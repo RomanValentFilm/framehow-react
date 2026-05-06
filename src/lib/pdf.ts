@@ -376,6 +376,26 @@ async function getTextItems(page: any, scale: number): Promise<TextItem[]> {
         i += 2;
         continue;
       }
+      // Combine split label fragments: "11" + "a." → "11a."
+      // Some PDF generators (Illustrator/InDesign) store digits and suffix in
+      // separate text runs.  Without this, "11a" and "11b" both resolve to
+      // "11" and the second frame gets deduped and loses its label entirely.
+      if (
+        /^\d{1,3}$/.test(item.text) &&
+        /^[a-z]\.?$/.test(next.text) &&
+        sameLine &&
+        closeX
+      ) {
+        combined.push({
+          text: `${item.text}${next.text}`,
+          x: item.x,
+          y: item.y,
+          w: next.x + next.w - item.x,
+          h: item.h,
+        });
+        i += 2;
+        continue;
+      }
       const belowLine = next.y > item.y && next.y < item.y + item.h * 3;
       const sameColumn = Math.abs(next.x - item.x) < item.w * 1.5;
       if (
@@ -417,7 +437,9 @@ function isLabel(t: string): boolean {
     /^FRAME\s+\d{1,3}[A-Z]?$/i.test(t) ||
     /^NEW\s+SHOT\s+[A-Z]$/i.test(t) ||
     /^\d{1,3}\s+[A-Z]\)$/.test(t) ||
-    /^\d{1,3}:\d{1,3}$/.test(t) ||
+    // Timecode-style labels like "1:30a" — but NOT "9:16" aspect-ratio tags.
+    // Reject pure N:N patterns where the second number is 9, 16, or 1 (common AR annotations).
+    (/^\d{1,3}:\d{1,3}$/.test(t) && !/^(?:9|16|1):(?:9|16|1)$/.test(t)) ||
     /^\d{1,3}:\d{1,3}[a-z]$/.test(t)
   );
 }
@@ -572,6 +594,18 @@ export async function handlePDF(file: File): Promise<void> {
               Math.abs(c.rh - dominantRH!) / dominantRH! < TOLERANCE
           )
         : candidates;
+
+      // Extra guard: reject candidates whose aspect ratio (w/h) deviates more
+      // than 60% from the dominant aspect ratio.  This catches thin text-strip
+      // bands (AR >> 1) that survive the independent rw/rh checks because
+      // their individual dimension tolerances are met individually.
+      if (dominantRW && dominantRH) {
+        const domAR = dominantRW / dominantRH;
+        filtered = filtered.filter((c: any) => {
+          const ar = c.rw / c.rh;
+          return Math.abs(ar - domAR) / domAR < 0.6;
+        });
+      }
 
       if (dominantRW && filtered.length >= 2 && filtered.length < candidates.length) {
         const removed = candidates.filter((c: any) => !filtered.includes(c));
