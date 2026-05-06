@@ -229,12 +229,42 @@ async function extractCandidates(
     ? findBands(colProf, W, 0.05, 0.02, Math.round(W * 0.04))
     : findBands(colProf, W, 0.04, 0.01, Math.round(W * 0.04));
 
-  if (finalRowBands.length === 0 || colBands.length === 0)
+  // Recursively split wide column bands so adjacent frames aren't merged
+  function splitColBand(band: { a: number; b: number }): { a: number; b: number }[] {
+    const bandW = band.b - band.a;
+    if (bandW <= W * 0.25) return [band];
+    const searchA = band.a + Math.round(bandW * 0.15);
+    const searchB = band.a + Math.round(bandW * 0.85);
+    const gapThresh = 0.015;
+    let bestGapStart = -1, bestGapEnd = -1, bestGapLen = 0, gapStart = -1;
+    for (let cx = searchA; cx < searchB; cx++) {
+      const val = useInverted ? 1 - colProf[cx] : colProf[cx];
+      if (val < gapThresh) {
+        if (gapStart < 0) gapStart = cx;
+      } else {
+        if (gapStart >= 0) {
+          const len = cx - gapStart;
+          if (len > bestGapLen) { bestGapLen = len; bestGapStart = gapStart; bestGapEnd = cx; }
+          gapStart = -1;
+        }
+      }
+    }
+    if (gapStart >= 0) {
+      const len = searchB - gapStart;
+      if (len > bestGapLen) { bestGapLen = len; bestGapStart = gapStart; bestGapEnd = searchB; }
+    }
+    if (bestGapLen < Math.round(W * 0.005)) return [band];
+    const mid = Math.round((bestGapStart + bestGapEnd) / 2);
+    return [...splitColBand({ a: band.a, b: mid }), ...splitColBand({ a: mid, b: band.b })];
+  }
+  const finalColBands = colBands.flatMap(splitColBand);
+
+  if (finalRowBands.length === 0 || finalColBands.length === 0)
     return { candidates: [], inverted: useInverted };
 
   const candidates: Candidate[] = [];
   for (const rb of finalRowBands) {
-    for (const cb of colBands) {
+    for (const cb of finalColBands) {
       const x = cb.a,
         y = rb.a,
         w = cb.b - cb.a,
@@ -243,14 +273,21 @@ async function extractCandidates(
       if (w * h > W * H * 0.9) continue;
       if (w < h) continue;
       let dark = 0,
-        total = 0;
+        total = 0,
+        sumG = 0,
+        sumGsq = 0;
       const step = 4;
       for (let sy = y; sy < y + h; sy += step)
         for (let sx = x; sx < x + w; sx += step) {
-          if (useInverted ? gray[sy * W + sx] > 100 : gray[sy * W + sx] < DARK) dark++;
+          const g = gray[sy * W + sx];
+          if (useInverted ? g > 100 : g < DARK) dark++;
+          sumG += g;
+          sumGsq += g * g;
           total++;
         }
       if (dark / total < 0.02) continue;
+      const mean = sumG / total;
+      if (sumGsq / total - mean * mean < 800) continue; // solid color region (title card, colored box)
       candidates.push({ x, y, w, h });
     }
   }
