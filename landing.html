@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Framehow — Storyboard Tool for Filmmakers</title>
+<meta name="description" content="A filmmaker's tool for developing your vision and tracking every shot as it evolves — from first sketch to final decisions on set.">
+<link rel="icon" href="/app/icons/icon_192.png" type="image/png">
+<meta name="apple-mobile-web-app-capable" content="no">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;}
+  :root{--bg:#111;--surface:#1a1a1a;--border:#333;--text:#e6e6e6;--muted:#999;--accent:#c94432;--font:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;}
+  html{scroll-behavior:smooth;}
+  body{background:var(--bg);color:var(--text);font-family:var(--font);line-height:1.6;-webkit-font-smoothing:antialiased;}
+
+  /* NAV */
+  .nav{position:fixed;top:0;left:0;right:0;z-index:50;padding:16px 24px;display:flex;align-items:center;justify-content:space-between;background:rgba(17,17,17,.85);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-bottom:1px solid rgba(255,255,255,.06);}
+  .nav-logo{font-size:18px;font-weight:700;letter-spacing:1px;color:var(--text);}
+  .nav-logo span{color:var(--accent);}
+  .nav-btn{font-family:var(--font);font-size:13px;font-weight:600;padding:8px 20px;border-radius:6px;border:none;background:var(--accent);color:#fff;cursor:pointer;transition:background .2s;text-decoration:none;display:inline-block;}
+  .nav-btn:hover{background:#b03b25;text-decoration:none;}
+
+  /* HERO */
+  .hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:100px 24px 60px;}
+  .hero-logo{font-size:clamp(22px,3.5vw,32px);font-weight:700;letter-spacing:3px;margin-bottom:40px;color:var(--text);}
+  .hero-logo span{color:var(--accent);}
+  .hero-text{max-width:960px;margin-bottom:40px;padding:0 24px;}
+  .hero-text p{font-size:clamp(20px,3.2vw,26px);color:var(--muted);line-height:1.55;font-family:Georgia,'Times New Roman',serif;}
+  .hero-text p+p{margin-top:1.2em;}
+  .hero-cta{display:inline-block;font-family:var(--font);font-size:16px;font-weight:600;padding:14px 36px;border-radius:8px;background:var(--accent);color:#fff;border:none;cursor:pointer;transition:background .2s,transform .15s;text-decoration:none;}
+  .hero-cta:hover{background:#b03b25;transform:translateY(-1px);text-decoration:none;}
+
+  /* IMAGE SECTION */
+  .hero-image{width:100%;max-width:1200px;margin:24px auto 0;padding:0 24px;}
+  .hero-image img{width:100%;border-radius:12px;border:1px solid var(--border);display:block;}
+  .hero-image .placeholder{width:100%;aspect-ratio:16/9;background:var(--surface);border:2px dashed var(--border);border-radius:12px;display:flex;align-items:center;justify-content:center;color:#555;font-size:16px;}
+
+  /* FEATURES */
+  .features{padding:24px 24px;max-width:900px;margin:0 auto;}
+  .feat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:20px;}
+  .feat{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:28px;}
+  .feat h3{font-size:16px;font-weight:600;margin-bottom:8px;}
+  .feat p{font-size:14px;color:var(--muted);line-height:1.6;}
+
+  /* CTA SECTION */
+  .cta-section{padding:8px 24px 60px;text-align:center;}
+  .cta-section h2{font-size:clamp(20px,3.5vw,28px);font-weight:700;margin-bottom:20px;}
+  .cta-columns{display:flex;justify-content:flex-start;gap:48px;margin-bottom:36px;flex-wrap:wrap;align-items:flex-start;max-width:700px;margin-left:auto;margin-right:auto;}
+  .cta-col{text-align:left;}
+  .cta-col h3{font-size:14px;font-weight:700;letter-spacing:1px;color:var(--muted);margin-bottom:12px;}
+  .cta-col ol{list-style:none;counter-reset:steps;}
+  .cta-col ol li{font-size:15px;line-height:1.6;color:var(--text);display:flex;align-items:flex-start;gap:6px;margin-bottom:4px;}
+  .cta-col ol li::before{counter-increment:steps;content:counter(steps) ".";color:var(--accent);font-weight:700;min-width:20px;line-height:1.6;}
+  .share-icon{display:inline-block;width:24px;height:24px;vertical-align:middle;position:relative;top:2px;}
+  .cta-sub{list-style:none;font-size:14px;color:var(--muted);padding-left:26px;margin-bottom:4px;margin-top:-4px;counter-increment:none;}
+  .cta-sub::before{content:none !important;}
+
+  /* FOOTER */
+  .footer{padding:32px 24px;text-align:center;border-top:1px solid var(--border);color:#555;font-size:12px;}
+
+  @media (max-width:500px){
+    .hero-image{padding:0 1px;}
+    .feat-grid{grid-template-columns:1fr;}
+    .cta-columns{flex-direction:column;align-items:flex-start;gap:20px;}
+  }
+</style>
+<script>
+if(window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches){
+  window.location.href='/app/';
+}
+</script>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-logo">FRAME<span>HOW</span></div>
+</nav>
+
+<section class="hero">
+  <div class="hero-logo">FRAME<span>HOW</span></div>
+  <div class="hero-text">
+    <p>Capture storyboard angles on recce on your tablet, compare versions during prep, and export for review — arrive on set prepared. From pre-production, through shooting, to post.</p>
+    <p>A creative filmmaker's tool for developing your vision and tracking every shot as it evolves — from first idea versions, to final decisions on set.</p>
+  </div>
+
+  <div class="hero-image">
+    <img src="/img/framehow-hero.png" alt="Framehow in action — storyboard import, version tracking, camera capture, annotations">
+  </div>
+</section>
+
+<section class="cta-section">
+  <h2>Get started in seconds:</h2>
+  <div class="cta-columns">
+    <div class="cta-col">
+      <h3>iPHONE / iPAD</h3>
+      <ol>
+        <li>Click button below</li>
+        <li>Tap SHARE <svg class="share-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 3L12 16" stroke="#fff" stroke-width="2" stroke-linecap="round"/><path d="M7 8L12 3L17 8" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 12V19C5 19.5523 5.44772 20 6 20H18C18.5523 20 19 19.5523 19 19V12" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg></li>
+        <li class="cta-sub">(top right iPad, bottom iPhone)</li>
+        <li>Tap <strong>"⋯"</strong> (three-dot menu) on iPad, or scroll down on iPhone</li>
+        <li>Tap <strong>ADD TO HOMESCREEN</strong></li>
+      </ol>
+    </div>
+    <div class="cta-col">
+      <h3>DESKTOP</h3>
+      <ol>
+        <li>Click below to open in browser (and use directly)</li>
+        <li>Or add as App from browser menu to desktop</li>
+      </ol>
+    </div>
+  </div>
+  <a href="/app/" class="hero-cta">Open Framehow Beta</a>
+</section>
+
+<section class="features">
+  <div class="feat-grid">
+    <div class="feat">
+      <h3>PDF Storyboard Import</h3>
+      <p>Load a storyboard PDF and Framehow extracts every frame automatically — labels, descriptions. Or import images.</p>
+    </div>
+    <div class="feat">
+      <h3>Capture Versions</h3>
+      <p>Use tablet's camera to capture your shot angles beside storyboard frames. Viewfinder with aspect ratio guide.</p>
+    </div>
+    <div class="feat">
+      <h3>Version Comparison</h3>
+      <p>Storyboard and versions side by side. Swipe through shot ideas, compare angles, track changes.</p>
+    </div>
+    <div class="feat">
+      <h3>Draw &amp; Annotate</h3>
+      <p>Sketch directly on your frames. Mark camera moves, and notes.</p>
+    </div>
+    <div class="feat">
+      <h3>Swipe Gestures</h3>
+      <p>Swipe with your fingers right and left to browse through versions.</p>
+    </div>
+    <div class="feat">
+      <h3>Works Everywhere</h3>
+      <p>iPhone, iPad, desktop — add to home screen as an app.</p>
+    </div>
+    <div class="feat">
+      <h3>Export</h3>
+      <p>Export for set, so you have a full overview of what you're shooting. Take your notes and images into post.</p>
+    </div>
+  </div>
+</section>
+
+<footer class="footer">
+  Framehow &copy; 2026
+</footer>
+
+</body>
+</html>

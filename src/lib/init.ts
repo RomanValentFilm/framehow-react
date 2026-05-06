@@ -385,7 +385,7 @@ export function initFramehow(): void {
 
   // Service worker
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js').then((reg) => {
+    navigator.serviceWorker.register('/app/sw.js').then((reg) => {
       reg.addEventListener('updatefound', () => {
         const w = reg.installing;
         if (!w) return;

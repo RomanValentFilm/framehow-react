@@ -1,9 +1,10 @@
-const CACHE_VERSION = 'framehow-v1';
+const CACHE_VERSION = 'framehow-v2';
 const ASSETS = [
-  '/index.html',
-  '/icons/icon_192.png',
-  '/icons/icon_512.png',
-  '/manifest.json'
+  './',
+  './index.html',
+  './icons/icon_192.png',
+  './icons/icon_512.png',
+  './manifest.json'
 ];
 
 // Install: cache core assets
