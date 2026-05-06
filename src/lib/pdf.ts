@@ -300,7 +300,11 @@ async function extractCandidates(
         }
       if (dark / total < 0.02) continue;
       const mean = sumG / total;
-      if (sumGsq / total - mean * mean < 800) continue; // solid color region (title card, colored box)
+      // Reject low-variance regions only when they're light-toned (empty slots,
+      // title cards, solid-colored boxes). Dark solid regions (e.g. a "black
+      // screen" storyboard shot) have mean ≈ 0 and near-zero variance but are
+      // valid frames — don't reject them.
+      if (mean > 160 && sumGsq / total - mean * mean < 800) continue;
       candidates.push({ x, y, w, h });
     }
   }
@@ -1003,6 +1007,16 @@ export async function handlePDF(file: File): Promise<void> {
         forceFullPage = true;
         console.log(
           `[StripBoard] Full-page detected: page AR=${pageAR.toFixed(2)}, dark-bg=${invertedCount}/${allCandidates.length}, wide-cand pages=${widePages}/${allCandidates.length} → forcing full-page mode`
+        );
+      }
+      // Wide cinematic pages with dark backgrounds whose frame-detection produces
+      // no convergent dominant size (image content causes false column splits that
+      // vary per page, preventing the dominant-size filter from converging).
+      // Fall back to full-page mode — each page IS the frame.
+      if (!forceFullPage && pageAR >= 1.5 && invertedRatio > 0.5 && dominantRW === null) {
+        forceFullPage = true;
+        console.log(
+          `[StripBoard] Full-page detected: wide+inverted (AR=${pageAR.toFixed(2)}, dark-bg=${invertedCount}/${allCandidates.length}) with no convergent frame size → full-page mode`
         );
       }
     }
