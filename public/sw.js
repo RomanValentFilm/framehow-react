@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'framehow-v2';
+const CACHE_VERSION = 'framehow-v4';
 const ASSETS = [
   './',
   './index.html',
@@ -27,6 +27,7 @@ self.addEventListener('activate', e => {
 
 // Fetch: network first, fall back to cache (ensures updates arrive fast)
 self.addEventListener('fetch', e => {
+  if (e.request.method !== 'GET') return;
   e.respondWith(
     fetch(e.request)
       .then(response => {
