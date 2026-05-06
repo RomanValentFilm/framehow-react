@@ -203,8 +203,12 @@ async function extractCandidates(
 
   const colProf = new Float32Array(W);
   if (finalRowBands.length > 0) {
+    // Only use tall row bands for the column profile — short bands are label/caption
+    // rows whose text fills column gaps and prevents frame separation.
+    const tallBands = finalRowBands.filter(rb => rb.b - rb.a >= Math.round(H * 0.08));
+    const colSrcBands = tallBands.length > 0 ? tallBands : finalRowBands;
     let totalRows = 0;
-    for (const rb of finalRowBands) {
+    for (const rb of colSrcBands) {
       for (let x = 0; x < W; x++) {
         let s = 0;
         if (useInverted) {
