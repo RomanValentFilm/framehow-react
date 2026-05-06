@@ -845,6 +845,27 @@ export async function handlePDF(file: File): Promise<void> {
             if (fw < 30 || fh < 30) continue;
             if (fw < estFW * 0.5 || fh < estFH * 0.5) continue;
             if (fw < fh * 0.7) continue;
+            // Pixel-content check: reject recovered frames that land on blank or
+            // uniform areas. Page-number text ("24", "38") can pass isLabel() and
+            // trigger recovery, but the computed frame position has no image content.
+            {
+              const imgData = pc.getContext('2d')!.getImageData(fx, fy, fw, fh);
+              const d = imgData.data;
+              const recStep = 4;
+              let recDark = 0, recN = 0, recSG = 0, recSG2 = 0;
+              for (let si = 0; si < fw * fh; si += recStep) {
+                const ri = si * 4;
+                const g = (d[ri] + d[ri + 1] + d[ri + 2]) / 3;
+                if (g < 200) recDark++;
+                recSG += g; recSG2 += g * g; recN++;
+              }
+              const recMean = recSG / recN;
+              const recVar = recSG2 / recN - recMean * recMean;
+              if (recDark / recN < 0.02 || recVar < 800) {
+                console.log(`[StripBoard] Recovery: skipped "${labelText}" — blank region (dark=${(recDark/recN).toFixed(3)}, var=${recVar.toFixed(0)})`);
+                continue;
+              }
+            }
             const pad = 3;
             const cx = Math.max(0, fx - pad),
               cy = Math.max(0, fy - pad);
