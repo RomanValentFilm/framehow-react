@@ -123,8 +123,17 @@ async function extractCandidates(
   const mergedRowBands: { a: number; b: number }[] = [];
   const MIN_GAP = Math.round(H * 0.02);
   for (const rb of activeRowBands) {
-    if (mergedRowBands.length > 0 && rb.a - mergedRowBands[mergedRowBands.length - 1].b < MIN_GAP) {
-      mergedRowBands[mergedRowBands.length - 1].b = rb.b;
+    const last = mergedRowBands.length > 0 ? mergedRowBands[mergedRowBands.length - 1] : null;
+    if (last && rb.a - last.b < MIN_GAP) {
+      const lastH = last.b - last.a, rbH = rb.b - rb.a;
+      // Only merge bands of similar height — prevents thin label rows from
+      // fusing with tall frame rows, which would create an oversized band that
+      // fails the dominant-size filter and causes frame rows to be dropped.
+      if (Math.min(lastH, rbH) / Math.max(lastH, rbH) > 0.5) {
+        last.b = rb.b;
+      } else {
+        mergedRowBands.push({ ...rb });
+      }
     } else {
       mergedRowBands.push({ ...rb });
     }

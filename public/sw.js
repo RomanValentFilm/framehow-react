@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'framehow-v2';
+const CACHE_VERSION = 'framehow-v4';
 const ASSETS = [
   './',
   './index.html',
