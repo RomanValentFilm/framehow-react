@@ -5,6 +5,7 @@
 import { state, useStore } from '../store/state';
 import { showToast, showCamBlockedMsg } from './modals';
 import { fhTrack } from './tracking';
+import { resetToolbarState } from './view';
 
 let cameraStream: MediaStream | null = null;
 let cameraFacing: 'environment' | 'user' = 'environment';
@@ -179,8 +180,9 @@ export function closeCamera(): void {
     cameraStream.getTracks().forEach((t) => t.stop());
     cameraStream = null;
   }
-  // Reset toolbar visibility — handled by view module via setState
   useStore.setState({ scrollHideGuard: Date.now() + 1000 });
+  resetToolbarState();
+  setTimeout(resetToolbarState, 300);
   document.getElementById('cameraOverlay')!.classList.add('hidden');
   const vid = document.getElementById('cameraVideo') as HTMLVideoElement;
   vid.srcObject = null;
