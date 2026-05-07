@@ -383,19 +383,25 @@ export function initFramehow(): void {
   // Telemetry
   startHeartbeat();
 
-  // Service worker
+  // Service worker — skip in dev mode so cached SW never blocks fresh code
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/app/sw.js').then((reg) => {
-      reg.addEventListener('updatefound', () => {
-        const w = reg.installing;
-        if (!w) return;
-        w.addEventListener('statechange', () => {
-          if (w.state === 'installed' && navigator.serviceWorker.controller) {
-            console.log('Framehow update available — reload to apply.');
-          }
+    if (import.meta.env.DEV) {
+      navigator.serviceWorker.getRegistrations().then(regs => {
+        regs.forEach(r => r.unregister());
+      });
+    } else {
+      navigator.serviceWorker.register('/app/sw.js').then((reg) => {
+        reg.addEventListener('updatefound', () => {
+          const w = reg.installing;
+          if (!w) return;
+          w.addEventListener('statechange', () => {
+            if (w.state === 'installed' && navigator.serviceWorker.controller) {
+              console.log('Framehow update available — reload to apply.');
+            }
+          });
         });
       });
-    });
+    }
   }
 
   // iOS :active CSS enabler

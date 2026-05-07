@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head><title>Clear Framehow Cache</title>
+<style>body{font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#111;color:#fff;}
+.box{text-align:center;} button{font-size:18px;padding:14px 32px;background:#c94432;color:#fff;border:none;border-radius:8px;cursor:pointer;}</style>
+</head>
+<body>
+<div class="box">
+  <h2 id="msg">Clearing old cache…</h2>
+  <p id="sub"></p>
+  <button onclick="location.href='/app/'" id="btn" style="display:none">Open Framehow</button>
+</div>
+<script>
+async function clear() {
+  let count = 0;
+  if ('serviceWorker' in navigator) {
+    const regs = await navigator.serviceWorker.getRegistrations();
+    for (const r of regs) { await r.unregister(); count++; }
+  }
+  const keys = await caches.keys();
+  for (const k of keys) { await caches.delete(k); }
+  document.getElementById('msg').textContent = '✅ Done!';
+  document.getElementById('sub').textContent = `Removed ${count} service worker(s) and all cached files.`;
+  document.getElementById('btn').style.display = 'inline-block';
+}
+clear();
+</script>
+</body>
+</html>

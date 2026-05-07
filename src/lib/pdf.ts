@@ -813,10 +813,11 @@ export async function handlePDF(file: File): Promise<void> {
         .map((f) => parseInt((f.label || '').match(/^(\d+)/)?.[1] || ''))
         .filter((n) => !isNaN(n));
       const expectedNums = new Set<number>();
+      let minN = 0;
       if (existingNums.length >= 2) {
         const sorted = [...new Set(existingNums)].sort((a, b) => a - b);
-        const minN = sorted[0],
-          maxN = sorted[sorted.length - 1];
+        minN = sorted[0];
+        const maxN = sorted[sorted.length - 1];
         const steps: number[] = [];
         for (let si = 1; si < sorted.length; si++) steps.push(sorted[si] - sorted[si - 1]);
         const stepCounts: Record<number, number> = {};
@@ -849,8 +850,13 @@ export async function handlePDF(file: File): Promise<void> {
             const t = it.text.trim();
             if (usedLabels.has(t)) return false;
             if (isZeroPage) return true;
+            // Suffixed labels (e.g. "7a.", "4b") are always distinct frames — recover if unused
+            if (/^\d{1,3}[a-zA-Z]\.?$/.test(t)) return true;
             const num = parseInt((t.match(/^(\d+)/) || [])[1]);
-            return !isNaN(num) && expectedNums.has(num);
+            if (isNaN(num)) return false;
+            // Recover if in expected sequence, or if below minN (early frames often
+            // fall below the sequence minimum when only a few frames were extracted)
+            return expectedNums.has(num) || num < minN;
           });
           if (pageLabels.length === 0) continue;
           const pc = await renderPage(page, 2);
