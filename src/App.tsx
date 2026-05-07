@@ -4,6 +4,7 @@ import { ViewBar } from './components/ViewBar';
 import { StripColumns } from './components/StripColumns';
 import { Modals } from './components/Modals';
 import { Overlays } from './components/Overlays';
+import { AccountModals } from './components/AccountModals';
 import { initFramehow } from './lib/init';
 
 export default function App() {
@@ -19,6 +20,7 @@ export default function App() {
       <StripColumns />
       <Modals />
       <Overlays />
+      <AccountModals />
     </>
   );
 }

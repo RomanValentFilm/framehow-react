@@ -27,6 +27,17 @@ import { openExportModal, openPptxModal, runExport, runPptxExport, runImageExpor
 import { wireCameraEvents } from './camera';
 import { openFullscreen } from './fullscreen';
 import { startHeartbeat } from './tracking';
+import {
+  bootstrapAccountSystem,
+  flowAccountOrSignIn,
+  flowLoadProject,
+  flowSaveProject,
+  isToasterShowing,
+  showSaveToaster,
+} from './accountFlow';
+import { getActiveMs, onActivityTick, startActivityTracking } from './activity';
+import { startAutosave } from './currentProject';
+import { subscribe as subscribeSession, isLoggedIn } from './session';
 
 let initialized = false;
 
@@ -196,6 +207,23 @@ export function initFramehow(): void {
       return;
     }
     document.getElementById('exportChooser')!.classList.remove('hidden');
+  });
+  // Account-system menu entries (v1.6)
+  document.getElementById('menuSaveProject')!.addEventListener('click', () => {
+    document.getElementById('mainMenu')!.classList.remove('open');
+    if (!state().frames.length) {
+      showToast('Nothing to save yet — load or create some frames first.');
+      return;
+    }
+    void flowSaveProject();
+  });
+  document.getElementById('menuLoadProject')!.addEventListener('click', () => {
+    document.getElementById('mainMenu')!.classList.remove('open');
+    void flowLoadProject();
+  });
+  document.getElementById('menuAccount')!.addEventListener('click', () => {
+    document.getElementById('mainMenu')!.classList.remove('open');
+    void flowAccountOrSignIn();
   });
 
   // Empty-state buttons
@@ -406,4 +434,79 @@ export function initFramehow(): void {
 
   // iOS :active CSS enabler
   document.addEventListener('touchstart', () => {}, { passive: true });
+
+  // Account system: bootstrap, activity, autosave, toaster trigger.
+  startActivityTracking();
+  startAutosave();
+
+  // Update the menu's "Sign In" / "Account" label to reflect login state.
+  function refreshAccountMenuLabel(): void {
+    const btn = document.getElementById('menuAccount');
+    if (btn) btn.textContent = isLoggedIn() ? 'Account' : 'Sign In';
+  }
+  refreshAccountMenuLabel();
+  subscribeSession(refreshAccountMenuLabel);
+
+  // Save toaster trigger logic
+  // ------------------------------------------------------------------------
+  // Production: 5 minutes of active use AND a storyboard is loaded.
+  // Dev/preview only (localhost or import.meta.env.DEV): URL overrides
+  //   ?toaster=now    → fire immediately
+  //   ?toaster=test   → fire 5s after a storyboard is loaded
+  // ------------------------------------------------------------------------
+  const FIVE_MIN = 5 * 60 * 1000;
+  const TEST_DELAY = 5 * 1000;
+  const isDevOrPreview =
+    import.meta.env.DEV ||
+    ['localhost', '127.0.0.1', '0.0.0.0'].includes(window.location.hostname);
+  const toasterOverride = isDevOrPreview
+    ? new URL(window.location.href).searchParams.get('toaster')
+    : null;
+
+  let toasterFired = false;
+  function maybeFireToaster(): void {
+    if (toasterFired) return;
+    if (isToasterShowing()) return;
+    if (state().frames.length === 0) return;
+    toasterFired = true;
+    showSaveToaster();
+  }
+
+  // Apply overrides immediately in dev/preview (without waiting for activity).
+  if (toasterOverride === 'now') {
+    // Fire as soon as React paints — small delay so the user can see frames first
+    // if they're loaded by the bootstrap flow.
+    setTimeout(() => {
+      toasterFired = true;
+      showSaveToaster();
+    }, 100);
+  } else if (toasterOverride === 'test') {
+    // Fire 5s after a storyboard becomes loaded.
+    let testTimer: number | null = null;
+    const tryStart = () => {
+      if (testTimer !== null) return;
+      if (state().frames.length === 0) return;
+      testTimer = window.setTimeout(() => {
+        toasterFired = true;
+        showSaveToaster();
+      }, TEST_DELAY);
+    };
+    useStore.subscribe(tryStart);
+    tryStart();
+  } else {
+    // Standard production trigger: 5 min of active use + storyboard loaded.
+    onActivityTick((ms) => {
+      if (ms >= FIVE_MIN) maybeFireToaster();
+    });
+    // Also re-evaluate when the storyboard becomes non-empty after the
+    // 5-minute mark has already passed.
+    useStore.subscribe(() => {
+      if (state().frames.length > 0 && getActiveMs() >= FIVE_MIN) {
+        maybeFireToaster();
+      }
+    });
+  }
+
+  // Kick off async bootstrap last so all wiring is in place when modals open.
+  void bootstrapAccountSystem();
 }

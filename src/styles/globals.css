@@ -343,3 +343,61 @@
     .columns{padding-top:calc(88px + env(safe-area-inset-top) * 0.5);}
   }
   @media (max-width:430px){.view-bar{padding:3px 10px;}.columns{padding-top:calc(78px + env(safe-area-inset-top) * 0.5);}.view-btn{width:24px;height:18px;font-size:13px;}.strip-label{font-size:8px;}}
+
+  /* ========================================================================
+     v1.6 — Account / sync UI
+     ======================================================================== */
+
+  /* Save toaster: bottom-anchored card with two buttons. Slides up. */
+  .save-toaster{position:fixed;left:50%;bottom:max(16px,env(safe-area-inset-bottom));transform:translateX(-50%) translateY(140%);z-index:350;transition:transform .28s ease;width:min(420px,calc(100vw - 24px));pointer-events:none;}
+  .save-toaster:not(.hidden){transform:translateX(-50%) translateY(0);pointer-events:auto;}
+  .save-toaster.hidden{transform:translateX(-50%) translateY(140%);}
+  .save-toaster-card{background:var(--surface);border:1px solid var(--border-strong);border-radius:var(--radius);padding:14px 16px;box-shadow:0 12px 32px rgba(0,0,0,.5);}
+  .save-toaster-msg{font-size:13px;line-height:1.45;color:#e6e6e6;margin-bottom:12px;}
+  .save-toaster-btns{display:flex;gap:8px;justify-content:flex-end;}
+
+  /* Generic account modal overlay (mirrors existing modal patterns). */
+  .account-modal{position:fixed;inset:0;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;z-index:400;padding:16px;overflow-y:auto;}
+  .account-modal.hidden{display:none!important;}
+  .account-card{background:var(--surface);border:1px solid var(--border-strong);border-radius:var(--radius);padding:20px 22px;width:min(420px,100%);max-height:calc(100dvh - 32px);overflow-y:auto;}
+  .account-card-wide{width:min(560px,100%);}
+  .account-card h2{font-size:18px;font-weight:600;margin:0 0 6px;color:#fff;}
+  .account-hint{font-size:12px;color:var(--text-faint);line-height:1.5;margin:0 0 14px;}
+  .account-row{margin-bottom:12px;display:flex;flex-direction:column;gap:6px;}
+  .account-row label{font-size:11px;font-weight:500;color:#b8b8b8;text-transform:uppercase;letter-spacing:.04em;}
+  .account-row input,.account-row select{font-family:var(--font);font-size:14px;padding:9px 11px;border-radius:var(--radius-sm);border:1px solid var(--border-strong);background:var(--bg);color:#fff;width:100%;box-sizing:border-box;}
+  .account-row input:focus,.account-row select:focus{outline:none;border-color:var(--accent);}
+  .account-readonly{font-size:13px;color:#ddd;padding:9px 11px;background:#222;border:1px solid var(--border);border-radius:var(--radius-sm);}
+  .account-optional{color:var(--text-faint);text-transform:none;font-weight:400;letter-spacing:0;}
+  .account-error{color:#ff6e57;font-size:12px;line-height:1.45;margin:6px 0 0;min-height:1em;}
+  .account-error:empty{display:none;}
+  .account-success{color:#7ad97a;font-size:12px;line-height:1.45;margin:6px 0 0;min-height:1em;}
+  .account-success:empty{display:none;}
+  .account-btns{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;}
+  .account-btns .btn{padding:9px 18px;font-size:13px;}
+  .account-links{display:flex;flex-direction:column;align-items:center;gap:6px;margin-top:14px;padding-top:14px;border-top:1px solid var(--border);}
+  .account-link-btn{background:none;border:none;color:#9aa6c6;font-size:12px;font-family:var(--font);cursor:pointer;padding:2px 4px;text-decoration:underline;}
+  .account-link-btn:hover{color:#fff;}
+  .account-sep{border:none;border-top:1px solid var(--border);margin:18px 0 14px;}
+  .account-actions-stack{display:flex;flex-direction:column;gap:8px;}
+  .account-actions-stack .btn{width:100%;text-align:center;padding:10px 14px;}
+  .btn-danger{background:#5a1a10;color:#ffb3a8;border-color:#7a2818;}
+  @media (hover:hover){.btn-danger:hover{background:#702012;color:#fff;}}
+  .account-header-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;}
+  .account-header-row h2{margin:0;}
+
+  /* Project list */
+  .project-list{display:flex;flex-direction:column;gap:6px;max-height:50dvh;overflow-y:auto;margin-bottom:14px;}
+  .project-list-empty{font-size:13px;color:var(--text-faint);text-align:center;padding:32px 8px;}
+  .project-list-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 14px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);font-family:var(--font);text-align:left;cursor:pointer;color:#fff;font-size:14px;}
+  @media (hover:hover){.project-list-row:hover{border-color:var(--accent);background:#1a1a1a;}}
+  .project-list-row:active{background:#0d0d0d;}
+  .project-list-name{font-weight:500;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .project-list-meta{font-family:var(--mono);font-size:11px;color:var(--text-faint);flex-shrink:0;}
+
+  /* Mobile tweaks */
+  @media (max-width:480px){
+    .save-toaster{width:calc(100vw - 16px);}
+    .account-card{padding:18px 16px;}
+    .account-btns{flex-wrap:wrap;}
+  }
