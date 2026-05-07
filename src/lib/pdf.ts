@@ -68,10 +68,24 @@ async function extractCandidates(
   for (let i = 0; i < W * H; i++) gray[i] = (px[i * 4] + px[i * 4 + 1] + px[i * 4 + 2]) / 3;
 
   const DARK = 200;
+  // Helper: returns true for yellow-ish pixels (section headers like OPENING,
+  // INSTORE, TAŠKY, MÜSLI …) and bright-red pixels (cross-out marks).
+  // These are visually prominent but should not count as "dark frame content"
+  // because they fill gaps between frames and pollute row/column profiling.
+  function isColorNoise(idx: number): boolean {
+    const r = px[idx], g = px[idx + 1], b = px[idx + 2];
+    if (r > 200 && g > 150 && b < 120) return true;   // yellow
+    if (r > 180 && g < 100 && b < 100) return true;    // red
+    return false;
+  }
+
   const rowProf = new Float32Array(H);
   for (let y = 0; y < H; y++) {
     let s = 0;
-    for (let x = 0; x < W; x++) if (gray[y * W + x] < DARK) s++;
+    for (let x = 0; x < W; x++) {
+      if (isColorNoise((y * W + x) * 4)) continue;
+      if (gray[y * W + x] < DARK) s++;
+    }
     rowProf[y] = s / W;
   }
 
@@ -224,7 +238,10 @@ async function extractCandidates(
           const LIGHT = 100;
           for (let y = rb.a; y < rb.b; y++) if (gray[y * W + x] > LIGHT) s++;
         } else {
-          for (let y = rb.a; y < rb.b; y++) if (gray[y * W + x] < DARK) s++;
+          for (let y = rb.a; y < rb.b; y++) {
+            if (isColorNoise((y * W + x) * 4)) continue;
+            if (gray[y * W + x] < DARK) s++;
+          }
         }
         colProf[x] += s;
       }
