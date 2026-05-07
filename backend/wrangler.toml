@@ -1,0 +1,35 @@
+name = "framehow-api"
+main = "src/index.ts"
+compatibility_date = "2025-04-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Vars (non-secret defaults). Override per-environment as needed.
+[vars]
+APP_NAME = "Framehow"
+APP_URL = "https://framehow.app"
+SESSION_TTL_DAYS = "30"
+PASSWORD_RESET_TTL_HOURS = "1"
+EMAIL_VERIFY_TTL_HOURS = "48"
+# Admin email for storage alerts (admin-only feature, see spec).
+ADMIN_EMAIL = "roman@valentfilm.com"
+
+# Secrets to set via `wrangler secret put`:
+#   EMAIL_API_KEY      — provider key (Resend / MailChannels / etc.)
+#   EMAIL_FROM         — verified sender address
+#   ADMIN_API_TOKEN    — bearer token for /admin/* endpoints
+
+# D1 — primary database
+[[d1_databases]]
+binding = "DB"
+database_name = "framehow-db"
+database_id = "9a805ca2-576c-4c8c-8af4-71016b8711b5"
+migrations_dir = "migrations"
+
+# R2 — frame images. NOT YET ACTIVATED (requires payment method on Cloudflare).
+# When R2 is activated:
+#   1. Create the bucket:  wrangler r2 bucket create framehow-images
+#   2. Uncomment the block below.
+#   3. Redeploy. The /upload and /images/:r2_key handlers already use this binding.
+# [[r2_buckets]]
+# binding = "IMAGES_BUCKET"
+# bucket_name = "framehow-images"
