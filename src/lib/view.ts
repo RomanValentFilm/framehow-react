@@ -491,6 +491,7 @@ export function wireScrollHandlers(): void {
     'scroll',
     () => {
       if (Date.now() < state().scrollHideGuard) return;
+      if (document.querySelector('.fs-overlay')) return;
       const camOvl = document.getElementById('cameraOverlay');
       if (camOvl && !camOvl.classList.contains('hidden')) return;
       const y = window.scrollY;

@@ -4,6 +4,7 @@
 import { state, useStore } from '../store/state';
 import { drawToolbarHTML, starHTML } from './helpers';
 import { restoreCanvas, restoreMainCanvas, setupDrawing, setupMainDrawing } from './drawing';
+import { resetToolbarState } from './view';
 
 const fsCollapseSVG = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M4 14h6v6M20 10h-6V4M10 14l-7 7M14 10l7-7"/></svg>';
 
@@ -152,6 +153,7 @@ export function closeFullscreen(): void {
   overlay.remove();
   document.body.style.overflow = '';
   useStore.setState({ fsOverlayActive: null });
+  resetToolbarState();
   const renderAll = (window as any).__fh_renderAll;
   if (renderAll) renderAll();
 }
