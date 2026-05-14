@@ -519,7 +519,9 @@ export async function openAccountSettings(): Promise<void> {
     logoutBtn.onclick = async () => {
       cleanup();
       await serverLogout();
+      resetStoryboardState();
       clearCurrentProject();
+      (window as any).__fh_renderAll?.();
       showToast('Logged out.');
     };
     deleteBtn.onclick = async () => {
@@ -530,7 +532,9 @@ export async function openAccountSettings(): Promise<void> {
       try {
         await api.delete('/user/me', getToken());
         clearSession();
+        resetStoryboardState();
         clearCurrentProject();
+        (window as any).__fh_renderAll?.();
         cleanup();
         showToast('Account deleted.');
       } catch (e) {

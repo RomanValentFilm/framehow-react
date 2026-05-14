@@ -416,20 +416,18 @@ export function addCrossSwipe(el: HTMLElement, fid: number, fromStrip: 'main' | 
 }
 
 export function resetToolbarState(): void {
+  const isPhone = Math.min(window.innerWidth, window.innerHeight) <= 430;
+  if (isPhone) return; // iPhone: toolbar scrolls naturally via CSS, no JS needed
+
   const toolbar = document.getElementById('mainToolbar');
   const viewBar = document.querySelector('.view-bar');
-  const isPhone = Math.min(window.innerWidth, window.innerHeight) <= 430;
 
   // Clear everything
   if (toolbar) toolbar.classList.remove('tb-hide');
-  if (viewBar) viewBar.classList.remove('tb-hide', 'vbar-top');
+  if (viewBar) viewBar.classList.remove('tb-hide');
 
   const shouldHide = window.scrollY > 10;
-  if (isPhone && shouldHide) {
-    // iPhone: hide toolbar, view bar slides to top
-    if (toolbar) toolbar.classList.add('tb-hide');
-    if (viewBar) viewBar.classList.add('vbar-top');
-  } else if (!isPhone && shouldHide) {
+  if (shouldHide) {
     // iPad: hide both
     if (toolbar) toolbar.classList.add('tb-hide');
     if (viewBar) viewBar.classList.add('tb-hide');
@@ -451,9 +449,15 @@ export function handleOrientationFlip(): void {
 
   document.getElementById('rotateMsg')!.classList.remove('show');
   if (!flipped) return;
-  resetToolbarState();
+
+  // Block scroll handler during the entire orientation transition.
+  // Don't touch toolbar state now — scrollY is unreliable during resize.
+  // Leave it as-is and do one clean reset after layout settles.
+  useStore.setState({ scrollHideGuard: Date.now() + 1500 });
+
   const fid = state().centerFid;
-  const isPhonePortrait = Math.min(newW, newH) <= 430 && newH > newW;
+  const isPhone = Math.min(newW, newH) <= 430;
+  const isPhonePortrait = isPhone && newH > newW;
   if (isPhonePortrait && state().currentViewMode !== 'main') {
     setViewMode('main', false, fid);
   }
@@ -463,9 +467,13 @@ export function handleOrientationFlip(): void {
     setTimeout(() => {
       syncCardHeights();
       scrollAnchorTo(fid);
-      resetToolbarState();
     }, delay)
   );
+
+  // Single toolbar reset after layout fully settles
+  setTimeout(() => {
+    resetToolbarState();
+  }, 1600);
 }
 
 export function wireScrollHandlers(): void {
@@ -493,6 +501,12 @@ export function wireScrollHandlers(): void {
   });
 
   if (!isTouch) return;
+
+  // iPhone: toolbar scrolls naturally via CSS. No JS show/hide needed.
+  const isPhoneAtInit = Math.min(window.innerWidth, window.innerHeight) <= 430;
+  if (isPhoneAtInit) return;
+
+  // iPad: JS-controlled show/hide
   let hidden = false;
   const toolbar = document.getElementById('mainToolbar');
   const viewBar = document.querySelector('.view-bar');
@@ -513,26 +527,17 @@ export function wireScrollHandlers(): void {
       const camOvl = document.getElementById('cameraOverlay');
       if (camOvl && !camOvl.classList.contains('hidden')) return;
       const y = window.scrollY;
-      const isPhone = Math.min(window.innerWidth, window.innerHeight) <= 430;
 
       if (y <= TH && hidden) {
         // At top → show toolbar
         hidden = false;
         toolbar.classList.remove('tb-hide');
-        if (isPhone) {
-          viewBar.classList.remove('vbar-top');
-        } else {
-          viewBar.classList.remove('tb-hide');
-        }
+        viewBar.classList.remove('tb-hide');
       } else if (y > TH && !hidden) {
         // Scrolled away → hide toolbar
         hidden = true;
         toolbar.classList.add('tb-hide');
-        if (isPhone) {
-          viewBar.classList.add('vbar-top');
-        } else {
-          viewBar.classList.add('tb-hide');
-        }
+        viewBar.classList.add('tb-hide');
       }
     },
     { passive: true }
