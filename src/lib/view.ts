@@ -198,7 +198,15 @@ export function showSwipeHint(): void {
   if (!hint) return;
   useStore.setState({ swipeHintShown: true });
   hint.classList.add('show');
-  hint.addEventListener('click', () => hint.classList.remove('show'), { once: true });
+  const dismiss = () => {
+    hint.style.transition = 'none';
+    hint.classList.remove('show');
+    // Restore CSS transition after instant hide
+    requestAnimationFrame(() => { hint.style.transition = ''; });
+  };
+  hint.addEventListener('click', dismiss, { once: true });
+  hint.addEventListener('touchstart', dismiss, { once: true, passive: true });
+  hint.addEventListener('touchmove', dismiss, { once: true, passive: true });
   setTimeout(() => {
     hint.classList.remove('show');
   }, 3000);
@@ -231,8 +239,9 @@ export function navigateStrip(fid: number, fromStrip: 'main' | 'ver', dir: 'left
   }
   if (fromStrip === 'main' && s.currentViewMode === 'main') {
     if (dir === 'right') {
-      const nxt = nextVisibleVer(fid, cur, 'right');
-      if (nxt >= 0) {
+      // Allow swiping to ALL versions (including hidden — they show dimmed)
+      const nxt = cur + 1;
+      if (nxt < numVer) {
         s.crossCompare[fid] = nxt;
         s.activeTab[fid] = nxt;
         useStore.setState({ swipeHighlightFid: fid });
@@ -240,7 +249,7 @@ export function navigateStrip(fid: number, fromStrip: 'main' | 'ver', dir: 'left
         if (div && renderMain) renderMain(div, fid);
       }
     } else if (dir === 'left' && cur >= 0) {
-      const prv = nextVisibleVer(fid, cur, 'left');
+      const prv = cur - 1;
       if (prv >= 0) {
         s.crossCompare[fid] = prv;
         s.activeTab[fid] = prv;
@@ -294,7 +303,7 @@ export function addNavArrows(wrapEl: HTMLElement, fid: number, fromStrip: 'main'
   let showLeft = false,
     showRight = false;
   if (fromStrip === 'main') {
-    showRight = hasVisibleVer(fid, cur, 'right');
+    showRight = cur + 1 < numVer;
     showLeft = cur >= 0;
   } else if (s.currentViewMode === 'both') {
     const ai = s.activeTab[fid] || 0;
@@ -368,8 +377,10 @@ export function addCrossSwipe(el: HTMLElement, fid: number, fromStrip: 'main' | 
           return;
         }
         if (dx < 0) {
-          const nxt = nextVisibleVer(fid, cur, 'right');
-          if (nxt >= 0) {
+          // Allow swiping to ALL versions (including hidden — they show dimmed)
+          const nxt = cur + 1;
+          const numV = (s.versions[fid] || []).length;
+          if (nxt < numV) {
             s.crossCompare[fid] = nxt;
             s.activeTab[fid] = nxt;
             useStore.setState({ swipeHighlightFid: fid });
@@ -377,7 +388,7 @@ export function addCrossSwipe(el: HTMLElement, fid: number, fromStrip: 'main' | 
             if (div && renderMain) renderMain(div, fid);
           }
         } else if (dx > 0 && cur >= 0) {
-          const prv = nextVisibleVer(fid, cur, 'left');
+          const prv = cur - 1;
           if (prv >= 0) {
             s.crossCompare[fid] = prv;
             s.activeTab[fid] = prv;
@@ -407,20 +418,24 @@ export function addCrossSwipe(el: HTMLElement, fid: number, fromStrip: 'main' | 
 export function resetToolbarState(): void {
   const toolbar = document.getElementById('mainToolbar');
   const viewBar = document.querySelector('.view-bar');
-  const isPhoneLand = window.innerWidth > window.innerHeight && Math.min(window.innerWidth, window.innerHeight) <= 430;
-  if (toolbar) {
-    toolbar.classList.remove('hdr-hidden');
-    toolbar.classList.remove('hdr-visible');
+  const isPhone = Math.min(window.innerWidth, window.innerHeight) <= 430;
+
+  // Clear everything
+  if (toolbar) toolbar.classList.remove('tb-hide');
+  if (viewBar) viewBar.classList.remove('tb-hide', 'vbar-top');
+
+  const shouldHide = window.scrollY > 10;
+  if (isPhone && shouldHide) {
+    // iPhone: hide toolbar, view bar slides to top
+    if (toolbar) toolbar.classList.add('tb-hide');
+    if (viewBar) viewBar.classList.add('vbar-top');
+  } else if (!isPhone && shouldHide) {
+    // iPad: hide both
+    if (toolbar) toolbar.classList.add('tb-hide');
+    if (viewBar) viewBar.classList.add('tb-hide');
   }
-  if (viewBar) {
-    viewBar.classList.remove('hdr-hidden');
-    viewBar.classList.remove('hdr-visible');
-  }
-  if (isPhoneLand && window.scrollY > 10) {
-    if (toolbar) toolbar.classList.add('hdr-hidden');
-    if (viewBar) viewBar.classList.add('hdr-hidden');
-  }
-  if ((window as any)._scrollHideReset) (window as any)._scrollHideReset();
+
+  if ((window as any)._scrollHideReset) (window as any)._scrollHideReset(shouldHide);
 }
 
 export function handleOrientationFlip(): void {
@@ -448,6 +463,7 @@ export function handleOrientationFlip(): void {
     setTimeout(() => {
       syncCardHeights();
       scrollAnchorTo(fid);
+      resetToolbarState();
     }, delay)
   );
 }
@@ -477,16 +493,18 @@ export function wireScrollHandlers(): void {
   });
 
   if (!isTouch) return;
-  let lastY = window.scrollY,
-    hidden = false;
+  let hidden = false;
   const toolbar = document.getElementById('mainToolbar');
   const viewBar = document.querySelector('.view-bar');
   if (!toolbar || !viewBar) return;
-  (window as any)._scrollHideReset = function () {
-    hidden = false;
-    lastY = window.scrollY;
+  (window as any)._scrollHideReset = function (h?: boolean) {
+    hidden = h !== undefined ? h : false;
   };
-  const TOP_THRESHOLD = 10;
+  const TH = 10;
+
+  // Apply initial state
+  resetToolbarState();
+
   window.addEventListener(
     'scroll',
     () => {
@@ -495,35 +513,27 @@ export function wireScrollHandlers(): void {
       const camOvl = document.getElementById('cameraOverlay');
       if (camOvl && !camOvl.classList.contains('hidden')) return;
       const y = window.scrollY;
-      const dy = y - lastY;
-      if (Math.abs(dy) < 2) {
-        lastY = y;
-        return;
-      }
-      const isPhoneLand =
-        window.innerWidth > window.innerHeight && Math.min(window.innerWidth, window.innerHeight) <= 430;
-      if (dy > 0 && y > 15 && !hidden) {
-        hidden = true;
-        toolbar.classList.add('hdr-hidden');
-        toolbar.classList.remove('hdr-visible');
-        viewBar.classList.add('hdr-hidden');
-        viewBar.classList.remove('hdr-visible');
-      } else if (hidden && y <= TOP_THRESHOLD) {
+      const isPhone = Math.min(window.innerWidth, window.innerHeight) <= 430;
+
+      if (y <= TH && hidden) {
+        // At top → show toolbar
         hidden = false;
-        toolbar.classList.remove('hdr-hidden');
-        viewBar.classList.remove('hdr-hidden');
-        if (isPhoneLand) {
-          toolbar.classList.add('hdr-visible');
-          viewBar.classList.add('hdr-visible');
+        toolbar.classList.remove('tb-hide');
+        if (isPhone) {
+          viewBar.classList.remove('vbar-top');
+        } else {
+          viewBar.classList.remove('tb-hide');
         }
-      } else if (!hidden && isPhoneLand && y <= TOP_THRESHOLD) {
-        toolbar.classList.add('hdr-visible');
-        viewBar.classList.add('hdr-visible');
-      } else if (!hidden && isPhoneLand && y > TOP_THRESHOLD) {
-        toolbar.classList.remove('hdr-visible');
-        viewBar.classList.remove('hdr-visible');
+      } else if (y > TH && !hidden) {
+        // Scrolled away → hide toolbar
+        hidden = true;
+        toolbar.classList.add('tb-hide');
+        if (isPhone) {
+          viewBar.classList.add('vbar-top');
+        } else {
+          viewBar.classList.add('tb-hide');
+        }
       }
-      lastY = y;
     },
     { passive: true }
   );

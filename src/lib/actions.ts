@@ -226,6 +226,7 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
   } else if (action === 'delete') {
     showDeleteChoice().then((choice) => {
       if (!choice) return;
+      useStore.setState({ scrollHideGuard: Date.now() + 600 });
       if (choice === 'hide') {
         f.hidden = true;
         updateFrameBadge();
@@ -356,6 +357,7 @@ export function handleAction(action: string, fid: number, div: HTMLElement, from
   } else if (action === 'clear') {
     showVersionChoice().then((choice) => {
       if (!choice) return;
+      useStore.setState({ scrollHideGuard: Date.now() + 600 });
       if (choice === 'hide') {
         ver.hidden = true;
         if (s.ovExpandedFid === fid) useStore.setState({ ovExpandedFid: null });

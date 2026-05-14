@@ -125,7 +125,7 @@ export function renderMainFrame(div: HTMLElement, fid: number): void {
             `<button class="vtab ${
               i === ai ? 'active' + (isCReorder ? ' reorder-highlight' : '') : ''
             }${i === ai && s.swipeHighlightFid === fid ? ' swipe-highlight' : ''}" data-cfidtab="${fid}" data-cidx="${i}"${
-              t.hidden ? ' style="opacity:0.3;pointer-events:none;"' : ''
+              t.hidden ? ' style="opacity:0.3;"' : ''
             }>${t.label}</button>`
         )
         .join('') + `<button class="vtab-add" data-cvadd="${fid}">+</button>`;
@@ -143,29 +143,34 @@ export function renderMainFrame(div: HTMLElement, fid: number): void {
     const cCanvasBorder = isCReorder
       ? 'border:2px solid #e53935;border-radius:var(--radius-sm);'
       : 'border:2px solid var(--accent);border-radius:var(--radius-sm);';
+    const cVerHidden = ver && ver.hidden;
     div.innerHTML = `
       <div class="frame-num ver-frame-num">${
         f.label ? `<span class="frame-label-tag">${f.label}</span>` : '<span></span>'
       }<div class="version-tabs${
         s.reorderFid === fid ? ' locked-dim' : s.verReorderFid === fid ? ' locked' : ''
-      }">${tabsHTML}</div>${reorderHTML}</div>
-      <div class="ver-canvas-area"><div class="canvas-wrap${
-        s.drawActive[fid] === 'ver' ? ' draw-active' : ''
-      }" style="aspect-ratio:${f.cropW || 16}/${f.cropH || 9};${cCanvasBorder}"><canvas id="${cid}" width="${
-      f.cropW || 960
-    }" height="${f.cropH || 540}"></canvas>${
-        ver.type === 'empty' ? '<div class="canvas-hint"><span>choose an action below</span></div>' : ''
-      }${starHTML(fid, ai)}${fsButtonHTML(fid, ai, 'ver')}</div></div>
-      ${s.drawActive[fid] === 'ver' ? `<div class="color-row">${colorDots}</div>` : ''}
-      <div class="version-actions">
-        <button class="act-btn" data-cact="upload" data-cfid="${fid}">Load</button>
-        <button class="act-btn${s.drawActive[fid] === 'ver' ? ' active' : ''}" data-cact="draw" data-cfid="${fid}">DRAW</button>
-        <button class="act-btn" data-cact="camera" data-cfid="${fid}">◎ CAM</button>
-        <button class="act-btn" data-cact="text" data-cfid="${fid}">WRITE</button>
-        <button class="act-btn" data-cact="copy" data-cfid="${fid}">Copy</button>
-        <button class="act-btn" data-cact="paste" data-cfid="${fid}">Paste</button>
+      }">${tabsHTML}</div>${
+        cVerHidden ? `<button class="btn" data-cvunhide="${fid}" style="margin-left:auto;font-size:10px;padding:2px 10px;">Un-Hide</button>` : reorderHTML
+      }</div>
+      <div style="${cVerHidden ? 'opacity:0.3;' : ''}">
+        <div class="ver-canvas-area"><div class="canvas-wrap${
+          !cVerHidden && s.drawActive[fid] === 'ver' ? ' draw-active' : ''
+        }" style="aspect-ratio:${f.cropW || 16}/${f.cropH || 9};${cCanvasBorder}"><canvas id="${cid}" width="${
+        f.cropW || 960
+      }" height="${f.cropH || 540}"${cVerHidden ? ' style="pointer-events:none;"' : ''}></canvas>${
+          !cVerHidden && ver.type === 'empty' ? '<div class="canvas-hint"><span>choose an action below</span></div>' : ''
+        }${!cVerHidden ? starHTML(fid, ai) : ''}${!cVerHidden ? fsButtonHTML(fid, ai, 'ver') : ''}</div></div>
+      </div>
+      ${!cVerHidden && s.drawActive[fid] === 'ver' ? `<div class="color-row">${colorDots}</div>` : ''}
+      <div class="version-actions"${cVerHidden ? ' style="pointer-events:none;opacity:0.3;"' : ''}>
+        <button class="act-btn${cVerHidden ? ' disabled' : ''}" data-cact="upload" data-cfid="${fid}">Load</button>
+        <button class="act-btn${cVerHidden ? ' disabled' : s.drawActive[fid] === 'ver' ? ' active' : ''}" data-cact="draw" data-cfid="${fid}">DRAW</button>
+        <button class="act-btn${cVerHidden ? ' disabled' : ''}" data-cact="camera" data-cfid="${fid}">◎ CAM</button>
+        <button class="act-btn${cVerHidden ? ' disabled' : ''}" data-cact="text" data-cfid="${fid}">WRITE</button>
+        <button class="act-btn${cVerHidden ? ' disabled' : ''}" data-cact="copy" data-cfid="${fid}">Copy</button>
+        <button class="act-btn${cVerHidden ? ' disabled' : ''}" data-cact="paste" data-cfid="${fid}">Paste</button>
         <button class="act-btn" data-cact="clear" data-cfid="${fid}">Hide/Del</button>
-        <button class="act-btn${s.prevFrameState[fid] && s.prevFrameState[fid]!.origin === 'ver' ? '' : ' disabled'}" data-cact="undo" data-cfid="${fid}" style="margin-left:auto">Undo</button>
+        <button class="act-btn${cVerHidden ? ' disabled' : s.prevFrameState[fid] && s.prevFrameState[fid]!.origin === 'ver' ? '' : ' disabled'}" data-cact="undo" data-cfid="${fid}" style="margin-left:auto">Undo</button>
       </div>`;
 
     div.querySelectorAll('[data-cfidtab]').forEach((t) =>
@@ -188,6 +193,14 @@ export function renderMainFrame(div: HTMLElement, fid: number): void {
         const n = s.versions[fid].length + 1;
         addNewVersion(fid, { id: n, label: `v${n}`, type: 'empty', strokes: [], bgImage: null });
         s.crossCompare[fid] = s.activeTab[fid];
+        renderMainFrame(div, fid);
+        const vd = document.querySelector(`#versionsScroll .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
+        if (vd) renderVersionFrame(vd, fid);
+      });
+    const cUnhideBtn = div.querySelector(`[data-cvunhide="${fid}"]`) as HTMLElement | null;
+    if (cUnhideBtn)
+      cUnhideBtn.addEventListener('click', () => {
+        unhideVersion(ver, fid);
         renderMainFrame(div, fid);
         const vd = document.querySelector(`#versionsScroll .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
         if (vd) renderVersionFrame(vd, fid);
