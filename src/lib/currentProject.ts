@@ -8,6 +8,7 @@
 
 import { useStore } from '../store/state';
 import { clearSnapshot, saveSnapshot, snapshotFromStore } from './persistence';
+import { isLoggedIn } from './session';
 
 interface CurrentProject {
   /** Server-side UUID once the project has been saved. Null = local-only. */
@@ -67,12 +68,47 @@ export function clearCurrentProject(): void {
 }
 
 // ---------------------------------------------------------------------------
-// Autosave: persist the storyboard to IDB on every storyboard mutation,
-// debounced so rapid changes during interaction don't thrash the disk.
+// Autosave: persist the storyboard to IDB regularly, and sync to cloud
+// every few seconds via a simple interval. The interval approach is
+// deliberately mutation-agnostic — it doesn't need to detect individual
+// changes. It just snapshots whatever the current state is and pushes it.
 // ---------------------------------------------------------------------------
 
 const AUTOSAVE_DEBOUNCE_MS = 800;
+const CLOUD_SYNC_INTERVAL_MS = 5_000;
 let autosaveTimer: number | null = null;
+let cloudSyncInFlight = false;
+
+// Lazy-loaded to avoid circular imports (accountFlow → currentProject).
+let _syncFn: ((projectId: string) => Promise<void>) | null = null;
+let _pullFn: (() => Promise<void>) | null = null;
+let _pullInFlight = false;
+
+/**
+ * Called once from accountFlow.ts at boot to hand us the sync function
+ * without creating a circular import.
+ */
+export function registerCloudSync(fn: (projectId: string) => Promise<void>): void {
+  _syncFn = fn;
+}
+
+/**
+ * Called once from accountFlow.ts at boot to hand us the pull function
+ * so we can trigger a pull when a push gets a 409 conflict.
+ */
+export function registerPullFn(fn: () => Promise<void>): void {
+  _pullFn = fn;
+}
+
+/** Called by accountFlow to tell push-sync to pause during a pull. */
+export function setPullInFlight(v: boolean): void {
+  _pullInFlight = v;
+}
+
+/** True when the push-sync interval is actively syncing to cloud. */
+export function isPushInFlight(): boolean {
+  return cloudSyncInFlight;
+}
 
 function scheduleAutosave(): void {
   if (autosaveTimer !== null) clearTimeout(autosaveTimer);
@@ -95,22 +131,150 @@ async function runAutosave(): Promise<void> {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Cloud sync: runs on a fixed interval. Compares a simple hash of the
+// current store state to the last-synced hash; only calls the server when
+// something actually changed.
+// ---------------------------------------------------------------------------
+
+let lastSyncHash = '';
+
 /**
- * Subscribe to storyboard changes and schedule an autosave whenever
- * frames/versions change. Call once at app boot.
+ * Call after applying cloud data to the store (pull-on-focus, load project)
+ * so the interval sync doesn't immediately re-push the same data.
+ */
+export function updateSyncHash(): void {
+  lastSyncHash = storeHash();
+}
+
+/** True when local store has changed since the last successful cloud sync. */
+export function hasLocalChanges(): boolean {
+  if (!lastSyncHash) return false; // Never synced — no baseline to compare
+  return storeHash() !== lastSyncHash;
+}
+
+/** Cheap hash of the sync-relevant parts of the store. */
+function storeHash(): string {
+  const s = useStore.getState();
+  // JSON.stringify the data-bearing parts. This is fast enough at <100 frames.
+  try {
+    return JSON.stringify({
+      frames: s.frames,
+      versions: s.versions,
+      activeTab: s.activeTab,
+      nextId: s.nextId,
+      name: cp.name,
+    });
+  } catch {
+    return '';
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Offline banner — shown once when sync fails. User can dismiss it.
+// Won't show again for 15 minutes after dismissal. Clears when back online.
+// ---------------------------------------------------------------------------
+
+const OFFLINE_COOLDOWN_MS = 15 * 60 * 1000; // 15 minutes
+let offlineBanner: HTMLElement | null = null;
+let isOffline = false;
+let offlineDismissedAt = 0;
+
+function showOfflineBanner(): void {
+  if (isOffline) return;
+  // Respect the 15-minute cooldown after user dismissed the banner
+  if (Date.now() - offlineDismissedAt < OFFLINE_COOLDOWN_MS) return;
+  isOffline = true;
+  if (!offlineBanner) {
+    offlineBanner = document.createElement('div');
+    offlineBanner.id = 'offlineBanner';
+    offlineBanner.style.cssText =
+      'position:fixed;top:0;left:0;right:0;z-index:99999;' +
+      'background:#e65100;color:#fff;text-align:center;' +
+      'padding:8px 40px 8px 12px;font-size:13px;font-weight:500;' +
+      'box-shadow:0 2px 8px rgba(0,0,0,0.3);';
+    offlineBanner.innerHTML =
+      'Offline — changes saved on this device only' +
+      '<button style="position:absolute;right:8px;top:50%;transform:translateY(-50%);' +
+      'background:none;border:none;color:#fff;font-size:18px;cursor:pointer;' +
+      'padding:4px 8px;line-height:1;" id="offlineDismiss">×</button>';
+    document.body.appendChild(offlineBanner);
+    offlineBanner.querySelector('#offlineDismiss')!.addEventListener('click', () => {
+      offlineDismissedAt = Date.now();
+      isOffline = false;
+      offlineBanner!.style.display = 'none';
+    });
+  }
+  offlineBanner.style.display = 'block';
+}
+
+function hideOfflineBanner(): void {
+  if (!isOffline) return;
+  isOffline = false;
+  offlineDismissedAt = 0; // Reset cooldown on successful sync
+  if (offlineBanner) offlineBanner.style.display = 'none';
+}
+
+async function runCloudSync(): Promise<void> {
+  if (!_syncFn) return;
+  if (!cp.projectId) return;       // Not yet saved to cloud — manual save first
+  if (!isLoggedIn()) return;       // Can't sync without auth
+  if (cloudSyncInFlight) return;   // Already in progress
+  if (_pullInFlight) return;       // Don't push while pulling — images loading would cause false changes
+
+  // Check if anything actually changed since last sync
+  const hash = storeHash();
+  if (hash === lastSyncHash) return;
+
+  cloudSyncInFlight = true;
+  try {
+    await _syncFn(cp.projectId);
+    lastSyncHash = hash;
+    cp = { ...cp, lastSavedAt: Date.now(), dirty: false };
+    hideOfflineBanner();
+    emit();
+  } catch (e: any) {
+    console.warn('[autosync] failed', e);
+    // 409 = conflict: server has newer data from another device.
+    // Trigger a pull so the user sees the conflict dialog.
+    if (e?.status === 409 && _pullFn) {
+      console.info('[autosync] conflict detected, triggering pull');
+      // Don't retry pushing — let the pull handle reconciliation.
+      lastSyncHash = hash; // Mark as "handled" so we don't keep re-pushing
+      try { await _pullFn(); } catch { /* pull handles its own errors */ }
+    } else if (!navigator.onLine || (e instanceof TypeError)) {
+      // Show offline banner if the failure looks like a network issue
+      showOfflineBanner();
+    }
+    // Will retry on next interval tick
+  } finally {
+    cloudSyncInFlight = false;
+  }
+}
+
+/**
+ * Start the autosave and cloud-sync systems. Call once at app boot.
+ *
+ * IDB autosave: triggered by zustand subscriber (detects reference changes)
+ *   AND by the cloud-sync interval (catches in-place mutations).
+ * Cloud sync: a simple 5-second interval that hashes the store and syncs
+ *   if anything changed. No need to detect individual mutations.
  */
 export function startAutosave(): void {
-  let prev = useStore.getState();
-  useStore.subscribe((s) => {
-    const changed =
-      s.frames !== prev.frames ||
-      s.versions !== prev.versions ||
-      s.activeTab !== prev.activeTab ||
-      s.nextId !== prev.nextId;
-    prev = s;
-    if (!changed) return;
-    cp.dirty = true;
+  // Zustand subscriber for IDB autosave (quick local persistence)
+  useStore.subscribe(() => {
     scheduleAutosave();
-    emit();
   });
+
+  // Fixed-interval cloud sync — mutation-agnostic, catches everything
+  setInterval(() => {
+    // Also save to IDB on every tick to catch in-place mutations
+    scheduleAutosave();
+    // Sync to cloud
+    void runCloudSync();
+  }, CLOUD_SYNC_INTERVAL_MS);
+
+  // Listen for browser online/offline events to show/hide banner immediately
+  window.addEventListener('offline', showOfflineBanner);
+  window.addEventListener('online', hideOfflineBanner);
 }

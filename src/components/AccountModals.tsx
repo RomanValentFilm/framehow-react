@@ -20,9 +20,8 @@ export function AccountModals() {
       <div className="account-modal hidden" id="projectNameModal">
         <div className="account-card">
           <h2>Name your project</h2>
-          <p className="account-hint">Give it something memorable — you can rename later.</p>
           <div className="account-row">
-            <input type="text" id="projectNameInput" maxLength={200} placeholder="My storyboard" />
+            <input type="text" id="projectNameInput" maxLength={200} />
           </div>
           <div className="account-error" id="projectNameError" />
           <div className="account-btns">
@@ -54,13 +53,21 @@ export function AccountModals() {
             <label htmlFor="accountProfession">Profession <span className="account-optional">(optional)</span></label>
             <select id="accountProfession">
               <option value="">— Select —</option>
+              <option disabled style={{ color: '#666' }}>─</option>
               <option value="director">Director</option>
-              <option value="cinematographer">Cinematographer</option>
-              <option value="producer">Producer</option>
-              <option value="writer">Writer</option>
-              <option value="storyboard_artist">Storyboard artist</option>
-              <option value="agency_creative">Agency creative</option>
-              <option value="other">Other</option>
+              <option value="1st_ad">1st AD</option>
+              <option value="script">Script</option>
+              <option disabled style={{ color: '#666' }}>─</option>
+              <option value="dop">DOP</option>
+              <option value="camera_dept">Camera Dept.</option>
+              <option disabled style={{ color: '#666' }}>─</option>
+              <option value="producer">Producer / Production Dept.</option>
+              <option value="location_manager">Location Manager</option>
+              <option disabled style={{ color: '#666' }}>─</option>
+              <option value="production_designer">Production Designer / Art Dept.</option>
+              <option value="costume_makeup">Costume &amp; Make-up Dept.</option>
+              <option disabled style={{ color: '#666' }}>─</option>
+              <option value="post_production">Post-Production</option>
             </select>
           </div>
 
@@ -141,13 +148,21 @@ export function AccountModals() {
             <label htmlFor="settingsProfession">Profession <span className="account-optional">(optional)</span></label>
             <select id="settingsProfession">
               <option value="">— Select —</option>
+              <option disabled style={{ color: '#666' }}>─</option>
               <option value="director">Director</option>
-              <option value="cinematographer">Cinematographer</option>
-              <option value="producer">Producer</option>
-              <option value="writer">Writer</option>
-              <option value="storyboard_artist">Storyboard artist</option>
-              <option value="agency_creative">Agency creative</option>
-              <option value="other">Other</option>
+              <option value="1st_ad">1st AD</option>
+              <option value="script">Script</option>
+              <option disabled style={{ color: '#666' }}>─</option>
+              <option value="dop">DOP</option>
+              <option value="camera_dept">Camera Dept.</option>
+              <option disabled style={{ color: '#666' }}>─</option>
+              <option value="producer">Producer / Production Dept.</option>
+              <option value="location_manager">Location Manager</option>
+              <option disabled style={{ color: '#666' }}>─</option>
+              <option value="production_designer">Production Designer / Art Dept.</option>
+              <option value="costume_makeup">Costume &amp; Make-up Dept.</option>
+              <option disabled style={{ color: '#666' }}>─</option>
+              <option value="post_production">Post-Production</option>
             </select>
           </div>
           <div className="account-row">
@@ -168,7 +183,7 @@ export function AccountModals() {
           <div className="account-actions-stack">
             <button className="btn" id="settingsChangePassword" type="button">Change password</button>
             <button className="btn" id="settingsLogout" type="button">Log out</button>
-            <button className="btn btn-danger" id="settingsDeleteAccount" type="button">Delete account</button>
+            <button className="btn btn-danger" id="settingsDeleteAccount" type="button" style={{ alignSelf: 'center', padding: '8px 24px', fontSize: '12px' }}>Delete account</button>
           </div>
         </div>
       </div>

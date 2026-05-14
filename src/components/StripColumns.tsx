@@ -20,6 +20,10 @@ export function StripColumns() {
                 Start from Scratch
               </button>
             </div>
+            <div id="startOpenProjectGap" style={{ height: '12px' }} />
+            <button className="btn btn-accent" id="startOpenProject">
+              Open Project
+            </button>
           </div>
         </div>
       </div>

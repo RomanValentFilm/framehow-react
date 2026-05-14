@@ -1,14 +1,29 @@
 export function ViewBar() {
   return (
     <div className="view-bar">
-      <span className="strip-label" id="labelMain">Main strip</span>
-      <div className="view-btns">
-        <button className="view-btn" data-view="main" title="Main Strip only">◧</button>
-        <button className="view-btn" data-view="ver" title="Versions Strip only">◨</button>
-        <button className="view-btn active" data-view="both" title="Both strips">◫</button>
-        <button className="view-btn" data-view="overview" title="Full Overview">▦</button>
+      {/* LEFT GROUP — iPad/Desktop only */}
+      <div className="view-btns vb-left">
+        <button className="view-btn vb-desktop-only" data-view="group" title="Group">GROUP</button>
+        <button className="view-btn vb-desktop-only" data-view="3x2" title="3×2">3×2</button>
       </div>
-      <span className="strip-label" id="labelVer">Versions strip</span>
+
+      {/* Flexible spacer */}
+      <div className="vb-spacer" />
+
+      {/* MIDDLE GROUP */}
+      <div className="view-btns vb-middle">
+        <button className="view-btn" data-view="main" title="Main Strip only">MAIN</button>
+        <button className="view-btn" data-view="ver" title="Versions Strip only">VRSN</button>
+        <button className="view-btn active" data-view="both" title="Both strips">TWIN</button>
+      </div>
+
+      {/* Flexible spacer */}
+      <div className="vb-spacer" />
+
+      {/* RIGHT GROUP */}
+      <div className="view-btns vb-right">
+        <button className="view-btn" data-view="overview" title="Full Overview">GRID</button>
+      </div>
     </div>
   );
 }

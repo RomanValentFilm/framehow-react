@@ -37,6 +37,7 @@ export interface Frame {
   textContent: string;
   tableData: TableData | null;
   hidden?: boolean;
+  versionLabel?: string;
 }
 
 export interface Version {

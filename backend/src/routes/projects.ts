@@ -156,7 +156,21 @@ projects.post("/:id/sync", async (c) => {
   }
   const payload = parsed.value;
 
-  // Conflict: server is newer. Tell the client to reconcile.
+  // Conflict detection: if the client sends a base_updated_at that is older
+  // than the server's updated_at AND the push is from a different device,
+  // that means the client hasn't seen the latest server version. Reject so
+  // the client can pull, show the conflict dialog, and reconcile.
+  const serverDevice = project.last_device_id;
+  const clientDevice = payload.project.device_id;
+  const baseUpdatedAt = payload.project.base_updated_at;
+
+  if (baseUpdatedAt !== undefined && baseUpdatedAt < project.updated_at
+      && serverDevice && clientDevice && serverDevice !== clientDevice) {
+    const remote = await loadProjectTree(c.env.DB, project.id);
+    return c.json({ conflict: true, remote }, 409);
+  }
+
+  // Fallback: server is newer (same-device case or no base_updated_at).
   if (payload.project.updated_at < project.updated_at) {
     const remote = await loadProjectTree(c.env.DB, project.id);
     return c.json({ conflict: true, remote }, 409);
@@ -189,10 +203,10 @@ export default projects;
 // ===========================================================================
 
 interface ProjectTree {
-  project: { id: string; name: string; created_at: number; updated_at: number };
+  project: { id: string; name: string; created_at: number; updated_at: number; last_device_id: string | null; last_device_name: string | null };
   strips: Array<{ id: string; project_id: string; label: string | null; sort_order: number; updated_at: number }>;
-  frames: Array<{ id: string; strip_id: string; label: string | null; sort_order: number; updated_at: number }>;
-  versions: Array<{ id: string; frame_id: string; label: string | null; type: string; updated_at: number }>;
+  frames: Array<{ id: string; strip_id: string; label: string | null; sort_order: number; crop_w: number | null; crop_h: number | null; text_content: string | null; table_data: string | null; version_label: string | null; hidden: number; updated_at: number }>;
+  versions: Array<{ id: string; frame_id: string; label: string | null; type: string; hidden: number; starred: number; updated_at: number }>;
   images: Array<{
     id: string;
     version_id: string;
@@ -211,78 +225,53 @@ function placeholders(n: number): string {
 }
 
 async function loadProjectTree(db: D1Database, projectId: string): Promise<ProjectTree> {
-  const project = (await db
-    .prepare("SELECT id, name, created_at, updated_at FROM projects WHERE id = ?")
-    .bind(projectId)
-    .first<{ id: string; name: string; created_at: number; updated_at: number }>())!;
-
-  const strips = (
-    await db
-      .prepare(
-        `SELECT id, project_id, label, sort_order, updated_at
-           FROM strips WHERE project_id = ? ORDER BY sort_order`,
-      )
-      .bind(projectId)
-      .all<ProjectTree["strips"][number]>()
-  ).results;
-
-  if (strips.length === 0) {
-    return { project, strips, frames: [], versions: [], images: [], drawings: [] };
-  }
-
-  const stripIds = strips.map((s) => s.id);
-  const frames = (
-    await db
-      .prepare(
-        `SELECT id, strip_id, label, sort_order, updated_at
-           FROM frames WHERE strip_id IN (${placeholders(stripIds.length)})
-          ORDER BY sort_order`,
-      )
-      .bind(...stripIds)
-      .all<ProjectTree["frames"][number]>()
-  ).results;
-
-  if (frames.length === 0) {
-    return { project, strips, frames, versions: [], images: [], drawings: [] };
-  }
-
-  const frameIds = frames.map((f) => f.id);
-  const versions = (
-    await db
-      .prepare(
-        `SELECT id, frame_id, label, type, updated_at
-           FROM versions WHERE frame_id IN (${placeholders(frameIds.length)})
-          ORDER BY updated_at`,
-      )
-      .bind(...frameIds)
-      .all<ProjectTree["versions"][number]>()
-  ).results;
-
-  if (versions.length === 0) {
-    return { project, strips, frames, versions, images: [], drawings: [] };
-  }
-
-  const versionIds = versions.map((v) => v.id);
-  const [imagesResult, drawingsResult] = await db.batch([
-    db
-      .prepare(
-        `SELECT id, version_id, r2_key, width, height, size_bytes, content_type, updated_at
-           FROM images WHERE version_id IN (${placeholders(versionIds.length)})`,
-      )
-      .bind(...versionIds),
-    db
-      .prepare(
-        `SELECT id, version_id, drawing_data, updated_at
-           FROM drawings WHERE version_id IN (${placeholders(versionIds.length)})`,
-      )
-      .bind(...versionIds),
+  // Use subqueries instead of IN (?, ?, ...) to avoid D1's 100-variable limit.
+  // All queries filter through project_id, so only 1 bind param each.
+  const [projectResult, stripsResult, framesResult, versionsResult, imagesResult, drawingsResult] = await db.batch([
+    db.prepare(
+      "SELECT id, name, created_at, updated_at, last_device_id, last_device_name FROM projects WHERE id = ?",
+    ).bind(projectId),
+    db.prepare(
+      `SELECT id, project_id, label, sort_order, updated_at
+         FROM strips WHERE project_id = ? ORDER BY sort_order`,
+    ).bind(projectId),
+    db.prepare(
+      `SELECT id, strip_id, label, sort_order, crop_w, crop_h, text_content, table_data, version_label, hidden, updated_at
+         FROM frames WHERE strip_id IN (SELECT id FROM strips WHERE project_id = ?)
+        ORDER BY sort_order`,
+    ).bind(projectId),
+    db.prepare(
+      `SELECT id, frame_id, label, type, hidden, starred, updated_at
+         FROM versions WHERE frame_id IN (
+           SELECT f.id FROM frames f JOIN strips s ON s.id = f.strip_id WHERE s.project_id = ?
+         ) ORDER BY updated_at`,
+    ).bind(projectId),
+    db.prepare(
+      `SELECT id, version_id, r2_key, width, height, size_bytes, content_type, updated_at
+         FROM images WHERE version_id IN (
+           SELECT v.id FROM versions v
+           JOIN frames f ON f.id = v.frame_id
+           JOIN strips s ON s.id = f.strip_id
+           WHERE s.project_id = ?
+         )`,
+    ).bind(projectId),
+    db.prepare(
+      `SELECT id, version_id, drawing_data, updated_at
+         FROM drawings WHERE version_id IN (
+           SELECT v.id FROM versions v
+           JOIN frames f ON f.id = v.frame_id
+           JOIN strips s ON s.id = f.strip_id
+           WHERE s.project_id = ?
+         )`,
+    ).bind(projectId),
   ]);
 
+  const project = (projectResult.results as any[])[0] as ProjectTree["project"];
   return {
     project,
-    strips,
-    frames,
-    versions,
+    strips: stripsResult.results as ProjectTree["strips"],
+    frames: framesResult.results as ProjectTree["frames"],
+    versions: versionsResult.results as ProjectTree["versions"],
     images: imagesResult.results as ProjectTree["images"],
     drawings: drawingsResult.results as ProjectTree["drawings"],
   };
@@ -315,10 +304,10 @@ async function sumOtherProjectImageBytes(
 // ---------------------------------------------------------------------------
 
 interface SyncPayload {
-  project: { name: string; updated_at: number };
+  project: { name: string; updated_at: number; base_updated_at?: number; device_id?: string; device_name?: string };
   strips: Array<{ id: string; label: string | null; sort_order: number; updated_at: number }>;
-  frames: Array<{ id: string; strip_id: string; label: string | null; sort_order: number; updated_at: number }>;
-  versions: Array<{ id: string; frame_id: string; label: string | null; type: string; updated_at: number }>;
+  frames: Array<{ id: string; strip_id: string; label: string | null; sort_order: number; crop_w: number | null; crop_h: number | null; text_content: string | null; table_data: string | null; version_label: string | null; hidden: boolean; updated_at: number }>;
+  versions: Array<{ id: string; frame_id: string; label: string | null; type: string; hidden: boolean; starred: boolean; updated_at: number }>;
   images: Array<{
     id: string;
     version_id: string;
@@ -358,6 +347,9 @@ function parseSyncPayload(body: unknown): Parsed<SyncPayload> {
   const projUpdated = asInt(projObj.updated_at);
   if (!projName || projName.length === 0 || projName.length > MAX_PROJECT_NAME_LEN) return err("project.name");
   if (projUpdated === null) return err("project.updated_at");
+  const baseUpdatedAt = typeof projObj.base_updated_at === "number" && Number.isFinite(projObj.base_updated_at) ? projObj.base_updated_at : undefined;
+  const deviceId = typeof projObj.device_id === "string" ? projObj.device_id.slice(0, 100) : undefined;
+  const deviceName = typeof projObj.device_name === "string" ? projObj.device_name.slice(0, 100) : undefined;
 
   const strips: SyncPayload["strips"] = [];
   for (const raw of asArray(b.strips)) {
@@ -380,9 +372,15 @@ function parseSyncPayload(body: unknown): Parsed<SyncPayload> {
     const sort_order = asInt(r.sort_order);
     const updated_at = asInt(r.updated_at);
     const label = asNullableStr(r.label, MAX_LABEL_LEN);
-    if (!id || !strip_id || sort_order === null || updated_at === null || label === undefined) return err("frames[]");
+    const crop_w = r.crop_w === null || r.crop_w === undefined ? null : asInt(r.crop_w);
+    const crop_h = r.crop_h === null || r.crop_h === undefined ? null : asInt(r.crop_h);
+    const text_content = r.text_content === null || r.text_content === undefined ? null : asStr(r.text_content);
+    const table_data = r.table_data === null || r.table_data === undefined ? null : asStr(r.table_data);
+    const version_label = asNullableStr(r.version_label, MAX_LABEL_LEN);
+    const hidden = r.hidden === true || r.hidden === 1;
+    if (!id || !strip_id || sort_order === null || updated_at === null || label === undefined || version_label === undefined) return err("frames[]");
     if (!stripIdSet.has(strip_id)) return err("frames[].strip_id (unknown)");
-    frames.push({ id, strip_id, label, sort_order, updated_at });
+    frames.push({ id, strip_id, label, sort_order, crop_w, crop_h, text_content, table_data, version_label: version_label ?? null, hidden, updated_at });
   }
 
   const frameIdSet = new Set(frames.map((f) => f.id));
@@ -395,11 +393,13 @@ function parseSyncPayload(body: unknown): Parsed<SyncPayload> {
     const type = asStr(r.type);
     const updated_at = asInt(r.updated_at);
     const label = asNullableStr(r.label, MAX_LABEL_LEN);
+    const hidden = r.hidden === true || r.hidden === 1;
+    const starred = r.starred === true || r.starred === 1;
     if (!id || !frame_id || !type || type.length > MAX_VERSION_TYPE_LEN || updated_at === null || label === undefined) {
       return err("versions[]");
     }
     if (!frameIdSet.has(frame_id)) return err("versions[].frame_id (unknown)");
-    versions.push({ id, frame_id, label, type, updated_at });
+    versions.push({ id, frame_id, label, type, hidden, starred, updated_at });
   }
 
   const versionIdSet = new Set(versions.map((v) => v.id));
@@ -441,7 +441,7 @@ function parseSyncPayload(body: unknown): Parsed<SyncPayload> {
 
   return {
     value: {
-      project: { name: projName, updated_at: projUpdated },
+      project: { name: projName, updated_at: projUpdated, base_updated_at: baseUpdatedAt, device_id: deviceId, device_name: deviceName },
       strips,
       frames,
       versions,
@@ -494,9 +494,9 @@ async function applySync(db: D1Database, projectId: string, payload: SyncPayload
         WHERE strip_id IN (SELECT id FROM strips WHERE project_id = ?)`,
     ).bind(projectId),
     db.prepare("DELETE FROM strips WHERE project_id = ?").bind(projectId),
-    // project name + bumped updated_at
-    db.prepare("UPDATE projects SET name = ?, updated_at = ? WHERE id = ?")
-      .bind(payload.project.name, Math.max(payload.project.updated_at, now), projectId),
+    // project name + bumped updated_at + device tracking
+    db.prepare("UPDATE projects SET name = ?, updated_at = ?, last_device_id = COALESCE(?, last_device_id), last_device_name = COALESCE(?, last_device_name) WHERE id = ?")
+      .bind(payload.project.name, Math.max(payload.project.updated_at, now), payload.project.device_id ?? null, payload.project.device_name ?? null, projectId),
   ];
 
   // Inserts
@@ -514,20 +514,20 @@ async function applySync(db: D1Database, projectId: string, payload: SyncPayload
     stmts.push(
       db
         .prepare(
-          `INSERT INTO frames (id, strip_id, label, sort_order, updated_at)
-           VALUES (?, ?, ?, ?, ?)`,
+          `INSERT INTO frames (id, strip_id, label, sort_order, crop_w, crop_h, text_content, table_data, version_label, hidden, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
-        .bind(f.id, f.strip_id, f.label, f.sort_order, f.updated_at),
+        .bind(f.id, f.strip_id, f.label, f.sort_order, f.crop_w, f.crop_h, f.text_content, f.table_data, f.version_label, f.hidden ? 1 : 0, f.updated_at),
     );
   }
   for (const v of payload.versions) {
     stmts.push(
       db
         .prepare(
-          `INSERT INTO versions (id, frame_id, label, type, updated_at)
-           VALUES (?, ?, ?, ?, ?)`,
+          `INSERT INTO versions (id, frame_id, label, type, hidden, starred, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
         )
-        .bind(v.id, v.frame_id, v.label, v.type, v.updated_at),
+        .bind(v.id, v.frame_id, v.label, v.type, v.hidden ? 1 : 0, v.starred ? 1 : 0, v.updated_at),
     );
   }
   for (const img of payload.images) {

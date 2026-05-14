@@ -1,7 +1,7 @@
 // Password hashing (PBKDF2-SHA256 via Web Crypto) and opaque token utilities.
 // We can't use bcrypt/argon2 on Workers — Web Crypto is the supported path.
 
-const PBKDF2_ITERATIONS = 210_000; // OWASP 2023 recommendation for PBKDF2-SHA256
+const PBKDF2_ITERATIONS = 100_000; // Reduced from 210K — Workers CPU time limit
 const PBKDF2_KEYLEN = 32; // bytes
 const SALT_LEN = 16; // bytes
 

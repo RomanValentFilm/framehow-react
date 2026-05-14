@@ -224,5 +224,94 @@ Follow the same pattern as `.fs-overlay` and `.crop-overlay`:
 - **v1.3 is sacred** — don't touch it. This feature goes into v1.4+.
 - **Reuse existing functions** — `extractCandidates()`, `matchLabel()`, `matchText()`, `getTextItems()` can all be reused. Guided mode just replaces the candidate detection step.
 
-## UX Priority
-This is a v2 feature — get the Albert fix working first with heuristic improvements (which is in progress). The guided extraction is the long-term solution for PDFs where heuristics will never be enough.
+## Load-First Flow (Default Behavior)
+
+Since ~90% of storyboard PDFs parse correctly, the app should **not** force the guided tool on every user. Instead:
+
+1. User drops a PDF → auto-extraction runs as normal → storyboard loads
+2. **7 seconds after extraction completes**, a dark popup fades in, centered on screen:
+   - Text: **"Frames look wrong?"**
+   - Red button: **"Adjust extraction"**
+   - Small text below button: **"You can always find this in the Menu."**
+3. The popup auto-dismisses after 10 seconds if the user doesn't interact, or the user taps anywhere outside it to dismiss
+4. Clicking "Adjust extraction" opens the guided extraction overlay (the full flow described above)
+5. The same option is always available in the Menu (hamburger → "Adjust extraction") for users who dismiss the popup but later realize they need it
+
+This way:
+- 90% of users: PDF loads → they're working in seconds → popup fades away untouched
+- 10% who need fixes: popup appears → one tap → guided mode → fixed in 30 seconds
+
+
+## Learning from User Corrections
+
+Every time a user uses the guided extraction to fix auto-detection errors, the app captures anonymized correction data and sends it to the tracking Worker (`framehow-tracker`). This builds a dataset over time that reveals exactly where the auto-detector fails.
+
+### What to Capture
+
+For each guided extraction session, send:
+- **PDF characteristics**: page count, page dimensions (width × height in pts), DPI
+- **Auto-detection result**: number of candidates found per page, grid dimensions detected
+- **User corrections**: what was changed — with type tags:
+  - `added_frame` — user drew a frame the system missed
+  - `removed_frame` — user deleted a false positive
+  - `resized_frame` — user adjusted frame boundaries
+  - `merged_columns` — user corrected column detection
+  - `split_row` — user fixed a row that was merged
+  - `skipped_page` — user marked a page as non-storyboard (cover, text-only)
+- **Final result**: confirmed grid dimensions, number of frames extracted
+- **No image data or content** — only structural metadata (rectangles, positions, counts)
+
+### How to Use the Data (Practical Steps)
+
+1. **Admin review page** — build a simple endpoint (like `/admin/corrections`) that lists recent correction sessions. Each entry shows: "PDF with 8 pages, auto found 22 frames, user removed 3 false positives (caused by header rows), added 1 missed frame."
+
+2. **Spot patterns manually** — review the corrections weekly. Common patterns will emerge quickly:
+   - "70% of removals are false frames from colored headers" → tighten `isColorNoise()` thresholds
+   - "Most added frames are in PDFs with 4+ columns" → improve column detection for wide layouts
+   - "Users keep resizing frames on landscape-oriented pages" → auto-detection assumes portrait
+
+3. **Translate patterns into code fixes** — each pattern becomes a targeted heuristic improvement in `pdf.ts`. This is the same process that fixed the yellow headers and red cross-out marks — but now driven by real user data instead of individual bug reports.
+
+4. **Track improvement over time** — as you ship fixes, the correction rate should drop. If 15% of users needed guided extraction in month 1 and only 5% need it in month 3, the heuristics are working.
+
+### Machine Learning (Much Later, Maybe Never)
+
+ML would mean training a model on the correction data to automatically detect frame boundaries instead of using hand-coded rules. This requires:
+- Hundreds or thousands of correction examples (dataset)
+- A training pipeline (Python, likely offline)
+- A way to run inference in the browser (TensorFlow.js or ONNX)
+- Ongoing model maintenance
+
+For Framehow's scale, this is likely overkill. The manual review → code fix loop will get you to 95%+ accuracy. ML only makes sense if you have thousands of users generating enough correction data and the long tail of edge cases becomes too varied for hand-coded rules. Keep it as a theoretical option, not a plan.
+
+
+## Keynote Storyboard Import (Future Feature)
+
+Many film professionals create storyboards in Apple Keynote. Supporting `.key` file import would be valuable.
+
+### How It Works Technically
+- Keynote files (`.key`) are ZIP archives internally
+- Unzip in the browser using JSZip (already a dependency)
+- Parse the internal XML/protobuf structure to find slides
+- Extract images and text from each slide
+- Map each slide to a Frame in the Framehow store
+
+### Implementation Notes
+- This would be a separate import pipeline alongside PDF and Images
+- Entry point: a new "Load from Keynote" option in the startup screen / menu
+- Keynote's internal format has changed across versions — need to handle at least the current format
+- Slide dimensions map to frame aspect ratio
+- Text boxes on slides become the frame's text content
+- Embedded images become the frame's source image
+
+
+## Priority & Ordering
+
+These features are not tied to a specific version number. Build order based on user impact:
+
+1. **Load-first flow + "Frames look wrong?" popup** — low effort, improves the experience immediately
+2. **Guided extraction overlay** — the core feature, biggest development effort
+3. **Correction data capture** — add alongside guided extraction, almost no extra work
+4. **Admin review page** — build when there's enough data to review
+5. **Keynote import** — independent feature, can be built anytime
+6. **ML** — only if the data shows the need and scale justifies it

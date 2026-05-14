@@ -19,7 +19,7 @@ import {
 } from './helpers';
 import { restoreCanvas, restoreMainCanvas, setupDrawing, setupMainDrawing } from './drawing';
 import { addCrossSwipe, addNavArrows, scheduleSyncHeights } from './view';
-import { showLabelEdit } from './modals';
+import { showLabelEdit, showVerLabelEdit } from './modals';
 
 export function renderAll(): void {
   saveOpenTextEdits();
@@ -31,7 +31,30 @@ export function renderAll(): void {
   versionsScroll.innerHTML = '';
   overviewScroll.innerHTML = '';
   const s = state();
-  if (!s.frames.length) return;
+  if (!s.frames.length) {
+    // Restore the empty-state startup screen
+    mainScroll.innerHTML = `
+      <div class="empty-state" id="emptyStateMain">
+        <div class="empty-icon">◎</div>
+        <p>Start your storyboard</p>
+        <div class="start-options">
+          <button class="btn btn-accent" id="startLoadPdf">Load Storyboard from PDF</button>
+          <button class="btn btn-accent" id="startLoadImages">Load Images from Folder</button>
+          <button class="btn btn-accent" id="startScratch">Start from Scratch</button>
+        </div>
+        <div id="startOpenProjectGap" style="height:12px"></div>
+        <button class="btn btn-accent" id="startOpenProject">Open Project</button>
+      </div>`;
+    versionsScroll.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon" style="opacity:0.4">≡</div>
+        <p style="opacity:0.5">Versions will appear<br>alongside each frame</p>
+      </div>`;
+    // Re-wire the empty-state button handlers
+    const wireEmptyButtons = (window as any).__fh_wireEmptyButtons;
+    if (wireEmptyButtons) wireEmptyButtons();
+    return;
+  }
   s.frames.forEach((f) => {
     mainScroll.appendChild(buildMainFrame(f));
     versionsScroll.appendChild(buildVersionFrame(f.id));
@@ -235,8 +258,6 @@ export function renderMainFrame(div: HTMLElement, fid: number): void {
         const c = (d as HTMLElement).dataset.color!;
         s.drawColor[fid] = c;
         s.drawEraser[fid] = false;
-        const txt = ver.strokes && ver.strokes.find((stk: any) => stk.type === 'text');
-        if (txt) txt.color = c;
         renderMainFrame(div, fid);
       })
     );
@@ -337,8 +358,6 @@ export function renderMainFrame(div: HTMLElement, fid: number): void {
       const c = (d as HTMLElement).dataset.color!;
       s.drawColor[fid] = c;
       s.drawEraser[fid] = false;
-      const txt = f.strokes && f.strokes.find((stk: any) => stk.type === 'text');
-      if (txt) txt.color = c;
       renderMainFrame(div, fid);
     })
   );
@@ -484,8 +503,6 @@ export function renderVersionFrame(div: HTMLElement, fid: number): void {
         const c = (d as HTMLElement).dataset.color!;
         s.drawColor[fid] = c;
         s.drawEraser[fid] = false;
-        const txt = f.strokes && f.strokes.find((stk: any) => stk.type === 'text');
-        if (txt) txt.color = c;
         renderVersionFrame(div, fid);
         const md = document.querySelector(`#mainScroll .frame-card[data-mfid="${fid}"]`) as HTMLElement | null;
         if (md) renderMainFrame(md, fid);
@@ -571,7 +588,7 @@ export function renderVersionFrame(div: HTMLElement, fid: number): void {
     : '';
   div.innerHTML = `
     <div class="frame-num ver-frame-num">${
-      f && f.label ? `<span class="frame-label-tag">${f.label} version</span>` : '<span></span>'
+      f && f.label ? `<span class="frame-label-tag ver-label-combo" data-editverlabel="${fid}">${f.label} ${f.versionLabel || 'version'}</span>` : '<span></span>'
     }<div class="version-tabs${
     s.reorderFid === fid ? ' locked-dim' : s.verReorderFid === fid ? ' locked' : ''
   }">${tabsHTML}</div>${
@@ -580,9 +597,9 @@ export function renderVersionFrame(div: HTMLElement, fid: number): void {
     <div style="${_verHidden ? 'opacity:0.3;' : ''}">
       <div class="ver-canvas-area"><div class="canvas-wrap${
         !_verHidden && s.drawActive[fid] === 'ver' ? ' draw-active' : ''
-      }" data-fid="${fid}" style="aspect-ratio:${f ? f.cropW : 16}/${f ? f.cropH : 9};${canvasBorder}"><canvas id="${cid}" width="${
-    f ? f.cropW : 960
-  }" height="${f ? f.cropH : 540}"${_verHidden ? ' style="pointer-events:none;"' : ''}></canvas>${
+      }" data-fid="${fid}" style="aspect-ratio:${f?.cropW || 16}/${f?.cropH || 9};${canvasBorder}"><canvas id="${cid}" width="${
+    f?.cropW || 960
+  }" height="${f?.cropH || 540}"${_verHidden ? ' style="pointer-events:none;"' : ''}></canvas>${
       !_verHidden && ver.type === 'empty' && (s.crossCompare[fid] ?? -1) < 0 ? '<div class="canvas-hint"><span>choose an action below</span></div>' : ''
     }${!_verHidden ? starHTML(fid, ai) : ''}${!_verHidden ? fsButtonHTML(fid, ai, 'ver') : ''}</div></div>
       ${
@@ -631,6 +648,15 @@ export function renderVersionFrame(div: HTMLElement, fid: number): void {
         if (row && fn) fn(row, fid);
       }
     });
+  div.querySelectorAll('[data-editverlabel]').forEach((el) =>
+    el.addEventListener('click', async () => {
+      if (!f) return;
+      const result = await showVerLabelEdit(f.label, f.versionLabel || 'version');
+      if (result === null) return;
+      f.versionLabel = result;
+      renderVersionFrame(div, fid);
+    })
+  );
   const startBtn = div.querySelector('[data-vreorderstart]') as HTMLElement | null;
   if (startBtn)
     startBtn.addEventListener('click', () => {
@@ -681,8 +707,6 @@ export function renderVersionFrame(div: HTMLElement, fid: number): void {
       const c = (d as HTMLElement).dataset.color!;
       s.drawColor[fid] = c;
       s.drawEraser[fid] = false;
-      const txt = ver.strokes && ver.strokes.find((stk: any) => stk.type === 'text');
-      if (txt) txt.color = c;
       renderVersionFrame(div, fid);
     })
   );

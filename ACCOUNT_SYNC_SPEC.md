@@ -65,12 +65,13 @@ Note: No username field — just Name. Avoids uniqueness headaches. If needed fo
 
 - **Cloudflare Workers** — API
 - **D1** — users, projects, frame metadata
-- **R2** — frame images (and drawing overlays)
+- **R2** — frame images (and drawing overlays) — **not yet activated**, requires payment method. Build the API with R2 bindings ready, but image upload won't work until R2 is activated. For now, images stay local (IndexedDB/canvas only).
 
 ### Storage Limits (Beta)
 
 - **10MB** per image
 - **350MB** per account
+- **400 uploads per hour** per user (rate limit — prevents abuse while allowing heavy real-world use: multiple storyboards with versions in one sitting)
 
 #### When Storage Is Full
 - Account Settings shows a **storage usage bar** (e.g. "127 MB / 350 MB used")

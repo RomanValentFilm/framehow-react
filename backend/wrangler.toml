@@ -25,11 +25,7 @@ database_name = "framehow-db"
 database_id = "9a805ca2-576c-4c8c-8af4-71016b8711b5"
 migrations_dir = "migrations"
 
-# R2 — frame images. NOT YET ACTIVATED (requires payment method on Cloudflare).
-# When R2 is activated:
-#   1. Create the bucket:  wrangler r2 bucket create framehow-images
-#   2. Uncomment the block below.
-#   3. Redeploy. The /upload and /images/:r2_key handlers already use this binding.
-# [[r2_buckets]]
-# binding = "IMAGES_BUCKET"
-# bucket_name = "framehow-images"
+# R2 — project storage (frame images, drawings, etc.)
+[[r2_buckets]]
+binding = "IMAGES_BUCKET"
+bucket_name = "framehow-storage"

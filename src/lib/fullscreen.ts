@@ -41,8 +41,8 @@ export function openFullscreen(fid: number, vi: number, origin: 'main' | 'ver'):
   function buildOverlay() {
     const { dw, dh } = calcSize();
     overlay.innerHTML = `
+      <button class="fs-close">${fsCollapseSVG}</button>
       <div class="fs-inner">
-        <button class="fs-close">${fsCollapseSVG}</button>
         <div class="fs-canvas-area">
           <div class="fs-canvas-wrap draw-active" style="width:${dw}px;height:${dh}px;cursor:crosshair;"><canvas id="${cid}" width="${cw}" height="${ch}" style="width:${dw}px;height:${dh}px;"></canvas>${
       !isMain ? starHTML(fid, vi) : ''
@@ -53,6 +53,8 @@ export function openFullscreen(fid: number, vi: number, origin: 'main' | 'ver'):
   }
 
   buildOverlay();
+  // Lock body scroll so the page behind the overlay doesn't shift on iOS
+  document.body.style.overflow = 'hidden';
   document.body.appendChild(overlay);
 
   function initCanvas() {
@@ -85,13 +87,7 @@ export function openFullscreen(fid: number, vi: number, origin: 'main' | 'ver'):
         const c = (d as HTMLElement).dataset.color!;
         state().drawColor[fid] = c;
         state().drawEraser[fid] = false;
-        if (isMain) {
-          const txt = f.strokes && f.strokes.find((stk) => stk.type === 'text');
-          if (txt) txt.color = c;
-        } else {
-          const txt = ver!.strokes && ver!.strokes.find((stk) => stk.type === 'text');
-          if (txt) txt.color = c;
-        }
+        // Draw color only — don't overwrite existing text overlay color
         overlay.querySelectorAll('.color-dot').forEach((dd) =>
           dd.classList.toggle('selected', (dd as HTMLElement).dataset.color === c)
         );
@@ -154,6 +150,7 @@ export function closeFullscreen(): void {
   document.removeEventListener('keydown', (overlay as any)._escHandler);
   if ((overlay as any)._resizeHandler) window.removeEventListener('resize', (overlay as any)._resizeHandler);
   overlay.remove();
+  document.body.style.overflow = '';
   useStore.setState({ fsOverlayActive: null });
   const renderAll = (window as any).__fh_renderAll;
   if (renderAll) renderAll();

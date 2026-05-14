@@ -7,7 +7,9 @@ export function showToast(msg: string): void {
   const t = document.getElementById('toast')!;
   t.textContent = msg;
   t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 2800);
+  const dismiss = () => t.classList.remove('show');
+  t.addEventListener('click', dismiss, { once: true });
+  setTimeout(dismiss, 2800);
 }
 
 export function showCamBlockedMsg(): void {
@@ -37,6 +39,58 @@ export function showConfirm(msg: string): Promise<boolean> {
     }
     yes.onclick = () => cleanup(true);
     no.onclick = () => cleanup(false);
+  });
+}
+
+export type ConflictChoice = 'cloud' | 'local' | 'merge';
+
+/**
+ * Three-option conflict dialog for cross-device sync conflicts.
+ * Returns 'cloud' (load cloud version), 'local' (keep this device), or 'merge' (keep both).
+ */
+export function showConflictDialog(deviceName: string, timeAgo: string): Promise<ConflictChoice> {
+  return new Promise((resolve) => {
+    // Create a dynamically-generated modal
+    const overlay = document.createElement('div');
+    overlay.style.cssText =
+      'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,0.6);' +
+      'display:flex;align-items:center;justify-content:center;padding:16px;';
+    const box = document.createElement('div');
+    box.style.cssText =
+      'background:#1e1e1e;border:1px solid #444;border-radius:12px;' +
+      'padding:20px 24px;max-width:360px;width:100%;color:#fff;' +
+      'font-family:-apple-system,BlinkMacSystemFont,sans-serif;';
+    box.innerHTML = `
+      <h3 style="margin:0 0 12px;font-size:16px;font-weight:600;">Sync Conflict</h3>
+      <p style="margin:0 0 16px;font-size:14px;line-height:1.5;color:#ccc;">
+        This project was last edited on <strong>${deviceName}</strong> (${timeAgo}).
+        You also have unsaved changes on this device.
+      </p>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <button id="conflictCloud" style="
+          padding:10px 14px;border-radius:8px;border:1px solid #555;
+          background:#2a2a2a;color:#fff;font-size:14px;text-align:left;cursor:pointer;
+        ">Load the <strong>${deviceName}</strong> version (${timeAgo})</button>
+        <button id="conflictLocal" style="
+          padding:10px 14px;border-radius:8px;border:1px solid #555;
+          background:#2a2a2a;color:#fff;font-size:14px;text-align:left;cursor:pointer;
+        ">Keep this device's version</button>
+        <button id="conflictMerge" style="
+          padding:10px 14px;border-radius:8px;border:1px solid #4caf50;
+          background:#1b3a1b;color:#fff;font-size:14px;text-align:left;cursor:pointer;
+        ">Keep both — add changes as duplicate frames</button>
+      </div>
+    `;
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+
+    function cleanup(choice: ConflictChoice) {
+      overlay.remove();
+      resolve(choice);
+    }
+    box.querySelector('#conflictCloud')!.addEventListener('click', () => cleanup('cloud'));
+    box.querySelector('#conflictLocal')!.addEventListener('click', () => cleanup('local'));
+    box.querySelector('#conflictMerge')!.addEventListener('click', () => cleanup('merge'));
   });
 }
 
@@ -199,6 +253,53 @@ export function showDeleteChoice(): Promise<'hide' | 'delete' | null> {
   });
 }
 
+export function showVerLabelEdit(frameLabel: string, currentVerLabel: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    const modal = document.getElementById('verLabelModal')!;
+    const prefix = document.getElementById('verLabelPrefix')!;
+    const input = document.getElementById('verLabelInput') as HTMLInputElement;
+    const ok = document.getElementById('verLabelOk') as HTMLButtonElement;
+    const cancel = document.getElementById('verLabelCancel') as HTMLButtonElement;
+    prefix.textContent = frameLabel + ' / ';
+    input.value = currentVerLabel || 'version';
+    modal.classList.remove('hidden');
+    setTimeout(() => { input.focus(); input.select(); }, 50);
+    function cleanup(result: string | null) {
+      modal.classList.add('hidden');
+      ok.onclick = null;
+      cancel.onclick = null;
+      input.onkeydown = null;
+      resolve(result);
+    }
+    ok.onclick = () => cleanup(input.value.trim() || 'version');
+    cancel.onclick = () => cleanup(null);
+    input.onkeydown = (e) => {
+      if (e.key === 'Enter') cleanup(input.value.trim() || 'version');
+      if (e.key === 'Escape') cleanup(null);
+    };
+  });
+}
+
+export function showOverwriteConfirm(): Promise<'yes' | 'cancel' | 'new_project'> {
+  return new Promise((resolve) => {
+    const modal = document.getElementById('overwriteModal')!;
+    const yesBtn = document.getElementById('overwriteYes') as HTMLButtonElement;
+    const cancelBtn = document.getElementById('overwriteCancel') as HTMLButtonElement;
+    const newBtn = document.getElementById('overwriteNewProject') as HTMLButtonElement;
+    modal.classList.remove('hidden');
+    function cleanup(result: 'yes' | 'cancel' | 'new_project') {
+      modal.classList.add('hidden');
+      yesBtn.onclick = null;
+      cancelBtn.onclick = null;
+      newBtn.onclick = null;
+      resolve(result);
+    }
+    yesBtn.onclick = () => cleanup('yes');
+    cancelBtn.onclick = () => cleanup('cancel');
+    newBtn.onclick = () => cleanup('new_project');
+  });
+}
+
 export function openTextModal(
   existing: string,
   initialColor: string
@@ -225,6 +326,8 @@ export function openTextModal(
         colorRow
           .querySelectorAll('[data-tcolor]')
           .forEach((x) => x.classList.toggle('selected', (x as HTMLElement).dataset.tcolor === chosenColor));
+        // Re-focus the textarea so the user can keep typing after picking a color
+        area.focus();
       })
     );
     modal.classList.remove('hidden');

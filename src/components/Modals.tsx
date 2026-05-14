@@ -40,6 +40,18 @@ export function Modals() {
         </div>
       </div>
 
+      {/* Overwrite content confirmation */}
+      <div className="account-modal hidden" id="overwriteModal">
+        <div className="account-card" style={{ textAlign: 'center' }}>
+          <h2 style={{ marginBottom: '14px' }}>Are you sure you want to overwrite the current content?</h2>
+          <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', flexWrap: 'wrap' }}>
+            <button className="btn btn-accent" id="overwriteCancel">Cancel</button>
+            <button className="btn" id="overwriteYes">Yes</button>
+            <button className="btn" id="overwriteNewProject" style={{ background: '#333', borderColor: '#555' }}>New Project</button>
+          </div>
+        </div>
+      </div>
+
       <div className="confirm-modal hidden" id="confirmModal">
         <div className="confirm-modal-box">
           <p id="confirmMsg"></p>
@@ -71,6 +83,48 @@ export function Modals() {
             <button
               className="btn"
               id="labelOk"
+              style={{ background: 'var(--accent)', borderColor: 'var(--accent)', color: '#fff' }}
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="label-modal hidden" id="verLabelModal">
+        <div className="label-modal-box">
+          <p>Edit strip name</p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0', justifyContent: 'center' }}>
+            <span
+              id="verLabelPrefix"
+              style={{
+                fontFamily: 'var(--mono)',
+                fontSize: '16px',
+                color: 'var(--text-muted)',
+                background: 'var(--surface2)',
+                border: '1px solid var(--border)',
+                borderRight: 'none',
+                borderRadius: 'var(--radius-sm) 0 0 var(--radius-sm)',
+                padding: '8px 8px 8px 10px',
+                whiteSpace: 'nowrap',
+              }}
+            />
+            <input
+              type="text"
+              id="verLabelInput"
+              maxLength={20}
+              placeholder="version"
+              style={{
+                borderRadius: '0 var(--radius-sm) var(--radius-sm) 0',
+                textAlign: 'left',
+              }}
+            />
+          </div>
+          <div className="label-modal-btns">
+            <button className="btn" id="verLabelCancel">Cancel</button>
+            <button
+              className="btn"
+              id="verLabelOk"
               style={{ background: 'var(--accent)', borderColor: 'var(--accent)', color: '#fff' }}
             >
               OK

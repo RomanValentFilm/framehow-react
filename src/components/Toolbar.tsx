@@ -23,8 +23,21 @@ export function Toolbar() {
                 borderBottom: 'none',
               }}
             />
+            <button id="menuNewProject">New Project</button>
+            <button id="menuLoadProject">Open Project</button>
             <button id="menuSaveProject">Save Project</button>
-            <button id="menuLoadProject">Load Project</button>
+            <div
+              style={{
+                height: 20,
+                background: '#000',
+                margin: 0,
+                borderTop: '1px solid var(--border)',
+                borderBottom: 'none',
+              }}
+            />
+            <button id="menuAccount">
+              Sign In
+            </button>
             <div
               style={{
                 height: 20,
@@ -35,18 +48,6 @@ export function Toolbar() {
               }}
             />
             <button id="menuExport">Export</button>
-            <div
-              style={{
-                height: 20,
-                background: '#000',
-                margin: 0,
-                borderTop: '1px solid var(--border)',
-                borderBottom: 'none',
-              }}
-            />
-            <button id="menuAccount" style={{ borderTop: '1px solid var(--border)' }}>
-              Sign In
-            </button>
           </div>
         </div>
       </div>

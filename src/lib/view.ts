@@ -160,10 +160,6 @@ export function setViewMode(mode: ViewMode, keepCompare?: boolean, forceAnchorFi
   document.querySelectorAll('.view-btn').forEach((b) => {
     b.classList.toggle('active', (b as HTMLElement).dataset.view === mode);
   });
-  (document.getElementById('labelMain') as HTMLElement).style.visibility =
-    mode === 'ver' || mode === 'overview' ? 'hidden' : 'visible';
-  (document.getElementById('labelVer') as HTMLElement).style.visibility =
-    mode === 'main' || mode === 'overview' ? 'hidden' : 'visible';
 
   if (mode === 'overview') {
     const fn = (window as any).__fh_renderOverview;
@@ -202,6 +198,7 @@ export function showSwipeHint(): void {
   if (!hint) return;
   useStore.setState({ swipeHintShown: true });
   hint.classList.add('show');
+  hint.addEventListener('click', () => hint.classList.remove('show'), { once: true });
   setTimeout(() => {
     hint.classList.remove('show');
   }, 3000);

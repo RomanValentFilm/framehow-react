@@ -3,7 +3,7 @@
 // window.__fh_* (used to break circular import cycles between render,
 // overview, actions, and helpers).
 
-import { state, useStore, isTouch } from '../store/state';
+import { state, useStore, isTouch, resetStoryboardState } from '../store/state';
 import { renderAll, renderMainFrame, renderVersionFrame } from './render';
 import { renderOverview, renderOverviewRow } from './overview';
 import { handleAction, handleMainAction } from './actions';
@@ -20,7 +20,7 @@ import {
 import { snapshotFrame } from './drawing';
 import { drawFit } from './drawing';
 import { setupDrawing } from './drawing';
-import { showToast } from './modals';
+import { showToast, showOverwriteConfirm } from './modals';
 import { handlePDF } from './pdf';
 import { handleFolderImages, startFromScratch } from './files';
 import { openExportModal, openPptxModal, runExport, runPptxExport, runImageExport } from './exports';
@@ -36,7 +36,7 @@ import {
   showSaveToaster,
 } from './accountFlow';
 import { getActiveMs, onActivityTick, startActivityTracking } from './activity';
-import { startAutosave } from './currentProject';
+import { startAutosave, getCurrentProject, clearCurrentProject } from './currentProject';
 import { subscribe as subscribeSession, isLoggedIn } from './session';
 
 let initialized = false;
@@ -184,18 +184,82 @@ export function initFramehow(): void {
     document.getElementById('mainMenu')!.classList.toggle('open');
   });
   document.addEventListener('click', () => document.getElementById('mainMenu')!.classList.remove('open'));
-  document.getElementById('menuLoadPdf')!.addEventListener('click', () => {
-    clearAllDrawActive();
+  // New Project
+  document.getElementById('menuNewProject')!.addEventListener('click', async () => {
     document.getElementById('mainMenu')!.classList.remove('open');
-    (document.getElementById('pdfInput') as HTMLInputElement).click();
+    const cp = getCurrentProject();
+    if (state().frames.length > 0) {
+      if (cp.projectId) {
+        // Already saved project — auto-save silently, then clear
+        try { await flowSaveProject(); } catch { /* best effort */ }
+      } else {
+        // Unsaved work — ask user to save or cancel
+        const ok = await import('./modals').then(m => m.showConfirm('Save your current work before starting a new project?'));
+        if (ok) {
+          await flowSaveProject();
+        }
+        // Whether they saved or declined, proceed to clear
+      }
+    }
+    resetStoryboardState();
+    clearCurrentProject();
+    renderAll();
+    updateFrameBadge();
+    showToast('New project started.');
+  });
+
+  // Overwrite guard helper
+  async function overwriteGuard(): Promise<boolean> {
+    if (state().frames.length === 0) return true;
+    const choice = await showOverwriteConfirm();
+    if (choice === 'cancel') return false;
+    if (choice === 'new_project') {
+      // Same logic as New Project: save if needed, then clear
+      const cp = getCurrentProject();
+      if (cp.projectId) {
+        try { await flowSaveProject(); } catch { /* best effort */ }
+      }
+      resetStoryboardState();
+      clearCurrentProject();
+      renderAll();
+      updateFrameBadge();
+      return true; // cleared — proceed with the load action
+    }
+    // choice === 'yes' — overwrite current content
+    return true;
+  }
+
+  document.getElementById('menuLoadPdf')!.addEventListener('click', () => {
+    document.getElementById('mainMenu')!.classList.remove('open');
+    if (state().frames.length > 0) {
+      // Has content — show overwrite guard, then trigger file picker after
+      void (async () => {
+        if (!(await overwriteGuard())) return;
+        clearAllDrawActive();
+        (document.getElementById('pdfInput') as HTMLInputElement).click();
+      })();
+    } else {
+      // No content — open file picker immediately (keeps user-gesture chain)
+      clearAllDrawActive();
+      (document.getElementById('pdfInput') as HTMLInputElement).click();
+    }
   });
   document.getElementById('menuLoadImages')!.addEventListener('click', () => {
-    clearAllDrawActive();
     document.getElementById('mainMenu')!.classList.remove('open');
-    (document.getElementById('folderImgInput') as HTMLInputElement).click();
+    if (state().frames.length > 0) {
+      void (async () => {
+        if (!(await overwriteGuard())) return;
+        clearAllDrawActive();
+        (document.getElementById('folderImgInput') as HTMLInputElement).click();
+      })();
+    } else {
+      clearAllDrawActive();
+      (document.getElementById('folderImgInput') as HTMLInputElement).click();
+    }
   });
-  document.getElementById('menuScratch')!.addEventListener('click', () => {
+  document.getElementById('menuScratch')!.addEventListener('click', async () => {
     document.getElementById('mainMenu')!.classList.remove('open');
+    if (!(await overwriteGuard())) return;
     startFromScratch();
     renderAll();
     autoPhoneMainView();
@@ -226,20 +290,38 @@ export function initFramehow(): void {
     void flowAccountOrSignIn();
   });
 
-  // Empty-state buttons
-  document.getElementById('startLoadPdf')!.addEventListener('click', () => {
-    clearAllDrawActive();
-    (document.getElementById('pdfInput') as HTMLInputElement).click();
-  });
-  document.getElementById('startLoadImages')!.addEventListener('click', () => {
-    clearAllDrawActive();
-    (document.getElementById('folderImgInput') as HTMLInputElement).click();
-  });
-  document.getElementById('startScratch')!.addEventListener('click', () => {
-    startFromScratch();
-    renderAll();
-    autoPhoneMainView();
-  });
+  // Empty-state buttons — wired via a function so renderAll() can re-attach
+  // them after restoring the empty-state markup.
+  function wireEmptyButtons(): void {
+    const pdf = document.getElementById('startLoadPdf');
+    const imgs = document.getElementById('startLoadImages');
+    const scratch = document.getElementById('startScratch');
+    const openProj = document.getElementById('startOpenProject');
+    if (pdf) pdf.addEventListener('click', () => {
+      clearAllDrawActive();
+      (document.getElementById('pdfInput') as HTMLInputElement).click();
+    });
+    if (imgs) imgs.addEventListener('click', () => {
+      clearAllDrawActive();
+      (document.getElementById('folderImgInput') as HTMLInputElement).click();
+    });
+    if (scratch) scratch.addEventListener('click', () => {
+      startFromScratch();
+      renderAll();
+      autoPhoneMainView();
+    });
+    if (openProj) {
+      const gap = document.getElementById('startOpenProjectGap');
+      // Always show Open Project — if not logged in, the flow will prompt login first.
+      openProj.classList.remove('hidden');
+      if (gap) gap.classList.remove('hidden');
+      openProj.addEventListener('click', () => {
+        void flowLoadProject();
+      });
+    }
+  }
+  (window as any).__fh_wireEmptyButtons = wireEmptyButtons;
+  wireEmptyButtons();
 
   // PDF input
   document.getElementById('pdfInput')!.addEventListener('change', async (e) => {
@@ -307,7 +389,27 @@ export function initFramehow(): void {
         h = window.innerHeight;
       const isPhone = Math.min(w, h) <= 430;
       const isPhonePortrait = isPhone && h > w;
-      const view = (b as HTMLElement).dataset.view as any;
+      const view = (b as HTMLElement).dataset.view as string;
+
+      // Left-side buttons: iPad/Desktop only
+      if (view === 'group') {
+        if (isPhone) {
+          showToast('This view is available only on iPad and Desktop');
+          return;
+        }
+        showToast('Coming soon');
+        return;
+      }
+      if (view === '3x2') {
+        if (isPhone) {
+          showToast('This view is available only on iPad and Desktop');
+          return;
+        }
+        // TODO: wire up 3x2 function
+        showToast('Coming soon');
+        return;
+      }
+
       if (isPhone && view === 'overview') {
         const om = document.getElementById('overviewPhoneMsg')!;
         om.classList.add('show');
@@ -323,10 +425,11 @@ export function initFramehow(): void {
         setViewMode('both');
         const rm = document.getElementById('rotateMsg')!;
         rm.classList.add('show');
+        rm.addEventListener('click', () => rm.classList.remove('show'), { once: true });
         setTimeout(() => rm.classList.remove('show'), 3000);
         return;
       }
-      setViewMode(view);
+      setViewMode(view as any);
     })
   );
 

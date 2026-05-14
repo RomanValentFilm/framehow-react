@@ -86,10 +86,10 @@ export async function loadOwnedProject(
   db: D1Database,
   userId: string,
   projectId: string,
-): Promise<{ id: string; user_id: string; name: string; updated_at: number } | null> {
+): Promise<{ id: string; user_id: string; name: string; updated_at: number; last_device_id: string | null } | null> {
   return await db
     .prepare(
-      `SELECT id, user_id, name, updated_at
+      `SELECT id, user_id, name, updated_at, last_device_id
          FROM projects
         WHERE id = ? AND user_id = ? AND deleted_at IS NULL
         LIMIT 1`,

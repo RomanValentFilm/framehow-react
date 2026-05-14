@@ -131,6 +131,11 @@ upload.get("/images/*", requireUser, async (c) => {
   headers.set("etag", obj.httpEtag);
   // Private to the owner; no shared/public caching.
   headers.set("Cache-Control", "private, max-age=3600");
+  // CORS: new Response() bypasses Hono's middleware headers, so add them here.
+  const origin = c.req.header("Origin") ?? "*";
+  headers.set("Access-Control-Allow-Origin", origin);
+  headers.set("Access-Control-Allow-Credentials", "true");
+  headers.set("Vary", "Origin");
   return new Response(obj.body as unknown as ReadableStream, { headers });
 });
 
