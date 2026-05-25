@@ -5,9 +5,9 @@
 
 import { state, useStore, isTouch, resetStoryboardState } from '../store/state';
 import { renderAll, renderMainFrame, renderVersionFrame } from './render';
-import { renderOverview, renderOverviewRow } from './overview';
+import { renderOverview, renderOverviewRow, renderGrid4, renderGrid4Row } from './overview';
 import { handleAction, handleMainAction } from './actions';
-import { setViewMode, autoPhoneMainView, wireScrollHandlers } from './view';
+import { setViewMode, autoPhoneMainView, wireScrollHandlers, scrollAnchorTo } from './view';
 import {
   saveTableFromDOM,
   defaultTableData,
@@ -20,13 +20,15 @@ import {
 import { snapshotFrame } from './drawing';
 import { drawFit } from './drawing';
 import { setupDrawing } from './drawing';
-import { showToast, showOverwriteConfirm } from './modals';
+import { showToast, showNewProjectModal, isNewProjectModalOpen } from './modals';
+import type { NewProjectChoice } from './modals';
 import { handlePDF } from './pdf';
-import { handleFolderImages, startFromScratch } from './files';
-import { openExportModal, openPptxModal, runExport, runPptxExport, runImageExport } from './exports';
+import { handleFolderImages, startFromScratch, startPortrait } from './files';
+import { openExportModal, openPptxModal, runExport, runPptxExport, openImageExportModal, runImageExport, openPortraitExportModal, runPortraitExport, runPortraitImageExport } from './exports';
 import { wireCameraEvents } from './camera';
 import { openFullscreen } from './fullscreen';
-import { startHeartbeat } from './tracking';
+import { toggleGroupSidebar } from './groups';
+import { startHeartbeat, fhTrack } from './tracking';
 import {
   bootstrapAccountSystem,
   flowAccountOrSignIn,
@@ -36,7 +38,7 @@ import {
   showSaveToaster,
 } from './accountFlow';
 import { getActiveMs, onActivityTick, startActivityTracking } from './activity';
-import { startAutosave, getCurrentProject, clearCurrentProject } from './currentProject';
+import { startAutosave, getCurrentProject, clearCurrentProject, subscribe as subscribeProject } from './currentProject';
 import { subscribe as subscribeSession, isLoggedIn } from './session';
 
 let initialized = false;
@@ -51,10 +53,13 @@ export function initFramehow(): void {
   (window as any).__fh_renderVersionFrame = renderVersionFrame;
   (window as any).__fh_renderOverview = renderOverview;
   (window as any).__fh_renderOverviewRow = renderOverviewRow;
+  (window as any).__fh_renderGrid4 = renderGrid4;
+  (window as any).__fh_renderGrid4Row = renderGrid4Row;
   (window as any).__fh_handleMainAction = handleMainAction;
   (window as any).__fh_handleAction = handleAction;
   (window as any).__fh_clearAllDrawActive = clearAllDrawActive;
   (window as any).__fh_setupDrawing = setupDrawing;
+  (window as any).__fh_scrollAnchorTo = scrollAnchorTo;
 
   // Drawing-suppress click cleanup (mouseup/touchend at document level)
   document.addEventListener('mouseup', () => {
@@ -184,85 +189,67 @@ export function initFramehow(): void {
     document.getElementById('mainMenu')!.classList.toggle('open');
   });
   document.addEventListener('click', () => document.getElementById('mainMenu')!.classList.remove('open'));
-  // New Project
+  // ── New Project modal handler ──────────────────────────────────────
+  // Centralised handler: opens the New Project modal and acts on the
+  // user's choice. The callback pattern (not Promise) preserves the
+  // user-gesture chain so file-input .click() works on Safari / iOS.
+  function openNewProjectModal(): void {
+    showNewProjectModal((choice: NewProjectChoice) => {
+      if (choice !== 'cancel') fhTrack('signpost_choice', { choice });
+      switch (choice) {
+        case 'pdf':
+          clearAllDrawActive();
+          (document.getElementById('pdfInput') as HTMLInputElement).click();
+          break;
+        case 'images':
+          clearAllDrawActive();
+          (document.getElementById('folderImgInput') as HTMLInputElement).click();
+          break;
+        case 'scratch':
+          startFromScratch();
+          renderAll();
+          autoPhoneMainView();
+          break;
+        case 'portrait':
+          startPortrait();
+          renderAll();
+          autoPhoneMainView();
+          break;
+        case 'open':
+          void flowLoadProject();
+          break;
+        case 'cancel':
+        default:
+          break;
+      }
+    });
+  }
+
+  // Let other modules (e.g. accountFlow) trigger the Signpost modal
+  window.addEventListener('fh:open-signpost', () => openNewProjectModal());
+
+  // Menu > New Project
   document.getElementById('menuNewProject')!.addEventListener('click', async () => {
     document.getElementById('mainMenu')!.classList.remove('open');
     const cp = getCurrentProject();
     if (state().frames.length > 0) {
       if (cp.projectId) {
-        // Already saved project — auto-save silently, then clear
         try { await flowSaveProject(); } catch { /* best effort */ }
       } else {
-        // Unsaved work — ask user to save or cancel
         const ok = await import('./modals').then(m => m.showConfirm('Save your current work before starting a new project?'));
         if (ok) {
           await flowSaveProject();
         }
-        // Whether they saved or declined, proceed to clear
-      }
-    }
-    resetStoryboardState();
-    clearCurrentProject();
-    renderAll();
-    updateFrameBadge();
-    showToast('New project started.');
-  });
-
-  // Overwrite guard helper
-  async function overwriteGuard(): Promise<boolean> {
-    if (state().frames.length === 0) return true;
-    const choice = await showOverwriteConfirm();
-    if (choice === 'cancel') return false;
-    if (choice === 'new_project') {
-      // Same logic as New Project: save if needed, then clear
-      const cp = getCurrentProject();
-      if (cp.projectId) {
-        try { await flowSaveProject(); } catch { /* best effort */ }
       }
       resetStoryboardState();
       clearCurrentProject();
       renderAll();
       updateFrameBadge();
-      return true; // cleared — proceed with the load action
     }
-    // choice === 'yes' — overwrite current content
-    return true;
-  }
-
-  document.getElementById('menuLoadPdf')!.addEventListener('click', () => {
-    document.getElementById('mainMenu')!.classList.remove('open');
-    if (state().frames.length > 0) {
-      // Has content — show overwrite guard, then trigger file picker after
-      void (async () => {
-        if (!(await overwriteGuard())) return;
-        clearAllDrawActive();
-        (document.getElementById('pdfInput') as HTMLInputElement).click();
-      })();
-    } else {
-      // No content — open file picker immediately (keeps user-gesture chain)
-      clearAllDrawActive();
-      (document.getElementById('pdfInput') as HTMLInputElement).click();
-    }
-  });
-  document.getElementById('menuLoadImages')!.addEventListener('click', () => {
-    document.getElementById('mainMenu')!.classList.remove('open');
-    if (state().frames.length > 0) {
-      void (async () => {
-        if (!(await overwriteGuard())) return;
-        clearAllDrawActive();
-        (document.getElementById('folderImgInput') as HTMLInputElement).click();
-      })();
-    } else {
-      clearAllDrawActive();
-      (document.getElementById('folderImgInput') as HTMLInputElement).click();
-    }
-  });
-  document.getElementById('menuScratch')!.addEventListener('click', async () => {
-    document.getElementById('mainMenu')!.classList.remove('open');
-    if (!(await overwriteGuard())) return;
-    startFromScratch();
-    renderAll();
-    autoPhoneMainView();
+    // If frames were cleared or already empty, renderAll shows the modal
+    // But if renderAll already triggered the modal, we don't double-show
+    // (showNewProjectModal guards against double-open)
+    openNewProjectModal();
   });
   document.getElementById('menuExport')!.addEventListener('click', () => {
     document.getElementById('mainMenu')!.classList.remove('open');
@@ -270,7 +257,11 @@ export function initFramehow(): void {
       showToast('No frames to export');
       return;
     }
-    document.getElementById('exportChooser')!.classList.remove('hidden');
+    if (state().portraitMode) {
+      document.getElementById('portraitExportChooser')!.classList.remove('hidden');
+    } else {
+      document.getElementById('exportChooser')!.classList.remove('hidden');
+    }
   });
   // Account-system menu entries (v1.6)
   document.getElementById('menuSaveProject')!.addEventListener('click', () => {
@@ -289,39 +280,6 @@ export function initFramehow(): void {
     document.getElementById('mainMenu')!.classList.remove('open');
     void flowAccountOrSignIn();
   });
-
-  // Empty-state buttons — wired via a function so renderAll() can re-attach
-  // them after restoring the empty-state markup.
-  function wireEmptyButtons(): void {
-    const pdf = document.getElementById('startLoadPdf');
-    const imgs = document.getElementById('startLoadImages');
-    const scratch = document.getElementById('startScratch');
-    const openProj = document.getElementById('startOpenProject');
-    if (pdf) pdf.addEventListener('click', () => {
-      clearAllDrawActive();
-      (document.getElementById('pdfInput') as HTMLInputElement).click();
-    });
-    if (imgs) imgs.addEventListener('click', () => {
-      clearAllDrawActive();
-      (document.getElementById('folderImgInput') as HTMLInputElement).click();
-    });
-    if (scratch) scratch.addEventListener('click', () => {
-      startFromScratch();
-      renderAll();
-      autoPhoneMainView();
-    });
-    if (openProj) {
-      const gap = document.getElementById('startOpenProjectGap');
-      // Always show Open Project — if not logged in, the flow will prompt login first.
-      openProj.classList.remove('hidden');
-      if (gap) gap.classList.remove('hidden');
-      openProj.addEventListener('click', () => {
-        void flowLoadProject();
-      });
-    }
-  }
-  (window as any).__fh_wireEmptyButtons = wireEmptyButtons;
-  wireEmptyButtons();
 
   // PDF input
   document.getElementById('pdfInput')!.addEventListener('change', async (e) => {
@@ -351,7 +309,7 @@ export function initFramehow(): void {
   });
   document.getElementById('exportFmtImages')!.addEventListener('click', () => {
     document.getElementById('exportChooser')!.classList.add('hidden');
-    runImageExport();
+    openImageExportModal();
   });
 
   // PDF export modal
@@ -382,6 +340,34 @@ export function initFramehow(): void {
   );
   document.getElementById('pptxGo')!.addEventListener('click', runPptxExport);
 
+  // Image export modal
+  document.getElementById('imageExportCancel')!.addEventListener('click', () =>
+    document.getElementById('imageExportModal')!.classList.add('hidden')
+  );
+  document.getElementById('imageExportGo')!.addEventListener('click', runImageExport);
+
+  // Portrait (9:16) export chooser
+  document.getElementById('portraitFmtCancel')!.addEventListener('click', () =>
+    document.getElementById('portraitExportChooser')!.classList.add('hidden')
+  );
+  document.getElementById('portraitFmtPDF')!.addEventListener('click', () => {
+    document.getElementById('portraitExportChooser')!.classList.add('hidden');
+    openPortraitExportModal('pdf');
+  });
+  document.getElementById('portraitFmtPPTX')!.addEventListener('click', () => {
+    document.getElementById('portraitExportChooser')!.classList.add('hidden');
+    openPortraitExportModal('pptx');
+  });
+  document.getElementById('portraitFmtImages')!.addEventListener('click', () => {
+    document.getElementById('portraitExportChooser')!.classList.add('hidden');
+    runPortraitImageExport();
+  });
+  // Portrait export modal
+  document.getElementById('portraitExportCancel')!.addEventListener('click', () =>
+    document.getElementById('portraitExportModal')!.classList.add('hidden')
+  );
+  document.getElementById('portraitExportGo')!.addEventListener('click', runPortraitExport);
+
   // View mode buttons
   document.querySelectorAll('.view-btn').forEach((b) =>
     b.addEventListener('click', () => {
@@ -393,11 +379,11 @@ export function initFramehow(): void {
 
       // Left-side buttons: iPad/Desktop only
       if (view === 'group') {
-        if (isPhone) {
-          showToast('This view is available only on iPad and Desktop');
+        if (isPhonePortrait) {
+          showToast('Rotate to landscape to use Groups');
           return;
         }
-        showToast('Coming soon');
+        toggleGroupSidebar();
         return;
       }
       if (view === '3x2') {
@@ -410,7 +396,7 @@ export function initFramehow(): void {
         return;
       }
 
-      if (isPhone && view === 'overview') {
+      if (isPhone && (view === 'overview' || view === 'grid4')) {
         const om = document.getElementById('overviewPhoneMsg')!;
         om.classList.add('show');
         const dismiss = () => {
@@ -452,7 +438,7 @@ export function initFramehow(): void {
         renderMainFrame(div, fid);
         const vd = document.querySelector(`#versionsScroll .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
         if (vd) renderVersionFrame(vd, fid);
-        showToast('Uploaded as new version');
+        // toast removed
       } else {
         f.src = (ev.target as FileReader).result as string;
         f.drawMode = false;
@@ -492,9 +478,9 @@ export function initFramehow(): void {
         const cvs = div.querySelector(`#cvs_${fid}_${nai}`) as HTMLCanvasElement | null;
         if (cvs) drawFit(cvs, (ev.target as FileReader).result as string);
       }
-      if (state().currentViewMode === 'overview') {
+      if (state().currentViewMode === 'overview' || state().currentViewMode === 'grid4') {
         const ovRow = document.querySelector(`#overviewScroll .overview-row[data-ofid="${fid}"]`) as HTMLElement | null;
-        if (ovRow) renderOverviewRow(ovRow, fid);
+        if (ovRow) { state().currentViewMode === 'grid4' ? renderGrid4Row(ovRow, fid) : renderOverviewRow(ovRow, fid); }
       }
       useStore.setState({ overviewAction: false });
     };
@@ -549,6 +535,9 @@ export function initFramehow(): void {
   }
   refreshAccountMenuLabel();
   subscribeSession(refreshAccountMenuLabel);
+
+  // Keep toolbar project name in sync with currentProject changes (save, load, rename)
+  subscribeProject(() => updateFrameBadge());
 
   // Save toaster trigger logic
   // ------------------------------------------------------------------------
@@ -610,6 +599,31 @@ export function initFramehow(): void {
     });
   }
 
-  // Kick off async bootstrap last so all wiring is in place when modals open.
-  void bootstrapAccountSystem();
+  // Hide view-bar on initial empty state
+  const viewBarEl = document.querySelector('.view-bar') as HTMLElement | null;
+  if (viewBarEl && !state().frames.length) viewBarEl.style.display = 'none';
+
+  // Startup flow: if empty, show loading line while bootstrap checks for
+  // saved work / session.  Only show the Signpost modal if still empty after.
+  if (!state().frames.length) {
+    const loadingLine = document.getElementById('startupLoadingLine');
+    if (loadingLine) loadingLine.classList.remove('hidden');
+
+    bootstrapAccountSystem().then(() => {
+      if (loadingLine) loadingLine.classList.add('hidden');
+      // Bootstrap already handled the "logged in + no frames" case by
+      // opening the project list (and the list's close handler re-opens
+      // the Signpost if the user cancels). So we only need the Signpost
+      // here for the NOT-logged-in-and-still-empty case.
+      // DON'T re-open if a project load is in flight (frames not yet populated).
+    }).catch(() => {}).finally(() => {
+      if (loadingLine) loadingLine.classList.add('hidden');
+      if (!state().frames.length && !isNewProjectModalOpen() && !isLoggedIn()) {
+        openNewProjectModal();
+      }
+    });
+  } else {
+    // Already have frames (shouldn't happen on fresh load, but be safe)
+    void bootstrapAccountSystem();
+  }
 }

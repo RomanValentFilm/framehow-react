@@ -20,6 +20,17 @@ import {
 import { restoreCanvas, restoreMainCanvas, setupDrawing, setupMainDrawing } from './drawing';
 import { addCrossSwipe, addNavArrows, scheduleSyncHeights } from './view';
 import { showLabelEdit, showVerLabelEdit } from './modals';
+import { getVisibleFrames, updateGroupButtonState } from './groups';
+
+/** In portrait mode, return a window of [prev, active, next] indices. Otherwise all. */
+function windowedTabIndices(tabs: any[], activeIdx: number, isPortrait: boolean): number[] {
+  if (!isPortrait || tabs.length <= 3) return tabs.map((_, i) => i);
+  const result: number[] = [];
+  if (activeIdx > 0) result.push(activeIdx - 1);
+  result.push(activeIdx);
+  if (activeIdx < tabs.length - 1) result.push(activeIdx + 1);
+  return result;
+}
 
 export function renderAll(): void {
   saveOpenTextEdits();
@@ -31,38 +42,45 @@ export function renderAll(): void {
   versionsScroll.innerHTML = '';
   overviewScroll.innerHTML = '';
   const s = state();
-  if (!s.frames.length) {
-    // Restore the empty-state startup screen
-    mainScroll.innerHTML = `
-      <div class="empty-state" id="emptyStateMain">
-        <div class="empty-icon">◎</div>
-        <p>Start your storyboard</p>
-        <div class="start-options">
-          <button class="btn btn-accent" id="startLoadPdf">Load Storyboard from PDF</button>
-          <button class="btn btn-accent" id="startLoadImages">Load Images from Folder</button>
-          <button class="btn btn-accent" id="startScratch">Start from Scratch</button>
-        </div>
-        <div id="startOpenProjectGap" style="height:12px"></div>
-        <button class="btn btn-accent" id="startOpenProject">Open Project</button>
-      </div>`;
-    versionsScroll.innerHTML = `
-      <div class="empty-state">
-        <div class="empty-icon" style="opacity:0.4">≡</div>
-        <p style="opacity:0.5">Versions will appear<br>alongside each frame</p>
-      </div>`;
-    // Re-wire the empty-state button handlers
-    const wireEmptyButtons = (window as any).__fh_wireEmptyButtons;
-    if (wireEmptyButtons) wireEmptyButtons();
+  // Toggle portrait-mode class on body for CSS sizing
+  document.body.classList.toggle('portrait-mode', !!s.portraitMode);
+  // Sync column layout classes with current view mode (ensures consistency
+  // after project load, view reset, etc. regardless of how we got here)
+  const columnsEl = document.querySelector('.columns');
+  if (columnsEl) {
+    columnsEl.classList.remove('view-main', 'view-ver', 'view-overview', 'view-grid4');
+    if (s.currentViewMode === 'main') columnsEl.classList.add('view-main');
+    else if (s.currentViewMode === 'ver') columnsEl.classList.add('view-ver');
+    else if (s.currentViewMode === 'overview') columnsEl.classList.add('view-overview');
+    else if (s.currentViewMode === 'grid4') columnsEl.classList.add('view-grid4');
+  }
+  document.querySelectorAll('.view-btn').forEach((b) => {
+    b.classList.toggle('active', (b as HTMLElement).dataset.view === s.currentViewMode);
+  });
+  // Show/hide view-bar based on whether we have frames
+  const viewBarEl = document.querySelector('.view-bar') as HTMLElement | null;
+  if (viewBarEl) viewBarEl.style.display = s.frames.length ? '' : 'none';
+
+  const visibleFrames = getVisibleFrames();
+  if (!visibleFrames.length) {
+    // Empty state — just clear the scroll areas
+    mainScroll.innerHTML = '<div class="empty-state" id="emptyStateMain"></div>';
+    versionsScroll.innerHTML = '';
     return;
   }
-  s.frames.forEach((f) => {
+  visibleFrames.forEach((f) => {
     mainScroll.appendChild(buildMainFrame(f));
     versionsScroll.appendChild(buildVersionFrame(f.id));
   });
   if (s.currentViewMode === 'overview') {
     const fn = (window as any).__fh_renderOverview;
     if (fn) fn();
+  } else if (s.currentViewMode === 'grid4') {
+    const fn = (window as any).__fh_renderGrid4;
+    if (fn) fn();
   }
+  updateFrameBadge();
+  updateGroupButtonState();
   requestAnimationFrame(() => scheduleSyncHeights());
 }
 
@@ -118,15 +136,18 @@ export function renderMainFrame(div: HTMLElement, fid: number): void {
       ver = tabs[ai],
       cid = `mcvs_${fid}_${ai}`;
     const isCReorder = s.verReorderFid === fid;
+    const visIndices = windowedTabIndices(tabs, ai, s.portraitMode);
     const tabsHTML =
-      tabs
+      visIndices
         .map(
-          (t: any, i: number) =>
-            `<button class="vtab ${
+          (i: number) => {
+            const t = tabs[i];
+            return `<button class="vtab ${
               i === ai ? 'active' + (isCReorder ? ' reorder-highlight' : '') : ''
             }${i === ai && s.swipeHighlightFid === fid ? ' swipe-highlight' : ''}" data-cfidtab="${fid}" data-cidx="${i}"${
               t.hidden ? ' style="opacity:0.3;"' : ''
-            }>${t.label}</button>`
+            }>${t.label}</button>`;
+          }
         )
         .join('') + `<button class="vtab-add" data-cvadd="${fid}">+</button>`;
     const reorderHTML =
@@ -170,7 +191,7 @@ export function renderMainFrame(div: HTMLElement, fid: number): void {
         <button class="act-btn${cVerHidden ? ' disabled' : ''}" data-cact="copy" data-cfid="${fid}">Copy</button>
         <button class="act-btn${cVerHidden ? ' disabled' : ''}" data-cact="paste" data-cfid="${fid}">Paste</button>
         <button class="act-btn" data-cact="clear" data-cfid="${fid}">Hide/Del</button>
-        <button class="act-btn${cVerHidden ? ' disabled' : s.prevFrameState[fid] && s.prevFrameState[fid]!.origin === 'ver' ? '' : ' disabled'}" data-cact="undo" data-cfid="${fid}" style="margin-left:auto">Undo</button>
+        <button class="act-btn${cVerHidden ? ' disabled' : s.prevFrameState[fid] && s.prevFrameState[fid]!.origin === 'ver' ? '' : ' disabled'}" data-cact="undo" data-cfid="${fid}"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M7 19v-2h7.1c1.15 0 2.13-.4 2.93-1.2.8-.8 1.2-1.78 1.2-2.93s-.4-2.13-1.2-2.93c-.8-.8-1.78-1.2-2.93-1.2H7.83l2.59 2.59L9 12.74 4 7.74l5-5 1.41 1.41L7.83 6.74H14.1c1.71 0 3.16.6 4.36 1.8s1.8 2.65 1.8 4.36-.6 3.16-1.8 4.36-2.65 1.8-4.36 1.8H7Z"/></svg></button>
       </div>`;
 
     div.querySelectorAll('[data-cfidtab]').forEach((t) =>
@@ -363,7 +384,7 @@ export function renderMainFrame(div: HTMLElement, fid: number): void {
       <button class="act-btn" data-mact="copy" data-mfid="${fid}">Copy</button>
       <button class="act-btn" data-mact="paste" data-mfid="${fid}">Paste</button>
       <button class="act-btn" data-mact="delete" data-mfid="${fid}">Hide/Del</button>
-      <button class="act-btn${s.prevFrameState[fid] && s.prevFrameState[fid]!.origin === 'main' ? '' : ' disabled'}" data-mact="undo" data-mfid="${fid}" style="margin-left:auto">Undo</button>
+      <button class="act-btn${s.prevFrameState[fid] && s.prevFrameState[fid]!.origin === 'main' ? '' : ' disabled'}" data-mact="undo" data-mfid="${fid}"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M7 19v-2h7.1c1.15 0 2.13-.4 2.93-1.2.8-.8 1.2-1.78 1.2-2.93s-.4-2.13-1.2-2.93c-.8-.8-1.78-1.2-2.93-1.2H7.83l2.59 2.59L9 12.74 4 7.74l5-5 1.41 1.41L7.83 6.74H14.1c1.71 0 3.16.6 4.36 1.8s1.8 2.65 1.8 4.36-.6 3.16-1.8 4.36-2.65 1.8-4.36 1.8H7Z"/></svg></button>
     </div>`;
 
   div.querySelectorAll('.color-dot[data-mfid]').forEach((d) =>
@@ -509,7 +530,7 @@ export function renderVersionFrame(div: HTMLElement, fid: number): void {
         <button class="act-btn" data-mact="copy" data-mfid="${fid}">Copy</button>
         <button class="act-btn" data-mact="paste" data-mfid="${fid}">Paste</button>
         <button class="act-btn" data-mact="delete" data-mfid="${fid}">Hide/Del</button>
-        <button class="act-btn${s.prevFrameState[fid] && s.prevFrameState[fid]!.origin === 'main' ? '' : ' disabled'}" data-mact="undo" data-mfid="${fid}" style="margin-left:auto">Undo</button>
+        <button class="act-btn${s.prevFrameState[fid] && s.prevFrameState[fid]!.origin === 'main' ? '' : ' disabled'}" data-mact="undo" data-mfid="${fid}"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M7 19v-2h7.1c1.15 0 2.13-.4 2.93-1.2.8-.8 1.2-1.78 1.2-2.93s-.4-2.13-1.2-2.93c-.8-.8-1.78-1.2-2.93-1.2H7.83l2.59 2.59L9 12.74 4 7.74l5-5 1.41 1.41L7.83 6.74H14.1c1.71 0 3.16.6 4.36 1.8s1.8 2.65 1.8 4.36-.6 3.16-1.8 4.36-2.65 1.8-4.36 1.8H7Z"/></svg></button>
       </div>`;
     div.querySelectorAll('.color-dot[data-mfid]').forEach((d) =>
       d.addEventListener('click', () => {
@@ -569,18 +590,21 @@ export function renderVersionFrame(div: HTMLElement, fid: number): void {
   }
 
   const isVReorder = s.verReorderFid === fid;
+  const vVisIndices = windowedTabIndices(tabs, ai, s.portraitMode);
   const tabsHTML =
-    tabs
+    vVisIndices
       .map(
-        (t: any, i: number) =>
-          `<button class="vtab ${
+        (i: number) => {
+          const t = tabs[i];
+          return `<button class="vtab ${
             i === ai
               ? 'active' + (isVReorder ? ' reorder-highlight' : '') + (s.swipeHighlightFid === fid ? ' swipe-highlight' : '')
               : ''
           }" data-fid="${fid}" data-idx="${i}"${
             (i === ai && s.verSlideDir ? ` style="--slide-dir:${s.verSlideDir}"` : '') +
             (!s.verSlideDir && t.hidden ? ` style="opacity:0.3"` : '')
-          }>${t.label}</button>`
+          }>${t.label}</button>`;
+        }
       )
       .join('') + `<button class="vtab-add" data-vadd="${fid}">+</button>`;
   const reorderHTML =
@@ -630,7 +654,7 @@ export function renderVersionFrame(div: HTMLElement, fid: number): void {
         <button class="act-btn${_verHidden ? ' disabled' : ''}" ${_verHidden ? '' : 'data-action="copy" data-fid="' + fid + '"'}>Copy</button>
         <button class="act-btn${_verHidden ? ' disabled' : ''}" ${_verHidden ? '' : 'data-action="paste" data-fid="' + fid + '"'}>Paste</button>
         <button class="act-btn${_verHidden ? ' disabled' : ''}" ${_verHidden ? '' : 'data-action="clear" data-fid="' + fid + '"'}>Hide/Del</button>
-        <button class="act-btn${_verHidden ? ' disabled' : s.prevFrameState[fid] && s.prevFrameState[fid]!.origin === 'ver' ? '' : ' disabled'}" ${_verHidden ? '' : 'data-action="undo" data-fid="' + fid + '"'} style="margin-left:auto">Undo</button>
+        <button class="act-btn${_verHidden ? ' disabled' : s.prevFrameState[fid] && s.prevFrameState[fid]!.origin === 'ver' ? '' : ' disabled'}" ${_verHidden ? '' : 'data-action="undo" data-fid="' + fid + '"'}><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M7 19v-2h7.1c1.15 0 2.13-.4 2.93-1.2.8-.8 1.2-1.78 1.2-2.93s-.4-2.13-1.2-2.93c-.8-.8-1.78-1.2-2.93-1.2H7.83l2.59 2.59L9 12.74 4 7.74l5-5 1.41 1.41L7.83 6.74H14.1c1.71 0 3.16.6 4.36 1.8s1.8 2.65 1.8 4.36-.6 3.16-1.8 4.36-2.65 1.8-4.36 1.8H7Z"/></svg></button>
       </div>
     </div>`;
   div.querySelectorAll('.vtab[data-fid]').forEach((t) =>
@@ -655,10 +679,12 @@ export function renderVersionFrame(div: HTMLElement, fid: number): void {
     vUnhideBtn.addEventListener('click', () => {
       unhideVersion(ver, fid);
       renderVersionFrame(div, fid);
-      if (s.currentViewMode === 'overview') {
+      if (s.currentViewMode === 'overview' || s.currentViewMode === 'grid4') {
         const row = document.querySelector(`#overviewScroll .overview-row[data-ofid="${fid}"]`) as HTMLElement | null;
-        const fn = (window as any).__fh_renderOverviewRow;
-        if (row && fn) fn(row, fid);
+        if (row) {
+          if (s.currentViewMode === 'grid4') { const fn = (window as any).__fh_renderGrid4Row; if (fn) fn(row, fid); }
+          else { const fn = (window as any).__fh_renderOverviewRow; if (fn) fn(row, fid); }
+        }
       }
     });
   div.querySelectorAll('[data-editverlabel]').forEach((el) =>

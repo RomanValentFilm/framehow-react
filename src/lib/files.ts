@@ -5,6 +5,7 @@ import { setProgress, showToast } from './modals';
 import { fhTrack } from './tracking';
 import { renderAll } from './render';
 import { autoPhoneMainView } from './view';
+import { updateFrameBadge } from './helpers';
 
 export function handleFolderImages(e: Event): void {
   fhTrack('images_loaded');
@@ -91,12 +92,9 @@ export function handleFolderImages(e: Event): void {
               });
               setProgress(100, 'Done!');
               setTimeout(() => document.getElementById('progressOverlay')!.classList.add('hidden'), 300);
-              document.getElementById('frameBadge')!.textContent = `${s.frames.length} frame${
-                s.frames.length !== 1 ? 's' : ''
-              }`;
               renderAll();
               autoPhoneMainView();
-              showToast(`${s.frames.length} image${s.frames.length !== 1 ? 's' : ''} loaded`);
+              // toast removed
             }
           };
           img.src = (re.target as FileReader).result as string;
@@ -113,13 +111,14 @@ export function handleFolderImages(e: Event): void {
 export function startFromScratch(): void {
   fhTrack('start_scratch');
   resetStoryboardState();
+  useStore.setState({ portraitMode: false });
   const s = state();
   const id = s.nextId;
   useStore.setState({ nextId: id + 1 });
   s.frames.push({
     id,
     src: '',
-    label: '#1',
+    label: '1',
     cropW: 900,
     cropH: 506,
     strokes: [],
@@ -132,6 +131,31 @@ export function startFromScratch(): void {
   s.drawColor[id] = COLORS[0];
   s.drawWidth[id] = 6;
   s.drawEraser[id] = false;
-  document.getElementById('frameBadge')!.textContent = '1 frame';
-  showToast('New storyboard — add frames with + button');
+  updateFrameBadge();
+}
+
+export function startPortrait(): void {
+  fhTrack('start_portrait');
+  resetStoryboardState();
+  useStore.setState({ portraitMode: true });
+  const s = state();
+  const id = s.nextId;
+  useStore.setState({ nextId: id + 1 });
+  s.frames.push({
+    id,
+    src: '',
+    label: 'name',
+    cropW: 540,
+    cropH: 960,
+    strokes: [],
+    drawMode: false,
+    textContent: '',
+    tableData: null,
+  });
+  s.versions[id] = [{ id: 1, label: 'v1', type: 'empty', strokes: [], bgImage: null }];
+  s.activeTab[id] = 0;
+  s.drawColor[id] = COLORS[0];
+  s.drawWidth[id] = 6;
+  s.drawEraser[id] = false;
+  updateFrameBadge();
 }

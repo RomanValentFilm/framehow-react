@@ -3,10 +3,13 @@
 
 import { state, useStore, isTouch } from '../store/state';
 import type { ViewMode } from '../store/state';
-import { hasVisibleVer, nextVisibleVer, ovCollapseExpanded, clearAllDrawActive, clearReorder, relabelVersions, saveOpenTextEdits, saveOpenTableEdits } from './helpers';
+
+import { hasVisibleVer, nextVisibleVer, ovCollapseExpanded, clearAllDrawActive, clearReorder, relabelVersions, saveOpenTextEdits, saveOpenTableEdits, _actionAnchorTimers } from './helpers';
 import { fhTrack } from './tracking';
 
 let _syncRAF: number | null = null;
+// Orientation-flip anchor timers — can be cancelled if user starts scrolling
+const _orientAnchorTimers: number[] = [];
 export function scheduleSyncHeights(): void {
   if (!_syncRAF) {
     _syncRAF = requestAnimationFrame(() => {
@@ -16,11 +19,35 @@ export function scheduleSyncHeights(): void {
   }
 }
 
+/* ── iOS touch-device detection ──
+   On iOS Safari/PWA, scrolling hides/shows the URL bar + toolbar, which
+   changes window.innerHeight. For portrait (9:16) projects this causes
+   visible layout jumps because canvas width is derived from height.
+   We detect iOS and standalone (PWA) mode separately to tune behaviour. */
+// iPadOS 13+ spoofs "Macintosh" in the UA string, so also check for
+// touch-capable Mac (= iPad pretending to be desktop Safari).
+const _isIOS = isTouch
+  && (/iPad|iPhone/.test(navigator.userAgent)
+      || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
+const _isPWA = !!(window.navigator as any).standalone;   // "Added to Home Screen"
+
+/* Lock innerHeight on first call for iOS Safari portrait projects.
+   Prevents jumps when bars hide and a later scheduleSyncHeights re-runs. */
+let _lockedIH: number | null = null;
+function _getLockedIH(): number {
+  if (_lockedIH === null) _lockedIH = window.innerHeight;
+  return _lockedIH;
+}
+/* Reset lock on real orientation change */
+function _resetLockedIH(): void { _lockedIH = null; }
+
 export function syncCardHeights(): void {
   const mainScroll = document.getElementById('mainScroll')!;
   const versionsScroll = document.getElementById('versionsScroll')!;
   const mainCards = mainScroll.querySelectorAll('.frame-card');
   const verCards = versionsScroll.querySelectorAll('.frame-card');
+
+  // STEP 1: Reset all cards to natural height
   mainCards.forEach((c) => {
     (c as HTMLElement).style.height = 'auto';
     (c as HTMLElement).style.minHeight = 'auto';
@@ -29,6 +56,78 @@ export function syncCardHeights(): void {
     (c as HTMLElement).style.height = 'auto';
     (c as HTMLElement).style.minHeight = 'auto';
   });
+
+  // STEP 2: Measure non-canvas overhead per card and cap the canvas so the
+  // full card (label + canvas + buttons) fits on screen without scrolling.
+  // Works for both portrait (9:16) and landscape (16:9) projects.
+  const s = state();
+  const toolbar = document.getElementById('mainToolbar');
+  const viewBar = document.querySelector('.view-bar');
+  const topChrome = (toolbar ? toolbar.getBoundingClientRect().height : 0)
+                  + (viewBar ? viewBar.getBoundingClientRect().height : 0);
+  // Touch devices: 90% (toolbar scrolls away). Desktop: 85%.
+  const factor = isTouch ? 0.9 : 0.85;
+  // iOS Safari + portrait: use locked innerHeight so bar toggling can't cause jumps.
+  // Everything else (landscape, desktop, PWA): use live innerHeight.
+  const vh = (_isIOS && !_isPWA && s.portraitMode) ? _getLockedIH() : window.innerHeight;
+  const target = Math.floor((vh - topChrome) * factor);
+
+  // Portrait: always cap (canvas is taller than wide, overflows everywhere).
+  // Landscape: only cap in desktop MAIN view (full-width column causes overflow;
+  //            TWIN/VRSN/GRID columns are narrow enough to self-constrain).
+  const capLandscape = !s.portraitMode && !isTouch && (s.currentViewMode === 'main' || s.currentViewMode === 'ver');
+
+  if (s.portraitMode || capLandscape) {
+    [...mainCards, ...verCards].forEach((card) => {
+      const wrap = card.querySelector('.canvas-wrap') as HTMLElement;
+      if (!wrap) return;
+      // Hide canvas so card height = pure overhead (label + buttons + padding)
+      wrap.style.display = 'none';
+      void (card as HTMLElement).offsetHeight;
+      const overhead = card.getBoundingClientRect().height;
+      wrap.style.display = '';
+      const avail = Math.max(80, target - overhead);
+      if (s.portraitMode && isTouch) {
+        // Portrait TOUCH on iOS — per-device size tuning.
+        // "avail" = viewport minus toolbars minus card overhead × 90%.
+        // Multipliers tuned by user testing on real devices:
+        const isPhone = Math.min(window.innerWidth, window.innerHeight) <= 430;
+        let ph = avail;
+        if (_isIOS) {
+          if (_isPWA) {
+            ph = Math.floor(avail * (isPhone ? 1.03 : 1.06));  // PWA iPhone +3%, iPad +6%
+          } else {
+            ph = Math.floor(avail * (isPhone ? 1.28 : 1.12));  // Safari iPhone +28%, iPad +12%
+          }
+        }
+        wrap.style.setProperty('--ph', ph + 'px');
+        wrap.style.maxWidth = '';
+        wrap.style.maxHeight = '';
+      } else if (s.portraitMode) {
+        // Portrait DESKTOP: height-first (fit card on screen)
+        wrap.style.setProperty('--ph', avail + 'px');
+        wrap.style.maxWidth = '';
+        wrap.style.maxHeight = '';
+      } else {
+        // Landscape desktop MAIN: cap width (derived from height × aspect ratio)
+        // so that aspect-ratio naturally produces the right height.
+        const ar = wrap.style.aspectRatio || '16 / 9';
+        const parts = ar.split('/').map(Number);
+        const aspect = (parts[0] || 16) / (parts[1] || 9);
+        wrap.style.maxWidth = Math.floor(avail * aspect) + 'px';
+        wrap.style.margin = '0 auto';
+        wrap.style.maxHeight = '';
+      }
+    });
+  } else {
+    // TWIN/VRSN/GRID landscape: clear any stale caps from a previous MAIN view
+    [...mainCards, ...verCards].forEach((card) => {
+      const wrap = card.querySelector('.canvas-wrap') as HTMLElement;
+      if (wrap) { wrap.style.maxHeight = ''; wrap.style.maxWidth = ''; }
+    });
+  }
+
+  // STEP 3: Force layout, then sync main ↔ version card heights
   void document.body.offsetHeight;
   for (let i = 0; i < mainCards.length && i < verCards.length; i++) {
     const mRect = mainCards[i].getBoundingClientRect();
@@ -39,6 +138,7 @@ export function syncCardHeights(): void {
     (mainCards[i] as HTMLElement).style.minHeight = max + 'px';
     (verCards[i] as HTMLElement).style.minHeight = max + 'px';
   }
+
   [...mainCards, ...verCards].forEach((card) => {
     const wrap = card.querySelector('.canvas-wrap');
     if (!wrap) return;
@@ -61,13 +161,13 @@ export function syncCardHeights(): void {
 export function _updateCenterFid(): void {
   const s = state();
   const scrollEl =
-    s.currentViewMode === 'overview'
+    s.currentViewMode === 'overview' || s.currentViewMode === 'grid4'
       ? document.getElementById('overviewScroll')
       : s.currentViewMode === 'ver'
       ? document.getElementById('versionsScroll')
       : document.getElementById('mainScroll');
   if (!scrollEl || !s.frames.length) return;
-  const sel = s.currentViewMode === 'overview' ? '.overview-row' : '.frame-card';
+  const sel = s.currentViewMode === 'overview' || s.currentViewMode === 'grid4' ? '.overview-row' : '.frame-card';
   const cards = scrollEl.querySelectorAll(sel);
   const screenMid = window.innerHeight / 2;
   let best: HTMLElement | null = null,
@@ -88,7 +188,7 @@ export function scrollAnchorTo(fid: string | number | null): void {
   if (!fid) return;
   const s = state();
   let target: HTMLElement | null = null;
-  if (s.currentViewMode === 'overview')
+  if (s.currentViewMode === 'overview' || s.currentViewMode === 'grid4')
     target = document.querySelector(`#overviewScroll .overview-row[data-ofid="${fid}"]`) as HTMLElement | null;
   else if (s.currentViewMode === 'ver')
     target = document.querySelector(`#versionsScroll .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
@@ -109,14 +209,14 @@ export function setViewMode(mode: ViewMode, keepCompare?: boolean, forceAnchorFi
   let anchorFid: string | null = forceAnchorFid || null;
   if (!anchorFid) {
     const visibleScroll =
-      s.currentViewMode === 'overview'
+      s.currentViewMode === 'overview' || s.currentViewMode === 'grid4'
         ? document.getElementById('overviewScroll')
         : s.currentViewMode === 'ver'
         ? document.getElementById('versionsScroll')
         : document.getElementById('mainScroll');
     if (visibleScroll) {
       const cards =
-        s.currentViewMode === 'overview'
+        s.currentViewMode === 'overview' || s.currentViewMode === 'grid4'
           ? visibleScroll.querySelectorAll('.overview-row')
           : visibleScroll.querySelectorAll('.frame-card');
       let anchorCard: HTMLElement | null = null;
@@ -153,16 +253,17 @@ export function setViewMode(mode: ViewMode, keepCompare?: boolean, forceAnchorFi
     });
   }
   const columnsEl = document.querySelector('.columns')!;
-  columnsEl.classList.remove('view-main', 'view-ver', 'view-overview');
+  columnsEl.classList.remove('view-main', 'view-ver', 'view-overview', 'view-grid4');
   if (mode === 'main') columnsEl.classList.add('view-main');
   else if (mode === 'ver') columnsEl.classList.add('view-ver');
   else if (mode === 'overview') columnsEl.classList.add('view-overview');
+  else if (mode === 'grid4') columnsEl.classList.add('view-grid4');
   document.querySelectorAll('.view-btn').forEach((b) => {
     b.classList.toggle('active', (b as HTMLElement).dataset.view === mode);
   });
 
-  if (mode === 'overview') {
-    const fn = (window as any).__fh_renderOverview;
+  if (mode === 'overview' || mode === 'grid4') {
+    const fn = mode === 'grid4' ? (window as any).__fh_renderGrid4 : (window as any).__fh_renderOverview;
     if (fn) fn();
   } else {
     document.getElementById('overviewScroll')!.innerHTML = '';
@@ -175,7 +276,7 @@ export function setViewMode(mode: ViewMode, keepCompare?: boolean, forceAnchorFi
       if (fn) fn(div, parseInt((div as HTMLElement).dataset.vfid!));
     });
   }
-  if (mode !== 'overview') syncCardHeights();
+  if (mode !== 'overview' && mode !== 'grid4') syncCardHeights();
 
   if (anchorFid) {
     void (columnsEl as HTMLElement).offsetHeight;
@@ -235,6 +336,7 @@ export function navigateStrip(fid: number, fromStrip: 'main' | 'ver', dir: 'left
       const div = document.querySelector(`#versionsScroll .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
       if (div && renderVer) renderVer(div, fid);
     }
+    requestAnimationFrame(() => scrollAnchorTo(fid));
     return;
   }
   if (fromStrip === 'main' && s.currentViewMode === 'main') {
@@ -292,6 +394,8 @@ export function navigateStrip(fid: number, fromStrip: 'main' | 'ver', dir: 'left
       }
     }
   }
+  // Scroll-anchor the frame we just navigated so it stays centered (desktop 9:16)
+  requestAnimationFrame(() => scrollAnchorTo(fid));
 }
 
 export function addNavArrows(wrapEl: HTMLElement, fid: number, fromStrip: 'main' | 'ver'): void {
@@ -386,6 +490,7 @@ export function addCrossSwipe(el: HTMLElement, fid: number, fromStrip: 'main' | 
             useStore.setState({ swipeHighlightFid: fid });
             const div = document.querySelector(`#mainScroll .frame-card[data-mfid="${fid}"]`) as HTMLElement | null;
             if (div && renderMain) renderMain(div, fid);
+            requestAnimationFrame(() => scrollAnchorTo(fid));
           }
         } else if (dx > 0 && cur >= 0) {
           const prv = cur - 1;
@@ -398,16 +503,19 @@ export function addCrossSwipe(el: HTMLElement, fid: number, fromStrip: 'main' | 
           useStore.setState({ swipeHighlightFid: fid });
           const div = document.querySelector(`#mainScroll .frame-card[data-mfid="${fid}"]`) as HTMLElement | null;
           if (div && renderMain) renderMain(div, fid);
+          requestAnimationFrame(() => scrollAnchorTo(fid));
         }
       } else if (fromStrip === 'ver' && s.currentViewMode === 'ver') {
         if (dx > 0 && cur < 0) {
           s.crossCompare[fid] = 0;
           const div = document.querySelector(`#versionsScroll .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
           if (div && renderVer) renderVer(div, fid);
+          requestAnimationFrame(() => scrollAnchorTo(fid));
         } else if (dx < 0 && cur >= 0) {
           s.crossCompare[fid] = -1;
           const div = document.querySelector(`#versionsScroll .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
           if (div && renderVer) renderVer(div, fid);
+          requestAnimationFrame(() => scrollAnchorTo(fid));
         }
       }
     },
@@ -455,6 +563,8 @@ export function handleOrientationFlip(): void {
   // Leave it as-is and do one clean reset after layout settles.
   useStore.setState({ scrollHideGuard: Date.now() + 1500 });
 
+  // Use centerFid captured BEFORE the layout started shifting
+  // (set by _updateCenterFid() in the resize/orientationchange handler)
   const fid = state().centerFid;
   const isPhone = Math.min(newW, newH) <= 430;
   const isPhonePortrait = isPhone && newH > newW;
@@ -463,12 +573,16 @@ export function handleOrientationFlip(): void {
   }
   syncCardHeights();
   if (!fid) return;
-  [0, 50, 150, 300, 500, 800, 1200].forEach((delay) =>
-    setTimeout(() => {
+  // Cancel any previous orientation-anchor timers
+  _orientAnchorTimers.forEach(clearTimeout);
+  _orientAnchorTimers.length = 0;
+  [0, 50, 150, 300, 500, 800, 1200].forEach((delay) => {
+    const tid = window.setTimeout(() => {
       syncCardHeights();
       scrollAnchorTo(fid);
-    }, delay)
-  );
+    }, delay);
+    _orientAnchorTimers.push(tid);
+  });
 
   // Single toolbar reset after layout fully settles
   setTimeout(() => {
@@ -490,14 +604,47 @@ export function wireScrollHandlers(): void {
     { passive: true }
   );
 
+  // If user starts scrolling/touching, cancel any pending anchor timers
+  // (both orientation and action) so they don't yank the scroll position back.
+  window.addEventListener('touchstart', () => {
+    if (_orientAnchorTimers.length) {
+      _orientAnchorTimers.forEach(clearTimeout);
+      _orientAnchorTimers.length = 0;
+    }
+    if (_actionAnchorTimers.length) {
+      _actionAnchorTimers.forEach(clearTimeout);
+      _actionAnchorTimers.length = 0;
+    }
+  }, { passive: true });
+
   let resizeTimer: number | null = null;
+  let _lastOrient = window.innerWidth > window.innerHeight ? 'L' : 'P';
   window.addEventListener('resize', () => {
     if (resizeTimer) clearTimeout(resizeTimer);
-    resizeTimer = window.setTimeout(handleOrientationFlip, 150);
+    resizeTimer = window.setTimeout(() => {
+      const nowOrient = window.innerWidth > window.innerHeight ? 'L' : 'P';
+      const orientChanged = nowOrient !== _lastOrient;
+      _lastOrient = nowOrient;
+      if (orientChanged) _resetLockedIH();   // new orientation → unlock height
+
+      // On iOS with a portrait project, skip bar-toggle resize events.
+      // But always allow real orientation changes through.
+      if (_isIOS && state().portraitMode && !orientChanged) return;
+
+      syncCardHeights();
+      handleOrientationFlip();  // does its own multi-delay anchoring when flipped
+    }, 150);
   });
   window.addEventListener('orientationchange', () => {
     if (resizeTimer) clearTimeout(resizeTimer);
-    resizeTimer = window.setTimeout(handleOrientationFlip, 200);
+    _resetLockedIH();         // unlock so next sync picks up new orientation height
+    // Don't call _updateCenterFid() here — window dimensions are mid-transition
+    // and would pick the wrong frame. Use the value already tracked by the scroll listener.
+    resizeTimer = window.setTimeout(() => {
+      _lastOrient = window.innerWidth > window.innerHeight ? 'L' : 'P';
+      syncCardHeights();
+      handleOrientationFlip();  // does its own multi-delay anchoring when flipped
+    }, 200);
   });
 
   if (!isTouch) return;

@@ -4,6 +4,7 @@ import authRouter from "./routes/auth";
 import userRouter from "./routes/user";
 import projectsRouter from "./routes/projects";
 import uploadRouter from "./routes/upload";
+import analyticsRouter from "./routes/analytics";
 
 const app = new Hono<{ Bindings: Env; Variables: AppVariables }>();
 
@@ -27,6 +28,8 @@ app.route("/user", userRouter);
 app.route("/projects", projectsRouter);
 // Upload router owns both /upload and /images/*; mount at root.
 app.route("/", uploadRouter);
+// Analytics: /track (public) + /analytics/* (admin-only)
+app.route("/", analyticsRouter);
 
 app.notFound((c) => c.json({ error: { code: "not_found", message: "Not found." } }, 404));
 

@@ -6,9 +6,12 @@ import jsPDF from 'jspdf';
 import PptxGenJS from 'pptxgenjs';
 import JSZip from 'jszip';
 import { state, useStore } from '../store/state';
+import type { Frame } from '../store/state';
 import { rasterizeMain, rasterizeVersion, versionHasContent, canvasToBlob } from './rasterize';
 import { showToast } from './modals';
 import { fhTrack } from './tracking';
+import { getCurrentProject } from './currentProject';
+import { getVisibleFrames } from './groups';
 
 // iOS detection (covers iPad in desktop-UA mode too).
 const isIOS =
@@ -120,6 +123,47 @@ export function buildPptxVersionPicker(): void {
     });
 }
 
+// ── Group picker for export modals ──
+
+function buildGroupPicker(containerId: string, radioName: string): void {
+  const s = state();
+  const container = document.getElementById(containerId);
+  const wrap = document.getElementById(containerId + 'Wrap');
+  if (!container || !wrap) return;
+
+  // Only show if groups exist
+  if (!s.groups.length) {
+    wrap.style.display = 'none';
+    return;
+  }
+  wrap.style.display = 'block';
+
+  let html = `<label class="exp-group-opt">
+    <input type="radio" name="${radioName}" value="all" checked>
+    <span>ALL (${s.frames.length})</span>
+  </label>`;
+
+  for (const g of s.groups) {
+    const count = g.frameIds.filter(id => s.frames.some(f => f.id === id)).length;
+    html += `<label class="exp-group-opt">
+      <input type="radio" name="${radioName}" value="${g.id}">
+      <span>${escapeHtml(g.name)} (${count})</span>
+    </label>`;
+  }
+  container.innerHTML = html;
+}
+
+function getExportFrames(radioName: string): Frame[] {
+  const s = state();
+  const selected = (document.querySelector(`input[name="${radioName}"]:checked`) as HTMLInputElement)?.value;
+  if (!selected || selected === 'all') return s.frames;
+  const gid = parseInt(selected);
+  const group = s.groups.find(g => g.id === gid);
+  if (!group) return s.frames;
+  const frameMap = new Map(s.frames.map(f => [f.id, f]));
+  return group.frameIds.map(id => frameMap.get(id)).filter((f): f is Frame => !!f);
+}
+
 export function openExportModal(): void {
   const s = state();
   if (!s.frames.length) {
@@ -129,6 +173,7 @@ export function openExportModal(): void {
   document.getElementById('exportModal')!.classList.remove('hidden');
   const nameInput = document.getElementById('exportProjectName') as HTMLInputElement;
   if (!nameInput.value) nameInput.value = s.lastPdfName || 'Storyboard';
+  buildGroupPicker('exportGroupPicker', 'exportGroup');
   buildVersionPicker();
   const layout = (document.querySelector('input[name="exportLayout"]:checked') as HTMLInputElement).value;
   const isOverview = layout === 'overview';
@@ -145,6 +190,7 @@ export function openPptxModal(): void {
   document.getElementById('pptxModal')!.classList.remove('hidden');
   const nameInput = document.getElementById('pptxProjectName') as HTMLInputElement;
   if (!nameInput.value) nameInput.value = s.lastPdfName || 'Storyboard';
+  buildGroupPicker('pptxGroupPicker', 'pptxGroup');
   buildPptxVersionPicker();
   const layout = (document.querySelector('input[name="pptxLayout"]:checked') as HTMLInputElement).value;
   const isOverview = layout === 'overview';
@@ -169,6 +215,11 @@ export async function runExport(): Promise<void> {
     if (!versionInclude[fid]) versionInclude[fid] = [];
     versionInclude[fid][vi] = el.checked;
   });
+
+  const exportFrames = getExportFrames('exportGroup');
+  // Shadow s.frames with group-filtered frames for the entire export
+  const origFrames = s.frames;
+  (s as any).frames = exportFrames;
 
   document.getElementById('exportModal')!.classList.add('hidden');
   showToast('Generating PDF…');
@@ -338,6 +389,27 @@ export async function runExport(): Promise<void> {
     return { cols, rows, frameW: fW, frameH: fH, textH, gutterX, gutterY, startX: centreX, startY };
   }
 
+  /** Portrait mode: 5 tall (9:16) frames side by side on one landscape page. */
+  function calcPortraitGrid() {
+    const cols = 5;
+    const contentW = pageW - 2 * MARGIN;
+    const contentH = pageH - 2 * MARGIN - HEADER_H - FOOTER_H;
+    const gutterX = 4;
+    const aspect = 540 / 960; // 9:16
+    const availW = contentW - gutterX * (cols - 1);
+    let fW = availW / cols;
+    let fH = fW / aspect;
+    // If frames are too tall, constrain by height
+    if (fH + LABEL_H > contentH) {
+      fH = contentH - LABEL_H;
+      fW = fH * aspect;
+    }
+    const gridW = cols * fW + (cols - 1) * gutterX;
+    const centreX = MARGIN + (contentW - gridW) / 2;
+    const startY = MARGIN + HEADER_H;
+    return { cols, frameW: fW, frameH: fH, gutterX, startX: centreX, startY };
+  }
+
   function calcDoubleGrid() {
     const contentW = pageW - 2 * MARGIN;
     const contentH = pageH - 2 * MARGIN - HEADER_H - FOOTER_H;
@@ -414,7 +486,27 @@ export async function runExport(): Promise<void> {
   let page = 0,
     totalPages = 0;
 
-  if (layout === 'main') {
+  if (layout === 'main' && s.portraitMode) {
+    // Portrait mode: 5 tall frames per landscape page
+    const g = calcPortraitGrid();
+    const perPage = g.cols; // 5 per page
+    totalPages = Math.ceil(s.frames.length / perPage);
+    for (let i = 0; i < s.frames.length; i++) {
+      const slot = i % perPage;
+      if (slot === 0) {
+        if (i > 0) pdf.addPage();
+        page++;
+        drawHeader(page, totalPages);
+      }
+      const col = slot;
+      const x = g.startX + col * (g.frameW + g.gutterX);
+      const y = g.startY + LABEL_H;
+      const f = s.frames[i];
+      const cvs = await rasterizeMain(f);
+      await drawFrameTile(x, y, g.frameW, g.frameH, cvs, '', 0);
+      drawFrameLabel(x, y, f.label || `${i + 1}`);
+    }
+  } else if (layout === 'main') {
     const g = calcMainGrid();
     const perPage = g.cols * g.rows;
     totalPages = Math.ceil(s.frames.length / perPage);
@@ -544,6 +636,7 @@ export async function runExport(): Promise<void> {
   const fname = `${projectName.replace(/[^\w\-]+/g, '_')}_${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}.pdf`;
   offerSave(pdf.output('blob') as Blob, fname);
   showToast('PDF ready');
+  (s as any).frames = origFrames;
 }
 
 export async function runPptxExport(): Promise<void> {
@@ -562,6 +655,10 @@ export async function runPptxExport(): Promise<void> {
     if (!versionInclude[fid]) versionInclude[fid] = [];
     versionInclude[fid][vi] = el.checked;
   });
+
+  const exportFrames = getExportFrames('pptxGroup');
+  const origFrames = s.frames;
+  (s as any).frames = exportFrames;
 
   document.getElementById('pptxModal')!.classList.add('hidden');
   showToast('Generating presentation…');
@@ -598,7 +695,40 @@ export async function runPptxExport(): Promise<void> {
     return cvs.toDataURL('image/jpeg', 0.92).split(',')[1];
   }
 
-  if (layout === 'main') {
+  if (layout === 'main' && s.portraitMode) {
+    // Portrait mode: 5 tall frames side by side per slide
+    const cols = 5;
+    const pAspect = 540 / 960;
+    const gapX = 0.15;
+    const availW = SW - 2 * MARGIN - gapX * (cols - 1);
+    let fW = availW / cols;
+    let fH = fW / pAspect;
+    if (fH > SH - 1.0) {
+      fH = SH - 1.0;
+      fW = fH * pAspect;
+    }
+    const gridW = cols * fW + (cols - 1) * gapX;
+    const startX = (SW - gridW) / 2;
+    const perPage = cols;
+    for (let i = 0; i < s.frames.length; i++) {
+      const slot = i % perPage;
+      let slide;
+      if (slot === 0) {
+        slide = newSlide();
+        slide.addText(projectName, { x: MARGIN, y: 0.15, w: SW - 2 * MARGIN, h: 0.3, fontSize: 9, color: '666666', fontFace: 'Helvetica' });
+      } else {
+        slide = pptx.slides[pptx.slides.length - 1];
+      }
+      const col = slot;
+      const x = startX + col * (fW + gapX);
+      const y = 0.7;
+      const f = s.frames[i];
+      const cvs = await rasterizeWithBorder(await rasterizeMain(f));
+      const label = f.label || `${i + 1}`;
+      slide.addText(label, { x, y: y - 0.02, w: fW, h: 0.2, fontSize: 7, bold: true, color: '000000', fontFace: 'Helvetica', valign: 'bottom' });
+      slide.addImage({ data: 'image/jpeg;base64,' + canvasToBase64(cvs), x, y: y + 0.2, w: fW, h: fH });
+    }
+  } else if (layout === 'main') {
     const cols = 3,
       rows = 2;
     const cellW = (SW - 2 * MARGIN - 0.3 * (cols - 1)) / cols;
@@ -748,10 +878,420 @@ export async function runPptxExport(): Promise<void> {
   const blob = (await pptx.write({ outputType: 'blob' })) as Blob;
   offerSave(blob, fname + '.pptx');
   showToast('Presentation ready');
+  (s as any).frames = origFrames;
+}
+
+export function openImageExportModal(): void {
+  const s = state();
+  if (!s.frames.length) {
+    showToast('No frames to export');
+    return;
+  }
+  document.getElementById('imageExportModal')!.classList.remove('hidden');
+  const nameInput = document.getElementById('imageExportProjectName') as HTMLInputElement;
+  if (!nameInput.value) nameInput.value = s.lastPdfName || 'Storyboard';
+  buildGroupPicker('imageGroupPicker', 'imageGroup');
 }
 
 export async function runImageExport(): Promise<void> {
   fhTrack('export_images');
+  showToast('Generating images…');
+  const s = state();
+  const nameInput = document.getElementById('imageExportProjectName') as HTMLInputElement;
+  const projectName = ((nameInput?.value || s.lastPdfName || 'PROJECT_NAME')).replace(/[^\w\-]+/g, '_');
+  const zip = new JSZip();
+  const exportFrames = getExportFrames('imageGroup');
+  const visibleFrames = (exportFrames.length ? exportFrames : getVisibleFrames()).filter((f) => !f.hidden);
+  document.getElementById('imageExportModal')?.classList.add('hidden');
+
+  for (let i = 0; i < visibleFrames.length; i++) {
+    const f = visibleFrames[i];
+    const label = (f.label || `${i + 1}`).replace(/[^\w\-]+/g, '_');
+    const prefix = `${projectName}_${label}`;
+    const mainCvs = await rasterizeMain(f);
+    zip.file(`${prefix}.jpg`, await canvasToBlob(mainCvs), { binary: true });
+    const vers = s.versions[f.id] || [];
+    for (let vi = 0; vi < vers.length; vi++) {
+      const v = vers[vi];
+      if (!versionHasContent(v)) continue;
+      const vLabel = v.label || `v${vi + 1}`;
+      const verCvs = await rasterizeVersion(v, f.cropW, f.cropH);
+      zip.file(`${prefix}_${vLabel}.jpg`, await canvasToBlob(verCvs), { binary: true });
+    }
+  }
+
+  const blob = await zip.generateAsync({ type: 'blob' });
+  offerSave(blob, `${projectName}_images.zip`);
+  showToast('Images ready');
+}
+
+// ---------------------------------------------------------------------------
+// Portrait (9:16) export
+// ---------------------------------------------------------------------------
+
+let _portraitExportMode: 'pdf' | 'pptx' = 'pdf';
+
+export function openPortraitExportModal(mode: 'pdf' | 'pptx'): void {
+  _portraitExportMode = mode;
+  const s = state();
+  if (!s.frames.length) {
+    showToast('No frames to export');
+    return;
+  }
+  document.getElementById('portraitExportTitle')!.textContent =
+    mode === 'pdf' ? 'Export 9:16 as PDF' : 'Export 9:16 as Keynote / PowerPoint';
+  const nameInput = document.getElementById('portraitExportName') as HTMLInputElement;
+  if (!nameInput.value) nameInput.value = getCurrentProject().name || s.lastPdfName || 'Storyboard';
+  document.getElementById('portraitExportModal')!.classList.remove('hidden');
+}
+
+export async function runPortraitExport(): Promise<void> {
+  if (_portraitExportMode === 'pptx') {
+    await runPortraitPptxExport();
+  } else {
+    await runPortraitPdfExport();
+  }
+}
+
+async function runPortraitPdfExport(): Promise<void> {
+  fhTrack('export_portrait_pdf');
+  const s = state();
+  const includeHidden = (document.getElementById('portraitIncludeHidden') as HTMLInputElement).checked;
+  const includeText = (document.getElementById('portraitIncludeText') as HTMLInputElement).checked;
+  const includeTable = (document.getElementById('portraitIncludeTable') as HTMLInputElement).checked;
+  const paperLetter = (document.getElementById('portraitPaperLetter') as HTMLInputElement).checked;
+  const projectName = ((document.getElementById('portraitExportName') as HTMLInputElement).value || 'Storyboard').trim();
+
+  document.getElementById('portraitExportModal')!.classList.add('hidden');
+  showToast('Generating PDF…');
+
+  const paper = paperLetter ? 'letter' : 'a4';
+  const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: paper });
+  const pageW = pdf.internal.pageSize.getWidth();
+  const pageH = pdf.internal.pageSize.getHeight();
+
+  const MARGIN = 8;
+  const HEADER_H = 8;
+  const FOOTER_H = 6;
+  const FRAME_BORDER_PT = 2;
+
+  const frames = includeHidden ? s.frames : s.frames.filter(f => !f.hidden);
+
+  function drawHeader(pageNum: number, totalPages: number) {
+    pdf.setTextColor(90);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(9);
+    pdf.text(projectName, MARGIN, MARGIN + 2);
+    pdf.setFontSize(8);
+    pdf.text(`${pageNum} / ${totalPages}`, pageW - MARGIN, pageH - MARGIN / 2, { align: 'right' });
+  }
+
+  function wrapText(text: string, maxWidth: number, fontSize: number): string[] {
+    pdf.setFontSize(fontSize);
+    return pdf.splitTextToSize(text || '', maxWidth);
+  }
+
+  // Layout: 5 columns (1 main + 4 versions), one frame per page
+  const COLS = 5;
+  const contentW = pageW - 2 * MARGIN;
+  const gutterX = 3;
+  const colW = (contentW - gutterX * (COLS - 1)) / COLS;
+  const aspect = 9 / 16;
+  let frameW = colW;
+  let frameH = frameW / aspect;
+  const maxFrameH = pageH - 2 * MARGIN - HEADER_H - FOOTER_H - 20; // leave room for text/table
+  if (frameH > maxFrameH) {
+    frameH = maxFrameH;
+    frameW = frameH * aspect;
+  }
+
+  const TABLE_FONT = 7;
+  const TABLE_ROW_H = 4.5;
+  const TABLE_HEADER_H = 5.5;
+  const TABLE_PAD = 1.5;
+
+  function tableHasContent(td: any): boolean {
+    if (!td) return false;
+    if (td.headers && td.headers.some((h: string) => h && h.trim())) return true;
+    if (td.rows && td.rows.some((r: string[]) => r.some((c: string) => c && c.trim()))) return true;
+    return false;
+  }
+
+  function drawTable(x: number, y: number, maxW: number, td: any): number {
+    if (!td) return 0;
+    const hasHeaders = td.headers && td.headers.some((h: string) => h && h.trim());
+    const dataRows = td.rows ? td.rows.filter((r: string[]) => r.some((c: string) => c && c.trim())) : [];
+    if (!hasHeaders && dataRows.length === 0) return 0;
+    const cols = td.headers ? td.headers.length : 3;
+    const cW = maxW / cols;
+    let curY = y;
+    if (hasHeaders) {
+      pdf.setFillColor(255, 255, 255);
+      pdf.rect(x, curY, maxW, TABLE_HEADER_H, 'F');
+      pdf.setTextColor(0);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(TABLE_FONT);
+      for (let c = 0; c < cols; c++) {
+        const text = (td.headers[c] || '').trim();
+        if (text) pdf.text(text, x + c * cW + TABLE_PAD, curY + TABLE_HEADER_H - 1.8);
+      }
+      pdf.setDrawColor(0);
+      pdf.setLineWidth(0.3);
+      pdf.rect(x, curY, maxW, TABLE_HEADER_H);
+      for (let c = 1; c < cols; c++) pdf.line(x + c * cW, curY, x + c * cW, curY + TABLE_HEADER_H);
+      curY += TABLE_HEADER_H;
+    }
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(TABLE_FONT);
+    for (const row of dataRows) {
+      pdf.setFillColor(255, 255, 255);
+      pdf.rect(x, curY, maxW, TABLE_ROW_H, 'F');
+      pdf.setTextColor(0);
+      for (let c = 0; c < cols; c++) {
+        const text = (row[c] || '').trim();
+        if (text) {
+          const clipped = pdf.splitTextToSize(text, cW - 2 * TABLE_PAD)[0] || '';
+          pdf.text(clipped, x + c * cW + TABLE_PAD, curY + TABLE_ROW_H - 1.3);
+        }
+      }
+      pdf.setDrawColor(0);
+      pdf.setLineWidth(0.3);
+      pdf.rect(x, curY, maxW, TABLE_ROW_H);
+      for (let c = 1; c < cols; c++) pdf.line(x + c * cW, curY, x + c * cW, curY + TABLE_ROW_H);
+      curY += TABLE_ROW_H;
+    }
+    return curY - y;
+  }
+
+  // Count total pages (frames may need multiple pages if >4 versions)
+  let pageIdx = 0;
+  for (let fi = 0; fi < frames.length; fi++) {
+    const f = frames[fi];
+    const vers = s.versions[f.id] || [];
+    const visVers = vers.filter(v => versionHasContent(v) && (includeHidden || !v.hidden));
+    const pagesForFrame = Math.max(1, Math.ceil(visVers.length / 4));
+
+    const label = f.label || `${fi + 1}`;
+    const LABEL_H = 4.5;
+    const framesY = MARGIN + HEADER_H + LABEL_H + 2;
+    const startX = MARGIN + (contentW - (COLS * frameW + (COLS - 1) * gutterX)) / 2;
+
+    // Rasterize main frame once (reused across overflow pages)
+    const mainCvs = await rasterizeMain(f);
+    const mainImg = mainCvs.toDataURL('image/jpeg', 0.92);
+
+    for (let pageOff = 0; pageOff < pagesForFrame; pageOff++) {
+      if (pageIdx > 0) pdf.addPage();
+      pageIdx++;
+      drawHeader(pageIdx, -1); // total unknown upfront, will skip
+
+      // Column 0: Main frame (shown on every page for this frame)
+      pdf.setTextColor(0);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(7.5);
+      pdf.text(label, startX, framesY - 1.2);
+      pdf.addImage(mainImg, 'JPEG', startX, framesY, frameW, frameH, undefined, 'FAST');
+      pdf.setDrawColor(0);
+      pdf.setLineWidth(FRAME_BORDER_PT * 0.353);
+      pdf.rect(startX, framesY, frameW, frameH);
+
+      // Columns 1–4: Versions for this page batch
+      const batchStart = pageOff * 4;
+      for (let vi = 0; vi < 4; vi++) {
+        const col = vi + 1;
+        const x = startX + col * (frameW + gutterX);
+        const vIdx = batchStart + vi;
+        if (vIdx < visVers.length) {
+          const vLabel = visVers[vIdx].label || `V${vIdx + 1}`;
+          pdf.setTextColor(100);
+          pdf.setFont('helvetica', 'normal');
+          pdf.setFontSize(7);
+          pdf.text(vLabel, x, framesY - 1.2);
+
+          const verCvs = await rasterizeVersion(visVers[vIdx], f.cropW, f.cropH);
+          const verImg = verCvs.toDataURL('image/jpeg', 0.92);
+          pdf.addImage(verImg, 'JPEG', x, framesY, frameW, frameH, undefined, 'FAST');
+          pdf.setDrawColor(0);
+          pdf.setLineWidth(FRAME_BORDER_PT * 0.353);
+          pdf.rect(x, framesY, frameW, frameH);
+        }
+      }
+
+      // Text & table only on the first page for this frame
+      if (pageOff === 0) {
+        let curY = framesY + frameH + 6;
+        if (includeText && f.textContent) {
+          pdf.setTextColor(30);
+          pdf.setFont('helvetica', 'normal');
+          pdf.setFontSize(8);
+          const lines = wrapText(f.textContent, contentW, 8);
+          const lineH = 3.5;
+          for (const line of lines) {
+            if (curY + lineH > pageH - MARGIN - FOOTER_H) break;
+            pdf.text(line, MARGIN, curY);
+            curY += lineH;
+          }
+          curY += 2;
+        }
+        if (includeTable && f.tableData && tableHasContent(f.tableData)) {
+          drawTable(startX, curY, frameW, f.tableData);
+        }
+      }
+    }
+  }
+
+  // Fix page numbers now that we know the total
+  const totalPages = pageIdx;
+  for (let p = 1; p <= totalPages; p++) {
+    pdf.setPage(p);
+    // Overwrite page number area
+    pdf.setFillColor(255, 255, 255);
+    pdf.rect(pageW - MARGIN - 20, pageH - MARGIN / 2 - 4, 20, 6, 'F');
+    pdf.setTextColor(90);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(8);
+    pdf.text(`${p} / ${totalPages}`, pageW - MARGIN, pageH - MARGIN / 2, { align: 'right' });
+  }
+
+  const now = new Date();
+  const fname = `${projectName.replace(/[^\w\-]+/g, '_')}_${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}.pdf`;
+  offerSave(pdf.output('blob') as Blob, fname);
+  showToast('PDF ready');
+}
+
+async function runPortraitPptxExport(): Promise<void> {
+  fhTrack('export_portrait_pptx');
+  const s = state();
+  const includeHidden = (document.getElementById('portraitIncludeHidden') as HTMLInputElement).checked;
+  const includeText = (document.getElementById('portraitIncludeText') as HTMLInputElement).checked;
+  const includeTable = (document.getElementById('portraitIncludeTable') as HTMLInputElement).checked;
+  const projectName = ((document.getElementById('portraitExportName') as HTMLInputElement).value || 'Storyboard').trim();
+
+  document.getElementById('portraitExportModal')!.classList.add('hidden');
+  showToast('Generating presentation…');
+
+  const pptx: any = new (PptxGenJS as any)();
+  pptx.layout = 'LAYOUT_WIDE'; // 13.33 × 7.5 in — landscape
+  pptx.title = projectName;
+
+  const SW = 13.333, SH = 7.5;
+  const MARGIN = 0.4;
+
+  function newSlide() {
+    const sl = pptx.addSlide();
+    sl.background = { color: 'FFFFFF' };
+    return sl;
+  }
+
+  function rasterizeWithBorder(canvas: HTMLCanvasElement, borderPx?: number) {
+    const c2 = document.createElement('canvas');
+    c2.width = canvas.width;
+    c2.height = canvas.height;
+    const ctx = c2.getContext('2d')!;
+    ctx.drawImage(canvas, 0, 0);
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = borderPx || 4;
+    ctx.strokeRect(0, 0, c2.width, c2.height);
+    return c2;
+  }
+
+  function canvasToBase64(cvs: HTMLCanvasElement) {
+    return cvs.toDataURL('image/jpeg', 0.92).split(',')[1];
+  }
+
+  const frames = includeHidden ? s.frames : s.frames.filter(f => !f.hidden);
+  const COLS = 5;
+  const gapX = 0.12;
+  const pAspect = 9 / 16;
+  const availW = SW - 2 * MARGIN - gapX * (COLS - 1);
+  let fW = availW / COLS;
+  let fH = fW / pAspect;
+  const maxH = SH - 1.8; // room for header + text below
+  if (fH > maxH) {
+    fH = maxH;
+    fW = fH * pAspect;
+  }
+  const gridW = COLS * fW + (COLS - 1) * gapX;
+  const startX = (SW - gridW) / 2;
+
+  for (let fi = 0; fi < frames.length; fi++) {
+    const f = frames[fi];
+    const label = f.label || `${fi + 1}`;
+    const vers = s.versions[f.id] || [];
+    const visVers = vers.filter(v => versionHasContent(v) && (includeHidden || !v.hidden));
+    const pagesForFrame = Math.max(1, Math.ceil(visVers.length / 4));
+
+    const framesY = 0.7;
+
+    // Rasterize main frame once
+    const mainCvs = rasterizeWithBorder(await rasterizeMain(f));
+    const mainB64 = 'image/jpeg;base64,' + canvasToBase64(mainCvs);
+
+    for (let pageOff = 0; pageOff < pagesForFrame; pageOff++) {
+      const slide = newSlide();
+      slide.addText(projectName, { x: MARGIN, y: 0.12, w: SW - 2 * MARGIN, h: 0.25, fontSize: 9, color: '666666', fontFace: 'Helvetica' });
+
+      // Column 0: Main (repeated on every page for this frame)
+      slide.addText(label, { x: startX, y: framesY - 0.22, w: fW, h: 0.2, fontSize: 8, bold: true, color: '000000', fontFace: 'Helvetica', valign: 'bottom' });
+      slide.addImage({ data: mainB64, x: startX, y: framesY, w: fW, h: fH });
+
+      // Columns 1–4: Versions for this batch
+      const batchStart = pageOff * 4;
+      for (let vi = 0; vi < 4; vi++) {
+        const col = vi + 1;
+        const x = startX + col * (fW + gapX);
+        const vIdx = batchStart + vi;
+        if (vIdx < visVers.length) {
+          const vLabel = visVers[vIdx].label || `V${vIdx + 1}`;
+          slide.addText(vLabel, { x, y: framesY - 0.22, w: fW, h: 0.2, fontSize: 7, color: '888888', fontFace: 'Helvetica', valign: 'bottom' });
+          const verCvs = rasterizeWithBorder(await rasterizeVersion(visVers[vIdx], f.cropW, f.cropH));
+          slide.addImage({ data: 'image/jpeg;base64,' + canvasToBase64(verCvs), x, y: framesY, w: fW, h: fH });
+        }
+      }
+
+      // Text & table only on the first page for this frame
+      if (pageOff === 0) {
+        let curY = framesY + fH + 0.22;
+        if (includeText && f.textContent) {
+          slide.addText(f.textContent, { x: MARGIN, y: curY, w: SW - 2 * MARGIN, h: 0.6, fontSize: 8, color: '222222', fontFace: 'Helvetica', valign: 'top', wrap: true });
+          curY += 0.65;
+        }
+        if (includeTable && f.tableData) {
+          const td = f.tableData as any;
+          const hasHeaders = td.headers && td.headers.some((h: string) => h && h.trim());
+          const dataRows = td.rows ? td.rows.filter((r: string[]) => r.some((c: string) => c && c.trim())) : [];
+          if (hasHeaders || dataRows.length > 0) {
+            const tblRows: any[] = [];
+            if (hasHeaders) {
+              tblRows.push(td.headers.map((h: string) => ({ text: h || '', options: { bold: true, fontSize: 7, fontFace: 'Helvetica', color: '000000' } })));
+            }
+            for (const row of dataRows) {
+              tblRows.push(row.map((c: string) => ({ text: c || '', options: { fontSize: 7, fontFace: 'Helvetica', color: '333333' } })));
+            }
+            if (tblRows.length > 0) {
+              const tblW = fW;
+              slide.addTable(tblRows, {
+                x: startX, y: curY, w: tblW,
+                border: { type: 'solid', pt: 0.5, color: '999999' },
+                rowH: 0.25,
+                colW: Array(tblRows[0].length).fill(tblW / tblRows[0].length),
+              });
+            }
+          }
+        }
+      }
+    }
+  }
+
+  const blob = await pptx.write({ outputType: 'blob' }) as Blob;
+  const now = new Date();
+  const fname = `${projectName.replace(/[^\w\-]+/g, '_')}_${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}.pptx`;
+  offerSave(blob, fname);
+  showToast('Presentation ready');
+}
+
+export async function runPortraitImageExport(): Promise<void> {
+  fhTrack('export_portrait_images');
   showToast('Generating images…');
   const s = state();
   const projectName = (s.lastPdfName || 'PROJECT_NAME').replace(/[^\w\-]+/g, '_');

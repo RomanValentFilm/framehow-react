@@ -6,25 +6,7 @@ export function StripColumns() {
     <div className="columns">
       <div className="strip-col">
         <div className="strip-scroll" id="mainScroll">
-          <div className="empty-state" id="emptyStateMain">
-            <div className="empty-icon">◎</div>
-            <p>Start your storyboard</p>
-            <div className="start-options">
-              <button className="btn btn-accent" id="startLoadPdf">
-                Load Story&shy;board from PDF
-              </button>
-              <button className="btn btn-accent" id="startLoadImages">
-                Load Images from Folder
-              </button>
-              <button className="btn btn-accent" id="startScratch">
-                Start from Scratch
-              </button>
-            </div>
-            <div id="startOpenProjectGap" style={{ height: '12px' }} />
-            <button className="btn btn-accent" id="startOpenProject">
-              Open Project
-            </button>
-          </div>
+          <div className="empty-state" id="emptyStateMain" />
         </div>
       </div>
       <div className="strip-col">

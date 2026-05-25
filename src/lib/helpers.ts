@@ -3,6 +3,33 @@
 
 import { COLORS, state, useStore } from '../store/state';
 import type { Version, Frame, Stroke, TableData } from '../store/state';
+import { getCurrentProject } from './currentProject';
+
+/** Scroll a frame card into the center of the visible area after re-render.
+ *  Uses requestAnimationFrame to wait for layout to settle.
+ *  Delegates to scrollAnchorTo (view.ts) via window to avoid circular imports. */
+// Pending anchor timers from scrollFrameIntoView — can be cancelled externally
+export const _actionAnchorTimers: number[] = [];
+
+// iPhone-only: needs multi-delay anchoring because Safari layout settles slowly
+const _isIPhone = /iPhone/.test(navigator.userAgent) && 'ontouchend' in document;
+
+export function scrollFrameIntoView(fid: number, _strip?: 'main' | 'ver'): void {
+  const fn = (window as any).__fh_scrollAnchorTo;
+  if (!fn) return;
+  if (_isIPhone) {
+    // Cancel any previous action-anchor timers
+    _actionAnchorTimers.forEach(clearTimeout);
+    _actionAnchorTimers.length = 0;
+    // Multi-delay anchor for slower iOS Safari layout settling after modal close
+    requestAnimationFrame(() => fn(fid));
+    [50, 150, 300].forEach((delay) => {
+      _actionAnchorTimers.push(window.setTimeout(() => fn(fid), delay));
+    });
+  } else {
+    requestAnimationFrame(() => fn(fid));
+  }
+}
 
 export function escH(s: string): string {
   return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -235,14 +262,18 @@ export function restoreFrame(fid: number): void {
 export function clearAllDrawActive(): void {
   const s = state();
   let changed = false;
+  let lastActiveFid: number | null = null;
+  let lastActiveStrip: 'main' | 'ver' = 'main';
   for (const fid in s.drawActive) {
     if (s.drawActive[+fid]) {
       changed = true;
+      lastActiveStrip = s.drawActive[+fid] as 'main' | 'ver';
+      lastActiveFid = +fid;
       s.drawActive[+fid] = null;
     }
   }
   if (!changed) return;
-  if (s.currentViewMode === 'overview') return;
+  if (s.currentViewMode === 'overview' || s.currentViewMode === 'grid4') return;
   document.querySelectorAll('.frame-card[data-mfid]').forEach((div) => {
     const fid = parseInt((div as HTMLElement).dataset.mfid!);
     // avoid circular import — render.ts wires this through window
@@ -254,6 +285,10 @@ export function clearAllDrawActive(): void {
     const fn = (window as any).__fh_renderVersionFrame;
     if (fn) fn(div, fid);
   });
+  // NOTE: No scroll anchoring here — clearAllDrawActive is called from many
+  // places (cross-compare, brush switches, etc.) and anchoring on every call
+  // causes unwanted jumps.  Anchoring is done explicitly at draw/write/camera
+  // close sites in actions.ts instead.
 }
 
 export function clearReorder(): void {
@@ -310,7 +345,29 @@ export function updateFrameBadge(): void {
   const s = state();
   const visible = s.frames.filter((f) => !f.hidden).length;
   const hidden = s.frames.length - visible;
-  document.getElementById('frameBadge')!.textContent = `${visible} frame${visible !== 1 ? 's' : ''}${
-    hidden > 0 ? ' (' + hidden + ' hidden)' : ''
-  }`;
+
+  // Hide frame badge on iPhone portrait + portrait mode project
+  const isPhone = Math.min(window.innerWidth, window.innerHeight) <= 430;
+  const isPhonePortrait = isPhone && window.innerHeight > window.innerWidth;
+  const badgeEl = document.getElementById('frameBadge');
+  if (badgeEl) {
+    if (isPhonePortrait && s.portraitMode) {
+      badgeEl.style.display = 'none';
+    } else {
+      badgeEl.style.display = '';
+      const groupLabel = s.activeGroupId !== null
+        ? (() => { const g = s.groups.find(g => g.id === s.activeGroupId); return g ? ` [${g.name}]` : ''; })()
+        : '';
+      badgeEl.textContent = `${visible} frame${visible !== 1 ? 's' : ''}${
+        hidden > 0 ? ' (' + hidden + ' hidden)' : ''
+      }${groupLabel}`;
+    }
+  }
+
+  // Update project name in toolbar
+  const nameEl = document.getElementById('toolbarProjectName');
+  if (nameEl) {
+    const cp = getCurrentProject();
+    nameEl.textContent = cp.name || 'UNTITLED';
+  }
 }

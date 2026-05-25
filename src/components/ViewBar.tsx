@@ -23,6 +23,7 @@ export function ViewBar() {
       {/* RIGHT GROUP */}
       <div className="view-btns vb-right">
         <button className="view-btn" data-view="overview" title="Full Overview">GRID</button>
+        <button className="view-btn" data-view="grid4" title="4-Column Grid">GRID4</button>
       </div>
     </div>
   );

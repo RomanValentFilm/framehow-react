@@ -3,6 +3,92 @@
 
 import { COLORS } from '../store/state';
 
+export type NewProjectChoice = 'pdf' | 'images' | 'scratch' | 'portrait' | 'open' | 'cancel';
+
+let _newProjectModalOpen = false;
+
+/**
+ * Shows the New Project modal. `onChoice` is called synchronously inside
+ * the button's click handler so that file-input .click() stays within the
+ * user-gesture callstack (required by Safari / iOS).
+ */
+export function showNewProjectModal(onChoice: (choice: NewProjectChoice) => void): void {
+  if (_newProjectModalOpen) return;
+  _newProjectModalOpen = true;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'new-project-overlay';
+  overlay.style.cssText =
+    'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,0.7);' +
+    'display:flex;align-items:center;justify-content:center;padding:16px;';
+
+  const box = document.createElement('div');
+  box.className = 'new-project-modal';
+  box.style.cssText =
+    'background:#1e1e1e;border:1px solid #444;border-radius:14px;' +
+    'padding:20px 24px;max-width:300px;width:100%;color:#fff;' +
+    'font-family:-apple-system,BlinkMacSystemFont,sans-serif;';
+
+  const accentBg = 'background:#c8432a;';
+  const btnBase =
+    'width:100%;padding:14px 16px;border-radius:8px;border:none;' +
+    'color:#fff;font-size:15px;font-weight:600;cursor:pointer;text-align:center;' +
+    'font-family:-apple-system,BlinkMacSystemFont,sans-serif;';
+
+  box.innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:12px;align-items:center;">
+      <button data-choice="pdf" class="np-btn" style="${btnBase}${accentBg}">Load Storyboard from PDF</button>
+      <button data-choice="images" class="np-btn" style="${btnBase}${accentBg}">Load Images from Folder</button>
+      <button data-choice="scratch" class="np-btn" style="${btnBase}${accentBg}">16×9 Start from Scratch</button>
+      <button data-choice="portrait" class="np-btn" style="
+        width:48px;padding:0;border-radius:8px;border:none;
+        ${accentBg}color:#fff;font-size:15px;font-weight:600;cursor:pointer;
+        aspect-ratio:9/16;display:flex;align-items:center;justify-content:center;
+      ">9x16</button>
+      <button data-choice="open" class="np-btn" style="${btnBase}${accentBg}">Open Project</button>
+      <button data-choice="cancel" class="np-btn" style="
+        ${btnBase}background:#2a2a2a;border:1px solid #555;color:#ccc;font-weight:500;
+      ">Cancel</button>
+    </div>
+  `;
+
+  const cleanup = () => {
+    _newProjectModalOpen = false;
+    overlay.remove();
+  };
+
+  box.querySelectorAll('[data-choice]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const choice = (btn as HTMLElement).dataset.choice as NewProjectChoice;
+      cleanup();
+      onChoice(choice);
+    });
+  });
+
+  // Close on overlay click (outside the box)
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) {
+      cleanup();
+      onChoice('cancel');
+    }
+  });
+
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+}
+
+export function isNewProjectModalOpen(): boolean {
+  return _newProjectModalOpen;
+}
+
+/** Dismiss the modal programmatically (e.g. when bootstrap restores a project). */
+export function dismissNewProjectModal(): void {
+  if (!_newProjectModalOpen) return;
+  const overlay = document.querySelector('.new-project-overlay');
+  if (overlay) overlay.remove();
+  _newProjectModalOpen = false;
+}
+
 export function showToast(msg: string): void {
   const t = document.getElementById('toast')!;
   t.textContent = msg;
@@ -22,6 +108,46 @@ export function showCamBlockedMsg(): void {
 export function setProgress(pct: number, label: string): void {
   (document.getElementById('progressBar') as HTMLElement).style.width = pct + '%';
   document.getElementById('progressLabel')!.textContent = label;
+}
+
+/**
+ * Two-option label choice dialog. Returns whichever label string the user picks.
+ */
+export function showLabelChoice(optA: string, optB: string): Promise<string> {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText =
+      'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,0.6);' +
+      'display:flex;align-items:center;justify-content:center;padding:16px;';
+    const box = document.createElement('div');
+    box.style.cssText =
+      'background:#1e1e1e;border:1px solid #444;border-radius:12px;' +
+      'padding:20px 24px;max-width:300px;width:100%;color:#fff;' +
+      'font-family:-apple-system,BlinkMacSystemFont,sans-serif;';
+    box.innerHTML = `
+      <p style="margin:0 0 16px;font-size:15px;text-align:center;color:#ccc;">
+        Label for new frame?
+      </p>
+      <div style="display:flex;gap:10px;justify-content:center;">
+        <button id="lc_a" style="
+          flex:1;padding:12px 14px;border-radius:8px;border:1px solid #555;
+          background:#2a2a2a;color:#fff;font-size:16px;font-weight:600;cursor:pointer;
+        ">${optA}</button>
+        <button id="lc_b" style="
+          flex:1;padding:12px 14px;border-radius:8px;border:1px solid #555;
+          background:#2a2a2a;color:#fff;font-size:16px;font-weight:600;cursor:pointer;
+        ">${optB}</button>
+      </div>`;
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    function cleanup(val: string) {
+      overlay.remove();
+      resolve(val);
+    }
+    document.getElementById('lc_a')!.onclick = () => cleanup(optA);
+    document.getElementById('lc_b')!.onclick = () => cleanup(optB);
+    overlay.onclick = (e) => { if (e.target === overlay) cleanup(optB); };
+  });
 }
 
 export function showConfirm(msg: string): Promise<boolean> {

@@ -1,6 +1,7 @@
 // Action handlers for Main strip and Version strip cards.
 
 import { COLORS, state, useStore } from '../store/state';
+import { reorderFrameInGroup } from './groups';
 import {
   addNewVersion,
   applyReorderHighlight,
@@ -13,12 +14,14 @@ import {
   restoreFrame,
   saveOpenTableEdits,
   saveOpenTextEdits,
+  scrollFrameIntoView,
   updateFrameBadge,
 } from './helpers';
 import { snapshotFrame } from './drawing';
 import { renderAll, renderMainFrame, renderVersionFrame } from './render';
-import { renderOverviewRow } from './overview';
-import { showConfirm, showDeleteChoice, showToast, showVersionChoice, openTextModal } from './modals';
+import { renderOverviewRow, renderGrid4Row } from './overview';
+import { showConfirm, showDeleteChoice, showLabelChoice, showToast, showVersionChoice, openTextModal } from './modals';
+import { fhTrack } from './tracking';
 import { drawFit } from './drawing';
 import { openCamera, getCameraTarget, clearCameraTarget, setOnCapturedImage } from './camera';
 
@@ -51,11 +54,18 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
       applyReorderHighlight(fid);
       return;
     }
-    if (action === 'moveup' && idx <= 0) return;
-    if (action === 'movedown' && idx >= s.frames.length - 1) return;
-    if (action === 'moveup') [s.frames[idx - 1], s.frames[idx]] = [s.frames[idx], s.frames[idx - 1]];
-    else [s.frames[idx], s.frames[idx + 1]] = [s.frames[idx + 1], s.frames[idx]];
-    renderAll();
+    // If a group is active, reorder within the group's frameIds array
+    if (s.activeGroupId !== null) {
+      const dir = action === 'moveup' ? 'up' : 'down';
+      if (!reorderFrameInGroup(fid, dir)) return;
+      renderAll();
+    } else {
+      if (action === 'moveup' && idx <= 0) return;
+      if (action === 'movedown' && idx >= s.frames.length - 1) return;
+      if (action === 'moveup') [s.frames[idx - 1], s.frames[idx]] = [s.frames[idx], s.frames[idx - 1]];
+      else [s.frames[idx], s.frames[idx + 1]] = [s.frames[idx + 1], s.frames[idx]];
+      renderAll();
+    }
     useStore.setState({ reorderFid: fid });
     applyReorderHighlight(fid);
     const mc = document.querySelector(`.frame-card[data-mfid="${fid}"]`) as HTMLElement | null;
@@ -96,27 +106,93 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
   clearAllDrawActive();
 
   if (action === 'new') {
-    const nid = s.nextId;
-    useStore.setState({ nextId: nid + 1 });
-    const newFrame = {
-      id: nid,
-      src: '',
-      label: '',
-      cropW: f.cropW || 960,
-      cropH: f.cropH || 540,
-      strokes: [],
-      drawMode: true,
-      textContent: '',
-      tableData: null,
-    };
-    s.frames.splice(idx + 1, 0, newFrame);
-    s.versions[nid] = [{ id: 1, label: 'v1', type: 'empty', strokes: [], bgImage: null }];
-    s.activeTab[nid] = 0;
-    s.drawColor[nid] = COLORS[0];
-    s.drawWidth[nid] = 6;
-    s.drawEraser[nid] = false;
-    updateFrameBadge();
-    renderAll();
+    // --- Auto-label logic ---
+    // Portrait mode: every new frame gets "name"
+    if (s.portraitMode) {
+      const s2 = state();
+      const f2 = s2.frames.find((fr) => fr.id === fid);
+      if (!f2) return;
+      const idx2 = s2.frames.indexOf(f2);
+      const nid = s2.nextId;
+      useStore.setState({ nextId: nid + 1 });
+      const newFrame = {
+        id: nid,
+        src: '',
+        label: 'name',
+        cropW: f2.cropW || 540,
+        cropH: f2.cropH || 960,
+        strokes: [],
+        drawMode: true,
+        textContent: '',
+        tableData: null,
+      };
+      s2.frames.splice(idx2 + 1, 0, newFrame);
+      s2.versions[nid] = [{ id: 1, label: 'v1', type: 'empty', strokes: [], bgImage: null }];
+      s2.activeTab[nid] = 0;
+      s2.drawColor[nid] = COLORS[0];
+      s2.drawWidth[nid] = 6;
+      s2.drawEraser[nid] = false;
+      updateFrameBadge();
+      renderAll();
+      return;
+    }
+    const prevLabel = f.label || '';
+    // Parse label: number + optional single-letter suffix + optional trailing text
+    // "5"       → num=5, letter=none, text=""       → auto "6"
+    // "5a"      → num=5, letter="a",  text=""       → ask "5b" or "6"
+    // "8opt"    → num=8, letter=none, text="opt"    → auto "9opt"
+    // "7 alt"   → num=7, letter=none, text=" alt"   → auto "8 alt"
+    // "6a alt"  → num=6, letter="a",  text=" alt"   → ask "6b alt" or "7 alt"
+    const labelMatch = prevLabel.match(/^(\d+)(?:([a-zA-Z])(?=\s|$))?(.*)?$/);
+    let labelPromise: Promise<string>;
+
+    if (labelMatch) {
+      const num = parseInt(labelMatch[1], 10);
+      const letter = labelMatch[2] || '';   // single letter suffix or ""
+      const text = labelMatch[3] || '';     // trailing text (may start with space)
+
+      if (letter) {
+        // Has single-letter suffix → ask user
+        const nextLetter = String.fromCharCode(letter.charCodeAt(0) + 1);
+        const optContinue = `${num}${nextLetter}${text}`;
+        const optNext = `${num + 1}${text}`;
+        labelPromise = showLabelChoice(optContinue, optNext);
+      } else {
+        // Pure number or number+text → auto-increment the number, keep text
+        labelPromise = Promise.resolve(`${num + 1}${text}`);
+      }
+    } else {
+      // Label doesn't match any number pattern → leave blank
+      labelPromise = Promise.resolve('');
+    }
+
+    labelPromise.then((newLabel) => {
+      const s2 = state();
+      const f2 = s2.frames.find((fr) => fr.id === fid);
+      if (!f2) return;
+      const idx2 = s2.frames.indexOf(f2);
+      const nid = s2.nextId;
+      useStore.setState({ nextId: nid + 1 });
+      const newFrame = {
+        id: nid,
+        src: '',
+        label: newLabel,
+        cropW: f2.cropW || 960,
+        cropH: f2.cropH || 540,
+        strokes: [],
+        drawMode: true,
+        textContent: '',
+        tableData: null,
+      };
+      s2.frames.splice(idx2 + 1, 0, newFrame);
+      s2.versions[nid] = [{ id: 1, label: 'v1', type: 'empty', strokes: [], bgImage: null }];
+      s2.activeTab[nid] = 0;
+      s2.drawColor[nid] = COLORS[0];
+      s2.drawWidth[nid] = 6;
+      s2.drawEraser[nid] = false;
+      updateFrameBadge();
+      renderAll();
+    });
   } else if (action === 'duplicate') {
     const nid = s.nextId;
     useStore.setState({ nextId: nid + 1 });
@@ -140,12 +216,14 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
     updateFrameBadge();
     renderAll();
   } else if (action === 'draw') {
-    if (!wasDrawing) s.drawActive[fid] = 'main';
+    if (!wasDrawing) { s.drawActive[fid] = 'main'; fhTrack('draw_used', { strip: 'main' }); }
     f.drawMode = true;
     renderMainFrame(div, fid);
     const vdiv = document.querySelector(`.frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
     if (vdiv) renderVersionFrame(vdiv, fid);
+    scrollFrameIntoView(fid, 'main');
   } else if (action === 'write') {
+    fhTrack('write_used', { strip: 'main' });
     f.strokes = f.strokes || [];
     const existing = f.strokes.find((st: any) => st.type === 'text');
     const curColor = existing ? existing.color : s.drawColor[fid] || '#fff';
@@ -169,9 +247,10 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
       renderMainFrame(div, fid);
       const vdiv2 = document.querySelector(`.frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
       if (vdiv2) renderVersionFrame(vdiv2, fid);
+      scrollFrameIntoView(fid, 'main');
     });
   } else if (action === 'upload') {
-    if (s.currentViewMode === 'overview') {
+    if (s.currentViewMode === 'overview' || s.currentViewMode === 'grid4') {
       if (!isMainEmpty(f)) {
         showConfirm('Are you sure you want to override the content inside the Main Frame?').then((ok) => {
           if (!ok) return;
@@ -194,7 +273,7 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
         cropH: f.cropH,
       },
     });
-    showToast('Copied');
+    // toast removed
   } else if (action === 'paste') {
     if (!s.stripClipboard) {
       showToast('Nothing to paste');
@@ -208,11 +287,10 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
       renderMainFrame(div, fid);
       const vdiv = document.querySelector(`.frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
       if (vdiv) renderVersionFrame(vdiv, fid);
-      if (s.currentViewMode === 'overview') {
+      if (s.currentViewMode === 'overview' || s.currentViewMode === 'grid4') {
         const ovRow = document.querySelector(`#overviewScroll .overview-row[data-ofid="${fid}"]`) as HTMLElement | null;
-        if (ovRow) renderOverviewRow(ovRow, fid);
+        if (ovRow) { s.currentViewMode === 'grid4' ? renderGrid4Row(ovRow, fid) : renderOverviewRow(ovRow, fid); }
       }
-      showToast('Pasted');
     };
     if (f.src || (f.strokes && f.strokes.length > 0)) {
       showConfirm('Are you sure you want to override the original frame?').then((ok) => {
@@ -278,10 +356,11 @@ export function handleAction(action: string, fid: number, div: HTMLElement, from
   clearAllDrawActive();
 
   if (action === 'draw') {
-    if (!wasDrawing) s.drawActive[fid] = 'ver';
+    if (!wasDrawing) { s.drawActive[fid] = 'ver'; fhTrack('draw_used', { strip: 'ver' }); }
     else if (s.overviewAction) s.drawEraser[fid] = false;
     ver.type = 'drawing';
     rerender();
+    scrollFrameIntoView(fid, 'ver');
   } else if (action === 'upload') {
     useStore.setState({ imgTarget: { fid, div, fromCompare } });
     (document.getElementById('imgInput') as HTMLInputElement).removeAttribute('capture');
@@ -289,6 +368,7 @@ export function handleAction(action: string, fid: number, div: HTMLElement, from
   } else if (action === 'camera') {
     openCamera(fid, div, !!fromCompare, false);
   } else if (action === 'text') {
+    fhTrack('write_used', { strip: 'ver' });
     ver.strokes = ver.strokes || [];
     const existing = ver.strokes.find((st: any) => st.type === 'text');
     const curColor = existing ? existing.color : s.drawColor[fid] || '#fff';
@@ -313,8 +393,10 @@ export function handleAction(action: string, fid: number, div: HTMLElement, from
       rerender();
       if (wasOverview) {
         const ovRow = document.querySelector(`#overviewScroll .overview-row[data-ofid="${fid}"]`) as HTMLElement | null;
-        if (ovRow) renderOverviewRow(ovRow, fid);
+        if (ovRow) { s.currentViewMode === 'grid4' ? renderGrid4Row(ovRow, fid) : renderOverviewRow(ovRow, fid); }
         useStore.setState({ overviewAction: false });
+      } else {
+        scrollFrameIntoView(fid, 'ver');
       }
     });
   } else if (action === 'copy') {
@@ -327,7 +409,7 @@ export function handleAction(action: string, fid: number, div: HTMLElement, from
         cropH: f.cropH,
       },
     });
-    showToast('Copied');
+    // toast removed
   } else if (action === 'paste') {
     if (!s.stripClipboard) {
       showToast('Nothing to paste');
@@ -339,7 +421,6 @@ export function handleAction(action: string, fid: number, div: HTMLElement, from
       ver.strokes = JSON.parse(JSON.stringify(s.stripClipboard.strokes || []));
       ver.bgImage = s.stripClipboard.bgImage || null;
       rerender();
-      showToast('Pasted into active version');
     } else {
       const n = s.versions[fid].length + 1;
       const newVer = {
@@ -352,7 +433,6 @@ export function handleAction(action: string, fid: number, div: HTMLElement, from
       addNewVersion(fid, newVer);
       if (fromCompare) s.crossCompare[fid] = s.activeTab[fid];
       rerender();
-      showToast('Pasted as new version');
     }
   } else if (action === 'clear') {
     showVersionChoice().then((choice) => {
@@ -382,9 +462,9 @@ export function handleAction(action: string, fid: number, div: HTMLElement, from
         }
         relabelVersions(fid);
         rerender();
-        if (s.currentViewMode === 'overview') {
+        if (s.currentViewMode === 'overview' || s.currentViewMode === 'grid4') {
           const row = document.querySelector(`#overviewScroll .overview-row[data-ofid="${fid}"]`) as HTMLElement | null;
-          if (row) renderOverviewRow(row, fid);
+          if (row) { s.currentViewMode === 'grid4' ? renderGrid4Row(row, fid) : renderOverviewRow(row, fid); }
         }
       } else {
         snapshotFrame(fid, 'ver');
@@ -438,14 +518,15 @@ export function applyCapturedImage(dataURL: string, target: any): void {
     const vcvs = div.querySelector(`#cvs_${fid}_${nai}`) as HTMLCanvasElement | null;
     if (vcvs) drawFit(vcvs, dataURL);
   }
-  showToast('Photo captured');
+  // toast removed
   useStore.setState({ centerFid: String(fid) });
-  if (s.currentViewMode === 'overview') {
+  if (s.currentViewMode === 'overview' || s.currentViewMode === 'grid4') {
     const ovRow = document.querySelector(`#overviewScroll .overview-row[data-ofid="${fid}"]`) as HTMLElement | null;
-    if (ovRow) renderOverviewRow(ovRow, fid);
+    if (ovRow) { s.currentViewMode === 'grid4' ? renderGrid4Row(ovRow, fid) : renderOverviewRow(ovRow, fid); }
   }
   useStore.setState({ overviewAction: false });
   clearCameraTarget();
+  scrollFrameIntoView(fid, fromMain ? 'main' : 'ver');
 }
 
 // Wire up the camera capture pipeline → applyCapturedImage

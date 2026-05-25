@@ -3,6 +3,7 @@
 // /user/me at app start and clears it if the server rejects it.
 
 import { api } from './api';
+import { setTrackingUser } from './tracking';
 
 export interface SessionUser {
   id: string;
@@ -43,6 +44,7 @@ export function setSession(t: string, u: SessionUser): void {
   token = t;
   user = u;
   writeStoredToken(t);
+  setTrackingUser(u.id);
   emit();
 }
 
@@ -55,6 +57,7 @@ export function clearSession(): void {
   token = null;
   user = null;
   writeStoredToken(null);
+  setTrackingUser(null);
   emit();
 }
 
@@ -73,6 +76,7 @@ export async function loadCurrentUser(): Promise<SessionUser | null> {
   try {
     const res = await api.get<{ user: SessionUser }>('/user/me', token);
     user = res.user;
+    setTrackingUser(user.id);
     emit();
     return user;
   } catch (e) {

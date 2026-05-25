@@ -6,7 +6,7 @@
 // active tab) — UI-only state (drawActive, hover, etc.) is omitted. On
 // restore we merge the payload back into the live store.
 
-import type { Frame, Version } from '../store/state';
+import type { Frame, Version, FrameGroup } from '../store/state';
 import { useStore } from '../store/state';
 
 const DB_NAME = 'framehow';
@@ -26,6 +26,9 @@ export interface CurrentProjectSnapshot {
   versions: Record<number, Version[]>;
   activeTab: Record<number, number>;
   nextId: number;
+  portraitMode?: boolean;
+  groups?: FrameGroup[];
+  nextGroupId?: number;
 }
 
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -89,6 +92,9 @@ export function snapshotFromStore(projectId: string | null, name: string | null)
     versions: s.versions,
     activeTab: s.activeTab,
     nextId: s.nextId,
+    portraitMode: s.portraitMode,
+    groups: s.groups,
+    nextGroupId: s.nextGroupId,
   };
 }
 
@@ -102,6 +108,9 @@ export function applySnapshotToStore(snap: CurrentProjectSnapshot): void {
     versions: snap.versions,
     activeTab: snap.activeTab,
     nextId: snap.nextId,
+    portraitMode: snap.portraitMode ?? false,
+    groups: snap.groups ?? [],
+    nextGroupId: snap.nextGroupId ?? 1,
     renderTick: prev.renderTick + 1,
   }));
 }

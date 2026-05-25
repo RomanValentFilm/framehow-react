@@ -20,18 +20,19 @@
   .nav-btn:hover{background:#b03b25;text-decoration:none;}
 
   /* HERO */
-  .hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:100px 24px 60px;}
+  .hero{display:flex;flex-direction:column;align-items:center;text-align:center;padding:100px 24px 24px;}
   .hero-logo{font-size:clamp(22px,3.5vw,32px);font-weight:700;letter-spacing:3px;margin-bottom:40px;color:var(--text);}
   .hero-logo span{color:var(--accent);}
   .hero-text{max-width:960px;margin-bottom:40px;padding:0 24px;}
   .hero-text p{font-size:clamp(20px,3.2vw,26px);color:var(--muted);line-height:1.55;font-family:Georgia,'Times New Roman',serif;}
   .hero-text p+p{margin-top:1.2em;}
+  .hero-text .tight{line-height:1.35;}
   .hero-cta{display:inline-block;font-family:var(--font);font-size:16px;font-weight:600;padding:14px 36px;border-radius:8px;background:var(--accent);color:#fff;border:none;cursor:pointer;transition:background .2s,transform .15s;text-decoration:none;}
   .hero-cta:hover{background:#b03b25;transform:translateY(-1px);text-decoration:none;}
 
   /* IMAGE SECTION */
   .hero-image{width:100%;max-width:1200px;margin:24px auto 0;padding:0 24px;}
-  .hero-image img{width:100%;border-radius:12px;border:1px solid var(--border);display:block;}
+  .hero-image img{width:100%;border-radius:12px;border:none;display:block;}
   .hero-image .placeholder{width:100%;aspect-ratio:16/9;background:var(--surface);border:2px dashed var(--border);border-radius:12px;display:flex;align-items:center;justify-content:center;color:#555;font-size:16px;}
 
   /* FEATURES */
@@ -56,6 +57,7 @@
 
   /* FOOTER */
   .footer{padding:32px 24px;text-align:center;border-top:1px solid var(--border);color:#555;font-size:12px;}
+  .support-link{color:#777;text-decoration:underline;}.support-link:hover{color:var(--text);}
 
   @media (max-width:500px){
     .hero-image{padding:0 1px;}
@@ -78,8 +80,9 @@ if(window.navigator.standalone || window.matchMedia('(display-mode: standalone)'
 <section class="hero">
   <div class="hero-logo">FRAME<span>HOW</span></div>
   <div class="hero-text">
-    <p>Capture storyboard angles on recce on your tablet, compare versions during prep, and export for review — arrive on set prepared. From pre-production, through shooting, to post.</p>
-    <p>A creative filmmaker's tool for developing your vision and tracking every shot as it evolves — from first idea versions, to final decisions on set.</p>
+    <p>One place to mentally put together your shoot.</p>
+    <p class="tight">Import storyboard. Shoot your camera angles. Draw floor plans. Add references. Rearrange, refine, export — and share your vision.</p>
+    <p>Syncs across your tablet, desktop, and phone.</p>
   </div>
 
   <div class="hero-image">
@@ -134,7 +137,7 @@ if(window.navigator.standalone || window.matchMedia('(display-mode: standalone)'
       <p>Swipe with your fingers right and left to browse through versions.</p>
     </div>
     <div class="feat">
-      <h3>Works Everywhere</h3>
+      <h3>Sync between Devices</h3>
       <p>iPhone, iPad, desktop — add to home screen as an app.</p>
     </div>
     <div class="feat">
@@ -145,7 +148,7 @@ if(window.navigator.standalone || window.matchMedia('(display-mode: standalone)'
 </section>
 
 <footer class="footer">
-  Framehow &copy; 2026
+  Framehow &copy; 2026 &nbsp;·&nbsp; <a href="#" class="support-link" onclick="this.href='mail'+'to:'+'info'+'@'+'framehow.com';return true;">Support</a>
 </footer>
 
 </body>

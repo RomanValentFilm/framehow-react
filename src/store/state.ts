@@ -50,7 +50,7 @@ export interface Version {
   starred?: boolean;
 }
 
-export type ViewMode = 'main' | 'ver' | 'both' | 'overview';
+export type ViewMode = 'main' | 'ver' | 'both' | 'overview' | 'grid4';
 export type DrawActiveOrigin = 'main' | 'ver' | null;
 
 export interface FrameSnapshot {
@@ -65,6 +65,12 @@ export interface FrameSnapshot {
   versions: Version[];
   activeTab: number;
   crossCompare: number | undefined;
+}
+
+export interface FrameGroup {
+  id: number;
+  name: string;
+  frameIds: number[];
 }
 
 export interface StripClipboard {
@@ -108,6 +114,12 @@ export interface FrameHowState {
   centerFid: string | null;
   scrollHideGuard: number;
   swipeHintShown: boolean;
+  /** 9:16 portrait storyboard mode */
+  portraitMode: boolean;
+  /** Frame groups */
+  groups: FrameGroup[];
+  activeGroupId: number | null;  // null = ALL
+  nextGroupId: number;
   // bumped manually by the imperative core to wake any React subscribers
   // that need to react to mutable state changes (e.g., frame badge count).
   renderTick: number;
@@ -142,6 +154,10 @@ const initial: FrameHowState = {
   centerFid: null,
   scrollHideGuard: 0,
   swipeHintShown: false,
+  portraitMode: false,
+  groups: [],
+  activeGroupId: null,
+  nextGroupId: 1,
   renderTick: 0,
 };
 
@@ -173,6 +189,11 @@ export function resetStoryboardState(): void {
     stripClipboard: null,
     imgTarget: null,
     mainImgTarget: null,
+    currentViewMode: 'both',
+    portraitMode: false,
+    groups: [],
+    activeGroupId: null,
+    nextGroupId: 1,
     renderTick: state().renderTick + 1,
   });
 }

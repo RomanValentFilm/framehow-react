@@ -4,7 +4,10 @@
 //
 // Network calls go through ./api with the bearer token from ./session.
 
+import { autoPhoneMainView } from './view';
+import { dismissNewProjectModal } from './modals';
 import { api, API_BASE_URL } from './api';
+import { fhTrack } from './tracking';
 import type { ApiError } from './api';
 import {
   clearSession,
@@ -229,6 +232,7 @@ function openAccountModal(initialMode: AccountMode = 'signup'): Promise<AccountR
             session: { token: string; expires_at: number };
           }>('/auth/signup', { name, email, password, profession });
           setSession(res.session.token, res.user);
+          fhTrack('signup', { profession: profession || 'none' });
           finish({ user: res.user, token: res.session.token });
         } else {
           if (email.length === 0 || password.length === 0) {
@@ -240,6 +244,7 @@ function openAccountModal(initialMode: AccountMode = 'signup'): Promise<AccountR
             session: { token: string; expires_at: number };
           }>('/auth/login', { email, password });
           setSession(res.session.token, res.user);
+          fhTrack('login');
           finish({ user: res.user, token: res.session.token });
         }
       } catch (e) {
@@ -371,7 +376,13 @@ export async function openProjectList(): Promise<void> {
       hide('projectListModal');
       resolve();
     }
-    closeBtn.onclick = cleanup;
+    closeBtn.onclick = () => {
+      cleanup();
+      // User explicitly cancelled — show Signpost if still empty
+      if (state().frames.length === 0) {
+        window.dispatchEvent(new CustomEvent('fh:open-signpost'));
+      }
+    };
     newBtn.onclick = async () => {
       cleanup();
       await startNewProject();
@@ -439,9 +450,11 @@ async function loadCloudProject(p: CloudProject): Promise<void> {
     await applyCloudTreeToStore(tree);
     updateLastKnownTimestamp(tree.project.updated_at);
     setCurrentProject({ projectId: p.id, name: p.name, lastSavedAt: tree.project.updated_at });
+    fhTrack('project_opened', { name: p.name });
     (window as any).__fh_renderAll?.();
+    autoPhoneMainView();
     updateSyncHash();
-    showToast(`Loaded "${p.name}"`);
+    // toast removed
   } catch (e) {
     showToast(asMessage(e, 'Could not load project.'));
   }
@@ -662,6 +675,7 @@ export async function saveNow(): Promise<void> {
       );
       projectId = res.project.id;
       markSaved(projectId);
+      fhTrack('project_created', { name: cp.name });
     } catch (e) {
       showToast(asMessage(e, 'Could not create project.'));
       return;
@@ -674,6 +688,7 @@ export async function saveNow(): Promise<void> {
     markSaved(projectId);
     updateSyncHash();
     updateLastKnownTimestamp(Date.now());
+    fhTrack('project_saved');
     showToast('Saved.');
   } catch (e) {
     showToast(asMessage(e, 'Could not save project.'));
@@ -688,10 +703,12 @@ async function startNewProject(): Promise<void> {
     if (!ok) return;
   }
   resetStoryboardState();
+  useStore.setState({ portraitMode: false });
   clearCurrentProject();
   // Refresh DOM
   (window as any).__fh_renderAll?.();
-  showToast('Started a new project.');
+  // Show Signpost modal so the user can pick what to do next
+  window.dispatchEvent(new CustomEvent('fh:open-signpost'));
 }
 
 async function openLoginThenContinue(): Promise<void> {
@@ -989,12 +1006,38 @@ async function applyCloudTreeToStore(tree: CloudProjectTree): Promise<void> {
     }
   }
 
+  // Detect portrait mode from frame dimensions: if the first frame has cropH > cropW,
+  // the project is portrait (9:16). Default to false (landscape) if no frames.
+  const isPortrait = newFrames.length > 0 && newFrames[0].cropH > newFrames[0].cropW;
+
   // Apply structure immediately so the user sees the project right away.
+  // Do a FULL reset of all per-frame maps to avoid stale data from the previous project.
   useStore.setState((prev) => ({
     frames: newFrames,
     versions: newVersions,
     activeTab,
+    drawColor: {},
+    drawWidth: {},
+    drawEraser: {},
+    drawActive: {},
+    showText: {},
+    crossCompare: {},
+    prevFrameState: {},
     nextId,
+    reorderFid: null,
+    verReorderFid: null,
+    verSlideDir: null,
+    swipeHighlightFid: null,
+    stripClipboard: null,
+    imgTarget: null,
+    mainImgTarget: null,
+    ovExpandedFid: null,
+    drawingInProgress: false,
+    drawSuppressClick: false,
+    overviewAction: false,
+    fsOverlayActive: null,
+    currentViewMode: 'both',
+    portraitMode: isPortrait,
     renderTick: prev.renderTick + 1,
   }));
   (window as any).__fh_renderAll?.();
@@ -1277,17 +1320,38 @@ async function tryPullFromCloud(): Promise<void> {
           const mergedActiveTab: Record<number, number> = {};
           for (const f of mergedFrames) mergedActiveTab[f.id] = 0;
 
+          const mergedIsPortrait = mergedFrames.length > 0 && mergedFrames[0].cropH > mergedFrames[0].cropW;
           useStore.setState((prev) => ({
             frames: mergedFrames,
             versions: mergedVersions,
             activeTab: mergedActiveTab,
+            drawColor: {},
+            drawWidth: {},
+            drawEraser: {},
+            drawActive: {},
+            showText: {},
+            crossCompare: {},
+            prevFrameState: {},
             nextId: Math.max(...mergedFrames.map((f) => f.id), 0) + 1,
+            reorderFid: null,
+            verReorderFid: null,
+            stripClipboard: null,
+            imgTarget: null,
+            mainImgTarget: null,
+            ovExpandedFid: null,
+            drawingInProgress: false,
+            drawSuppressClick: false,
+            overviewAction: false,
+            fsOverlayActive: null,
+            currentViewMode: 'both',
+            portraitMode: mergedIsPortrait,
             renderTick: prev.renderTick + 1,
           }));
 
           lastKnownUpdatedAt = remoteUpdatedAt;
           markSaved(cp.projectId!);
           (window as any).__fh_renderAll?.();
+          autoPhoneMainView();
           updateSyncHash();
           showToast('Merged — duplicate frames marked with "?"');
           return;
@@ -1300,6 +1364,7 @@ async function tryPullFromCloud(): Promise<void> {
       await applyCloudTreeToStore(tree);
       markSaved(cp.projectId!);
       (window as any).__fh_renderAll?.();
+      autoPhoneMainView();
       // updateSyncHash AFTER renderAll — renderAll calls saveOpenTextEdits/saveOpenTableEdits
       // which can modify the store. If we hash before that, the push interval sees a stale hash
       // and re-pushes, causing a ping-pong loop between devices.
@@ -1335,6 +1400,7 @@ export async function bootstrapAccountSystem(): Promise<void> {
   try {
     const snap = await loadSnapshot();
     if (snap && snap.frames.length > 0) {
+      dismissNewProjectModal();
       applySnapshotToStore(snap);
       setCurrentProject({
         projectId: snap.projectId,
@@ -1359,6 +1425,9 @@ export async function bootstrapAccountSystem(): Promise<void> {
 
   // 4. If logged in and no current project, surface the project list.
   if (isLoggedIn() && state().frames.length === 0) {
+    dismissNewProjectModal();
+    // Hide startup loading line before opening the (potentially long-lived) modal
+    document.getElementById('startupLoadingLine')?.classList.add('hidden');
     await openProjectList();
   }
 }
