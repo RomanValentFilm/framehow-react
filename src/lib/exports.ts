@@ -153,6 +153,20 @@ function buildGroupPicker(containerId: string, radioName: string): void {
   container.innerHTML = html;
 }
 
+function getExportGroupName(radioName: string): string | null {
+  const s = state();
+  const selected = (document.querySelector(`input[name="${radioName}"]:checked`) as HTMLInputElement)?.value;
+  if (!selected || selected === 'all') return null;
+  const gid = parseInt(selected);
+  const group = s.groups.find(g => g.id === gid);
+  return group ? group.name : null;
+}
+
+function withGroupSuffix(projectName: string, radioName: string): string {
+  const groupName = getExportGroupName(radioName);
+  return groupName ? `${projectName} / ${groupName}` : projectName;
+}
+
 function getExportFrames(radioName: string): Frame[] {
   const s = state();
   const selected = (document.querySelector(`input[name="${radioName}"]:checked`) as HTMLInputElement)?.value;
@@ -205,7 +219,7 @@ export async function runExport(): Promise<void> {
   const includeText = (document.getElementById('exportIncludeText') as HTMLInputElement).checked;
   const includeTable = (document.getElementById('exportIncludeTable') as HTMLInputElement).checked;
   const paperLetter = (document.getElementById('exportPaperLetter') as HTMLInputElement).checked;
-  const projectName = ((document.getElementById('exportProjectName') as HTMLInputElement).value || 'Storyboard').trim();
+  const projectName = withGroupSuffix(((document.getElementById('exportProjectName') as HTMLInputElement).value || 'Storyboard').trim(), 'exportGroup');
 
   const versionInclude: Record<number, boolean[]> = {};
   document.querySelectorAll('#exportVersionPicker input[type="checkbox"]').forEach((cb) => {
@@ -645,7 +659,7 @@ export async function runPptxExport(): Promise<void> {
   const layout = (document.querySelector('input[name="pptxLayout"]:checked') as HTMLInputElement).value;
   const includeText = (document.getElementById('pptxIncludeText') as HTMLInputElement).checked;
   const includeTable = (document.getElementById('pptxIncludeTable') as HTMLInputElement).checked;
-  const projectName = ((document.getElementById('pptxProjectName') as HTMLInputElement).value || 'Storyboard').trim();
+  const projectName = withGroupSuffix(((document.getElementById('pptxProjectName') as HTMLInputElement).value || 'Storyboard').trim(), 'pptxGroup');
 
   const versionInclude: Record<number, boolean[]> = {};
   document.querySelectorAll('#pptxVersionPicker input[type="checkbox"]').forEach((cb) => {
@@ -898,7 +912,9 @@ export async function runImageExport(): Promise<void> {
   showToast('Generating images…');
   const s = state();
   const nameInput = document.getElementById('imageExportProjectName') as HTMLInputElement;
-  const projectName = ((nameInput?.value || s.lastPdfName || 'PROJECT_NAME')).replace(/[^\w\-]+/g, '_');
+  const baseName = ((nameInput?.value || s.lastPdfName || 'PROJECT_NAME')).replace(/[^\w\-]+/g, '_');
+  const groupName = getExportGroupName('imageGroup');
+  const projectName = groupName ? `${baseName}_${groupName.replace(/[^\w\-]+/g, '_')}` : baseName;
   const zip = new JSZip();
   const exportFrames = getExportFrames('imageGroup');
   const visibleFrames = (exportFrames.length ? exportFrames : getVisibleFrames()).filter((f) => !f.hidden);
