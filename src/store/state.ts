@@ -71,6 +71,7 @@ export interface FrameGroup {
   id: number;
   name: string;
   frameIds: number[];
+  hiddenFrameIds: number[];
 }
 
 export interface StripClipboard {

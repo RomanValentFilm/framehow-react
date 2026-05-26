@@ -105,7 +105,8 @@ export function renderMainFrame(div: HTMLElement, fid: number): void {
   const f = s.frames.find((fr) => fr.id === fid);
   if (!f) return;
 
-  if (f.hidden) {
+  // Hidden frames only show as hidden in ALL view; inside a group they render normally
+  if (f.hidden && s.activeGroupId === null) {
     div.style.background = 'rgba(51,51,51,0.4)';
     div.style.borderColor = 'rgba(255,255,255,0.12)';
     div.innerHTML = `
@@ -446,7 +447,8 @@ export function renderVersionFrame(div: HTMLElement, fid: number): void {
     cid = `cvs_${fid}_${ai}`;
   const f = s.frames.find((fr) => fr.id === fid);
 
-  if (f && f.hidden) {
+  // Hidden frames only show as hidden in ALL view; inside a group they render normally
+  if (f && f.hidden && s.activeGroupId === null) {
     div.style.background = 'rgba(51,51,51,0.4)';
     div.style.borderColor = 'rgba(255,255,255,0.12)';
     const tabsHTML = tabs

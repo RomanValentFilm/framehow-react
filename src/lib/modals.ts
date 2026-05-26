@@ -379,6 +379,47 @@ export function showDeleteChoice(): Promise<'hide' | 'delete' | null> {
   });
 }
 
+export function showGroupDeleteChoice(): Promise<'hide' | 'remove' | null> {
+  return new Promise((resolve) => {
+    const modal = document.getElementById('choiceModal')!;
+    const content = document.getElementById('choiceContent')!;
+    content.style.minWidth = '320px';
+    let selected: 'hide' | 'remove' = 'hide';
+    function renderOptions() {
+      content.innerHTML = `
+        <div class="choice-modal-options">
+          <div class="choice-option${selected === 'hide' ? ' selected' : ''}" data-choice="hide">
+            <div class="choice-radio"><div class="choice-radio-dot"></div></div>
+            <span class="choice-label">HIDE this frame and all its versions<br>inside this group</span>
+          </div>
+          <div class="choice-option danger${selected === 'remove' ? ' selected' : ''}" data-choice="remove">
+            <div class="choice-radio"><div class="choice-radio-dot"></div></div>
+            <span class="choice-label">REMOVE this frame and all its versions<br>from this group</span>
+          </div>
+        </div>
+        <div class="confirm-modal-btns">
+          <button class="btn" id="choiceCancel2">Cancel</button>
+          <button class="btn" id="choiceOk">OK</button>
+        </div>`;
+      content.querySelectorAll('.choice-option').forEach((opt) => {
+        opt.addEventListener('click', () => {
+          selected = (opt as HTMLElement).dataset.choice as 'hide' | 'remove';
+          renderOptions();
+        });
+      });
+      document.getElementById('choiceCancel2')!.addEventListener('click', () => cleanup(null));
+      document.getElementById('choiceOk')!.addEventListener('click', () => cleanup(selected));
+    }
+    modal.classList.remove('hidden');
+    renderOptions();
+    function cleanup(result: 'hide' | 'remove' | null) {
+      modal.classList.add('hidden');
+      content.style.minWidth = '';
+      resolve(result);
+    }
+  });
+}
+
 export function showVerLabelEdit(frameLabel: string, currentVerLabel: string): Promise<string | null> {
   return new Promise((resolve) => {
     const modal = document.getElementById('verLabelModal')!;

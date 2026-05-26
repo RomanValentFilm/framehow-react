@@ -3,6 +3,7 @@
 
 import { state, useStore } from '../store/state';
 import type { Frame, FrameGroup } from '../store/state';
+import { rasterizeMain } from './rasterize';
 
 let _sidebarEl: HTMLElement | null = null;
 let _overlayEl: HTMLElement | null = null;
@@ -14,10 +15,90 @@ export function getVisibleFrames(): Frame[] {
   if (s.activeGroupId === null) return s.frames;
   const group = s.groups.find(g => g.id === s.activeGroupId);
   if (!group) return s.frames;
+  const hiddenSet = new Set(group.hiddenFrameIds || []);
   // Build a map for O(1) lookup
   const frameMap = new Map(s.frames.map(f => [f.id, f]));
-  // Return in group's frameIds order (preserves per-group reorder)
-  return group.frameIds.map(id => frameMap.get(id)).filter((f): f is Frame => !!f);
+  // Return in group's frameIds order, excluding per-group hidden frames
+  return group.frameIds
+    .filter(id => !hiddenSet.has(id))
+    .map(id => frameMap.get(id))
+    .filter((f): f is Frame => !!f);
+}
+
+// ── Auto-add a newly created frame to the active group ──
+// Also positions the frame in s.frames (ALL order) right after `afterFid`.
+export function addFrameToActiveGroup(newFid: number, afterFid: number): void {
+  const s = state();
+  if (s.activeGroupId === null) return;
+  const group = s.groups.find(g => g.id === s.activeGroupId);
+  if (!group) return;
+  const afterIdx = group.frameIds.indexOf(afterFid);
+  const newIds = [...group.frameIds];
+  if (afterIdx >= 0) {
+    newIds.splice(afterIdx + 1, 0, newFid);
+  } else {
+    newIds.push(newFid);
+  }
+  const newGroups = s.groups.map(g =>
+    g.id === group.id ? { ...g, frameIds: newIds } : g
+  );
+  useStore.setState({ groups: newGroups });
+}
+
+// ── Hide a frame within a specific group (per-group, not global) ──
+export function hideFrameInGroup(fid: number, groupId?: number): void {
+  const s = state();
+  const gid = groupId ?? s.activeGroupId;
+  if (gid === null) return;
+  const newGroups = s.groups.map(g => {
+    if (g.id !== gid) return g;
+    const hidden = g.hiddenFrameIds || [];
+    if (hidden.includes(fid)) return g;
+    return { ...g, hiddenFrameIds: [...hidden, fid] };
+  });
+  useStore.setState({ groups: newGroups });
+}
+
+// ── Remove a frame from a specific group (not from the project) ──
+export function removeFrameFromGroup(fid: number, groupId?: number): void {
+  const s = state();
+  const gid = groupId ?? s.activeGroupId;
+  if (gid === null) return;
+  const newGroups = s.groups.map(g =>
+    g.id === gid ? { ...g, frameIds: g.frameIds.filter(id => id !== fid) } : g
+  );
+  useStore.setState({ groups: newGroups });
+}
+
+// ── Sync ALL order after reorder in a group ──
+// Moves `fid` in s.frames to sit right after the frame above it in the group.
+function syncAllOrderFromGroup(fid: number, group: { frameIds: number[] }): void {
+  const s = state();
+  const posInGroup = group.frameIds.indexOf(fid);
+  if (posInGroup < 0) return;
+
+  // Find the frame just above in the group
+  let anchorFid: number | null = null;
+  for (let i = posInGroup - 1; i >= 0; i--) {
+    if (s.frames.some(f => f.id === group.frameIds[i])) {
+      anchorFid = group.frameIds[i];
+      break;
+    }
+  }
+
+  // Remove fid from s.frames
+  const frameIdx = s.frames.findIndex(f => f.id === fid);
+  if (frameIdx < 0) return;
+  const [frame] = s.frames.splice(frameIdx, 1);
+
+  if (anchorFid !== null) {
+    // Insert right after the anchor
+    const anchorIdx = s.frames.findIndex(f => f.id === anchorFid);
+    s.frames.splice(anchorIdx + 1, 0, frame);
+  } else {
+    // No anchor above → put at the start
+    s.frames.unshift(frame);
+  }
 }
 
 // ── Reorder a frame within the active group ──
@@ -37,6 +118,12 @@ export function reorderFrameInGroup(fid: number, direction: 'up' | 'down'): bool
     g.id === group.id ? { ...g, frameIds: newIds } : g
   );
   useStore.setState({ groups: newGroups });
+  // Only sync ALL order for user-created frames (label contains #).
+  // Original frames (from PDF, no #) keep their ALL position fixed.
+  const frame = s.frames.find(fr => fr.id === fid);
+  if (frame && frame.label && frame.label.includes('#')) {
+    syncAllOrderFromGroup(fid, { frameIds: newIds });
+  }
   return true; // handled
 }
 
@@ -197,12 +284,12 @@ function openGroupEditor(existing: FrameGroup | null): void {
     'padding:20px 24px;max-width:560px;width:100%;color:#fff;max-height:80vh;overflow-y:auto;' +
     'font-family:-apple-system,BlinkMacSystemFont,sans-serif;';
 
-  // Build frame thumbnails — larger, with description on the right
+  // Build frame thumbnails from ALL frames (not filtered by active group)
   let framesHTML = '';
   for (const f of s.frames) {
     const checked = selectedIds.has(f.id);
     const thumbSrc = f.src || '';
-    const label = f.label || `Frame ${f.id}`;
+    const label = (f.label || `Frame ${f.id}`) + (f.hidden ? ' (hidden)' : '');
     const desc = f.textContent ? f.textContent.substring(0, 60) + (f.textContent.length > 60 ? '…' : '') : '';
     framesHTML += `
       <label class="group-frame-toggle" data-fid="${f.id}" style="
@@ -215,8 +302,8 @@ function openGroupEditor(existing: FrameGroup | null): void {
           width:18px;height:18px;accent-color:#c94432;cursor:pointer;flex-shrink:0;
         ">
         ${thumbSrc
-          ? `<img src="${thumbSrc}" style="width:96px;height:64px;object-fit:cover;border-radius:4px;flex-shrink:0;">`
-          : `<div style="width:96px;height:64px;background:#333;border-radius:4px;flex-shrink:0;"></div>`}
+          ? `<img data-thumb-fid="${f.id}" src="${thumbSrc}" style="width:115px;height:77px;object-fit:cover;border-radius:4px;flex-shrink:0;">`
+          : `<div style="width:115px;height:77px;background:#333;border-radius:4px;flex-shrink:0;"></div>`}
         <div style="flex:1;min-width:0;">
           <div style="font-size:13px;font-weight:600;">${escHtml(label)}</div>
           ${desc ? `<div style="font-size:11px;color:#888;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(desc)}</div>` : ''}
@@ -235,7 +322,19 @@ function openGroupEditor(existing: FrameGroup | null): void {
         background:#2a2a2a;color:#fff;font-size:14px;outline:none;
         font-family:-apple-system,BlinkMacSystemFont,sans-serif;">
     </div>
-    <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:16px;">
+    <div style="display:flex;gap:8px;margin-bottom:10px;">
+      <button class="group-select-all-btn" style="
+        padding:6px 14px;border-radius:6px;border:1px solid #555;
+        background:#2a2a2a;color:#ccc;font-size:12px;font-weight:500;cursor:pointer;
+        font-family:-apple-system,BlinkMacSystemFont,sans-serif;
+      ">Select All</button>
+      <button class="group-deselect-all-btn" style="
+        padding:6px 14px;border-radius:6px;border:1px solid #555;
+        background:#2a2a2a;color:#ccc;font-size:12px;font-weight:500;cursor:pointer;
+        font-family:-apple-system,BlinkMacSystemFont,sans-serif;
+      ">Deselect All</button>
+    </div>
+    <div class="group-frames-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:16px;">
       ${framesHTML}
     </div>
     <div style="display:flex;gap:10px;justify-content:flex-end;">
@@ -265,13 +364,38 @@ function openGroupEditor(existing: FrameGroup | null): void {
   const nameInput = box.querySelector('.group-name-input') as HTMLInputElement;
   setTimeout(() => nameInput.focus(), 100);
 
+  // Async: render thumbnails with strokes overlaid
+  for (const f of s.frames) {
+    if (!f.src && (!f.strokes || !f.strokes.length)) continue;
+    const img = box.querySelector(`img[data-thumb-fid="${f.id}"]`) as HTMLImageElement | null;
+    if (!img) continue;
+    rasterizeMain(f, 0.5).then(cvs => {
+      try { img.src = cvs.toDataURL('image/jpeg', 0.7); } catch {}
+    }).catch(() => {});
+  }
+
   // Toggle visual feedback on checkboxes
+  function updateToggleVisual(cb: Element) {
+    const label = cb.closest('.group-frame-toggle') as HTMLElement;
+    const checked = (cb as HTMLInputElement).checked;
+    label.style.background = checked ? 'rgba(201,68,50,0.15)' : 'transparent';
+    label.style.borderColor = checked ? '#c94432' : '#333';
+  }
   box.querySelectorAll('input[type="checkbox"]').forEach(cb => {
-    cb.addEventListener('change', () => {
-      const label = (cb as HTMLElement).closest('.group-frame-toggle') as HTMLElement;
-      const checked = (cb as HTMLInputElement).checked;
-      label.style.background = checked ? 'rgba(201,68,50,0.15)' : 'transparent';
-      label.style.borderColor = checked ? '#c94432' : '#333';
+    cb.addEventListener('change', () => updateToggleVisual(cb));
+  });
+
+  // Select All / Deselect All
+  box.querySelector('.group-select-all-btn')?.addEventListener('click', () => {
+    box.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+      (cb as HTMLInputElement).checked = true;
+      updateToggleVisual(cb);
+    });
+  });
+  box.querySelector('.group-deselect-all-btn')?.addEventListener('click', () => {
+    box.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+      (cb as HTMLInputElement).checked = false;
+      updateToggleVisual(cb);
     });
   });
 
@@ -318,6 +442,7 @@ function openGroupEditor(existing: FrameGroup | null): void {
         id: s.nextGroupId,
         name,
         frameIds: checkedIds,
+        hiddenFrameIds: [],
       };
       useStore.setState({
         groups: [...s.groups, newGroup],
