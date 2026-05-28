@@ -118,12 +118,8 @@ export function reorderFrameInGroup(fid: number, direction: 'up' | 'down'): bool
     g.id === group.id ? { ...g, frameIds: newIds } : g
   );
   useStore.setState({ groups: newGroups });
-  // Only sync ALL order for user-created frames (label contains #).
-  // Original frames (from PDF, no #) keep their ALL position fixed.
-  const frame = s.frames.find(fr => fr.id === fid);
-  if (frame && frame.label && frame.label.includes('#')) {
-    syncAllOrderFromGroup(fid, { frameIds: newIds });
-  }
+  // Also update position in s.frames (ALL order) to follow group order
+  syncAllOrderFromGroup(fid, { frameIds: newIds });
   return true; // handled
 }
 

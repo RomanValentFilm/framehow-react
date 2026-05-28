@@ -50,11 +50,14 @@ export interface Version {
   starred?: boolean;
 }
 
+export type StripType = 'main' | 'ver' | 'floor' | 'refs';
+export type LayoutMode = 'auto' | 'overview' | 'grid4';
+// Keep ViewMode for backward compat during transition
 export type ViewMode = 'main' | 'ver' | 'both' | 'overview' | 'grid4';
-export type DrawActiveOrigin = 'main' | 'ver' | null;
+export type DrawActiveOrigin = 'main' | 'ver' | 'floor' | 'refs' | null;
 
 export interface FrameSnapshot {
-  origin: 'main' | 'ver';
+  origin: 'main' | 'ver' | 'floor' | 'refs';
   main: {
     src: string;
     strokes: Stroke[];
@@ -85,6 +88,20 @@ export interface FrameHowState {
   frames: Frame[];
   versions: Record<number, Version[]>;
   activeTab: Record<number, number>;
+  /** Floor strip — multi-version per frame, like versions */
+  floorVersions: Record<number, Version[]>;
+  floorActiveTab: Record<number, number>;
+  floorCrossCompare: Record<number, number>;
+  floorPrevFrameState: Record<number, FrameSnapshot | null>;
+  /** Refs strip — multi-version per frame, like versions */
+  refsVersions: Record<number, Version[]>;
+  refsActiveTab: Record<number, number>;
+  refsCrossCompare: Record<number, number>;
+  refsPrevFrameState: Record<number, FrameSnapshot | null>;
+  /** Which strips are selected in the middle buttons (ordered) */
+  activeStrips: StripType[];
+  /** Layout mode from the right buttons */
+  layoutMode: LayoutMode;
   drawColor: Record<number, string>;
   drawWidth: Record<number, number>;
   drawEraser: Record<number, boolean>;
@@ -98,7 +115,7 @@ export interface FrameHowState {
   verSlideDir: string | null;
   swipeHighlightFid: number | null;
   stripClipboard: StripClipboard | null;
-  imgTarget: { fid: number; div: HTMLElement; fromCompare?: boolean } | null;
+  imgTarget: { fid: number; div: HTMLElement; fromCompare?: boolean; stripType?: StripType } | null;
   mainImgTarget: {
     fid: number;
     div: HTMLElement;
@@ -110,7 +127,7 @@ export interface FrameHowState {
   drawingInProgress: boolean;
   drawSuppressClick: boolean;
   overviewAction: boolean;
-  fsOverlayActive: { fid: number; vi: number; origin: 'main' | 'ver' } | null;
+  fsOverlayActive: { fid: number; vi: number; origin: 'main' | 'ver' | 'floor' | 'refs' } | null;
   lastPdfName: string;
   centerFid: string | null;
   scrollHideGuard: number;
@@ -130,6 +147,16 @@ const initial: FrameHowState = {
   frames: [],
   versions: {},
   activeTab: {},
+  floorVersions: {},
+  floorActiveTab: {},
+  floorCrossCompare: {},
+  floorPrevFrameState: {},
+  refsVersions: {},
+  refsActiveTab: {},
+  refsCrossCompare: {},
+  refsPrevFrameState: {},
+  activeStrips: ['main', 'ver'],
+  layoutMode: 'auto',
   drawColor: {},
   drawWidth: {},
   drawEraser: {},
@@ -177,6 +204,16 @@ export function resetStoryboardState(): void {
     frames: [],
     versions: {},
     activeTab: {},
+    floorVersions: {},
+    floorActiveTab: {},
+    floorCrossCompare: {},
+    floorPrevFrameState: {},
+    refsVersions: {},
+    refsActiveTab: {},
+    refsCrossCompare: {},
+    refsPrevFrameState: {},
+    activeStrips: ['main', 'ver'],
+    layoutMode: 'auto',
     drawColor: {},
     drawWidth: {},
     drawEraser: {},

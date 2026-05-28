@@ -10,19 +10,21 @@ export function ViewBar() {
       {/* Flexible spacer */}
       <div className="vb-spacer" />
 
-      {/* MIDDLE GROUP */}
+      {/* MIDDLE GROUP — strip selectors (toggleable) */}
       <div className="view-btns vb-middle">
-        <button className="view-btn" data-view="main" title="Main Strip only">MAIN</button>
-        <button className="view-btn" data-view="ver" title="Versions Strip only">VRSN</button>
-        <button className="view-btn active" data-view="both" title="Both strips">TWIN</button>
+        <button className="view-btn strip-toggle active" data-strip="main" title="Main Strip">MAIN</button>
+        <button className="view-btn strip-toggle active" data-strip="ver" title="Version Strip">VRSN</button>
+        <button className="view-btn strip-toggle vb-desktop-only" data-strip="floor" title="Floor Plans">FLOOR</button>
+        <button className="view-btn strip-toggle vb-desktop-only" data-strip="refs" title="References">REFS</button>
       </div>
 
       {/* Flexible spacer */}
       <div className="vb-spacer" />
 
-      {/* RIGHT GROUP */}
+      {/* RIGHT GROUP — special layout overrides */}
       <div className="view-btns vb-right">
-        <button className="view-btn" data-view="overview" title="Full Overview">GRID</button>
+        <button className="view-btn vb-off-btn" id="vbOffBtn" data-view="off" title="Back to columns" style={{display:'none'}}>OFF<svg width="10" height="10" viewBox="0 0 10 10" style={{flexShrink:0}}><path d="M2 1l6 4-6 4z" fill="#e53935"/></svg></button>
+        <button className="view-btn" data-view="overview" title="Main + 2 Versions">1+2V</button>
         <button className="view-btn" data-view="grid4" title="4-Column Grid">GRID4</button>
       </div>
     </div>

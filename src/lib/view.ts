@@ -42,17 +42,29 @@ function _getLockedIH(): number {
 function _resetLockedIH(): void { _lockedIH = null; }
 
 export function syncCardHeights(): void {
-  const mainScroll = document.getElementById('mainScroll')!;
-  const versionsScroll = document.getElementById('versionsScroll')!;
-  const mainCards = mainScroll.querySelectorAll('.frame-card');
-  const verCards = versionsScroll.querySelectorAll('.frame-card');
+  const s = state();
+  // Gather card lists from all visible strip columns
+  const stripScrollIds = [
+    { strip: 'main', scrollId: 'mainScroll' },
+    { strip: 'ver', scrollId: 'versionsScroll' },
+    { strip: 'floor', scrollId: 'floorScroll' },
+    { strip: 'refs', scrollId: 'refsScroll' },
+  ];
+  const activeCardArrays: NodeListOf<Element>[] = [];
+  for (const { strip, scrollId } of stripScrollIds) {
+    if (!s.activeStrips.includes(strip as any)) continue;
+    const el = document.getElementById(scrollId);
+    if (!el) continue;
+    const cards = el.querySelectorAll('.frame-card');
+    activeCardArrays.push(cards);
+  }
+  // Aliases for backward compat in STEP 2 canvas capping
+  const mainCards = document.getElementById('mainScroll')?.querySelectorAll('.frame-card') || document.querySelectorAll('#mainScroll .frame-card');
+  const verCards = document.getElementById('versionsScroll')?.querySelectorAll('.frame-card') || document.querySelectorAll('#versionsScroll .frame-card');
+  const allCards = activeCardArrays.flatMap((nl) => Array.from(nl));
 
   // STEP 1: Reset all cards to natural height
-  mainCards.forEach((c) => {
-    (c as HTMLElement).style.height = 'auto';
-    (c as HTMLElement).style.minHeight = 'auto';
-  });
-  verCards.forEach((c) => {
+  allCards.forEach((c) => {
     (c as HTMLElement).style.height = 'auto';
     (c as HTMLElement).style.minHeight = 'auto';
   });
@@ -60,7 +72,6 @@ export function syncCardHeights(): void {
   // STEP 2: Measure non-canvas overhead per card and cap the canvas so the
   // full card (label + canvas + buttons) fits on screen without scrolling.
   // Works for both portrait (9:16) and landscape (16:9) projects.
-  const s = state();
   const toolbar = document.getElementById('mainToolbar');
   const viewBar = document.querySelector('.view-bar');
   const topChrome = (toolbar ? toolbar.getBoundingClientRect().height : 0)
@@ -75,10 +86,10 @@ export function syncCardHeights(): void {
   // Portrait: always cap (canvas is taller than wide, overflows everywhere).
   // Landscape: only cap in desktop MAIN view (full-width column causes overflow;
   //            TWIN/VRSN/GRID columns are narrow enough to self-constrain).
-  const capLandscape = !s.portraitMode && !isTouch && (s.currentViewMode === 'main' || s.currentViewMode === 'ver');
+  const capLandscape = !s.portraitMode && !isTouch && s.activeStrips.length === 1;
 
   if (s.portraitMode || capLandscape) {
-    [...mainCards, ...verCards].forEach((card) => {
+    allCards.forEach((card) => {
       const wrap = card.querySelector('.canvas-wrap') as HTMLElement;
       if (!wrap) return;
       // Hide canvas so card height = pure overhead (label + buttons + padding)
@@ -120,26 +131,34 @@ export function syncCardHeights(): void {
       }
     });
   } else {
-    // TWIN/VRSN/GRID landscape: clear any stale caps from a previous MAIN view
-    [...mainCards, ...verCards].forEach((card) => {
+    // Multi-strip landscape: clear any stale caps from a previous single-strip view
+    allCards.forEach((card) => {
       const wrap = card.querySelector('.canvas-wrap') as HTMLElement;
       if (wrap) { wrap.style.maxHeight = ''; wrap.style.maxWidth = ''; }
     });
   }
 
-  // STEP 3: Force layout, then sync main ↔ version card heights
+  // STEP 3: Force layout, then sync card heights across all active strip columns
   void document.body.offsetHeight;
-  for (let i = 0; i < mainCards.length && i < verCards.length; i++) {
-    const mRect = mainCards[i].getBoundingClientRect();
-    const vRect = verCards[i].getBoundingClientRect();
-    const max = Math.ceil(Math.max(mRect.height, vRect.height));
-    (mainCards[i] as HTMLElement).style.height = max + 'px';
-    (verCards[i] as HTMLElement).style.height = max + 'px';
-    (mainCards[i] as HTMLElement).style.minHeight = max + 'px';
-    (verCards[i] as HTMLElement).style.minHeight = max + 'px';
+  if (activeCardArrays.length > 1) {
+    const rowCount = Math.max(...activeCardArrays.map((a) => a.length));
+    for (let i = 0; i < rowCount; i++) {
+      let max = 0;
+      for (const cards of activeCardArrays) {
+        if (i < cards.length) {
+          max = Math.max(max, Math.ceil(cards[i].getBoundingClientRect().height));
+        }
+      }
+      for (const cards of activeCardArrays) {
+        if (i < cards.length) {
+          (cards[i] as HTMLElement).style.height = max + 'px';
+          (cards[i] as HTMLElement).style.minHeight = max + 'px';
+        }
+      }
+    }
   }
 
-  [...mainCards, ...verCards].forEach((card) => {
+  allCards.forEach((card) => {
     const wrap = card.querySelector('.canvas-wrap');
     if (!wrap) return;
     const parent = wrap.parentElement;
@@ -236,6 +255,9 @@ export function setViewMode(mode: ViewMode, keepCompare?: boolean, forceAnchorFi
   }
 
   useStore.setState({ currentViewMode: mode });
+  // Show/hide OFF button for 1+2V / GRID4 modes
+  const offBtn = document.getElementById('vbOffBtn') as HTMLElement | null;
+  if (offBtn) offBtn.style.display = (mode === 'overview' || mode === 'grid4') ? '' : 'none';
   if (!keepCompare) {
     const affected = Object.keys(s.crossCompare).filter((k) => (s.crossCompare[+k] ?? -1) >= 0);
     affected.forEach((fid) => {
@@ -253,13 +275,16 @@ export function setViewMode(mode: ViewMode, keepCompare?: boolean, forceAnchorFi
     });
   }
   const columnsEl = document.querySelector('.columns')!;
-  columnsEl.classList.remove('view-main', 'view-ver', 'view-overview', 'view-grid4');
-  if (mode === 'main') columnsEl.classList.add('view-main');
-  else if (mode === 'ver') columnsEl.classList.add('view-ver');
-  else if (mode === 'overview') columnsEl.classList.add('view-overview');
+  columnsEl.classList.remove('view-overview', 'view-grid4', 'strips-1', 'strips-2', 'strips-3', 'strips-4');
+  if (mode === 'overview') columnsEl.classList.add('view-overview');
   else if (mode === 'grid4') columnsEl.classList.add('view-grid4');
-  document.querySelectorAll('.view-btn').forEach((b) => {
+  else columnsEl.classList.add(`strips-${state().activeStrips.length}`);
+  document.querySelectorAll('.view-btn:not(.strip-toggle)').forEach((b) => {
     b.classList.toggle('active', (b as HTMLElement).dataset.view === mode);
+  });
+  document.querySelectorAll('.strip-toggle').forEach((b) => {
+    const strip = (b as HTMLElement).dataset.strip as string;
+    b.classList.toggle('active', state().activeStrips.includes(strip as any));
   });
 
   if (mode === 'overview' || mode === 'grid4') {

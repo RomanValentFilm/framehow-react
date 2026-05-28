@@ -23,7 +23,7 @@
   @media (hover:hover){.btn-accent:hover{background:#b03b25;}}
   .btn-accent:active{background:#111;color:#fff;border-color:#888;transition:none;}
   .columns{display:flex;align-items:flex-start;flex:1;width:100%;}
-  .strip-col{display:flex;flex-direction:column;width:50%;min-width:0;}
+  .strip-col{display:flex;flex-direction:column;flex:1;min-width:0;}
   .strip-col+.strip-col{border-left:1px solid var(--border);}
   .strip-label{display:none;}
   .view-bar{display:flex;align-items:center;padding:3px 10px;background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:52px;z-index:10;}
@@ -34,24 +34,20 @@
   .view-btn{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.04em;padding:0 8px;height:22px;display:flex;align-items:center;justify-content:center;border:1px solid var(--border);border-radius:3px;background:transparent;color:#808080;cursor:pointer;line-height:1;text-align:center;white-space:nowrap;}
   @media (hover:hover){.view-btn:hover{color:#e6e6e6;border-color:var(--border-strong);}}
   .view-btn.active{color:var(--accent);border-color:#fff;font-weight:700;}
+  .vb-off-btn{color:#e53935;border-color:#e53935;font-size:10px;padding:0 6px;height:20px;display:flex;align-items:center;gap:2px;}
   .vb-desktop-only{display:flex;}
   @media (max-width:430px) and (orientation:portrait){.vb-desktop-only{display:none;}}
   @media (max-width:430px) and (orientation:landscape){.vb-desktop-only{opacity:0.5;}}
-  .columns.view-main .strip-col:nth-child(2){display:none;}
-  .columns.view-main .strip-col:nth-child(1){width:100%;}
-  .columns.view-ver .strip-col:nth-child(1){display:none;}
-  .columns.view-ver .strip-col:nth-child(2){width:100%;border-left:none;}
+  /* Single-strip layout: center the column with capped width */
+  .columns.strips-1 .strip-col{margin:0 auto;}
   @media (orientation:landscape){
-    .columns.view-main .strip-col:nth-child(1),
-    .columns.view-ver .strip-col:nth-child(2){width:80%;margin:0 auto;}
+    .columns.strips-1 .strip-col{max-width:80%;}
   }
   @media (orientation:landscape) and (max-height:430px){
-    .columns.view-main .strip-col:nth-child(1),
-    .columns.view-ver .strip-col:nth-child(2){width:50%;}
+    .columns.strips-1 .strip-col{max-width:50%;}
   }
   @media (orientation:landscape) and (min-height:431px) and (max-height:900px){
-    .columns.view-main .strip-col:nth-child(1),
-    .columns.view-ver .strip-col:nth-child(2){width:90%;}
+    .columns.strips-1 .strip-col{max-width:90%;}
   }
   .columns.view-overview .strip-col{display:none;}
   .columns.view-overview .overview-col{display:flex;}
@@ -412,7 +408,7 @@
   .account-card{background:var(--surface);border:1px solid var(--border-strong);border-radius:var(--radius);padding:20px 22px;width:min(420px,100%);max-height:calc(100dvh - 32px);overflow-y:auto;}
   .account-card-wide{width:min(560px,100%);}
   .account-card h2{font-size:18px;font-weight:600;margin:0 0 6px;color:#fff;}
-  .account-hint{font-size:12px;color:var(--text-faint);line-height:1.5;margin:0 0 14px;}
+  .account-hint{font-size:14px;color:#aaa;line-height:1.5;margin:0 0 14px;}
   .account-row{margin-bottom:12px;display:flex;flex-direction:column;gap:6px;}
   .account-row label{font-size:11px;font-weight:500;color:#b8b8b8;text-transform:uppercase;letter-spacing:.04em;}
   .account-row input,.account-row select{font-family:var(--font);font-size:14px;padding:9px 11px;border-radius:var(--radius-sm);border:1px solid var(--border-strong);background:var(--bg);color:#fff;width:100%;box-sizing:border-box;}
@@ -425,8 +421,10 @@
   .account-success:empty{display:none;}
   .account-btns{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;}
   .account-btns .btn{padding:9px 18px;font-size:13px;}
+  .account-top-toggle{text-align:left;margin-bottom:4px;}
+  .account-top-toggle .account-link-btn{padding-left:0;font-size:16px;}
   .account-links{display:flex;flex-direction:column;align-items:center;gap:6px;margin-top:14px;padding-top:14px;border-top:1px solid var(--border);}
-  .account-link-btn{background:none;border:none;color:#9aa6c6;font-size:12px;font-family:var(--font);cursor:pointer;padding:2px 4px;text-decoration:underline;}
+  .account-link-btn{background:none;border:none;color:#9aa6c6;font-size:16px;font-family:var(--font);cursor:pointer;padding:2px 4px;text-decoration:underline;}
   .account-link-btn:hover{color:#fff;}
   .account-sep{border:none;border-top:1px solid var(--border);margin:18px 0 14px;}
   .account-actions-stack{display:flex;flex-direction:column;gap:8px;}

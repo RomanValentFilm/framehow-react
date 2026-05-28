@@ -2,7 +2,7 @@
 // state cleanup, and inline view-mode helpers.
 
 import { COLORS, state, useStore } from '../store/state';
-import type { Version, Frame, Stroke, TableData } from '../store/state';
+import type { Version, Frame, Stroke, TableData, StripType, FrameSnapshot } from '../store/state';
 import { getCurrentProject } from './currentProject';
 
 /** Scroll a frame card into the center of the visible area after re-render.
@@ -370,4 +370,137 @@ export function updateFrameBadge(): void {
     const cp = getCurrentProject();
     nameEl.textContent = cp.name || 'UNTITLED';
   }
+}
+
+// ── Strip-agnostic accessors ──
+// These let renderVersionFrame, handleAction, etc. work with any strip type
+// by routing to the correct state slice.
+
+const STRIP_TAB_PREFIX: Record<string, string> = { ver: 'v', floor: 'f', refs: 'r' };
+
+export function stripTabPrefix(strip: StripType): string {
+  return STRIP_TAB_PREFIX[strip] || 'v';
+}
+
+export function stripScrollId(strip: StripType): string {
+  if (strip === 'main') return 'mainScroll';
+  if (strip === 'floor') return 'floorScroll';
+  if (strip === 'refs') return 'refsScroll';
+  return 'versionsScroll';
+}
+
+export function getStripVersions(fid: number, strip: StripType): Version[] {
+  const s = state();
+  if (strip === 'floor') return s.floorVersions[fid] || [];
+  if (strip === 'refs') return s.refsVersions[fid] || [];
+  return s.versions[fid] || [];
+}
+
+export function setStripVersions(fid: number, strip: StripType, vers: Version[]): void {
+  const s = state();
+  if (strip === 'floor') s.floorVersions[fid] = vers;
+  else if (strip === 'refs') s.refsVersions[fid] = vers;
+  else s.versions[fid] = vers;
+}
+
+export function ensureStripVersions(fid: number, strip: StripType): Version[] {
+  const s = state();
+  const prefix = stripTabPrefix(strip);
+  if (strip === 'floor') {
+    if (!s.floorVersions[fid] || s.floorVersions[fid].length === 0) {
+      s.floorVersions[fid] = [{ id: 1, label: `${prefix}1`, type: 'empty', strokes: [], bgImage: null }];
+      s.floorActiveTab[fid] = 0;
+    }
+    return s.floorVersions[fid];
+  }
+  if (strip === 'refs') {
+    if (!s.refsVersions[fid] || s.refsVersions[fid].length === 0) {
+      s.refsVersions[fid] = [{ id: 1, label: `${prefix}1`, type: 'empty', strokes: [], bgImage: null }];
+      s.refsActiveTab[fid] = 0;
+    }
+    return s.refsVersions[fid];
+  }
+  return s.versions[fid];
+}
+
+export function getStripActiveTab(fid: number, strip: StripType): number {
+  const s = state();
+  if (strip === 'floor') return s.floorActiveTab[fid] || 0;
+  if (strip === 'refs') return s.refsActiveTab[fid] || 0;
+  return s.activeTab[fid] || 0;
+}
+
+export function setStripActiveTab(fid: number, strip: StripType, val: number): void {
+  const s = state();
+  if (strip === 'floor') s.floorActiveTab[fid] = val;
+  else if (strip === 'refs') s.refsActiveTab[fid] = val;
+  else s.activeTab[fid] = val;
+}
+
+export function getStripCrossCompare(fid: number, strip: StripType): number {
+  const s = state();
+  if (strip === 'floor') return s.floorCrossCompare[fid] ?? -1;
+  if (strip === 'refs') return s.refsCrossCompare[fid] ?? -1;
+  return s.crossCompare[fid] ?? -1;
+}
+
+export function setStripCrossCompare(fid: number, strip: StripType, val: number): void {
+  const s = state();
+  if (strip === 'floor') s.floorCrossCompare[fid] = val;
+  else if (strip === 'refs') s.refsCrossCompare[fid] = val;
+  else s.crossCompare[fid] = val;
+}
+
+export function getStripPrevFrameState(fid: number, strip: StripType): FrameSnapshot | null {
+  const s = state();
+  if (strip === 'floor') return s.floorPrevFrameState[fid] || null;
+  if (strip === 'refs') return s.refsPrevFrameState[fid] || null;
+  return s.prevFrameState[fid] || null;
+}
+
+export function setStripPrevFrameState(fid: number, strip: StripType, snap: FrameSnapshot | null): void {
+  const s = state();
+  if (strip === 'floor') s.floorPrevFrameState[fid] = snap;
+  else if (strip === 'refs') s.refsPrevFrameState[fid] = snap;
+  else s.prevFrameState[fid] = snap;
+}
+
+/** Relabel versions for any strip type */
+export function relabelStripVersions(fid: number, strip: StripType): void {
+  const vers = getStripVersions(fid, strip);
+  if (!vers) return;
+  const prefix = stripTabPrefix(strip);
+  let vn = 1, hn = 1;
+  vers.forEach((v) => {
+    v.label = v.hidden ? `h${hn++}` : `${prefix}${vn++}`;
+  });
+}
+
+/** Add a new version to any strip, after the last visible tab */
+export function addNewStripVersion(fid: number, strip: StripType, newVer: Version): void {
+  const vers = getStripVersions(fid, strip);
+  let lastVisible = -1;
+  for (let i = vers.length - 1; i >= 0; i--) {
+    if (!vers[i].hidden) { lastVisible = i; break; }
+  }
+  vers.splice(lastVisible + 1, 0, newVer);
+  setStripActiveTab(fid, strip, lastVisible + 1);
+  relabelStripVersions(fid, strip);
+}
+
+/** Auto-create new version if current one has content, for any strip */
+export function autoNewStripVersionIfNeeded(fid: number, strip: StripType): Version {
+  const s = state();
+  const ai = getStripActiveTab(fid, strip);
+  const vers = getStripVersions(fid, strip);
+  const ver = vers[ai];
+  if (s.overviewAction) return ver;
+  if (ver.bgImage || (ver.strokes && ver.strokes.length > 0)) {
+    const prefix = stripTabPrefix(strip);
+    const n = vers.length + 1;
+    const newVer: Version = { id: n, label: `${prefix}${n}`, type: 'empty', strokes: [], bgImage: null };
+    addNewStripVersion(fid, strip, newVer);
+    return newVer;
+  }
+  return ver;
 }

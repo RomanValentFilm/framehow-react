@@ -368,8 +368,8 @@ export function initFramehow(): void {
   );
   document.getElementById('portraitExportGo')!.addEventListener('click', runPortraitExport);
 
-  // View mode buttons
-  document.querySelectorAll('.view-btn').forEach((b) =>
+  // View mode buttons (excludes strip toggles — they have their own handler)
+  document.querySelectorAll('.view-btn:not(.strip-toggle)').forEach((b) =>
     b.addEventListener('click', () => {
       const w = window.innerWidth,
         h = window.innerHeight;
@@ -396,6 +396,17 @@ export function initFramehow(): void {
         return;
       }
 
+      // OFF button — exit 1+2V/GRID4 back to normal columns with same strip pair
+      if (view === 'off') {
+        const s = state();
+        let viewMode: 'main' | 'ver' | 'both' = 'both';
+        if (s.activeStrips.length === 1 && s.activeStrips[0] === 'main') viewMode = 'main';
+        else if (s.activeStrips.length === 1) viewMode = 'ver';
+        useStore.setState({ currentViewMode: viewMode });
+        renderAll();
+        return;
+      }
+
       if (isPhone && (view === 'overview' || view === 'grid4')) {
         const om = document.getElementById('overviewPhoneMsg')!;
         om.classList.add('show');
@@ -407,15 +418,59 @@ export function initFramehow(): void {
         setTimeout(() => om.classList.remove('show'), 3000);
         return;
       }
-      if (isPhonePortrait && view === 'both') {
-        setViewMode('both');
-        const rm = document.getElementById('rotateMsg')!;
-        rm.classList.add('show');
-        rm.addEventListener('click', () => rm.classList.remove('show'), { once: true });
-        setTimeout(() => rm.classList.remove('show'), 3000);
+
+      // 1+2V and GRID4: always MAIN + one companion strip
+      if (view === 'overview' || view === 'grid4') {
+        const s = state();
+        // If already in this mode, toggle back to normal columns
+        if (s.currentViewMode === view) {
+          setViewMode('both');
+          return;
+        }
+        // Pick companion: first non-main strip in activeStrips, or default to 'ver'
+        const companion = s.activeStrips.find((st: string) => st !== 'main') || 'ver';
+        useStore.setState({ activeStrips: ['main', companion] as any });
+        setViewMode(view as any);
         return;
       }
+
       setViewMode(view as any);
+    })
+  );
+
+  // Strip toggle buttons (middle group) — toggle strips, auto-derive layout
+  document.querySelectorAll('.strip-toggle').forEach((b) =>
+    b.addEventListener('click', () => {
+      const strip = (b as HTMLElement).dataset.strip as 'main' | 'ver' | 'floor' | 'refs';
+      const s = state();
+
+      // In 1+2V / GRID4 mode: MAIN locked on, switch companion strip
+      if (s.currentViewMode === 'overview' || s.currentViewMode === 'grid4') {
+        if (strip === 'main') return; // MAIN always on in these modes
+        useStore.setState({ activeStrips: ['main', strip] as any });
+        renderAll();
+        return;
+      }
+
+      // Normal column mode: toggle strip on/off
+      const current = [...s.activeStrips];
+      const idx = current.indexOf(strip);
+
+      if (idx >= 0) {
+        // Don't allow removing the last strip
+        if (current.length <= 1) return;
+        current.splice(idx, 1);
+      } else {
+        current.push(strip);
+      }
+
+      // Derive currentViewMode from active strips
+      let viewMode: 'main' | 'ver' | 'both' = 'both';
+      if (current.length === 1 && current[0] === 'main') viewMode = 'main';
+      else if (current.length === 1) viewMode = 'ver';
+
+      useStore.setState({ activeStrips: current, currentViewMode: viewMode });
+      renderAll();
     })
   );
 
@@ -457,34 +512,49 @@ export function initFramehow(): void {
   });
 
   document.getElementById('imgInput')!.addEventListener('change', (e) => {
-    const file = (e.target as HTMLInputElement).files?.[0];
+    const files = (e.target as HTMLInputElement).files;
     const s = state();
-    if (!file || !s.imgTarget) return;
+    if (!files || files.length === 0 || !s.imgTarget) return;
     const { fid, div, fromCompare } = s.imgTarget;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      snapshotFrame(fid, 'ver');
-      const target = autoNewVersionIfNeeded(fid);
-      target.type = 'upload';
-      target.bgImage = (ev.target as FileReader).result as string;
-      if (fromCompare) {
-        state().crossCompare[fid] = state().activeTab[fid];
-        renderMainFrame(div, fid);
-        const vd = document.querySelector(`#versionsScroll .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
-        if (vd) renderVersionFrame(vd, fid);
-      } else {
-        renderVersionFrame(div, fid);
-        const nai = state().activeTab[fid];
-        const cvs = div.querySelector(`#cvs_${fid}_${nai}`) as HTMLCanvasElement | null;
-        if (cvs) drawFit(cvs, (ev.target as FileReader).result as string);
-      }
-      if (state().currentViewMode === 'overview' || state().currentViewMode === 'grid4') {
-        const ovRow = document.querySelector(`#overviewScroll .overview-row[data-ofid="${fid}"]`) as HTMLElement | null;
-        if (ovRow) { state().currentViewMode === 'grid4' ? renderGrid4Row(ovRow, fid) : renderOverviewRow(ovRow, fid); }
-      }
-      useStore.setState({ overviewAction: false });
-    };
-    reader.readAsDataURL(file);
+    snapshotFrame(fid, 'ver');
+    let loaded = 0;
+    const total = files.length;
+    for (let i = 0; i < total; i++) {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const dataURL = (ev.target as FileReader).result as string;
+        if (i === 0) {
+          // First file: use autoNewVersionIfNeeded (respects current tab state)
+          const target = autoNewVersionIfNeeded(fid);
+          target.type = 'upload';
+          target.bgImage = dataURL;
+        } else {
+          // Additional files: create new version tabs
+          const n = s.versions[fid].length + 1;
+          const newVer = { id: n, label: `v${n}`, type: 'upload' as const, strokes: [], bgImage: dataURL };
+          s.versions[fid].push(newVer);
+          s.activeTab[fid] = s.versions[fid].length - 1;
+        }
+        loaded++;
+        if (loaded === total) {
+          // All files loaded — re-render once
+          if (fromCompare) {
+            state().crossCompare[fid] = state().activeTab[fid];
+            renderMainFrame(div, fid);
+            const vd = document.querySelector(`#versionsScroll .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
+            if (vd) renderVersionFrame(vd, fid);
+          } else {
+            renderVersionFrame(div, fid);
+          }
+          if (state().currentViewMode === 'overview' || state().currentViewMode === 'grid4') {
+            const ovRow = document.querySelector(`#overviewScroll .overview-row[data-ofid="${fid}"]`) as HTMLElement | null;
+            if (ovRow) { state().currentViewMode === 'grid4' ? renderGrid4Row(ovRow, fid) : renderOverviewRow(ovRow, fid); }
+          }
+          useStore.setState({ overviewAction: false });
+        }
+      };
+      reader.readAsDataURL(files[i]);
+    }
     (e.target as HTMLInputElement).value = '';
   });
 
@@ -618,6 +688,18 @@ export function initFramehow(): void {
       // DON'T re-open if a project load is in flight (frames not yet populated).
     }).catch(() => {}).finally(() => {
       if (loadingLine) loadingLine.classList.add('hidden');
+      // Auto-open sign-in modal when arriving from landing page with ?signin=1
+      const urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.get('signin') === '1') {
+        // Clean the URL so refreshing doesn't re-trigger
+        const clean = new URL(window.location.href);
+        clean.searchParams.delete('signin');
+        window.history.replaceState({}, '', clean.pathname + clean.hash);
+        if (!isLoggedIn()) {
+          void flowAccountOrSignIn();
+          return; // skip new-project modal
+        }
+      }
       if (!state().frames.length && !isNewProjectModalOpen() && !isLoggedIn()) {
         openNewProjectModal();
       }

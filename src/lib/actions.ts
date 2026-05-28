@@ -1,7 +1,7 @@
 // Action handlers for Main strip and Version strip cards.
 
 import { COLORS, state, useStore } from '../store/state';
-import { reorderFrameInGroup, addFrameToActiveGroup, removeFrameFromGroup } from './groups';
+import { reorderFrameInGroup, addFrameToActiveGroup, removeFrameFromGroup, hideFrameInGroup } from './groups';
 import {
   addNewVersion,
   applyReorderHighlight,
@@ -20,7 +20,7 @@ import {
 import { snapshotFrame } from './drawing';
 import { renderAll, renderMainFrame, renderVersionFrame } from './render';
 import { renderOverviewRow, renderGrid4Row } from './overview';
-import { showConfirm, showDeleteChoice, showToast, showVersionChoice, openTextModal } from './modals';
+import { showConfirm, showDeleteChoice, showGroupDeleteChoice, showLabelChoice, showToast, showVersionChoice, openTextModal } from './modals';
 import { fhTrack } from './tracking';
 import { drawFit } from './drawing';
 import { openCamera, getCameraTarget, clearCameraTarget, setOnCapturedImage } from './camera';
@@ -107,45 +107,25 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
 
   if (action === 'new') {
     // --- Auto-label logic ---
-    // "3"   → "3#1",  "3#1" → "3#2",  "3#2" → "3#3"
-    // If user renamed to "2", next is "2#1".
-    // Base number is kept, # counter increments.
-    const prevLabel = f.label || '';
-    let newLabel: string;
-    const hashMatch = prevLabel.match(/^(\d+)#(\d+)$/);
-    if (hashMatch) {
-      // Previous is "3#2" → "3#3"
-      const base = hashMatch[1];
-      const counter = parseInt(hashMatch[2], 10);
-      newLabel = `${base}#${counter + 1}`;
-    } else {
-      // Previous is "3" or "3a" or anything → extract leading number, add #1
-      const numMatch = prevLabel.match(/^(\d+)/);
-      const base = numMatch ? numMatch[1] : '0';
-      newLabel = `${base}#1`;
-    }
-
-    {
+    // Portrait mode: every new frame gets "name"
+    if (s.portraitMode) {
       const s2 = state();
       const f2 = s2.frames.find((fr) => fr.id === fid);
       if (!f2) return;
       const idx2 = s2.frames.indexOf(f2);
       const nid = s2.nextId;
-      const insideGroup = s.activeGroupId !== null;
       useStore.setState({ nextId: nid + 1 });
-      const newFrame: any = {
+      const newFrame = {
         id: nid,
         src: '',
-        label: newLabel,
-        cropW: f2.cropW || (s.portraitMode ? 540 : 960),
-        cropH: f2.cropH || (s.portraitMode ? 960 : 540),
+        label: 'name',
+        cropW: f2.cropW || 540,
+        cropH: f2.cropH || 960,
         strokes: [],
         drawMode: true,
         textContent: '',
         tableData: null,
       };
-      // Frames created inside a group are auto-hidden in ALL view
-      if (insideGroup) newFrame.hidden = true;
       s2.frames.splice(idx2 + 1, 0, newFrame);
       s2.versions[nid] = [{ id: 1, label: 'v1', type: 'empty', strokes: [], bgImage: null }];
       s2.activeTab[nid] = 0;
@@ -155,7 +135,66 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
       addFrameToActiveGroup(nid, fid);
       updateFrameBadge();
       renderAll();
+      return;
     }
+    const prevLabel = f.label || '';
+    // Parse label: number + optional single-letter suffix + optional trailing text
+    // "5"       → num=5, letter=none, text=""       → auto "6"
+    // "5a"      → num=5, letter="a",  text=""       → ask "5b" or "6"
+    // "8opt"    → num=8, letter=none, text="opt"    → auto "9opt"
+    // "7 alt"   → num=7, letter=none, text=" alt"   → auto "8 alt"
+    // "6a alt"  → num=6, letter="a",  text=" alt"   → ask "6b alt" or "7 alt"
+    const labelMatch = prevLabel.match(/^(\d+)(?:([a-zA-Z])(?=\s|$))?(.*)?$/);
+    let labelPromise: Promise<string>;
+
+    if (labelMatch) {
+      const num = parseInt(labelMatch[1], 10);
+      const letter = labelMatch[2] || '';   // single letter suffix or ""
+      const text = labelMatch[3] || '';     // trailing text (may start with space)
+
+      if (letter) {
+        // Has single-letter suffix → ask user
+        const nextLetter = String.fromCharCode(letter.charCodeAt(0) + 1);
+        const optContinue = `${num}${nextLetter}${text}`;
+        const optNext = `${num + 1}${text}`;
+        labelPromise = showLabelChoice(optContinue, optNext);
+      } else {
+        // Pure number or number+text → auto-increment the number, keep text
+        labelPromise = Promise.resolve(`${num + 1}${text}`);
+      }
+    } else {
+      // Label doesn't match any number pattern → leave blank
+      labelPromise = Promise.resolve('');
+    }
+
+    labelPromise.then((newLabel) => {
+      const s2 = state();
+      const f2 = s2.frames.find((fr) => fr.id === fid);
+      if (!f2) return;
+      const idx2 = s2.frames.indexOf(f2);
+      const nid = s2.nextId;
+      useStore.setState({ nextId: nid + 1 });
+      const newFrame = {
+        id: nid,
+        src: '',
+        label: newLabel,
+        cropW: f2.cropW || 960,
+        cropH: f2.cropH || 540,
+        strokes: [],
+        drawMode: true,
+        textContent: '',
+        tableData: null,
+      };
+      s2.frames.splice(idx2 + 1, 0, newFrame);
+      s2.versions[nid] = [{ id: 1, label: 'v1', type: 'empty', strokes: [], bgImage: null }];
+      s2.activeTab[nid] = 0;
+      s2.drawColor[nid] = COLORS[0];
+      s2.drawWidth[nid] = 6;
+      s2.drawEraser[nid] = false;
+      addFrameToActiveGroup(nid, fid);
+      updateFrameBadge();
+      renderAll();
+    });
   } else if (action === 'duplicate') {
     const nid = s.nextId;
     useStore.setState({ nextId: nid + 1 });
@@ -267,14 +306,21 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
     openCamera(fid, div, false, true);
   } else if (action === 'delete') {
     if (s.activeGroupId !== null) {
-      // Inside a group: confirm then remove from this group only
-      const currentGroupId = s.activeGroupId;
-      showConfirm('Remove this frame and all its versions from this group?').then((confirmed) => {
-        if (!confirmed) return;
+      // Inside a group: HIDE in group or REMOVE from group (no permanent delete)
+      const currentGroupId = s.activeGroupId; // capture before async modal
+      showGroupDeleteChoice().then((choice) => {
+        if (!choice) return;
         useStore.setState({ scrollHideGuard: Date.now() + 600 });
-        removeFrameFromGroup(fid, currentGroupId);
-        updateFrameBadge();
-        renderAll();
+        if (choice === 'hide') {
+          hideFrameInGroup(fid, currentGroupId!);
+          updateFrameBadge();
+          renderAll();
+        } else {
+          // 'remove' — take frame out of this group only
+          removeFrameFromGroup(fid, currentGroupId);
+          updateFrameBadge();
+          renderAll();
+        }
       });
     } else {
       // ALL view: HIDE or permanent DELETE

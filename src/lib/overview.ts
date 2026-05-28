@@ -38,8 +38,7 @@ export function renderOverviewRow(row: HTMLElement, fid: number): void {
   const s = state();
   const f = s.frames.find((x) => x.id === fid);
   if (!f) return;
-  // Hidden frames only show as hidden in ALL view; inside a group they render normally
-  if (f.hidden && s.activeGroupId === null) {
+  if (f.hidden) {
     const tabs = s.versions[fid] || [];
     const ai = s.activeTab[fid] || 0;
     const tabsHTML = tabs
@@ -412,8 +411,8 @@ export function renderGrid4Row(row: HTMLElement, fid: number): void {
   if (!f) return;
   row.innerHTML = '';
 
-  // ── Hidden frame — collapsed bar with Un-Hide (only in ALL view) ──
-  if (f.hidden && s.activeGroupId === null) {
+  // ── Hidden frame — collapsed bar with Un-Hide ──
+  if (f.hidden) {
     const tabs = s.versions[fid] || [];
     const ai = s.activeTab[fid] || 0;
     const tabsHTML = tabs

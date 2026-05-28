@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Framehow PDF Test Harness</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.min.mjs" type="module"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a2e; color: #e0e0e0; padding: 20px; }
+h1 { font-size: 22px; margin-bottom: 6px; color: #fff; }
+.subtitle { color: #888; font-size: 13px; margin-bottom: 20px; }
+
+.drop-zone {
+  border: 2px dashed #444; border-radius: 12px; padding: 40px; text-align: center;
+  color: #888; cursor: pointer; margin-bottom: 20px; transition: all 0.2s;
+}
+.drop-zone.over { border-color: #4a9eff; background: rgba(74,158,255,0.08); color: #4a9eff; }
+.drop-zone input { display: none; }
+
+.controls { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+.btn { padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500; }
+.btn-primary { background: #4a9eff; color: #fff; }
+.btn-danger { background: #ff4a4a; color: #fff; }
+.btn-success { background: #4aff7a; color: #111; }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.status { padding: 10px 14px; background: #222; border-radius: 8px; margin-bottom: 20px; font-size: 13px; display: none; }
+.status.show { display: block; }
+
+table { width: 100%; border-collapse: collapse; background: #16213e; border-radius: 8px; overflow: hidden; }
+th { background: #0f3460; padding: 10px 14px; text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: #aaa; }
+td { padding: 10px 14px; border-top: 1px solid #1a1a3e; font-size: 13px; }
+tr.pass td { }
+tr.fail td { background: rgba(255,74,74,0.1); }
+tr.new td { background: rgba(74,158,255,0.1); }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+.badge-pass { background: #1b4332; color: #4aff7a; }
+.badge-fail { background: #4a1010; color: #ff4a4a; }
+.badge-new { background: #0f3460; color: #4a9eff; }
+.badge-running { background: #3d3400; color: #ffd700; }
+
+.expected-input { width: 50px; background: #1a1a2e; border: 1px solid #444; color: #fff; border-radius: 4px; padding: 4px 6px; text-align: center; font-size: 13px; }
+.expected-input:focus { border-color: #4a9eff; outline: none; }
+
+.summary { margin-top: 16px; padding: 12px 16px; border-radius: 8px; font-size: 14px; font-weight: 500; }
+.summary-pass { background: #1b4332; color: #4aff7a; }
+.summary-fail { background: #4a1010; color: #ff4a4a; }
+
+.page-detail { font-size: 11px; color: #888; margin-top: 2px; }
+.thumb-row { display: flex; gap: 4px; margin-top: 6px; flex-wrap: wrap; }
+.thumb { height: 40px; border: 1px solid #333; border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<h1>Framehow PDF Test Harness</h1>
+<p class="subtitle">Drop storyboard PDFs to verify frame extraction. Expected counts are saved between sessions.</p>
+
+<div class="drop-zone" id="dropZone">
+  <p>Drop PDF files here or click to select</p>
+  <p style="font-size:12px; margin-top:8px; color:#666">Supports multiple files</p>
+  <input type="file" id="fileInput" multiple accept=".pdf">
+</div>
+
+<div class="controls">
+  <button class="btn btn-primary" id="btnRun" disabled>Run Tests</button>
+  <button class="btn btn-success" id="btnSave" disabled>Save Expected Counts</button>
+  <button class="btn btn-danger" id="btnClear">Clear Saved Data</button>
+  <span style="flex:1"></span>
+  <span id="fileCount" style="color:#888; font-size:13px; align-self:center;"></span>
+</div>
+
+<div class="status" id="status"></div>
+
+<table id="results" style="display:none">
+  <thead>
+    <tr>
+      <th>File</th>
+      <th>Pages</th>
+      <th>Expected</th>
+      <th>Actual</th>
+      <th>Per Page</th>
+      <th>Status</th>
+    </tr>
+  </thead>
+  <tbody id="tbody"></tbody>
+</table>
+
+<div id="summary"></div>
+
+<script type="module">
+// ── PDF.js setup ──
+const pdfjsLib = await import('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.min.mjs');
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.worker.min.mjs';
+
+// ── LocalStorage for expected counts ──
+const STORAGE_KEY = 'fh_pdf_test_expected';
+function loadExpected() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); } catch { return {}; }
+}
+function saveExpected(map) { localStorage.setItem(STORAGE_KEY, JSON.stringify(map)); }
+
+// ── State ──
+let pdfFiles = [];
+let results = [];
+const expectedMap = loadExpected();
+
+// ── DOM ──
+const dropZone = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
+const btnRun = document.getElementById('btnRun');
+const btnSave = document.getElementById('btnSave');
+const btnClear = document.getElementById('btnClear');
+const fileCount = document.getElementById('fileCount');
+const statusEl = document.getElementById('status');
+const tbody = document.getElementById('tbody');
+const resultsTable = document.getElementById('results');
+const summaryEl = document.getElementById('summary');
+
+// ── Drop zone ──
+dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault(); dropZone.classList.remove('over');
+  addFiles([...e.dataTransfer.files].filter(f => f.name.toLowerCase().endsWith('.pdf')));
+});
+fileInput.addEventListener('change', () => { addFiles([...fileInput.files]); fileInput.value = ''; });
+
+function addFiles(files) {
+  // Deduplicate by name
+  for (const f of files) {
+    if (!pdfFiles.some(p => p.name === f.name)) pdfFiles.push(f);
+  }
+  fileCount.textContent = `${pdfFiles.length} PDF${pdfFiles.length !== 1 ? 's' : ''} loaded`;
+  btnRun.disabled = pdfFiles.length === 0;
+}
+
+// ── Buttons ──
+btnRun.addEventListener('click', runTests);
+btnSave.addEventListener('click', () => {
+  // Read input values from the table
+  document.querySelectorAll('.expected-input').forEach(input => {
+    const name = input.dataset.name;
+    const val = parseInt(input.value);
+    if (!isNaN(val) && val > 0) expectedMap[name] = val;
+  });
+  saveExpected(expectedMap);
+  showStatus('Expected counts saved!', '#4aff7a');
+  // Re-evaluate pass/fail
+  updateStatuses();
+});
+btnClear.addEventListener('click', () => {
+  if (confirm('Clear all saved expected counts?')) {
+    localStorage.removeItem(STORAGE_KEY);
+    Object.keys(expectedMap).forEach(k => delete expectedMap[k]);
+    showStatus('Saved data cleared.', '#ff4a4a');
+    document.querySelectorAll('.expected-input').forEach(input => {
+      if (!input.dataset.fromResult) input.value = '';
+    });
+    updateStatuses();
+  }
+});
+
+function showStatus(msg, color) {
+  statusEl.textContent = msg;
+  statusEl.style.color = color || '#e0e0e0';
+  statusEl.classList.add('show');
+  setTimeout(() => statusEl.classList.remove('show'), 3000);
+}
+
+// ── Extraction logic (mirrors pdf.ts) ──
+
+async function renderPage(page, scale) {
+  const vp = page.getViewport({ scale });
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(vp.width);
+  canvas.height = Math.round(vp.height);
+  await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+  return canvas;
+}
+
+function findBands(prof, len, highT, lowT, minSize) {
+  const bands = [];
+  let on = false, start = 0;
+  for (let i = 0; i < len; i++) {
+    if (!on && prof[i] >= highT) { on = true; start = i; }
+    else if (on && prof[i] < lowT) {
+      if (i - start >= minSize) bands.push({ a: start, b: i });
+      on = false;
+    }
+  }
+  if (on && len - start >= minSize) bands.push({ a: start, b: len });
+  return bands;
+}
+
+async function extractCandidates(page) {
+  const SCALE = 2;
+  const vp = page.getViewport({ scale: SCALE });
+  const W = Math.round(vp.width), H = Math.round(vp.height);
+
+  const pc = await renderPage(page, SCALE);
+  const px = pc.getContext('2d').getImageData(0, 0, W, H).data;
+  const gray = new Float32Array(W * H);
+  for (let i = 0; i < W * H; i++) gray[i] = (px[i * 4] + px[i * 4 + 1] + px[i * 4 + 2]) / 3;
+
+  const DARK = 200;
+  function isColorNoise(idx) {
+    const r = px[idx], g = px[idx + 1], b = px[idx + 2];
+    if (r > 200 && g > 150 && b < 120) return true;
+    if (r > 180 && g < 100 && b < 100) return true;
+    return false;
+  }
+
+  const rowProf = new Float32Array(H);
+  for (let y = 0; y < H; y++) {
+    let s = 0;
+    for (let x = 0; x < W; x++) {
+      if (isColorNoise((y * W + x) * 4)) continue;
+      if (gray[y * W + x] < DARK) s++;
+    }
+    rowProf[y] = s / W;
+  }
+
+  let rowBands = findBands(rowProf, H, 0.08, 0.02, Math.round(H * 0.04));
+  const rowBandsLow = findBands(rowProf, H, 0.04, 0.015, Math.round(H * 0.04));
+  if (rowBandsLow.length > rowBands.length) rowBands = rowBandsLow;
+
+  const overallDark = rowProf.reduce((a, b) => a + b, 0) / H;
+  let useInverted = false;
+  if (rowBands.length === 1 && rowBands[0].b - rowBands[0].a > H * 0.8 && overallDark > 0.5) {
+    useInverted = true;
+  }
+
+  let activeRowBands = rowBands;
+  let rowProfForSplit = rowProf;
+  if (useInverted) {
+    const LIGHT = 100;
+    const rowProfLight = new Float32Array(H);
+    for (let y = 0; y < H; y++) {
+      let s = 0;
+      for (let x = 0; x < W; x++) if (gray[y * W + x] > LIGHT) s++;
+      rowProfLight[y] = s / W;
+    }
+    activeRowBands = findBands(rowProfLight, H, 0.05, 0.02, Math.round(H * 0.04));
+    rowProfForSplit = rowProfLight;
+  }
+
+  const mergedRowBands = [];
+  const MIN_GAP = Math.round(H * 0.02);
+  for (const rb of activeRowBands) {
+    const last = mergedRowBands.length > 0 ? mergedRowBands[mergedRowBands.length - 1] : null;
+    if (last && rb.a - last.b < MIN_GAP) {
+      const lastH = last.b - last.a, rbH = rb.b - rb.a;
+      if (Math.min(lastH, rbH) / Math.max(lastH, rbH) > 0.5) {
+        last.b = rb.b;
+      } else {
+        mergedRowBands.push({ ...rb });
+      }
+    } else {
+      mergedRowBands.push({ ...rb });
+    }
+  }
+
+  function splitRowBand(rb) {
+    const bandH = rb.b - rb.a;
+    if (bandH <= H * 0.20) return [rb];
+    const searchA = rb.a + Math.round(bandH * 0.15);
+    const searchB = rb.a + Math.round(bandH * 0.85);
+    const gapThresh = 0.025;
+    let bestGapStart = -1, bestGapEnd = -1, bestGapLen = 0, gapStart = -1;
+    for (let y = searchA; y < searchB; y++) {
+      const val = rowProfForSplit[y];
+      if (val < gapThresh) {
+        if (gapStart < 0) gapStart = y;
+      } else {
+        if (gapStart >= 0) {
+          const len = y - gapStart;
+          if (len > bestGapLen) { bestGapLen = len; bestGapStart = gapStart; bestGapEnd = y; }
+        }
+        gapStart = -1;
+      }
+    }
+    if (gapStart >= 0) {
+      const len = searchB - gapStart;
+      if (len > bestGapLen) { bestGapLen = len; bestGapStart = gapStart; bestGapEnd = searchB; }
+    }
+    if (bestGapLen >= Math.round(H * 0.005)) {
+      const splitRow = Math.round((bestGapStart + bestGapEnd) / 2);
+      return [...splitRowBand({ a: rb.a, b: splitRow }), ...splitRowBand({ a: splitRow, b: rb.b })];
+    }
+    return [rb];
+  }
+
+  let finalRowBands = mergedRowBands.flatMap(splitRowBand);
+
+  // Post-split: absorb tiny bands
+  const TINY_THRESH = Math.round(H * 0.08);
+  const ABSORB_GAP = Math.round(H * 0.10);
+  let absorbed = true;
+  while (absorbed) {
+    absorbed = false;
+    const nonTinySizes = finalRowBands.map(b => b.b - b.a).filter(s => s >= TINY_THRESH).sort((a, b) => a - b);
+    const medianSize = nonTinySizes.length > 0 ? nonTinySizes[Math.floor(nonTinySizes.length / 2)] : H / finalRowBands.length;
+    for (let i = 0; i < finalRowBands.length; i++) {
+      const band = finalRowBands[i];
+      if (band.b - band.a >= TINY_THRESH) continue;
+      let bestIdx = -1, bestDeviation = Infinity;
+      for (let j = 0; j < finalRowBands.length; j++) {
+        if (j === i) continue;
+        const other = finalRowBands[j];
+        const dist = Math.min(Math.abs(band.a - other.b), Math.abs(other.a - band.b));
+        if (dist > ABSORB_GAP) continue;
+        const mergedSize = Math.max(other.b, band.b) - Math.min(other.a, band.a);
+        const deviation = Math.abs(mergedSize - medianSize);
+        if (deviation < bestDeviation) { bestDeviation = deviation; bestIdx = j; }
+      }
+      if (bestIdx >= 0) {
+        const mergedSize = Math.max(finalRowBands[bestIdx].b, band.b) - Math.min(finalRowBands[bestIdx].a, band.a);
+        if (Math.abs(mergedSize - medianSize) / medianSize < 0.20) {
+          const other = finalRowBands[bestIdx];
+          other.a = Math.min(other.a, band.a);
+          other.b = Math.max(other.b, band.b);
+          finalRowBands.splice(i, 1);
+          absorbed = true;
+          break;
+        }
+      }
+    }
+  }
+
+  const colProf = new Float32Array(W);
+  if (finalRowBands.length > 0) {
+    const tallBands = finalRowBands.filter(rb => rb.b - rb.a >= Math.round(H * 0.08));
+    const colSrcBands = tallBands.length > 0 ? tallBands : finalRowBands;
+    let totalRows = 0;
+    for (const rb of colSrcBands) {
+      for (let x = 0; x < W; x++) {
+        let s = 0;
+        if (useInverted) {
+          const LIGHT = 100;
+          for (let y = rb.a; y < rb.b; y++) if (gray[y * W + x] > LIGHT) s++;
+        } else {
+          for (let y = rb.a; y < rb.b; y++) {
+            if (isColorNoise((y * W + x) * 4)) continue;
+            if (gray[y * W + x] < DARK) s++;
+          }
+        }
+        colProf[x] += s;
+      }
+      totalRows += rb.b - rb.a;
+    }
+    for (let x = 0; x < W; x++) colProf[x] /= totalRows;
+  } else {
+    for (let x = 0; x < W; x++) {
+      let s = 0;
+      for (let y = 0; y < H; y++) if (gray[y * W + x] < DARK) s++;
+      colProf[x] = s / H;
+    }
+  }
+  const colBands = useInverted
+    ? findBands(colProf, W, 0.05, 0.02, Math.round(W * 0.04))
+    : findBands(colProf, W, 0.04, 0.01, Math.round(W * 0.04));
+
+  function splitColBand(band) {
+    const bandW = band.b - band.a;
+    if (bandW <= W * 0.25) return [band];
+    const searchA = band.a + Math.round(bandW * 0.15);
+    const searchB = band.a + Math.round(bandW * 0.85);
+    const gapThresh = 0.015;
+    let bestGapStart = -1, bestGapEnd = -1, bestGapLen = 0, gapStart = -1;
+    for (let cx = searchA; cx < searchB; cx++) {
+      const val = useInverted ? 1 - colProf[cx] : colProf[cx];
+      if (val < gapThresh) {
+        if (gapStart < 0) gapStart = cx;
+      } else {
+        if (gapStart >= 0) {
+          const len = cx - gapStart;
+          if (len > bestGapLen) { bestGapLen = len; bestGapStart = gapStart; bestGapEnd = cx; }
+          gapStart = -1;
+        }
+      }
+    }
+    if (gapStart >= 0) {
+      const len = searchB - gapStart;
+      if (len > bestGapLen) { bestGapLen = len; bestGapStart = gapStart; bestGapEnd = searchB; }
+    }
+    if (bestGapLen < Math.round(W * 0.005)) return [band];
+    const mid = Math.round((bestGapStart + bestGapEnd) / 2);
+    return [...splitColBand({ a: band.a, b: mid }), ...splitColBand({ a: mid, b: band.b })];
+  }
+  const finalColBands = colBands.flatMap(splitColBand);
+
+  if (finalRowBands.length === 0 || finalColBands.length === 0)
+    return { candidates: [], inverted: useInverted, rowBands: finalRowBands, colBands: finalColBands, W, H };
+
+  const candidates = [];
+  for (const rb of finalRowBands) {
+    for (const cb of finalColBands) {
+      const x = cb.a, y = rb.a, w = cb.b - cb.a, h = rb.b - rb.a;
+      if (w < W * 0.06 || h < H * 0.04) continue;
+      if (w * h > W * H * 0.9) continue;
+      if (w < h) continue;
+      let dark = 0, total = 0, sumG = 0, sumGsq = 0;
+      const step = 4;
+      for (let sy = y; sy < y + h; sy += step)
+        for (let sx = x; sx < x + w; sx += step) {
+          const g = gray[sy * W + sx];
+          if (useInverted ? g > 100 : g < DARK) dark++;
+          sumG += g; sumGsq += g * g; total++;
+        }
+      if (dark / total < 0.02) continue;
+      const mean = sumG / total;
+      const variance = sumGsq / total - mean * mean;
+      if (mean > 160 && variance < 800) continue;
+      candidates.push({ x, y, w, h });
+    }
+  }
+
+  const kept = [];
+  candidates.sort((a, b) => b.w * b.h - a.w * a.h);
+  for (const c of candidates) {
+    const dup = kept.some(k => {
+      const ix = Math.max(0, Math.min(c.x + c.w, k.x + k.w) - Math.max(c.x, k.x));
+      const iy = Math.max(0, Math.min(c.y + c.h, k.y + k.h) - Math.max(c.y, k.y));
+      if (ix <= 0 || iy <= 0) return false;
+      return (ix * iy) / Math.min(c.w * c.h, k.w * k.h) > 0.4;
+    });
+    if (!dup) kept.push(c);
+  }
+
+  kept.sort((a, b) => {
+    const rb = Math.round(H * 0.1);
+    const ra = Math.floor(a.y / rb), rb2 = Math.floor(b.y / rb);
+    return ra !== rb2 ? ra - rb2 : a.x - b.x;
+  });
+
+  return { candidates: kept, inverted: useInverted, rowBands: finalRowBands, colBands: finalColBands, W, H };
+}
+
+// Full pipeline: extract candidates from all pages, apply DOM filter, count frames
+async function testPdf(file, onProgress) {
+  const ab = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: ab }).promise;
+
+  const allCandidates = [];
+  for (let p = 1; p <= pdf.numPages; p++) {
+    onProgress(`Page ${p}/${pdf.numPages}`);
+    const page = await pdf.getPage(p);
+    const vp = page.getViewport({ scale: 2 });
+    const pageW = Math.round(vp.width), pageH = Math.round(vp.height);
+    const result = await extractCandidates(page);
+    const candidates = result.candidates;
+    candidates.forEach(c => { c.rw = c.w / pageW; c.rh = c.h / pageH; });
+    allCandidates.push({ page, candidates, pageW, pageH, rowBands: result.rowBands, colBands: result.colBands });
+  }
+
+  // Dominant size
+  const allSizes = allCandidates.flatMap(pc => pc.candidates).map(c => ({ rw: c.rw, rh: c.rh }));
+  let dominantRW = null, dominantRH = null;
+  if (allSizes.length > 0) {
+    const rws = allSizes.map(s => s.rw).sort((a, b) => a - b);
+    const rhs = allSizes.map(s => s.rh).sort((a, b) => a - b);
+    const medRW = rws[Math.floor(rws.length / 2)];
+    const medRH = rhs[Math.floor(rhs.length / 2)];
+    const TOLERANCE = 0.3;
+    const matching = allSizes.filter(s =>
+      Math.abs(s.rw - medRW) / medRW < TOLERANCE && Math.abs(s.rh - medRH) / medRH < TOLERANCE
+    );
+    if (matching.length / allSizes.length > 0.35) {
+      dominantRW = medRW;
+      dominantRH = medRH;
+    }
+  }
+
+  // DOM filter per page
+  let totalFrames = 0;
+  const pageResults = [];
+  for (let i = 0; i < allCandidates.length; i++) {
+    const { candidates, pageW, pageH } = allCandidates[i];
+    const TOLERANCE = 0.3;
+    let filtered = dominantRW
+      ? candidates.filter(c => {
+          const rwOk = Math.abs(c.rw - dominantRW) / dominantRW < TOLERANCE;
+          const rhOk = Math.abs(c.rh - dominantRH) / dominantRH < TOLERANCE;
+          return rwOk && rhOk;
+        })
+      : candidates;
+
+    // AR guard
+    if (dominantRW && dominantRH) {
+      const domAR = dominantRW / dominantRH;
+      filtered = filtered.filter(c => {
+        const ar = c.rw / c.rh;
+        return Math.abs(ar - domAR) / domAR < 0.6;
+      });
+    }
+
+    // Illustration-over-text swap
+    if (dominantRW && filtered.length >= 2 && filtered.length < candidates.length) {
+      const removed = candidates.filter(c => !filtered.includes(c));
+      if (removed.length === filtered.length &&
+          removed.every(c => Math.abs(c.rw - dominantRW) / dominantRW < TOLERANCE)) {
+        const remMaxBot = Math.max(...removed.map(c => c.y + c.h));
+        const filMinTop = Math.min(...filtered.map(c => c.y));
+        if (remMaxBot < filMinTop - pageH * 0.02) {
+          const remXs = removed.map(c => c.x).sort((a, b) => a - b);
+          const filXs = filtered.map(c => c.x).sort((a, b) => a - b);
+          let aligned = true;
+          for (let ai = 0; ai < remXs.length; ai++) {
+            if (Math.abs(remXs[ai] - filXs[ai]) > pageW * 0.05) { aligned = false; break; }
+          }
+          if (aligned) filtered = removed;
+        }
+      }
+    }
+
+    totalFrames += filtered.length;
+    pageResults.push({
+      page: i + 1,
+      raw: candidates.length,
+      filtered: filtered.length,
+      dims: `${pageW}x${pageH}`
+    });
+  }
+
+  return { totalFrames, pages: pdf.numPages, pageResults, dominantRW, dominantRH };
+}
+
+
+// ── Run tests ──
+async function runTests() {
+  btnRun.disabled = true;
+  results = [];
+  tbody.innerHTML = '';
+  resultsTable.style.display = 'table';
+  summaryEl.innerHTML = '';
+
+  // Create rows
+  for (let fi = 0; fi < pdfFiles.length; fi++) {
+    const f = pdfFiles[fi];
+    const tr = document.createElement('tr');
+    tr.id = `row-${fi}`;
+    const exp = expectedMap[f.name];
+    tr.innerHTML = `
+      <td>${esc(f.name)}</td>
+      <td>…</td>
+      <td><input type="number" class="expected-input" data-name="${esc(f.name)}" value="${exp || ''}" min="1" placeholder="?"></td>
+      <td>…</td>
+      <td>…</td>
+      <td><span class="badge badge-running">running</span></td>
+    `;
+    tbody.appendChild(tr);
+  }
+
+  // Process sequentially
+  for (let fi = 0; fi < pdfFiles.length; fi++) {
+    const f = pdfFiles[fi];
+    const tr = document.getElementById(`row-${fi}`);
+    const cells = tr.querySelectorAll('td');
+
+    try {
+      const result = await testPdf(f, msg => {
+        cells[5].innerHTML = `<span class="badge badge-running">${msg}</span>`;
+      });
+
+      const exp = expectedMap[f.name];
+      const actual = result.totalFrames;
+      const pageDetail = result.pageResults.map(p => `p${p.page}: ${p.filtered}`).join(', ');
+
+      cells[1].textContent = result.pages;
+      cells[3].textContent = actual;
+      cells[4].innerHTML = `<span class="page-detail">${pageDetail}</span>`;
+
+      let status, cls;
+      if (exp == null) {
+        status = '<span class="badge badge-new">NEW</span>';
+        cls = 'new';
+        // Pre-fill expected with actual
+        tr.querySelector('.expected-input').value = actual;
+      } else if (actual === exp) {
+        status = '<span class="badge badge-pass">PASS</span>';
+        cls = 'pass';
+      } else {
+        status = `<span class="badge badge-fail">FAIL (expected ${exp})</span>`;
+        cls = 'fail';
+      }
+      cells[5].innerHTML = status;
+      tr.className = cls;
+
+      results.push({ name: f.name, actual, expected: exp, pages: result.pages, pageResults: result.pageResults });
+    } catch (err) {
+      cells[3].textContent = 'ERROR';
+      cells[5].innerHTML = `<span class="badge badge-fail">ERROR</span>`;
+      tr.className = 'fail';
+      console.error(`Error processing ${f.name}:`, err);
+      results.push({ name: f.name, actual: -1, expected: expectedMap[f.name], error: err.message });
+    }
+  }
+
+  // Summary
+  const total = results.length;
+  const passed = results.filter(r => r.expected != null && r.actual === r.expected).length;
+  const failed = results.filter(r => r.expected != null && r.actual !== r.expected).length;
+  const newOnes = results.filter(r => r.expected == null).length;
+
+  const allPass = failed === 0;
+  summaryEl.className = `summary ${allPass ? 'summary-pass' : 'summary-fail'}`;
+  summaryEl.textContent = allPass
+    ? `All ${passed} tests passed${newOnes ? ` (${newOnes} new)` : ''}.`
+    : `${failed} FAILED, ${passed} passed${newOnes ? `, ${newOnes} new` : ''}.`;
+
+  btnRun.disabled = false;
+  btnSave.disabled = false;
+}
+
+function updateStatuses() {
+  const rows = tbody.querySelectorAll('tr');
+  let passed = 0, failed = 0, newOnes = 0;
+  rows.forEach((tr, i) => {
+    if (i >= results.length) return;
+    const r = results[i];
+    const input = tr.querySelector('.expected-input');
+    const exp = expectedMap[r.name] ?? (input ? parseInt(input.value) : null);
+    const cells = tr.querySelectorAll('td');
+    if (r.actual < 0) return;
+    if (exp == null || isNaN(exp)) {
+      cells[5].innerHTML = '<span class="badge badge-new">NEW</span>';
+      tr.className = 'new';
+      newOnes++;
+    } else if (r.actual === exp) {
+      cells[5].innerHTML = '<span class="badge badge-pass">PASS</span>';
+      tr.className = 'pass';
+      passed++;
+    } else {
+      cells[5].innerHTML = `<span class="badge badge-fail">FAIL (expected ${exp})</span>`;
+      tr.className = 'fail';
+      failed++;
+    }
+  });
+  const allPass = failed === 0;
+  summaryEl.className = `summary ${allPass ? 'summary-pass' : 'summary-fail'}`;
+  summaryEl.textContent = allPass
+    ? `All ${passed} tests passed${newOnes ? ` (${newOnes} new)` : ''}.`
+    : `${failed} FAILED, ${passed} passed${newOnes ? `, ${newOnes} new` : ''}.`;
+}
+
+function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+</script>
+</body>
+</html>

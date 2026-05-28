@@ -165,6 +165,8 @@ function openAccountModal(initialMode: AccountMode = 'signup'): Promise<AccountR
   const hintEl = el('accountHint');
   const submit = el<HTMLButtonElement>('accountSubmit');
   const toggle = el<HTMLButtonElement>('accountToggle');
+  const toggleTop = el<HTMLButtonElement>('accountToggleTop');
+  const topToggleWrap = el('accountTopToggle');
   const forgot = el<HTMLButtonElement>('accountForgot');
   const cancel = el<HTMLButtonElement>('accountCancel');
   const errorEl = el('accountError');
@@ -172,6 +174,11 @@ function openAccountModal(initialMode: AccountMode = 'signup'): Promise<AccountR
   const emailInput = el<HTMLInputElement>('accountEmail');
   const passInput = el<HTMLInputElement>('accountPassword');
   const profSelect = el<HTMLSelectElement>('accountProfession');
+
+  function switchMode(): void {
+    mode = mode === 'signup' ? 'login' : 'signup';
+    applyMode();
+  }
 
   function applyMode(): void {
     if (mode === 'signup') {
@@ -182,14 +189,20 @@ function openAccountModal(initialMode: AccountMode = 'signup'): Promise<AccountR
       toggle.textContent = 'Already have an account? Log in';
       setVisible('accountRowName', true);
       setVisible('accountRowProfession', true);
+      // Top toggle hidden in signup; bottom toggle visible
+      topToggleWrap.style.display = 'none';
+      toggle.style.display = '';
     } else {
-      titleEl.textContent = 'Welcome back';
+      titleEl.textContent = 'Sign in';
       hintEl.textContent = 'Log in to access your projects on any device.';
       submit.textContent = 'Log in';
       passInput.autocomplete = 'current-password';
       toggle.textContent = 'New here? Create an account';
       setVisible('accountRowName', false);
       setVisible('accountRowProfession', false);
+      // Top toggle visible in login; bottom toggle hidden
+      topToggleWrap.style.display = '';
+      toggle.style.display = 'none';
     }
     errorEl.textContent = '';
   }
@@ -209,6 +222,7 @@ function openAccountModal(initialMode: AccountMode = 'signup'): Promise<AccountR
       resolved = true;
       submit.onclick = null;
       toggle.onclick = null;
+      toggleTop.onclick = null;
       forgot.onclick = null;
       cancel.onclick = null;
       hide('accountModal');
@@ -255,8 +269,12 @@ function openAccountModal(initialMode: AccountMode = 'signup'): Promise<AccountR
     };
 
     toggle.onclick = () => {
-      mode = mode === 'signup' ? 'login' : 'signup';
-      applyMode();
+      switchMode();
+      focusFirstInput('accountModal');
+    };
+
+    toggleTop.onclick = () => {
+      switchMode();
       focusFirstInput('accountModal');
     };
 

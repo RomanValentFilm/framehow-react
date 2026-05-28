@@ -34,9 +34,12 @@ export function AccountModals() {
       {/* Signup / login (mode toggle) */}
       <div className="account-modal hidden" id="accountModal">
         <div className="account-card">
+          <div className="account-top-toggle" id="accountTopToggle" style={{display:'none'}}>
+            <button className="account-link-btn" id="accountToggleTop" type="button">New here? Create an account</button>
+            <p className="account-hint" style={{margin:'8px 0'}}>or</p>
+          </div>
           <h2 id="accountTitle">Create your account</h2>
           <p className="account-hint" id="accountHint">A free account lets you save and edit on any device.</p>
-
           <div className="account-row" id="accountRowName">
             <label htmlFor="accountName">Name</label>
             <input type="text" id="accountName" autoComplete="name" maxLength={120} />

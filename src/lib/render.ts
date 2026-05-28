@@ -2,6 +2,7 @@
 // `renderVersionFrame`, `buildMainFrame`, `buildVersionFrame`, `renderAll`.
 
 import { state, useStore } from '../store/state';
+import type { StripType } from '../store/state';
 import {
   drawToolbarHTML,
   fsButtonHTML,
@@ -16,6 +17,19 @@ import {
   clearAllDrawActive,
   clearReorder,
   updateFrameBadge,
+  getStripVersions,
+  setStripVersions,
+  ensureStripVersions,
+  getStripActiveTab,
+  setStripActiveTab,
+  getStripCrossCompare,
+  setStripCrossCompare,
+  getStripPrevFrameState,
+  relabelStripVersions,
+  addNewStripVersion,
+  autoNewStripVersionIfNeeded,
+  stripTabPrefix,
+  stripScrollId,
 } from './helpers';
 import { restoreCanvas, restoreMainCanvas, setupDrawing, setupMainDrawing } from './drawing';
 import { addCrossSwipe, addNavArrows, scheduleSyncHeights } from './view';
@@ -41,22 +55,39 @@ export function renderAll(): void {
   mainScroll.innerHTML = '';
   versionsScroll.innerHTML = '';
   overviewScroll.innerHTML = '';
+  const floorScroll = document.getElementById('floorScroll')!;
+  const refsScroll = document.getElementById('refsScroll')!;
+  if (floorScroll) floorScroll.innerHTML = '';
+  if (refsScroll) refsScroll.innerHTML = '';
   const s = state();
   // Toggle portrait-mode class on body for CSS sizing
   document.body.classList.toggle('portrait-mode', !!s.portraitMode);
-  // Sync column layout classes with current view mode (ensures consistency
-  // after project load, view reset, etc. regardless of how we got here)
+  // Sync column layout classes with current state
   const columnsEl = document.querySelector('.columns');
   if (columnsEl) {
-    columnsEl.classList.remove('view-main', 'view-ver', 'view-overview', 'view-grid4');
-    if (s.currentViewMode === 'main') columnsEl.classList.add('view-main');
-    else if (s.currentViewMode === 'ver') columnsEl.classList.add('view-ver');
-    else if (s.currentViewMode === 'overview') columnsEl.classList.add('view-overview');
+    columnsEl.classList.remove('view-overview', 'view-grid4', 'strips-1', 'strips-2', 'strips-3', 'strips-4');
+    if (s.currentViewMode === 'overview') columnsEl.classList.add('view-overview');
     else if (s.currentViewMode === 'grid4') columnsEl.classList.add('view-grid4');
+    else columnsEl.classList.add(`strips-${s.activeStrips.length}`);
   }
-  document.querySelectorAll('.view-btn').forEach((b) => {
+  const mainCol = document.getElementById('mainCol') as HTMLElement;
+  const verCol = document.getElementById('verCol') as HTMLElement;
+  const floorCol = document.getElementById('floorCol') as HTMLElement;
+  const refsCol = document.getElementById('refsCol') as HTMLElement;
+  if (mainCol) mainCol.style.display = s.activeStrips.includes('main') ? '' : 'none';
+  if (verCol) verCol.style.display = s.activeStrips.includes('ver') ? '' : 'none';
+  if (floorCol) floorCol.style.display = s.activeStrips.includes('floor') ? '' : 'none';
+  if (refsCol) refsCol.style.display = s.activeStrips.includes('refs') ? '' : 'none';
+  document.querySelectorAll('.view-btn:not(.strip-toggle)').forEach((b) => {
     b.classList.toggle('active', (b as HTMLElement).dataset.view === s.currentViewMode);
   });
+  document.querySelectorAll('.strip-toggle').forEach((b) => {
+    const strip = (b as HTMLElement).dataset.strip as StripType;
+    b.classList.toggle('active', s.activeStrips.includes(strip));
+  });
+  // Show/hide OFF button when in 1+2V or GRID4 mode
+  const offBtn = document.getElementById('vbOffBtn') as HTMLElement | null;
+  if (offBtn) offBtn.style.display = (s.currentViewMode === 'overview' || s.currentViewMode === 'grid4') ? '' : 'none';
   // Show/hide view-bar based on whether we have frames
   const viewBarEl = document.querySelector('.view-bar') as HTMLElement | null;
   if (viewBarEl) viewBarEl.style.display = s.frames.length ? '' : 'none';
@@ -71,6 +102,12 @@ export function renderAll(): void {
   visibleFrames.forEach((f) => {
     mainScroll.appendChild(buildMainFrame(f));
     versionsScroll.appendChild(buildVersionFrame(f.id));
+    if (s.activeStrips.includes('floor') && floorScroll) {
+      floorScroll.appendChild(buildVersionFrame(f.id, 'floor'));
+    }
+    if (s.activeStrips.includes('refs') && refsScroll) {
+      refsScroll.appendChild(buildVersionFrame(f.id, 'refs'));
+    }
   });
   if (s.currentViewMode === 'overview') {
     const fn = (window as any).__fh_renderOverview;
@@ -92,11 +129,13 @@ export function buildMainFrame(f: any): HTMLElement {
   return div;
 }
 
-export function buildVersionFrame(fid: number): HTMLElement {
+export function buildVersionFrame(fid: number, strip: StripType = 'ver'): HTMLElement {
   const div = document.createElement('div');
   div.className = 'frame-card';
   div.dataset.vfid = String(fid);
-  renderVersionFrame(div, fid);
+  div.dataset.sfid = String(fid);
+  div.dataset.strip = strip;
+  renderVersionFrame(div, fid, strip);
   return div;
 }
 
@@ -105,8 +144,7 @@ export function renderMainFrame(div: HTMLElement, fid: number): void {
   const f = s.frames.find((fr) => fr.id === fid);
   if (!f) return;
 
-  // Hidden frames only show as hidden in ALL view; inside a group they render normally
-  if (f.hidden && s.activeGroupId === null) {
+  if (f.hidden) {
     div.style.background = 'rgba(51,51,51,0.4)';
     div.style.borderColor = 'rgba(255,255,255,0.12)';
     div.innerHTML = `
@@ -439,16 +477,17 @@ export function renderMainFrame(div: HTMLElement, fid: number): void {
   scheduleSyncHeights();
 }
 
-export function renderVersionFrame(div: HTMLElement, fid: number): void {
+export function renderVersionFrame(div: HTMLElement, fid: number, strip: StripType = 'ver'): void {
   const s = state();
-  const tabs = s.versions[fid],
-    ai = s.activeTab[fid] || 0,
+  if (strip !== 'ver') ensureStripVersions(fid, strip);
+  const tabs = getStripVersions(fid, strip),
+    ai = getStripActiveTab(fid, strip),
     ver = tabs[ai],
-    cid = `cvs_${fid}_${ai}`;
+    cid = `cvs_${strip}_${fid}_${ai}`;
+  const tabPrefix = stripTabPrefix(strip);
   const f = s.frames.find((fr) => fr.id === fid);
 
-  // Hidden frames only show as hidden in ALL view; inside a group they render normally
-  if (f && f.hidden && s.activeGroupId === null) {
+  if (f && f.hidden) {
     div.style.background = 'rgba(51,51,51,0.4)';
     div.style.borderColor = 'rgba(255,255,255,0.12)';
     const tabsHTML = tabs
@@ -477,7 +516,7 @@ export function renderVersionFrame(div: HTMLElement, fid: number): void {
   div.style.borderColor = '';
   div.style.opacity = '';
   const _verHidden = ver && ver.hidden;
-  const isMainInline = (s.crossCompare[fid] ?? -1) >= 0 && s.currentViewMode === 'ver';
+  const isMainInline = strip === 'ver' && (s.crossCompare[fid] ?? -1) >= 0 && s.currentViewMode === 'ver';
 
   if (isMainInline && f) {
     const mcid = `vmcvs_${fid}`;
@@ -622,7 +661,7 @@ export function renderVersionFrame(div: HTMLElement, fid: number): void {
   const colorDots = drawToolbarHTML(fid, 'data-fid', fid);
   const canvasBorder = isVReorder
     ? 'border:2px solid #e53935;border-radius:var(--radius-sm);'
-    : (s.crossCompare[fid] ?? -1) >= 0 && s.currentViewMode === 'ver'
+    : (getStripCrossCompare(fid, strip) ?? -1) >= 0 && s.currentViewMode === 'ver'
     ? 'border:2px solid var(--accent);border-radius:var(--radius-sm);'
     : '';
   div.innerHTML = `
@@ -635,14 +674,14 @@ export function renderVersionFrame(div: HTMLElement, fid: number): void {
     }</div>
     <div style="${_verHidden ? 'opacity:0.3;' : ''}">
       <div class="ver-canvas-area"><div class="canvas-wrap${
-        !_verHidden && s.drawActive[fid] === 'ver' ? ' draw-active' : ''
+        !_verHidden && s.drawActive[fid] === strip ? ' draw-active' : ''
       }" data-fid="${fid}" style="aspect-ratio:${f?.cropW || 16}/${f?.cropH || 9};${canvasBorder}"><canvas id="${cid}" width="${
     f?.cropW || 960
   }" height="${f?.cropH || 540}"${_verHidden ? ' style="pointer-events:none;"' : ''}></canvas>${
-      !_verHidden && ver.type === 'empty' && (s.crossCompare[fid] ?? -1) < 0 ? '<div class="canvas-hint"><span>choose an action below</span></div>' : ''
+      !_verHidden && ver.type === 'empty' && (getStripCrossCompare(fid, strip) ?? -1) < 0 ? '<div class="canvas-hint"><span>choose an action below</span></div>' : ''
     }${!_verHidden ? starHTML(fid, ai) : ''}${!_verHidden ? fsButtonHTML(fid, ai, 'ver') : ''}</div></div>
       ${
-        !_verHidden && s.drawActive[fid] === 'ver'
+        !_verHidden && s.drawActive[fid] === strip
           ? `<div class="color-row">${colorDots}</div>`
           : !_verHidden && s.drawActive[fid]
           ? `<div class="color-row" style="visibility:hidden">${colorDots}</div>`
@@ -650,13 +689,13 @@ export function renderVersionFrame(div: HTMLElement, fid: number): void {
       }
       <div class="version-actions"${_verHidden ? ' style="pointer-events:none;opacity:0.3;"' : ''}>
         <button class="act-btn${_verHidden ? ' disabled' : ''}" ${_verHidden ? '' : 'data-action="upload" data-fid="' + fid + '"'}>Load</button>
-        <button class="act-btn${_verHidden ? ' disabled' : !_verHidden && s.drawActive[fid] === 'ver' ? ' active' : ''}" ${_verHidden ? '' : 'data-action="draw" data-fid="' + fid + '"'}>DRAW</button>
+        <button class="act-btn${_verHidden ? ' disabled' : !_verHidden && s.drawActive[fid] === strip ? ' active' : ''}" ${_verHidden ? '' : 'data-action="draw" data-fid="' + fid + '"'}>DRAW</button>
         <button class="act-btn${_verHidden ? ' disabled' : ''}" ${_verHidden ? '' : 'data-action="camera" data-fid="' + fid + '"'}>◎ CAM</button>
         <button class="act-btn${_verHidden ? ' disabled' : ''}" ${_verHidden ? '' : 'data-action="text" data-fid="' + fid + '"'}>WRITE</button>
         <button class="act-btn${_verHidden ? ' disabled' : ''}" ${_verHidden ? '' : 'data-action="copy" data-fid="' + fid + '"'}>Copy</button>
         <button class="act-btn${_verHidden ? ' disabled' : ''}" ${_verHidden ? '' : 'data-action="paste" data-fid="' + fid + '"'}>Paste</button>
         <button class="act-btn${_verHidden ? ' disabled' : ''}" ${_verHidden ? '' : 'data-action="clear" data-fid="' + fid + '"'}>Hide/Del</button>
-        <button class="act-btn${_verHidden ? ' disabled' : s.prevFrameState[fid] && s.prevFrameState[fid]!.origin === 'ver' ? '' : ' disabled'}" ${_verHidden ? '' : 'data-action="undo" data-fid="' + fid + '"'}><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M7 19v-2h7.1c1.15 0 2.13-.4 2.93-1.2.8-.8 1.2-1.78 1.2-2.93s-.4-2.13-1.2-2.93c-.8-.8-1.78-1.2-2.93-1.2H7.83l2.59 2.59L9 12.74 4 7.74l5-5 1.41 1.41L7.83 6.74H14.1c1.71 0 3.16.6 4.36 1.8s1.8 2.65 1.8 4.36-.6 3.16-1.8 4.36-2.65 1.8-4.36 1.8H7Z"/></svg></button>
+        <button class="act-btn${_verHidden ? ' disabled' : getStripPrevFrameState(fid, strip) && getStripPrevFrameState(fid, strip)!.origin === strip ? '' : ' disabled'}" ${_verHidden ? '' : 'data-action="undo" data-fid="' + fid + '"'}><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M7 19v-2h7.1c1.15 0 2.13-.4 2.93-1.2.8-.8 1.2-1.78 1.2-2.93s-.4-2.13-1.2-2.93c-.8-.8-1.78-1.2-2.93-1.2H7.83l2.59 2.59L9 12.74 4 7.74l5-5 1.41 1.41L7.83 6.74H14.1c1.71 0 3.16.6 4.36 1.8s1.8 2.65 1.8 4.36-.6 3.16-1.8 4.36-2.65 1.8-4.36 1.8H7Z"/></svg></button>
       </div>
     </div>`;
   div.querySelectorAll('.vtab[data-fid]').forEach((t) =>
@@ -664,23 +703,23 @@ export function renderVersionFrame(div: HTMLElement, fid: number): void {
       if (s.reorderFid === fid || s.verReorderFid === fid) return;
       useStore.setState({ swipeHighlightFid: null });
       clearAllDrawActive();
-      s.activeTab[fid] = parseInt((t as HTMLElement).dataset.idx!);
-      renderVersionFrame(div, fid);
+      setStripActiveTab(fid, strip, parseInt((t as HTMLElement).dataset.idx!));
+      renderVersionFrame(div, fid, strip);
     })
   );
   div.querySelector('[data-vadd]')!.addEventListener('click', () => {
     if (s.reorderFid === fid || s.verReorderFid === fid) return;
     useStore.setState({ swipeHighlightFid: null });
     clearAllDrawActive();
-    const n = s.versions[fid].length + 1;
-    addNewVersion(fid, { id: n, label: `v${n}`, type: 'empty', strokes: [], bgImage: null });
-    renderVersionFrame(div, fid);
+    const n = getStripVersions(fid, strip).length + 1;
+    addNewStripVersion(fid, strip, { id: n, label: `${tabPrefix}${n}`, type: 'empty', strokes: [], bgImage: null });
+    renderVersionFrame(div, fid, strip);
   });
   const vUnhideBtn = div.querySelector(`[data-vunhide="${fid}"]`) as HTMLElement | null;
   if (vUnhideBtn)
     vUnhideBtn.addEventListener('click', () => {
       unhideVersion(ver, fid);
-      renderVersionFrame(div, fid);
+      renderVersionFrame(div, fid, strip);
       if (s.currentViewMode === 'overview' || s.currentViewMode === 'grid4') {
         const row = document.querySelector(`#overviewScroll .overview-row[data-ofid="${fid}"]`) as HTMLElement | null;
         if (row) {
@@ -695,7 +734,7 @@ export function renderVersionFrame(div: HTMLElement, fid: number): void {
       const result = await showVerLabelEdit(f.label, f.versionLabel || 'version');
       if (result === null) return;
       f.versionLabel = result;
-      renderVersionFrame(div, fid);
+      renderVersionFrame(div, fid, strip);
     })
   );
   const startBtn = div.querySelector('[data-vreorderstart]') as HTMLElement | null;
@@ -705,7 +744,7 @@ export function renderVersionFrame(div: HTMLElement, fid: number): void {
       useStore.setState({ reorderFid: null, swipeHighlightFid: null });
       document.querySelectorAll('.frame-card.reorder-active').forEach((c) => c.classList.remove('reorder-active'));
       useStore.setState({ verReorderFid: fid });
-      renderVersionFrame(div, fid);
+      renderVersionFrame(div, fid, strip);
       document.querySelectorAll('.frame-card[data-mfid]').forEach((c) =>
         renderMainFrame(c as HTMLElement, parseInt((c as HTMLElement).dataset.mfid!))
       );
@@ -714,7 +753,7 @@ export function renderVersionFrame(div: HTMLElement, fid: number): void {
   if (doneBtn)
     doneBtn.addEventListener('click', () => {
       useStore.setState({ verReorderFid: null });
-      renderVersionFrame(div, fid);
+      renderVersionFrame(div, fid, strip);
       document.querySelectorAll('.frame-card[data-mfid]').forEach((c) =>
         renderMainFrame(c as HTMLElement, parseInt((c as HTMLElement).dataset.mfid!))
       );
@@ -725,18 +764,18 @@ export function renderVersionFrame(div: HTMLElement, fid: number): void {
       useStore.setState({ reorderFid: null, swipeHighlightFid: null });
       document.querySelectorAll('.frame-card.reorder-active').forEach((c) => c.classList.remove('reorder-active'));
       const dir = (b as HTMLElement).dataset.vmove!;
-      const tabs2 = s.versions[fid];
-      const ai2 = s.activeTab[fid];
+      const tabs2 = getStripVersions(fid, strip);
+      const ai2 = getStripActiveTab(fid, strip);
       if (dir === 'left' && ai2 > 0) {
         [tabs2[ai2 - 1], tabs2[ai2]] = [tabs2[ai2], tabs2[ai2 - 1]];
-        s.activeTab[fid] = ai2 - 1;
+        setStripActiveTab(fid, strip, ai2 - 1);
       } else if (dir === 'right' && ai2 < tabs2.length - 1) {
         [tabs2[ai2], tabs2[ai2 + 1]] = [tabs2[ai2 + 1], tabs2[ai2]];
-        s.activeTab[fid] = ai2 + 1;
+        setStripActiveTab(fid, strip, ai2 + 1);
       }
-      relabelVersions(fid);
+      relabelStripVersions(fid, strip);
       useStore.setState({ verReorderFid: fid, verSlideDir: dir === 'left' ? '20px' : '-20px' });
-      renderVersionFrame(div, fid);
+      renderVersionFrame(div, fid, strip);
       useStore.setState({ verSlideDir: null });
       document.querySelectorAll('.frame-card[data-mfid]').forEach((c) =>
         renderMainFrame(c as HTMLElement, parseInt((c as HTMLElement).dataset.mfid!))
@@ -748,35 +787,35 @@ export function renderVersionFrame(div: HTMLElement, fid: number): void {
       const c = (d as HTMLElement).dataset.color!;
       s.drawColor[fid] = c;
       s.drawEraser[fid] = false;
-      renderVersionFrame(div, fid);
+      renderVersionFrame(div, fid, strip);
     })
   );
   div.querySelectorAll('.thick-btn').forEach((d) =>
     d.addEventListener('click', () => {
       s.drawWidth[fid] = parseInt((d as HTMLElement).dataset.tw!);
       s.drawEraser[fid] = false;
-      renderVersionFrame(div, fid);
+      renderVersionFrame(div, fid, strip);
     })
   );
   div.querySelectorAll('.eraser-btn').forEach((d) =>
     d.addEventListener('click', () => {
       s.drawEraser[fid] = !s.drawEraser[fid];
-      renderVersionFrame(div, fid);
+      renderVersionFrame(div, fid, strip);
     })
   );
   div.querySelectorAll('.act-btn').forEach((b) =>
     b.addEventListener('click', () => {
       const fn = (window as any).__fh_handleAction;
-      if (fn) fn((b as HTMLElement).dataset.action!, fid, div);
+      if (fn) fn((b as HTMLElement).dataset.action!, fid, div, false, strip);
     })
   );
   const cvs = div.querySelector(`#${cid}`) as HTMLCanvasElement | null;
   if (cvs) {
-    if ((s.crossCompare[fid] ?? -1) >= 0 && s.currentViewMode === 'ver') {
+    if ((getStripCrossCompare(fid, strip) ?? -1) >= 0 && s.currentViewMode === 'ver') {
       restoreMainCanvas(cvs, f!);
     } else {
       restoreCanvas(cvs, ver);
-      if (ver.type !== 'empty' && s.drawActive[fid] === 'ver') setupDrawing(cvs, fid, ai);
+      if (ver.type !== 'empty' && s.drawActive[fid] === strip) setupDrawing(cvs, fid, ai);
     }
   }
   const swipeEl = (div.querySelector('.ver-canvas-area') || div.querySelector('.canvas-wrap[data-fid]')) as HTMLElement | null;
@@ -798,22 +837,22 @@ export function renderVersionFrame(div: HTMLElement, fid: number): void {
         const dy = e.changedTouches[0].clientY - sy;
         if (Math.abs(dx) < 40 || Math.abs(dy) > Math.abs(dx)) return;
         if (s.reorderFid !== null) return;
-        const tabs2 = s.versions[fid],
-          ai2 = s.activeTab[fid];
+        const tabs2 = getStripVersions(fid, strip),
+          ai2 = getStripActiveTab(fid, strip);
         if (s.verReorderFid === fid) {
           if (dx < 0 && ai2 > 0) {
             [tabs2[ai2 - 1], tabs2[ai2]] = [tabs2[ai2], tabs2[ai2 - 1]];
-            s.activeTab[fid] = ai2 - 1;
-            relabelVersions(fid);
+            setStripActiveTab(fid, strip, ai2 - 1);
+            relabelStripVersions(fid, strip);
             useStore.setState({ verSlideDir: '-20px' });
-            renderVersionFrame(div, fid);
+            renderVersionFrame(div, fid, strip);
             useStore.setState({ verSlideDir: null });
           } else if (dx > 0 && ai2 < tabs2.length - 1) {
             [tabs2[ai2], tabs2[ai2 + 1]] = [tabs2[ai2 + 1], tabs2[ai2]];
-            s.activeTab[fid] = ai2 + 1;
-            relabelVersions(fid);
+            setStripActiveTab(fid, strip, ai2 + 1);
+            relabelStripVersions(fid, strip);
             useStore.setState({ verSlideDir: '20px' });
-            renderVersionFrame(div, fid);
+            renderVersionFrame(div, fid, strip);
             useStore.setState({ verSlideDir: null });
           }
           return;
@@ -821,23 +860,23 @@ export function renderVersionFrame(div: HTMLElement, fid: number): void {
         if (dx < 0 && ai2 < tabs2.length - 1) {
           clearReorder();
           clearAllDrawActive();
-          s.activeTab[fid] = ai2 + 1;
+          setStripActiveTab(fid, strip, ai2 + 1);
           useStore.setState({ verSlideDir: '20px', swipeHighlightFid: fid });
-          renderVersionFrame(div, fid);
+          renderVersionFrame(div, fid, strip);
           useStore.setState({ verSlideDir: null });
         } else if (dx > 0 && ai2 > 0) {
           clearReorder();
           clearAllDrawActive();
-          s.activeTab[fid] = ai2 - 1;
+          setStripActiveTab(fid, strip, ai2 - 1);
           useStore.setState({ verSlideDir: '-20px', swipeHighlightFid: fid });
-          renderVersionFrame(div, fid);
+          renderVersionFrame(div, fid, strip);
           useStore.setState({ verSlideDir: null });
-        } else if (dx > 0 && ai2 === 0 && s.currentViewMode === 'ver' && (s.crossCompare[fid] ?? -1) < 0) {
+        } else if (strip === 'ver' && dx > 0 && ai2 === 0 && s.currentViewMode === 'ver' && (s.crossCompare[fid] ?? -1) < 0) {
           s.crossCompare[fid] = 0;
-          renderVersionFrame(div, fid);
-        } else if (dx < 0 && (s.crossCompare[fid] ?? -1) >= 0 && s.currentViewMode === 'ver') {
+          renderVersionFrame(div, fid, strip);
+        } else if (strip === 'ver' && dx < 0 && (s.crossCompare[fid] ?? -1) >= 0 && s.currentViewMode === 'ver') {
           s.crossCompare[fid] = -1;
-          renderVersionFrame(div, fid);
+          renderVersionFrame(div, fid, strip);
         }
       },
       { passive: true }
@@ -845,7 +884,7 @@ export function renderVersionFrame(div: HTMLElement, fid: number): void {
   }
   if (!s.drawActive[fid]) {
     const nw = div.querySelector('.canvas-wrap') as HTMLElement | null;
-    if (nw) addNavArrows(nw, fid, 'ver');
+    if (nw) addNavArrows(nw, fid, strip as 'main' | 'ver');
   }
   scheduleSyncHeights();
 }
