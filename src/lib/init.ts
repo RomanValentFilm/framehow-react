@@ -16,7 +16,16 @@ import {
   updateFrameBadge,
   tableHTML,
   autoNewVersionIfNeeded,
+  autoNewStripVersionIfNeeded,
+  getStripVersions,
+  getStripActiveTab,
+  setStripActiveTab,
+  setStripCrossCompare,
+  addNewStripVersion,
+  stripScrollId,
+  stripTabPrefix,
 } from './helpers';
+import type { StripType } from '../store/state';
 import { snapshotFrame } from './drawing';
 import { drawFit } from './drawing';
 import { setupDrawing } from './drawing';
@@ -146,9 +155,10 @@ export function initFramehow(): void {
     e.stopPropagation();
     const fid = +btn.dataset.starfid!,
       vi = +btn.dataset.starvi!;
+    const starStrip = (btn.dataset.starstrip || 'ver') as StripType;
     const oldIdx = vi;
-    toggleStar(fid, vi);
-    const newIdx = state().activeTab[fid];
+    toggleStar(fid, vi, starStrip);
+    const newIdx = getStripActiveTab(fid, starStrip);
     renderAll();
     if (oldIdx !== newIdx) {
       const dir = newIdx < oldIdx ? '-20px' : '20px';
@@ -179,7 +189,7 @@ export function initFramehow(): void {
     e.stopPropagation();
     const fid = +btn.dataset.fsfid!,
       vi = +btn.dataset.fsvi!,
-      origin = btn.dataset.fsorigin as 'main' | 'ver';
+      origin = btn.dataset.fsorigin as 'main' | 'ver' | 'floor' | 'refs';
     openFullscreen(fid, vi, origin);
   });
 
@@ -443,6 +453,10 @@ export function initFramehow(): void {
     b.addEventListener('click', () => {
       const strip = (b as HTMLElement).dataset.strip as 'main' | 'ver' | 'floor' | 'refs';
       const s = state();
+      const w = window.innerWidth, h = window.innerHeight;
+      const isPhone = Math.min(w, h) <= 430;
+      const isPhonePortrait = isPhone && h > w;
+      const isPhoneLandscape = isPhone && w > h;
 
       // In 1+2V / GRID4 mode: MAIN locked on, switch companion strip
       if (s.currentViewMode === 'overview' || s.currentViewMode === 'grid4') {
@@ -452,7 +466,43 @@ export function initFramehow(): void {
         return;
       }
 
-      // Normal column mode: toggle strip on/off
+      // ── iPhone portrait: single strip view only ──
+      if (isPhonePortrait) {
+        const viewMode = strip === 'main' ? 'main' as const : 'ver' as const;
+        useStore.setState({ activeStrips: [strip], currentViewMode: viewMode });
+        renderAll();
+        return;
+      }
+
+      // ── iPhone landscape: max 2 strips ──
+      if (isPhoneLandscape) {
+        const current = [...s.activeStrips];
+        const idx = current.indexOf(strip);
+        if (idx >= 0) {
+          // Toggling off — don't allow removing the last strip
+          if (current.length <= 1) return;
+          current.splice(idx, 1);
+        } else {
+          // Toggling on — enforce max 2 strips
+          if (current.length >= 2) {
+            const om = document.getElementById('maxStripsMsg')!;
+            om.classList.add('show');
+            const dismiss = () => om.classList.remove('show');
+            om.addEventListener('click', dismiss, { once: true });
+            setTimeout(dismiss, 3000);
+            return;
+          }
+          current.push(strip);
+        }
+        let viewMode: 'main' | 'ver' | 'both' = 'both';
+        if (current.length === 1 && current[0] === 'main') viewMode = 'main';
+        else if (current.length === 1) viewMode = 'ver';
+        useStore.setState({ activeStrips: current, currentViewMode: viewMode });
+        renderAll();
+        return;
+      }
+
+      // ── iPad / Desktop: normal toggle ──
       const current = [...s.activeStrips];
       const idx = current.indexOf(strip);
 
@@ -516,7 +566,9 @@ export function initFramehow(): void {
     const s = state();
     if (!files || files.length === 0 || !s.imgTarget) return;
     const { fid, div, fromCompare } = s.imgTarget;
-    snapshotFrame(fid, 'ver');
+    const strip: StripType = s.imgTarget.stripType || 'ver';
+    const scrollId = stripScrollId(strip);
+    snapshotFrame(fid, strip);
     let loaded = 0;
     const total = files.length;
     for (let i = 0; i < total; i++) {
@@ -524,27 +576,29 @@ export function initFramehow(): void {
       reader.onload = (ev) => {
         const dataURL = (ev.target as FileReader).result as string;
         if (i === 0) {
-          // First file: use autoNewVersionIfNeeded (respects current tab state)
-          const target = autoNewVersionIfNeeded(fid);
+          // First file: use autoNewStripVersionIfNeeded (respects current tab state)
+          const target = autoNewStripVersionIfNeeded(fid, strip);
           target.type = 'upload';
           target.bgImage = dataURL;
         } else {
           // Additional files: create new version tabs
-          const n = s.versions[fid].length + 1;
-          const newVer = { id: n, label: `v${n}`, type: 'upload' as const, strokes: [], bgImage: dataURL };
-          s.versions[fid].push(newVer);
-          s.activeTab[fid] = s.versions[fid].length - 1;
+          const allVers = getStripVersions(fid, strip);
+          const n = allVers.length + 1;
+          const prefix = stripTabPrefix(strip);
+          const newVer = { id: n, label: `${prefix}${n}`, type: 'upload' as const, strokes: [], bgImage: dataURL };
+          allVers.push(newVer);
+          setStripActiveTab(fid, strip, allVers.length - 1);
         }
         loaded++;
         if (loaded === total) {
           // All files loaded — re-render once
           if (fromCompare) {
-            state().crossCompare[fid] = state().activeTab[fid];
+            setStripCrossCompare(fid, strip, getStripActiveTab(fid, strip));
             renderMainFrame(div, fid);
-            const vd = document.querySelector(`#versionsScroll .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
-            if (vd) renderVersionFrame(vd, fid);
+            const vd = document.querySelector(`#${scrollId} .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
+            if (vd) renderVersionFrame(vd, fid, strip);
           } else {
-            renderVersionFrame(div, fid);
+            renderVersionFrame(div, fid, strip);
           }
           if (state().currentViewMode === 'overview' || state().currentViewMode === 'grid4') {
             const ovRow = document.querySelector(`#overviewScroll .overview-row[data-ofid="${fid}"]`) as HTMLElement | null;

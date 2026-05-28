@@ -2,18 +2,20 @@
 // in a large overlay with the same drawing toolbar.
 
 import { state, useStore } from '../store/state';
-import { drawToolbarHTML, starHTML } from './helpers';
+import type { StripType } from '../store/state';
+import { drawToolbarHTML, starHTML, getStripVersions } from './helpers';
 import { restoreCanvas, restoreMainCanvas, setupDrawing, setupMainDrawing } from './drawing';
 import { resetToolbarState } from './view';
 
 const fsCollapseSVG = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M4 14h6v6M20 10h-6V4M10 14l-7 7M14 10l7-7"/></svg>';
 
-export function openFullscreen(fid: number, vi: number, origin: 'main' | 'ver'): void {
+export function openFullscreen(fid: number, vi: number, origin: 'main' | 'ver' | 'floor' | 'refs'): void {
   if (document.querySelector('.fs-overlay')) return;
   useStore.setState({ fsOverlayActive: { fid, vi, origin } });
   const s = state();
   const f = s.frames.find((x) => x.id === fid)!;
-  const ver = (s.versions[fid] || [])[vi];
+  const strip: StripType = origin === 'main' ? 'ver' : origin as StripType;
+  const ver = getStripVersions(fid, strip)[vi];
   const isMain = origin === 'main';
   const src: any = isMain ? f : ver;
   if (!src) return;
@@ -73,7 +75,7 @@ export function openFullscreen(fid: number, vi: number, origin: 'main' | 'ver'):
       setupMainDrawing(cvs, fid);
     } else if (!isMain && ver) {
       restoreCanvas(cvs, ver);
-      setupDrawing(cvs, fid, vi);
+      setupDrawing(cvs, fid, vi, strip);
     }
   }
   initCanvas();
@@ -134,7 +136,7 @@ export function openFullscreen(fid: number, vi: number, origin: 'main' | 'ver'):
       if (isMain) restoreMainCanvas(cvs, f);
       else if (ver) restoreCanvas(cvs, ver);
       if (isMain) setupMainDrawing(cvs, fid);
-      else setupDrawing(cvs, fid, vi);
+      else setupDrawing(cvs, fid, vi, strip);
     }
   }
   window.addEventListener('resize', onResize);

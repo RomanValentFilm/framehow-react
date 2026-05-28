@@ -18,6 +18,7 @@ export interface CameraTarget {
   aspectRatio: number;
   fromCompare: boolean;
   fromMain: boolean;
+  stripType?: string;
 }
 
 // Lazily-bound applyCapturedImage so this module stays free of core-renderer deps.
@@ -30,12 +31,13 @@ export async function openCamera(
   fid: number,
   div: HTMLElement,
   fromCompare: boolean,
-  fromMain: boolean
+  fromMain: boolean,
+  strip: string = 'ver'
 ): Promise<void> {
   fhTrack('camera_opened');
   const f = state().frames.find((fr) => fr.id === fid);
   const ar = f && f.cropW && f.cropH ? f.cropW / f.cropH : 16 / 9;
-  cameraTarget = { fid, div, aspectRatio: ar, fromCompare: !!fromCompare, fromMain: !!fromMain };
+  cameraTarget = { fid, div, aspectRatio: ar, fromCompare: !!fromCompare, fromMain: !!fromMain, stripType: strip };
 
   let hasCamera = false;
   let camBlocked = false;

@@ -26,6 +26,15 @@ export function Overlays() {
           to allow camera access again.
         </span>
       </div>
+      <div className="rotate-msg" id="maxStripsMsg">
+        <span>
+          You can fit maximum 2 STRIPS VIEW<br />
+          on this device's screen.<br />
+          <br />
+          Please toggle-off a strip's button<br />
+          to select another one.
+        </span>
+      </div>
       <div className="swipe-hint" id="swipeHint">
         <div className="swipe-hint-inner">
           <div className="swipe-label">Swipe over image</div>

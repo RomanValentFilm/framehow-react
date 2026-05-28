@@ -1,6 +1,7 @@
-// Action handlers for Main strip and Version strip cards.
+// Action handlers for Main strip and Version/Floor/Refs strip cards.
 
 import { COLORS, state, useStore } from '../store/state';
+import type { StripType } from '../store/state';
 import { reorderFrameInGroup, addFrameToActiveGroup, removeFrameFromGroup, hideFrameInGroup } from './groups';
 import {
   addNewVersion,
@@ -16,6 +17,16 @@ import {
   saveOpenTextEdits,
   scrollFrameIntoView,
   updateFrameBadge,
+  getStripVersions,
+  setStripVersions,
+  getStripActiveTab,
+  setStripActiveTab,
+  getStripCrossCompare,
+  setStripCrossCompare,
+  relabelStripVersions,
+  addNewStripVersion,
+  autoNewStripVersionIfNeeded,
+  stripScrollId,
 } from './helpers';
 import { snapshotFrame } from './drawing';
 import { renderAll, renderMainFrame, renderVersionFrame } from './render';
@@ -35,9 +46,10 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
     for (const k in s.drawActive) s.drawActive[+k] = null;
     useStore.setState({ verReorderFid: null, swipeHighlightFid: null, reorderFid: fid });
     renderMainFrame(div, fid);
-    document.querySelectorAll('.frame-card[data-vfid]').forEach((c) =>
-      renderVersionFrame(c as HTMLElement, parseInt((c as HTMLElement).dataset.vfid!))
-    );
+    document.querySelectorAll('.frame-card[data-vfid]').forEach((c) => {
+      const el = c as HTMLElement;
+      renderVersionFrame(el, parseInt(el.dataset.vfid!), (el.dataset.strip || 'ver') as StripType);
+    });
     applyReorderHighlight(fid);
     return;
   }
@@ -345,25 +357,27 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
   }
 }
 
-export function handleAction(action: string, fid: number, div: HTMLElement, fromCompare?: boolean): void {
+export function handleAction(action: string, fid: number, div: HTMLElement, fromCompare?: boolean, strip: StripType = 'ver'): void {
   const s = state();
-  const ai = s.activeTab[fid],
-    ver = s.versions[fid][ai];
+  const ai = getStripActiveTab(fid, strip);
+  const vers = getStripVersions(fid, strip);
+  const ver = vers[ai];
+  const scrollId = stripScrollId(strip);
 
   function rerender() {
     if (fromCompare) {
       renderMainFrame(div, fid);
-      const vd = document.querySelector(`#versionsScroll .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
-      if (vd) renderVersionFrame(vd, fid);
+      const vd = document.querySelector(`#${scrollId} .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
+      if (vd) renderVersionFrame(vd, fid, strip);
     } else {
-      renderVersionFrame(div, fid);
+      renderVersionFrame(div, fid, strip);
       const md = document.querySelector(`#mainScroll .frame-card[data-mfid="${fid}"]`) as HTMLElement | null;
       if (md) renderMainFrame(md, fid);
     }
   }
 
   if (action === 'undo') {
-    restoreFrame(fid);
+    restoreFrame(fid, strip);
     rerender();
     return;
   }
@@ -375,30 +389,30 @@ export function handleAction(action: string, fid: number, div: HTMLElement, from
     if (mdiv) renderMainFrame(mdiv, fid);
   }
   clearReorder();
-  const wasDrawing = s.drawActive[fid] === 'ver';
+  const wasDrawing = s.drawActive[fid] === strip;
   clearAllDrawActive();
 
   if (action === 'draw') {
-    if (!wasDrawing) { s.drawActive[fid] = 'ver'; fhTrack('draw_used', { strip: 'ver' }); }
+    if (!wasDrawing) { s.drawActive[fid] = strip; fhTrack('draw_used', { strip }); }
     else if (s.overviewAction) s.drawEraser[fid] = false;
     ver.type = 'drawing';
     rerender();
-    scrollFrameIntoView(fid, 'ver');
+    scrollFrameIntoView(fid, strip);
   } else if (action === 'upload') {
-    useStore.setState({ imgTarget: { fid, div, fromCompare } });
+    useStore.setState({ imgTarget: { fid, div, fromCompare, stripType: strip } });
     (document.getElementById('imgInput') as HTMLInputElement).removeAttribute('capture');
     (document.getElementById('imgInput') as HTMLInputElement).click();
   } else if (action === 'camera') {
-    openCamera(fid, div, !!fromCompare, false);
+    openCamera(fid, div, !!fromCompare, false, strip);
   } else if (action === 'text') {
-    fhTrack('write_used', { strip: 'ver' });
+    fhTrack('write_used', { strip });
     ver.strokes = ver.strokes || [];
     const existing = ver.strokes.find((st: any) => st.type === 'text');
     const curColor = existing ? existing.color : s.drawColor[fid] || '#fff';
     const wasOverview = s.overviewAction;
     openTextModal(existing ? existing.text || '' : '', curColor || '#fff').then((result) => {
       if (result !== null) {
-        snapshotFrame(fid, 'ver');
+        snapshotFrame(fid, strip);
         const { text, color } = result;
         s.drawColor[fid] = color;
         if (existing) {
@@ -419,7 +433,7 @@ export function handleAction(action: string, fid: number, div: HTMLElement, from
         if (ovRow) { s.currentViewMode === 'grid4' ? renderGrid4Row(ovRow, fid) : renderOverviewRow(ovRow, fid); }
         useStore.setState({ overviewAction: false });
       } else {
-        scrollFrameIntoView(fid, 'ver');
+        scrollFrameIntoView(fid, strip);
       }
     });
   } else if (action === 'copy') {
@@ -432,20 +446,20 @@ export function handleAction(action: string, fid: number, div: HTMLElement, from
         cropH: f.cropH,
       },
     });
-    // toast removed
   } else if (action === 'paste') {
     if (!s.stripClipboard) {
       showToast('Nothing to paste');
       return;
     }
-    snapshotFrame(fid, 'ver');
+    snapshotFrame(fid, strip);
     if (s.overviewAction) {
       ver.type = s.stripClipboard.bgImage ? 'upload' : 'drawing';
       ver.strokes = JSON.parse(JSON.stringify(s.stripClipboard.strokes || []));
       ver.bgImage = s.stripClipboard.bgImage || null;
       rerender();
     } else {
-      const n = s.versions[fid].length + 1;
+      const allVers = getStripVersions(fid, strip);
+      const n = allVers.length + 1;
       const newVer = {
         id: n,
         label: `v${n}`,
@@ -453,8 +467,8 @@ export function handleAction(action: string, fid: number, div: HTMLElement, from
         strokes: JSON.parse(JSON.stringify(s.stripClipboard.strokes || [])),
         bgImage: s.stripClipboard.bgImage || null,
       };
-      addNewVersion(fid, newVer);
-      if (fromCompare) s.crossCompare[fid] = s.activeTab[fid];
+      addNewStripVersion(fid, strip, newVer);
+      if (fromCompare) setStripCrossCompare(fid, strip, getStripActiveTab(fid, strip));
       rerender();
     }
   } else if (action === 'clear') {
@@ -468,34 +482,34 @@ export function handleAction(action: string, fid: number, div: HTMLElement, from
           s.drawActive[fid] = null;
           s.drawEraser[fid] = false;
         }
-        const vers = s.versions[fid];
-        const curIdx = vers.indexOf(ver);
+        const allVers = getStripVersions(fid, strip);
+        const curIdx = allVers.indexOf(ver);
         if (curIdx >= 0) {
-          vers.splice(curIdx, 1);
+          allVers.splice(curIdx, 1);
           let lastVisible = -1;
-          for (let i = vers.length - 1; i >= 0; i--) {
-            if (!vers[i].hidden) {
+          for (let i = allVers.length - 1; i >= 0; i--) {
+            if (!allVers[i].hidden) {
               lastVisible = i;
               break;
             }
           }
-          vers.splice(lastVisible + 1, 0, ver);
-          const visibleIdx = vers.findIndex((v) => !v.hidden);
-          s.activeTab[fid] = visibleIdx >= 0 ? visibleIdx : 0;
+          allVers.splice(lastVisible + 1, 0, ver);
+          const visibleIdx = allVers.findIndex((v) => !v.hidden);
+          setStripActiveTab(fid, strip, visibleIdx >= 0 ? visibleIdx : 0);
         }
-        relabelVersions(fid);
+        relabelStripVersions(fid, strip);
         rerender();
         if (s.currentViewMode === 'overview' || s.currentViewMode === 'grid4') {
           const row = document.querySelector(`#overviewScroll .overview-row[data-ofid="${fid}"]`) as HTMLElement | null;
           if (row) { s.currentViewMode === 'grid4' ? renderGrid4Row(row, fid) : renderOverviewRow(row, fid); }
         }
       } else {
-        snapshotFrame(fid, 'ver');
-        const vers = s.versions[fid];
-        const curIdx = vers.indexOf(ver);
-        if (curIdx >= 0) vers.splice(curIdx, 1);
-        if (vers.length === 0) vers.push({ id: 1, label: 'v1', type: 'empty', strokes: [], bgImage: null });
-        s.activeTab[fid] = Math.min(s.activeTab[fid], vers.length - 1);
+        snapshotFrame(fid, strip);
+        const allVers = getStripVersions(fid, strip);
+        const curIdx = allVers.indexOf(ver);
+        if (curIdx >= 0) allVers.splice(curIdx, 1);
+        if (allVers.length === 0) allVers.push({ id: 1, label: 'v1', type: 'empty', strokes: [], bgImage: null });
+        setStripActiveTab(fid, strip, Math.min(getStripActiveTab(fid, strip), allVers.length - 1));
         rerender();
       }
     });
@@ -506,7 +520,9 @@ export function handleAction(action: string, fid: number, div: HTMLElement, from
 export function applyCapturedImage(dataURL: string, target: any): void {
   const s = state();
   const { fid, div, fromCompare, fromMain } = target;
-  snapshotFrame(fid, fromMain ? 'main' : 'ver');
+  const strip: StripType = target.stripType || 'ver';
+  const scrollId = stripScrollId(strip);
+  snapshotFrame(fid, fromMain ? 'main' : strip);
   if (fromMain) {
     const f = s.frames.find((fr) => fr.id === fid);
     if (f && isMainEmpty(f)) {
@@ -515,30 +531,31 @@ export function applyCapturedImage(dataURL: string, target: any): void {
       const md = document.querySelector(`#mainScroll .frame-card[data-mfid="${fid}"]`) as HTMLElement | null;
       if (md) renderMainFrame(md, fid);
     } else {
-      const t = autoNewVersionIfNeeded(fid);
+      const t = autoNewStripVersionIfNeeded(fid, strip);
       t.type = 'upload';
       t.bgImage = dataURL;
-      if (s.currentViewMode === 'main') s.crossCompare[fid] = s.activeTab[fid];
+      if (s.currentViewMode === 'main') setStripCrossCompare(fid, strip, getStripActiveTab(fid, strip));
       const md = document.querySelector(`#mainScroll .frame-card[data-mfid="${fid}"]`) as HTMLElement | null;
       if (md) renderMainFrame(md, fid);
-      const vd = document.querySelector(`#versionsScroll .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
-      if (vd) renderVersionFrame(vd, fid);
+      const vd = document.querySelector(`#${scrollId} .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
+      if (vd) renderVersionFrame(vd, fid, strip);
     }
   } else if (fromCompare) {
-    const t = autoNewVersionIfNeeded(fid);
+    const t = autoNewStripVersionIfNeeded(fid, strip);
     t.type = 'upload';
     t.bgImage = dataURL;
-    s.crossCompare[fid] = s.activeTab[fid];
+    setStripCrossCompare(fid, strip, getStripActiveTab(fid, strip));
     renderMainFrame(div, fid);
-    const vd = document.querySelector(`#versionsScroll .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
-    if (vd) renderVersionFrame(vd, fid);
+    const vd = document.querySelector(`#${scrollId} .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
+    if (vd) renderVersionFrame(vd, fid, strip);
   } else {
-    const t = autoNewVersionIfNeeded(fid);
+    const t = autoNewStripVersionIfNeeded(fid, strip);
     t.type = 'upload';
     t.bgImage = dataURL;
-    renderVersionFrame(div, fid);
-    const nai = s.activeTab[fid];
-    const vcvs = div.querySelector(`#cvs_${fid}_${nai}`) as HTMLCanvasElement | null;
+    renderVersionFrame(div, fid, strip);
+    const nai = getStripActiveTab(fid, strip);
+    const cvsPfx = `cvs_${strip}_${fid}_${nai}`;
+    const vcvs = div.querySelector(`#${cvsPfx}`) as HTMLCanvasElement | null;
     if (vcvs) drawFit(vcvs, dataURL);
   }
   // toast removed
@@ -549,7 +566,7 @@ export function applyCapturedImage(dataURL: string, target: any): void {
   }
   useStore.setState({ overviewAction: false });
   clearCameraTarget();
-  scrollFrameIntoView(fid, fromMain ? 'main' : 'ver');
+  scrollFrameIntoView(fid, fromMain ? 'main' : strip);
 }
 
 // Wire up the camera capture pipeline → applyCapturedImage

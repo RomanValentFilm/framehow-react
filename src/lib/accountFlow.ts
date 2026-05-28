@@ -1426,6 +1426,7 @@ export async function bootstrapAccountSystem(): Promise<void> {
         lastSavedAt: snap.projectId ? snap.lastModified : null,
       });
       (window as any).__fh_renderAll?.();
+      autoPhoneMainView();
     }
   } catch (e) {
     console.warn('[accountFlow] IDB restore failed', e);

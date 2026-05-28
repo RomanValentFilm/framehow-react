@@ -29,6 +29,12 @@ export interface CurrentProjectSnapshot {
   portraitMode?: boolean;
   groups?: FrameGroup[];
   nextGroupId?: number;
+  /** Floor strip data */
+  floorVersions?: Record<number, Version[]>;
+  floorActiveTab?: Record<number, number>;
+  /** Refs strip data */
+  refsVersions?: Record<number, Version[]>;
+  refsActiveTab?: Record<number, number>;
 }
 
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -95,6 +101,10 @@ export function snapshotFromStore(projectId: string | null, name: string | null)
     portraitMode: s.portraitMode,
     groups: s.groups,
     nextGroupId: s.nextGroupId,
+    floorVersions: s.floorVersions,
+    floorActiveTab: s.floorActiveTab,
+    refsVersions: s.refsVersions,
+    refsActiveTab: s.refsActiveTab,
   };
 }
 
@@ -111,6 +121,10 @@ export function applySnapshotToStore(snap: CurrentProjectSnapshot): void {
     portraitMode: snap.portraitMode ?? false,
     groups: snap.groups ?? [],
     nextGroupId: snap.nextGroupId ?? 1,
+    floorVersions: snap.floorVersions ?? {},
+    floorActiveTab: snap.floorActiveTab ?? {},
+    refsVersions: snap.refsVersions ?? {},
+    refsActiveTab: snap.refsActiveTab ?? {},
     renderTick: prev.renderTick + 1,
   }));
 }

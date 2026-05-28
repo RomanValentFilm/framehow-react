@@ -3,7 +3,8 @@
 // pointer-event setup for live drawing on a canvas.
 
 import { COLORS, state, useStore } from '../store/state';
-import type { Frame, Stroke, Version } from '../store/state';
+import type { Frame, Stroke, Version, StripType, FrameSnapshot } from '../store/state';
+import { getStripVersions, getStripActiveTab, getStripCrossCompare, setStripPrevFrameState } from './helpers';
 
 export function _drawStrokeItem(tctx: CanvasRenderingContext2D, st: Stroke, cH: number): void {
   if (st.type === 'text') {
@@ -153,11 +154,20 @@ export function drawFit(cvs: HTMLCanvasElement, src: string): void {
 }
 
 // snapshot + undo helpers — used by drawing setup and many action handlers.
-export function snapshotFrame(fid: number, origin: 'main' | 'ver'): void {
+export function snapshotFrame(fid: number, origin: 'main' | 'ver' | 'floor' | 'refs'): void {
   const s = state();
   const f = s.frames.find((fr) => fr.id === fid);
   if (!f) return;
-  s.prevFrameState[fid] = {
+
+  // For 'main' origin, snapshot the ver strip's version data (backward compat).
+  // For strip origins (ver/floor/refs), use the strip-agnostic accessors.
+  const effectiveStrip: StripType = origin === 'main' ? 'ver' : origin as StripType;
+  const stripVers = getStripVersions(fid, effectiveStrip);
+  const stripTab = getStripActiveTab(fid, effectiveStrip);
+  const rawCC = getStripCrossCompare(fid, effectiveStrip);
+  const stripCC = rawCC >= 0 ? rawCC : undefined;
+
+  const snap: FrameSnapshot = {
     origin,
     main: {
       src: f.src,
@@ -166,10 +176,12 @@ export function snapshotFrame(fid: number, origin: 'main' | 'ver'): void {
       textContent: f.textContent,
       tableData: f.tableData ? JSON.parse(JSON.stringify(f.tableData)) : null,
     },
-    versions: JSON.parse(JSON.stringify(s.versions[fid] || [])),
-    activeTab: s.activeTab[fid],
-    crossCompare: fid in s.crossCompare ? s.crossCompare[fid] : undefined,
+    versions: JSON.parse(JSON.stringify(stripVers || [])),
+    activeTab: stripTab,
+    crossCompare: stripCC,
   };
+
+  setStripPrevFrameState(fid, origin === 'main' ? 'ver' : origin as StripType, snap);
 }
 
 export function updateUndoButtons(fid: number): void {
@@ -252,10 +264,10 @@ export function setupMainDrawing(cvs: HTMLCanvasElement, fid: number): void {
   cvs.addEventListener('touchend', end);
 }
 
-export function setupDrawing(cvs: HTMLCanvasElement, fid: number, ai: number): void {
+export function setupDrawing(cvs: HTMLCanvasElement, fid: number, ai: number, strip: StripType = 'ver'): void {
   let isDrawing = false,
     cur: Stroke | null = null;
-  const ver = state().versions[fid][ai];
+  const ver = getStripVersions(fid, strip)[ai];
   function getPos(e: MouseEvent | TouchEvent): { x: number; y: number } {
     const r = cvs.getBoundingClientRect(),
       sx = cvs.width / r.width,
@@ -269,7 +281,7 @@ export function setupDrawing(cvs: HTMLCanvasElement, fid: number, ai: number): v
     if (!ver || !ver.strokes || ver.strokes.length === 0) return;
     const idx = _hitTestStroke(ver.strokes, p, 20);
     if (idx < 0) return;
-    snapshotFrame(fid, 'ver');
+    snapshotFrame(fid, strip);
     ver.strokes.splice(idx, 1);
     updateUndoButtons(fid);
     restoreCanvas(cvs, ver);
@@ -302,7 +314,7 @@ export function setupDrawing(cvs: HTMLCanvasElement, fid: number, ai: number): v
   }
   function end(): void {
     if (isDrawing && cur && cur.points && cur.points.length > 1) {
-      snapshotFrame(fid, 'ver');
+      snapshotFrame(fid, strip);
       ver.strokes = ver.strokes || [];
       ver.strokes.push(cur);
       updateUndoButtons(fid);

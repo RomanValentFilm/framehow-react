@@ -162,6 +162,10 @@ function storeHash(): string {
       frames: s.frames,
       versions: s.versions,
       activeTab: s.activeTab,
+      floorVersions: s.floorVersions,
+      floorActiveTab: s.floorActiveTab,
+      refsVersions: s.refsVersions,
+      refsActiveTab: s.refsActiveTab,
       nextId: s.nextId,
       name: cp.name,
     });

@@ -2,14 +2,25 @@
 // nav arrows, sync heights, hide-toolbar-on-scroll, orientation flip.
 
 import { state, useStore, isTouch } from '../store/state';
-import type { ViewMode } from '../store/state';
+import type { ViewMode, StripType } from '../store/state';
 
-import { hasVisibleVer, nextVisibleVer, ovCollapseExpanded, clearAllDrawActive, clearReorder, relabelVersions, saveOpenTextEdits, saveOpenTableEdits, _actionAnchorTimers } from './helpers';
+import { hasVisibleVer, nextVisibleVer, ovCollapseExpanded, clearAllDrawActive, clearReorder, relabelVersions, saveOpenTextEdits, saveOpenTableEdits, _actionAnchorTimers, getStripVersions, getStripActiveTab, setStripActiveTab, getStripCrossCompare, setStripCrossCompare, relabelStripVersions, stripScrollId } from './helpers';
 import { fhTrack } from './tracking';
 
 let _syncRAF: number | null = null;
 // Orientation-flip anchor timers — can be cancelled if user starts scrolling
 const _orientAnchorTimers: number[] = [];
+
+/** Return the visible companion (non-main) scroll element. Falls back to versionsScroll. */
+function activeCompanionScrollEl(): HTMLElement | null {
+  const s = state();
+  const companion = s.activeStrips.find((st: string) => st !== 'main') as StripType | undefined;
+  if (companion) {
+    const el = document.getElementById(stripScrollId(companion));
+    if (el) return el;
+  }
+  return document.getElementById('versionsScroll');
+}
 export function scheduleSyncHeights(): void {
   if (!_syncRAF) {
     _syncRAF = requestAnimationFrame(() => {
@@ -183,7 +194,7 @@ export function _updateCenterFid(): void {
     s.currentViewMode === 'overview' || s.currentViewMode === 'grid4'
       ? document.getElementById('overviewScroll')
       : s.currentViewMode === 'ver'
-      ? document.getElementById('versionsScroll')
+      ? activeCompanionScrollEl()
       : document.getElementById('mainScroll');
   if (!scrollEl || !s.frames.length) return;
   const sel = s.currentViewMode === 'overview' || s.currentViewMode === 'grid4' ? '.overview-row' : '.frame-card';
@@ -209,8 +220,10 @@ export function scrollAnchorTo(fid: string | number | null): void {
   let target: HTMLElement | null = null;
   if (s.currentViewMode === 'overview' || s.currentViewMode === 'grid4')
     target = document.querySelector(`#overviewScroll .overview-row[data-ofid="${fid}"]`) as HTMLElement | null;
-  else if (s.currentViewMode === 'ver')
-    target = document.querySelector(`#versionsScroll .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
+  else if (s.currentViewMode === 'ver') {
+    const scrollEl = activeCompanionScrollEl();
+    target = scrollEl ? scrollEl.querySelector(`.frame-card[data-vfid="${fid}"]`) as HTMLElement | null : null;
+  }
   else target = document.querySelector(`#mainScroll .frame-card[data-mfid="${fid}"]`) as HTMLElement | null;
   if (!target) return;
   target.scrollIntoView({ block: 'center', behavior: 'instant' as ScrollBehavior });
@@ -231,7 +244,7 @@ export function setViewMode(mode: ViewMode, keepCompare?: boolean, forceAnchorFi
       s.currentViewMode === 'overview' || s.currentViewMode === 'grid4'
         ? document.getElementById('overviewScroll')
         : s.currentViewMode === 'ver'
-        ? document.getElementById('versionsScroll')
+        ? activeCompanionScrollEl()
         : document.getElementById('mainScroll');
     if (visibleScroll) {
       const cards =
@@ -314,7 +327,12 @@ export function setViewMode(mode: ViewMode, keepCompare?: boolean, forceAnchorFi
 export function autoPhoneMainView(): void {
   const w = window.innerWidth,
     h = window.innerHeight;
-  if (Math.min(w, h) <= 430 && h > w && state().currentViewMode !== 'main') setViewMode('main');
+  const isPhone = Math.min(w, h) <= 430;
+  if (isPhone && h > w) {
+    // iPhone portrait: single strip MAIN view
+    useStore.setState({ activeStrips: ['main'], currentViewMode: 'main' });
+    setViewMode('main');
+  }
 }
 
 export function showSwipeHint(): void {
@@ -338,104 +356,152 @@ export function showSwipeHint(): void {
   }, 3000);
 }
 
-export function navigateStrip(fid: number, fromStrip: 'main' | 'ver', dir: 'left' | 'right'): void {
+// Ordered list of cross-swipeable companion strips
+const CROSS_STRIP_ORDER: StripType[] = ['ver', 'floor', 'refs'];
+
+/** Return the next/prev strip that has at least 1 version for this frame. */
+function adjacentCrossStrip(fid: number, currentStrip: StripType, dir: 'next' | 'prev'): StripType | null {
+  const idx = CROSS_STRIP_ORDER.indexOf(currentStrip);
+  if (idx < 0) return null;
+  const step = dir === 'next' ? 1 : -1;
+  for (let i = idx + step; i >= 0 && i < CROSS_STRIP_ORDER.length; i += step) {
+    const candidate = CROSS_STRIP_ORDER[i];
+    if (getStripVersions(fid, candidate).length > 0) return candidate;
+  }
+  return null;
+}
+
+export function navigateStrip(fid: number, fromStrip: StripType, dir: 'left' | 'right'): void {
   saveOpenTextEdits();
   saveOpenTableEdits();
   const s = state();
-  const cur = s.crossCompare[fid] ?? -1;
-  const numVer = (s.versions[fid] || []).length;
+  const cur = fromStrip === 'main' ? (s.crossCompare[fid] ?? -1) : (getStripCrossCompare(fid, fromStrip) ?? -1);
+  const ccStrip = s.crossCompareStrip[fid] || 'ver';
+  const numVer = getStripVersions(fid, fromStrip === 'main' ? ccStrip : fromStrip).length;
   const renderMain = (window as any).__fh_renderMainFrame;
   const renderVer = (window as any).__fh_renderVersionFrame;
-  if (s.currentViewMode === 'both' && fromStrip === 'ver') {
-    const ai = s.activeTab[fid] || 0;
+  const scrollId = fromStrip === 'main' ? 'mainScroll' : stripScrollId(fromStrip);
+
+  // Multi-column mode: navigate within the strip's versions
+  if (s.activeStrips.length > 1 && fromStrip !== 'main') {
+    const ai = getStripActiveTab(fid, fromStrip);
     if (dir === 'left' && ai > 0) {
       clearAllDrawActive();
-      s.activeTab[fid] = ai - 1;
+      setStripActiveTab(fid, fromStrip, ai - 1);
       useStore.setState({ swipeHighlightFid: fid });
-      const div = document.querySelector(`#versionsScroll .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
-      if (div && renderVer) renderVer(div, fid);
+      const div = document.querySelector(`#${scrollId} .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
+      if (div && renderVer) renderVer(div, fid, fromStrip);
     } else if (dir === 'right' && ai < numVer - 1) {
       clearAllDrawActive();
-      s.activeTab[fid] = ai + 1;
+      setStripActiveTab(fid, fromStrip, ai + 1);
       useStore.setState({ swipeHighlightFid: fid });
-      const div = document.querySelector(`#versionsScroll .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
-      if (div && renderVer) renderVer(div, fid);
+      const div = document.querySelector(`#${scrollId} .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
+      if (div && renderVer) renderVer(div, fid, fromStrip);
     }
     requestAnimationFrame(() => scrollAnchorTo(fid));
     return;
   }
+  // Single-column main: cross-compare swipe across strips
   if (fromStrip === 'main' && s.currentViewMode === 'main') {
     if (dir === 'right') {
-      // Allow swiping to ALL versions (including hidden — they show dimmed)
       const nxt = cur + 1;
       if (nxt < numVer) {
+        // Navigate within current strip
         s.crossCompare[fid] = nxt;
         s.activeTab[fid] = nxt;
         useStore.setState({ swipeHighlightFid: fid });
         const div = document.querySelector(`#mainScroll .frame-card[data-mfid="${fid}"]`) as HTMLElement | null;
         if (div && renderMain) renderMain(div, fid);
+      } else {
+        // End of current strip — jump to next strip's first version
+        const nextStrip = adjacentCrossStrip(fid, ccStrip, 'next');
+        if (nextStrip) {
+          s.crossCompareStrip[fid] = nextStrip;
+          s.crossCompare[fid] = 0;
+          s.activeTab[fid] = 0;
+          useStore.setState({ swipeHighlightFid: fid });
+          const div = document.querySelector(`#mainScroll .frame-card[data-mfid="${fid}"]`) as HTMLElement | null;
+          if (div && renderMain) renderMain(div, fid);
+        }
       }
     } else if (dir === 'left' && cur >= 0) {
       const prv = cur - 1;
       if (prv >= 0) {
+        // Navigate within current strip
         s.crossCompare[fid] = prv;
         s.activeTab[fid] = prv;
       } else {
-        s.crossCompare[fid] = -1;
+        // At first version of current strip — jump to previous strip's last version, or back to main
+        const prevStrip = adjacentCrossStrip(fid, ccStrip, 'prev');
+        if (prevStrip) {
+          const prevLen = getStripVersions(fid, prevStrip).length;
+          s.crossCompareStrip[fid] = prevStrip;
+          s.crossCompare[fid] = prevLen - 1;
+          s.activeTab[fid] = prevLen - 1;
+        } else {
+          // Back to main frame (no previous strip)
+          s.crossCompare[fid] = -1;
+          s.crossCompareStrip[fid] = 'ver';
+        }
       }
       useStore.setState({ swipeHighlightFid: fid });
       const div = document.querySelector(`#mainScroll .frame-card[data-mfid="${fid}"]`) as HTMLElement | null;
       if (div && renderMain) renderMain(div, fid);
     }
-  } else if (fromStrip === 'ver' && s.currentViewMode === 'ver') {
+  } else if (fromStrip !== 'main' && s.currentViewMode === 'ver') {
+    // Single-column version strip: cross-compare swipe to show main inline
     if (cur >= 0) {
       if (dir === 'right') {
-        s.crossCompare[fid] = -1;
+        setStripCrossCompare(fid, fromStrip, -1);
         useStore.setState({ swipeHighlightFid: fid });
-        const div = document.querySelector(`#versionsScroll .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
-        if (div && renderVer) renderVer(div, fid);
+        const div = document.querySelector(`#${scrollId} .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
+        if (div && renderVer) renderVer(div, fid, fromStrip);
       }
     } else {
-      const ai = s.activeTab[fid] || 0;
+      const ai = getStripActiveTab(fid, fromStrip);
       if (dir === 'left') {
         if (ai > 0) {
           clearAllDrawActive();
-          s.activeTab[fid] = ai - 1;
+          setStripActiveTab(fid, fromStrip, ai - 1);
           useStore.setState({ swipeHighlightFid: fid });
-          const div = document.querySelector(`#versionsScroll .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
-          if (div && renderVer) renderVer(div, fid);
-        } else {
+          const div = document.querySelector(`#${scrollId} .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
+          if (div && renderVer) renderVer(div, fid, fromStrip);
+        } else if (fromStrip === 'ver') {
+          // Cross-compare into main only for ver strip (at ai=0)
           s.crossCompare[fid] = 0;
           useStore.setState({ swipeHighlightFid: fid });
-          const div = document.querySelector(`#versionsScroll .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
-          if (div && renderVer) renderVer(div, fid);
+          const div = document.querySelector(`#${scrollId} .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
+          if (div && renderVer) renderVer(div, fid, fromStrip);
         }
       } else if (dir === 'right' && ai < numVer - 1) {
         clearAllDrawActive();
-        s.activeTab[fid] = ai + 1;
+        setStripActiveTab(fid, fromStrip, ai + 1);
         useStore.setState({ swipeHighlightFid: fid });
-        const div = document.querySelector(`#versionsScroll .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
-        if (div && renderVer) renderVer(div, fid);
+        const div = document.querySelector(`#${scrollId} .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
+        if (div && renderVer) renderVer(div, fid, fromStrip);
       }
     }
   }
-  // Scroll-anchor the frame we just navigated so it stays centered (desktop 9:16)
   requestAnimationFrame(() => scrollAnchorTo(fid));
 }
 
-export function addNavArrows(wrapEl: HTMLElement, fid: number, fromStrip: 'main' | 'ver'): void {
+export function addNavArrows(wrapEl: HTMLElement, fid: number, fromStrip: StripType): void {
   if (isTouch) return;
   const s = state();
-  if (s.currentViewMode === 'both' && fromStrip === 'main') return;
-  const numVer = (s.versions[fid] || []).length;
-  const cur = s.crossCompare[fid] ?? -1;
+  if (s.activeStrips.length > 1 && fromStrip === 'main') return;
+  const ccStrip = s.crossCompareStrip[fid] || 'ver';
+  const strip = fromStrip === 'main' ? ccStrip : fromStrip;
+  const numVer = getStripVersions(fid, strip).length;
+  const cur = fromStrip === 'main' ? (s.crossCompare[fid] ?? -1) : (getStripCrossCompare(fid, strip) ?? -1);
   let showLeft = false,
     showRight = false;
   if (fromStrip === 'main') {
-    showRight = cur + 1 < numVer;
+    // Can go right if more versions in current strip OR if there's a next strip
+    showRight = (cur + 1 < numVer) || !!adjacentCrossStrip(fid, ccStrip, 'next');
+    // Can go left if we're in a cross-compare state
     showLeft = cur >= 0;
-  } else if (s.currentViewMode === 'both') {
-    const ai = s.activeTab[fid] || 0;
+  } else if (s.activeStrips.length > 1) {
+    const ai = getStripActiveTab(fid, strip);
     showLeft = ai > 0;
     showRight = ai < numVer - 1;
   } else {
@@ -443,8 +509,8 @@ export function addNavArrows(wrapEl: HTMLElement, fid: number, fromStrip: 'main'
       showRight = true;
       showLeft = false;
     } else {
-      const ai = s.activeTab[fid] || 0;
-      showLeft = true;
+      const ai = getStripActiveTab(fid, strip);
+      showLeft = ai > 0 || fromStrip === 'ver'; // ver: cross-compare to main at ai=0; others: just version nav
       showRight = ai < numVer - 1;
     }
   }
@@ -461,7 +527,7 @@ export function addNavArrows(wrapEl: HTMLElement, fid: number, fromStrip: 'main'
   );
 }
 
-export function addCrossSwipe(el: HTMLElement, fid: number, fromStrip: 'main' | 'ver'): void {
+export function addCrossSwipe(el: HTMLElement, fid: number, fromStrip: StripType): void {
   if (!isTouch) return;
   let sx = 0,
     sy = 0;
@@ -487,7 +553,8 @@ export function addCrossSwipe(el: HTMLElement, fid: number, fromStrip: 'main' | 
       const renderVer = (window as any).__fh_renderVersionFrame;
       if (fromStrip === 'main' && s.currentViewMode === 'main') {
         if (s.verReorderFid === fid && cur >= 0) {
-          const tabs = s.versions[fid],
+          const ccStrip = s.crossCompareStrip[fid] || 'ver';
+          const tabs = getStripVersions(fid, ccStrip),
             ai = cur;
           if (dx < 0 && ai > 0) {
             [tabs[ai - 1], tabs[ai]] = [tabs[ai], tabs[ai - 1]];
@@ -498,39 +565,18 @@ export function addCrossSwipe(el: HTMLElement, fid: number, fromStrip: 'main' | 
             s.crossCompare[fid] = ai + 1;
             s.activeTab[fid] = ai + 1;
           } else return;
-          relabelVersions(fid);
+          relabelStripVersions(fid, ccStrip);
           const div = document.querySelector(`#mainScroll .frame-card[data-mfid="${fid}"]`) as HTMLElement | null;
           if (div && renderMain) renderMain(div, fid);
           const vd = document.querySelector(`#versionsScroll .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
           if (vd && renderVer) renderVer(vd, fid);
           return;
         }
-        if (dx < 0) {
-          // Allow swiping to ALL versions (including hidden — they show dimmed)
-          const nxt = cur + 1;
-          const numV = (s.versions[fid] || []).length;
-          if (nxt < numV) {
-            s.crossCompare[fid] = nxt;
-            s.activeTab[fid] = nxt;
-            useStore.setState({ swipeHighlightFid: fid });
-            const div = document.querySelector(`#mainScroll .frame-card[data-mfid="${fid}"]`) as HTMLElement | null;
-            if (div && renderMain) renderMain(div, fid);
-            requestAnimationFrame(() => scrollAnchorTo(fid));
-          }
-        } else if (dx > 0 && cur >= 0) {
-          const prv = cur - 1;
-          if (prv >= 0) {
-            s.crossCompare[fid] = prv;
-            s.activeTab[fid] = prv;
-          } else {
-            s.crossCompare[fid] = -1;
-          }
-          useStore.setState({ swipeHighlightFid: fid });
-          const div = document.querySelector(`#mainScroll .frame-card[data-mfid="${fid}"]`) as HTMLElement | null;
-          if (div && renderMain) renderMain(div, fid);
-          requestAnimationFrame(() => scrollAnchorTo(fid));
-        }
+        // Delegate to navigateStrip for cross-strip continuation
+        const dir = dx < 0 ? 'right' : 'left';
+        navigateStrip(fid, fromStrip, dir);
       } else if (fromStrip === 'ver' && s.currentViewMode === 'ver') {
+        // Ver strip cross-compare to main (swipe right to show main inline)
         if (dx > 0 && cur < 0) {
           s.crossCompare[fid] = 0;
           const div = document.querySelector(`#versionsScroll .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
@@ -543,6 +589,7 @@ export function addCrossSwipe(el: HTMLElement, fid: number, fromStrip: 'main' | 
           requestAnimationFrame(() => scrollAnchorTo(fid));
         }
       }
+      // Floor/refs strips don't do main-inline cross-compare
     },
     { passive: true }
   );
@@ -593,8 +640,17 @@ export function handleOrientationFlip(): void {
   const fid = state().centerFid;
   const isPhone = Math.min(newW, newH) <= 430;
   const isPhonePortrait = isPhone && newH > newW;
-  if (isPhonePortrait && state().currentViewMode !== 'main') {
-    setViewMode('main', false, fid);
+  if (isPhonePortrait) {
+    // iPhone portrait: always return to MAIN single strip view
+    useStore.setState({ activeStrips: ['main'], currentViewMode: 'main' });
+    const renderAll = (window as any).__fh_renderAll;
+    if (renderAll) renderAll();
+  } else if (isPhone && newW > newH) {
+    // iPhone landscape: enforce max 2 strips
+    const s = state();
+    if (s.activeStrips.length > 2) {
+      useStore.setState({ activeStrips: s.activeStrips.slice(0, 2) });
+    }
   }
   syncCardHeights();
   if (!fid) return;

@@ -38,6 +38,8 @@ export interface Frame {
   tableData: TableData | null;
   hidden?: boolean;
   versionLabel?: string;
+  floorLabel?: string;
+  refsLabel?: string;
 }
 
 export interface Version {
@@ -108,6 +110,7 @@ export interface FrameHowState {
   drawActive: Record<number, DrawActiveOrigin>;
   showText: Record<number, 'text' | 'table' | null>;
   crossCompare: Record<number, number>;
+  crossCompareStrip: Record<number, StripType>;
   prevFrameState: Record<number, FrameSnapshot | null>;
   nextId: number;
   reorderFid: number | null;
@@ -163,6 +166,7 @@ const initial: FrameHowState = {
   drawActive: {},
   showText: {},
   crossCompare: {},
+  crossCompareStrip: {},
   prevFrameState: {},
   nextId: 1,
   reorderFid: null,
@@ -220,6 +224,7 @@ export function resetStoryboardState(): void {
     drawActive: {},
     showText: {},
     crossCompare: {},
+    crossCompareStrip: {},
     prevFrameState: {},
     nextId: 1,
     reorderFid: null,
