@@ -99,14 +99,18 @@ export interface StripClipboard {
 
 export interface FrameHowState {
   frames: Frame[];
+  /** Generic per-strip data — keyed by StripType, then by frame id */
+  stripVersions: Record<string, Record<number, Version[]>>;
+  stripActiveTab: Record<string, Record<number, number>>;
+  stripCrossCompare: Record<string, Record<number, number>>;
+  stripPrevFrameState: Record<string, Record<number, FrameSnapshot | null>>;
+  // Legacy aliases (kept for backward compat during migration, point to same objects)
   versions: Record<number, Version[]>;
   activeTab: Record<number, number>;
-  /** Floor strip — multi-version per frame, like versions */
   floorVersions: Record<number, Version[]>;
   floorActiveTab: Record<number, number>;
   floorCrossCompare: Record<number, number>;
   floorPrevFrameState: Record<number, FrameSnapshot | null>;
-  /** Refs strip — multi-version per frame, like versions */
   refsVersions: Record<number, Version[]>;
   refsActiveTab: Record<number, number>;
   refsCrossCompare: Record<number, number>;
@@ -160,18 +164,44 @@ export interface FrameHowState {
   renderTick: number;
 }
 
+// Create shared objects so legacy aliases and generic maps point to the same data
+function createStripState() {
+  const ver: Record<number, Version[]> = {};
+  const floor: Record<number, Version[]> = {};
+  const refs: Record<number, Version[]> = {};
+  const verTab: Record<number, number> = {};
+  const floorTab: Record<number, number> = {};
+  const refsTab: Record<number, number> = {};
+  const verCC: Record<number, number> = {};
+  const floorCC: Record<number, number> = {};
+  const refsCC: Record<number, number> = {};
+  const verPFS: Record<number, FrameSnapshot | null> = {};
+  const floorPFS: Record<number, FrameSnapshot | null> = {};
+  const refsPFS: Record<number, FrameSnapshot | null> = {};
+  return {
+    stripVersions: { ver, floor, refs } as Record<string, Record<number, Version[]>>,
+    stripActiveTab: { ver: verTab, floor: floorTab, refs: refsTab } as Record<string, Record<number, number>>,
+    stripCrossCompare: { ver: verCC, floor: floorCC, refs: refsCC } as Record<string, Record<number, number>>,
+    stripPrevFrameState: { ver: verPFS, floor: floorPFS, refs: refsPFS } as Record<string, Record<number, FrameSnapshot | null>>,
+    // Legacy aliases point to the SAME objects
+    versions: ver,
+    activeTab: verTab,
+    floorVersions: floor,
+    floorActiveTab: floorTab,
+    floorCrossCompare: floorCC,
+    floorPrevFrameState: floorPFS,
+    refsVersions: refs,
+    refsActiveTab: refsTab,
+    refsCrossCompare: refsCC,
+    refsPrevFrameState: refsPFS,
+  };
+}
+
+const initialStrips = createStripState();
+
 const initial: FrameHowState = {
   frames: [],
-  versions: {},
-  activeTab: {},
-  floorVersions: {},
-  floorActiveTab: {},
-  floorCrossCompare: {},
-  floorPrevFrameState: {},
-  refsVersions: {},
-  refsActiveTab: {},
-  refsCrossCompare: {},
-  refsPrevFrameState: {},
+  ...initialStrips,
   stripDefs: DEFAULT_STRIP_DEFS,
   activeStrips: ['main', 'ver'],
   layoutMode: 'auto',
@@ -220,18 +250,10 @@ export function bumpRenderTick(): void {
 }
 
 export function resetStoryboardState(): void {
+  const freshStrips = createStripState();
   useStore.setState({
     frames: [],
-    versions: {},
-    activeTab: {},
-    floorVersions: {},
-    floorActiveTab: {},
-    floorCrossCompare: {},
-    floorPrevFrameState: {},
-    refsVersions: {},
-    refsActiveTab: {},
-    refsCrossCompare: {},
-    refsPrevFrameState: {},
+    ...freshStrips,
     stripDefs: DEFAULT_STRIP_DEFS,
     activeStrips: ['main', 'ver'],
     layoutMode: 'auto',

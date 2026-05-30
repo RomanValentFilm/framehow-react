@@ -29,13 +29,15 @@ export interface CurrentProjectSnapshot {
   portraitMode?: boolean;
   groups?: FrameGroup[];
   nextGroupId?: number;
-  /** Floor strip data */
+  /** Generic strip data (v4.1+) */
+  stripVersions?: Record<string, Record<number, Version[]>>;
+  stripActiveTab?: Record<string, Record<number, number>>;
+  /** Legacy fields — kept for backward compat when loading old snapshots */
   floorVersions?: Record<number, Version[]>;
   floorActiveTab?: Record<number, number>;
-  /** Refs strip data */
   refsVersions?: Record<number, Version[]>;
   refsActiveTab?: Record<number, number>;
-  /** Strip definitions (v4.1+) */
+  /** Strip definitions (v4.0+) */
   stripDefs?: StripDef[];
 }
 
@@ -97,16 +99,19 @@ export function snapshotFromStore(projectId: string | null, name: string | null)
     name,
     lastModified: Date.now(),
     frames: s.frames,
-    versions: s.versions,
-    activeTab: s.activeTab,
+    versions: s.stripVersions.ver || {},
+    activeTab: s.stripActiveTab.ver || {},
     nextId: s.nextId,
     portraitMode: s.portraitMode,
     groups: s.groups,
     nextGroupId: s.nextGroupId,
-    floorVersions: s.floorVersions,
-    floorActiveTab: s.floorActiveTab,
-    refsVersions: s.refsVersions,
-    refsActiveTab: s.refsActiveTab,
+    stripVersions: s.stripVersions,
+    stripActiveTab: s.stripActiveTab,
+    // Legacy fields for backward compat when loading on older versions
+    floorVersions: s.stripVersions.floor || {},
+    floorActiveTab: s.stripActiveTab.floor || {},
+    refsVersions: s.stripVersions.refs || {},
+    refsActiveTab: s.stripActiveTab.refs || {},
     stripDefs: s.stripDefs,
   };
 }
@@ -126,18 +131,37 @@ export function applySnapshotToStore(snap: CurrentProjectSnapshot): void {
       if (old.refsLabel) { f.stripLabels.refs = old.refsLabel; delete old.refsLabel; }
     }
   }
+
+  // Build generic strip maps — prefer new format, fall back to legacy fields
+  const verVersions = snap.stripVersions?.ver || snap.versions || {};
+  const verActiveTab = snap.stripActiveTab?.ver || snap.activeTab || {};
+  const floorVersions = snap.stripVersions?.floor || snap.floorVersions || {};
+  const floorActiveTab = snap.stripActiveTab?.floor || snap.floorActiveTab || {};
+  const refsVersions = snap.stripVersions?.refs || snap.refsVersions || {};
+  const refsActiveTab = snap.stripActiveTab?.refs || snap.refsActiveTab || {};
+
   useStore.setState((prev) => ({
     frames: snap.frames,
-    versions: snap.versions,
-    activeTab: snap.activeTab,
+    // Generic maps
+    stripVersions: { ver: verVersions, floor: floorVersions, refs: refsVersions },
+    stripActiveTab: { ver: verActiveTab, floor: floorActiveTab, refs: refsActiveTab },
+    stripCrossCompare: { ver: {}, floor: {}, refs: {} },
+    stripPrevFrameState: { ver: {}, floor: {}, refs: {} },
+    // Legacy aliases (same objects)
+    versions: verVersions,
+    activeTab: verActiveTab,
+    floorVersions,
+    floorActiveTab,
+    floorCrossCompare: {},
+    floorPrevFrameState: {},
+    refsVersions,
+    refsActiveTab,
+    refsCrossCompare: {},
+    refsPrevFrameState: {},
     nextId: snap.nextId,
     portraitMode: snap.portraitMode ?? false,
     groups: snap.groups ?? [],
     nextGroupId: snap.nextGroupId ?? 1,
-    floorVersions: snap.floorVersions ?? {},
-    floorActiveTab: snap.floorActiveTab ?? {},
-    refsVersions: snap.refsVersions ?? {},
-    refsActiveTab: snap.refsActiveTab ?? {},
     stripDefs: snap.stripDefs ?? DEFAULT_STRIP_DEFS,
     renderTick: prev.renderTick + 1,
   }));

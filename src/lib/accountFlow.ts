@@ -1030,10 +1030,28 @@ async function applyCloudTreeToStore(tree: CloudProjectTree): Promise<void> {
 
   // Apply structure immediately so the user sees the project right away.
   // Do a FULL reset of all per-frame maps to avoid stale data from the previous project.
+  const emptyFloor: Record<number, Version[]> = {};
+  const emptyRefs: Record<number, Version[]> = {};
+  const emptyFloorTab: Record<number, number> = {};
+  const emptyRefsTab: Record<number, number> = {};
   useStore.setState((prev) => ({
     frames: newFrames,
+    // Generic maps
+    stripVersions: { ver: newVersions, floor: emptyFloor, refs: emptyRefs },
+    stripActiveTab: { ver: activeTab, floor: emptyFloorTab, refs: emptyRefsTab },
+    stripCrossCompare: { ver: {}, floor: {}, refs: {} },
+    stripPrevFrameState: { ver: {}, floor: {}, refs: {} },
+    // Legacy aliases (same objects)
     versions: newVersions,
     activeTab,
+    floorVersions: emptyFloor,
+    floorActiveTab: emptyFloorTab,
+    floorCrossCompare: {},
+    floorPrevFrameState: {},
+    refsVersions: emptyRefs,
+    refsActiveTab: emptyRefsTab,
+    refsCrossCompare: {},
+    refsPrevFrameState: {},
     drawColor: {},
     drawWidth: {},
     drawEraser: {},
@@ -1340,10 +1358,26 @@ async function tryPullFromCloud(): Promise<void> {
           for (const f of mergedFrames) mergedActiveTab[f.id] = 0;
 
           const mergedIsPortrait = mergedFrames.length > 0 && mergedFrames[0].cropH > mergedFrames[0].cropW;
+          const mFloor: Record<number, Version[]> = {};
+          const mRefs: Record<number, Version[]> = {};
+          const mFloorTab: Record<number, number> = {};
+          const mRefsTab: Record<number, number> = {};
           useStore.setState((prev) => ({
             frames: mergedFrames,
+            stripVersions: { ver: mergedVersions, floor: mFloor, refs: mRefs },
+            stripActiveTab: { ver: mergedActiveTab, floor: mFloorTab, refs: mRefsTab },
+            stripCrossCompare: { ver: {}, floor: {}, refs: {} },
+            stripPrevFrameState: { ver: {}, floor: {}, refs: {} },
             versions: mergedVersions,
             activeTab: mergedActiveTab,
+            floorVersions: mFloor,
+            floorActiveTab: mFloorTab,
+            floorCrossCompare: {},
+            floorPrevFrameState: {},
+            refsVersions: mRefs,
+            refsActiveTab: mRefsTab,
+            refsCrossCompare: {},
+            refsPrevFrameState: {},
             drawColor: {},
             drawWidth: {},
             drawEraser: {},

@@ -429,11 +429,34 @@ interface StripRegistryEntry {
 }
 
 // ─── ADD NEW STRIPS HERE ───
-const STRIP_REGISTRY: Record<string, StripRegistryEntry> = {
-  ver:   { prefix: 'v', scrollId: 'versionsScroll', slice: () => { const s = state(); return { versions: s.versions, activeTab: s.activeTab, crossCompare: s.crossCompare, prevFrameState: s.prevFrameState }; } },
-  floor: { prefix: 'f', scrollId: 'floorScroll',    slice: () => { const s = state(); return { versions: s.floorVersions, activeTab: s.floorActiveTab, crossCompare: s.floorCrossCompare, prevFrameState: s.floorPrevFrameState }; } },
-  refs:  { prefix: 'r', scrollId: 'refsScroll',     slice: () => { const s = state(); return { versions: s.refsVersions, activeTab: s.refsActiveTab, crossCompare: s.refsCrossCompare, prevFrameState: s.refsPrevFrameState }; } },
+// Each strip just needs a scrollId; data lives in the generic stripVersions/stripActiveTab/etc maps.
+const STRIP_SCROLL_IDS: Record<string, string> = {
+  ver: 'versionsScroll',
+  floor: 'floorScroll',
+  refs: 'refsScroll',
 };
+
+const STRIP_REGISTRY: Record<string, StripRegistryEntry> = {};
+
+// Build registry dynamically — each strip reads from the generic maps
+for (const id of ['ver', 'floor', 'refs']) {
+  STRIP_REGISTRY[id] = {
+    prefix: id === 'ver' ? 'v' : id === 'floor' ? 'f' : 'r',
+    scrollId: STRIP_SCROLL_IDS[id] || `${id}Scroll`,
+    slice: (() => {
+      const stripId = id;
+      return () => {
+        const s = state();
+        return {
+          versions: s.stripVersions[stripId] || (s.stripVersions[stripId] = {}),
+          activeTab: s.stripActiveTab[stripId] || (s.stripActiveTab[stripId] = {}),
+          crossCompare: s.stripCrossCompare[stripId] || (s.stripCrossCompare[stripId] = {}),
+          prevFrameState: s.stripPrevFrameState[stripId] || (s.stripPrevFrameState[stripId] = {}),
+        };
+      };
+    })(),
+  };
+}
 
 /** Get the registry entry for a strip (falls back to 'ver' for unknown types) */
 function reg(strip: StripType): StripRegistryEntry {
