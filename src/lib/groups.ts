@@ -118,8 +118,7 @@ export function reorderFrameInGroup(fid: number, direction: 'up' | 'down'): bool
     g.id === group.id ? { ...g, frameIds: newIds } : g
   );
   useStore.setState({ groups: newGroups });
-  // Also update position in s.frames (ALL order) to follow group order
-  syncAllOrderFromGroup(fid, { frameIds: newIds });
+  // Group order is independent from ALL order — do NOT sync to s.frames.
   return true; // handled
 }
 
@@ -134,8 +133,7 @@ export function updateGroupButtonState(): void {
       groupBtn.classList.remove('group-active');
     }
   }
-  // Update or create the group label inside vb-left (after the buttons).
-  // vb-left has flex:1 matching vb-right, so the middle buttons stay centred.
+  // Update or create the group label right after the GROUP button.
   let labelEl = document.getElementById('groupActiveLabel');
   if (s.activeGroupId !== null) {
     const group = s.groups.find(g => g.id === s.activeGroupId);
@@ -144,8 +142,10 @@ export function updateGroupButtonState(): void {
       labelEl = document.createElement('span');
       labelEl.id = 'groupActiveLabel';
       labelEl.className = 'group-active-label';
-      const vbLeft = document.querySelector('.vb-left');
-      if (vbLeft) vbLeft.appendChild(labelEl);
+      // Insert right after the GROUP button (before 3×2)
+      if (groupBtn && groupBtn.parentNode) {
+        groupBtn.parentNode.insertBefore(labelEl, groupBtn.nextSibling);
+      }
     }
     labelEl.textContent = name;
   } else if (labelEl) {

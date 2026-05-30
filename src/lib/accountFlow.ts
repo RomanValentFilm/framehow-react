@@ -1030,35 +1030,42 @@ async function applyCloudTreeToStore(tree: CloudProjectTree): Promise<void> {
 
   // Apply structure immediately so the user sees the project right away.
   // Do a FULL reset of all per-frame maps to avoid stale data from the previous project.
+  // IMPORTANT: Legacy aliases must reference the SAME objects as stripXxx maps.
   const emptyFloor: Record<number, Version[]> = {};
   const emptyRefs: Record<number, Version[]> = {};
   const emptyFloorTab: Record<number, number> = {};
   const emptyRefsTab: Record<number, number> = {};
+  const verCC: Record<number, number> = {};
+  const floorCC: Record<number, number> = {};
+  const refsCC: Record<number, number> = {};
+  const verPFS: Record<number, any> = {};
+  const floorPFS: Record<number, any> = {};
+  const refsPFS: Record<number, any> = {};
   useStore.setState((prev) => ({
     frames: newFrames,
     // Generic maps
     stripVersions: { ver: newVersions, floor: emptyFloor, refs: emptyRefs },
     stripActiveTab: { ver: activeTab, floor: emptyFloorTab, refs: emptyRefsTab },
-    stripCrossCompare: { ver: {}, floor: {}, refs: {} },
-    stripPrevFrameState: { ver: {}, floor: {}, refs: {} },
-    // Legacy aliases (same objects)
+    stripCrossCompare: { ver: verCC, floor: floorCC, refs: refsCC },
+    stripPrevFrameState: { ver: verPFS, floor: floorPFS, refs: refsPFS },
+    // Legacy aliases (SAME objects as above)
     versions: newVersions,
     activeTab,
     floorVersions: emptyFloor,
     floorActiveTab: emptyFloorTab,
-    floorCrossCompare: {},
-    floorPrevFrameState: {},
+    floorCrossCompare: floorCC,
+    floorPrevFrameState: floorPFS,
     refsVersions: emptyRefs,
     refsActiveTab: emptyRefsTab,
-    refsCrossCompare: {},
-    refsPrevFrameState: {},
+    refsCrossCompare: refsCC,
+    refsPrevFrameState: refsPFS,
     drawColor: {},
     drawWidth: {},
     drawEraser: {},
     drawActive: {},
     showText: {},
-    crossCompare: {},
-    prevFrameState: {},
+    crossCompare: verCC,
+    prevFrameState: verPFS,
     nextId,
     reorderFid: null,
     verReorderFid: null,
@@ -1362,29 +1369,35 @@ async function tryPullFromCloud(): Promise<void> {
           const mRefs: Record<number, Version[]> = {};
           const mFloorTab: Record<number, number> = {};
           const mRefsTab: Record<number, number> = {};
+          const mVerCC: Record<number, number> = {};
+          const mFloorCC: Record<number, number> = {};
+          const mRefsCC: Record<number, number> = {};
+          const mVerPFS: Record<number, any> = {};
+          const mFloorPFS: Record<number, any> = {};
+          const mRefsPFS: Record<number, any> = {};
           useStore.setState((prev) => ({
             frames: mergedFrames,
             stripVersions: { ver: mergedVersions, floor: mFloor, refs: mRefs },
             stripActiveTab: { ver: mergedActiveTab, floor: mFloorTab, refs: mRefsTab },
-            stripCrossCompare: { ver: {}, floor: {}, refs: {} },
-            stripPrevFrameState: { ver: {}, floor: {}, refs: {} },
+            stripCrossCompare: { ver: mVerCC, floor: mFloorCC, refs: mRefsCC },
+            stripPrevFrameState: { ver: mVerPFS, floor: mFloorPFS, refs: mRefsPFS },
             versions: mergedVersions,
             activeTab: mergedActiveTab,
             floorVersions: mFloor,
             floorActiveTab: mFloorTab,
-            floorCrossCompare: {},
-            floorPrevFrameState: {},
+            floorCrossCompare: mFloorCC,
+            floorPrevFrameState: mFloorPFS,
             refsVersions: mRefs,
             refsActiveTab: mRefsTab,
-            refsCrossCompare: {},
-            refsPrevFrameState: {},
+            refsCrossCompare: mRefsCC,
+            refsPrevFrameState: mRefsPFS,
             drawColor: {},
             drawWidth: {},
             drawEraser: {},
             drawActive: {},
             showText: {},
-            crossCompare: {},
-            prevFrameState: {},
+            crossCompare: mVerCC,
+            prevFrameState: mVerPFS,
             nextId: Math.max(...mergedFrames.map((f) => f.id), 0) + 1,
             reorderFid: null,
             verReorderFid: null,

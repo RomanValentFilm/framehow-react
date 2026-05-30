@@ -165,8 +165,8 @@ export function initFramehow(): void {
       const dir = newIdx < oldIdx ? '-20px' : '20px';
       setTimeout(() => {
         const activeVtab =
-          (document.querySelector(`.vtab.active[data-fid="${fid}"]`) as HTMLElement | null) ||
-          (document.querySelector(`.vtab.active[data-idx="${newIdx}"]`) as HTMLElement | null);
+          (document.querySelector(`.vtab.active[data-fid="${fid}"][data-tabstrip="${starStrip}"]`) as HTMLElement | null) ||
+          (document.querySelector(`.vtab.active[data-idx="${newIdx}"][data-tabstrip="${starStrip}"]`) as HTMLElement | null);
         if (activeVtab) {
           activeVtab.style.setProperty('--slide-dir', dir);
           activeVtab.classList.add('reorder-highlight');

@@ -164,36 +164,37 @@ export interface FrameHowState {
   renderTick: number;
 }
 
-// Create shared objects so legacy aliases and generic maps point to the same data
+// Create shared objects so legacy aliases and generic maps point to the same data.
+// Iterates DEFAULT_STRIP_DEFS — adding a strip there auto-creates its state buckets.
 function createStripState() {
-  const ver: Record<number, Version[]> = {};
-  const floor: Record<number, Version[]> = {};
-  const refs: Record<number, Version[]> = {};
-  const verTab: Record<number, number> = {};
-  const floorTab: Record<number, number> = {};
-  const refsTab: Record<number, number> = {};
-  const verCC: Record<number, number> = {};
-  const floorCC: Record<number, number> = {};
-  const refsCC: Record<number, number> = {};
-  const verPFS: Record<number, FrameSnapshot | null> = {};
-  const floorPFS: Record<number, FrameSnapshot | null> = {};
-  const refsPFS: Record<number, FrameSnapshot | null> = {};
+  const stripVersions: Record<string, Record<number, Version[]>> = {};
+  const stripActiveTab: Record<string, Record<number, number>> = {};
+  const stripCrossCompare: Record<string, Record<number, number>> = {};
+  const stripPrevFrameState: Record<string, Record<number, FrameSnapshot | null>> = {};
+  for (const def of DEFAULT_STRIP_DEFS) {
+    stripVersions[def.id] = {};
+    stripActiveTab[def.id] = {};
+    stripCrossCompare[def.id] = {};
+    stripPrevFrameState[def.id] = {};
+  }
   return {
-    stripVersions: { ver, floor, refs } as Record<string, Record<number, Version[]>>,
-    stripActiveTab: { ver: verTab, floor: floorTab, refs: refsTab } as Record<string, Record<number, number>>,
-    stripCrossCompare: { ver: verCC, floor: floorCC, refs: refsCC } as Record<string, Record<number, number>>,
-    stripPrevFrameState: { ver: verPFS, floor: floorPFS, refs: refsPFS } as Record<string, Record<number, FrameSnapshot | null>>,
-    // Legacy aliases point to the SAME objects
-    versions: ver,
-    activeTab: verTab,
-    floorVersions: floor,
-    floorActiveTab: floorTab,
-    floorCrossCompare: floorCC,
-    floorPrevFrameState: floorPFS,
-    refsVersions: refs,
-    refsActiveTab: refsTab,
-    refsCrossCompare: refsCC,
-    refsPrevFrameState: refsPFS,
+    stripVersions,
+    stripActiveTab,
+    stripCrossCompare,
+    stripPrevFrameState,
+    // Legacy aliases point to the SAME objects (for backward compat)
+    versions: stripVersions.ver,
+    activeTab: stripActiveTab.ver,
+    crossCompare: stripCrossCompare.ver,
+    prevFrameState: stripPrevFrameState.ver,
+    floorVersions: stripVersions.floor,
+    floorActiveTab: stripActiveTab.floor,
+    floorCrossCompare: stripCrossCompare.floor,
+    floorPrevFrameState: stripPrevFrameState.floor,
+    refsVersions: stripVersions.refs,
+    refsActiveTab: stripActiveTab.refs,
+    refsCrossCompare: stripCrossCompare.refs,
+    refsPrevFrameState: stripPrevFrameState.refs,
   };
 }
 
@@ -210,9 +211,7 @@ const initial: FrameHowState = {
   drawEraser: {},
   drawActive: {},
   showText: {},
-  crossCompare: {},
   crossCompareStrip: {},
-  prevFrameState: {},
   nextId: 1,
   reorderFid: null,
   verReorderFid: null,
@@ -262,9 +261,7 @@ export function resetStoryboardState(): void {
     drawEraser: {},
     drawActive: {},
     showText: {},
-    crossCompare: {},
     crossCompareStrip: {},
-    prevFrameState: {},
     nextId: 1,
     reorderFid: null,
     verReorderFid: null,

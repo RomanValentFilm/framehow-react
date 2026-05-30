@@ -1,3 +1,5 @@
+import { DEFAULT_STRIP_DEFS } from '../store/state';
+
 export function ViewBar() {
   return (
     <div className="view-bar">
@@ -10,12 +12,20 @@ export function ViewBar() {
       {/* Flexible spacer */}
       <div className="vb-spacer" />
 
-      {/* MIDDLE GROUP — strip selectors (toggleable) */}
+      {/* MIDDLE GROUP — strip selectors (toggleable), built from stripDefs */}
       <div className="view-btns vb-middle">
         <button className="view-btn strip-toggle active" data-strip="main" title="Main Strip">MAIN</button>
-        <button className="view-btn strip-toggle active" data-strip="ver" id="stripBtn-ver" title="Strip 1">STRIP1</button>
-        <button className="view-btn strip-toggle" data-strip="floor" id="stripBtn-floor" title="Strip 2">STRIP2</button>
-        <button className="view-btn strip-toggle" data-strip="refs" id="stripBtn-refs" title="Strip 3">STRIP3</button>
+        {DEFAULT_STRIP_DEFS.map((def, i) => (
+          <button
+            key={def.id}
+            className={`view-btn strip-toggle${i === 0 ? ' active' : ''}`}
+            data-strip={def.id}
+            id={`stripBtn-${def.id}`}
+            title={def.defaultFrameLabel}
+          >
+            {def.buttonLabel}
+          </button>
+        ))}
       </div>
 
       {/* Flexible spacer */}

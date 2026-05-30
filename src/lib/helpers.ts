@@ -1,7 +1,7 @@
 // Reusable helper utilities — HTML fragments, version manipulation,
 // state cleanup, and inline view-mode helpers.
 
-import { COLORS, state, useStore } from '../store/state';
+import { COLORS, state, useStore, DEFAULT_STRIP_DEFS } from '../store/state';
 import type { Version, Frame, Stroke, TableData, StripType, FrameSnapshot } from '../store/state';
 import { getCurrentProject } from './currentProject';
 
@@ -242,10 +242,8 @@ export function autoNewVersionIfNeeded(fid: number): Version {
 
 export function restoreFrame(fid: number, strip: StripType = 'ver'): void {
   const s = state();
-  const bucket = strip === 'floor' ? s.floorPrevFrameState
-    : strip === 'refs' ? s.refsPrevFrameState
-    : s.prevFrameState;
-  const snap = bucket[fid];
+  const slice = reg(strip).slice();
+  const snap = slice.prevFrameState[fid];
   if (!snap) return;
 
   // Always restore main frame data (shared across strips)
@@ -259,21 +257,11 @@ export function restoreFrame(fid: number, strip: StripType = 'ver'): void {
   }
 
   // Restore strip-specific version data
-  const vers = strip === 'floor' ? s.floorVersions
-    : strip === 'refs' ? s.refsVersions
-    : s.versions;
-  const tabs = strip === 'floor' ? s.floorActiveTab
-    : strip === 'refs' ? s.refsActiveTab
-    : s.activeTab;
-  const cc = strip === 'floor' ? s.floorCrossCompare
-    : strip === 'refs' ? s.refsCrossCompare
-    : s.crossCompare;
-
-  vers[fid] = snap.versions;
-  tabs[fid] = snap.activeTab;
-  if (snap.crossCompare === undefined) delete cc[fid];
-  else cc[fid] = snap.crossCompare;
-  bucket[fid] = null;
+  slice.versions[fid] = snap.versions;
+  slice.activeTab[fid] = snap.activeTab;
+  if (snap.crossCompare === undefined) delete slice.crossCompare[fid];
+  else slice.crossCompare[fid] = snap.crossCompare;
+  slice.prevFrameState[fid] = null;
 }
 
 export function clearAllDrawActive(): void {
@@ -428,21 +416,18 @@ interface StripRegistryEntry {
   slice: () => StripSlice; // returns live references to the state buckets
 }
 
-// ─── ADD NEW STRIPS HERE ───
-// Each strip just needs a scrollId; data lives in the generic stripVersions/stripActiveTab/etc maps.
-const STRIP_SCROLL_IDS: Record<string, string> = {
-  ver: 'versionsScroll',
-  floor: 'floorScroll',
-  refs: 'refsScroll',
-};
+// ─── STRIP REGISTRY — built automatically from DEFAULT_STRIP_DEFS ───
+// Adding a strip to DEFAULT_STRIP_DEFS is all that's needed; scrollId follows
+// convention: 'ver' → 'versionsScroll', others → '{id}Scroll'.
+const SCROLL_ID_OVERRIDES: Record<string, string> = { ver: 'versionsScroll' };
 
 const STRIP_REGISTRY: Record<string, StripRegistryEntry> = {};
 
-// Build registry dynamically — each strip reads from the generic maps
-for (const id of ['ver', 'floor', 'refs']) {
+for (const def of DEFAULT_STRIP_DEFS) {
+  const id = def.id;
   STRIP_REGISTRY[id] = {
-    prefix: id === 'ver' ? 'v' : id === 'floor' ? 'f' : 'r',
-    scrollId: STRIP_SCROLL_IDS[id] || `${id}Scroll`,
+    prefix: def.prefix,
+    scrollId: SCROLL_ID_OVERRIDES[id] || `${id}Scroll`,
     slice: (() => {
       const stripId = id;
       return () => {

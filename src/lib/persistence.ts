@@ -139,25 +139,34 @@ export function applySnapshotToStore(snap: CurrentProjectSnapshot): void {
   const floorActiveTab = snap.stripActiveTab?.floor || snap.floorActiveTab || {};
   const refsVersions = snap.stripVersions?.refs || snap.refsVersions || {};
   const refsActiveTab = snap.stripActiveTab?.refs || snap.refsActiveTab || {};
+  // IMPORTANT: Legacy aliases must reference the SAME objects as stripXxx maps.
+  const verCC: Record<number, number> = {};
+  const floorCC: Record<number, number> = {};
+  const refsCC: Record<number, number> = {};
+  const verPFS: Record<number, any> = {};
+  const floorPFS: Record<number, any> = {};
+  const refsPFS: Record<number, any> = {};
 
   useStore.setState((prev) => ({
     frames: snap.frames,
     // Generic maps
     stripVersions: { ver: verVersions, floor: floorVersions, refs: refsVersions },
     stripActiveTab: { ver: verActiveTab, floor: floorActiveTab, refs: refsActiveTab },
-    stripCrossCompare: { ver: {}, floor: {}, refs: {} },
-    stripPrevFrameState: { ver: {}, floor: {}, refs: {} },
-    // Legacy aliases (same objects)
+    stripCrossCompare: { ver: verCC, floor: floorCC, refs: refsCC },
+    stripPrevFrameState: { ver: verPFS, floor: floorPFS, refs: refsPFS },
+    // Legacy aliases (SAME objects as above)
     versions: verVersions,
     activeTab: verActiveTab,
+    crossCompare: verCC,
+    prevFrameState: verPFS,
     floorVersions,
     floorActiveTab,
-    floorCrossCompare: {},
-    floorPrevFrameState: {},
+    floorCrossCompare: floorCC,
+    floorPrevFrameState: floorPFS,
     refsVersions,
     refsActiveTab,
-    refsCrossCompare: {},
-    refsPrevFrameState: {},
+    refsCrossCompare: refsCC,
+    refsPrevFrameState: refsPFS,
     nextId: snap.nextId,
     portraitMode: snap.portraitMode ?? false,
     groups: snap.groups ?? [],
