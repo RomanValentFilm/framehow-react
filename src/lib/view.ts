@@ -552,8 +552,8 @@ export function addCrossSwipe(el: HTMLElement, fid: number, fromStrip: StripType
       const renderMain = (window as any).__fh_renderMainFrame;
       const renderVer = (window as any).__fh_renderVersionFrame;
       if (fromStrip === 'main' && s.currentViewMode === 'main') {
-        if (s.verReorderFid === fid && cur >= 0) {
-          const ccStrip = s.crossCompareStrip[fid] || 'ver';
+        const ccStrip = (s.crossCompareStrip[fid] || 'ver') as StripType;
+        if (s.verReorderFid === fid && s.verReorderStrip === ccStrip && cur >= 0) {
           const tabs = getStripVersions(fid, ccStrip),
             ai = cur;
           if (dx < 0 && ai > 0) {

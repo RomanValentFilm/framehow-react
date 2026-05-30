@@ -102,6 +102,9 @@ export function renderAll(): void {
   document.querySelectorAll('.strip-toggle').forEach((b) => {
     const strip = (b as HTMLElement).dataset.strip as StripType;
     b.classList.toggle('active', s.activeStrips.includes(strip));
+    // Sync button label from stripDefs
+    const def = s.stripDefs.find((d) => d.id === strip);
+    if (def) b.textContent = def.buttonLabel;
   });
   // Show/hide OFF button when in 1+2V or GRID4 mode
   const offBtn = document.getElementById('vbOffBtn') as HTMLElement | null;
@@ -193,7 +196,7 @@ export function renderMainFrame(div: HTMLElement, fid: number): void {
       ai = compareIdx,
       ver = tabs[ai],
       cid = `mcvs_${fid}_${ai}`;
-    const isCReorder = s.verReorderFid === fid;
+    const isCReorder = s.verReorderFid === fid && s.verReorderStrip === ccStrip;
     const visIndices = windowedTabIndices(tabs, ai, s.portraitMode);
     const tabsHTML =
       visIndices
@@ -227,7 +230,7 @@ export function renderMainFrame(div: HTMLElement, fid: number): void {
       <div class="frame-num ver-frame-num">${
         f.label ? `<span class="frame-label-tag">${f.label} ${getFrameStripLabel(f, ccStrip)}</span>` : '<span></span>'
       }<div class="version-tabs${
-        s.reorderFid === fid ? ' locked-dim' : s.verReorderFid === fid ? ' locked' : ''
+        s.reorderFid === fid ? ' locked-dim' : s.verReorderFid === fid && s.verReorderStrip === ccStrip ? ' locked' : ''
       }">${tabsHTML}</div>${
         cVerHidden ? `<button class="btn" data-cvunhide="${fid}" style="margin-left:auto;font-size:10px;padding:2px 10px;">Un-Hide</button>` : reorderHTML
       }</div>
@@ -295,7 +298,7 @@ export function renderMainFrame(div: HTMLElement, fid: number): void {
         for (const k in s.drawActive) s.drawActive[+k] = null;
         useStore.setState({ reorderFid: null, swipeHighlightFid: null });
         document.querySelectorAll('.frame-card.reorder-active').forEach((c) => c.classList.remove('reorder-active'));
-        useStore.setState({ verReorderFid: fid });
+        useStore.setState({ verReorderFid: fid, verReorderStrip: ccStrip });
         renderMainFrame(div, fid);
         document.querySelectorAll('.frame-card[data-mfid]').forEach((c) => {
           if (parseInt((c as HTMLElement).dataset.mfid!) !== fid) renderMainFrame(c as HTMLElement, parseInt((c as HTMLElement).dataset.mfid!));
@@ -308,7 +311,7 @@ export function renderMainFrame(div: HTMLElement, fid: number): void {
     const cDoneBtn = div.querySelector('[data-cvreorderdone]') as HTMLElement | null;
     if (cDoneBtn)
       cDoneBtn.addEventListener('click', () => {
-        useStore.setState({ verReorderFid: null });
+        useStore.setState({ verReorderFid: null, verReorderStrip: null });
         renderMainFrame(div, fid);
         const vd = document.querySelector(`#versionsScroll .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
         if (vd) renderVersionFrame(vd, fid);
@@ -340,7 +343,7 @@ export function renderMainFrame(div: HTMLElement, fid: number): void {
           s.activeTab[fid] = ci + 1;
         }
         relabelStripVersions(fid, ccS);
-        useStore.setState({ verReorderFid: fid });
+        useStore.setState({ verReorderFid: fid, verReorderStrip: ccS });
         renderMainFrame(div, fid);
         const scrollId = stripScrollId(ccS);
         const vd = document.querySelector(`#${scrollId} .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
@@ -663,7 +666,7 @@ export function renderVersionFrame(div: HTMLElement, fid: number, strip: StripTy
     return;
   }
 
-  const isVReorder = s.verReorderFid === fid;
+  const isVReorder = s.verReorderFid === fid && s.verReorderStrip === strip;
   const vVisIndices = windowedTabIndices(tabs, ai, s.portraitMode);
   const tabsHTML =
     vVisIndices
@@ -701,7 +704,7 @@ export function renderVersionFrame(div: HTMLElement, fid: number, strip: StripTy
     <div class="frame-num ver-frame-num">${
       f && f.label ? `<span class="frame-label-tag ver-label-combo" data-editverlabel="${fid}">${f.label} ${getFrameStripLabel(f, strip)}</span>` : '<span></span>'
     }<div class="version-tabs${
-    s.reorderFid === fid ? ' locked-dim' : s.verReorderFid === fid ? ' locked' : ''
+    s.reorderFid === fid ? ' locked-dim' : s.verReorderFid === fid && s.verReorderStrip === strip ? ' locked' : ''
   }">${tabsHTML}</div>${
       _verHidden ? `<button class="btn" data-vunhide="${fid}" style="margin-left:auto;font-size:10px;padding:2px 10px;">Un-Hide</button>` : reorderHTML
     }</div>
@@ -776,7 +779,7 @@ export function renderVersionFrame(div: HTMLElement, fid: number, strip: StripTy
       for (const k in s.drawActive) s.drawActive[+k] = null;
       useStore.setState({ reorderFid: null, swipeHighlightFid: null });
       document.querySelectorAll('.frame-card.reorder-active').forEach((c) => c.classList.remove('reorder-active'));
-      useStore.setState({ verReorderFid: fid });
+      useStore.setState({ verReorderFid: fid, verReorderStrip: strip });
       renderVersionFrame(div, fid, strip);
       document.querySelectorAll('.frame-card[data-mfid]').forEach((c) =>
         renderMainFrame(c as HTMLElement, parseInt((c as HTMLElement).dataset.mfid!))
@@ -785,7 +788,7 @@ export function renderVersionFrame(div: HTMLElement, fid: number, strip: StripTy
   const doneBtn = div.querySelector('[data-vreorderdone]') as HTMLElement | null;
   if (doneBtn)
     doneBtn.addEventListener('click', () => {
-      useStore.setState({ verReorderFid: null });
+      useStore.setState({ verReorderFid: null, verReorderStrip: null });
       renderVersionFrame(div, fid, strip);
       document.querySelectorAll('.frame-card[data-mfid]').forEach((c) =>
         renderMainFrame(c as HTMLElement, parseInt((c as HTMLElement).dataset.mfid!))
@@ -807,7 +810,7 @@ export function renderVersionFrame(div: HTMLElement, fid: number, strip: StripTy
         setStripActiveTab(fid, strip, ai2 + 1);
       }
       relabelStripVersions(fid, strip);
-      useStore.setState({ verReorderFid: fid, verSlideDir: dir === 'left' ? '20px' : '-20px' });
+      useStore.setState({ verReorderFid: fid, verReorderStrip: strip, verSlideDir: dir === 'left' ? '20px' : '-20px' });
       renderVersionFrame(div, fid, strip);
       useStore.setState({ verSlideDir: null });
       document.querySelectorAll('.frame-card[data-mfid]').forEach((c) =>
@@ -872,7 +875,7 @@ export function renderVersionFrame(div: HTMLElement, fid: number, strip: StripTy
         if (s.reorderFid !== null) return;
         const tabs2 = getStripVersions(fid, strip),
           ai2 = getStripActiveTab(fid, strip);
-        if (s.verReorderFid === fid) {
+        if (s.verReorderFid === fid && s.verReorderStrip === strip) {
           if (dx < 0 && ai2 > 0) {
             [tabs2[ai2 - 1], tabs2[ai2]] = [tabs2[ai2], tabs2[ai2 - 1]];
             setStripActiveTab(fid, strip, ai2 - 1);

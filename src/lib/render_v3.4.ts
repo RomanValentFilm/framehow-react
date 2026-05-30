@@ -617,7 +617,7 @@ export function renderVersionFrame(div: HTMLElement, fid: number): void {
     : '';
   div.innerHTML = `
     <div class="frame-num ver-frame-num">${
-      f && f.label ? `<span class="frame-label-tag ver-label-combo" data-editverlabel="${fid}">${f.label} ${f.versionLabel || 'version'}</span>` : '<span></span>'
+      f && f.label ? `<span class="frame-label-tag ver-label-combo" data-editverlabel="${fid}">${f.label} ${f.stripLabels?.ver || 'version'}</span>` : '<span></span>'
     }<div class="version-tabs${
     s.reorderFid === fid ? ' locked-dim' : s.verReorderFid === fid ? ' locked' : ''
   }">${tabsHTML}</div>${
@@ -680,9 +680,10 @@ export function renderVersionFrame(div: HTMLElement, fid: number): void {
   div.querySelectorAll('[data-editverlabel]').forEach((el) =>
     el.addEventListener('click', async () => {
       if (!f) return;
-      const result = await showVerLabelEdit(f.label, f.versionLabel || 'version');
+      const result = await showVerLabelEdit(f.label, f.stripLabels?.ver || 'version');
       if (result === null) return;
-      f.versionLabel = result;
+      if (!f.stripLabels) f.stripLabels = {};
+      f.stripLabels.ver = result;
       renderVersionFrame(div, fid);
     })
   );

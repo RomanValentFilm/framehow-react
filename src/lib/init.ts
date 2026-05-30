@@ -13,6 +13,7 @@ import {
   defaultTableData,
   toggleStar,
   clearAllDrawActive,
+  clearVerReorder,
   updateFrameBadge,
   tableHTML,
   autoNewVersionIfNeeded,
@@ -199,6 +200,16 @@ export function initFramehow(): void {
     document.getElementById('mainMenu')!.classList.toggle('open');
   });
   document.addEventListener('click', () => document.getElementById('mainMenu')!.classList.remove('open'));
+
+  // ── Global: dismiss any active MOVE/reorder when clicking elsewhere ─
+  document.addEventListener('click', (e: MouseEvent) => {
+    if (state().verReorderFid === null) return;
+    const t = e.target as HTMLElement;
+    // Keep MOVE active only when clicking move arrows or the reorder label (MOVE/DONE)
+    if (t.closest('.vtab-add, .reorder-label, [data-ovmove], [data-vmove], [data-cvmove]')) return;
+    clearVerReorder();
+  });
+
   // ── New Project modal handler ──────────────────────────────────────
   // Centralised handler: opens the New Project modal and acts on the
   // user's choice. The callback pattern (not Promise) preserves the
@@ -655,7 +666,7 @@ export function initFramehow(): void {
   // Update the menu's "Sign In" / "Account" label to reflect login state.
   function refreshAccountMenuLabel(): void {
     const btn = document.getElementById('menuAccount');
-    if (btn) btn.textContent = isLoggedIn() ? 'Account' : 'Sign In';
+    if (btn) btn.textContent = isLoggedIn() ? 'Account' : 'Sign in / Log in';
   }
   refreshAccountMenuLabel();
   subscribeSession(refreshAccountMenuLabel);

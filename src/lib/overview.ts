@@ -185,7 +185,7 @@ export function renderOverviewRow(row: HTMLElement, fid: number): void {
     const vcard = document.createElement('div');
     vcard.className = 'ov-ver-card';
     const vcid = 'ov_vc_' + fid + '_' + vi;
-    const isVReorder = s.verReorderFid === fid;
+    const isVReorder = s.verReorderFid === fid && s.verReorderStrip === companionStrip;
     const isActive = vi === ai;
     const colorDotsVer = drawToolbarHTML(fid, 'data-ovfid', fid);
     const isExpanded = isActive && s.ovExpandedFid === fid;
@@ -349,7 +349,7 @@ export function renderOverviewRow(row: HTMLElement, fid: number): void {
           setStripActiveTab(fid, companionStrip, curAi + 1);
         }
         relabelStripVersions(fid, companionStrip);
-        useStore.setState({ verReorderFid: fid });
+        useStore.setState({ verReorderFid: fid, verReorderStrip: companionStrip });
         renderOverviewRow(row, fid);
       })
     );
@@ -357,13 +357,13 @@ export function renderOverviewRow(row: HTMLElement, fid: number): void {
     if (startBtn)
       startBtn.addEventListener('click', () => {
         for (const k in s.drawActive) s.drawActive[+k] = null;
-        useStore.setState({ reorderFid: null, swipeHighlightFid: null, verReorderFid: fid });
+        useStore.setState({ reorderFid: null, swipeHighlightFid: null, verReorderFid: fid, verReorderStrip: companionStrip });
         renderOverviewRow(row, fid);
       });
     const doneBtn = fc.querySelector('[data-ovreorderdone]') as HTMLElement | null;
     if (doneBtn)
       doneBtn.addEventListener('click', () => {
-        useStore.setState({ verReorderFid: null });
+        useStore.setState({ verReorderFid: null, verReorderStrip: null });
         renderOverviewRow(row, fid);
       });
     const cvs = fc.querySelector(`#${vcid}`) as HTMLCanvasElement | null;
@@ -584,7 +584,7 @@ export function renderGrid4Row(row: HTMLElement, fid: number): void {
     }
 
     const isActive = vi === (getStripActiveTab(fid, companionStrip) || 0);
-    const isVReorder = s.verReorderFid === fid;
+    const isVReorder = s.verReorderFid === fid && s.verReorderStrip === companionStrip;
     const colorDotsVer = drawToolbarHTML(fid, 'data-ovfid', fid);
     const cardClass =
       mainReorder ? 'ov-reorder' : (isVReorder && isActive ? 'ov-moving' : isActive ? 'ov-active' : '');
@@ -689,7 +689,7 @@ export function renderGrid4Row(row: HTMLElement, fid: number): void {
           setStripActiveTab(fid, companionStrip, curAi + 1);
         }
         relabelStripVersions(fid, companionStrip);
-        useStore.setState({ verReorderFid: fid });
+        useStore.setState({ verReorderFid: fid, verReorderStrip: companionStrip });
         renderGrid4Row(row, fid);
       })
     );
@@ -698,14 +698,14 @@ export function renderGrid4Row(row: HTMLElement, fid: number): void {
       startBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         for (const k in s.drawActive) s.drawActive[+k] = null;
-        useStore.setState({ reorderFid: null, swipeHighlightFid: null, verReorderFid: fid });
+        useStore.setState({ reorderFid: null, swipeHighlightFid: null, verReorderFid: fid, verReorderStrip: companionStrip });
         renderGrid4Row(row, fid);
       });
     const doneBtn = fc.querySelector('[data-ovreorderdone]') as HTMLElement | null;
     if (doneBtn)
       doneBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        useStore.setState({ verReorderFid: null });
+        useStore.setState({ verReorderFid: null, verReorderStrip: null });
         renderGrid4Row(row, fid);
       });
     const cvs = fc.querySelector(`#${vcid}`) as HTMLCanvasElement | null;

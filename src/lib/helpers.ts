@@ -332,11 +332,23 @@ export function clearVerReorder(): void {
   const s = state();
   const needRender = s.verReorderFid || s.swipeHighlightFid;
   const prev = s.verReorderFid || s.swipeHighlightFid;
-  useStore.setState({ verReorderFid: null, swipeHighlightFid: null });
+  useStore.setState({ verReorderFid: null, verReorderStrip: null, swipeHighlightFid: null });
   if (!needRender) return;
-  const vd = document.querySelector(`.frame-card[data-vfid="${prev}"]`) as HTMLElement | null;
+  // Re-render affected version frame cards
   const renderVer = (window as any).__fh_renderVersionFrame;
-  if (vd && renderVer) renderVer(vd, prev);
+  if (renderVer) {
+    document.querySelectorAll(`.frame-card[data-vfid="${prev}"]`).forEach((el) => {
+      const strip = ((el as HTMLElement).dataset.strip || 'ver') as StripType;
+      renderVer(el, prev, strip);
+    });
+  }
+  // Re-render main frame cards too — they use verReorderFid for the 'locked' class
+  const renderMn = (window as any).__fh_renderMainFrame;
+  if (renderMn) {
+    document.querySelectorAll('.frame-card[data-mfid]').forEach((c) => {
+      renderMn(c as HTMLElement, parseInt((c as HTMLElement).dataset.mfid!));
+    });
+  }
   const md = document.querySelector(`.frame-card[data-mfid="${prev}"]`) as HTMLElement | null;
   const renderMain = (window as any).__fh_renderMainFrame;
   if (md && (state().crossCompare[prev as number] ?? -1) >= 0 && renderMain) renderMain(md, +prev!);
@@ -429,28 +441,55 @@ function reg(strip: StripType): StripRegistryEntry {
 }
 
 export function stripTabPrefix(strip: StripType): string {
-  return reg(strip).prefix;
+  const def = state().stripDefs.find((d) => d.id === strip);
+  return def ? def.prefix : reg(strip).prefix;
 }
 
 /** Return the human-readable default label for a strip type */
 export function stripDefaultLabel(strip: StripType): string {
-  if (strip === 'floor') return 'floor plan';
-  if (strip === 'refs') return 'reference';
-  return 'version';
+  const def = state().stripDefs.find((d) => d.id === strip);
+  return def ? def.defaultFrameLabel : 'version';
+}
+
+/** Return the user-facing button label for a strip type */
+export function stripButtonLabel(strip: StripType): string {
+  const def = state().stripDefs.find((d) => d.id === strip);
+  return def ? def.buttonLabel : strip.toUpperCase();
 }
 
 /** Return the custom strip label for a frame, falling back to the default */
 export function getFrameStripLabel(f: Frame, strip: StripType): string {
-  if (strip === 'floor') return f.floorLabel || stripDefaultLabel(strip);
-  if (strip === 'refs') return f.refsLabel || stripDefaultLabel(strip);
-  return f.versionLabel || stripDefaultLabel(strip);
+  return f.stripLabels?.[strip] || stripDefaultLabel(strip);
 }
 
 /** Set the custom strip label on the correct field of a frame */
 export function setFrameStripLabel(f: Frame, strip: StripType, label: string): void {
-  if (strip === 'floor') f.floorLabel = label;
-  else if (strip === 'refs') f.refsLabel = label;
-  else f.versionLabel = label;
+  if (!f.stripLabels) f.stripLabels = {};
+  f.stripLabels[strip] = label;
+
+  if (label.trim().length === 0) return;
+  const s = state();
+  const def = s.stripDefs.find((d) => d.id === strip);
+  if (!def) return;
+
+  // Update the default label so ALL frames in this strip show the new name
+  def.defaultFrameLabel = label.trim();
+  // Clear custom stripLabels on all other frames so they fall through to the new default
+  for (const fr of s.frames) {
+    if (fr !== f && fr.stripLabels && fr.stripLabels[strip]) {
+      delete fr.stripLabels[strip];
+    }
+  }
+
+  // Update strip prefix from first letter and relabel all tabs
+  const newPrefix = label.trim()[0].toLowerCase();
+  if (def.prefix !== newPrefix) {
+    def.prefix = newPrefix;
+    const versMap = reg(strip).slice().versions;
+    for (const fid of Object.keys(versMap)) {
+      relabelStripVersions(+fid, strip);
+    }
+  }
 }
 
 export function stripScrollId(strip: StripType): string {

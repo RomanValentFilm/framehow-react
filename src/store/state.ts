@@ -37,9 +37,7 @@ export interface Frame {
   textContent: string;
   tableData: TableData | null;
   hidden?: boolean;
-  versionLabel?: string;
-  floorLabel?: string;
-  refsLabel?: string;
+  stripLabels?: Record<string, string>;
 }
 
 export interface Version {
@@ -79,6 +77,19 @@ export interface FrameGroup {
   hiddenFrameIds: number[];
 }
 
+export interface StripDef {
+  id: StripType;
+  buttonLabel: string;       // max 6 chars, displayed CAPS on the button
+  defaultFrameLabel: string; // default label inside frame cards
+  prefix: string;            // tab prefix: 'v', 'f', 'r'
+}
+
+export const DEFAULT_STRIP_DEFS: StripDef[] = [
+  { id: 'ver',   buttonLabel: 'STRIP1', defaultFrameLabel: 'vers',  prefix: 'v' },
+  { id: 'floor', buttonLabel: 'STRIP2', defaultFrameLabel: 'floor', prefix: 'f' },
+  { id: 'refs',  buttonLabel: 'STRIP3', defaultFrameLabel: 'refs',  prefix: 'r' },
+];
+
 export interface StripClipboard {
   bgImage: string | null;
   strokes: Stroke[];
@@ -100,6 +111,8 @@ export interface FrameHowState {
   refsActiveTab: Record<number, number>;
   refsCrossCompare: Record<number, number>;
   refsPrevFrameState: Record<number, FrameSnapshot | null>;
+  /** Strip definitions — user-configurable button labels & defaults */
+  stripDefs: StripDef[];
   /** Which strips are selected in the middle buttons (ordered) */
   activeStrips: StripType[];
   /** Layout mode from the right buttons */
@@ -115,6 +128,7 @@ export interface FrameHowState {
   nextId: number;
   reorderFid: number | null;
   verReorderFid: number | null;
+  verReorderStrip: StripType | null;
   verSlideDir: string | null;
   swipeHighlightFid: number | null;
   stripClipboard: StripClipboard | null;
@@ -158,6 +172,7 @@ const initial: FrameHowState = {
   refsActiveTab: {},
   refsCrossCompare: {},
   refsPrevFrameState: {},
+  stripDefs: DEFAULT_STRIP_DEFS,
   activeStrips: ['main', 'ver'],
   layoutMode: 'auto',
   drawColor: {},
@@ -171,6 +186,7 @@ const initial: FrameHowState = {
   nextId: 1,
   reorderFid: null,
   verReorderFid: null,
+  verReorderStrip: null,
   verSlideDir: null,
   swipeHighlightFid: null,
   stripClipboard: null,
@@ -216,6 +232,7 @@ export function resetStoryboardState(): void {
     refsActiveTab: {},
     refsCrossCompare: {},
     refsPrevFrameState: {},
+    stripDefs: DEFAULT_STRIP_DEFS,
     activeStrips: ['main', 'ver'],
     layoutMode: 'auto',
     drawColor: {},
@@ -229,6 +246,7 @@ export function resetStoryboardState(): void {
     nextId: 1,
     reorderFid: null,
     verReorderFid: null,
+    verReorderStrip: null,
     stripClipboard: null,
     imgTarget: null,
     mainImgTarget: null,

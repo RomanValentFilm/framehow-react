@@ -13,9 +13,9 @@ export function ViewBar() {
       {/* MIDDLE GROUP — strip selectors (toggleable) */}
       <div className="view-btns vb-middle">
         <button className="view-btn strip-toggle active" data-strip="main" title="Main Strip">MAIN</button>
-        <button className="view-btn strip-toggle active" data-strip="ver" title="Version Strip">VRSN</button>
-        <button className="view-btn strip-toggle" data-strip="floor" title="Floor Plans">FLOOR</button>
-        <button className="view-btn strip-toggle" data-strip="refs" title="References">REFS</button>
+        <button className="view-btn strip-toggle active" data-strip="ver" id="stripBtn-ver" title="Strip 1">STRIP1</button>
+        <button className="view-btn strip-toggle" data-strip="floor" id="stripBtn-floor" title="Strip 2">STRIP2</button>
+        <button className="view-btn strip-toggle" data-strip="refs" id="stripBtn-refs" title="Strip 3">STRIP3</button>
       </div>
 
       {/* Flexible spacer */}

@@ -44,7 +44,7 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
 
   if (action === 'reorderstart') {
     for (const k in s.drawActive) s.drawActive[+k] = null;
-    useStore.setState({ verReorderFid: null, swipeHighlightFid: null, reorderFid: fid });
+    useStore.setState({ verReorderFid: null, verReorderStrip: null, swipeHighlightFid: null, reorderFid: fid });
     renderMainFrame(div, fid);
     document.querySelectorAll('.frame-card[data-vfid]').forEach((c) => {
       const el = c as HTMLElement;
@@ -510,7 +510,12 @@ export function handleAction(action: string, fid: number, div: HTMLElement, from
         if (curIdx >= 0) allVers.splice(curIdx, 1);
         if (allVers.length === 0) allVers.push({ id: 1, label: 'v1', type: 'empty', strokes: [], bgImage: null });
         setStripActiveTab(fid, strip, Math.min(getStripActiveTab(fid, strip), allVers.length - 1));
+        relabelStripVersions(fid, strip);
         rerender();
+        if (s.currentViewMode === 'overview' || s.currentViewMode === 'grid4') {
+          const row = document.querySelector(`#overviewScroll .overview-row[data-ofid="${fid}"]`) as HTMLElement | null;
+          if (row) { s.currentViewMode === 'grid4' ? renderGrid4Row(row, fid) : renderOverviewRow(row, fid); }
+        }
       }
     });
     return;

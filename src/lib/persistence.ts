@@ -6,8 +6,8 @@
 // active tab) — UI-only state (drawActive, hover, etc.) is omitted. On
 // restore we merge the payload back into the live store.
 
-import type { Frame, Version, FrameGroup } from '../store/state';
-import { useStore } from '../store/state';
+import type { Frame, Version, FrameGroup, StripDef } from '../store/state';
+import { useStore, DEFAULT_STRIP_DEFS } from '../store/state';
 
 const DB_NAME = 'framehow';
 const DB_VERSION = 1;
@@ -35,6 +35,8 @@ export interface CurrentProjectSnapshot {
   /** Refs strip data */
   refsVersions?: Record<number, Version[]>;
   refsActiveTab?: Record<number, number>;
+  /** Strip definitions (v4.1+) */
+  stripDefs?: StripDef[];
 }
 
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -105,6 +107,7 @@ export function snapshotFromStore(projectId: string | null, name: string | null)
     floorActiveTab: s.floorActiveTab,
     refsVersions: s.refsVersions,
     refsActiveTab: s.refsActiveTab,
+    stripDefs: s.stripDefs,
   };
 }
 
@@ -113,6 +116,16 @@ export function snapshotFromStore(projectId: string | null, name: string | null)
  * left at its defaults; the renderer will redraw from the restored data.
  */
 export function applySnapshotToStore(snap: CurrentProjectSnapshot): void {
+  // Migrate old per-field strip labels to consolidated stripLabels map
+  for (const f of snap.frames) {
+    const old = f as any;
+    if (old.versionLabel || old.floorLabel || old.refsLabel) {
+      if (!f.stripLabels) f.stripLabels = {};
+      if (old.versionLabel) { f.stripLabels.ver = old.versionLabel; delete old.versionLabel; }
+      if (old.floorLabel) { f.stripLabels.floor = old.floorLabel; delete old.floorLabel; }
+      if (old.refsLabel) { f.stripLabels.refs = old.refsLabel; delete old.refsLabel; }
+    }
+  }
   useStore.setState((prev) => ({
     frames: snap.frames,
     versions: snap.versions,
@@ -125,6 +138,7 @@ export function applySnapshotToStore(snap: CurrentProjectSnapshot): void {
     floorActiveTab: snap.floorActiveTab ?? {},
     refsVersions: snap.refsVersions ?? {},
     refsActiveTab: snap.refsActiveTab ?? {},
+    stripDefs: snap.stripDefs ?? DEFAULT_STRIP_DEFS,
     renderTick: prev.renderTick + 1,
   }));
 }

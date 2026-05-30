@@ -830,7 +830,7 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
       crop_w: f.cropW || null, crop_h: f.cropH || null,
       text_content: f.textContent || null,
       table_data: f.tableData ? JSON.stringify(f.tableData) : null,
-      version_label: f.versionLabel || null,
+      version_label: f.stripLabels?.ver || null,
       hidden: !!f.hidden,
       updated_at: now,
     });
@@ -972,7 +972,7 @@ async function applyCloudTreeToStore(tree: CloudProjectTree): Promise<void> {
         id: localId,
         src: '',  // filled async below
         label: sf.label ?? '',
-        versionLabel: sf.version_label || undefined,
+        stripLabels: sf.version_label ? { ver: sf.version_label } : undefined,
         hidden: !!sf.hidden,
         cropW: sf.crop_w || 16,
         cropH: sf.crop_h || 9,
