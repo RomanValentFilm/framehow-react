@@ -770,7 +770,11 @@ export function renderVersionFrame(div: HTMLElement, fid: number, strip: StripTy
       const result = await showVerLabelEdit(f.label, getFrameStripLabel(f, strip));
       if (result === null) return;
       setFrameStripLabel(f, strip, result);
-      renderVersionFrame(div, fid, strip);
+      // Re-render ALL version cards in this strip (label is global)
+      document.querySelectorAll(`.frame-card[data-strip="${strip}"]`).forEach((el) => {
+        const vfid = (el as HTMLElement).dataset.vfid;
+        if (vfid) renderVersionFrame(el as HTMLElement, +vfid, strip);
+      });
     })
   );
   const startBtn = div.querySelector('[data-vreorderstart]') as HTMLElement | null;
