@@ -191,6 +191,30 @@ export function AccountModals() {
         </div>
       </div>
 
+      {/* Customise */}
+      <div className="account-modal hidden" id="customiseModal">
+        <div className="account-card">
+          <h2>Customise</h2>
+          <p className="account-hint">Strip names</p>
+          <div className="account-row">
+            <label>STRIP 1</label>
+            <input type="text" id="customStrip1" maxLength={6} style={{textTransform:'uppercase',letterSpacing:'.05em'}} />
+          </div>
+          <div className="account-row">
+            <label>STRIP 2</label>
+            <input type="text" id="customStrip2" maxLength={6} style={{textTransform:'uppercase',letterSpacing:'.05em'}} />
+          </div>
+          <div className="account-row">
+            <label>STRIP 3</label>
+            <input type="text" id="customStrip3" maxLength={6} style={{textTransform:'uppercase',letterSpacing:'.05em'}} />
+          </div>
+          <div className="account-btns">
+            <button className="btn" id="customiseCancel" type="button">Cancel</button>
+            <button className="btn btn-accent" id="customiseSave" type="button">Save</button>
+          </div>
+        </div>
+      </div>
+
       {/* Change password */}
       <div className="account-modal hidden" id="changePasswordModal">
         <div className="account-card">

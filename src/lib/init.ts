@@ -302,6 +302,43 @@ export function initFramehow(): void {
     void flowAccountOrSignIn();
   });
 
+  // Customise modal
+  document.getElementById('menuCustomise')!.addEventListener('click', () => {
+    document.getElementById('mainMenu')!.classList.remove('open');
+    const s = state();
+    // Populate inputs with current strip labels
+    const inp1 = document.getElementById('customStrip1') as HTMLInputElement;
+    const inp2 = document.getElementById('customStrip2') as HTMLInputElement;
+    const inp3 = document.getElementById('customStrip3') as HTMLInputElement;
+    inp1.value = s.stripDefs[0]?.buttonLabel || 'STRIP1';
+    inp2.value = s.stripDefs[1]?.buttonLabel || 'STRIP2';
+    inp3.value = s.stripDefs[2]?.buttonLabel || 'STRIP3';
+    document.getElementById('customiseModal')!.classList.remove('hidden');
+  });
+  document.getElementById('customiseCancel')!.addEventListener('click', () => {
+    document.getElementById('customiseModal')!.classList.add('hidden');
+  });
+  document.getElementById('customiseSave')!.addEventListener('click', () => {
+    const inp1 = document.getElementById('customStrip1') as HTMLInputElement;
+    const inp2 = document.getElementById('customStrip2') as HTMLInputElement;
+    const inp3 = document.getElementById('customStrip3') as HTMLInputElement;
+    const s = state();
+    const newDefs = s.stripDefs.map((def, i) => {
+      const raw = i === 0 ? inp1.value : i === 1 ? inp2.value : inp3.value;
+      const label = raw.toUpperCase().replace(/[^A-Z0-9 ]/g, '').slice(0, 6) || def.buttonLabel;
+      return { ...def, buttonLabel: label };
+    });
+    useStore.setState({ stripDefs: newDefs });
+    document.getElementById('customiseModal')!.classList.add('hidden');
+    renderAll();
+  });
+  // Close customise on backdrop click
+  document.getElementById('customiseModal')!.addEventListener('click', (e) => {
+    if ((e.target as HTMLElement).id === 'customiseModal') {
+      document.getElementById('customiseModal')!.classList.add('hidden');
+    }
+  });
+
   // PDF input
   document.getElementById('pdfInput')!.addEventListener('change', async (e) => {
     const file = (e.target as HTMLInputElement).files?.[0];

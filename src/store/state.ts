@@ -84,6 +84,12 @@ export interface StripDef {
   prefix: string;            // tab prefix: 'v', 'f', 'r'
 }
 
+// Internal strip IDs are legacy names kept for backward compat with persisted data.
+// MAIN  = 'main'  (hardcoded, not in this array)
+// STRIP1 = 'ver'   (originally "versions")
+// STRIP2 = 'floor' (originally "floor plan")
+// STRIP3 = 'refs'  (originally "references")
+// The buttonLabel is what users see and can rename via Customise.
 export const DEFAULT_STRIP_DEFS: StripDef[] = [
   { id: 'ver',   buttonLabel: 'STRIP1', defaultFrameLabel: 'vers',  prefix: 'v' },
   { id: 'floor', buttonLabel: 'STRIP2', defaultFrameLabel: 'floor', prefix: 'f' },
