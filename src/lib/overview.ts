@@ -49,7 +49,8 @@ export function renderOverviewRow(row: HTMLElement, fid: number): void {
   const f = s.frames.find((x) => x.id === fid);
   if (!f) return;
   const companionStrip: StripType = (s.activeStrips.find((st: string) => st !== 'main') || 'ver') as StripType;
-  if (f.hidden) {
+  // Only show as hidden in ALL mode — inside a group, frames are always visible
+  if (f.hidden && s.activeGroupId === null) {
     const tabs = getStripVersions(fid, companionStrip) || [];
     const ai = getStripActiveTab(fid, companionStrip) || 0;
     const tabsHTML = tabs
@@ -425,8 +426,8 @@ export function renderGrid4Row(row: HTMLElement, fid: number): void {
   row.innerHTML = '';
   const companionStrip: StripType = (s.activeStrips.find((st: string) => st !== 'main') || 'ver') as StripType;
 
-  // ── Hidden frame — collapsed bar with Un-Hide ──
-  if (f.hidden) {
+  // ── Hidden frame — collapsed bar with Un-Hide (only in ALL mode) ──
+  if (f.hidden && s.activeGroupId === null) {
     const tabs = getStripVersions(fid, companionStrip) || [];
     const ai = getStripActiveTab(fid, companionStrip) || 0;
     const tabsHTML = tabs

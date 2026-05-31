@@ -224,9 +224,9 @@ export default projects;
 // ===========================================================================
 
 interface ProjectTree {
-  project: { id: string; name: string; created_at: number; updated_at: number; last_device_id: string | null; last_device_name: string | null };
+  project: { id: string; name: string; created_at: number; updated_at: number; last_device_id: string | null; last_device_name: string | null; metadata: string | null };
   strips: Array<{ id: string; project_id: string; label: string | null; sort_order: number; updated_at: number }>;
-  frames: Array<{ id: string; strip_id: string; label: string | null; sort_order: number; crop_w: number | null; crop_h: number | null; text_content: string | null; table_data: string | null; version_label: string | null; hidden: number; updated_at: number }>;
+  frames: Array<{ id: string; strip_id: string; label: string | null; sort_order: number; crop_w: number | null; crop_h: number | null; text_content: string | null; table_data: string | null; version_label: string | null; strip_labels: string | null; hidden: number; updated_at: number }>;
   versions: Array<{ id: string; frame_id: string; label: string | null; type: string; hidden: number; starred: number; updated_at: number }>;
   images: Array<{
     id: string;
@@ -250,14 +250,14 @@ async function loadProjectTree(db: D1Database, projectId: string): Promise<Proje
   // All queries filter through project_id, so only 1 bind param each.
   const [projectResult, stripsResult, framesResult, versionsResult, imagesResult, drawingsResult] = await db.batch([
     db.prepare(
-      "SELECT id, name, created_at, updated_at, last_device_id, last_device_name FROM projects WHERE id = ?",
+      "SELECT id, name, created_at, updated_at, last_device_id, last_device_name, metadata FROM projects WHERE id = ?",
     ).bind(projectId),
     db.prepare(
       `SELECT id, project_id, label, sort_order, updated_at
          FROM strips WHERE project_id = ? ORDER BY sort_order`,
     ).bind(projectId),
     db.prepare(
-      `SELECT id, strip_id, label, sort_order, crop_w, crop_h, text_content, table_data, version_label, hidden, updated_at
+      `SELECT id, strip_id, label, sort_order, crop_w, crop_h, text_content, table_data, version_label, strip_labels, hidden, updated_at
          FROM frames WHERE strip_id IN (SELECT id FROM strips WHERE project_id = ?)
         ORDER BY sort_order`,
     ).bind(projectId),
@@ -325,9 +325,9 @@ async function sumOtherProjectImageBytes(
 // ---------------------------------------------------------------------------
 
 interface SyncPayload {
-  project: { name: string; updated_at: number; base_updated_at?: number; device_id?: string; device_name?: string };
+  project: { name: string; updated_at: number; base_updated_at?: number; device_id?: string; device_name?: string; metadata?: string | null };
   strips: Array<{ id: string; label: string | null; sort_order: number; updated_at: number }>;
-  frames: Array<{ id: string; strip_id: string; label: string | null; sort_order: number; crop_w: number | null; crop_h: number | null; text_content: string | null; table_data: string | null; version_label: string | null; hidden: boolean; updated_at: number }>;
+  frames: Array<{ id: string; strip_id: string; label: string | null; sort_order: number; crop_w: number | null; crop_h: number | null; text_content: string | null; table_data: string | null; version_label: string | null; strip_labels: string | null; hidden: boolean; updated_at: number }>;
   versions: Array<{ id: string; frame_id: string; label: string | null; type: string; hidden: boolean; starred: boolean; updated_at: number }>;
   images: Array<{
     id: string;
@@ -371,6 +371,7 @@ function parseSyncPayload(body: unknown): Parsed<SyncPayload> {
   const baseUpdatedAt = typeof projObj.base_updated_at === "number" && Number.isFinite(projObj.base_updated_at) ? projObj.base_updated_at : undefined;
   const deviceId = typeof projObj.device_id === "string" ? projObj.device_id.slice(0, 100) : undefined;
   const deviceName = typeof projObj.device_name === "string" ? projObj.device_name.slice(0, 100) : undefined;
+  const metadata = typeof projObj.metadata === "string" ? projObj.metadata : null;
 
   const strips: SyncPayload["strips"] = [];
   for (const raw of asArray(b.strips)) {
@@ -398,10 +399,11 @@ function parseSyncPayload(body: unknown): Parsed<SyncPayload> {
     const text_content = r.text_content === null || r.text_content === undefined ? null : asStr(r.text_content);
     const table_data = r.table_data === null || r.table_data === undefined ? null : asStr(r.table_data);
     const version_label = asNullableStr(r.version_label, MAX_LABEL_LEN);
+    const strip_labels = r.strip_labels === null || r.strip_labels === undefined ? null : asStr(r.strip_labels);
     const hidden = r.hidden === true || r.hidden === 1;
     if (!id || !strip_id || sort_order === null || updated_at === null || label === undefined || version_label === undefined) return err("frames[]");
     if (!stripIdSet.has(strip_id)) return err("frames[].strip_id (unknown)");
-    frames.push({ id, strip_id, label, sort_order, crop_w, crop_h, text_content, table_data, version_label: version_label ?? null, hidden, updated_at });
+    frames.push({ id, strip_id, label, sort_order, crop_w, crop_h, text_content, table_data, version_label: version_label ?? null, strip_labels, hidden, updated_at });
   }
 
   const frameIdSet = new Set(frames.map((f) => f.id));
@@ -462,7 +464,7 @@ function parseSyncPayload(body: unknown): Parsed<SyncPayload> {
 
   return {
     value: {
-      project: { name: projName, updated_at: projUpdated, base_updated_at: baseUpdatedAt, device_id: deviceId, device_name: deviceName },
+      project: { name: projName, updated_at: projUpdated, base_updated_at: baseUpdatedAt, device_id: deviceId, device_name: deviceName, metadata },
       strips,
       frames,
       versions,
@@ -516,8 +518,8 @@ async function applySync(db: D1Database, projectId: string, payload: SyncPayload
     ).bind(projectId),
     db.prepare("DELETE FROM strips WHERE project_id = ?").bind(projectId),
     // project name + bumped updated_at + device tracking
-    db.prepare("UPDATE projects SET name = ?, updated_at = ?, last_device_id = COALESCE(?, last_device_id), last_device_name = COALESCE(?, last_device_name) WHERE id = ?")
-      .bind(payload.project.name, Math.max(payload.project.updated_at, now), payload.project.device_id ?? null, payload.project.device_name ?? null, projectId),
+    db.prepare("UPDATE projects SET name = ?, updated_at = ?, last_device_id = COALESCE(?, last_device_id), last_device_name = COALESCE(?, last_device_name), metadata = ? WHERE id = ?")
+      .bind(payload.project.name, Math.max(payload.project.updated_at, now), payload.project.device_id ?? null, payload.project.device_name ?? null, payload.project.metadata ?? null, projectId),
   ];
 
   // Inserts
@@ -535,10 +537,10 @@ async function applySync(db: D1Database, projectId: string, payload: SyncPayload
     stmts.push(
       db
         .prepare(
-          `INSERT INTO frames (id, strip_id, label, sort_order, crop_w, crop_h, text_content, table_data, version_label, hidden, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO frames (id, strip_id, label, sort_order, crop_w, crop_h, text_content, table_data, version_label, strip_labels, hidden, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
-        .bind(f.id, f.strip_id, f.label, f.sort_order, f.crop_w, f.crop_h, f.text_content, f.table_data, f.version_label, f.hidden ? 1 : 0, f.updated_at),
+        .bind(f.id, f.strip_id, f.label, f.sort_order, f.crop_w, f.crop_h, f.text_content, f.table_data, f.version_label, f.strip_labels, f.hidden ? 1 : 0, f.updated_at),
     );
   }
   for (const v of payload.versions) {

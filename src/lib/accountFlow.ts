@@ -989,9 +989,9 @@ async function fetchImageFromR2(r2Key: string, token: string): Promise<string> {
 // ---------------------------------------------------------------------------
 
 interface CloudProjectTree {
-  project: { id: string; name: string; created_at: number; updated_at: number; last_device_id: string | null; last_device_name: string | null };
+  project: { id: string; name: string; created_at: number; updated_at: number; last_device_id: string | null; last_device_name: string | null; metadata: string | null };
   strips: Array<{ id: string; project_id: string; label: string | null; sort_order: number; updated_at: number }>;
-  frames: Array<{ id: string; strip_id: string; label: string | null; sort_order: number; crop_w: number | null; crop_h: number | null; text_content: string | null; table_data: string | null; version_label: string | null; hidden: number; updated_at: number }>;
+  frames: Array<{ id: string; strip_id: string; label: string | null; sort_order: number; crop_w: number | null; crop_h: number | null; text_content: string | null; table_data: string | null; version_label: string | null; strip_labels: string | null; hidden: number; updated_at: number }>;
   versions: Array<{ id: string; frame_id: string; label: string | null; type: string; hidden: number; starred: number; updated_at: number }>;
   images: Array<{ id: string; version_id: string; r2_key: string; width: number | null; height: number | null; size_bytes: number | null; content_type: string | null; updated_at: number }>;
   drawings: Array<{ id: string; version_id: string; drawing_data: string; updated_at: number }>;
@@ -1010,59 +1010,81 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   const now = Date.now();
   const token = getToken()!;
 
-  // One strip per project (the existing app has a single main strip column).
+  // One strip per project — all frames live here. Strip versions use type prefixes.
   const stripId = uuid();
   const strips = [{ id: stripId, label: 'Main', sort_order: 0, updated_at: now }];
 
-  const frames: Array<{ id: string; strip_id: string; label: string | null; sort_order: number; crop_w: number | null; crop_h: number | null; text_content: string | null; table_data: string | null; version_label: string | null; hidden: boolean; updated_at: number }> = [];
+  const frames: Array<{ id: string; strip_id: string; label: string | null; sort_order: number; crop_w: number | null; crop_h: number | null; text_content: string | null; table_data: string | null; version_label: string | null; strip_labels: string | null; hidden: boolean; updated_at: number }> = [];
   const versions: Array<{ id: string; frame_id: string; label: string | null; type: string; hidden: boolean; starred: boolean; updated_at: number }> = [];
   const drawings: Array<{ id: string; version_id: string; drawing_data: string; updated_at: number }> = [];
-  // Collect images that need uploading to R2
   const imageUploads: Array<{ versionId: string; src: string }> = [];
+
+  // Map local frame id → server frame UUID (needed for group remapping)
+  const localToServerFrame = new Map<number, string>();
 
   s.frames.forEach((f, i) => {
     const frameId = uuid();
+    localToServerFrame.set(f.id, frameId);
+
     frames.push({
       id: frameId, strip_id: stripId, label: f.label || null, sort_order: i,
       crop_w: f.cropW || null, crop_h: f.cropH || null,
       text_content: f.textContent || null,
       table_data: f.tableData ? JSON.stringify(f.tableData) : null,
       version_label: f.stripLabels?.ver || null,
+      strip_labels: f.stripLabels ? JSON.stringify(f.stripLabels) : null,
       hidden: !!f.hidden,
       updated_at: now,
     });
 
-    // Frame-level strokes are treated as a "main" version of the frame.
+    // Frame-level strokes → "main" version
     const mainVersionId = uuid();
     versions.push({ id: mainVersionId, frame_id: frameId, label: 'main', type: 'main', hidden: false, starred: false, updated_at: now });
     if (f.strokes && f.strokes.length > 0) {
       drawings.push({ id: uuid(), version_id: mainVersionId, drawing_data: JSON.stringify(f.strokes), updated_at: now });
     }
-    // Queue main frame image for R2 upload
     if (f.src && isLocalImage(f.src)) {
       imageUploads.push({ versionId: mainVersionId, src: f.src });
     }
 
-    const localVersions = s.versions[f.id] ?? [];
-    for (const lv of localVersions) {
-      const vid = uuid();
-      versions.push({
-        id: vid,
-        frame_id: frameId,
-        label: lv.label || null,
-        type: lv.type,
-        hidden: !!lv.hidden,
-        starred: !!lv.starred,
-        updated_at: now,
-      });
-      if (lv.strokes && lv.strokes.length > 0) {
-        drawings.push({ id: uuid(), version_id: vid, drawing_data: JSON.stringify(lv.strokes), updated_at: now });
+    // Helper: push versions for a strip type with optional type prefix
+    const pushStripVersions = (stripVersions: Version[] | undefined, prefix: string) => {
+      if (!stripVersions) return;
+      for (const lv of stripVersions) {
+        const vid = uuid();
+        const fullType = prefix ? `${prefix}:${lv.type}` : lv.type;
+        versions.push({
+          id: vid, frame_id: frameId, label: lv.label || null, type: fullType,
+          hidden: !!lv.hidden, starred: !!lv.starred, updated_at: now,
+        });
+        if (lv.strokes && lv.strokes.length > 0) {
+          drawings.push({ id: uuid(), version_id: vid, drawing_data: JSON.stringify(lv.strokes), updated_at: now });
+        }
+        if (lv.bgImage && isLocalImage(lv.bgImage)) {
+          imageUploads.push({ versionId: vid, src: lv.bgImage });
+        }
       }
-      // Queue version background image for R2 upload
-      if (lv.bgImage && isLocalImage(lv.bgImage)) {
-        imageUploads.push({ versionId: vid, src: lv.bgImage });
-      }
-    }
+    };
+
+    // Ver strip versions (no prefix for backward compat with existing synced data)
+    pushStripVersions(s.stripVersions.ver?.[f.id], '');
+    // Floor and refs strip versions (prefixed types)
+    pushStripVersions(s.stripVersions.floor?.[f.id], 'floor');
+    pushStripVersions(s.stripVersions.refs?.[f.id], 'refs');
+  });
+
+  // Build metadata JSON: stripDefs, groups (with remapped frame IDs), portraitMode
+  const metaGroups = s.groups.map((g) => ({
+    id: g.id,
+    name: g.name,
+    frameIds: g.frameIds.map((fid) => localToServerFrame.get(fid) || '').filter(Boolean),
+    hiddenFrameIds: g.hiddenFrameIds.map((fid) => localToServerFrame.get(fid) || '').filter(Boolean),
+  }));
+  const metadata = JSON.stringify({
+    stripDefs: s.stripDefs,
+    groups: metaGroups,
+    nextGroupId: s.nextGroupId,
+    portraitMode: s.portraitMode,
   });
 
   // Upload all images to R2 in parallel
@@ -1108,6 +1130,7 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
         base_updated_at: lastKnownUpdatedAt ?? cp.lastSavedAt ?? 0,
         device_id: getDeviceId(),
         device_name: getDeviceName(),
+        metadata,
       },
       strips,
       frames,
@@ -1117,6 +1140,9 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
     },
     getToken(),
   );
+  // Update lastKnownUpdatedAt so that the pull-on-focus mechanism doesn't
+  // see our own push as a "newer remote version" and try to apply it.
+  lastKnownUpdatedAt = now;
 }
 
 async function applyCloudTreeToStore(tree: CloudProjectTree): Promise<void> {
@@ -1124,8 +1150,14 @@ async function applyCloudTreeToStore(tree: CloudProjectTree): Promise<void> {
   // We assign new local numeric ids that don't clash with the existing autoincrement.
   let nextId = 1;
   const newFrames: Frame[] = [];
-  const newVersions: Record<number, Version[]> = {};
-  const activeTab: Record<number, number> = {};
+
+  // Per-strip version/tab maps
+  const verVersions: Record<number, Version[]> = {};
+  const floorVersions: Record<number, Version[]> = {};
+  const refsVersions: Record<number, Version[]> = {};
+  const verActiveTab: Record<number, number> = {};
+  const floorActiveTab: Record<number, number> = {};
+  const refsActiveTab: Record<number, number> = {};
 
   const stripsSorted = [...tree.strips].sort((a, b) => a.sort_order - b.sort_order);
   const framesByStrip = new Map<string, typeof tree.frames>();
@@ -1148,15 +1180,21 @@ async function applyCloudTreeToStore(tree: CloudProjectTree): Promise<void> {
   // Track which local frame/version needs an image fetched from R2.
   // We'll apply structure first, then fill images in asynchronously.
   const mainImageTasks: Array<{ localId: number; r2Key: string }> = [];
-  const versionImageTasks: Array<{ localId: number; versionIdx: number; r2Key: string }> = [];
+  // strip → localId → versionIdx → r2Key
+  type VersionImageTask = { strip: 'ver' | 'floor' | 'refs'; localId: number; versionIdx: number; r2Key: string };
+  const versionImageTasks: VersionImageTask[] = [];
+
+  // Map server frame UUID → local numeric id (for group remapping on download)
+  const serverToLocalFrame = new Map<string, number>();
 
   for (const strip of stripsSorted) {
     const stripFrames = (framesByStrip.get(strip.id) ?? []).sort((a, b) => a.sort_order - b.sort_order);
     for (const sf of stripFrames) {
       const localId = nextId++;
+      serverToLocalFrame.set(sf.id, localId);
       const allVersions = (versionsByFrame.get(sf.id) ?? []).sort((a, b) => a.updated_at - b.updated_at);
-      // Treat the first "main"-typed version as frame-level strokes; everything
-      // else becomes an entry in the versions strip.
+
+      // Treat the first "main"-typed version as frame-level strokes
       const mainV = allVersions.find((v) => v.type === 'main');
       const sideVs = allVersions.filter((v) => v !== mainV);
       const mainStrokes = mainV ? parseStrokes(drawingByVersion.get(mainV.id)) : [];
@@ -1165,11 +1203,20 @@ async function applyCloudTreeToStore(tree: CloudProjectTree): Promise<void> {
       const mainR2Key = mainV ? imageByVersion.get(mainV.id) : undefined;
       if (mainR2Key) mainImageTasks.push({ localId, r2Key: mainR2Key });
 
+      // Parse strip_labels: prefer strip_labels JSON, fall back to version_label
+      let stripLabels: Record<string, string> | undefined;
+      if (sf.strip_labels) {
+        try { stripLabels = JSON.parse(sf.strip_labels); } catch { /* ignore */ }
+      }
+      if (!stripLabels && sf.version_label) {
+        stripLabels = { ver: sf.version_label };
+      }
+
       newFrames.push({
         id: localId,
         src: '',  // filled async below
         label: sf.label ?? '',
-        stripLabels: sf.version_label ? { ver: sf.version_label } : undefined,
+        stripLabels,
         hidden: !!sf.hidden,
         cropW: sf.crop_w || 16,
         cropH: sf.crop_h || 9,
@@ -1179,35 +1226,82 @@ async function applyCloudTreeToStore(tree: CloudProjectTree): Promise<void> {
         tableData: sf.table_data ? parseTableData(sf.table_data) : null,
       });
 
-      const mappedVersions = sideVs.map((sv, j) => {
-        const r2Key = imageByVersion.get(sv.id);
-        if (r2Key) versionImageTasks.push({ localId, versionIdx: j, r2Key });
-        return {
-          id: j + 1,
-          label: sv.label ?? '',
-          type: (sv.type === 'drawing' || sv.type === 'upload' || sv.type === 'empty') ? sv.type as 'drawing' | 'upload' | 'empty' : 'empty' as const,
-          strokes: parseStrokes(drawingByVersion.get(sv.id)),
-          bgImage: null as string | null,  // filled async below
-          hidden: !!sv.hidden,
-          starred: !!sv.starred,
-        };
-      });
-      newVersions[localId] = mappedVersions;
-      activeTab[localId] = 0;
+      // Sort side versions into strips by parsing the type prefix.
+      // No prefix → ver strip (backward compat). "floor:xxx" → floor. "refs:xxx" → refs.
+      const verVers: typeof sideVs = [];
+      const floorVers: typeof sideVs = [];
+      const refsVers: typeof sideVs = [];
+      for (const sv of sideVs) {
+        if (sv.type.startsWith('floor:')) floorVers.push(sv);
+        else if (sv.type.startsWith('refs:')) refsVers.push(sv);
+        else verVers.push(sv);
+      }
+
+      // Helper: map server versions to local Version[] for a specific strip
+      const mapVersions = (svList: typeof sideVs, stripName: 'ver' | 'floor' | 'refs') => {
+        return svList.map((sv, j) => {
+          const r2Key = imageByVersion.get(sv.id);
+          if (r2Key) versionImageTasks.push({ strip: stripName, localId, versionIdx: j, r2Key });
+          // Strip the prefix from the type to get the raw type
+          let rawType = sv.type;
+          const colonIdx = rawType.indexOf(':');
+          if (colonIdx !== -1) rawType = rawType.slice(colonIdx + 1);
+          return {
+            id: j + 1,
+            label: sv.label ?? '',
+            type: (rawType === 'drawing' || rawType === 'upload' || rawType === 'empty') ? rawType as 'drawing' | 'upload' | 'empty' : 'empty' as const,
+            strokes: parseStrokes(drawingByVersion.get(sv.id)),
+            bgImage: null as string | null,  // filled async below
+            hidden: !!sv.hidden,
+            starred: !!sv.starred,
+          };
+        });
+      };
+
+      verVersions[localId] = mapVersions(verVers, 'ver');
+      floorVersions[localId] = mapVersions(floorVers, 'floor');
+      refsVersions[localId] = mapVersions(refsVers, 'refs');
+      verActiveTab[localId] = 0;
+      floorActiveTab[localId] = 0;
+      refsActiveTab[localId] = 0;
     }
   }
 
-  // Detect portrait mode from frame dimensions: if the first frame has cropH > cropW,
-  // the project is portrait (9:16). Default to false (landscape) if no frames.
-  const isPortrait = newFrames.length > 0 && newFrames[0].cropH > newFrames[0].cropW;
+  // Parse project metadata to restore stripDefs, groups, portraitMode, nextGroupId
+  let restoredStripDefs: import('../store/state').StripDef[] | undefined;
+  let restoredGroups: import('../store/state').FrameGroup[] = [];
+  let restoredNextGroupId = 1;
+  let isPortrait = newFrames.length > 0 && newFrames[0].cropH > newFrames[0].cropW;
+
+  if (tree.project.metadata) {
+    try {
+      const meta = JSON.parse(tree.project.metadata);
+      if (meta.stripDefs && Array.isArray(meta.stripDefs)) {
+        restoredStripDefs = meta.stripDefs;
+      }
+      if (meta.portraitMode != null) {
+        isPortrait = !!meta.portraitMode;
+      }
+      if (meta.nextGroupId != null) {
+        restoredNextGroupId = meta.nextGroupId;
+      }
+      // Remap group frameIds from server UUIDs back to local numeric IDs
+      if (meta.groups && Array.isArray(meta.groups)) {
+        restoredGroups = meta.groups.map((g: any) => ({
+          id: g.id,
+          name: g.name ?? '',
+          frameIds: (g.frameIds || []).map((uuid: string) => serverToLocalFrame.get(uuid)).filter((id: number | undefined) => id != null) as number[],
+          hiddenFrameIds: (g.hiddenFrameIds || []).map((uuid: string) => serverToLocalFrame.get(uuid)).filter((id: number | undefined) => id != null) as number[],
+        }));
+      }
+    } catch {
+      // Ignore malformed metadata — use defaults
+    }
+  }
 
   // Apply structure immediately so the user sees the project right away.
   // Do a FULL reset of all per-frame maps to avoid stale data from the previous project.
   // IMPORTANT: Legacy aliases must reference the SAME objects as stripXxx maps.
-  const emptyFloor: Record<number, Version[]> = {};
-  const emptyRefs: Record<number, Version[]> = {};
-  const emptyFloorTab: Record<number, number> = {};
-  const emptyRefsTab: Record<number, number> = {};
   const verCC: Record<number, number> = {};
   const floorCC: Record<number, number> = {};
   const refsCC: Record<number, number> = {};
@@ -1217,21 +1311,26 @@ async function applyCloudTreeToStore(tree: CloudProjectTree): Promise<void> {
   useStore.setState((prev) => ({
     frames: newFrames,
     // Generic maps
-    stripVersions: { ver: newVersions, floor: emptyFloor, refs: emptyRefs },
-    stripActiveTab: { ver: activeTab, floor: emptyFloorTab, refs: emptyRefsTab },
+    stripVersions: { ver: verVersions, floor: floorVersions, refs: refsVersions },
+    stripActiveTab: { ver: verActiveTab, floor: floorActiveTab, refs: refsActiveTab },
     stripCrossCompare: { ver: verCC, floor: floorCC, refs: refsCC },
     stripPrevFrameState: { ver: verPFS, floor: floorPFS, refs: refsPFS },
     // Legacy aliases (SAME objects as above)
-    versions: newVersions,
-    activeTab,
-    floorVersions: emptyFloor,
-    floorActiveTab: emptyFloorTab,
+    versions: verVersions,
+    activeTab: verActiveTab,
+    floorVersions,
+    floorActiveTab,
     floorCrossCompare: floorCC,
     floorPrevFrameState: floorPFS,
-    refsVersions: emptyRefs,
-    refsActiveTab: emptyRefsTab,
+    refsVersions,
+    refsActiveTab,
     refsCrossCompare: refsCC,
     refsPrevFrameState: refsPFS,
+    // StripDefs & groups from metadata (or defaults)
+    ...(restoredStripDefs ? { stripDefs: restoredStripDefs } : {}),
+    groups: restoredGroups,
+    activeGroupId: null,
+    nextGroupId: restoredNextGroupId,
     drawColor: {},
     drawWidth: {},
     drawEraser: {},
@@ -1286,17 +1385,27 @@ async function applyCloudTreeToStore(tree: CloudProjectTree): Promise<void> {
       fetchImageFromR2(task.r2Key, token)
         .then((dataUrl) => {
           const s = useStore.getState();
-          const vers = s.versions[task.localId];
+          // Pick the right strip map based on the task's strip
+          const stripKey = task.strip === 'ver' ? 'versions'
+            : task.strip === 'floor' ? 'floorVersions'
+            : 'refsVersions';
+          const versMap = s[stripKey] as Record<number, Version[]>;
+          const vers = versMap[task.localId];
           if (!vers || !vers[task.versionIdx]) return;
           const updatedVers = [...vers];
           updatedVers[task.versionIdx] = { ...updatedVers[task.versionIdx], bgImage: dataUrl };
           useStore.setState((prev) => ({
-            versions: { ...prev.versions, [task.localId]: updatedVers },
+            [stripKey]: { ...(prev[stripKey] as Record<number, Version[]>), [task.localId]: updatedVers },
+            // Also update the generic map
+            stripVersions: {
+              ...prev.stripVersions,
+              [task.strip]: { ...prev.stripVersions[task.strip], [task.localId]: updatedVers },
+            },
             renderTick: prev.renderTick + 1,
           }));
           (window as any).__fh_renderAll?.();
         })
-        .catch((e) => console.warn('[sync] failed to fetch version image', task.r2Key, e)),
+        .catch((e) => console.warn('[sync] failed to fetch version image', task.strip, task.r2Key, e)),
     );
   }
 
@@ -1649,6 +1758,9 @@ export async function bootstrapAccountSystem(): Promise<void> {
       });
       (window as any).__fh_renderAll?.();
       autoPhoneMainView();
+      // Set baseline hash so pull-on-focus doesn't silently override the
+      // restored state (which includes activeGroupId, local edits, etc.).
+      updateSyncHash();
     }
   } catch (e) {
     console.warn('[accountFlow] IDB restore failed', e);

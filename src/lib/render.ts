@@ -513,8 +513,14 @@ export function renderMainFrame(div: HTMLElement, fid: number): void {
 export function renderVersionFrame(div: HTMLElement, fid: number, strip: StripType = 'ver'): void {
   const s = state();
   if (strip !== 'ver') ensureStripVersions(fid, strip);
-  const tabs = getStripVersions(fid, strip),
-    ai = getStripActiveTab(fid, strip),
+  let tabs = getStripVersions(fid, strip);
+  // Guard: if the ver strip has no versions yet (e.g. just loaded from cloud
+  // before image fetch), create a placeholder so we don't crash.
+  if (tabs.length === 0) {
+    ensureStripVersions(fid, strip);
+    tabs = getStripVersions(fid, strip);
+  }
+  const ai = getStripActiveTab(fid, strip),
     ver = tabs[ai],
     cid = `cvs_${strip}_${fid}_${ai}`;
   const tabPrefix = stripTabPrefix(strip);
@@ -716,7 +722,7 @@ export function renderVersionFrame(div: HTMLElement, fid: number, strip: StripTy
       }" data-fid="${fid}" style="aspect-ratio:${f?.cropW || 16}/${f?.cropH || 9};${canvasBorder}"><canvas id="${cid}" width="${
     f?.cropW || 960
   }" height="${f?.cropH || 540}"${_verHidden ? ' style="pointer-events:none;"' : ''}></canvas>${
-      !_verHidden && ver.type === 'empty' && (getStripCrossCompare(fid, strip) ?? -1) < 0 ? '<div class="canvas-hint"><span>choose an action below</span></div>' : ''
+      !_verHidden && ver && ver.type === 'empty' && (getStripCrossCompare(fid, strip) ?? -1) < 0 ? '<div class="canvas-hint"><span>choose an action below</span></div>' : ''
     }${!_verHidden ? starHTML(fid, ai, strip) : ''}${!_verHidden ? fsButtonHTML(fid, ai, strip) : ''}</div></div>
       ${
         !_verHidden && s.drawActive[fid] === strip
@@ -855,7 +861,7 @@ export function renderVersionFrame(div: HTMLElement, fid: number, strip: StripTy
   if (cvs) {
     if ((getStripCrossCompare(fid, strip) ?? -1) >= 0 && s.currentViewMode === 'ver') {
       restoreMainCanvas(cvs, f!);
-    } else {
+    } else if (ver) {
       restoreCanvas(cvs, ver);
       if (ver.type !== 'empty' && s.drawActive[fid] === strip) setupDrawing(cvs, fid, ai, strip);
     }

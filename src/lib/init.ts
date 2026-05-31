@@ -543,7 +543,9 @@ export function initFramehow(): void {
       // ── iPhone portrait: single strip view only ──
       if (isPhonePortrait) {
         const viewMode = strip === 'main' ? 'main' as const : 'ver' as const;
-        useStore.setState({ activeStrips: [strip], currentViewMode: viewMode });
+        // Reset cross-compare so stale state from previous view doesn't bleed through
+        const freshCC: Record<number, number> = {};
+        useStore.setState({ activeStrips: [strip], currentViewMode: viewMode, crossCompare: freshCC, stripCrossCompare: { ...s.stripCrossCompare, ver: freshCC } });
         renderAll();
         return;
       }
@@ -571,7 +573,9 @@ export function initFramehow(): void {
         let viewMode: 'main' | 'ver' | 'both' = 'both';
         if (current.length === 1 && current[0] === 'main') viewMode = 'main';
         else if (current.length === 1) viewMode = 'ver';
-        useStore.setState({ activeStrips: current, currentViewMode: viewMode });
+        // Reset cross-compare so stale state from previous view doesn't bleed through
+        const freshCC2: Record<number, number> = {};
+        useStore.setState({ activeStrips: current, currentViewMode: viewMode, crossCompare: freshCC2, stripCrossCompare: { ...s.stripCrossCompare, ver: freshCC2 } });
         renderAll();
         return;
       }
@@ -593,7 +597,9 @@ export function initFramehow(): void {
       if (current.length === 1 && current[0] === 'main') viewMode = 'main';
       else if (current.length === 1) viewMode = 'ver';
 
-      useStore.setState({ activeStrips: current, currentViewMode: viewMode });
+      // Reset cross-compare so stale state from previous view doesn't bleed through
+      const freshCC3: Record<number, number> = {};
+      useStore.setState({ activeStrips: current, currentViewMode: viewMode, crossCompare: freshCC3, stripCrossCompare: { ...s.stripCrossCompare, ver: freshCC3 } });
       renderAll();
     })
   );
