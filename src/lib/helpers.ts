@@ -470,11 +470,8 @@ export function getFrameStripLabel(f: Frame, strip: StripType): string {
   return f.stripLabels?.[strip] || stripDefaultLabel(strip);
 }
 
-/** Set the custom strip label on the correct field of a frame */
+/** Set the strip label globally — strips never have per-frame overrides */
 export function setFrameStripLabel(f: Frame, strip: StripType, label: string): void {
-  if (!f.stripLabels) f.stripLabels = {};
-  f.stripLabels[strip] = label;
-
   if (label.trim().length === 0) return;
   const s = state();
   const def = s.stripDefs.find((d) => d.id === strip);
@@ -482,9 +479,9 @@ export function setFrameStripLabel(f: Frame, strip: StripType, label: string): v
 
   // Update the default label so ALL frames in this strip show the new name
   def.defaultFrameLabel = label.trim();
-  // Clear custom stripLabels on all other frames so they fall through to the new default
+  // Clear any per-frame stripLabels overrides on ALL frames
   for (const fr of s.frames) {
-    if (fr !== f && fr.stripLabels && fr.stripLabels[strip]) {
+    if (fr.stripLabels && fr.stripLabels[strip]) {
       delete fr.stripLabels[strip];
     }
   }
@@ -515,7 +512,7 @@ export function setStripVersions(fid: number, strip: StripType, vers: Version[])
 
 export function ensureStripVersions(fid: number, strip: StripType): Version[] {
   const sl = reg(strip).slice();
-  const prefix = reg(strip).prefix;
+  const prefix = stripTabPrefix(strip);
   if (!sl.versions[fid] || sl.versions[fid].length === 0) {
     sl.versions[fid] = [{ id: 1, label: `${prefix}1`, type: 'empty', strokes: [], bgImage: null }];
     sl.activeTab[fid] = 0;

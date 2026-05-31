@@ -129,7 +129,7 @@
   .version-tabs.locked-dim{opacity:.35;pointer-events:none;}
   .reorder-group.locked{opacity:.35;pointer-events:none;}
   .frame-num{font-family:var(--mono);font-size:12px;color:var(--text-faint);padding:0 10px;height:24px;letter-spacing:.05em;display:flex;justify-content:space-between;align-items:center;gap:4px;position:relative;}
-  .frame-label-tag{font-family:var(--mono);font-size:13px;font-weight:500;color:var(--accent);border:1px solid var(--border);border-radius:3px;padding:0 8px 0 5px;line-height:1.1;}
+  .frame-label-tag{font-family:var(--mono);font-size:13px;font-weight:500;color:var(--accent);border:1px solid var(--border);border-radius:3px;padding:0 4px 0 5px;line-height:1.1;}
   .frame-label-tag[data-editlabel]{cursor:pointer;}
   .frame-label-tag[data-editverlabel]{cursor:pointer;}
   .frame-box{width:100%;background:#111;overflow:hidden;}
@@ -431,8 +431,9 @@
   .account-sep{border:none;border-top:1px solid var(--border);margin:18px 0 14px;}
   .account-actions-stack{display:flex;flex-direction:column;gap:8px;}
   .account-actions-stack .btn{width:100%;text-align:center;padding:10px 14px;}
-  .btn-danger{background:#5a1a10;color:#ffb3a8;border-color:#7a2818;}
-  @media (hover:hover){.btn-danger:hover{background:#702012;color:#fff;}}
+  .btn-danger{background:var(--accent);color:#fff;border-color:var(--accent);}
+  @media (hover:hover){.btn-danger:hover{background:#b03b25;}}
+  .btn-danger:active{background:#111;color:#fff;border-color:#888;transition:none;}
   .account-header-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;}
   .account-header-row h2{margin:0;}
 

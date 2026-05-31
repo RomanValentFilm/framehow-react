@@ -374,6 +374,7 @@ interface CloudProject {
   name: string;
   created_at: number;
   updated_at: number;
+  deleted_at: number | null;
 }
 
 export async function openProjectList(): Promise<void> {
@@ -385,18 +386,46 @@ export async function openProjectList(): Promise<void> {
   content.textContent = 'Loading…';
   show('projectListModal');
 
+  let editMode = false;
+  let projects: CloudProject[] = [];
+
+  const editBtn = el<HTMLButtonElement>('projectListEdit');
+  editBtn.textContent = 'Edit Projects';
+
   return new Promise((resolve) => {
     const closeBtn = el<HTMLButtonElement>('projectListClose');
     const newBtn = el<HTMLButtonElement>('projectListNew');
+    const headerRow = newBtn.parentElement as HTMLElement;
+    const title = headerRow.querySelector('h2') as HTMLElement;
+
+    function setEditModeUI(on: boolean): void {
+      editBtn.textContent = on ? 'Done' : 'Edit Projects';
+      if (on) {
+        editBtn.classList.add('btn-danger');
+      } else {
+        editBtn.classList.remove('btn-danger');
+      }
+      title.style.display = on ? 'none' : '';
+      newBtn.style.display = on ? 'none' : '';
+    }
+
     function cleanup(): void {
       closeBtn.onclick = null;
       newBtn.onclick = null;
+      editBtn.onclick = null;
+      editMode = false;
+      setEditModeUI(false);
       hide('projectListModal');
       resolve();
     }
     closeBtn.onclick = () => {
+      if (editMode) {
+        editMode = false;
+        setEditModeUI(false);
+        renderProjectList(projects, editMode, onPick, onEdit, onDelete, onRecover);
+        return;
+      }
       cleanup();
-      // User explicitly cancelled — show Signpost if still empty
       if (state().frames.length === 0) {
         window.dispatchEvent(new CustomEvent('fh:open-signpost'));
       }
@@ -405,14 +434,68 @@ export async function openProjectList(): Promise<void> {
       cleanup();
       await startNewProject();
     };
+    editBtn.onclick = () => {
+      editMode = !editMode;
+      setEditModeUI(editMode);
+      renderProjectList(projects, editMode, onPick, onEdit, onDelete, onRecover);
+    };
+
+    function onPick(p: CloudProject): void {
+      if (editMode) return;
+      cleanup();
+      void loadCloudProject(p);
+    }
+
+    async function onEdit(p: CloudProject): Promise<void> {
+      hide('projectListModal');
+      const newName = await promptRenameProject(p.name);
+      if (newName && newName !== p.name) {
+        try {
+          await api.put(`/projects/${encodeURIComponent(p.id)}`, { name: newName }, getToken());
+          p.name = newName;
+        } catch (e) {
+          showToast(asMessage(e, 'Could not rename project.'));
+        }
+      }
+      show('projectListModal');
+      renderProjectList(projects, editMode, onPick, onEdit, onDelete, onRecover);
+    }
+
+    async function onDelete(p: CloudProject): Promise<void> {
+      hide('projectListModal');
+      const confirmed = await promptDeleteConfirm();
+      if (!confirmed) { show('projectListModal'); return; }
+      const accepted = await promptDeleteNotice();
+      if (!accepted) { show('projectListModal'); return; }
+      try {
+        await api.delete(`/projects/${encodeURIComponent(p.id)}`, getToken());
+        p.deleted_at = Date.now();
+      } catch (e) {
+        showToast(asMessage(e, 'Could not delete project.'));
+      }
+      show('projectListModal');
+      renderProjectList(projects, editMode, onPick, onEdit, onDelete, onRecover);
+    }
+
+    async function onRecover(p: CloudProject): Promise<void> {
+      hide('projectListModal');
+      const confirmed = await promptRecoverConfirm();
+      if (!confirmed) { show('projectListModal'); return; }
+      try {
+        await api.post(`/projects/${encodeURIComponent(p.id)}/recover`, undefined, getToken());
+        p.deleted_at = null;
+      } catch (e) {
+        showToast(asMessage(e, 'Could not recover project.'));
+      }
+      show('projectListModal');
+      renderProjectList(projects, editMode, onPick, onEdit, onDelete, onRecover);
+    }
 
     void (async () => {
       try {
         const res = await api.get<{ projects: CloudProject[] }>('/projects', getToken());
-        renderProjectList(res.projects, async (project) => {
-          cleanup();
-          await loadCloudProject(project);
-        });
+        projects = res.projects;
+        renderProjectList(projects, editMode, onPick, onEdit, onDelete, onRecover);
       } catch (e) {
         content.textContent = asMessage(e, 'Could not load your projects.');
       }
@@ -420,7 +503,16 @@ export async function openProjectList(): Promise<void> {
   });
 }
 
-function renderProjectList(projects: CloudProject[], onPick: (p: CloudProject) => void): void {
+// ── Project list rendering ──────────────────────────────────────────────────
+
+function renderProjectList(
+  projects: CloudProject[],
+  editMode: boolean,
+  onPick: (p: CloudProject) => void,
+  onEdit: (p: CloudProject) => void,
+  onDelete: (p: CloudProject) => void,
+  onRecover: (p: CloudProject) => void,
+): void {
   const content = el('projectListContent');
   content.innerHTML = '';
   if (projects.length === 0) {
@@ -431,19 +523,100 @@ function renderProjectList(projects: CloudProject[], onPick: (p: CloudProject) =
     return;
   }
   for (const p of projects) {
+    const isDeleted = p.deleted_at != null;
     const row = document.createElement('button');
     row.type = 'button';
     row.className = 'project-list-row';
+    if (isDeleted) row.style.opacity = '0.35';
     const name = document.createElement('span');
     name.className = 'project-list-name';
     name.textContent = p.name;
-    const meta = document.createElement('span');
-    meta.className = 'project-list-meta';
-    meta.textContent = formatRelative(p.updated_at);
-    row.append(name, meta);
-    row.onclick = () => onPick(p);
+    row.appendChild(name);
+
+    if (editMode) {
+      const actions = document.createElement('span');
+      actions.className = 'project-list-meta';
+      actions.style.display = 'flex';
+      actions.style.gap = '12px';
+      if (isDeleted) {
+        const recoverBtn = document.createElement('span');
+        recoverBtn.textContent = 'Recover';
+        recoverBtn.style.cursor = 'pointer';
+        recoverBtn.style.color = '#6b9aff';
+        recoverBtn.onclick = (e) => { e.stopPropagation(); void onRecover(p); };
+        actions.appendChild(recoverBtn);
+      } else {
+        const editBtn = document.createElement('span');
+        editBtn.textContent = 'Edit';
+        editBtn.style.cursor = 'pointer';
+        editBtn.style.color = '#6b9aff';
+        editBtn.onclick = (e) => { e.stopPropagation(); void onEdit(p); };
+        const delBtn = document.createElement('span');
+        delBtn.textContent = 'Delete';
+        delBtn.style.cursor = 'pointer';
+        delBtn.style.color = '#ff6b6b';
+        delBtn.onclick = (e) => { e.stopPropagation(); void onDelete(p); };
+        actions.append(editBtn, delBtn);
+      }
+      row.appendChild(actions);
+    } else {
+      if (!isDeleted) {
+        const meta = document.createElement('span');
+        meta.className = 'project-list-meta';
+        meta.textContent = formatRelative(p.updated_at);
+        row.appendChild(meta);
+      }
+    }
+    if (!editMode) {
+      row.onclick = isDeleted ? null : () => onPick(p);
+      if (isDeleted) row.style.cursor = 'default';
+    }
     content.appendChild(row);
   }
+}
+
+// ── Confirmation dialogs ────────────────────────────────────────────────────
+
+function promptDeleteConfirm(): Promise<boolean> {
+  return new Promise((resolve) => {
+    show('deleteConfirmModal');
+    el<HTMLButtonElement>('deleteConfirmCancel').onclick = () => { hide('deleteConfirmModal'); resolve(false); };
+    el<HTMLButtonElement>('deleteConfirmYes').onclick = () => { hide('deleteConfirmModal'); resolve(true); };
+  });
+}
+
+function promptDeleteNotice(): Promise<boolean> {
+  return new Promise((resolve) => {
+    show('deleteNoticeModal');
+    el<HTMLButtonElement>('deleteNoticeCancel').onclick = () => { hide('deleteNoticeModal'); resolve(false); };
+    el<HTMLButtonElement>('deleteNoticeOk').onclick = () => { hide('deleteNoticeModal'); resolve(true); };
+  });
+}
+
+function promptRecoverConfirm(): Promise<boolean> {
+  return new Promise((resolve) => {
+    show('recoverConfirmModal');
+    el<HTMLButtonElement>('recoverConfirmNo').onclick = () => { hide('recoverConfirmModal'); resolve(false); };
+    el<HTMLButtonElement>('recoverConfirmYes').onclick = () => { hide('recoverConfirmModal'); resolve(true); };
+  });
+}
+
+function promptRenameProject(currentName: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    const input = el<HTMLInputElement>('renameProjectInput');
+    const errorDiv = el('renameProjectError');
+    input.value = currentName;
+    errorDiv.textContent = '';
+    show('renameProjectModal');
+    setTimeout(() => { input.focus(); input.select(); }, 50);
+    el<HTMLButtonElement>('renameProjectCancel').onclick = () => { hide('renameProjectModal'); resolve(null); };
+    el<HTMLButtonElement>('renameProjectSave').onclick = () => {
+      const name = input.value.trim();
+      if (!name) { errorDiv.textContent = 'Name cannot be empty.'; return; }
+      hide('renameProjectModal');
+      resolve(name);
+    };
+  });
 }
 
 function formatRelative(ts: number): string {

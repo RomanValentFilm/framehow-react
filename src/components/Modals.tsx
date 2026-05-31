@@ -115,11 +115,12 @@ export function Modals() {
             <input
               type="text"
               id="verLabelInput"
-              maxLength={20}
+              maxLength={6}
               placeholder="version"
               style={{
                 borderRadius: '0 var(--radius-sm) var(--radius-sm) 0',
                 textAlign: 'left',
+                width: '110px',
               }}
             />
           </div>

@@ -25,6 +25,7 @@ import {
   addNewStripVersion,
   stripScrollId,
   stripTabPrefix,
+  relabelStripVersions,
 } from './helpers';
 import type { StripType } from '../store/state';
 import { snapshotFrame } from './drawing';
@@ -313,6 +314,9 @@ export function initFramehow(): void {
     inp1.value = s.stripDefs[0]?.buttonLabel || 'STRIP1';
     inp2.value = s.stripDefs[1]?.buttonLabel || 'STRIP2';
     inp3.value = s.stripDefs[2]?.buttonLabel || 'STRIP3';
+    (document.getElementById('customFrameLabel1') as HTMLInputElement).value = s.stripDefs[0]?.defaultFrameLabel || 'vers';
+    (document.getElementById('customFrameLabel2') as HTMLInputElement).value = s.stripDefs[1]?.defaultFrameLabel || 'floor';
+    (document.getElementById('customFrameLabel3') as HTMLInputElement).value = s.stripDefs[2]?.defaultFrameLabel || 'refs';
     document.getElementById('customiseModal')!.classList.remove('hidden');
   });
   document.getElementById('customiseCancel')!.addEventListener('click', () => {
@@ -322,13 +326,35 @@ export function initFramehow(): void {
     const inp1 = document.getElementById('customStrip1') as HTMLInputElement;
     const inp2 = document.getElementById('customStrip2') as HTMLInputElement;
     const inp3 = document.getElementById('customStrip3') as HTMLInputElement;
+    const fl1 = document.getElementById('customFrameLabel1') as HTMLInputElement;
+    const fl2 = document.getElementById('customFrameLabel2') as HTMLInputElement;
+    const fl3 = document.getElementById('customFrameLabel3') as HTMLInputElement;
     const s = state();
     const newDefs = s.stripDefs.map((def, i) => {
       const raw = i === 0 ? inp1.value : i === 1 ? inp2.value : inp3.value;
+      const flRaw = i === 0 ? fl1.value : i === 1 ? fl2.value : fl3.value;
       const label = raw.toUpperCase().replace(/[^A-Z0-9 ]/g, '').slice(0, 6) || def.buttonLabel;
-      return { ...def, buttonLabel: label };
+      const frameLabel = flRaw.trim().slice(0, 6) || def.defaultFrameLabel;
+      return { ...def, buttonLabel: label, defaultFrameLabel: frameLabel };
     });
     useStore.setState({ stripDefs: newDefs });
+    // Update prefix + relabel tabs, and clear per-frame overrides
+    for (const def of newDefs) {
+      // Clear all per-frame stripLabels so every frame uses the new default
+      for (const fr of s.frames) {
+        if (fr.stripLabels && fr.stripLabels[def.id]) {
+          delete fr.stripLabels[def.id];
+        }
+      }
+      const newPrefix = def.defaultFrameLabel[0]?.toLowerCase() || def.prefix;
+      if (def.prefix !== newPrefix) {
+        def.prefix = newPrefix;
+        const versMap = s.stripVersions[def.id] || {};
+        for (const fid of Object.keys(versMap)) {
+          relabelStripVersions(+fid, def.id);
+        }
+      }
+    }
     document.getElementById('customiseModal')!.classList.add('hidden');
     renderAll();
   });

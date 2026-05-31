@@ -126,14 +126,65 @@ export function AccountModals() {
       <div className="account-modal hidden" id="projectListModal">
         <div className="account-card account-card-wide">
           <div className="account-header-row">
-            <h2>Your projects</h2>
+            <h2>Open project</h2>
             <button className="btn btn-accent" id="projectListNew" type="button">New project</button>
           </div>
           <div className="project-list" id="projectListContent">
             {/* populated dynamically */}
           </div>
-          <div className="account-btns">
+          <div className="account-btns" style={{justifyContent:'space-between'}}>
+            <button className="btn" id="projectListEdit" type="button" style={{fontSize:'12px'}}>Edit Projects</button>
             <button className="btn" id="projectListClose" type="button">Close</button>
+          </div>
+        </div>
+      </div>
+
+      {/* Delete confirmation */}
+      <div className="account-modal hidden" id="deleteConfirmModal">
+        <div className="account-card">
+          <h2>Delete project</h2>
+          <p className="account-hint">Are you sure you want to delete this project?</p>
+          <div className="account-btns">
+            <button className="btn" id="deleteConfirmCancel" type="button">Cancel</button>
+            <button className="btn btn-danger" id="deleteConfirmYes" type="button">Yes</button>
+          </div>
+        </div>
+      </div>
+
+      {/* Delete notice (24h) */}
+      <div className="account-modal hidden" id="deleteNoticeModal">
+        <div className="account-card">
+          <p className="account-hint" style={{margin:'16px 0'}}>This project will be deleted after 24 hours.</p>
+          <div className="account-btns">
+            <button className="btn" id="deleteNoticeCancel" type="button">Cancel</button>
+            <button className="btn btn-accent" id="deleteNoticeOk" type="button">OK</button>
+          </div>
+        </div>
+      </div>
+
+      {/* Recover confirmation */}
+      <div className="account-modal hidden" id="recoverConfirmModal">
+        <div className="account-card">
+          <h2>Recover project</h2>
+          <p className="account-hint">Do you want to recover this project?</p>
+          <div className="account-btns">
+            <button className="btn" id="recoverConfirmNo" type="button">No</button>
+            <button className="btn btn-accent" id="recoverConfirmYes" type="button">Yes</button>
+          </div>
+        </div>
+      </div>
+
+      {/* Rename project (edit from project list) */}
+      <div className="account-modal hidden" id="renameProjectModal">
+        <div className="account-card">
+          <h2>Rename project</h2>
+          <div className="account-row">
+            <input type="text" id="renameProjectInput" maxLength={200} />
+          </div>
+          <div className="account-error" id="renameProjectError" />
+          <div className="account-btns">
+            <button className="btn" id="renameProjectCancel" type="button">Cancel</button>
+            <button className="btn btn-accent" id="renameProjectSave" type="button">Save</button>
           </div>
         </div>
       </div>
@@ -198,15 +249,27 @@ export function AccountModals() {
           <p className="account-hint">Strip names</p>
           <div className="account-row">
             <label>STRIP 1</label>
-            <input type="text" id="customStrip1" maxLength={6} style={{textTransform:'uppercase',letterSpacing:'.05em'}} />
+            <div style={{display:'flex',alignItems:'center',gap:'10px'}}>
+              <input type="text" id="customStrip1" maxLength={6} style={{textTransform:'uppercase',letterSpacing:'.05em',width:'85px',flexShrink:0}} />
+              <span style={{color:'#666',fontSize:'12px',flexShrink:0}}>label</span>
+              <input type="text" id="customFrameLabel1" maxLength={6} style={{width:'70px',fontSize:'13px',padding:'5px 8px'}} />
+            </div>
           </div>
           <div className="account-row">
             <label>STRIP 2</label>
-            <input type="text" id="customStrip2" maxLength={6} style={{textTransform:'uppercase',letterSpacing:'.05em'}} />
+            <div style={{display:'flex',alignItems:'center',gap:'10px'}}>
+              <input type="text" id="customStrip2" maxLength={6} style={{textTransform:'uppercase',letterSpacing:'.05em',width:'85px',flexShrink:0}} />
+              <span style={{color:'#666',fontSize:'12px',flexShrink:0}}>label</span>
+              <input type="text" id="customFrameLabel2" maxLength={6} style={{width:'70px',fontSize:'13px',padding:'5px 8px'}} />
+            </div>
           </div>
           <div className="account-row">
             <label>STRIP 3</label>
-            <input type="text" id="customStrip3" maxLength={6} style={{textTransform:'uppercase',letterSpacing:'.05em'}} />
+            <div style={{display:'flex',alignItems:'center',gap:'10px'}}>
+              <input type="text" id="customStrip3" maxLength={6} style={{textTransform:'uppercase',letterSpacing:'.05em',width:'85px',flexShrink:0}} />
+              <span style={{color:'#666',fontSize:'12px',flexShrink:0}}>label</span>
+              <input type="text" id="customFrameLabel3" maxLength={6} style={{width:'70px',fontSize:'13px',padding:'5px 8px'}} />
+            </div>
           </div>
           <div className="account-btns">
             <button className="btn" id="customiseCancel" type="button">Cancel</button>

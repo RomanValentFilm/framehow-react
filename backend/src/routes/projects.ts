@@ -17,19 +17,21 @@ const projects = new Hono<{ Bindings: Env; Variables: AppVariables }>();
 projects.use("*", requireUser);
 
 // ---------------------------------------------------------------------------
-// GET /projects — list (excludes soft-deleted)
+// GET /projects — list (includes recently soft-deleted so UI can show them
+// grayed out; hides projects deleted more than 24 h ago)
 // ---------------------------------------------------------------------------
 projects.get("/", async (c) => {
   const me = c.get("user");
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000; // 24 hours ago
   const result = await c.env.DB
     .prepare(
-      `SELECT id, name, created_at, updated_at
+      `SELECT id, name, created_at, updated_at, deleted_at
          FROM projects
-        WHERE user_id = ? AND deleted_at IS NULL
+        WHERE user_id = ? AND (deleted_at IS NULL OR deleted_at > ?)
         ORDER BY updated_at DESC`,
     )
-    .bind(me.id)
-    .all<{ id: string; name: string; created_at: number; updated_at: number }>();
+    .bind(me.id, cutoff)
+    .all<{ id: string; name: string; created_at: number; updated_at: number; deleted_at: number | null }>();
   return c.json({ projects: result.results });
 });
 
@@ -112,6 +114,25 @@ projects.delete("/:id", async (c) => {
   await c.env.DB
     .prepare("UPDATE projects SET deleted_at = ?, updated_at = ? WHERE id = ?")
     .bind(now, now, project.id)
+    .run();
+  return c.json({ ok: true });
+});
+
+// ---------------------------------------------------------------------------
+// POST /projects/:id/recover — undo soft delete
+// ---------------------------------------------------------------------------
+projects.post("/:id/recover", async (c) => {
+  const me = c.get("user");
+  const id = c.req.param("id");
+  const row = await c.env.DB
+    .prepare("SELECT id FROM projects WHERE id = ? AND user_id = ? AND deleted_at IS NOT NULL")
+    .bind(id, me.id)
+    .first<{ id: string }>();
+  if (!row) return jsonError(c, 404, "not_found", "Project not found or not deleted.");
+  const now = Date.now();
+  await c.env.DB
+    .prepare("UPDATE projects SET deleted_at = NULL, updated_at = ? WHERE id = ?")
+    .bind(now, row.id)
     .run();
   return c.json({ ok: true });
 });

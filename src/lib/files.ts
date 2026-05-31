@@ -138,7 +138,14 @@ export function startPortrait(): void {
   fhTrack('start_portrait');
   resetStoryboardState();
   useStore.setState({ portraitMode: true });
+  // Portrait (9:16) projects default strips to costume-fitting labels
   const s = state();
+  s.stripDefs = s.stripDefs.map((def, i) => ({
+    ...def,
+    buttonLabel: `LOOK${i + 1}`,
+    defaultFrameLabel: `fit ${String.fromCharCode(65 + i)}`,
+    prefix: 'f',
+  }));
   const id = s.nextId;
   useStore.setState({ nextId: id + 1 });
   s.frames.push({
