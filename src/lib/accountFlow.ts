@@ -31,6 +31,8 @@ import {
   setCurrentProject,
   setProjectName,
   setPullInFlight,
+  setProjectSwitchInFlight,
+  flushSyncNow,
   updateSyncHash,
 } from './currentProject';
 import { applySnapshotToStore, loadSnapshot, snapshotFromStore } from './persistence';
@@ -637,6 +639,11 @@ async function loadCloudProject(p: CloudProject): Promise<void> {
     if (!ok) return;
   }
   try {
+    // 1. Flush-save current project before switching (blocking)
+    await flushSyncNow();
+    // 2. Pause auto-sync to prevent cross-contamination during load
+    setProjectSwitchInFlight(true);
+    // 3. Load new project from cloud
     const tree = await api.get<CloudProjectTree>(`/projects/${encodeURIComponent(p.id)}/sync`, getToken());
     await applyCloudTreeToStore(tree);
     updateLastKnownTimestamp(tree.project.updated_at);
@@ -644,10 +651,14 @@ async function loadCloudProject(p: CloudProject): Promise<void> {
     fhTrack('project_opened', { name: p.name });
     (window as any).__fh_renderAll?.();
     autoPhoneMainView();
+    // 4. Update sync hash BEFORE resuming — so sync sees the new project as baseline
     updateSyncHash();
-    // toast removed
+    showToast('Project loaded');
   } catch (e) {
     showToast(asMessage(e, 'Could not load project.'));
+  } finally {
+    // 5. Resume auto-sync
+    setProjectSwitchInFlight(false);
   }
 }
 

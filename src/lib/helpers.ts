@@ -364,8 +364,6 @@ export function ovCollapseExpanded(): void {
 
 export function updateFrameBadge(): void {
   const s = state();
-  const visible = s.frames.filter((f) => !f.hidden).length;
-  const hidden = s.frames.length - visible;
 
   // Hide frame badge on iPhone portrait + portrait mode project
   const isPhone = Math.min(window.innerWidth, window.innerHeight) <= 430;
@@ -376,12 +374,22 @@ export function updateFrameBadge(): void {
       badgeEl.style.display = 'none';
     } else {
       badgeEl.style.display = '';
-      const groupLabel = s.activeGroupId !== null
-        ? (() => { const g = s.groups.find(g => g.id === s.activeGroupId); return g ? ` [${g.name}]` : ''; })()
-        : '';
-      badgeEl.textContent = `${visible} frame${visible !== 1 ? 's' : ''}${
-        hidden > 0 ? ' (' + hidden + ' hidden)' : ''
-      }${groupLabel}`;
+      if (s.activeGroupId !== null) {
+        // Group active — show group frame count (only count frames that exist)
+        const group = s.groups.find(g => g.id === s.activeGroupId);
+        if (group) {
+          const existingIds = new Set(s.frames.map(f => f.id));
+          const groupCount = group.frameIds.filter(id => existingIds.has(id)).length;
+          badgeEl.textContent = `${groupCount} frame${groupCount !== 1 ? 's' : ''} [${group.name}]`;
+        }
+      } else {
+        // ALL mode — show total frame count
+        const visible = s.frames.filter((f) => !f.hidden).length;
+        const hidden = s.frames.length - visible;
+        badgeEl.textContent = `${visible} frame${visible !== 1 ? 's' : ''}${
+          hidden > 0 ? ' (' + hidden + ' hidden)' : ''
+        }`;
+      }
     }
   }
 

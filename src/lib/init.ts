@@ -35,7 +35,7 @@ import { showToast, showNewProjectModal, isNewProjectModalOpen } from './modals'
 import type { NewProjectChoice } from './modals';
 import { handlePDF } from './pdf';
 import { handleFolderImages, startFromScratch, startPortrait } from './files';
-import { openExportModal, openPptxModal, runExport, runPptxExport, openImageExportModal, runImageExport, openPortraitExportModal, runPortraitExport, runPortraitImageExport } from './exports';
+import { openExportModal, openPptxModal, runExport, runPptxExport, openImageExportModal, runImageExport, openPortraitExportModal, runPortraitExport, openPortraitImageExportModal, runPortraitImageExport, updateExportVisibility, buildVersionPicker, buildPptxVersionPicker } from './exports';
 import { wireCameraEvents } from './camera';
 import { openFullscreen } from './fullscreen';
 import { toggleGroupSidebar } from './groups';
@@ -49,7 +49,7 @@ import {
   showSaveToaster,
 } from './accountFlow';
 import { getActiveMs, onActivityTick, startActivityTracking } from './activity';
-import { startAutosave, getCurrentProject, clearCurrentProject, subscribe as subscribeProject } from './currentProject';
+import { startAutosave, getCurrentProject, clearCurrentProject, flushSyncNow, subscribe as subscribeProject } from './currentProject';
 import { subscribe as subscribeSession, isLoggedIn } from './session';
 
 let initialized = false;
@@ -195,10 +195,11 @@ export function initFramehow(): void {
     openFullscreen(fid, vi, origin);
   });
 
-  // Main Menu dropdown
+  // Main Menu dropdown — flush-save on open (safety net before potential project switch)
   document.getElementById('mainMenuBtn')!.addEventListener('click', (e) => {
     e.stopPropagation();
     document.getElementById('mainMenu')!.classList.toggle('open');
+    void flushSyncNow(); // non-blocking save — ensures current work is safe
   });
   document.addEventListener('click', () => document.getElementById('mainMenu')!.classList.remove('open'));
 
@@ -255,6 +256,8 @@ export function initFramehow(): void {
     document.getElementById('mainMenu')!.classList.remove('open');
     const cp = getCurrentProject();
     if (state().frames.length > 0) {
+      // Flush-save current project before switching (blocking)
+      await flushSyncNow();
       if (cp.projectId) {
         try { await flowSaveProject(); } catch { /* best effort */ }
       } else {
@@ -403,11 +406,12 @@ export function initFramehow(): void {
   document.querySelectorAll('input[name="exportLayout"]').forEach((r) =>
     r.addEventListener('change', () => {
       const layout = (document.querySelector('input[name="exportLayout"]:checked') as HTMLInputElement).value;
-      const isOverview = layout === 'overview';
-      (document.getElementById('exportTableToggleWrap') as HTMLElement).style.display = isOverview ? 'block' : 'none';
-      (document.getElementById('exportVersionPickerWrap') as HTMLElement).style.display = isOverview ? 'block' : 'none';
+      updateExportVisibility(layout, 'export');
+      if (layout === 'overview') buildVersionPicker();
     })
   );
+  // Rebuild version picker when overview strip selection changes
+  document.getElementById('exportOverviewStripPicker')?.addEventListener('change', () => buildVersionPicker());
   document.getElementById('exportGo')!.addEventListener('click', runExport);
 
   // PPTX export modal
@@ -417,11 +421,11 @@ export function initFramehow(): void {
   document.querySelectorAll('input[name="pptxLayout"]').forEach((r) =>
     r.addEventListener('change', () => {
       const layout = (document.querySelector('input[name="pptxLayout"]:checked') as HTMLInputElement).value;
-      const isOverview = layout === 'overview';
-      (document.getElementById('pptxTableToggleWrap') as HTMLElement).style.display = isOverview ? 'block' : 'none';
-      (document.getElementById('pptxVersionPickerWrap') as HTMLElement).style.display = isOverview ? 'block' : 'none';
+      updateExportVisibility(layout, 'pptx');
+      if (layout === 'overview') buildPptxVersionPicker();
     })
   );
+  document.getElementById('pptxOverviewStripPicker')?.addEventListener('change', () => buildPptxVersionPicker());
   document.getElementById('pptxGo')!.addEventListener('click', runPptxExport);
 
   // Image export modal
@@ -444,7 +448,13 @@ export function initFramehow(): void {
   });
   document.getElementById('portraitFmtImages')!.addEventListener('click', () => {
     document.getElementById('portraitExportChooser')!.classList.add('hidden');
-    runPortraitImageExport();
+    openPortraitImageExportModal();
+  });
+  document.getElementById('portraitImageExportCancel')!.addEventListener('click', () =>
+    document.getElementById('portraitImageExportModal')!.classList.add('hidden')
+  );
+  document.getElementById('portraitImageExportGo')!.addEventListener('click', () => {
+    void runPortraitImageExport();
   });
   // Portrait export modal
   document.getElementById('portraitExportCancel')!.addEventListener('click', () =>
@@ -464,6 +474,14 @@ export function initFramehow(): void {
       // Left-side buttons: iPad/Desktop only
       if (view === 'group') {
         if (isPhonePortrait) {
+          // If stuck in a group on portrait, allow escaping back to ALL
+          const gs = state();
+          if (gs.activeGroupId !== null) {
+            useStore.setState({ activeGroupId: null });
+            (window as any).__fh_renderAll?.();
+            showToast('Showing all frames');
+            return;
+          }
           showToast('Rotate to landscape to use Groups');
           return;
         }

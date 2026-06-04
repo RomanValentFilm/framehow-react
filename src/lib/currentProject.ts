@@ -105,6 +105,69 @@ export function setPullInFlight(v: boolean): void {
   _pullInFlight = v;
 }
 
+/** Pause all cloud sync (used during project switches to prevent cross-contamination). */
+let _projectSwitchInFlight = false;
+export function setProjectSwitchInFlight(v: boolean): void {
+  _projectSwitchInFlight = v;
+}
+
+/**
+ * Immediately push current project to cloud (if dirty). Returns when done.
+ * Use before switching projects to ensure current work is saved first.
+ * If the push fails (offline), queues the project for retry when back online.
+ */
+export async function flushSyncNow(): Promise<void> {
+  if (!_syncFn || !cp.projectId || !isLoggedIn()) return;
+  if (cloudSyncInFlight) return; // already syncing
+  const hash = storeHash();
+  if (hash === lastSyncHash) return; // nothing changed
+  const pid = cp.projectId;
+  cloudSyncInFlight = true;
+  try {
+    await _syncFn(pid);
+    lastSyncHash = hash;
+    cp = { ...cp, lastSavedAt: Date.now(), dirty: false };
+    _pendingSyncIds.delete(pid);
+    emit();
+  } catch {
+    // Offline or failed — queue for retry when back online
+    _pendingSyncIds.add(pid);
+  } finally {
+    cloudSyncInFlight = false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Pending sync queue: projects whose flush failed (offline). Retried when
+// the device comes back online or on the next sync interval while online.
+// ---------------------------------------------------------------------------
+
+const _pendingSyncIds = new Set<string>();
+
+async function retryPendingSyncs(): Promise<void> {
+  if (!_syncFn || !isLoggedIn() || !navigator.onLine) return;
+  if (_pendingSyncIds.size === 0) return;
+  if (cloudSyncInFlight || _projectSwitchInFlight) return;
+  // Only retry if we're currently on one of the pending projects
+  // (we can only push the project that's currently loaded in state)
+  const currentPid = cp.projectId;
+  if (currentPid && _pendingSyncIds.has(currentPid)) {
+    cloudSyncInFlight = true;
+    try {
+      await _syncFn(currentPid);
+      lastSyncHash = storeHash();
+      cp = { ...cp, lastSavedAt: Date.now(), dirty: false };
+      _pendingSyncIds.delete(currentPid);
+      hideOfflineBanner();
+      emit();
+    } catch {
+      // Still offline — will retry next tick
+    } finally {
+      cloudSyncInFlight = false;
+    }
+  }
+}
+
 /** True when the push-sync interval is actively syncing to cloud. */
 export function isPushInFlight(): boolean {
   return cloudSyncInFlight;
@@ -225,6 +288,7 @@ async function runCloudSync(): Promise<void> {
   if (!isLoggedIn()) return;       // Can't sync without auth
   if (cloudSyncInFlight) return;   // Already in progress
   if (_pullInFlight) return;       // Don't push while pulling — images loading would cause false changes
+  if (_projectSwitchInFlight) return; // Don't push during project switch — would contaminate the new project
 
   // Check if anything actually changed since last sync
   const hash = storeHash();
@@ -276,9 +340,15 @@ export function startAutosave(): void {
     scheduleAutosave();
     // Sync to cloud
     void runCloudSync();
+    // Retry any pending syncs from failed project switches
+    void retryPendingSyncs();
   }, CLOUD_SYNC_INTERVAL_MS);
 
   // Listen for browser online/offline events to show/hide banner immediately
   window.addEventListener('offline', showOfflineBanner);
-  window.addEventListener('online', hideOfflineBanner);
+  window.addEventListener('online', () => {
+    hideOfflineBanner();
+    // Retry pending syncs now that we're back online
+    void retryPendingSyncs();
+  });
 }

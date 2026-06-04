@@ -127,7 +127,8 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
       const idx2 = s2.frames.indexOf(f2);
       const nid = s2.nextId;
       useStore.setState({ nextId: nid + 1 });
-      const newFrame = {
+      const insideGroup = s.activeGroupId !== null;
+      const newFrame: any = {
         id: nid,
         src: '',
         label: 'name',
@@ -138,6 +139,7 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
         textContent: '',
         tableData: null,
       };
+      if (insideGroup) newFrame.hidden = true;
       s2.frames.splice(idx2 + 1, 0, newFrame);
       s2.versions[nid] = [{ id: 1, label: 'v1', type: 'empty', strokes: [], bgImage: null }];
       s2.activeTab[nid] = 0;
@@ -308,21 +310,14 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
     openCamera(fid, div, false, true);
   } else if (action === 'delete') {
     if (s.activeGroupId !== null) {
-      // Inside a group: HIDE in group or REMOVE from group (no permanent delete)
-      const currentGroupId = s.activeGroupId; // capture before async modal
-      showGroupDeleteChoice().then((choice) => {
-        if (!choice) return;
+      // Inside a group: confirm, then remove frame from this group (frame stays in ALL)
+      const currentGroupId = s.activeGroupId;
+      showConfirm('Remove this frame and all its versions from this group?\nYou can still find the frame in group ALL.').then((ok) => {
+        if (!ok) return;
         useStore.setState({ scrollHideGuard: Date.now() + 600 });
-        if (choice === 'hide') {
-          hideFrameInGroup(fid, currentGroupId!);
-          updateFrameBadge();
-          renderAll();
-        } else {
-          // 'remove' — take frame out of this group only
-          removeFrameFromGroup(fid, currentGroupId);
-          updateFrameBadge();
-          renderAll();
-        }
+        removeFrameFromGroup(fid, currentGroupId);
+        updateFrameBadge();
+        renderAll();
       });
     } else {
       // ALL view: HIDE or permanent DELETE

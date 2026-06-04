@@ -254,10 +254,23 @@ export function Modals() {
                 </svg>
                 <span className="exp-opt-text">
                   <strong>Double Strip</strong>
-                  <span className="exp-sub">Main Frame + Active Version Frame</span>
+                  <span className="exp-sub">Main Frame + Selected Frame</span>
                 </span>
               </span>
             </label>
+            <div className="exp-inline-controls" id="exportDoubleStripWrap" style={{ display: 'none' }}>
+              <div className="exp-strip-picker" id="exportDoubleStripPicker"></div>
+              <div className="exp-double-mode">
+                <label className="exp-strip-opt">
+                  <input type="radio" name="exportDoubleMode" value="starred" defaultChecked />
+                  <span>Main + Starred Frame</span>
+                </label>
+                <label className="exp-strip-opt">
+                  <input type="radio" name="exportDoubleMode" value="active" />
+                  <span>Main + Active Frame</span>
+                </label>
+              </div>
+            </div>
             <label className="exp-opt">
               <input type="radio" name="exportLayout" value="overview" />
               <span className="exp-opt-wrap">
@@ -276,9 +289,14 @@ export function Modals() {
                 </svg>
                 <span className="exp-opt-text">
                   <strong>Full Overview</strong>
-                  <span className="exp-sub">Main Frame + all its versions</span>
+                  <span className="exp-sub">Main Frame + selected strips with their versions</span>
                 </span>
               </span>
+            </label>
+          </div>
+          <div className="exp-field">
+            <label className="exp-inline">
+              <input type="checkbox" id="exportIncludeHidden" /> Include hidden frames
             </label>
           </div>
           <div className="exp-field">
@@ -296,8 +314,12 @@ export function Modals() {
               <input type="checkbox" id="exportPaperLetter" /> US Letter paper (default A4)
             </label>
           </div>
+          <div className="exp-field" id="exportOverviewStripWrap" style={{ display: 'none' }}>
+            <label>SELECT STRIPS TO INCLUDE</label>
+            <div className="exp-strip-picker" id="exportOverviewStripPicker"></div>
+          </div>
           <div className="exp-field" id="exportVersionPickerWrap" style={{ display: 'none' }}>
-            <label>Versions to include</label>
+            <label>SELECT VERSIONS TO INCLUDE</label>
             <div className="exp-version-picker" id="exportVersionPicker"></div>
           </div>
           <div className="text-modal-btns">
@@ -353,10 +375,23 @@ export function Modals() {
                 </svg>
                 <span className="exp-opt-text">
                   <strong>Double Strip</strong>
-                  <span className="exp-sub">Main Frame + Active Version Frame</span>
+                  <span className="exp-sub">Main Frame + Selected Frame</span>
                 </span>
               </span>
             </label>
+            <div className="exp-inline-controls" id="pptxDoubleStripWrap" style={{ display: 'none' }}>
+              <div className="exp-strip-picker" id="pptxDoubleStripPicker"></div>
+              <div className="exp-double-mode">
+                <label className="exp-strip-opt">
+                  <input type="radio" name="pptxDoubleMode" value="starred" defaultChecked />
+                  <span>Main + Starred Frame</span>
+                </label>
+                <label className="exp-strip-opt">
+                  <input type="radio" name="pptxDoubleMode" value="active" />
+                  <span>Main + Active Frame</span>
+                </label>
+              </div>
+            </div>
             <label className="exp-opt">
               <input type="radio" name="pptxLayout" value="overview" />
               <span className="exp-opt-wrap">
@@ -375,9 +410,14 @@ export function Modals() {
                 </svg>
                 <span className="exp-opt-text">
                   <strong>Full Overview</strong>
-                  <span className="exp-sub">Main Frame + all its versions</span>
+                  <span className="exp-sub">Main Frame + selected strips with their versions</span>
                 </span>
               </span>
+            </label>
+          </div>
+          <div className="exp-field">
+            <label className="exp-inline">
+              <input type="checkbox" id="pptxIncludeHidden" /> Include hidden frames
             </label>
           </div>
           <div className="exp-field">
@@ -390,8 +430,12 @@ export function Modals() {
               <input type="checkbox" id="pptxIncludeTable" defaultChecked /> Include Table
             </label>
           </div>
+          <div className="exp-field" id="pptxOverviewStripWrap" style={{ display: 'none' }}>
+            <label>SELECT STRIPS TO INCLUDE</label>
+            <div className="exp-strip-picker" id="pptxOverviewStripPicker"></div>
+          </div>
           <div className="exp-field" id="pptxVersionPickerWrap" style={{ display: 'none' }}>
-            <label>Versions to include</label>
+            <label>SELECT VERSIONS TO INCLUDE</label>
             <div className="exp-version-picker" id="pptxVersionPicker"></div>
           </div>
           <div className="text-modal-btns">
@@ -412,6 +456,32 @@ export function Modals() {
           <div className="exp-field" id="imageGroupPickerWrap" style={{ display: 'none' }}>
             <label>Select group to export</label>
             <div className="exp-group-picker" id="imageGroupPicker"></div>
+          </div>
+          <div className="exp-field">
+            <label>SELECT STRIPS TO INCLUDE</label>
+            <div className="exp-strip-picker" id="imageStripPicker"></div>
+          </div>
+          <div className="exp-field">
+            <label className="exp-inline">
+              <input type="checkbox" id="imageIncludeHiddenMain" /> Include hidden main frames
+            </label>
+          </div>
+          <div className="exp-field">
+            <label>SELECT VERSION FRAMES TO INCLUDE</label>
+            <div className="exp-strip-picker">
+              <label className="exp-strip-opt">
+                <input type="radio" name="imageVersionScope" value="starred" defaultChecked />
+                <span>Starred frames only</span>
+              </label>
+              <label className="exp-strip-opt">
+                <input type="radio" name="imageVersionScope" value="active" />
+                <span>Active frames only</span>
+              </label>
+              <label className="exp-strip-opt">
+                <input type="radio" name="imageVersionScope" value="all" />
+                <span>All (including hidden versions)</span>
+              </label>
+            </div>
           </div>
           <div className="text-modal-btns">
             <button className="btn" id="imageExportCancel">Cancel</button>
@@ -489,6 +559,10 @@ export function Modals() {
             <label>Project name</label>
             <input type="text" id="portraitExportName" placeholder="Storyboard" />
           </div>
+          <div className="exp-field" id="portraitGroupPickerWrap" style={{ display: 'none' }}>
+            <label>Select group to export</label>
+            <div className="exp-group-picker" id="portraitGroupPicker"></div>
+          </div>
           <div className="exp-field">
             <label>Layout</label>
             <label className="exp-opt">
@@ -531,7 +605,7 @@ export function Modals() {
           </div>
           <div className="exp-field">
             <label className="exp-inline">
-              <input type="checkbox" id="portraitIncludeHidden" /> Include hidden pictures
+              <input type="checkbox" id="portraitIncludeHidden" /> Include hidden frames
             </label>
           </div>
           <div className="exp-field">
@@ -549,9 +623,75 @@ export function Modals() {
               <input type="checkbox" id="portraitPaperLetter" /> US Letter paper (default A4)
             </label>
           </div>
+          <div className="exp-field">
+            <label>SELECT STRIPS TO INCLUDE</label>
+            <div className="exp-strip-picker" id="portraitStripPicker"></div>
+          </div>
+          <div className="exp-field">
+            <label>SELECT VERSIONS TO INCLUDE</label>
+            <div className="exp-strip-picker">
+              <label className="exp-strip-opt">
+                <input type="radio" name="portraitVersionScope" value="starred" />
+                <span>Starred only</span>
+              </label>
+              <label className="exp-strip-opt">
+                <input type="radio" name="portraitVersionScope" value="visible" defaultChecked />
+                <span>Visible only</span>
+              </label>
+              <label className="exp-strip-opt">
+                <input type="radio" name="portraitVersionScope" value="all" />
+                <span>All (including hidden versions)</span>
+              </label>
+            </div>
+          </div>
           <div className="text-modal-btns">
             <button className="btn" id="portraitExportCancel">Cancel</button>
             <button className="btn btn-accent" id="portraitExportGo">Export</button>
+          </div>
+        </div>
+      </div>
+
+      {/* Portrait (9:16) image export modal */}
+      <div className="export-modal hidden" id="portraitImageExportModal">
+        <div className="export-modal-box">
+          <div className="exp-title">Export 9:16 as Images</div>
+          <div className="exp-field">
+            <label>Project name</label>
+            <input type="text" id="portraitImageExportName" placeholder="Storyboard" />
+          </div>
+          <div className="exp-field" id="portraitImageGroupPickerWrap" style={{ display: 'none' }}>
+            <label>Select group to export</label>
+            <div className="exp-group-picker" id="portraitImageGroupPicker"></div>
+          </div>
+          <div className="exp-field">
+            <label>SELECT STRIPS TO INCLUDE</label>
+            <div className="exp-strip-picker" id="portraitImageStripPicker"></div>
+          </div>
+          <div className="exp-field">
+            <label className="exp-inline">
+              <input type="checkbox" id="portraitImageIncludeHiddenMain" /> Include hidden main frames
+            </label>
+          </div>
+          <div className="exp-field">
+            <label>SELECT VERSION FRAMES TO INCLUDE</label>
+            <div className="exp-strip-picker">
+              <label className="exp-strip-opt">
+                <input type="radio" name="portraitImageVersionScope" value="starred" defaultChecked />
+                <span>Starred frames only</span>
+              </label>
+              <label className="exp-strip-opt">
+                <input type="radio" name="portraitImageVersionScope" value="active" />
+                <span>Active frames only</span>
+              </label>
+              <label className="exp-strip-opt">
+                <input type="radio" name="portraitImageVersionScope" value="all" />
+                <span>All (including hidden versions)</span>
+              </label>
+            </div>
+          </div>
+          <div className="text-modal-btns">
+            <button className="btn" id="portraitImageExportCancel">Cancel</button>
+            <button className="btn btn-accent" id="portraitImageExportGo">Export</button>
           </div>
         </div>
       </div>

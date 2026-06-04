@@ -24,7 +24,7 @@ import { showToast, showNewProjectModal, isNewProjectModalOpen } from './modals'
 import type { NewProjectChoice } from './modals';
 import { handlePDF } from './pdf';
 import { handleFolderImages, startFromScratch, startPortrait } from './files';
-import { openExportModal, openPptxModal, runExport, runPptxExport, runImageExport, openPortraitExportModal, runPortraitExport, runPortraitImageExport } from './exports';
+import { openExportModal, openPptxModal, runExport, runPptxExport, runImageExport, openPortraitExportModal, runPortraitExport, openPortraitImageExportModal, runPortraitImageExport } from './exports';
 import { wireCameraEvents } from './camera';
 import { openFullscreen } from './fullscreen';
 import { startHeartbeat } from './tracking';
@@ -349,7 +349,7 @@ export function initFramehow(): void {
   });
   document.getElementById('portraitFmtImages')!.addEventListener('click', () => {
     document.getElementById('portraitExportChooser')!.classList.add('hidden');
-    runPortraitImageExport();
+    openPortraitImageExportModal();
   });
   // Portrait export modal
   document.getElementById('portraitExportCancel')!.addEventListener('click', () =>

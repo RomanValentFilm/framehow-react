@@ -15,12 +15,8 @@ export function getVisibleFrames(): Frame[] {
   if (s.activeGroupId === null) return s.frames;
   const group = s.groups.find(g => g.id === s.activeGroupId);
   if (!group) return s.frames;
-  const hiddenSet = new Set(group.hiddenFrameIds || []);
-  // Build a map for O(1) lookup
   const frameMap = new Map(s.frames.map(f => [f.id, f]));
-  // Return in group's frameIds order, excluding per-group hidden frames
   return group.frameIds
-    .filter(id => !hiddenSet.has(id))
     .map(id => frameMap.get(id))
     .filter((f): f is Frame => !!f);
 }
@@ -65,7 +61,7 @@ export function removeFrameFromGroup(fid: number, groupId?: number): void {
   const gid = groupId ?? s.activeGroupId;
   if (gid === null) return;
   const newGroups = s.groups.map(g =>
-    g.id === gid ? { ...g, frameIds: g.frameIds.filter(id => id !== fid) } : g
+    g.id === gid ? { ...g, frameIds: g.frameIds.filter(id => id !== fid), hiddenFrameIds: (g.hiddenFrameIds || []).filter(id => id !== fid) } : g
   );
   useStore.setState({ groups: newGroups });
 }
@@ -429,7 +425,7 @@ function openGroupEditor(existing: FrameGroup | null): void {
     if (existing) {
       // Update existing
       const newGroups = s.groups.map(g =>
-        g.id === existing.id ? { ...g, name, frameIds: checkedIds } : g
+        g.id === existing.id ? { ...g, name, frameIds: checkedIds, hiddenFrameIds: [] } : g
       );
       useStore.setState({ groups: newGroups });
     } else {
