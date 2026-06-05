@@ -1,2 +1,2 @@
-ALTER TABLE versions ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE versions ADD COLUMN starred INTEGER NOT NULL DEFAULT 0;
+-- Columns already exist on production. No-op.
+SELECT 1;

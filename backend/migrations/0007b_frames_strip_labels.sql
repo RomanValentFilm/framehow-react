@@ -1,1 +1,2 @@
-ALTER TABLE frames ADD COLUMN strip_labels TEXT;
+-- Column already exists on production. No-op.
+SELECT 1;

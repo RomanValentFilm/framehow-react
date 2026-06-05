@@ -138,6 +138,21 @@ projects.post("/:id/recover", async (c) => {
 });
 
 // ---------------------------------------------------------------------------
+// GET /projects/:id/status — lightweight check: just timestamp + device info
+// Used by the device lock system to detect concurrent editing (~100 bytes).
+// ---------------------------------------------------------------------------
+projects.get("/:id/status", async (c) => {
+  const me = c.get("user");
+  const id = c.req.param("id");
+  const row = await c.env.DB
+    .prepare("SELECT updated_at, last_device_id, last_device_name FROM projects WHERE id = ? AND user_id = ? AND deleted_at IS NULL")
+    .bind(id, me.id)
+    .first<{ updated_at: number; last_device_id: string | null; last_device_name: string | null }>();
+  if (!row) return jsonError(c, 404, "not_found", "Project not found.");
+  return c.json(row);
+});
+
+// ---------------------------------------------------------------------------
 // GET /projects/:id/sync — download cloud state
 // ---------------------------------------------------------------------------
 projects.get("/:id/sync", async (c) => {

@@ -1,1 +1,2 @@
-ALTER TABLE projects ADD COLUMN metadata TEXT;
+-- Column already exists on production. No-op.
+SELECT 1;

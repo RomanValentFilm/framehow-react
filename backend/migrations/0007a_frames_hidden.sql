@@ -1,1 +1,2 @@
-ALTER TABLE frames ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0;
+-- Column already exists on production. No-op.
+SELECT 1;
