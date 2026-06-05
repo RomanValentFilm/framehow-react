@@ -4,9 +4,11 @@
 // correct the extraction, then re-extracts with the adjusted positions.
 
 import * as pdfjsLib from 'pdfjs-dist';
-import { showToast, setProgress } from './modals';
-import { extractCandidates, getTextItems, matchLabel, matchText } from './pdf';
-import type { Candidate, TextItem } from './pdf';
+import { showToast } from './modals';
+import { testExtractPDF } from './pdf';
+import type { TestFrame } from './pdf';
+import { COLORS, state, useStore, resetStoryboardState } from '../store/state';
+import { updateFrameBadge } from './helpers';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -34,6 +36,8 @@ interface PageData {
 let _overlay: HTMLElement | null = null;
 let _pages: PageData[] = [];
 let _pdfDoc: any = null;
+let _currentFile: File | null = null;
+let _extractedFrames: TestFrame[] = [];
 let _activeRect: AdjustRect | null = null;
 let _dragHandle: string | null = null; // 'move' | 'nw' | 'ne' | 'sw' | 'se'
 let _dragStartX = 0;
@@ -70,7 +74,7 @@ export function openPdfAdjust(): void {
       <div style="display:flex;gap:8px;">
         <button id="pdfAdjustAddImage" style="padding:5px 12px;border-radius:6px;border:1px solid #00c850;background:transparent;color:#00c850;font-size:12px;cursor:pointer;">+ Image</button>
         <button id="pdfAdjustAddText" style="padding:5px 12px;border-radius:6px;border:1px solid #3c82ff;background:transparent;color:#3c82ff;font-size:12px;cursor:pointer;">+ Text</button>
-        <button id="pdfAdjustAddLabel" style="padding:5px 12px;border-radius:6px;border:1px solid #ff3c3c;background:transparent;color:#ff3c3c;font-size:12px;cursor:pointer;">+ Label</button>
+        <button id="pdfAdjustAddLabel" style="padding:5px 12px;border-radius:6px;border:1px solid #ff3c3c;background:transparent;color:#ff3c3c;font-size:12px;cursor:pointer;">+ Number</button>
         <button id="pdfAdjustApply" style="padding:5px 16px;border-radius:6px;border:none;background:#c94432;color:#fff;font-size:12px;font-weight:600;cursor:pointer;">Apply</button>
         <button id="pdfAdjustClose" style="padding:5px 12px;border-radius:6px;border:1px solid #555;background:transparent;color:#ccc;font-size:12px;cursor:pointer;">Close</button>
       </div>
@@ -84,7 +88,7 @@ export function openPdfAdjust(): void {
     <div style="display:flex;gap:8px;padding:8px 16px;background:#1a1a1a;flex-shrink:0;">
       <span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#00c850;">◼ Image</span>
       <span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#3c82ff;">◼ Text</span>
-      <span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#ff3c3c;">◼ Label/Number</span>
+      <span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#ff3c3c;">◼ Number</span>
       <span style="font-size:11px;color:#666;margin-left:8px;">Drag corners to resize. Drag middle to move. Tap to select, Delete to remove.</span>
     </div>
     <div id="pdfAdjustPages" style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:24px;align-items:center;"></div>
@@ -112,6 +116,8 @@ export function closePdfAdjust(): void {
   }
   _pages = [];
   _pdfDoc = null;
+  _currentFile = null;
+  _extractedFrames = [];
   _activeRect = null;
   document.removeEventListener('keydown', onKeyDown);
 }
@@ -125,6 +131,7 @@ async function onFileSelect(e: Event): Promise<void> {
   const file = input.files?.[0];
   if (!file) return;
 
+  _currentFile = file;
   document.getElementById('pdfAdjustFileName')!.textContent = file.name;
   showToast('Loading PDF…');
 
@@ -143,14 +150,21 @@ async function onFileSelect(e: Event): Promise<void> {
 // Page rendering
 // ---------------------------------------------------------------------------
 
-const RENDER_SCALE = 1.5; // balance between quality and performance
+const RENDER_SCALE = 1.5;
 
 async function renderAllPages(): Promise<void> {
   const container = document.getElementById('pdfAdjustPages')!;
   container.innerHTML = '';
   _pages = [];
-  const allPageCandidates: { candidates: Candidate[]; pageW: number; pageH: number }[] = [];
 
+  // Run the SAME extraction pipeline as the normal PDF import
+  showToast('Running extraction…');
+  const result = await testExtractPDF(_currentFile!, (msg) => showToast(msg));
+  _extractedFrames = result.frames;
+  const extractedFrames = _extractedFrames;
+  showToast(`${extractedFrames.length} frames found. Rendering pages…`);
+
+  // Render each PDF page and overlay rectangles from extraction results
   for (let p = 1; p <= _pdfDoc.numPages; p++) {
     const page = await _pdfDoc.getPage(p);
     const vp = page.getViewport({ scale: RENDER_SCALE });
@@ -168,50 +182,70 @@ async function renderAllPages(): Promise<void> {
     };
     _pages.push(pageData);
 
-    // Auto-detect using the SAME logic as handlePDF
-    await autoDetectRects(page, pageData, allPageCandidates);
+    // Convert extracted frames for this page into rectangles
+    const pageIdx = p - 1;
+    const pageFrames = extractedFrames.filter(f => f.pageIdx === pageIdx);
+    let rectId = 0;
+    for (const f of pageFrames) {
+      if (f.imgX != null && f.imgW != null && f.pageW && f.pageH) {
+        const pw = f.pageW, ph = f.pageH;
+        // Image rect (green)
+        pageData.rects.push({
+          id: `p${p}_img_${rectId++}`, type: 'image', pageIdx,
+          x: f.imgX / pw, y: f.imgY! / ph, w: f.imgW / pw, h: f.imgH! / ph,
+        });
+        // Label rect (red)
+        if (f.labelX != null && f.labelW != null) {
+          pageData.rects.push({
+            id: `p${p}_lbl_${rectId++}`, type: 'label', pageIdx,
+            x: f.labelX / pw, y: f.labelY! / ph, w: f.labelW / pw, h: f.labelH! / ph,
+          });
+        }
+        // Text rect (blue)
+        if (f.textX != null && f.textW != null) {
+          pageData.rects.push({
+            id: `p${p}_txt_${rectId++}`, type: 'text', pageIdx,
+            x: f.textX / pw, y: f.textY! / ph, w: f.textW / pw, h: f.textH! / ph,
+          });
+        }
+      }
+    }
 
     // Build page element
     const pageEl = document.createElement('div');
     pageEl.className = 'pdfAdjustPage';
-    pageEl.dataset.pageIdx = String(p - 1);
+    pageEl.dataset.pageIdx = String(pageIdx);
     pageEl.style.cssText = 'position:relative;display:inline-block;border:1px solid #333;';
 
-    // Page number label
     const label = document.createElement('div');
     label.style.cssText = 'position:absolute;top:-20px;left:0;font-size:11px;color:#666;font-family:monospace;';
-    label.textContent = `Page ${p}`;
+    label.textContent = `Page ${p} — ${pageFrames.length} frame${pageFrames.length !== 1 ? 's' : ''}`;
     pageEl.appendChild(label);
 
-    // The PDF page canvas
-    canvas.style.cssText = `display:block;max-width:90vw;height:auto;`;
+    canvas.style.cssText = 'display:block;max-width:90vw;height:auto;';
     pageEl.appendChild(canvas);
 
-    // SVG overlay for rectangles
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('viewBox', `0 0 ${canvas.width} ${canvas.height}`);
     svg.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;';
-    svg.id = `pdfAdjustSvg_${p - 1}`;
+    svg.id = `pdfAdjustSvg_${pageIdx}`;
     pageEl.appendChild(svg);
 
-    // Interaction layer
     const interactLayer = document.createElement('div');
-    interactLayer.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;cursor:crosshair;';
-    interactLayer.dataset.pageIdx = String(p - 1);
-    wireInteraction(interactLayer, p - 1);
+    interactLayer.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;cursor:crosshair;touch-action:pan-y;';
+    interactLayer.dataset.pageIdx = String(pageIdx);
+    wireInteraction(interactLayer, pageIdx);
     pageEl.appendChild(interactLayer);
 
     container.appendChild(pageEl);
-    renderRectsForPage(p - 1);
+    renderRectsForPage(pageIdx);
   }
+  showToast(`Ready — ${extractedFrames.length} frames across ${_pdfDoc.numPages} pages`);
 }
 
-// ---------------------------------------------------------------------------
-// Auto-detect rectangles — runs the EXACT same logic as handlePDF:
-// extractCandidates → dominant size filter → matchLabel → matchText
-// Only shows what the real extraction would find.
-// ---------------------------------------------------------------------------
+// (autoDetectRects removed — now uses testExtractPDF shared function)
 
+/* REMOVED — now uses testExtractPDF shared function
 async function autoDetectRects(page: any, pageData: PageData, allPageCandidates: { candidates: Candidate[]; pageW: number; pageH: number }[]): Promise<void> {
   const SCALE = 2;
   const vp = page.getViewport({ scale: SCALE });
@@ -350,6 +384,7 @@ async function autoDetectRects(page: any, pageData: PageData, allPageCandidates:
     }
   }
 }
+*/
 
 // ---------------------------------------------------------------------------
 // Rectangle rendering (SVG overlay)
@@ -408,7 +443,7 @@ function renderRectsForPage(pageIdx: number): void {
     text.setAttribute('font-size', '10');
     text.setAttribute('font-family', 'monospace');
     text.setAttribute('font-weight', 'bold');
-    text.textContent = rect.type.toUpperCase();
+    text.textContent = rect.type === 'label' ? 'NUMBER' : rect.type.toUpperCase();
     svg.appendChild(text);
   }
 }
@@ -459,10 +494,10 @@ function wireInteraction(el: HTMLElement, pageIdx: number): void {
   }
 
   function onDown(e: MouseEvent | TouchEvent): void {
-    e.preventDefault();
     const pos = getPos('touches' in e ? e.touches[0] : e);
     const hit = findHit(pos);
     if (hit) {
+      e.preventDefault(); // only prevent default when hitting a rectangle
       _activeRect = hit.rect;
       _dragHandle = hit.handle;
       _dragStartX = pos.x;
@@ -471,13 +506,14 @@ function wireInteraction(el: HTMLElement, pageIdx: number): void {
       isDown = true;
     } else {
       _activeRect = null;
+      // Don't preventDefault — let the scroll through
     }
     renderRectsForPage(pageIdx);
   }
 
   function onMove(e: MouseEvent | TouchEvent): void {
     if (!isDown || !_activeRect || !_dragHandle) return;
-    e.preventDefault();
+    e.preventDefault(); // only prevent default when dragging
     const pos = getPos('touches' in e ? e.touches[0] : e);
     const dx = pos.x - _dragStartX;
     const dy = pos.y - _dragStartY;
@@ -565,12 +601,57 @@ function onKeyDown(e: KeyboardEvent): void {
 // ---------------------------------------------------------------------------
 
 async function onApply(): Promise<void> {
-  if (!_pdfDoc || _pages.length === 0) {
-    showToast('No PDF loaded');
+  if (!_extractedFrames.length) {
+    showToast('No frames to apply');
     return;
   }
-  showToast('Applying adjusted extraction…');
-  // TODO: Step 4 — use the adjusted rects to extract frames, text, labels
-  // and replace the current project's frames
+
+  // Store frames locally before closing (closePdfAdjust clears _extractedFrames)
+  const framesToLoad = [..._extractedFrames];
+  const fileName = _currentFile?.name.replace(/\.pdf$/i, '') || '';
+
   closePdfAdjust();
+
+  // Reset the storyboard and load extracted frames — same logic as handlePDF
+  try {
+    resetStoryboardState();
+    if (fileName) useStore.setState({ lastPdfName: fileName });
+
+    const s = state();
+    const frameStartIdx = s.frames.length;
+    let nextId = s.nextId;
+    for (const item of framesToLoad) {
+      const id = nextId++;
+      s.frames.push({
+        id,
+        src: item.src,
+        label: item.label,
+        cropW: item.cropW,
+        cropH: item.cropH,
+        strokes: [],
+        drawMode: false,
+        textContent: item.textContent || '',
+        tableData: null,
+      });
+      s.versions[id] = [{ id: 1, label: 'v1', type: 'empty', strokes: [], bgImage: null }];
+      s.activeTab[id] = 0;
+      s.drawColor[id] = COLORS[0];
+      s.drawWidth[id] = 6;
+      s.drawEraser[id] = false;
+    }
+    for (let i = frameStartIdx; i < s.frames.length; i++) {
+      if (!s.frames[i].label) s.frames[i].label = '#' + (i - frameStartIdx + 1);
+    }
+    useStore.setState({ nextId });
+    updateFrameBadge();
+    showToast(`${framesToLoad.length} frames loaded`);
+
+    // Trigger render after a tick to ensure overlay is fully removed
+    requestAnimationFrame(() => {
+      (window as any).__fh_renderAll?.();
+    });
+  } catch (err) {
+    console.error('[pdfAdjust] Apply failed:', err);
+    showToast('Error loading frames');
+  }
 }
