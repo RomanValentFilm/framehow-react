@@ -58,14 +58,9 @@ function getDeviceId(): string {
 
 function getDeviceName(): string {
   const ua = navigator.userAgent;
-  if (/iPad/i.test(ua)) return 'iPad';
-  if (/iPhone/i.test(ua)) return 'iPhone';
-  if (/Android.*Mobile/i.test(ua)) return 'Android Phone';
-  if (/Android/i.test(ua)) return 'Android Tablet';
-  if (/Macintosh|Mac OS/i.test(ua)) return 'Mac';
-  if (/Windows/i.test(ua)) return 'Windows PC';
-  if (/Linux/i.test(ua)) return 'Linux';
-  return 'Unknown Device';
+  if (/iPhone/i.test(ua) || (/Android/i.test(ua) && /Mobile/i.test(ua))) return 'Phone';
+  if (/iPad/i.test(ua) || (/Macintosh/i.test(ua) && navigator.maxTouchPoints > 1) || (/Android/i.test(ua) && !/Mobile/i.test(ua))) return 'Tablet';
+  return 'Desktop';
 }
 
 // ---------------------------------------------------------------------------
@@ -1458,8 +1453,132 @@ export async function flowAccountOrSignIn(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Pull-on-focus: when the tab becomes visible, check if the cloud version is
-// newer and silently refresh the project if so.
+// Device heartbeat: server-side "I'm working" signal.
+// All timestamps are SERVER-side — no client clock dependency.
+// ---------------------------------------------------------------------------
+
+const HEARTBEAT_INTERVAL_MS = 5_000;
+const HEARTBEAT_STALE_MS = 10_000; // heartbeat older than this = device stopped
+let _heartbeatTimer: number | null = null;
+let _lastUserActivity = 0;
+let _deviceLockOverlay: HTMLElement | null = null;
+
+/** Send a heartbeat to the server — "this device is actively working". */
+async function sendHeartbeat(): Promise<void> {
+  const cp = getCurrentProject();
+  if (!cp.projectId || !isLoggedIn()) return;
+  try {
+    await api.post(
+      `/projects/${encodeURIComponent(cp.projectId)}/heartbeat`,
+      { device_id: getDeviceId(), device_name: getDeviceName() },
+      getToken(),
+    );
+  } catch { /* silent */ }
+}
+
+/** Start sending heartbeats while the user is active. */
+function startHeartbeatSender(): void {
+  // Track user activity
+  const onActivity = () => { _lastUserActivity = Date.now(); };
+  document.addEventListener('mousedown', onActivity, true);
+  document.addEventListener('touchstart', onActivity, true);
+  document.addEventListener('keydown', onActivity, true);
+
+  // Send heartbeat every 5 seconds, but ONLY if the user was active in the last 10 seconds
+  setInterval(() => {
+    if (!document.hasFocus()) return;
+    if (isDeviceLocked()) return;
+    if (Date.now() - _lastUserActivity < HEARTBEAT_STALE_MS) {
+      void sendHeartbeat();
+    }
+  }, HEARTBEAT_INTERVAL_MS);
+}
+
+type ProjectStatus = {
+  updated_at: number;
+  last_device_id: string | null;
+  last_device_name: string | null;
+  heartbeat_at: number | null;
+  heartbeat_device_id: string | null;
+  heartbeat_device_name: string | null;
+  server_now: number;
+};
+
+/** Check if another device's heartbeat is alive. Returns the device name if locked, null if clear. */
+async function checkHeartbeat(): Promise<string | null> {
+  const cp = getCurrentProject();
+  if (!cp.projectId || !isLoggedIn()) return null;
+  try {
+    const status = await api.get<ProjectStatus>(
+      `/projects/${encodeURIComponent(cp.projectId)}/status`,
+      getToken(),
+    );
+    if (!status.heartbeat_at || !status.heartbeat_device_id) return null;
+    if (status.heartbeat_device_id === getDeviceId()) return null; // our own heartbeat
+    const age = status.server_now - status.heartbeat_at;
+    if (age < HEARTBEAT_STALE_MS) {
+      return status.heartbeat_device_name || 'another device';
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function showDeviceLockOverlay(deviceName: string): void {
+  if (!_deviceLockOverlay) {
+    const el = document.createElement('div');
+    el.id = 'deviceLockOverlay';
+    el.style.cssText =
+      'position:fixed;inset:0;z-index:999999;background:rgba(0,0,0,0.82);' +
+      'display:flex;align-items:center;justify-content:center;' +
+      'font-family:-apple-system,BlinkMacSystemFont,sans-serif;color:#fff;text-align:center;';
+    el.innerHTML = `
+      <div style="max-width:340px;padding:24px;">
+        <div style="font-size:16px;font-weight:600;margin-bottom:8px;" id="deviceLockMsg"></div>
+        <div style="font-size:13px;color:#aaa;">Changes will sync automatically.</div>
+      </div>`;
+    document.body.appendChild(el);
+    _deviceLockOverlay = el;
+  }
+  _deviceLockOverlay.style.display = 'flex';
+  const msgEl = document.getElementById('deviceLockMsg');
+  if (msgEl) msgEl.textContent = `Your ${deviceName} is working on this project — please wait 10sec for sync to start working here.`;
+}
+
+function hideDeviceLockOverlay(): void {
+  if (_deviceLockOverlay) _deviceLockOverlay.style.display = 'none';
+}
+
+function isDeviceLocked(): boolean {
+  return _deviceLockOverlay !== null && _deviceLockOverlay.style.display !== 'none';
+}
+
+/**
+ * Gate function: check heartbeat, show overlay if another device is active,
+ * wait until it stops, then pull and unlock. Returns when safe to proceed.
+ */
+async function waitForDeviceLock(): Promise<void> {
+  const lockedBy = await checkHeartbeat();
+  if (!lockedBy) return; // no other device active — proceed
+
+  showDeviceLockOverlay(lockedBy);
+  // Poll every 5 seconds until the heartbeat goes stale
+  while (true) {
+    await new Promise(r => setTimeout(r, HEARTBEAT_INTERVAL_MS));
+    const stillLocked = await checkHeartbeat();
+    if (!stillLocked) {
+      // Other device stopped — pull latest and unlock
+      await tryPullFromCloud();
+      hideDeviceLockOverlay();
+      return;
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Pull-on-focus: when the tab becomes visible, check heartbeat FIRST,
+// then pull if safe.
 // ---------------------------------------------------------------------------
 
 let pullOnFocusActive = false;
@@ -1473,22 +1592,36 @@ function startPullOnFocus(): void {
   if (pullOnFocusActive) return;
   pullOnFocusActive = true;
 
-  const doPull = () => void tryPullFromCloud();
+  // Start the heartbeat sender
+  startHeartbeatSender();
+
+  const safePull = async () => {
+    await waitForDeviceLock();
+    if (!isDeviceLocked()) void tryPullFromCloud();
+  };
 
   // visibilitychange fires on tab switches; focus fires on app switches
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') doPull();
+    if (document.visibilityState === 'visible') void safePull();
   });
-  window.addEventListener('focus', doPull);
+  window.addEventListener('focus', () => void safePull());
 
-  // Periodic pull every 30s — catches changes from other devices even when
-  // this window stays focused the whole time (no tab/app switch).
-  // Only polls when the page is actually focused (not behind another app).
-  // document.hasFocus() is false when another app is in front, unlike
-  // visibilityState which stays 'visible' even when Chrome is behind.
+  // Periodic pull every 30s
   setInterval(() => {
-    if (document.hasFocus()) doPull();
+    if (document.hasFocus() && !isDeviceLocked()) void tryPullFromCloud();
   }, 30_000);
+
+  // Wake-from-idle: if idle 10+ seconds and user clicks, check heartbeat first
+  let _lastInteraction = Date.now();
+  function onWakeFromIdle(): void {
+    const now = Date.now();
+    if ((now - _lastInteraction) > HEARTBEAT_STALE_MS && !isDeviceLocked()) {
+      void waitForDeviceLock();
+    }
+    _lastInteraction = now;
+  }
+  document.addEventListener('mousedown', onWakeFromIdle, true);
+  document.addEventListener('touchstart', onWakeFromIdle, true);
 }
 
 function formatTimeAgo(ts: number): string {

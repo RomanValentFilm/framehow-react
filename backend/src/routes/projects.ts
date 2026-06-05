@@ -138,18 +138,35 @@ projects.post("/:id/recover", async (c) => {
 });
 
 // ---------------------------------------------------------------------------
-// GET /projects/:id/status — lightweight check: just timestamp + device info
-// Used by the device lock system to detect concurrent editing (~100 bytes).
+// GET /projects/:id/status — lightweight check: heartbeat + device info (~150 bytes).
+// Returns server_now so the client can compute age without clock drift.
 // ---------------------------------------------------------------------------
 projects.get("/:id/status", async (c) => {
   const me = c.get("user");
   const id = c.req.param("id");
   const row = await c.env.DB
-    .prepare("SELECT updated_at, last_device_id, last_device_name FROM projects WHERE id = ? AND user_id = ? AND deleted_at IS NULL")
+    .prepare("SELECT updated_at, last_device_id, last_device_name, heartbeat_at, heartbeat_device_id, heartbeat_device_name FROM projects WHERE id = ? AND user_id = ? AND deleted_at IS NULL")
     .bind(id, me.id)
-    .first<{ updated_at: number; last_device_id: string | null; last_device_name: string | null }>();
+    .first<{ updated_at: number; last_device_id: string | null; last_device_name: string | null; heartbeat_at: number | null; heartbeat_device_id: string | null; heartbeat_device_name: string | null }>();
   if (!row) return jsonError(c, 404, "not_found", "Project not found.");
-  return c.json(row);
+  return c.json({ ...row, server_now: Date.now() });
+});
+
+// ---------------------------------------------------------------------------
+// POST /projects/:id/heartbeat — "I'm actively working on this project"
+// Tiny request (~100 bytes). Server sets its own timestamp.
+// ---------------------------------------------------------------------------
+projects.post("/:id/heartbeat", async (c) => {
+  const me = c.get("user");
+  const id = c.req.param("id");
+  const body = await c.req.json<{ device_id: string; device_name: string }>();
+  const now = Date.now();
+  const result = await c.env.DB
+    .prepare("UPDATE projects SET heartbeat_at = ?, heartbeat_device_id = ?, heartbeat_device_name = ? WHERE id = ? AND user_id = ? AND deleted_at IS NULL")
+    .bind(now, body.device_id, body.device_name, id, me.id)
+    .run();
+  if (!result.meta.changes) return jsonError(c, 404, "not_found", "Project not found.");
+  return c.json({ ok: true, heartbeat_at: now });
 });
 
 // ---------------------------------------------------------------------------
