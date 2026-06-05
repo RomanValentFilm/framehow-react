@@ -306,6 +306,12 @@ export function initFramehow(): void {
     void flowAccountOrSignIn();
   });
 
+  // Adjust PDF Import
+  document.getElementById('menuAdjustPdf')!.addEventListener('click', () => {
+    document.getElementById('mainMenu')!.classList.remove('open');
+    import('./pdfAdjust').then(m => m.openPdfAdjust());
+  });
+
   // Customise modal
   document.getElementById('menuCustomise')!.addEventListener('click', () => {
     document.getElementById('mainMenu')!.classList.remove('open');

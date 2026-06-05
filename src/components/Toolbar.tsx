@@ -24,6 +24,16 @@ export function Toolbar() {
                 borderBottom: 'none',
               }}
             />
+            <button id="menuAdjustPdf">Adjust PDF Import</button>
+            <div
+              style={{
+                height: 20,
+                background: '#000',
+                margin: 0,
+                borderTop: '1px solid var(--border)',
+                borderBottom: 'none',
+              }}
+            />
             <button id="menuCustomise">Customise</button>
             <div
               style={{

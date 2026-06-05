@@ -14,7 +14,7 @@ import { updateFrameBadge } from './helpers';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
-interface Candidate {
+export interface Candidate {
   x: number;
   y: number;
   w: number;
@@ -26,7 +26,7 @@ interface Candidate {
   dedupedLabel?: boolean;
 }
 
-interface TextItem {
+export interface TextItem {
   text: string;
   x: number;
   y: number;
@@ -55,7 +55,7 @@ async function renderPage(page: any, scale: number): Promise<HTMLCanvasElement> 
   return pc;
 }
 
-async function extractCandidates(
+export async function extractCandidates(
   page: any
 ): Promise<{ candidates: Candidate[]; inverted: boolean }> {
   const SCALE = 2;
@@ -343,7 +343,7 @@ async function extractCandidates(
   return { candidates: kept, inverted: useInverted };
 }
 
-async function getTextItems(page: any, scale: number): Promise<TextItem[]> {
+export async function getTextItems(page: any, scale: number): Promise<TextItem[]> {
   const content = await page.getTextContent();
   const vp = page.getViewport({ scale });
   const raw: TextItem[] = content.items
@@ -488,7 +488,7 @@ function isLabel(t: string): boolean {
   );
 }
 
-function matchLabel(
+export function matchLabel(
   items: TextItem[],
   x: number,
   y: number,
@@ -545,7 +545,7 @@ function matchLabel(
   return best;
 }
 
-function matchText(
+export function matchText(
   items: TextItem[],
   x: number,
   y: number,
