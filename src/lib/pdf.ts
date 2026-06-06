@@ -14,7 +14,7 @@ import { updateFrameBadge } from './helpers';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
-export interface Candidate {
+interface Candidate {
   x: number;
   y: number;
   w: number;
@@ -44,9 +44,8 @@ export interface ExtractedFrame {
   pageIdx?: number;
   sortX?: number;
   sortY?: number;
-  // Position data for the adjust tool (in scale=2 page coordinates)
-  pageW?: number;
-  pageH?: number;
+  // Position data (scale=2 page coords) for Adjust tool
+  pageW?: number; pageH?: number;
   imgX?: number; imgY?: number; imgW?: number; imgH?: number;
   labelX?: number; labelY?: number; labelW?: number; labelH?: number;
   textX?: number; textY?: number; textW?: number; textH?: number;
@@ -61,7 +60,7 @@ async function renderPage(page: any, scale: number): Promise<HTMLCanvasElement> 
   return pc;
 }
 
-export async function extractCandidates(
+async function extractCandidates(
   page: any
 ): Promise<{ candidates: Candidate[]; inverted: boolean }> {
   const SCALE = 2;
@@ -862,24 +861,19 @@ export async function handlePDF(file: File): Promise<void> {
             );
           }
         }
-        // Compute text bounding box for adjust tool
-        let textX: number | undefined, textY: number | undefined, textW: number | undefined, textH: number | undefined;
+        // Compute text bounding box for Adjust tool
+        let _tX: number | undefined, _tY: number | undefined, _tW: number | undefined, _tH: number | undefined;
         if (txt) {
           const belowItems = textItems.filter(item => item.y >= c.y + c.h - 10 && item.y <= maxY && item.x + item.w >= c.x - 20 && item.x <= c.x + c.w + 20);
           const rightItems = textItems.filter(item => item.x > c.x + c.w - 10 && item.y >= c.y - 20 && item.y <= c.y + c.h + 20);
           const matched = rightItems.length > belowItems.length ? rightItems : belowItems;
           if (matched.length > 0) {
-            textX = Math.min(...matched.map(it => it.x));
-            textY = Math.min(...matched.map(it => it.y));
-            textW = Math.max(...matched.map(it => it.x + it.w)) - textX;
-            textH = Math.max(...matched.map(it => it.y + it.h)) - textY;
+            _tX = Math.min(...matched.map(it => it.x)); _tY = Math.min(...matched.map(it => it.y));
+            _tW = Math.max(...matched.map(it => it.x + it.w)) - _tX; _tH = Math.max(...matched.map(it => it.y + it.h)) - _tY;
           }
         } else if (ocrCrop) {
-          // OCR region position
-          textX = Math.max(0, c.x - 10);
-          textY = c.y + c.h;
-          textW = Math.min(pc.width - textX, c.w + 20);
-          textH = Math.min(maxY, pageH) - textY;
+          _tX = Math.max(0, c.x - 10); _tY = c.y + c.h;
+          _tW = Math.min(pc.width - _tX, c.w + 20); _tH = Math.min(maxY, pageH) - _tY;
         }
         allFrames.push({
           src: crop.toDataURL('image/jpeg', 0.93),
@@ -892,7 +886,7 @@ export async function handlePDF(file: File): Promise<void> {
           pageW, pageH,
           imgX: c.x, imgY: c.y, imgW: c.w, imgH: c.h,
           labelX: c.labelItem?.x, labelY: c.labelItem?.y, labelW: c.labelItem?.w, labelH: c.labelItem?.h,
-          textX, textY, textW, textH,
+          textX: _tX, textY: _tY, textW: _tW, textH: _tH,
         });
         if (c.label && c.labelItem) {
           const li = c.labelItem;
@@ -1094,6 +1088,14 @@ export async function handlePDF(file: File): Promise<void> {
               }
             }
             usedLabels.add(labelText);
+            let _rtX: number | undefined, _rtY: number | undefined, _rtW: number | undefined, _rtH: number | undefined;
+            if (txt) {
+              const maxTY = fy + fh + Math.round(pageH * 0.25);
+              const belowItems = textItems.filter(item => item.y >= fy + fh - 10 && item.y <= maxTY && item.x + item.w >= fx - 20 && item.x <= fx + fw + 20);
+              const rightItems = textItems.filter(item => item.x > fx + fw - 10 && item.y >= fy - 20 && item.y <= fy + fh + 20);
+              const matched = rightItems.length > belowItems.length ? rightItems : belowItems;
+              if (matched.length > 0) { _rtX = Math.min(...matched.map(it => it.x)); _rtY = Math.min(...matched.map(it => it.y)); _rtW = Math.max(...matched.map(it => it.x + it.w)) - _rtX; _rtH = Math.max(...matched.map(it => it.y + it.h)) - _rtY; }
+            } else if (ocrCrop) { _rtX = Math.max(0, fx - 10); _rtY = fy + fh; _rtW = Math.min(pc.width - _rtX, fw + 20); _rtH = Math.min(fy + fh + Math.round(pageH * 0.25), pageH) - _rtY; }
             recovered.push({
               src: crop.toDataURL('image/jpeg', 0.93),
               label: labelText,
@@ -1104,6 +1106,10 @@ export async function handlePDF(file: File): Promise<void> {
               pageIdx: pi,
               sortX: tl.x,
               sortY: tl.y,
+              pageW, pageH,
+              imgX: fx, imgY: fy, imgW: fw, imgH: fh,
+              labelX: tl.x, labelY: tl.y, labelW: tl.w, labelH: tl.h,
+              textX: _rtX, textY: _rtY, textW: _rtW, textH: _rtH,
             });
           }
         }
@@ -1164,6 +1170,11 @@ export async function handlePDF(file: File): Promise<void> {
           crop.height = ch;
           crop.getContext('2d')!.drawImage(pc, cx, cy, cw, ch, 0, 0, cw, ch);
           const txt = matchText(textItems, minX, minY, ecW, ecH, maxY + Math.round(pageH * 0.1));
+          let _ecTX: number | undefined, _ecTY: number | undefined, _ecTW: number | undefined, _ecTH: number | undefined;
+          if (txt) {
+            const belowItems = textItems.filter(item => item.y >= minY + ecH - 10 && item.y <= maxY + Math.round(pageH * 0.1) && item.x + item.w >= minX - 20 && item.x <= minX + ecW + 20);
+            if (belowItems.length > 0) { _ecTX = Math.min(...belowItems.map(it => it.x)); _ecTY = Math.min(...belowItems.map(it => it.y)); _ecTW = Math.max(...belowItems.map(it => it.x + it.w)) - _ecTX; _ecTH = Math.max(...belowItems.map(it => it.y + it.h)) - _ecTY; }
+          }
           allFrames.push({
             src: crop.toDataURL('image/jpeg', 0.93),
             label: '',
@@ -1172,6 +1183,9 @@ export async function handlePDF(file: File): Promise<void> {
             textContent: txt || '',
             ocrCrop: null,
             pageIdx: lastIdx,
+            pageW, pageH,
+            imgX: minX, imgY: minY, imgW: ecW, imgH: ecH,
+            textX: _ecTX, textY: _ecTY, textW: _ecTW, textH: _ecTH,
           });
           console.log(`[StripBoard] End-card detected on last page: ${cw}x${ch} at (${cx},${cy})`);
         }
@@ -1223,9 +1237,11 @@ export async function handlePDF(file: File): Promise<void> {
         const pc = await renderPage(page, 2);
         const textItems = await getTextItems(page, 2);
         let label = '';
+        let _fpLabelItem: { x: number; y: number; w: number; h: number } | null = null;
         for (const item of textItems) {
           if (isLabel(item.text) && item.x < pageW * 0.25 && item.y < pageH * 0.2) {
             label = item.text.trim();
+            _fpLabelItem = { x: item.x, y: item.y, w: item.w, h: item.h };
             break;
           }
         }
@@ -1235,6 +1251,7 @@ export async function handlePDF(file: File): Promise<void> {
             if (!ANNOT.test(item.text.trim())) continue;
             if (item.x < pageW * 0.25 && item.y < pageH * 0.25) {
               label = label + ' ' + item.text.trim();
+              if (_fpLabelItem) _fpLabelItem.w = Math.max(_fpLabelItem.w, item.x + item.w - _fpLabelItem.x);
               break;
             }
           }
@@ -1245,6 +1262,10 @@ export async function handlePDF(file: File): Promise<void> {
           cropW: pc.width,
           cropH: pc.height,
           textContent: '',
+          pageIdx: i,
+          pageW, pageH,
+          imgX: 0, imgY: 0, imgW: pageW, imgH: pageH,
+          labelX: _fpLabelItem?.x, labelY: _fpLabelItem?.y, labelW: _fpLabelItem?.w, labelH: _fpLabelItem?.h,
         });
       }
     }
@@ -1272,41 +1293,13 @@ export async function handlePDF(file: File): Promise<void> {
         console.warn('OCR fallback failed:', ocrErr);
       }
     }
-    allFrames.forEach((f) => {
-      delete f.ocrCrop;
-    });
-
-    setProgress(95, 'Building strips…');
-    const s = state();
-    const frameStartIdx = s.frames.length;
-    let nextId = s.nextId;
-    allFrames.forEach((item) => {
-      const id = nextId++;
-      s.frames.push({
-        id,
-        src: item.src,
-        label: item.label,
-        cropW: item.cropW,
-        cropH: item.cropH,
-        strokes: [],
-        drawMode: false,
-        textContent: item.textContent || '',
-        tableData: null,
-      });
-      s.versions[id] = [{ id: 1, label: 'v1', type: 'empty', strokes: [], bgImage: null }];
-      s.activeTab[id] = 0;
-      s.drawColor[id] = COLORS[0];
-      s.drawWidth[id] = 6;
-      s.drawEraser[id] = false;
-    });
-    for (let i = frameStartIdx; i < s.frames.length; i++) {
-      if (!s.frames[i].label) s.frames[i].label = '#' + (i - frameStartIdx + 1);
-    }
-    useStore.setState({ nextId });
-    setProgress(100, 'Done!');
+    setProgress(95, 'Ready for review…');
+    allFrames.forEach((f) => { delete f.ocrCrop; });
     setTimeout(() => document.getElementById('progressOverlay')!.classList.add('hidden'), 300);
-    updateFrameBadge();
-    // toast removed
+
+    // Open the Adjust window with the extraction results
+    const { openPdfAdjustWithResults } = await import('./pdfAdjust');
+    openPdfAdjustWithResults(file, allFrames);
   } catch (err) {
     console.error('[StripBoard] PDF extraction error:', err);
     document.getElementById('progressOverlay')!.classList.add('hidden');
@@ -1324,7 +1317,7 @@ export interface TestFrame {
   cropH: number;
   pageIdx: number;
   ocrCrop?: HTMLCanvasElement | null;
-  // Position data (in scale=2 page coordinates) for the adjust tool
+  // Position data (scale=2 page coords) for Adjust tool
   pageW?: number; pageH?: number;
   imgX?: number; imgY?: number; imgW?: number; imgH?: number;
   labelX?: number; labelY?: number; labelW?: number; labelH?: number;
@@ -1521,20 +1514,6 @@ export async function testExtractPDF(
           ocrCrop.getContext('2d')!.drawImage(pc, ocrX, Math.round(tRegionY), ocrW, Math.round(tRegionH), 0, 0, ocrW, Math.round(tRegionH));
         }
       }
-      // Compute text bounding box
-      let _textX: number | undefined, _textY: number | undefined, _textW: number | undefined, _textH: number | undefined;
-      if (txt) {
-        const belowItems = textItems.filter(item => item.y >= c.y + c.h - 10 && item.y <= maxY && item.x + item.w >= c.x - 20 && item.x <= c.x + c.w + 20);
-        const rightItems = textItems.filter(item => item.x > c.x + c.w - 10 && item.y >= c.y - 20 && item.y <= c.y + c.h + 20);
-        const matched = rightItems.length > belowItems.length ? rightItems : belowItems;
-        if (matched.length > 0) {
-          _textX = Math.min(...matched.map(it => it.x)); _textY = Math.min(...matched.map(it => it.y));
-          _textW = Math.max(...matched.map(it => it.x + it.w)) - _textX; _textH = Math.max(...matched.map(it => it.y + it.h)) - _textY;
-        }
-      } else if (ocrCrop) {
-        _textX = Math.max(0, c.x - 10); _textY = c.y + c.h;
-        _textW = Math.min(pc.width - _textX, c.w + 20); _textH = Math.min(maxY, pageH) - _textY;
-      }
       allFrames.push({
         src: crop.toDataURL('image/jpeg', 0.93),
         label: c.label || '',
@@ -1542,10 +1521,6 @@ export async function testExtractPDF(
         textContent: txt,
         pageIdx: i,
         ocrCrop,
-        pageW, pageH,
-        imgX: c.x, imgY: c.y, imgW: c.w, imgH: c.h,
-        labelX: c.labelItem?.x, labelY: c.labelItem?.y, labelW: c.labelItem?.w, labelH: c.labelItem?.h,
-        textX: _textX, textY: _textY, textW: _textW, textH: _textH,
       });
       if (c.label && c.labelItem) {
         const li = c.labelItem;

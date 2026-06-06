@@ -5,8 +5,8 @@
 
 import * as pdfjsLib from 'pdfjs-dist';
 import { showToast } from './modals';
-import { testExtractPDF } from './pdf';
-import type { TestFrame } from './pdf';
+import { testExtractPDF, getTextItems, matchLabel, matchText } from './pdf';
+import type { TestFrame, ExtractedFrame, TextItem } from './pdf';
 import { COLORS, state, useStore, resetStoryboardState } from '../store/state';
 import { updateFrameBadge } from './helpers';
 
@@ -19,6 +19,7 @@ interface AdjustRect {
   type: 'image' | 'text' | 'label';
   x: number; y: number; w: number; h: number; // relative to page (0–1)
   pageIdx: number;
+  adjusted?: boolean; // true if user moved/resized this rect
 }
 
 interface PageData {
@@ -107,6 +108,102 @@ export function openPdfAdjust(): void {
 
   // Global key handler for delete
   document.addEventListener('keydown', onKeyDown);
+}
+
+/**
+ * Open the Adjust window with pre-extracted frames (called from handlePDF after extraction).
+ * This skips the file picker and extraction — goes straight to showing results.
+ */
+export async function openPdfAdjustWithResults(file: File, frames: ExtractedFrame[]): Promise<void> {
+  // Cast ExtractedFrame[] to work as our internal format
+  _extractedFrames = frames.map(f => ({
+    src: f.src, label: f.label, textContent: f.textContent,
+    cropW: f.cropW, cropH: f.cropH, pageIdx: f.pageIdx || 0,
+    pageW: f.pageW, pageH: f.pageH,
+    imgX: f.imgX, imgY: f.imgY, imgW: f.imgW, imgH: f.imgH,
+    labelX: f.labelX, labelY: f.labelY, labelW: f.labelW, labelH: f.labelH,
+    textX: f.textX, textY: f.textY, textW: f.textW, textH: f.textH,
+  })) as any;
+  _currentFile = file;
+
+  // Open the overlay UI
+  openPdfAdjust();
+
+  // Load the PDF for page rendering
+  try {
+    const ab = await file.arrayBuffer();
+    _pdfDoc = await pdfjsLib.getDocument({ data: ab }).promise;
+    document.getElementById('pdfAdjustFileName')!.textContent = file.name;
+    await renderPagesWithPreExtractedFrames();
+  } catch (err) {
+    showToast('Could not render PDF pages');
+    console.error('[pdfAdjust]', err);
+  }
+}
+
+/** Render pages using pre-extracted frame positions (no re-extraction needed) */
+async function renderPagesWithPreExtractedFrames(): Promise<void> {
+  const container = document.getElementById('pdfAdjustPages')!;
+  container.innerHTML = '';
+  _pages = [];
+
+  for (let p = 1; p <= _pdfDoc.numPages; p++) {
+    const page = await _pdfDoc.getPage(p);
+    const vp = page.getViewport({ scale: RENDER_SCALE });
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(vp.width);
+    canvas.height = Math.round(vp.height);
+    await page.render({ canvasContext: canvas.getContext('2d')!, viewport: vp }).promise;
+
+    const pageData: PageData = {
+      pageNum: p, canvas,
+      width: canvas.width, height: canvas.height,
+      rects: [],
+    };
+    _pages.push(pageData);
+
+    // Build rectangles from pre-extracted frame positions
+    const pageIdx = p - 1;
+    const pageFrames = (_extractedFrames as any[]).filter((f: any) => f.pageIdx === pageIdx);
+    let rectId = 0;
+    for (const f of pageFrames) {
+      if (f.imgX != null && f.imgW != null && f.pageW && f.pageH) {
+        const pw = f.pageW, ph = f.pageH;
+        pageData.rects.push({ id: `p${p}_img_${rectId++}`, type: 'image', pageIdx, x: f.imgX / pw, y: f.imgY / ph, w: f.imgW / pw, h: f.imgH / ph });
+        if (f.labelX != null && f.labelW != null) {
+          pageData.rects.push({ id: `p${p}_lbl_${rectId++}`, type: 'label', pageIdx, x: f.labelX / pw, y: f.labelY / ph, w: f.labelW / pw, h: f.labelH / ph });
+        }
+        if (f.textX != null && f.textW != null) {
+          pageData.rects.push({ id: `p${p}_txt_${rectId++}`, type: 'text', pageIdx, x: f.textX / pw, y: f.textY / ph, w: f.textW / pw, h: f.textH / ph });
+        }
+      }
+    }
+
+    // Build page DOM element
+    const pageEl = document.createElement('div');
+    pageEl.className = 'pdfAdjustPage';
+    pageEl.dataset.pageIdx = String(pageIdx);
+    pageEl.style.cssText = 'position:relative;display:inline-block;border:1px solid #333;';
+    const label = document.createElement('div');
+    label.style.cssText = 'position:absolute;top:-20px;left:0;font-size:11px;color:#666;font-family:monospace;';
+    label.textContent = `Page ${p} — ${pageFrames.length} frame${pageFrames.length !== 1 ? 's' : ''}`;
+    pageEl.appendChild(label);
+    canvas.style.cssText = 'display:block;max-width:90vw;height:auto;';
+    pageEl.appendChild(canvas);
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', `0 0 ${canvas.width} ${canvas.height}`);
+    svg.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;';
+    svg.id = `pdfAdjustSvg_${pageIdx}`;
+    pageEl.appendChild(svg);
+    const interactLayer = document.createElement('div');
+    interactLayer.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;cursor:crosshair;touch-action:pan-y;';
+    interactLayer.dataset.pageIdx = String(pageIdx);
+    wireInteraction(interactLayer, pageIdx);
+    pageEl.appendChild(interactLayer);
+    container.appendChild(pageEl);
+    renderRectsForPage(pageIdx);
+  }
+  showToast(`${(_extractedFrames as any[]).length} frames — review and press Apply`);
 }
 
 export function closePdfAdjust(): void {
@@ -542,6 +639,7 @@ function wireInteraction(el: HTMLElement, pageIdx: number): void {
   }
 
   function onUp(): void {
+    if (isDown && _activeRect) _activeRect.adjusted = true;
     isDown = false;
     _dragHandle = null;
   }
@@ -579,6 +677,7 @@ function addRectToCurrentPage(type: 'image' | 'text' | 'label'): void {
     type,
     x: 0.2, y: 0.2, w: 0.3, h: 0.2,
     pageIdx: targetIdx,
+    adjusted: true, // user-added = always run snap-to-content
   };
   page.rects.push(newRect);
   _activeRect = newRect;
@@ -597,41 +696,196 @@ function onKeyDown(e: KeyboardEvent): void {
 }
 
 // ---------------------------------------------------------------------------
+// Snap to content: for user-adjusted/added rects, find actual image borders
+// within the rectangle area by trimming white/background from edges.
+// ---------------------------------------------------------------------------
+
+function snapToContent(canvas: HTMLCanvasElement, rx: number, ry: number, rw: number, rh: number): { x: number; y: number; w: number; h: number } {
+  const ctx = canvas.getContext('2d')!;
+  const x0 = Math.max(0, rx), y0 = Math.max(0, ry);
+  const x1 = Math.min(canvas.width, rx + rw), y1 = Math.min(canvas.height, ry + rh);
+  const w = x1 - x0, h = y1 - y0;
+  if (w < 10 || h < 10) return { x: rx, y: ry, w: rw, h: rh };
+
+  const imgData = ctx.getImageData(x0, y0, w, h).data;
+  const THRESHOLD = 240; // pixel lighter than this = "white/background"
+
+  // Scan from each edge inward to find content
+  function rowHasContent(row: number): boolean {
+    for (let col = 0; col < w; col++) {
+      const idx = (row * w + col) * 4;
+      if (imgData[idx] < THRESHOLD || imgData[idx + 1] < THRESHOLD || imgData[idx + 2] < THRESHOLD) return true;
+    }
+    return false;
+  }
+  function colHasContent(col: number): boolean {
+    for (let row = 0; row < h; row++) {
+      const idx = (row * w + col) * 4;
+      if (imgData[idx] < THRESHOLD || imgData[idx + 1] < THRESHOLD || imgData[idx + 2] < THRESHOLD) return true;
+    }
+    return false;
+  }
+
+  let top = 0, bottom = h - 1, left = 0, right = w - 1;
+  while (top < h && !rowHasContent(top)) top++;
+  while (bottom > top && !rowHasContent(bottom)) bottom--;
+  while (left < w && !colHasContent(left)) left++;
+  while (right > left && !colHasContent(right)) right--;
+
+  // Don't trim more than 20% from any edge (user's rect is a hint, not wildly off)
+  const maxTrim = Math.min(w, h) * 0.2;
+  top = Math.min(top, maxTrim);
+  left = Math.min(left, maxTrim);
+  bottom = Math.max(bottom, h - 1 - maxTrim);
+  right = Math.max(right, w - 1 - maxTrim);
+
+  return {
+    x: x0 + left,
+    y: y0 + top,
+    w: right - left + 1,
+    h: bottom - top + 1,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Apply — re-extract with adjusted rectangles
 // ---------------------------------------------------------------------------
 
 async function onApply(): Promise<void> {
-  if (!_extractedFrames.length) {
-    showToast('No frames to apply');
+  if (!_pdfDoc || _pages.length === 0) {
+    showToast('No PDF loaded');
     return;
   }
 
-  // Store frames locally before closing (closePdfAdjust clears _extractedFrames)
-  const framesToLoad = [..._extractedFrames];
+  const imageRects = _pages.flatMap(p => p.rects.filter(r => r.type === 'image'));
+  if (imageRects.length === 0) {
+    showToast('No image frames to apply');
+    return;
+  }
+
+  showToast('Applying adjustments…');
   const fileName = _currentFile?.name.replace(/\.pdf$/i, '') || '';
+  const SCALE = 2;
 
-  closePdfAdjust();
-
-  // Reset the storyboard and load extracted frames — same logic as handlePDF
   try {
+    // Re-crop from the PDF using the ADJUSTED rectangle positions
+    const framesToLoad: { src: string; label: string; cropW: number; cropH: number; textContent: string; pageIdx?: number; sortY?: number; sortX?: number }[] = [];
+
+    for (let pi = 0; pi < _pages.length; pi++) {
+      const pageData = _pages[pi];
+      const page = await _pdfDoc.getPage(pi + 1);
+      const vp = page.getViewport({ scale: SCALE });
+      const pageW = Math.round(vp.width);
+      const pageH = Math.round(vp.height);
+
+      // Render page at scale=2 for cropping
+      const pc = document.createElement('canvas');
+      pc.width = pageW; pc.height = pageH;
+      await page.render({ canvasContext: pc.getContext('2d')!, viewport: vp }).promise;
+
+      // Get text items for this page
+      const textItems = await getTextItems(page, SCALE);
+
+      // Get image rects on this page (sorted top-to-bottom, left-to-right)
+      const pageImageRects = pageData.rects
+        .filter(r => r.type === 'image')
+        .sort((a, b) => a.y - b.y || a.x - b.x);
+
+      // Build row clusters for text matching (same as handlePDF)
+      const rowTops = [...new Set(pageImageRects.map(r => Math.round(r.y * pageH)))].sort((a, b) => a - b);
+      const rowClusters: number[] = [];
+      for (const yt of rowTops) {
+        if (rowClusters.length === 0 || yt - rowClusters[rowClusters.length - 1] > 40) rowClusters.push(yt);
+      }
+
+      for (const imgRect of pageImageRects) {
+        // Convert relative coords to page pixels (scale=2)
+        let ix = Math.round(imgRect.x * pageW);
+        let iy = Math.round(imgRect.y * pageH);
+        let iw = Math.round(imgRect.w * pageW);
+        let ih = Math.round(imgRect.h * pageH);
+
+        // Snap to content: if user adjusted this rect, find actual image borders
+        // within the rectangle area (trim whitespace/background from edges)
+        if (imgRect.adjusted) {
+          const snapped = snapToContent(pc, ix, iy, iw, ih);
+          ix = snapped.x; iy = snapped.y; iw = snapped.w; ih = snapped.h;
+        }
+
+        // Crop image
+        const crop = document.createElement('canvas');
+        const pad = 3;
+        const cx = Math.max(0, ix - pad), cy = Math.max(0, iy - pad);
+        const cw = Math.min(pageW - cx, iw + pad * 2), ch = Math.min(pageH - cy, ih + pad * 2);
+        crop.width = cw; crop.height = ch;
+        crop.getContext('2d')!.drawImage(pc, cx, cy, cw, ch, 0, 0, cw, ch);
+
+        // Use matchLabel — same logic as handlePDF (finds label above/left of frame)
+        const labelResult = matchLabel(textItems, ix, iy, iw, ih, true) as { text: string } | null;
+        const label = labelResult ? labelResult.text : '';
+
+        // Use matchText — same logic as handlePDF (finds text below/right of frame)
+        const nextRowY = rowClusters.find(ry => ry > iy + ih * 0.5);
+        const maxY = nextRowY !== undefined ? nextRowY : pageH;
+        const textContent = matchText(textItems, ix, iy, iw, ih, maxY);
+
+        framesToLoad.push({
+          src: crop.toDataURL('image/jpeg', 0.93),
+          label,
+          cropW: cw,
+          cropH: ch,
+          textContent,
+          pageIdx: pi,
+          sortY: iy,
+          sortX: ix,
+        });
+      }
+    }
+
+    // Sort frames by position: page order, then top-to-bottom, left-to-right
+    // (same row = within 50% of frame height, then by X)
+    if (framesToLoad.length > 1) {
+      const medH = framesToLoad.map(f => f.cropH).sort((a, b) => a - b)[Math.floor(framesToLoad.length / 2)] || 100;
+      const rowBucket = medH * 0.5;
+      framesToLoad.sort((a, b) => {
+        if ((a.pageIdx ?? 0) !== (b.pageIdx ?? 0)) return (a.pageIdx ?? 0) - (b.pageIdx ?? 0);
+        const rowA = Math.floor((a.sortY ?? 0) / rowBucket);
+        const rowB = Math.floor((b.sortY ?? 0) / rowBucket);
+        return rowA !== rowB ? rowA - rowB : (a.sortX ?? 0) - (b.sortX ?? 0);
+      });
+    }
+
+    // Label sequencing: if labels have numeric prefixes, ensure they follow
+    // the spatial order. Detect gaps in numbering.
+    const numberedLabels: { idx: number; num: number; suffix: string; label: string }[] = [];
+    for (let fi = 0; fi < framesToLoad.length; fi++) {
+      const lbl = framesToLoad[fi].label || '';
+      const m = lbl.match(/^(\d+)(.*)$/);
+      if (m) numberedLabels.push({ idx: fi, num: parseInt(m[1]), suffix: m[2], label: lbl });
+    }
+    if (numberedLabels.length >= 2) {
+      // Sort labels numerically and re-assign to frames in spatial order
+      const labelsSorted = [...numberedLabels].sort((a, b) => a.num !== b.num ? a.num - b.num : a.suffix.localeCompare(b.suffix));
+      for (let i = 0; i < numberedLabels.length; i++) {
+        framesToLoad[numberedLabels[i].idx].label = labelsSorted[i].label;
+      }
+    }
+
+    closePdfAdjust();
+
+    // Load into app
     resetStoryboardState();
     if (fileName) useStore.setState({ lastPdfName: fileName });
-
     const s = state();
     const frameStartIdx = s.frames.length;
     let nextId = s.nextId;
     for (const item of framesToLoad) {
       const id = nextId++;
       s.frames.push({
-        id,
-        src: item.src,
-        label: item.label,
-        cropW: item.cropW,
-        cropH: item.cropH,
-        strokes: [],
-        drawMode: false,
-        textContent: item.textContent || '',
-        tableData: null,
+        id, src: item.src, label: item.label,
+        cropW: item.cropW, cropH: item.cropH,
+        strokes: [], drawMode: false,
+        textContent: item.textContent || '', tableData: null,
       });
       s.versions[id] = [{ id: 1, label: 'v1', type: 'empty', strokes: [], bgImage: null }];
       s.activeTab[id] = 0;
@@ -644,14 +898,10 @@ async function onApply(): Promise<void> {
     }
     useStore.setState({ nextId });
     updateFrameBadge();
-    showToast(`${framesToLoad.length} frames loaded`);
-
-    // Trigger render after a tick to ensure overlay is fully removed
-    requestAnimationFrame(() => {
-      (window as any).__fh_renderAll?.();
-    });
+    showToast(`${framesToLoad.length} frames loaded from adjusted positions`);
+    requestAnimationFrame(() => { (window as any).__fh_renderAll?.(); });
   } catch (err) {
     console.error('[pdfAdjust] Apply failed:', err);
-    showToast('Error loading frames');
+    showToast('Error applying adjustments');
   }
 }
