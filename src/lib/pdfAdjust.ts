@@ -7,6 +7,8 @@ import * as pdfjsLib from 'pdfjs-dist';
 import { showToast } from './modals';
 import { testExtractPDF, getTextItems, matchLabel, matchText } from './pdf';
 import type { TestFrame, ExtractedFrame, TextItem } from './pdf';
+// @ts-ignore
+import { createWorker } from 'tesseract.js';
 import { COLORS, state, useStore, resetStoryboardState } from '../store/state';
 import { updateFrameBadge } from './helpers';
 
@@ -798,6 +800,37 @@ async function onApply(): Promise<void> {
         if (rowClusters.length === 0 || yt - rowClusters[rowClusters.length - 1] > 40) rowClusters.push(yt);
       }
 
+      // Pre-read user-added/adjusted red rectangles on this page
+      // These will fill in gaps AFTER matchLabel runs for each image.
+      // Uses text layer first, OCR fallback if text layer is empty.
+      const userLabelRects = pageData.rects
+        .filter(r => r.type === 'label' && r.adjusted)
+        .sort((a, b) => a.y - b.y || a.x - b.x);
+      const userLabelTexts: { text: string; x: number; y: number }[] = [];
+      for (const lr of userLabelRects) {
+        const lx = Math.round(lr.x * pageW), ly = Math.round(lr.y * pageH);
+        const lw = Math.round(lr.w * pageW), lh = Math.round(lr.h * pageH);
+        // Try text layer first
+        const items = textItems.filter(t => t.x + t.w > lx && t.x < lx + lw && t.y + t.h > ly && t.y < ly + lh);
+        let text = items.map(t => t.text).join(' ').trim();
+        // OCR fallback if text layer is empty
+        if (!text && lw > 5 && lh > 5) {
+          const ocrCrop = document.createElement('canvas');
+          ocrCrop.width = lw; ocrCrop.height = lh;
+          ocrCrop.getContext('2d')!.drawImage(pc, lx, ly, lw, lh, 0, 0, lw, lh);
+          try {
+            const worker = await createWorker('eng', 1, {
+              workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/worker.min.js',
+              corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5/tesseract-core.wasm.js',
+            } as any);
+            const result = await worker.recognize(ocrCrop.toDataURL('image/png'));
+            text = (result.data.text || '').trim();
+            await worker.terminate();
+          } catch { /* silent */ }
+        }
+        if (text) userLabelTexts.push({ text, x: lx, y: ly });
+      }
+
       for (const imgRect of pageImageRects) {
         // Convert relative coords to page pixels (scale=2)
         let ix = Math.round(imgRect.x * pageW);
@@ -820,14 +853,16 @@ async function onApply(): Promise<void> {
         crop.width = cw; crop.height = ch;
         crop.getContext('2d')!.drawImage(pc, cx, cy, cw, ch, 0, 0, cw, ch);
 
-        // Use matchLabel — same logic as handlePDF (finds label above/left of frame)
-        const labelResult = matchLabel(textItems, ix, iy, iw, ih, true) as { text: string } | null;
-        const label = labelResult ? labelResult.text : '';
+        // Label: matchLabel first to get the automatic detection
+        const labelResult = matchLabel(textItems, ix, iy, iw, ih, true) as { text: string; item?: TextItem } | null;
+        let label = labelResult ? labelResult.text : '';
 
         // Use matchText — same logic as handlePDF (finds text below/right of frame)
         const nextRowY = rowClusters.find(ry => ry > iy + ih * 0.5);
         const maxY = nextRowY !== undefined ? nextRowY : pageH;
-        const textContent = matchText(textItems, ix, iy, iw, ih, maxY);
+        let textContent = matchText(textItems, ix, iy, iw, ih, maxY);
+
+        // User blue rects will be matched by pattern AFTER the page loop (same as red rects)
 
         framesToLoad.push({
           src: crop.toDataURL('image/jpeg', 0.93),
@@ -839,6 +874,130 @@ async function onApply(): Promise<void> {
           sortY: iy,
           sortX: ix,
         });
+      }
+
+      // Pattern-based label override: use the SPATIAL PATTERN of existing
+      // label-image relationships to assign user-added/adjusted red rects.
+      // 1. Compute median offset between auto-detected labels and their images
+      // 2. For each user red rect, find which image it "belongs to" using that pattern
+      // 3. Override that image's label
+      if (userLabelTexts.length > 0) {
+        const pageFrameStart = framesToLoad.length - pageImageRects.length;
+        const pageFrames = framesToLoad.slice(pageFrameStart);
+
+        // Compute pattern: how do auto-detected labels relate to images?
+        // Use the original extraction's label-to-image offsets
+        const offsets: { dx: number; dy: number }[] = [];
+        const autoLabelRects = pageData.rects.filter(r => r.type === 'label' && !r.adjusted);
+        for (const lr of autoLabelRects) {
+          const lx = Math.round(lr.x * pageW), ly = Math.round(lr.y * pageH);
+          // Find the image this auto-label was closest to
+          let nearestImg: typeof pageImageRects[0] | null = null;
+          let nearDist = Infinity;
+          for (const ir of pageImageRects) {
+            const iix = Math.round(ir.x * pageW), iiy = Math.round(ir.y * pageH);
+            const d = Math.abs(lx - iix) + Math.abs(ly - iiy);
+            if (d < nearDist) { nearDist = d; nearestImg = ir; }
+          }
+          if (nearestImg) {
+            offsets.push({ dx: Math.round(nearestImg.x * pageW) - lx, dy: Math.round(nearestImg.y * pageH) - ly });
+          }
+        }
+
+        // Median offset (the "pattern")
+        let medDx = 0, medDy = 0;
+        if (offsets.length > 0) {
+          const dxs = offsets.map(o => o.dx).sort((a, b) => a - b);
+          const dys = offsets.map(o => o.dy).sort((a, b) => a - b);
+          medDx = dxs[Math.floor(dxs.length / 2)];
+          medDy = dys[Math.floor(dys.length / 2)];
+        }
+
+        // For each user red rect: find the image it belongs to using the pattern
+        for (const ul of userLabelTexts) {
+          // Expected image position based on pattern
+          const expectedImgX = ul.x + medDx;
+          const expectedImgY = ul.y + medDy;
+          // Find closest image to expected position
+          let bestFrame: typeof pageFrames[0] | null = null;
+          let bestDist = Infinity;
+          for (const pf of pageFrames) {
+            const dist = Math.abs((pf.sortX ?? 0) - expectedImgX) + Math.abs((pf.sortY ?? 0) - expectedImgY);
+            if (dist < bestDist) { bestDist = dist; bestFrame = pf; }
+          }
+          if (bestFrame) {
+            bestFrame.label = ul.text; // OVERRIDE with user's label
+          }
+        }
+      }
+
+      // Same pattern logic for user-added/adjusted BLUE text rects
+      const userTextRects = pageData.rects.filter(r => r.type === 'text' && r.adjusted);
+      if (userTextRects.length > 0) {
+        const pageFrameStart = framesToLoad.length - pageImageRects.length;
+        const pageFrames = framesToLoad.slice(pageFrameStart);
+
+        // Compute text-to-image offset pattern from auto-detected text rects
+        const textOffsets: { dx: number; dy: number }[] = [];
+        const autoTextRects = pageData.rects.filter(r => r.type === 'text' && !r.adjusted);
+        for (const tr of autoTextRects) {
+          const tx = Math.round(tr.x * pageW), ty = Math.round(tr.y * pageH);
+          let nearestImg: typeof pageImageRects[0] | null = null;
+          let nearDist = Infinity;
+          for (const ir of pageImageRects) {
+            const iix = Math.round(ir.x * pageW), iiy = Math.round(ir.y * pageH);
+            const d = Math.abs(tx - iix) + Math.abs(ty - iiy);
+            if (d < nearDist) { nearDist = d; nearestImg = ir; }
+          }
+          if (nearestImg) {
+            textOffsets.push({ dx: Math.round(nearestImg.x * pageW) - tx, dy: Math.round(nearestImg.y * pageH) - ty });
+          }
+        }
+        let textMedDx = 0, textMedDy = 0;
+        if (textOffsets.length > 0) {
+          const dxs = textOffsets.map(o => o.dx).sort((a, b) => a - b);
+          const dys = textOffsets.map(o => o.dy).sort((a, b) => a - b);
+          textMedDx = dxs[Math.floor(dxs.length / 2)];
+          textMedDy = dys[Math.floor(dys.length / 2)];
+        }
+
+        for (const tr of userTextRects) {
+          const tx = Math.round(tr.x * pageW), ty = Math.round(tr.y * pageH);
+          const tw = Math.round(tr.w * pageW), th = Math.round(tr.h * pageH);
+
+          // Read text from this rect (text layer + OCR fallback)
+          const txtItems = textItems.filter(t => t.x + t.w > tx && t.x < tx + tw && t.y + t.h > ty && t.y < ty + th);
+          let userText = txtItems.sort((a, b) => a.y - b.y || a.x - b.x).map(t => t.text).join(' ').trim();
+          if (!userText && tw > 10 && th > 10) {
+            try {
+              const ocrCrop = document.createElement('canvas');
+              ocrCrop.width = tw; ocrCrop.height = th;
+              ocrCrop.getContext('2d')!.drawImage(pc, tx, ty, tw, th, 0, 0, tw, th);
+              const worker = await createWorker('eng', 1, {
+                workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/worker.min.js',
+                corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5/tesseract-core.wasm.js',
+              } as any);
+              const result = await worker.recognize(ocrCrop.toDataURL('image/png'));
+              userText = (result.data.text || '').trim();
+              await worker.terminate();
+            } catch { /* silent */ }
+          }
+
+          if (userText) {
+            // Find which image this text belongs to using the pattern
+            const expectedImgX = tx + textMedDx;
+            const expectedImgY = ty + textMedDy;
+            let bestFrame: typeof pageFrames[0] | null = null;
+            let bestDist = Infinity;
+            for (const pf of pageFrames) {
+              const dist = Math.abs((pf.sortX ?? 0) - expectedImgX) + Math.abs((pf.sortY ?? 0) - expectedImgY);
+              if (dist < bestDist) { bestDist = dist; bestFrame = pf; }
+            }
+            if (bestFrame) {
+              bestFrame.textContent = userText; // OVERRIDE with user's text
+            }
+          }
+        }
       }
     }
 
