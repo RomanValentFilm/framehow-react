@@ -584,11 +584,13 @@ function wireInteraction(el: HTMLElement, pageIdx: number): void {
   function findHit(pos: { x: number; y: number }): { rect: AdjustRect; handle: string } | null {
     const page = _pages[pageIdx];
     if (!page) return null;
-    const HANDLE_R = 0.015; // relative handle hit radius
 
-    // Check active rect's handles first
+    // Check active rect's handles first — handle radius scales with rect size
+    // so small rects (labels/numbers) are easy to grab and move, not just resize.
     if (_activeRect && _activeRect.pageIdx === pageIdx) {
       const r = _activeRect;
+      const minDim = Math.min(r.w, r.h);
+      const handleR = Math.max(0.005, Math.min(0.015, minDim * 0.15));
       const corners = [
         { x: r.x, y: r.y, name: 'nw' },
         { x: r.x + r.w, y: r.y, name: 'ne' },
@@ -596,7 +598,7 @@ function wireInteraction(el: HTMLElement, pageIdx: number): void {
         { x: r.x + r.w, y: r.y + r.h, name: 'se' },
       ];
       for (const c of corners) {
-        if (Math.abs(pos.x - c.x) < HANDLE_R && Math.abs(pos.y - c.y) < HANDLE_R) {
+        if (Math.abs(pos.x - c.x) < handleR && Math.abs(pos.y - c.y) < handleR) {
           return { rect: r, handle: c.name };
         }
       }
