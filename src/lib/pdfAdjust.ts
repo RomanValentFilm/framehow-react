@@ -695,15 +695,17 @@ function addRectToCurrentPage(type: 'image' | 'text' | 'label'): void {
   const page = _pages[targetIdx];
   if (!page) return;
 
-  // Smart default size: use median size of existing rects of the same type
-  // across all pages, then add 3% so the user only needs to move, not resize.
+  // Smart default size: use median size of existing rects of the same type.
+  // Labels/numbers get +20% (small rects need more margin to grab easily).
+  // Images and text get +3%.
   let defW = 0.3, defH = 0.2; // fallback
   const sameTypeRects = _pages.flatMap(p => p.rects.filter(r => r.type === type));
   if (sameTypeRects.length > 0) {
     const ws = sameTypeRects.map(r => r.w).sort((a, b) => a - b);
     const hs = sameTypeRects.map(r => r.h).sort((a, b) => a - b);
-    defW = ws[Math.floor(ws.length / 2)] * 1.03;
-    defH = hs[Math.floor(hs.length / 2)] * 1.03;
+    const scale = type === 'label' ? 1.20 : 1.03;
+    defW = ws[Math.floor(ws.length / 2)] * scale;
+    defH = hs[Math.floor(hs.length / 2)] * scale;
   }
 
   const newRect: AdjustRect = {
@@ -940,9 +942,13 @@ async function onApply(): Promise<void> {
       const textItemsNoLabels = textItems.filter(t => !isInsideRedZone(t));
 
       // =================================================================
-      // STEP C: Process EVERY image rect — crop, label, text.
-      // Uses full textItems for matchLabel but FILTERED for matchText.
+      // STEP C: Process EVERY image rect — crop + text.
+      // Labels come ONLY from red rects (Step D). If no red rects on the
+      // page, fall back to matchLabel. This prevents the duplicate-label
+      // bug where matchLabel assigns the same text to multiple images.
       // =================================================================
+      const hasRedRects = allLabelRects.length > 0;
+
       for (const imgRect of pageImageRects) {
         try {
           let ix = Math.round(imgRect.x * pageW);
@@ -962,11 +968,15 @@ async function onApply(): Promise<void> {
           crop.width = cw; crop.height = ch;
           crop.getContext('2d')!.drawImage(pc, cx, cy, cw, ch, 0, 0, cw, ch);
 
-          // matchLabel uses FULL textItems (it needs to see label text)
-          const labelResult = matchLabel(textItems, ix, iy, iw, ih, true) as { text: string; item?: TextItem } | null;
-          let label = labelResult ? labelResult.text : '';
+          // Label: ONLY from red rects (assigned in Step D).
+          // Fall back to matchLabel only if this page has NO red rects at all.
+          let label = '';
+          if (!hasRedRects) {
+            const labelResult = matchLabel(textItems, ix, iy, iw, ih, true) as { text: string; item?: TextItem } | null;
+            label = labelResult ? labelResult.text : '';
+          }
 
-          // matchText uses FILTERED textItems (excludes red-zone numbers)
+          // Text: uses FILTERED textItems (excludes red-zone numbers)
           const nextRowY = rowClusters.find(ry => ry > iy + ih * 0.5);
           const maxY = nextRowY !== undefined ? nextRowY : pageH;
           let textContent = matchText(textItemsNoLabels, ix, iy, iw, ih, maxY);
@@ -994,13 +1004,17 @@ async function onApply(): Promise<void> {
             const cw = Math.min(pageW - cx, iw + pad * 2), ch = Math.min(pageH - cy, ih + pad * 2);
             crop.width = cw; crop.height = ch;
             crop.getContext('2d')!.drawImage(pc, cx, cy, cw, ch, 0, 0, cw, ch);
-            const lr = matchLabel(textItems, ix, iy, iw, ih, true) as { text: string } | null;
+            let label = '';
+            if (!hasRedRects) {
+              const lr = matchLabel(textItems, ix, iy, iw, ih, true) as { text: string } | null;
+              label = lr ? lr.text : '';
+            }
             const nextRowY = rowClusters.find(ry => ry > iy + ih * 0.5);
             const maxY = nextRowY !== undefined ? nextRowY : pageH;
             const tc = matchText(textItemsNoLabels, ix, iy, iw, ih, maxY);
             framesToLoad.push({
               src: crop.toDataURL('image/jpeg', 0.93),
-              label: lr ? lr.text : '', cropW: cw, cropH: ch, textContent: tc,
+              label, cropW: cw, cropH: ch, textContent: tc,
               pageIdx: pi, sortY: iy, sortX: ix, rectId: imgRect.id,
             });
             processedRectIds.add(imgRect.id);
@@ -1292,20 +1306,9 @@ async function onApply(): Promise<void> {
       });
     }
 
-    // Label sequencing
-    setApplyProgress(88, 'Sequencing labels…');
-    const numberedLabels: { idx: number; num: number; suffix: string; label: string }[] = [];
-    for (let fi = 0; fi < framesToLoad.length; fi++) {
-      const lbl = framesToLoad[fi].label || '';
-      const m = lbl.match(/^(\d+)(.*)$/);
-      if (m) numberedLabels.push({ idx: fi, num: parseInt(m[1]), suffix: m[2], label: lbl });
-    }
-    if (numberedLabels.length >= 2) {
-      const labelsSorted = [...numberedLabels].sort((a, b) => a.num !== b.num ? a.num - b.num : a.suffix.localeCompare(b.suffix));
-      for (let i = 0; i < numberedLabels.length; i++) {
-        framesToLoad[numberedLabels[i].idx].label = labelsSorted[i].label;
-      }
-    }
+    // Labels from red rects are authoritative — no re-sequencing.
+    // The user/extraction placed specific numbers on specific images.
+    setApplyProgress(88, 'Finalising labels…');
 
     setApplyProgress(92, 'Loading into app…', `${framesToLoad.length} frames`);
     await new Promise(r => setTimeout(r, 50));
