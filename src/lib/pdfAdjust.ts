@@ -59,6 +59,22 @@ const RECT_BORDERS = {
 };
 
 // ---------------------------------------------------------------------------
+// Live counter: image + number rects across all pages
+// ---------------------------------------------------------------------------
+
+function updateRectCounts(): void {
+  const imageCount = _pages.reduce((sum, p) => sum + p.rects.filter(r => r.type === 'image').length, 0);
+  const labelCount = _pages.reduce((sum, p) => sum + p.rects.filter(r => r.type === 'label').length, 0);
+  const el = document.getElementById('pdfAdjustCounter');
+  if (el) {
+    el.innerHTML =
+      `<span style="color:#00c850">${imageCount}</span> Image${imageCount !== 1 ? 's' : ''}` +
+      `  ·  ` +
+      `<span style="color:#ff3c3c">${labelCount}</span> Number${labelCount !== 1 ? 's' : ''}`;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Open the adjustment overlay
 // ---------------------------------------------------------------------------
 
@@ -74,6 +90,7 @@ export function openPdfAdjust(): void {
   overlay.innerHTML = `
     <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:#1a1a1a;border-bottom:1px solid #333;flex-shrink:0;">
       <span style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;font-size:15px;font-weight:600;color:#fff;">Adjust PDF Import</span>
+      <span id="pdfAdjustCounter" style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;font-size:13px;color:#888;flex:1;text-align:center;"></span>
       <div style="display:flex;gap:8px;">
         <button id="pdfAdjustAddImage" style="padding:5px 12px;border-radius:6px;border:1px solid #00c850;background:transparent;color:#00c850;font-size:12px;cursor:pointer;">+ Image</button>
         <button id="pdfAdjustAddText" style="padding:5px 12px;border-radius:6px;border:1px solid #3c82ff;background:transparent;color:#3c82ff;font-size:12px;cursor:pointer;">+ Text</button>
@@ -205,6 +222,7 @@ async function renderPagesWithPreExtractedFrames(): Promise<void> {
     container.appendChild(pageEl);
     renderRectsForPage(pageIdx);
   }
+  updateRectCounts();
   showToast(`${(_extractedFrames as any[]).length} frames — review and press Apply`);
 }
 
@@ -339,6 +357,7 @@ async function renderAllPages(): Promise<void> {
     container.appendChild(pageEl);
     renderRectsForPage(pageIdx);
   }
+  updateRectCounts();
   showToast(`Ready — ${extractedFrames.length} frames across ${_pdfDoc.numPages} pages`);
 }
 
@@ -684,6 +703,7 @@ function addRectToCurrentPage(type: 'image' | 'text' | 'label'): void {
   page.rects.push(newRect);
   _activeRect = newRect;
   renderRectsForPage(targetIdx);
+  updateRectCounts();
 }
 
 function onKeyDown(e: KeyboardEvent): void {
@@ -693,6 +713,7 @@ function onKeyDown(e: KeyboardEvent): void {
       page.rects = page.rects.filter(r => r.id !== _activeRect!.id);
       renderRectsForPage(_activeRect.pageIdx);
       _activeRect = null;
+      updateRectCounts();
     }
   }
 }
@@ -759,22 +780,80 @@ async function onApply(): Promise<void> {
     return;
   }
 
-  const imageRects = _pages.flatMap(p => p.rects.filter(r => r.type === 'image'));
-  if (imageRects.length === 0) {
+  // Collect ALL image rects across ALL pages — this is the source of truth
+  const allImageRects: { rect: AdjustRect; pageIdx: number }[] = [];
+  for (let pi = 0; pi < _pages.length; pi++) {
+    for (const r of _pages[pi].rects) {
+      if (r.type === 'image') allImageRects.push({ rect: r, pageIdx: pi });
+    }
+  }
+  const expectedCount = allImageRects.length;
+  if (expectedCount === 0) {
     showToast('No image frames to apply');
     return;
   }
 
-  showToast('Applying adjustments…');
+  console.log(`[pdfAdjust] Apply: ${expectedCount} image rects across ${_pages.length} pages`);
+  for (let pi = 0; pi < _pages.length; pi++) {
+    const pgImgs = _pages[pi].rects.filter(r => r.type === 'image').length;
+    if (pgImgs > 0) console.log(`  Page ${pi + 1}: ${pgImgs} images`);
+  }
+
+  // --- Show progress bar inside the Adjust overlay ---
+  const applyBtn = document.getElementById('pdfAdjustApply') as HTMLButtonElement;
+  if (applyBtn) { applyBtn.disabled = true; applyBtn.style.opacity = '0.5'; }
+  const addBtns = ['pdfAdjustAddImage', 'pdfAdjustAddText', 'pdfAdjustAddLabel'];
+  addBtns.forEach(id => { const b = document.getElementById(id) as HTMLButtonElement; if (b) { b.disabled = true; b.style.opacity = '0.5'; } });
+
+  const pagesContainer = document.getElementById('pdfAdjustPages')!;
+  pagesContainer.innerHTML = '';
+  const progressWrap = document.createElement('div');
+  progressWrap.style.cssText = 'display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:16px;';
+  progressWrap.innerHTML = `
+    <div id="pdfAdjustProgressLabel" style="font-size:15px;color:#ccc;font-family:-apple-system,BlinkMacSystemFont,sans-serif;font-weight:600;">Applying adjustments…</div>
+    <div style="width:60%;max-width:400px;height:6px;background:#333;border-radius:3px;overflow:hidden;">
+      <div id="pdfAdjustProgressBar" style="width:0%;height:100%;background:#c94432;transition:width 0.15s;border-radius:3px;"></div>
+    </div>
+    <div id="pdfAdjustProgressDetail" style="font-size:12px;color:#666;font-family:monospace;"></div>
+  `;
+  pagesContainer.appendChild(progressWrap);
+
+  function setApplyProgress(pct: number, label: string, detail?: string): void {
+    const bar = document.getElementById('pdfAdjustProgressBar');
+    const lbl = document.getElementById('pdfAdjustProgressLabel');
+    const det = document.getElementById('pdfAdjustProgressDetail');
+    if (bar) bar.style.width = Math.min(100, pct) + '%';
+    if (lbl) lbl.textContent = label;
+    if (det) det.textContent = detail || '';
+  }
+
+  // Yield to let the UI paint the progress bar
+  await new Promise(r => setTimeout(r, 50));
+
   const fileName = _currentFile?.name.replace(/\.pdf$/i, '') || '';
   const SCALE = 2;
 
   try {
-    // Re-crop from the PDF using the ADJUSTED rectangle positions
-    const framesToLoad: { src: string; label: string; cropW: number; cropH: number; textContent: string; pageIdx?: number; sortY?: number; sortX?: number }[] = [];
+    const framesToLoad: { src: string; label: string; cropW: number; cropH: number; textContent: string; pageIdx?: number; sortY?: number; sortX?: number; rectId?: string }[] = [];
+    const processedRectIds = new Set<string>();
+    let processedSoFar = 0;
 
     for (let pi = 0; pi < _pages.length; pi++) {
       const pageData = _pages[pi];
+      const pageImageRects = pageData.rects
+        .filter(r => r.type === 'image')
+        .sort((a, b) => a.y - b.y || a.x - b.x);
+
+      // Skip pages with no image rects
+      if (pageImageRects.length === 0) continue;
+
+      setApplyProgress(
+        Math.round((processedSoFar / expectedCount) * 80),
+        `Processing page ${pi + 1} of ${_pages.length}…`,
+        `${processedSoFar} / ${expectedCount} frames`
+      );
+      await new Promise(r => setTimeout(r, 10)); // yield for UI
+
       const page = await _pdfDoc.getPage(pi + 1);
       const vp = page.getViewport({ scale: SCALE });
       const pageW = Math.round(vp.width);
@@ -788,11 +867,6 @@ async function onApply(): Promise<void> {
       // Get text items for this page
       const textItems = await getTextItems(page, SCALE);
 
-      // Get image rects on this page (sorted top-to-bottom, left-to-right)
-      const pageImageRects = pageData.rects
-        .filter(r => r.type === 'image')
-        .sort((a, b) => a.y - b.y || a.x - b.x);
-
       // Build row clusters for text matching (same as handlePDF)
       const rowTops = [...new Set(pageImageRects.map(r => Math.round(r.y * pageH)))].sort((a, b) => a - b);
       const rowClusters: number[] = [];
@@ -801,8 +875,6 @@ async function onApply(): Promise<void> {
       }
 
       // Pre-read user-added/adjusted red rectangles on this page
-      // These will fill in gaps AFTER matchLabel runs for each image.
-      // Uses text layer first, OCR fallback if text layer is empty.
       const userLabelRects = pageData.rects
         .filter(r => r.type === 'label' && r.adjusted)
         .sort((a, b) => a.y - b.y || a.x - b.x);
@@ -810,10 +882,8 @@ async function onApply(): Promise<void> {
       for (const lr of userLabelRects) {
         const lx = Math.round(lr.x * pageW), ly = Math.round(lr.y * pageH);
         const lw = Math.round(lr.w * pageW), lh = Math.round(lr.h * pageH);
-        // Try text layer first
         const items = textItems.filter(t => t.x + t.w > lx && t.x < lx + lw && t.y + t.h > ly && t.y < ly + lh);
         let text = items.map(t => t.text).join(' ').trim();
-        // OCR fallback if text layer is empty
         if (!text && lw > 5 && lh > 5) {
           const ocrCrop = document.createElement('canvas');
           ocrCrop.width = lw; ocrCrop.height = lh;
@@ -831,67 +901,71 @@ async function onApply(): Promise<void> {
         if (text) userLabelTexts.push({ text, x: lx, y: ly });
       }
 
+      // Process EVERY image rect on this page — each one wrapped in try-catch
       for (const imgRect of pageImageRects) {
-        // Convert relative coords to page pixels (scale=2)
-        let ix = Math.round(imgRect.x * pageW);
-        let iy = Math.round(imgRect.y * pageH);
-        let iw = Math.round(imgRect.w * pageW);
-        let ih = Math.round(imgRect.h * pageH);
+        try {
+          let ix = Math.round(imgRect.x * pageW);
+          let iy = Math.round(imgRect.y * pageH);
+          let iw = Math.round(imgRect.w * pageW);
+          let ih = Math.round(imgRect.h * pageH);
 
-        // Snap to content: if user adjusted this rect, find actual image borders
-        // within the rectangle area (trim whitespace/background from edges)
-        if (imgRect.adjusted) {
-          const snapped = snapToContent(pc, ix, iy, iw, ih);
-          ix = snapped.x; iy = snapped.y; iw = snapped.w; ih = snapped.h;
+          if (imgRect.adjusted) {
+            const snapped = snapToContent(pc, ix, iy, iw, ih);
+            ix = snapped.x; iy = snapped.y; iw = snapped.w; ih = snapped.h;
+          }
+
+          const crop = document.createElement('canvas');
+          const pad = 3;
+          const cx = Math.max(0, ix - pad), cy = Math.max(0, iy - pad);
+          const cw = Math.min(pageW - cx, iw + pad * 2), ch = Math.min(pageH - cy, ih + pad * 2);
+          crop.width = cw; crop.height = ch;
+          crop.getContext('2d')!.drawImage(pc, cx, cy, cw, ch, 0, 0, cw, ch);
+
+          const labelResult = matchLabel(textItems, ix, iy, iw, ih, true) as { text: string; item?: TextItem } | null;
+          let label = labelResult ? labelResult.text : '';
+
+          const nextRowY = rowClusters.find(ry => ry > iy + ih * 0.5);
+          const maxY = nextRowY !== undefined ? nextRowY : pageH;
+          let textContent = matchText(textItems, ix, iy, iw, ih, maxY);
+
+          framesToLoad.push({
+            src: crop.toDataURL('image/jpeg', 0.93),
+            label, cropW: cw, cropH: ch, textContent,
+            pageIdx: pi, sortY: iy, sortX: ix, rectId: imgRect.id,
+          });
+          processedRectIds.add(imgRect.id);
+        } catch (rectErr) {
+          console.error(`[pdfAdjust] Failed to process rect ${imgRect.id} on page ${pi + 1}:`, rectErr);
+          // RECOVERY: basic crop without label/text matching
+          try {
+            const ix = Math.round(imgRect.x * pageW);
+            const iy = Math.round(imgRect.y * pageH);
+            const iw = Math.round(imgRect.w * pageW);
+            const ih = Math.round(imgRect.h * pageH);
+            const crop = document.createElement('canvas');
+            crop.width = iw; crop.height = ih;
+            crop.getContext('2d')!.drawImage(pc, ix, iy, iw, ih, 0, 0, iw, ih);
+            framesToLoad.push({
+              src: crop.toDataURL('image/jpeg', 0.93),
+              label: '', cropW: iw, cropH: ih, textContent: '',
+              pageIdx: pi, sortY: iy, sortX: ix, rectId: imgRect.id,
+            });
+            processedRectIds.add(imgRect.id);
+            console.log(`[pdfAdjust] Recovered rect ${imgRect.id} with basic crop`);
+          } catch { /* truly failed — will be caught by verification below */ }
         }
-
-        // Crop image
-        const crop = document.createElement('canvas');
-        const pad = 3;
-        const cx = Math.max(0, ix - pad), cy = Math.max(0, iy - pad);
-        const cw = Math.min(pageW - cx, iw + pad * 2), ch = Math.min(pageH - cy, ih + pad * 2);
-        crop.width = cw; crop.height = ch;
-        crop.getContext('2d')!.drawImage(pc, cx, cy, cw, ch, 0, 0, cw, ch);
-
-        // Label: matchLabel first to get the automatic detection
-        const labelResult = matchLabel(textItems, ix, iy, iw, ih, true) as { text: string; item?: TextItem } | null;
-        let label = labelResult ? labelResult.text : '';
-
-        // Use matchText — same logic as handlePDF (finds text below/right of frame)
-        const nextRowY = rowClusters.find(ry => ry > iy + ih * 0.5);
-        const maxY = nextRowY !== undefined ? nextRowY : pageH;
-        let textContent = matchText(textItems, ix, iy, iw, ih, maxY);
-
-        // User blue rects will be matched by pattern AFTER the page loop (same as red rects)
-
-        framesToLoad.push({
-          src: crop.toDataURL('image/jpeg', 0.93),
-          label,
-          cropW: cw,
-          cropH: ch,
-          textContent,
-          pageIdx: pi,
-          sortY: iy,
-          sortX: ix,
-        });
+        processedSoFar++;
       }
 
-      // Pattern-based label override: use the SPATIAL PATTERN of existing
-      // label-image relationships to assign user-added/adjusted red rects.
-      // 1. Compute median offset between auto-detected labels and their images
-      // 2. For each user red rect, find which image it "belongs to" using that pattern
-      // 3. Override that image's label
+      // Pattern-based label override for user-added red rects
       if (userLabelTexts.length > 0) {
         const pageFrameStart = framesToLoad.length - pageImageRects.length;
         const pageFrames = framesToLoad.slice(pageFrameStart);
 
-        // Compute pattern: how do auto-detected labels relate to images?
-        // Use the original extraction's label-to-image offsets
         const offsets: { dx: number; dy: number }[] = [];
         const autoLabelRects = pageData.rects.filter(r => r.type === 'label' && !r.adjusted);
         for (const lr of autoLabelRects) {
           const lx = Math.round(lr.x * pageW), ly = Math.round(lr.y * pageH);
-          // Find the image this auto-label was closest to
           let nearestImg: typeof pageImageRects[0] | null = null;
           let nearDist = Infinity;
           for (const ir of pageImageRects) {
@@ -904,7 +978,6 @@ async function onApply(): Promise<void> {
           }
         }
 
-        // Median offset (the "pattern")
         let medDx = 0, medDy = 0;
         if (offsets.length > 0) {
           const dxs = offsets.map(o => o.dx).sort((a, b) => a - b);
@@ -913,31 +986,25 @@ async function onApply(): Promise<void> {
           medDy = dys[Math.floor(dys.length / 2)];
         }
 
-        // For each user red rect: find the image it belongs to using the pattern
         for (const ul of userLabelTexts) {
-          // Expected image position based on pattern
           const expectedImgX = ul.x + medDx;
           const expectedImgY = ul.y + medDy;
-          // Find closest image to expected position
           let bestFrame: typeof pageFrames[0] | null = null;
           let bestDist = Infinity;
           for (const pf of pageFrames) {
             const dist = Math.abs((pf.sortX ?? 0) - expectedImgX) + Math.abs((pf.sortY ?? 0) - expectedImgY);
             if (dist < bestDist) { bestDist = dist; bestFrame = pf; }
           }
-          if (bestFrame) {
-            bestFrame.label = ul.text; // OVERRIDE with user's label
-          }
+          if (bestFrame) bestFrame.label = ul.text;
         }
       }
 
-      // Same pattern logic for user-added/adjusted BLUE text rects
+      // Pattern-based text override for user-added blue rects
       const userTextRects = pageData.rects.filter(r => r.type === 'text' && r.adjusted);
       if (userTextRects.length > 0) {
         const pageFrameStart = framesToLoad.length - pageImageRects.length;
         const pageFrames = framesToLoad.slice(pageFrameStart);
 
-        // Compute text-to-image offset pattern from auto-detected text rects
         const textOffsets: { dx: number; dy: number }[] = [];
         const autoTextRects = pageData.rects.filter(r => r.type === 'text' && !r.adjusted);
         for (const tr of autoTextRects) {
@@ -965,7 +1032,6 @@ async function onApply(): Promise<void> {
           const tx = Math.round(tr.x * pageW), ty = Math.round(tr.y * pageH);
           const tw = Math.round(tr.w * pageW), th = Math.round(tr.h * pageH);
 
-          // Read text from this rect (text layer + OCR fallback)
           const txtItems = textItems.filter(t => t.x + t.w > tx && t.x < tx + tw && t.y + t.h > ty && t.y < ty + th);
           let userText = txtItems.sort((a, b) => a.y - b.y || a.x - b.x).map(t => t.text).join(' ').trim();
           if (!userText && tw > 10 && th > 10) {
@@ -984,7 +1050,6 @@ async function onApply(): Promise<void> {
           }
 
           if (userText) {
-            // Find which image this text belongs to using the pattern
             const expectedImgX = tx + textMedDx;
             const expectedImgY = ty + textMedDy;
             let bestFrame: typeof pageFrames[0] | null = null;
@@ -993,16 +1058,58 @@ async function onApply(): Promise<void> {
               const dist = Math.abs((pf.sortX ?? 0) - expectedImgX) + Math.abs((pf.sortY ?? 0) - expectedImgY);
               if (dist < bestDist) { bestDist = dist; bestFrame = pf; }
             }
-            if (bestFrame) {
-              bestFrame.textContent = userText; // OVERRIDE with user's text
-            }
+            if (bestFrame) bestFrame.textContent = userText;
           }
         }
       }
     }
 
+    // -----------------------------------------------------------------------
+    // VERIFICATION: every green rect must produce a frame. If any were missed,
+    // log exactly which ones and attempt recovery.
+    // -----------------------------------------------------------------------
+    setApplyProgress(82, 'Verifying extraction…', `${framesToLoad.length} / ${expectedCount} frames`);
+    await new Promise(r => setTimeout(r, 10));
+
+    if (framesToLoad.length < expectedCount) {
+      console.warn(`[pdfAdjust] MISMATCH: expected ${expectedCount} frames, got ${framesToLoad.length}`);
+      const missedRects = allImageRects.filter(r => !processedRectIds.has(r.rect.id));
+      console.warn(`[pdfAdjust] Missed rects:`, missedRects.map(r => `${r.rect.id} on page ${r.pageIdx + 1}`));
+
+      // Recovery: re-render missed pages and force-crop
+      for (const missed of missedRects) {
+        try {
+          const pi = missed.pageIdx;
+          const ir = missed.rect;
+          const page = await _pdfDoc.getPage(pi + 1);
+          const vp = page.getViewport({ scale: SCALE });
+          const pageW = Math.round(vp.width), pageH = Math.round(vp.height);
+          const pc = document.createElement('canvas');
+          pc.width = pageW; pc.height = pageH;
+          await page.render({ canvasContext: pc.getContext('2d')!, viewport: vp }).promise;
+
+          const ix = Math.round(ir.x * pageW), iy = Math.round(ir.y * pageH);
+          const iw = Math.round(ir.w * pageW), ih = Math.round(ir.h * pageH);
+          const crop = document.createElement('canvas');
+          crop.width = iw; crop.height = ih;
+          crop.getContext('2d')!.drawImage(pc, ix, iy, iw, ih, 0, 0, iw, ih);
+          framesToLoad.push({
+            src: crop.toDataURL('image/jpeg', 0.93),
+            label: '', cropW: iw, cropH: ih, textContent: '',
+            pageIdx: pi, sortY: iy, sortX: ix, rectId: ir.id,
+          });
+          console.log(`[pdfAdjust] Recovered missed rect ${ir.id} from page ${pi + 1}`);
+        } catch (recErr) {
+          console.error(`[pdfAdjust] Could not recover rect ${missed.rect.id}:`, recErr);
+        }
+      }
+      console.log(`[pdfAdjust] After recovery: ${framesToLoad.length} frames`);
+    } else {
+      console.log(`[pdfAdjust] All ${expectedCount} image rects extracted successfully`);
+    }
+
     // Sort frames by position: page order, then top-to-bottom, left-to-right
-    // (same row = within 50% of frame height, then by X)
+    setApplyProgress(85, 'Sorting frames…');
     if (framesToLoad.length > 1) {
       const medH = framesToLoad.map(f => f.cropH).sort((a, b) => a - b)[Math.floor(framesToLoad.length / 2)] || 100;
       const rowBucket = medH * 0.5;
@@ -1014,8 +1121,8 @@ async function onApply(): Promise<void> {
       });
     }
 
-    // Label sequencing: if labels have numeric prefixes, ensure they follow
-    // the spatial order. Detect gaps in numbering.
+    // Label sequencing
+    setApplyProgress(88, 'Sequencing labels…');
     const numberedLabels: { idx: number; num: number; suffix: string; label: string }[] = [];
     for (let fi = 0; fi < framesToLoad.length; fi++) {
       const lbl = framesToLoad[fi].label || '';
@@ -1023,12 +1130,14 @@ async function onApply(): Promise<void> {
       if (m) numberedLabels.push({ idx: fi, num: parseInt(m[1]), suffix: m[2], label: lbl });
     }
     if (numberedLabels.length >= 2) {
-      // Sort labels numerically and re-assign to frames in spatial order
       const labelsSorted = [...numberedLabels].sort((a, b) => a.num !== b.num ? a.num - b.num : a.suffix.localeCompare(b.suffix));
       for (let i = 0; i < numberedLabels.length; i++) {
         framesToLoad[numberedLabels[i].idx].label = labelsSorted[i].label;
       }
     }
+
+    setApplyProgress(92, 'Loading into app…', `${framesToLoad.length} frames`);
+    await new Promise(r => setTimeout(r, 50));
 
     closePdfAdjust();
 
