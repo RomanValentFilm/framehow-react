@@ -41,6 +41,7 @@ import type { ConflictChoice } from './modals';
 import { saveOpenTextEdits, saveOpenTableEdits } from './helpers';
 import { resetStoryboardState, state, useStore } from '../store/state';
 import type { Frame, Stroke, Version } from '../store/state';
+import { clearRectsForProject } from './pdfAdjust';
 
 // ---------------------------------------------------------------------------
 // Device identification — persistent ID + human-readable name
@@ -467,6 +468,7 @@ export async function openProjectList(): Promise<void> {
       try {
         await api.delete(`/projects/${encodeURIComponent(p.id)}`, getToken());
         p.deleted_at = Date.now();
+        clearRectsForProject(p.id);
       } catch (e) {
         showToast(asMessage(e, 'Could not delete project.'));
       }

@@ -10,6 +10,7 @@ import type { TestFrame, ExtractedFrame, TextItem } from './pdf';
 // @ts-ignore
 import { createWorker } from 'tesseract.js';
 import { COLORS, state, useStore, resetStoryboardState } from '../store/state';
+import { getCurrentProject } from './currentProject';
 import { updateFrameBadge } from './helpers';
 
 // ---------------------------------------------------------------------------
@@ -57,6 +58,60 @@ const RECT_BORDERS = {
   text: '#3c82ff',
   label: '#ff3c3c',
 };
+
+// ---------------------------------------------------------------------------
+// Persist rect overlay per project + PDF filename (localStorage)
+// ---------------------------------------------------------------------------
+
+const STORAGE_PREFIX = 'pdfAdjustRects_';
+
+function storageKey(fileName: string): string {
+  const cp = getCurrentProject();
+  const pid = cp.projectId || 'local';
+  return `${STORAGE_PREFIX}${pid}_${fileName}`;
+}
+
+function saveRectsForFile(): void {
+  if (!_currentFile || _pages.length === 0) return;
+  const key = storageKey(_currentFile.name);
+  const data = _pages.map(p => ({
+    pageNum: p.pageNum,
+    rects: p.rects.map(r => ({ id: r.id, type: r.type, x: r.x, y: r.y, w: r.w, h: r.h, adjusted: r.adjusted })),
+  }));
+  try {
+    localStorage.setItem(key, JSON.stringify(data));
+    console.log(`[pdfAdjust] Saved ${data.reduce((s, p) => s + p.rects.length, 0)} rects → "${key}"`);
+  } catch { /* quota exceeded — silent */ }
+}
+
+function loadRectsForFile(fileName: string): { pageNum: number; rects: AdjustRect[] }[] | null {
+  const key = storageKey(fileName);
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const data = JSON.parse(raw) as { pageNum: number; rects: any[] }[];
+    if (!Array.isArray(data) || data.length === 0) return null;
+    for (const page of data) {
+      if (!Array.isArray(page.rects)) return null;
+    }
+    console.log(`[pdfAdjust] Restored rects from "${key}": ${data.reduce((s, p) => s + p.rects.length, 0)} rects`);
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+/** Remove all saved rect data for a given project (call on project delete) */
+export function clearRectsForProject(projectId: string): void {
+  const prefix = `${STORAGE_PREFIX}${projectId}_`;
+  const toRemove: string[] = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k && k.startsWith(prefix)) toRemove.push(k);
+  }
+  for (const k of toRemove) localStorage.removeItem(k);
+  if (toRemove.length > 0) console.log(`[pdfAdjust] Cleared ${toRemove.length} saved rect entries for project ${projectId}`);
+}
 
 // ---------------------------------------------------------------------------
 // Live counter: image + number rects across all pages
@@ -227,6 +282,9 @@ async function renderPagesWithPreExtractedFrames(): Promise<void> {
 }
 
 export function closePdfAdjust(): void {
+  // Save rects before closing (user can recall them later)
+  saveRectsForFile();
+
   if (_overlay) {
     _overlay.remove();
     _overlay = null;
@@ -274,14 +332,20 @@ async function renderAllPages(): Promise<void> {
   container.innerHTML = '';
   _pages = [];
 
-  // Run the SAME extraction pipeline as the normal PDF import
-  showToast('Running extraction…');
-  const result = await testExtractPDF(_currentFile!, (msg) => showToast(msg));
-  _extractedFrames = result.frames;
-  const extractedFrames = _extractedFrames;
-  showToast(`${extractedFrames.length} frames found. Rendering pages…`);
+  // Check if we have saved rects for this PDF
+  const savedRects = _currentFile ? loadRectsForFile(_currentFile.name) : null;
 
-  // Render each PDF page and overlay rectangles from extraction results
+  if (!savedRects) {
+    // No saved rects — run fresh extraction
+    showToast('Running extraction…');
+    const result = await testExtractPDF(_currentFile!, (msg) => showToast(msg));
+    _extractedFrames = result.frames;
+    showToast(`${_extractedFrames.length} frames found. Rendering pages…`);
+  } else {
+    showToast('Restoring previous adjustments…');
+  }
+
+  // Render each PDF page
   for (let p = 1; p <= _pdfDoc.numPages; p++) {
     const page = await _pdfDoc.getPage(p);
     const vp = page.getViewport({ scale: RENDER_SCALE });
@@ -290,6 +354,7 @@ async function renderAllPages(): Promise<void> {
     canvas.height = Math.round(vp.height);
     await page.render({ canvasContext: canvas.getContext('2d')!, viewport: vp }).promise;
 
+    const pageIdx = p - 1;
     const pageData: PageData = {
       pageNum: p,
       canvas,
@@ -299,31 +364,35 @@ async function renderAllPages(): Promise<void> {
     };
     _pages.push(pageData);
 
-    // Convert extracted frames for this page into rectangles
-    const pageIdx = p - 1;
-    const pageFrames = extractedFrames.filter(f => f.pageIdx === pageIdx);
-    let rectId = 0;
-    for (const f of pageFrames) {
-      if (f.imgX != null && f.imgW != null && f.pageW && f.pageH) {
-        const pw = f.pageW, ph = f.pageH;
-        // Image rect (green)
-        pageData.rects.push({
-          id: `p${p}_img_${rectId++}`, type: 'image', pageIdx,
-          x: f.imgX / pw, y: f.imgY! / ph, w: f.imgW / pw, h: f.imgH! / ph,
-        });
-        // Label rect (red)
-        if (f.labelX != null && f.labelW != null) {
+    if (savedRects) {
+      // RESTORE saved rects for this page
+      const savedPage = savedRects.find(sp => sp.pageNum === p);
+      if (savedPage) {
+        pageData.rects = savedPage.rects.map(r => ({ ...r }));
+      }
+    } else {
+      // BUILD rects from fresh extraction results
+      const pageFrames = _extractedFrames.filter(f => f.pageIdx === pageIdx);
+      let rectId = 0;
+      for (const f of pageFrames) {
+        if (f.imgX != null && f.imgW != null && f.pageW && f.pageH) {
+          const pw = f.pageW, ph = f.pageH;
           pageData.rects.push({
-            id: `p${p}_lbl_${rectId++}`, type: 'label', pageIdx,
-            x: f.labelX / pw, y: f.labelY! / ph, w: f.labelW / pw, h: f.labelH! / ph,
+            id: `p${p}_img_${rectId++}`, type: 'image', pageIdx,
+            x: f.imgX / pw, y: f.imgY! / ph, w: f.imgW / pw, h: f.imgH! / ph,
           });
-        }
-        // Text rect (blue)
-        if (f.textX != null && f.textW != null) {
-          pageData.rects.push({
-            id: `p${p}_txt_${rectId++}`, type: 'text', pageIdx,
-            x: f.textX / pw, y: f.textY! / ph, w: f.textW / pw, h: f.textH! / ph,
-          });
+          if (f.labelX != null && f.labelW != null) {
+            pageData.rects.push({
+              id: `p${p}_lbl_${rectId++}`, type: 'label', pageIdx,
+              x: f.labelX / pw, y: f.labelY! / ph, w: f.labelW / pw, h: f.labelH! / ph,
+            });
+          }
+          if (f.textX != null && f.textW != null) {
+            pageData.rects.push({
+              id: `p${p}_txt_${rectId++}`, type: 'text', pageIdx,
+              x: f.textX / pw, y: f.textY! / ph, w: f.textW / pw, h: f.textH! / ph,
+            });
+          }
         }
       }
     }
@@ -334,9 +403,10 @@ async function renderAllPages(): Promise<void> {
     pageEl.dataset.pageIdx = String(pageIdx);
     pageEl.style.cssText = 'position:relative;display:inline-block;border:1px solid #333;';
 
+    const totalRects = pageData.rects.filter(r => r.type === 'image').length;
     const label = document.createElement('div');
     label.style.cssText = 'position:absolute;top:-20px;left:0;font-size:11px;color:#666;font-family:monospace;';
-    label.textContent = `Page ${p} — ${pageFrames.length} frame${pageFrames.length !== 1 ? 's' : ''}`;
+    label.textContent = `Page ${p} — ${totalRects} frame${totalRects !== 1 ? 's' : ''}`;
     pageEl.appendChild(label);
 
     canvas.style.cssText = 'display:block;max-width:90vw;height:auto;';
@@ -358,7 +428,13 @@ async function renderAllPages(): Promise<void> {
     renderRectsForPage(pageIdx);
   }
   updateRectCounts();
-  showToast(`Ready — ${extractedFrames.length} frames across ${_pdfDoc.numPages} pages`);
+
+  const totalFrames = _pages.reduce((s, p) => s + p.rects.filter(r => r.type === 'image').length, 0);
+  if (savedRects) {
+    showToast(`Restored ${totalFrames} frames from previous session — adjust and Apply`);
+  } else {
+    showToast(`Ready — ${totalFrames} frames across ${_pdfDoc.numPages} pages`);
+  }
 }
 
 // (autoDetectRects removed — now uses testExtractPDF shared function)
@@ -807,6 +883,9 @@ async function onApply(): Promise<void> {
     showToast('No image frames to apply');
     return;
   }
+
+  // Save rect overlay for recall next time this PDF is opened
+  saveRectsForFile();
 
   console.log(`[pdfAdjust] Apply: ${expectedCount} image rects across ${_pages.length} pages`);
   for (let pi = 0; pi < _pages.length; pi++) {
