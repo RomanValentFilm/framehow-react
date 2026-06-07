@@ -1081,18 +1081,31 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
     pushStripVersions(s.stripVersions.refs?.[f.id], 'refs');
   });
 
-  // Build metadata JSON: stripDefs, groups (with remapped frame IDs), portraitMode
+  // Build metadata JSON: stripDefs, groups (with remapped frame IDs), portraitMode, pdfAdjustRects
   const metaGroups = s.groups.map((g) => ({
     id: g.id,
     name: g.name,
     frameIds: g.frameIds.map((fid) => localToServerFrame.get(fid) || '').filter(Boolean),
     hiddenFrameIds: g.hiddenFrameIds.map((fid) => localToServerFrame.get(fid) || '').filter(Boolean),
   }));
+
+  // Collect all PDF adjust rect entries for this project from localStorage
+  const pdfAdjustRects: Record<string, any> = {};
+  const rectsPrefix = `pdfAdjustRects_${projectId}_`;
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k && k.startsWith(rectsPrefix)) {
+      const fileName = k.slice(rectsPrefix.length);
+      try { pdfAdjustRects[fileName] = JSON.parse(localStorage.getItem(k)!); } catch { /* skip */ }
+    }
+  }
+
   const metadata = JSON.stringify({
     stripDefs: s.stripDefs,
     groups: metaGroups,
     nextGroupId: s.nextGroupId,
     portraitMode: s.portraitMode,
+    pdfAdjustRects: Object.keys(pdfAdjustRects).length > 0 ? pdfAdjustRects : undefined,
   });
 
   // Upload all images to R2 in parallel
@@ -1301,6 +1314,15 @@ async function applyCloudTreeToStore(tree: CloudProjectTree): Promise<void> {
           frameIds: (g.frameIds || []).map((uuid: string) => serverToLocalFrame.get(uuid)).filter((id: number | undefined) => id != null) as number[],
           hiddenFrameIds: (g.hiddenFrameIds || []).map((uuid: string) => serverToLocalFrame.get(uuid)).filter((id: number | undefined) => id != null) as number[],
         }));
+      }
+      // Restore PDF adjust rects to localStorage (cross-device sync)
+      if (meta.pdfAdjustRects && typeof meta.pdfAdjustRects === 'object') {
+        const pid = tree.project.id;
+        for (const [fileName, data] of Object.entries(meta.pdfAdjustRects)) {
+          try {
+            localStorage.setItem(`pdfAdjustRects_${pid}_${fileName}`, JSON.stringify(data));
+          } catch { /* quota — skip */ }
+        }
       }
     } catch {
       // Ignore malformed metadata — use defaults

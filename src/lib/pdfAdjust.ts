@@ -65,14 +65,14 @@ const RECT_BORDERS = {
 
 const STORAGE_PREFIX = 'pdfAdjustRects_';
 
-function storageKey(fileName: string): string {
-  const cp = getCurrentProject();
-  const pid = cp.projectId || 'local';
-  return `${STORAGE_PREFIX}${pid}_${fileName}`;
+function storageKey(fileName: string, pid?: string): string {
+  const id = pid ?? getCurrentProject().projectId ?? 'local';
+  return `${STORAGE_PREFIX}${id}_${fileName}`;
 }
 
 function saveRectsForFile(): void {
   if (!_currentFile || _pages.length === 0) return;
+  const cp = getCurrentProject();
   const key = storageKey(_currentFile.name);
   const data = _pages.map(p => ({
     pageNum: p.pageNum,
@@ -80,21 +80,41 @@ function saveRectsForFile(): void {
   }));
   try {
     localStorage.setItem(key, JSON.stringify(data));
+    // If project now has an ID but data was previously under 'local', clean up old key
+    if (cp.projectId) {
+      const oldKey = storageKey(_currentFile.name, 'local');
+      if (localStorage.getItem(oldKey)) localStorage.removeItem(oldKey);
+    }
     console.log(`[pdfAdjust] Saved ${data.reduce((s, p) => s + p.rects.length, 0)} rects → "${key}"`);
   } catch { /* quota exceeded — silent */ }
 }
 
 function loadRectsForFile(fileName: string): { pageNum: number; rects: AdjustRect[] }[] | null {
-  const key = storageKey(fileName);
+  const cp = getCurrentProject();
+  // Try project-specific key first
+  let key = storageKey(fileName);
+  let raw = localStorage.getItem(key);
+
+  // Fallback: if project has an ID but no data, check 'local' (pre-save state)
+  if (!raw && cp.projectId) {
+    const localKey = storageKey(fileName, 'local');
+    raw = localStorage.getItem(localKey);
+    if (raw) {
+      // Migrate: move from 'local' to project key
+      localStorage.setItem(key, raw);
+      localStorage.removeItem(localKey);
+      console.log(`[pdfAdjust] Migrated rects from "local" → "${key}"`);
+    }
+  }
+
+  if (!raw) return null;
   try {
-    const raw = localStorage.getItem(key);
-    if (!raw) return null;
     const data = JSON.parse(raw) as { pageNum: number; rects: any[] }[];
     if (!Array.isArray(data) || data.length === 0) return null;
     for (const page of data) {
       if (!Array.isArray(page.rects)) return null;
     }
-    console.log(`[pdfAdjust] Restored rects from "${key}": ${data.reduce((s, p) => s + p.rects.length, 0)} rects`);
+    console.log(`[pdfAdjust] Restored ${data.reduce((s, p) => s + p.rects.length, 0)} rects for "${fileName}"`);
     return data;
   } catch {
     return null;
