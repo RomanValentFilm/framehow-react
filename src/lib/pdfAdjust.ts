@@ -888,16 +888,25 @@ async function onApply(): Promise<void> {
         if (rowClusters.length === 0 || yt - rowClusters[rowClusters.length - 1] > 40) rowClusters.push(yt);
       }
 
-      // Pre-read user-added/adjusted red rectangles on this page
-      const userLabelRects = pageData.rects
-        .filter(r => r.type === 'label' && r.adjusted)
+      // =================================================================
+      // STEP A: Read ALL red rects on this page (auto + user-added).
+      // Every red rect MUST produce a label. Text layer first, OCR fallback.
+      // =================================================================
+      const allLabelRects = pageData.rects
+        .filter(r => r.type === 'label')
         .sort((a, b) => a.y - b.y || a.x - b.x);
-      const userLabelTexts: { text: string; x: number; y: number }[] = [];
-      for (const lr of userLabelRects) {
+      const redRectReadings: { text: string; x: number; y: number; w: number; h: number }[] = [];
+      // Pixel bounding boxes of all red rects — used as exclusion zones
+      const redZones: { x: number; y: number; w: number; h: number }[] = [];
+
+      for (const lr of allLabelRects) {
         const lx = Math.round(lr.x * pageW), ly = Math.round(lr.y * pageH);
         const lw = Math.round(lr.w * pageW), lh = Math.round(lr.h * pageH);
+        redZones.push({ x: lx, y: ly, w: lw, h: lh });
+        // Read text layer
         const items = textItems.filter(t => t.x + t.w > lx && t.x < lx + lw && t.y + t.h > ly && t.y < ly + lh);
         let text = items.map(t => t.text).join(' ').trim();
+        // OCR fallback
         if (!text && lw > 5 && lh > 5) {
           const ocrCrop = document.createElement('canvas');
           ocrCrop.width = lw; ocrCrop.height = lh;
@@ -912,10 +921,26 @@ async function onApply(): Promise<void> {
             await worker.terminate();
           } catch { /* silent */ }
         }
-        if (text) userLabelTexts.push({ text, x: lx, y: ly });
+        if (text) redRectReadings.push({ text, x: lx, y: ly, w: lw, h: lh });
       }
 
-      // Process EVERY image rect on this page — each one wrapped in try-catch
+      // =================================================================
+      // STEP B: Build "label-free" text items — excludes anything inside
+      // a red rect so numbers don't leak into matchText or blue text rects.
+      // =================================================================
+      function isInsideRedZone(t: TextItem): boolean {
+        const tcx = t.x + t.w / 2, tcy = t.y + t.h / 2;
+        for (const z of redZones) {
+          if (tcx >= z.x && tcx <= z.x + z.w && tcy >= z.y && tcy <= z.y + z.h) return true;
+        }
+        return false;
+      }
+      const textItemsNoLabels = textItems.filter(t => !isInsideRedZone(t));
+
+      // =================================================================
+      // STEP C: Process EVERY image rect — crop, label, text.
+      // Uses full textItems for matchLabel but FILTERED for matchText.
+      // =================================================================
       for (const imgRect of pageImageRects) {
         try {
           let ix = Math.round(imgRect.x * pageW);
@@ -935,12 +960,14 @@ async function onApply(): Promise<void> {
           crop.width = cw; crop.height = ch;
           crop.getContext('2d')!.drawImage(pc, cx, cy, cw, ch, 0, 0, cw, ch);
 
+          // matchLabel uses FULL textItems (it needs to see label text)
           const labelResult = matchLabel(textItems, ix, iy, iw, ih, true) as { text: string; item?: TextItem } | null;
           let label = labelResult ? labelResult.text : '';
 
+          // matchText uses FILTERED textItems (excludes red-zone numbers)
           const nextRowY = rowClusters.find(ry => ry > iy + ih * 0.5);
           const maxY = nextRowY !== undefined ? nextRowY : pageH;
-          let textContent = matchText(textItems, ix, iy, iw, ih, maxY);
+          let textContent = matchText(textItemsNoLabels, ix, iy, iw, ih, maxY);
 
           framesToLoad.push({
             src: crop.toDataURL('image/jpeg', 0.93),
@@ -950,7 +977,6 @@ async function onApply(): Promise<void> {
           processedRectIds.add(imgRect.id);
         } catch (rectErr) {
           console.error(`[pdfAdjust] Failed to process rect ${imgRect.id} on page ${pi + 1}:`, rectErr);
-          // RECOVERY: full extraction with snap, label, text, OCR
           try {
             let ix = Math.round(imgRect.x * pageW);
             let iy = Math.round(imgRect.y * pageH);
@@ -969,7 +995,7 @@ async function onApply(): Promise<void> {
             const lr = matchLabel(textItems, ix, iy, iw, ih, true) as { text: string } | null;
             const nextRowY = rowClusters.find(ry => ry > iy + ih * 0.5);
             const maxY = nextRowY !== undefined ? nextRowY : pageH;
-            const tc = matchText(textItems, ix, iy, iw, ih, maxY);
+            const tc = matchText(textItemsNoLabels, ix, iy, iw, ih, maxY);
             framesToLoad.push({
               src: crop.toDataURL('image/jpeg', 0.93),
               label: lr ? lr.text : '', cropW: cw, cropH: ch, textContent: tc,
@@ -982,14 +1008,18 @@ async function onApply(): Promise<void> {
         processedSoFar++;
       }
 
-      // Pattern-based label override for user-added red rects
-      if (userLabelTexts.length > 0) {
+      // =================================================================
+      // STEP D: Pattern-based label override from ALL red rects.
+      // Every red rect that was read gets assigned to its image using the
+      // spatial pattern. This OVERRIDES whatever matchLabel found.
+      // =================================================================
+      if (redRectReadings.length > 0) {
         const pageFrameStart = framesToLoad.length - pageImageRects.length;
         const pageFrames = framesToLoad.slice(pageFrameStart);
 
+        // Compute pattern: median offset from label rect to its nearest image
         const offsets: { dx: number; dy: number }[] = [];
-        const autoLabelRects = pageData.rects.filter(r => r.type === 'label' && !r.adjusted);
-        for (const lr of autoLabelRects) {
+        for (const lr of allLabelRects) {
           const lx = Math.round(lr.x * pageW), ly = Math.round(lr.y * pageH);
           let nearestImg: typeof pageImageRects[0] | null = null;
           let nearDist = Infinity;
@@ -1011,22 +1041,29 @@ async function onApply(): Promise<void> {
           medDy = dys[Math.floor(dys.length / 2)];
         }
 
-        for (const ul of userLabelTexts) {
-          const expectedImgX = ul.x + medDx;
-          const expectedImgY = ul.y + medDy;
+        // Assign each red rect reading to its image using the pattern
+        for (const rl of redRectReadings) {
+          const expectedImgX = rl.x + medDx;
+          const expectedImgY = rl.y + medDy;
           let bestFrame: typeof pageFrames[0] | null = null;
           let bestDist = Infinity;
           for (const pf of pageFrames) {
             const dist = Math.abs((pf.sortX ?? 0) - expectedImgX) + Math.abs((pf.sortY ?? 0) - expectedImgY);
             if (dist < bestDist) { bestDist = dist; bestFrame = pf; }
           }
-          if (bestFrame) bestFrame.label = ul.text;
+          if (bestFrame) {
+            bestFrame.label = rl.text; // OVERRIDE — red rect is authoritative
+            console.log(`[pdfAdjust] Red rect → "${rl.text}" assigned to frame at (${bestFrame.sortX}, ${bestFrame.sortY})`);
+          }
         }
       }
 
-      // Pattern-based text override for user-added blue rects
-      const userTextRects = pageData.rects.filter(r => r.type === 'text' && r.adjusted);
-      if (userTextRects.length > 0) {
+      // =================================================================
+      // STEP E: Blue text rects — read with red-zone exclusion.
+      // Uses textItemsNoLabels so numbers don't leak into text content.
+      // =================================================================
+      const allTextRects = pageData.rects.filter(r => r.type === 'text' && r.adjusted);
+      if (allTextRects.length > 0) {
         const pageFrameStart = framesToLoad.length - pageImageRects.length;
         const pageFrames = framesToLoad.slice(pageFrameStart);
 
@@ -1053,11 +1090,12 @@ async function onApply(): Promise<void> {
           textMedDy = dys[Math.floor(dys.length / 2)];
         }
 
-        for (const tr of userTextRects) {
+        for (const tr of allTextRects) {
           const tx = Math.round(tr.x * pageW), ty = Math.round(tr.y * pageH);
           const tw = Math.round(tr.w * pageW), th = Math.round(tr.h * pageH);
 
-          const txtItems = textItems.filter(t => t.x + t.w > tx && t.x < tx + tw && t.y + t.h > ty && t.y < ty + th);
+          // Use FILTERED text items — excludes anything inside red rects
+          const txtItems = textItemsNoLabels.filter(t => t.x + t.w > tx && t.x < tx + tw && t.y + t.h > ty && t.y < ty + th);
           let userText = txtItems.sort((a, b) => a.y - b.y || a.x - b.x).map(t => t.text).join(' ').trim();
           if (!userText && tw > 10 && th > 10) {
             try {
