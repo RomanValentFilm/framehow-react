@@ -838,13 +838,16 @@ async function onApply(): Promise<void> {
     const processedRectIds = new Set<string>();
     let processedSoFar = 0;
 
+    // Process ALL pages — even if there are blank/divider pages between pages
+    // with rects. The loop visits every page; pages without image rects are
+    // skipped cheaply. Gaps of 1 or 100 empty pages do NOT break extraction.
     for (let pi = 0; pi < _pages.length; pi++) {
       const pageData = _pages[pi];
       const pageImageRects = pageData.rects
         .filter(r => r.type === 'image')
         .sort((a, b) => a.y - b.y || a.x - b.x);
 
-      // Skip pages with no image rects
+      // Skip pages with no image rects (blank divider pages, title pages, etc.)
       if (pageImageRects.length === 0) continue;
 
       setApplyProgress(
@@ -936,22 +939,33 @@ async function onApply(): Promise<void> {
           processedRectIds.add(imgRect.id);
         } catch (rectErr) {
           console.error(`[pdfAdjust] Failed to process rect ${imgRect.id} on page ${pi + 1}:`, rectErr);
-          // RECOVERY: basic crop without label/text matching
+          // RECOVERY: full extraction with snap, label, text, OCR
           try {
-            const ix = Math.round(imgRect.x * pageW);
-            const iy = Math.round(imgRect.y * pageH);
-            const iw = Math.round(imgRect.w * pageW);
-            const ih = Math.round(imgRect.h * pageH);
+            let ix = Math.round(imgRect.x * pageW);
+            let iy = Math.round(imgRect.y * pageH);
+            let iw = Math.round(imgRect.w * pageW);
+            let ih = Math.round(imgRect.h * pageH);
+            if (imgRect.adjusted) {
+              const snapped = snapToContent(pc, ix, iy, iw, ih);
+              ix = snapped.x; iy = snapped.y; iw = snapped.w; ih = snapped.h;
+            }
             const crop = document.createElement('canvas');
-            crop.width = iw; crop.height = ih;
-            crop.getContext('2d')!.drawImage(pc, ix, iy, iw, ih, 0, 0, iw, ih);
+            const pad = 3;
+            const cx = Math.max(0, ix - pad), cy = Math.max(0, iy - pad);
+            const cw = Math.min(pageW - cx, iw + pad * 2), ch = Math.min(pageH - cy, ih + pad * 2);
+            crop.width = cw; crop.height = ch;
+            crop.getContext('2d')!.drawImage(pc, cx, cy, cw, ch, 0, 0, cw, ch);
+            const lr = matchLabel(textItems, ix, iy, iw, ih, true) as { text: string } | null;
+            const nextRowY = rowClusters.find(ry => ry > iy + ih * 0.5);
+            const maxY = nextRowY !== undefined ? nextRowY : pageH;
+            const tc = matchText(textItems, ix, iy, iw, ih, maxY);
             framesToLoad.push({
               src: crop.toDataURL('image/jpeg', 0.93),
-              label: '', cropW: iw, cropH: ih, textContent: '',
+              label: lr ? lr.text : '', cropW: cw, cropH: ch, textContent: tc,
               pageIdx: pi, sortY: iy, sortX: ix, rectId: imgRect.id,
             });
             processedRectIds.add(imgRect.id);
-            console.log(`[pdfAdjust] Recovered rect ${imgRect.id} with basic crop`);
+            console.log(`[pdfAdjust] Recovered rect ${imgRect.id} with full extraction`);
           } catch { /* truly failed — will be caught by verification below */ }
         }
         processedSoFar++;
@@ -1076,31 +1090,137 @@ async function onApply(): Promise<void> {
       const missedRects = allImageRects.filter(r => !processedRectIds.has(r.rect.id));
       console.warn(`[pdfAdjust] Missed rects:`, missedRects.map(r => `${r.rect.id} on page ${r.pageIdx + 1}`));
 
-      // Recovery: re-render missed pages and force-crop
-      for (const missed of missedRects) {
+      // Recovery: full extraction per missed rect (snap, label, text, OCR)
+      // Group missed rects by page so we only render each page once
+      const missedByPage = new Map<number, typeof missedRects>();
+      for (const m of missedRects) {
+        const arr = missedByPage.get(m.pageIdx) || [];
+        arr.push(m);
+        missedByPage.set(m.pageIdx, arr);
+      }
+
+      for (const [pi, pageMissed] of missedByPage) {
         try {
-          const pi = missed.pageIdx;
-          const ir = missed.rect;
+          setApplyProgress(83, `Recovering page ${pi + 1}…`, `${pageMissed.length} missed frame${pageMissed.length > 1 ? 's' : ''}`);
+          await new Promise(r => setTimeout(r, 10));
+
           const page = await _pdfDoc.getPage(pi + 1);
           const vp = page.getViewport({ scale: SCALE });
           const pageW = Math.round(vp.width), pageH = Math.round(vp.height);
           const pc = document.createElement('canvas');
           pc.width = pageW; pc.height = pageH;
           await page.render({ canvasContext: pc.getContext('2d')!, viewport: vp }).promise;
+          const textItems = await getTextItems(page, SCALE);
 
-          const ix = Math.round(ir.x * pageW), iy = Math.round(ir.y * pageH);
-          const iw = Math.round(ir.w * pageW), ih = Math.round(ir.h * pageH);
-          const crop = document.createElement('canvas');
-          crop.width = iw; crop.height = ih;
-          crop.getContext('2d')!.drawImage(pc, ix, iy, iw, ih, 0, 0, iw, ih);
-          framesToLoad.push({
-            src: crop.toDataURL('image/jpeg', 0.93),
-            label: '', cropW: iw, cropH: ih, textContent: '',
-            pageIdx: pi, sortY: iy, sortX: ix, rectId: ir.id,
-          });
-          console.log(`[pdfAdjust] Recovered missed rect ${ir.id} from page ${pi + 1}`);
-        } catch (recErr) {
-          console.error(`[pdfAdjust] Could not recover rect ${missed.rect.id}:`, recErr);
+          // All image rects on this page (for row clusters)
+          const pageData = _pages[pi];
+          const allPageImgRects = pageData ? pageData.rects.filter(r => r.type === 'image').sort((a, b) => a.y - b.y || a.x - b.x) : [];
+          const rowTops = [...new Set(allPageImgRects.map(r => Math.round(r.y * pageH)))].sort((a, b) => a - b);
+          const rowClusters: number[] = [];
+          for (const yt of rowTops) {
+            if (rowClusters.length === 0 || yt - rowClusters[rowClusters.length - 1] > 40) rowClusters.push(yt);
+          }
+
+          for (const missed of pageMissed) {
+            try {
+              const ir = missed.rect;
+              let ix = Math.round(ir.x * pageW), iy = Math.round(ir.y * pageH);
+              let iw = Math.round(ir.w * pageW), ih = Math.round(ir.h * pageH);
+
+              if (ir.adjusted) {
+                const snapped = snapToContent(pc, ix, iy, iw, ih);
+                ix = snapped.x; iy = snapped.y; iw = snapped.w; ih = snapped.h;
+              }
+
+              const crop = document.createElement('canvas');
+              const pad = 3;
+              const cx = Math.max(0, ix - pad), cy = Math.max(0, iy - pad);
+              const cw = Math.min(pageW - cx, iw + pad * 2), ch = Math.min(pageH - cy, ih + pad * 2);
+              crop.width = cw; crop.height = ch;
+              crop.getContext('2d')!.drawImage(pc, cx, cy, cw, ch, 0, 0, cw, ch);
+
+              // Full label detection: matchLabel + user red rects + OCR fallback
+              const labelResult = matchLabel(textItems, ix, iy, iw, ih, true) as { text: string } | null;
+              let label = labelResult ? labelResult.text : '';
+
+              // Check user-added label rects on this page
+              if (!label && pageData) {
+                const userLabelRects = pageData.rects.filter(r => r.type === 'label');
+                for (const lr of userLabelRects) {
+                  const lx = Math.round(lr.x * pageW), ly = Math.round(lr.y * pageH);
+                  const lw = Math.round(lr.w * pageW), lh = Math.round(lr.h * pageH);
+                  // Check proximity to this image
+                  const dist = Math.abs(lx - ix) + Math.abs(ly - iy);
+                  if (dist < pageW * 0.3) {
+                    // Read text from this label rect
+                    const items = textItems.filter(t => t.x + t.w > lx && t.x < lx + lw && t.y + t.h > ly && t.y < ly + lh);
+                    let lText = items.map(t => t.text).join(' ').trim();
+                    // OCR fallback
+                    if (!lText && lw > 5 && lh > 5) {
+                      try {
+                        const ocrCrop = document.createElement('canvas');
+                        ocrCrop.width = lw; ocrCrop.height = lh;
+                        ocrCrop.getContext('2d')!.drawImage(pc, lx, ly, lw, lh, 0, 0, lw, lh);
+                        const worker = await createWorker('eng', 1, {
+                          workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/worker.min.js',
+                          corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5/tesseract-core.wasm.js',
+                        } as any);
+                        const result = await worker.recognize(ocrCrop.toDataURL('image/png'));
+                        lText = (result.data.text || '').trim();
+                        await worker.terminate();
+                      } catch { /* silent */ }
+                    }
+                    if (lText) { label = lText; break; }
+                  }
+                }
+              }
+
+              // Full text detection
+              const nextRowY = rowClusters.find(ry => ry > iy + ih * 0.5);
+              const maxY = nextRowY !== undefined ? nextRowY : pageH;
+              let textContent = matchText(textItems, ix, iy, iw, ih, maxY);
+
+              // Check user-added text rects on this page
+              if (!textContent && pageData) {
+                const userTextRects = pageData.rects.filter(r => r.type === 'text');
+                for (const tr of userTextRects) {
+                  const tx = Math.round(tr.x * pageW), ty = Math.round(tr.y * pageH);
+                  const tw = Math.round(tr.w * pageW), th = Math.round(tr.h * pageH);
+                  const dist = Math.abs(tx - ix) + Math.abs(ty - iy);
+                  if (dist < pageW * 0.3) {
+                    const txtItems = textItems.filter(t => t.x + t.w > tx && t.x < tx + tw && t.y + t.h > ty && t.y < ty + th);
+                    let uText = txtItems.sort((a, b) => a.y - b.y || a.x - b.x).map(t => t.text).join(' ').trim();
+                    if (!uText && tw > 10 && th > 10) {
+                      try {
+                        const ocrCrop = document.createElement('canvas');
+                        ocrCrop.width = tw; ocrCrop.height = th;
+                        ocrCrop.getContext('2d')!.drawImage(pc, tx, ty, tw, th, 0, 0, tw, th);
+                        const worker = await createWorker('eng', 1, {
+                          workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/worker.min.js',
+                          corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5/tesseract-core.wasm.js',
+                        } as any);
+                        const result = await worker.recognize(ocrCrop.toDataURL('image/png'));
+                        uText = (result.data.text || '').trim();
+                        await worker.terminate();
+                      } catch { /* silent */ }
+                    }
+                    if (uText) { textContent = uText; break; }
+                  }
+                }
+              }
+
+              framesToLoad.push({
+                src: crop.toDataURL('image/jpeg', 0.93),
+                label, cropW: cw, cropH: ch, textContent,
+                pageIdx: pi, sortY: iy, sortX: ix, rectId: ir.id,
+              });
+              console.log(`[pdfAdjust] Recovered rect ${ir.id} page ${pi + 1}: label="${label}"`);
+            } catch (recErr) {
+              console.error(`[pdfAdjust] Could not recover rect ${missed.rect.id}:`, recErr);
+            }
+          }
+        } catch (pageErr) {
+          console.error(`[pdfAdjust] Could not recover page ${pi + 1}:`, pageErr);
         }
       }
       console.log(`[pdfAdjust] After recovery: ${framesToLoad.length} frames`);
