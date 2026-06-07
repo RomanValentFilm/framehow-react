@@ -893,45 +893,20 @@ async function onApply(): Promise<void> {
       }
 
       // =================================================================
-      // STEP A: Read ALL red rects on this page (auto + user-added).
-      // Every red rect MUST produce a label. Text layer first, OCR fallback.
+      // STEP 1: Crop every GREEN rect → create frame (no label/text yet)
       // =================================================================
-      const allLabelRects = pageData.rects
-        .filter(r => r.type === 'label')
-        .sort((a, b) => a.y - b.y || a.x - b.x);
-      const redRectReadings: { text: string; x: number; y: number; w: number; h: number }[] = [];
-      // Pixel bounding boxes of all red rects — used as exclusion zones
+      const hasRedRects = pageData.rects.some(r => r.type === 'label');
+      const hasBlueRects = pageData.rects.some(r => r.type === 'text');
+
+      // Build red zones for exclusion (numbers must not leak into text)
+      const allLabelRects = pageData.rects.filter(r => r.type === 'label');
       const redZones: { x: number; y: number; w: number; h: number }[] = [];
-
       for (const lr of allLabelRects) {
-        const lx = Math.round(lr.x * pageW), ly = Math.round(lr.y * pageH);
-        const lw = Math.round(lr.w * pageW), lh = Math.round(lr.h * pageH);
-        redZones.push({ x: lx, y: ly, w: lw, h: lh });
-        // Read text layer
-        const items = textItems.filter(t => t.x + t.w > lx && t.x < lx + lw && t.y + t.h > ly && t.y < ly + lh);
-        let text = items.map(t => t.text).join(' ').trim();
-        // OCR fallback
-        if (!text && lw > 5 && lh > 5) {
-          const ocrCrop = document.createElement('canvas');
-          ocrCrop.width = lw; ocrCrop.height = lh;
-          ocrCrop.getContext('2d')!.drawImage(pc, lx, ly, lw, lh, 0, 0, lw, lh);
-          try {
-            const worker = await createWorker('eng', 1, {
-              workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/worker.min.js',
-              corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5/tesseract-core.wasm.js',
-            } as any);
-            const result = await worker.recognize(ocrCrop.toDataURL('image/png'));
-            text = (result.data.text || '').trim();
-            await worker.terminate();
-          } catch { /* silent */ }
-        }
-        if (text) redRectReadings.push({ text, x: lx, y: ly, w: lw, h: lh });
+        redZones.push({
+          x: Math.round(lr.x * pageW), y: Math.round(lr.y * pageH),
+          w: Math.round(lr.w * pageW), h: Math.round(lr.h * pageH),
+        });
       }
-
-      // =================================================================
-      // STEP B: Build "label-free" text items — excludes anything inside
-      // a red rect so numbers don't leak into matchText or blue text rects.
-      // =================================================================
       function isInsideRedZone(t: TextItem): boolean {
         const tcx = t.x + t.w / 2, tcy = t.y + t.h / 2;
         for (const z of redZones) {
@@ -940,14 +915,6 @@ async function onApply(): Promise<void> {
         return false;
       }
       const textItemsNoLabels = textItems.filter(t => !isInsideRedZone(t));
-
-      // =================================================================
-      // STEP C: Process EVERY image rect — crop + text.
-      // Labels come ONLY from red rects (Step D). If no red rects on the
-      // page, fall back to matchLabel. This prevents the duplicate-label
-      // bug where matchLabel assigns the same text to multiple images.
-      // =================================================================
-      const hasRedRects = allLabelRects.length > 0;
 
       for (const imgRect of pageImageRects) {
         try {
@@ -968,18 +935,20 @@ async function onApply(): Promise<void> {
           crop.width = cw; crop.height = ch;
           crop.getContext('2d')!.drawImage(pc, cx, cy, cw, ch, 0, 0, cw, ch);
 
-          // Label: ONLY from red rects (assigned in Step D).
-          // Fall back to matchLabel only if this page has NO red rects at all.
+          // Label fallback: only if NO red rects exist on this page
           let label = '';
           if (!hasRedRects) {
             const labelResult = matchLabel(textItems, ix, iy, iw, ih, true) as { text: string; item?: TextItem } | null;
             label = labelResult ? labelResult.text : '';
           }
 
-          // Text: uses FILTERED textItems (excludes red-zone numbers)
-          const nextRowY = rowClusters.find(ry => ry > iy + ih * 0.5);
-          const maxY = nextRowY !== undefined ? nextRowY : pageH;
-          let textContent = matchText(textItemsNoLabels, ix, iy, iw, ih, maxY);
+          // Text fallback: only if NO blue rects exist on this page
+          let textContent = '';
+          if (!hasBlueRects) {
+            const nextRowY = rowClusters.find(ry => ry > iy + ih * 0.5);
+            const maxY = nextRowY !== undefined ? nextRowY : pageH;
+            textContent = matchText(textItemsNoLabels, ix, iy, iw, ih, maxY);
+          }
 
           framesToLoad.push({
             src: crop.toDataURL('image/jpeg', 0.93),
@@ -988,67 +957,87 @@ async function onApply(): Promise<void> {
           });
           processedRectIds.add(imgRect.id);
         } catch (rectErr) {
-          console.error(`[pdfAdjust] Failed to process rect ${imgRect.id} on page ${pi + 1}:`, rectErr);
+          console.error(`[pdfAdjust] rect ${imgRect.id} page ${pi + 1} error:`, rectErr);
+          // Basic recovery — just crop
           try {
-            let ix = Math.round(imgRect.x * pageW);
-            let iy = Math.round(imgRect.y * pageH);
-            let iw = Math.round(imgRect.w * pageW);
-            let ih = Math.round(imgRect.h * pageH);
-            if (imgRect.adjusted) {
-              const snapped = snapToContent(pc, ix, iy, iw, ih);
-              ix = snapped.x; iy = snapped.y; iw = snapped.w; ih = snapped.h;
-            }
+            const ix = Math.round(imgRect.x * pageW), iy = Math.round(imgRect.y * pageH);
+            const iw = Math.round(imgRect.w * pageW), ih = Math.round(imgRect.h * pageH);
             const crop = document.createElement('canvas');
             const pad = 3;
             const cx = Math.max(0, ix - pad), cy = Math.max(0, iy - pad);
             const cw = Math.min(pageW - cx, iw + pad * 2), ch = Math.min(pageH - cy, ih + pad * 2);
             crop.width = cw; crop.height = ch;
             crop.getContext('2d')!.drawImage(pc, cx, cy, cw, ch, 0, 0, cw, ch);
-            let label = '';
-            if (!hasRedRects) {
-              const lr = matchLabel(textItems, ix, iy, iw, ih, true) as { text: string } | null;
-              label = lr ? lr.text : '';
-            }
-            const nextRowY = rowClusters.find(ry => ry > iy + ih * 0.5);
-            const maxY = nextRowY !== undefined ? nextRowY : pageH;
-            const tc = matchText(textItemsNoLabels, ix, iy, iw, ih, maxY);
             framesToLoad.push({
               src: crop.toDataURL('image/jpeg', 0.93),
-              label, cropW: cw, cropH: ch, textContent: tc,
+              label: '', cropW: cw, cropH: ch, textContent: '',
               pageIdx: pi, sortY: iy, sortX: ix, rectId: imgRect.id,
             });
             processedRectIds.add(imgRect.id);
-            console.log(`[pdfAdjust] Recovered rect ${imgRect.id} with full extraction`);
-          } catch { /* truly failed — will be caught by verification below */ }
+          } catch { /* skip */ }
         }
         processedSoFar++;
       }
 
       // =================================================================
-      // STEP D: Pattern-based label override from ALL red rects.
-      // Every red rect that was read gets assigned to its image using the
-      // spatial pattern. This OVERRIDES whatever matchLabel found.
+      // STEP 2: Read every RED rect directly from the PDF.
+      // Text layer first, OCR fallback. The text IS the label.
+      // Assign using pattern (median offset) + greedy 1:1 (no double-claims).
       // =================================================================
-      if (redRectReadings.length > 0) {
+      if (hasRedRects) {
         const pageFrameStart = framesToLoad.length - pageImageRects.length;
         const pageFrames = framesToLoad.slice(pageFrameStart);
+        const claimed = new Set<number>(); // indices into pageFrames already assigned
 
-        // Compute pattern: median offset from label rect to its nearest image
-        const offsets: { dx: number; dy: number }[] = [];
+        // Read all red rects
+        const readings: { text: string; cx: number; cy: number }[] = [];
         for (const lr of allLabelRects) {
           const lx = Math.round(lr.x * pageW), ly = Math.round(lr.y * pageH);
-          let nearestImg: typeof pageImageRects[0] | null = null;
-          let nearDist = Infinity;
-          for (const ir of pageImageRects) {
-            const iix = Math.round(ir.x * pageW), iiy = Math.round(ir.y * pageH);
-            const d = Math.abs(lx - iix) + Math.abs(ly - iiy);
-            if (d < nearDist) { nearDist = d; nearestImg = ir; }
+          const lw = Math.round(lr.w * pageW), lh = Math.round(lr.h * pageH);
+
+          // READ from PDF text layer — items overlapping this rect
+          const items = textItems.filter(t =>
+            t.x + t.w > lx && t.x < lx + lw &&
+            t.y + t.h > ly && t.y < ly + lh
+          );
+          let text = items.sort((a, b) => a.y - b.y || a.x - b.x).map(t => t.text).join(' ').trim();
+
+          // OCR fallback if text layer empty
+          if (!text && lw > 5 && lh > 5) {
+            try {
+              const ocrCrop = document.createElement('canvas');
+              ocrCrop.width = lw; ocrCrop.height = lh;
+              ocrCrop.getContext('2d')!.drawImage(pc, lx, ly, lw, lh, 0, 0, lw, lh);
+              const worker = await createWorker('eng', 1, {
+                workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/worker.min.js',
+                corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5/tesseract-core.wasm.js',
+              } as any);
+              const result = await worker.recognize(ocrCrop.toDataURL('image/png'));
+              text = (result.data.text || '').trim();
+              await worker.terminate();
+            } catch { /* silent */ }
           }
-          if (nearestImg) {
-            offsets.push({ dx: Math.round(nearestImg.x * pageW) - lx, dy: Math.round(nearestImg.y * pageH) - ly });
+
+          if (text) {
+            readings.push({ text, cx: lx + lw / 2, cy: ly + lh / 2 });
           }
         }
 
+        // Compute pattern: median offset from each red rect center to its nearest image center
+        const offsets: { dx: number; dy: number }[] = [];
+        for (const lr of allLabelRects) {
+          const lcx = Math.round(lr.x * pageW) + Math.round(lr.w * pageW) / 2;
+          const lcy = Math.round(lr.y * pageH) + Math.round(lr.h * pageH) / 2;
+          let nearDist = Infinity;
+          let nearImgCx = 0, nearImgCy = 0;
+          for (const ir of pageImageRects) {
+            const icx = Math.round(ir.x * pageW) + Math.round(ir.w * pageW) / 2;
+            const icy = Math.round(ir.y * pageH) + Math.round(ir.h * pageH) / 2;
+            const d = Math.abs(lcx - icx) + Math.abs(lcy - icy);
+            if (d < nearDist) { nearDist = d; nearImgCx = icx; nearImgCy = icy; }
+          }
+          offsets.push({ dx: nearImgCx - lcx, dy: nearImgCy - lcy });
+        }
         let medDx = 0, medDy = 0;
         if (offsets.length > 0) {
           const dxs = offsets.map(o => o.dx).sort((a, b) => a - b);
@@ -1057,87 +1046,111 @@ async function onApply(): Promise<void> {
           medDy = dys[Math.floor(dys.length / 2)];
         }
 
-        // Assign each red rect reading to its image using the pattern
-        for (const rl of redRectReadings) {
-          const expectedImgX = rl.x + medDx;
-          const expectedImgY = rl.y + medDy;
-          let bestFrame: typeof pageFrames[0] | null = null;
+        // Pattern-based greedy 1:1 assignment
+        for (const rd of readings) {
+          const expectedX = rd.cx + medDx;
+          const expectedY = rd.cy + medDy;
+          let bestIdx = -1;
           let bestDist = Infinity;
-          for (const pf of pageFrames) {
-            const dist = Math.abs((pf.sortX ?? 0) - expectedImgX) + Math.abs((pf.sortY ?? 0) - expectedImgY);
-            if (dist < bestDist) { bestDist = dist; bestFrame = pf; }
+          for (let fi = 0; fi < pageFrames.length; fi++) {
+            if (claimed.has(fi)) continue;
+            const fx = (pageFrames[fi].sortX ?? 0) + (pageFrames[fi].cropW ?? 0) / 2;
+            const fy = (pageFrames[fi].sortY ?? 0) + (pageFrames[fi].cropH ?? 0) / 2;
+            const dist = Math.abs(expectedX - fx) + Math.abs(expectedY - fy);
+            if (dist < bestDist) { bestDist = dist; bestIdx = fi; }
           }
-          if (bestFrame) {
-            bestFrame.label = rl.text; // OVERRIDE — red rect is authoritative
-            console.log(`[pdfAdjust] Red rect → "${rl.text}" assigned to frame at (${bestFrame.sortX}, ${bestFrame.sortY})`);
+          if (bestIdx >= 0) {
+            pageFrames[bestIdx].label = rd.text;
+            claimed.add(bestIdx);
+            console.log(`[pdfAdjust] RED "${rd.text}" → frame #${bestIdx} at (${pageFrames[bestIdx].sortX}, ${pageFrames[bestIdx].sortY})`);
           }
         }
       }
 
       // =================================================================
-      // STEP E: Blue text rects — read with red-zone exclusion.
-      // Uses textItemsNoLabels so numbers don't leak into text content.
+      // STEP 3: Read every BLUE rect directly from the PDF.
+      // Text layer (with red-zone exclusion) + OCR fallback.
+      // Assign using pattern (median offset) + greedy 1:1.
       // =================================================================
-      const allTextRects = pageData.rects.filter(r => r.type === 'text' && r.adjusted);
-      if (allTextRects.length > 0) {
+      const allBlueRects = pageData.rects.filter(r => r.type === 'text');
+      if (allBlueRects.length > 0) {
         const pageFrameStart = framesToLoad.length - pageImageRects.length;
         const pageFrames = framesToLoad.slice(pageFrameStart);
+        const claimed = new Set<number>();
 
-        const textOffsets: { dx: number; dy: number }[] = [];
-        const autoTextRects = pageData.rects.filter(r => r.type === 'text' && !r.adjusted);
-        for (const tr of autoTextRects) {
-          const tx = Math.round(tr.x * pageW), ty = Math.round(tr.y * pageH);
-          let nearestImg: typeof pageImageRects[0] | null = null;
-          let nearDist = Infinity;
-          for (const ir of pageImageRects) {
-            const iix = Math.round(ir.x * pageW), iiy = Math.round(ir.y * pageH);
-            const d = Math.abs(tx - iix) + Math.abs(ty - iiy);
-            if (d < nearDist) { nearDist = d; nearestImg = ir; }
-          }
-          if (nearestImg) {
-            textOffsets.push({ dx: Math.round(nearestImg.x * pageW) - tx, dy: Math.round(nearestImg.y * pageH) - ty });
-          }
-        }
-        let textMedDx = 0, textMedDy = 0;
-        if (textOffsets.length > 0) {
-          const dxs = textOffsets.map(o => o.dx).sort((a, b) => a - b);
-          const dys = textOffsets.map(o => o.dy).sort((a, b) => a - b);
-          textMedDx = dxs[Math.floor(dxs.length / 2)];
-          textMedDy = dys[Math.floor(dys.length / 2)];
-        }
+        const blueReadings: { text: string; cx: number; cy: number }[] = [];
+        for (const br of allBlueRects) {
+          const bx = Math.round(br.x * pageW), by = Math.round(br.y * pageH);
+          const bw = Math.round(br.w * pageW), bh = Math.round(br.h * pageH);
 
-        for (const tr of allTextRects) {
-          const tx = Math.round(tr.x * pageW), ty = Math.round(tr.y * pageH);
-          const tw = Math.round(tr.w * pageW), th = Math.round(tr.h * pageH);
+          // READ from PDF text layer — items overlapping this rect, EXCLUDING red zones
+          const items = textItemsNoLabels.filter(t =>
+            t.x + t.w > bx && t.x < bx + bw &&
+            t.y + t.h > by && t.y < by + bh
+          );
+          let text = items.sort((a, b) => a.y - b.y || a.x - b.x).map(t => t.text).join(' ').trim();
 
-          // Use FILTERED text items — excludes anything inside red rects
-          const txtItems = textItemsNoLabels.filter(t => t.x + t.w > tx && t.x < tx + tw && t.y + t.h > ty && t.y < ty + th);
-          let userText = txtItems.sort((a, b) => a.y - b.y || a.x - b.x).map(t => t.text).join(' ').trim();
-          if (!userText && tw > 10 && th > 10) {
+          // OCR fallback if text layer empty
+          if (!text && bw > 10 && bh > 10) {
             try {
               const ocrCrop = document.createElement('canvas');
-              ocrCrop.width = tw; ocrCrop.height = th;
-              ocrCrop.getContext('2d')!.drawImage(pc, tx, ty, tw, th, 0, 0, tw, th);
+              ocrCrop.width = bw; ocrCrop.height = bh;
+              ocrCrop.getContext('2d')!.drawImage(pc, bx, by, bw, bh, 0, 0, bw, bh);
               const worker = await createWorker('eng', 1, {
                 workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/worker.min.js',
                 corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5/tesseract-core.wasm.js',
               } as any);
               const result = await worker.recognize(ocrCrop.toDataURL('image/png'));
-              userText = (result.data.text || '').trim();
+              text = (result.data.text || '').trim();
               await worker.terminate();
             } catch { /* silent */ }
           }
 
-          if (userText) {
-            const expectedImgX = tx + textMedDx;
-            const expectedImgY = ty + textMedDy;
-            let bestFrame: typeof pageFrames[0] | null = null;
-            let bestDist = Infinity;
-            for (const pf of pageFrames) {
-              const dist = Math.abs((pf.sortX ?? 0) - expectedImgX) + Math.abs((pf.sortY ?? 0) - expectedImgY);
-              if (dist < bestDist) { bestDist = dist; bestFrame = pf; }
-            }
-            if (bestFrame) bestFrame.textContent = userText;
+          if (text) {
+            blueReadings.push({ text, cx: bx + bw / 2, cy: by + bh / 2 });
+          }
+        }
+
+        // Compute pattern: median offset from each blue rect center to nearest image center
+        const blueOffsets: { dx: number; dy: number }[] = [];
+        for (const br of allBlueRects) {
+          const bcx = Math.round(br.x * pageW) + Math.round(br.w * pageW) / 2;
+          const bcy = Math.round(br.y * pageH) + Math.round(br.h * pageH) / 2;
+          let nearDist = Infinity;
+          let nearImgCx = 0, nearImgCy = 0;
+          for (const ir of pageImageRects) {
+            const icx = Math.round(ir.x * pageW) + Math.round(ir.w * pageW) / 2;
+            const icy = Math.round(ir.y * pageH) + Math.round(ir.h * pageH) / 2;
+            const d = Math.abs(bcx - icx) + Math.abs(bcy - icy);
+            if (d < nearDist) { nearDist = d; nearImgCx = icx; nearImgCy = icy; }
+          }
+          blueOffsets.push({ dx: nearImgCx - bcx, dy: nearImgCy - bcy });
+        }
+        let blueMedDx = 0, blueMedDy = 0;
+        if (blueOffsets.length > 0) {
+          const dxs = blueOffsets.map(o => o.dx).sort((a, b) => a - b);
+          const dys = blueOffsets.map(o => o.dy).sort((a, b) => a - b);
+          blueMedDx = dxs[Math.floor(dxs.length / 2)];
+          blueMedDy = dys[Math.floor(dys.length / 2)];
+        }
+
+        // Pattern-based greedy 1:1 assignment
+        for (const bd of blueReadings) {
+          const expectedX = bd.cx + blueMedDx;
+          const expectedY = bd.cy + blueMedDy;
+          let bestIdx = -1;
+          let bestDist = Infinity;
+          for (let fi = 0; fi < pageFrames.length; fi++) {
+            if (claimed.has(fi)) continue;
+            const fx = (pageFrames[fi].sortX ?? 0) + (pageFrames[fi].cropW ?? 0) / 2;
+            const fy = (pageFrames[fi].sortY ?? 0) + (pageFrames[fi].cropH ?? 0) / 2;
+            const dist = Math.abs(expectedX - fx) + Math.abs(expectedY - fy);
+            if (dist < bestDist) { bestDist = dist; bestIdx = fi; }
+          }
+          if (bestIdx >= 0) {
+            pageFrames[bestIdx].textContent = bd.text;
+            claimed.add(bestIdx);
+            console.log(`[pdfAdjust] BLUE "${bd.text.slice(0, 40)}" → frame #${bestIdx}`);
           }
         }
       }
