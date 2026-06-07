@@ -693,10 +693,21 @@ function addRectToCurrentPage(type: 'image' | 'text' | 'label'): void {
   const page = _pages[targetIdx];
   if (!page) return;
 
+  // Smart default size: use median size of existing rects of the same type
+  // across all pages, then add 3% so the user only needs to move, not resize.
+  let defW = 0.3, defH = 0.2; // fallback
+  const sameTypeRects = _pages.flatMap(p => p.rects.filter(r => r.type === type));
+  if (sameTypeRects.length > 0) {
+    const ws = sameTypeRects.map(r => r.w).sort((a, b) => a - b);
+    const hs = sameTypeRects.map(r => r.h).sort((a, b) => a - b);
+    defW = ws[Math.floor(ws.length / 2)] * 1.03;
+    defH = hs[Math.floor(hs.length / 2)] * 1.03;
+  }
+
   const newRect: AdjustRect = {
     id: `p${targetIdx}_new_${Date.now()}`,
     type,
-    x: 0.2, y: 0.2, w: 0.3, h: 0.2,
+    x: 0.2, y: 0.2, w: defW, h: defH,
     pageIdx: targetIdx,
     adjusted: true, // user-added = always run snap-to-content
   };
