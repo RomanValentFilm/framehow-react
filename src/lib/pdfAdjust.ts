@@ -834,6 +834,30 @@ function onKeyDown(e: KeyboardEvent): void {
 // within the rectangle area by trimming white/background from edges.
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Clean OCR text for blue rects: strip leading label numbers and short noise
+// lines that bleed in from the image/label area above the text.
+// ---------------------------------------------------------------------------
+function cleanOcrBlueText(raw: string): string {
+  const lines = raw.split(/\n/);
+  let startIdx = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) { startIdx = i + 1; continue; }
+    // Skip lines that are just a label (1-3 digits + optional letter + punctuation)
+    if (/^\d{1,3}[a-zA-Z]?[\s.:;,\-–—]*$/.test(line)) { startIdx = i + 1; continue; }
+    // Skip short lines (<10 chars) that start with a label pattern (likely noise)
+    if (line.length < 10 && /^\d{1,3}[a-zA-Z]?\b/.test(line)) { startIdx = i + 1; continue; }
+    // Skip very short lines (<5 chars) that are mostly non-alphabetic (visual noise)
+    if (line.length < 5 && !/[a-zA-Z]{3,}/.test(line)) { startIdx = i + 1; continue; }
+    break;
+  }
+  let text = lines.slice(startIdx).join('\n').trim();
+  // Also strip an inline leading label at the start of the first real line
+  text = text.replace(/^\d{1,3}[a-zA-Z]?\s+/, '');
+  return text;
+}
+
 function snapToContent(canvas: HTMLCanvasElement, rx: number, ry: number, rw: number, rh: number): { x: number; y: number; w: number; h: number } {
   const ctx = canvas.getContext('2d')!;
   const x0 = Math.max(0, rx), y0 = Math.max(0, ry);
@@ -1133,36 +1157,57 @@ async function onApply(): Promise<void> {
             if (mlResult) text = mlResult.text;
           }
 
+          // Common OCR corrections for labels (i/l/| → 1, o/O → 0)
+          if (text) {
+            text = text.replace(/^[il|]$/, '1').replace(/^[oO]$/, '0');
+          }
+
           if (text) {
             readings.push({ text, cx: lx + lw / 2, cy: ly + lh / 2, adjusted: !!lr.adjusted });
+            console.log(`[pdfAdjust] RED rect read "${text}" at (${lx + lw / 2}, ${ly + lh / 2}) adjusted=${!!lr.adjusted}`);
           }
         }
 
-        // Compute pattern from NON-adjusted rects only (auto-detected positions)
+        // Compute pattern from NON-adjusted rects only (need ≥2 for reliable pattern)
         const autoLabelRects = allLabelRects.filter(r => !r.adjusted);
         const offsets: { dx: number; dy: number }[] = [];
-        for (const lr of autoLabelRects) {
-          const lcx = Math.round(lr.x * pageW) + Math.round(lr.w * pageW) / 2;
-          const lcy = Math.round(lr.y * pageH) + Math.round(lr.h * pageH) / 2;
-          let nearDist = Infinity;
-          let nearImgCx = 0, nearImgCy = 0;
-          for (const ir of pageImageRects) {
-            const icx = Math.round(ir.x * pageW) + Math.round(ir.w * pageW) / 2;
-            const icy = Math.round(ir.y * pageH) + Math.round(ir.h * pageH) / 2;
-            const d = Math.abs(lcx - icx) + Math.abs(lcy - icy);
-            if (d < nearDist) { nearDist = d; nearImgCx = icx; nearImgCy = icy; }
+        if (autoLabelRects.length >= 2) {
+          for (const lr of autoLabelRects) {
+            const lcx = Math.round(lr.x * pageW) + Math.round(lr.w * pageW) / 2;
+            const lcy = Math.round(lr.y * pageH) + Math.round(lr.h * pageH) / 2;
+            let nearDist = Infinity;
+            let nearImgCx = 0, nearImgCy = 0;
+            for (const ir of pageImageRects) {
+              const icx = Math.round(ir.x * pageW) + Math.round(ir.w * pageW) / 2;
+              const icy = Math.round(ir.y * pageH) + Math.round(ir.h * pageH) / 2;
+              const d = Math.abs(lcx - icx) + Math.abs(lcy - icy);
+              if (d < nearDist) { nearDist = d; nearImgCx = icx; nearImgCy = icy; }
+            }
+            offsets.push({ dx: nearImgCx - lcx, dy: nearImgCy - lcy });
           }
-          offsets.push({ dx: nearImgCx - lcx, dy: nearImgCy - lcy });
         }
         let medDx = 0, medDy = 0;
-        if (offsets.length > 0) {
+        if (offsets.length >= 2) {
           const dxs = offsets.map(o => o.dx).sort((a, b) => a - b);
           const dys = offsets.map(o => o.dy).sort((a, b) => a - b);
           medDx = dxs[Math.floor(dxs.length / 2)];
           medDy = dys[Math.floor(dys.length / 2)];
         }
+        console.log(`[pdfAdjust] RED pattern: ${autoLabelRects.length} auto rects → offset (${medDx.toFixed(0)}, ${medDy.toFixed(0)})`);
 
-        // Greedy 1:1 assignment — pattern from non-adjusted, applied to ALL
+        // Sort readings by distance to nearest frame (closest first = best matches first)
+        readings.sort((a, b) => {
+          let aMin = Infinity, bMin = Infinity;
+          for (let fi = 0; fi < pageFrames.length; fi++) {
+            const fx = (pageFrames[fi].sortX ?? 0) + (pageFrames[fi].cropW ?? 0) / 2;
+            const fy = (pageFrames[fi].sortY ?? 0) + (pageFrames[fi].cropH ?? 0) / 2;
+            aMin = Math.min(aMin, Math.abs(a.cx + medDx - fx) + Math.abs(a.cy + medDy - fy));
+            bMin = Math.min(bMin, Math.abs(b.cx + medDx - fx) + Math.abs(b.cy + medDy - fy));
+          }
+          return aMin - bMin;
+        });
+
+        // Greedy 1:1 assignment — closest matches first
         for (const rd of readings) {
           const expectedX = rd.cx + medDx;
           const expectedY = rd.cy + medDy;
@@ -1178,7 +1223,7 @@ async function onApply(): Promise<void> {
           if (bestIdx >= 0) {
             pageFrames[bestIdx].label = rd.text;
             claimed.add(bestIdx);
-            console.log(`[pdfAdjust] RED "${rd.text}" ${rd.adjusted ? '(user)' : '(auto)'} → frame #${bestIdx}`);
+            console.log(`[pdfAdjust] RED "${rd.text}" ${rd.adjusted ? '(user)' : '(auto)'} → frame #${bestIdx} (dist=${bestDist.toFixed(0)})`);
           }
         }
       }
@@ -1228,6 +1273,11 @@ async function onApply(): Promise<void> {
             }
           }
 
+          // Clean OCR text: strip leading label numbers and noise lines
+          if (text && items.length === 0) {
+            text = cleanOcrBlueText(text);
+          }
+
           if (text) {
             blueReadings.push({ text, cx: bx + bw / 2, cy: by + bh / 2, adjusted: !!br.adjusted });
           } else {
@@ -1235,33 +1285,60 @@ async function onApply(): Promise<void> {
           }
         }
 
-        // Compute pattern from NON-adjusted blue rects only
+        // Deduplicate: if same short text appears multiple times, it's junk (watermark/footer)
+        const textCounts = new Map<string, number>();
+        for (const br of blueReadings) {
+          const key = br.text.trim().toLowerCase();
+          textCounts.set(key, (textCounts.get(key) || 0) + 1);
+        }
+        const cleanReadings = blueReadings.filter(br => {
+          const key = br.text.trim().toLowerCase();
+          const isDupe = textCounts.get(key)! > 1 && br.text.length < 30;
+          if (isDupe) console.log(`[pdfAdjust] BLUE filtered junk duplicate: "${br.text}"`);
+          return !isDupe;
+        });
+
+        // Compute pattern from NON-adjusted blue rects (need ≥2 for reliable pattern)
         const autoBlueRects = allBlueRects.filter(r => !r.adjusted);
         const blueOffsets: { dx: number; dy: number }[] = [];
-        for (const br of autoBlueRects) {
-          const bcx = Math.round(br.x * pageW) + Math.round(br.w * pageW) / 2;
-          const bcy = Math.round(br.y * pageH) + Math.round(br.h * pageH) / 2;
-          let nearDist = Infinity;
-          let nearImgCx = 0, nearImgCy = 0;
-          for (const ir of pageImageRects) {
-            const icx = Math.round(ir.x * pageW) + Math.round(ir.w * pageW) / 2;
-            const icy = Math.round(ir.y * pageH) + Math.round(ir.h * pageH) / 2;
-            const d = Math.abs(bcx - icx) + Math.abs(bcy - icy);
-            if (d < nearDist) { nearDist = d; nearImgCx = icx; nearImgCy = icy; }
+        if (autoBlueRects.length >= 2) {
+          for (const br of autoBlueRects) {
+            const bcx = Math.round(br.x * pageW) + Math.round(br.w * pageW) / 2;
+            const bcy = Math.round(br.y * pageH) + Math.round(br.h * pageH) / 2;
+            let nearDist = Infinity;
+            let nearImgCx = 0, nearImgCy = 0;
+            for (const ir of pageImageRects) {
+              const icx = Math.round(ir.x * pageW) + Math.round(ir.w * pageW) / 2;
+              const icy = Math.round(ir.y * pageH) + Math.round(ir.h * pageH) / 2;
+              const d = Math.abs(bcx - icx) + Math.abs(bcy - icy);
+              if (d < nearDist) { nearDist = d; nearImgCx = icx; nearImgCy = icy; }
+            }
+            blueOffsets.push({ dx: nearImgCx - bcx, dy: nearImgCy - bcy });
           }
-          blueOffsets.push({ dx: nearImgCx - bcx, dy: nearImgCy - bcy });
         }
         let blueMedDx = 0, blueMedDy = 0;
-        if (blueOffsets.length > 0) {
+        if (blueOffsets.length >= 2) {
           const dxs = blueOffsets.map(o => o.dx).sort((a, b) => a - b);
           const dys = blueOffsets.map(o => o.dy).sort((a, b) => a - b);
           blueMedDx = dxs[Math.floor(dxs.length / 2)];
           blueMedDy = dys[Math.floor(dys.length / 2)];
         }
-        console.log(`[pdfAdjust] BLUE pattern: ${autoBlueRects.length} auto rects → offset (${blueMedDx.toFixed(0)}, ${blueMedDy.toFixed(0)}), ${blueReadings.length} readings to assign to ${pageFrames.length} frames`);
+        console.log(`[pdfAdjust] BLUE pattern: ${autoBlueRects.length} auto rects → offset (${blueMedDx.toFixed(0)}, ${blueMedDy.toFixed(0)}), ${cleanReadings.length} clean readings (${blueReadings.length - cleanReadings.length} junk removed) to assign to ${pageFrames.length} frames`);
 
-        // Greedy 1:1 assignment — pattern from non-adjusted, applied to ALL
-        for (const bd of blueReadings) {
+        // Sort readings by distance to nearest frame (closest first = best matches first)
+        cleanReadings.sort((a, b) => {
+          let aMin = Infinity, bMin = Infinity;
+          for (let fi = 0; fi < pageFrames.length; fi++) {
+            const fx = (pageFrames[fi].sortX ?? 0) + (pageFrames[fi].cropW ?? 0) / 2;
+            const fy = (pageFrames[fi].sortY ?? 0) + (pageFrames[fi].cropH ?? 0) / 2;
+            aMin = Math.min(aMin, Math.abs(a.cx + blueMedDx - fx) + Math.abs(a.cy + blueMedDy - fy));
+            bMin = Math.min(bMin, Math.abs(b.cx + blueMedDx - fx) + Math.abs(b.cy + blueMedDy - fy));
+          }
+          return aMin - bMin;
+        });
+
+        // Greedy 1:1 assignment — closest matches first
+        for (const bd of cleanReadings) {
           const expectedX = bd.cx + blueMedDx;
           const expectedY = bd.cy + blueMedDy;
           let bestIdx = -1;
@@ -1276,7 +1353,7 @@ async function onApply(): Promise<void> {
           if (bestIdx >= 0) {
             pageFrames[bestIdx].textContent = bd.text;
             claimed.add(bestIdx);
-            console.log(`[pdfAdjust] BLUE "${bd.text.slice(0, 40)}" ${bd.adjusted ? '(user)' : '(auto)'} → frame #${bestIdx}`);
+            console.log(`[pdfAdjust] BLUE "${bd.text.slice(0, 40)}" ${bd.adjusted ? '(user)' : '(auto)'} → frame #${bestIdx} (dist=${bestDist.toFixed(0)})`);
           }
         }
       }
