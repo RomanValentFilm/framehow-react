@@ -1199,6 +1199,7 @@ async function onApply(): Promise<void> {
         for (const br of allBlueRects) {
           const bx = Math.round(br.x * pageW), by = Math.round(br.y * pageH);
           const bw = Math.round(br.w * pageW), bh = Math.round(br.h * pageH);
+          console.log(`[pdfAdjust] BLUE rect ${br.id} area: (${bx},${by}) ${bw}×${bh} adjusted=${!!br.adjusted}`);
 
           // READ from PDF text layer — items overlapping this rect, EXCLUDING red zones
           const items = textItemsNoLabels.filter(t =>
@@ -1206,6 +1207,7 @@ async function onApply(): Promise<void> {
             t.y + t.h > by && t.y < by + bh
           );
           let text = items.sort((a, b) => a.y - b.y || a.x - b.x).map(t => t.text).join(' ').trim();
+          console.log(`[pdfAdjust] BLUE rect ${br.id}: text layer found ${items.length} items → "${text.slice(0, 60)}"`);
 
           // OCR fallback if text layer empty
           if (!text && bw > 10 && bh > 10) {
@@ -1220,11 +1222,16 @@ async function onApply(): Promise<void> {
               const result = await worker.recognize(ocrCrop.toDataURL('image/png'));
               text = (result.data.text || '').trim();
               await worker.terminate();
-            } catch { /* silent */ }
+              console.log(`[pdfAdjust] BLUE rect ${br.id}: OCR fallback → "${text.slice(0, 60)}"`);
+            } catch (ocrErr) {
+              console.warn(`[pdfAdjust] BLUE rect ${br.id}: OCR failed`, ocrErr);
+            }
           }
 
           if (text) {
             blueReadings.push({ text, cx: bx + bw / 2, cy: by + bh / 2, adjusted: !!br.adjusted });
+          } else {
+            console.warn(`[pdfAdjust] BLUE rect ${br.id}: NO TEXT found (text layer + OCR both empty)`);
           }
         }
 
@@ -1251,6 +1258,7 @@ async function onApply(): Promise<void> {
           blueMedDx = dxs[Math.floor(dxs.length / 2)];
           blueMedDy = dys[Math.floor(dys.length / 2)];
         }
+        console.log(`[pdfAdjust] BLUE pattern: ${autoBlueRects.length} auto rects → offset (${blueMedDx.toFixed(0)}, ${blueMedDy.toFixed(0)}), ${blueReadings.length} readings to assign to ${pageFrames.length} frames`);
 
         // Greedy 1:1 assignment — pattern from non-adjusted, applied to ALL
         for (const bd of blueReadings) {
