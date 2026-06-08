@@ -1080,36 +1080,46 @@ async function onApply(): Promise<void> {
 
       // =================================================================
       // STEP 2: Read every RED rect directly from the PDF.
-      // Text layer first, OCR fallback. The text IS the label.
-      // Assign using pattern (median offset) + greedy 1:1 (no double-claims).
+      // Text layer → OCR (upscaled + digit whitelist) → assign to frame.
+      // Adjusted/user-added rects → nearest image directly.
+      // Auto-detected rects → pattern-based assignment.
+      // Greedy 1:1: no frame can be double-claimed.
       // =================================================================
       if (hasRedRects) {
         const pageFrameStart = framesToLoad.length - pageImageRects.length;
         const pageFrames = framesToLoad.slice(pageFrameStart);
-        const claimed = new Set<number>(); // indices into pageFrames already assigned
+        const claimed = new Set<number>();
 
-        // Read all red rects
-        const readings: { text: string; cx: number; cy: number }[] = [];
+        // Read all red rects with thorough label reading
+        const readings: { text: string; cx: number; cy: number; adjusted: boolean }[] = [];
         for (const lr of allLabelRects) {
           const lx = Math.round(lr.x * pageW), ly = Math.round(lr.y * pageH);
           const lw = Math.round(lr.w * pageW), lh = Math.round(lr.h * pageH);
 
-          // READ from PDF text layer — items overlapping this rect
+          // 1) PDF text layer — items overlapping this rect
           const items = textItems.filter(t =>
             t.x + t.w > lx && t.x < lx + lw &&
             t.y + t.h > ly && t.y < ly + lh
           );
           let text = items.sort((a, b) => a.y - b.y || a.x - b.x).map(t => t.text).join(' ').trim();
 
-          // OCR fallback if text layer empty
-          if (!text && lw > 5 && lh > 5) {
+          // 2) OCR fallback — upscale 3× for better digit recognition
+          if (!text && lw > 3 && lh > 3) {
             try {
+              const ocrScale = 3;
+              const ocrW = lw * ocrScale, ocrH = lh * ocrScale;
               const ocrCrop = document.createElement('canvas');
-              ocrCrop.width = lw; ocrCrop.height = lh;
-              ocrCrop.getContext('2d')!.drawImage(pc, lx, ly, lw, lh, 0, 0, lw, lh);
+              ocrCrop.width = ocrW; ocrCrop.height = ocrH;
+              const ctx = ocrCrop.getContext('2d')!;
+              ctx.imageSmoothingEnabled = true;
+              ctx.imageSmoothingQuality = 'high';
+              ctx.drawImage(pc, lx, ly, lw, lh, 0, 0, ocrW, ocrH);
               const worker = await createWorker('eng', 1, {
                 workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/worker.min.js',
                 corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5/tesseract-core.wasm.js',
+              } as any);
+              await worker.setParameters({
+                tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz.-/: ',
               } as any);
               const result = await worker.recognize(ocrCrop.toDataURL('image/png'));
               text = (result.data.text || '').trim();
@@ -1117,14 +1127,21 @@ async function onApply(): Promise<void> {
             } catch { /* silent */ }
           }
 
+          // 3) If both failed, try matchLabel from the text layer as last resort
+          if (!text) {
+            const mlResult = matchLabel(textItems, lx, ly, lw, lh, true) as { text: string } | null;
+            if (mlResult) text = mlResult.text;
+          }
+
           if (text) {
-            readings.push({ text, cx: lx + lw / 2, cy: ly + lh / 2 });
+            readings.push({ text, cx: lx + lw / 2, cy: ly + lh / 2, adjusted: !!lr.adjusted });
           }
         }
 
-        // Compute pattern: median offset from each red rect center to its nearest image center
+        // Compute pattern from NON-adjusted rects only (auto-detected positions)
+        const autoLabelRects = allLabelRects.filter(r => !r.adjusted);
         const offsets: { dx: number; dy: number }[] = [];
-        for (const lr of allLabelRects) {
+        for (const lr of autoLabelRects) {
           const lcx = Math.round(lr.x * pageW) + Math.round(lr.w * pageW) / 2;
           const lcy = Math.round(lr.y * pageH) + Math.round(lr.h * pageH) / 2;
           let nearDist = Infinity;
@@ -1145,7 +1162,7 @@ async function onApply(): Promise<void> {
           medDy = dys[Math.floor(dys.length / 2)];
         }
 
-        // Pattern-based greedy 1:1 assignment
+        // Greedy 1:1 assignment — pattern from non-adjusted, applied to ALL
         for (const rd of readings) {
           const expectedX = rd.cx + medDx;
           const expectedY = rd.cy + medDy;
@@ -1161,15 +1178,16 @@ async function onApply(): Promise<void> {
           if (bestIdx >= 0) {
             pageFrames[bestIdx].label = rd.text;
             claimed.add(bestIdx);
-            console.log(`[pdfAdjust] RED "${rd.text}" → frame #${bestIdx} at (${pageFrames[bestIdx].sortX}, ${pageFrames[bestIdx].sortY})`);
+            console.log(`[pdfAdjust] RED "${rd.text}" ${rd.adjusted ? '(user)' : '(auto)'} → frame #${bestIdx}`);
           }
         }
       }
 
       // =================================================================
       // STEP 3: Read every BLUE rect directly from the PDF.
-      // Text layer (with red-zone exclusion) + OCR fallback.
-      // Assign using pattern (median offset) + greedy 1:1.
+      // Text layer (red-zone exclusion) + OCR fallback.
+      // Pattern from non-adjusted rects, applied to ALL. Greedy 1:1.
+      // Deleted blue rects = no text for that frame (intentional).
       // =================================================================
       const allBlueRects = pageData.rects.filter(r => r.type === 'text');
       if (allBlueRects.length > 0) {
@@ -1177,7 +1195,7 @@ async function onApply(): Promise<void> {
         const pageFrames = framesToLoad.slice(pageFrameStart);
         const claimed = new Set<number>();
 
-        const blueReadings: { text: string; cx: number; cy: number }[] = [];
+        const blueReadings: { text: string; cx: number; cy: number; adjusted: boolean }[] = [];
         for (const br of allBlueRects) {
           const bx = Math.round(br.x * pageW), by = Math.round(br.y * pageH);
           const bw = Math.round(br.w * pageW), bh = Math.round(br.h * pageH);
@@ -1206,13 +1224,14 @@ async function onApply(): Promise<void> {
           }
 
           if (text) {
-            blueReadings.push({ text, cx: bx + bw / 2, cy: by + bh / 2 });
+            blueReadings.push({ text, cx: bx + bw / 2, cy: by + bh / 2, adjusted: !!br.adjusted });
           }
         }
 
-        // Compute pattern: median offset from each blue rect center to nearest image center
+        // Compute pattern from NON-adjusted blue rects only
+        const autoBlueRects = allBlueRects.filter(r => !r.adjusted);
         const blueOffsets: { dx: number; dy: number }[] = [];
-        for (const br of allBlueRects) {
+        for (const br of autoBlueRects) {
           const bcx = Math.round(br.x * pageW) + Math.round(br.w * pageW) / 2;
           const bcy = Math.round(br.y * pageH) + Math.round(br.h * pageH) / 2;
           let nearDist = Infinity;
@@ -1233,7 +1252,7 @@ async function onApply(): Promise<void> {
           blueMedDy = dys[Math.floor(dys.length / 2)];
         }
 
-        // Pattern-based greedy 1:1 assignment
+        // Greedy 1:1 assignment — pattern from non-adjusted, applied to ALL
         for (const bd of blueReadings) {
           const expectedX = bd.cx + blueMedDx;
           const expectedY = bd.cy + blueMedDy;
@@ -1249,7 +1268,7 @@ async function onApply(): Promise<void> {
           if (bestIdx >= 0) {
             pageFrames[bestIdx].textContent = bd.text;
             claimed.add(bestIdx);
-            console.log(`[pdfAdjust] BLUE "${bd.text.slice(0, 40)}" → frame #${bestIdx}`);
+            console.log(`[pdfAdjust] BLUE "${bd.text.slice(0, 40)}" ${bd.adjusted ? '(user)' : '(auto)'} → frame #${bestIdx}`);
           }
         }
       }
