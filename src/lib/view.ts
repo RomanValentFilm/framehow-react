@@ -342,15 +342,16 @@ export function showSwipeHint(): void {
   if (!hint) return;
   useStore.setState({ swipeHintShown: true });
   hint.classList.add('show');
-  const dismiss = () => {
+  const dismiss = (e?: Event) => {
+    if (e) { e.stopPropagation(); e.preventDefault(); }
     hint.style.transition = 'none';
     hint.classList.remove('show');
     // Restore CSS transition after instant hide
     requestAnimationFrame(() => { hint.style.transition = ''; });
   };
   hint.addEventListener('click', dismiss, { once: true });
-  hint.addEventListener('touchstart', dismiss, { once: true, passive: true });
-  hint.addEventListener('touchmove', dismiss, { once: true, passive: true });
+  hint.addEventListener('touchstart', dismiss, { once: true });
+  hint.addEventListener('touchmove', dismiss, { once: true });
   setTimeout(() => {
     hint.classList.remove('show');
   }, 3000);

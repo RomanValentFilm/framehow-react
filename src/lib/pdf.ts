@@ -85,14 +85,21 @@ async function extractCandidates(
     return false;
   }
 
+  // Inset the row profile by ~4% on each side to ignore thick page borders.
+  // Some PDFs (e.g. Armadillo) draw a 30pt stroked rectangle around the page;
+  // its left/right borders inject dark pixels into every row, preventing the
+  // profiler from detecting gaps between frame rows.  Excluding the edges
+  // removes the border contribution while preserving frame content detection.
+  const marginX = Math.round(W * 0.04);
+  const profW = W - 2 * marginX;
   const rowProf = new Float32Array(H);
   for (let y = 0; y < H; y++) {
     let s = 0;
-    for (let x = 0; x < W; x++) {
+    for (let x = marginX; x < W - marginX; x++) {
       if (isColorNoise((y * W + x) * 4)) continue;
       if (gray[y * W + x] < DARK) s++;
     }
-    rowProf[y] = s / W;
+    rowProf[y] = s / profW;
   }
 
   function findBands(
@@ -138,8 +145,8 @@ async function extractCandidates(
     const rowProfLight = new Float32Array(H);
     for (let y = 0; y < H; y++) {
       let s = 0;
-      for (let x = 0; x < W; x++) if (gray[y * W + x] > LIGHT) s++;
-      rowProfLight[y] = s / W;
+      for (let x = marginX; x < W - marginX; x++) if (gray[y * W + x] > LIGHT) s++;
+      rowProfLight[y] = s / profW;
     }
     activeRowBands = findBands(rowProfLight, H, 0.05, 0.02, Math.round(H * 0.04));
     rowProfForSplit = rowProfLight;
@@ -558,11 +565,14 @@ export function matchText(
   h: number,
   maxY?: number
 ): string {
-  const limit = maxY || y + h + 300;
+  // Allow text slightly beyond the next row (captions can overlap row boundaries)
+  const limit = maxY ? maxY + Math.round(h * 0.25) : y + h + 300;
   // Collect text BELOW the frame (traditional layout)
   const belowItems: TextItem[] = [];
-  // Collect text to the RIGHT of the frame (vertical layout)
+  // Collect text to the RIGHT of the frame (vertical layout — limit distance
+  // to avoid capturing text from adjacent columns in multi-column grids)
   const rightItems: TextItem[] = [];
+  const rightLimit = x + w + Math.round(w * 0.5);
   for (const item of items) {
     if (isLabel(item.text)) continue;
     const iy = item.y,
@@ -571,8 +581,8 @@ export function matchText(
     if (iy >= y + h - 10 && iy <= limit && ix + item.w >= x - 20 && ix <= x + w + 20) {
       belowItems.push(item);
     }
-    // Right: text starts to the right of frame, within frame y range
-    if (ix > x + w - 10 && iy >= y - 20 && iy <= y + h + 20) {
+    // Right: text starts to the right of frame, within half a frame width
+    if (ix > x + w - 10 && ix < rightLimit && iy >= y - 20 && iy <= y + h + 20) {
       rightItems.push(item);
     }
   }
@@ -837,11 +847,13 @@ export async function handlePDF(file: File): Promise<void> {
         crop.getContext('2d')!.drawImage(pc, cx, cy, cw, ch, 0, 0, cw, ch);
         const nextRowY = rowClusters.find((ry) => ry > c.y + c.h * 0.5);
         const maxY = nextRowY !== undefined ? nextRowY : pageH;
+        // Allow text slightly beyond next row (captions can overlap row boundaries)
+        const extMaxY = Math.min(pageH, maxY + Math.round(c.h * 0.25));
         const txt = matchText(textItems, c.x, c.y, c.w, c.h, maxY);
         let ocrCrop: HTMLCanvasElement | null = null;
         if (!txt) {
           const tRegionY = c.y + c.h;
-          const tRegionH = Math.min(maxY, pageH) - tRegionY;
+          const tRegionH = Math.min(extMaxY, pageH) - tRegionY;
           if (tRegionH > 10) {
             ocrCrop = document.createElement('canvas');
             const ocrX = Math.max(0, c.x - 10);
@@ -861,19 +873,38 @@ export async function handlePDF(file: File): Promise<void> {
             );
           }
         }
-        // Compute text bounding box for Adjust tool
+        // Compute text bounding box for Adjust tool.
+        // RULE: text area must NEVER overlap the image area — text is never
+        // read from inside a picture.  The image rect defines the boundary.
         let _tX: number | undefined, _tY: number | undefined, _tW: number | undefined, _tH: number | undefined;
         if (txt) {
-          const belowItems = textItems.filter(item => item.y >= c.y + c.h - 10 && item.y <= maxY && item.x + item.w >= c.x - 20 && item.x <= c.x + c.w + 20);
-          const rightItems = textItems.filter(item => item.x > c.x + c.w - 10 && item.y >= c.y - 20 && item.y <= c.y + c.h + 20);
+          const _rightLimit = c.x + c.w + Math.round(c.w * 0.5);
+          const belowItems = textItems.filter(item => !isLabel(item.text) && item.y >= c.y + c.h - 10 && item.y <= extMaxY && item.x + item.w >= c.x - 20 && item.x <= c.x + c.w + 20);
+          const rightItems = textItems.filter(item => !isLabel(item.text) && item.x > c.x + c.w - 10 && item.x < _rightLimit && item.y >= c.y - 20 && item.y <= c.y + c.h + 20);
           const matched = rightItems.length > belowItems.length ? rightItems : belowItems;
           if (matched.length > 0) {
             _tX = Math.min(...matched.map(it => it.x)); _tY = Math.min(...matched.map(it => it.y));
             _tW = Math.max(...matched.map(it => it.x + it.w)) - _tX; _tH = Math.max(...matched.map(it => it.y + it.h)) - _tY;
+            // Clamp: text bbox must not enter the image area
+            const imgBottom = c.y + c.h;
+            const imgRight = c.x + c.w;
+            if (rightItems.length > belowItems.length) {
+              // Text is to the right of the image — left edge must be at or past image right
+              if (_tX < imgRight) { _tW -= (imgRight - _tX); _tX = imgRight; }
+            } else {
+              // Text is below the image — top edge must be at or past image bottom
+              if (_tY < imgBottom) { _tH -= (imgBottom - _tY); _tY = imgBottom; }
+            }
+            // If clamping made the box invalid, discard it
+            if (_tW <= 0 || _tH <= 0) { _tX = _tY = _tW = _tH = undefined; }
           }
         } else if (ocrCrop) {
           _tX = Math.max(0, c.x - 10); _tY = c.y + c.h;
-          _tW = Math.min(pc.width - _tX, c.w + 20); _tH = Math.min(maxY, pageH) - _tY;
+          _tW = Math.min(pc.width - _tX, c.w + 20);
+          // Default rect: cap at ~3 lines of text so it wraps tighter
+          // (user can extend if text is longer; ocrCrop canvas still scans full area)
+          const ocrAvail = Math.min(extMaxY, pageH) - _tY;
+          _tH = Math.min(Math.round(c.h * 0.35), 150, ocrAvail);
         }
         allFrames.push({
           src: crop.toDataURL('image/jpeg', 0.93),
@@ -904,6 +935,7 @@ export async function handlePDF(file: File): Promise<void> {
           });
         }
       }
+
     }
 
     // Late label assignment: for pages where some frames have no label and
@@ -938,9 +970,15 @@ export async function handlePDF(file: File): Promise<void> {
         let li = 0;
         for (const frame of unlabeled) {
           if (li >= unusedLabels.length) break;
-          frame.label = unusedLabels[li].text.trim();
+          const lateLbl = unusedLabels[li];
+          frame.label = lateLbl.text.trim();
+          // Also store label coordinates so Adjust tool can create rects
+          frame.labelX = lateLbl.x;
+          frame.labelY = lateLbl.y;
+          frame.labelW = lateLbl.w;
+          frame.labelH = lateLbl.h;
           usedLabelsSet.add(frame.label);
-          console.log(`[StripBoard] Late label assign: page ${pi + 1}, "${frame.label}" → frame at position ${allFrames.indexOf(frame)}`);
+          console.log(`[StripBoard] Late label assign: page ${pi + 1}, "${frame.label}" → frame at position ${allFrames.indexOf(frame)} (${lateLbl.x},${lateLbl.y})`);
           li++;
         }
       }
@@ -1091,11 +1129,21 @@ export async function handlePDF(file: File): Promise<void> {
             let _rtX: number | undefined, _rtY: number | undefined, _rtW: number | undefined, _rtH: number | undefined;
             if (txt) {
               const maxTY = fy + fh + Math.round(pageH * 0.25);
-              const belowItems = textItems.filter(item => item.y >= fy + fh - 10 && item.y <= maxTY && item.x + item.w >= fx - 20 && item.x <= fx + fw + 20);
-              const rightItems = textItems.filter(item => item.x > fx + fw - 10 && item.y >= fy - 20 && item.y <= fy + fh + 20);
+              const belowItems = textItems.filter(item => !isLabel(item.text) && item.y >= fy + fh - 10 && item.y <= maxTY && item.x + item.w >= fx - 20 && item.x <= fx + fw + 20);
+              const rightItems = textItems.filter(item => !isLabel(item.text) && item.x > fx + fw - 10 && item.y >= fy - 20 && item.y <= fy + fh + 20);
               const matched = rightItems.length > belowItems.length ? rightItems : belowItems;
-              if (matched.length > 0) { _rtX = Math.min(...matched.map(it => it.x)); _rtY = Math.min(...matched.map(it => it.y)); _rtW = Math.max(...matched.map(it => it.x + it.w)) - _rtX; _rtH = Math.max(...matched.map(it => it.y + it.h)) - _rtY; }
-            } else if (ocrCrop) { _rtX = Math.max(0, fx - 10); _rtY = fy + fh; _rtW = Math.min(pc.width - _rtX, fw + 20); _rtH = Math.min(fy + fh + Math.round(pageH * 0.25), pageH) - _rtY; }
+              if (matched.length > 0) {
+                _rtX = Math.min(...matched.map(it => it.x)); _rtY = Math.min(...matched.map(it => it.y));
+                _rtW = Math.max(...matched.map(it => it.x + it.w)) - _rtX; _rtH = Math.max(...matched.map(it => it.y + it.h)) - _rtY;
+                // Text area must never overlap the image area
+                if (rightItems.length > belowItems.length) {
+                  if (_rtX < fx + fw) { _rtW -= (fx + fw - _rtX); _rtX = fx + fw; }
+                } else {
+                  if (_rtY < fy + fh) { _rtH -= (fy + fh - _rtY); _rtY = fy + fh; }
+                }
+                if (_rtW <= 0 || _rtH <= 0) { _rtX = _rtY = _rtW = _rtH = undefined; }
+              }
+            } else if (ocrCrop) { _rtX = Math.max(0, fx - 10); _rtY = fy + fh; _rtW = Math.min(pc.width - _rtX, fw + 20); const _ocrAvail = Math.min(fy + fh + Math.round(pageH * 0.25), pageH) - _rtY; _rtH = Math.min(Math.round(fh * 0.35), 150, _ocrAvail); }
             recovered.push({
               src: crop.toDataURL('image/jpeg', 0.93),
               label: labelText,
@@ -1172,8 +1220,15 @@ export async function handlePDF(file: File): Promise<void> {
           const txt = matchText(textItems, minX, minY, ecW, ecH, maxY + Math.round(pageH * 0.1));
           let _ecTX: number | undefined, _ecTY: number | undefined, _ecTW: number | undefined, _ecTH: number | undefined;
           if (txt) {
-            const belowItems = textItems.filter(item => item.y >= minY + ecH - 10 && item.y <= maxY + Math.round(pageH * 0.1) && item.x + item.w >= minX - 20 && item.x <= minX + ecW + 20);
-            if (belowItems.length > 0) { _ecTX = Math.min(...belowItems.map(it => it.x)); _ecTY = Math.min(...belowItems.map(it => it.y)); _ecTW = Math.max(...belowItems.map(it => it.x + it.w)) - _ecTX; _ecTH = Math.max(...belowItems.map(it => it.y + it.h)) - _ecTY; }
+            const belowItems = textItems.filter(item => !isLabel(item.text) && item.y >= minY + ecH - 10 && item.y <= maxY + Math.round(pageH * 0.1) && item.x + item.w >= minX - 20 && item.x <= minX + ecW + 20);
+            if (belowItems.length > 0) {
+              _ecTX = Math.min(...belowItems.map(it => it.x)); _ecTY = Math.min(...belowItems.map(it => it.y));
+              _ecTW = Math.max(...belowItems.map(it => it.x + it.w)) - _ecTX; _ecTH = Math.max(...belowItems.map(it => it.y + it.h)) - _ecTY;
+              // Text area must never overlap the image area
+              const imgBtm = minY + ecH;
+              if (_ecTY < imgBtm) { _ecTH -= (imgBtm - _ecTY); _ecTY = imgBtm; }
+              if (_ecTW <= 0 || _ecTH <= 0) { _ecTX = _ecTY = _ecTW = _ecTH = undefined; }
+            }
           }
           allFrames.push({
             src: crop.toDataURL('image/jpeg', 0.93),
@@ -1297,9 +1352,43 @@ export async function handlePDF(file: File): Promise<void> {
     allFrames.forEach((f) => { delete f.ocrCrop; });
     setTimeout(() => document.getElementById('progressOverlay')!.classList.add('hidden'), 300);
 
-    // Open the Adjust window with the extraction results
-    const { openPdfAdjustWithResults } = await import('./pdfAdjust');
-    openPdfAdjustWithResults(file, allFrames);
+    // Phone: skip Adjust, load frames directly into store
+    const phoneMode = Math.min(window.innerWidth, window.innerHeight) <= 430;
+    if (phoneMode) {
+      resetStoryboardState();
+      useStore.setState({ lastPdfName: file.name });
+      const s = state();
+      let nextId = s.nextId;
+      for (const item of allFrames) {
+        const id = nextId++;
+        s.frames.push({
+          id, src: item.src, label: item.label,
+          cropW: item.cropW, cropH: item.cropH,
+          strokes: [], drawMode: false,
+          textContent: item.textContent || '', tableData: null,
+        });
+        s.versions[id] = [{ id: 1, label: 'v1', type: 'empty', strokes: [], bgImage: null }];
+        s.activeTab[id] = 0;
+        s.drawColor[id] = COLORS[0];
+        s.drawWidth[id] = 6;
+        s.drawEraser[id] = false;
+      }
+      for (let i = 0; i < s.frames.length; i++) {
+        if (!s.frames[i].label) s.frames[i].label = '#' + (i + 1);
+      }
+      useStore.setState({ nextId });
+      updateFrameBadge();
+      showToast(`${allFrames.length} frames loaded`);
+      requestAnimationFrame(() => { (window as any).__fh_renderAll?.(); });
+      // Show the "use iPad or desktop" message after a short delay
+      setTimeout(() => {
+        import('./pdfAdjust').then(m => m.showPhoneAdjustMessage());
+      }, 600);
+    } else {
+      // iPad/desktop: open the Adjust window with the extraction results
+      const { openPdfAdjustWithResults } = await import('./pdfAdjust');
+      openPdfAdjustWithResults(file, allFrames);
+    }
   } catch (err) {
     console.error('[StripBoard] PDF extraction error:', err);
     document.getElementById('progressOverlay')!.classList.add('hidden');
@@ -1499,12 +1588,13 @@ export async function testExtractPDF(
       crop.getContext('2d')!.drawImage(pc, cx, cy, cw, ch, 0, 0, cw, ch);
       const nextRowY = rowClusters.find((ry) => ry > c.y + c.h * 0.5);
       const maxY = nextRowY !== undefined ? nextRowY : pageH;
+      const extMaxY = Math.min(pageH, maxY + Math.round(c.h * 0.25));
       const txt = matchText(textItems, c.x, c.y, c.w, c.h, maxY);
       // Prepare OCR crop for frames with no text (same as handlePDF)
       let ocrCrop: HTMLCanvasElement | null = null;
       if (!txt) {
         const tRegionY = c.y + c.h;
-        const tRegionH = Math.min(maxY, pageH) - tRegionY;
+        const tRegionH = Math.min(extMaxY, pageH) - tRegionY;
         if (tRegionH > 10) {
           ocrCrop = document.createElement('canvas');
           const ocrX = Math.max(0, c.x - 10);
@@ -1527,6 +1617,7 @@ export async function testExtractPDF(
         labelAnchors.push({ lx: li.x, ly: li.y, lw: li.w, lh: li.h, fx: c.x, fy: c.y, fw: c.w, fh: c.h, pageW, pageH });
       }
     }
+
   }
 
   // Late label assignment
@@ -1549,7 +1640,12 @@ export async function testExtractPDF(
       let li = 0;
       for (const frame of unlabeled) {
         if (li >= unusedLabels.length) break;
-        frame.label = unusedLabels[li].text.trim();
+        const lateLbl = unusedLabels[li];
+        frame.label = lateLbl.text.trim();
+        frame.labelX = lateLbl.x;
+        frame.labelY = lateLbl.y;
+        frame.labelW = lateLbl.w;
+        frame.labelH = lateLbl.h;
         usedLabelsSet.add(frame.label);
         li++;
       }

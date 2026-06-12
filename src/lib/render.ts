@@ -39,14 +39,14 @@ import { addCrossSwipe, addNavArrows, scheduleSyncHeights } from './view';
 import { showLabelEdit, showVerLabelEdit } from './modals';
 import { getVisibleFrames, updateGroupButtonState } from './groups';
 
-/** In portrait mode, return a window of [prev, active, next] indices. Otherwise all. */
-function windowedTabIndices(tabs: any[], activeIdx: number, isPortrait: boolean): number[] {
-  if (!isPortrait || tabs.length <= 3) return tabs.map((_, i) => i);
-  const result: number[] = [];
-  if (activeIdx > 0) result.push(activeIdx - 1);
-  result.push(activeIdx);
-  if (activeIdx < tabs.length - 1) result.push(activeIdx + 1);
-  return result;
+/** iPhone + 9:16 project → strip cards skip the repeated main-frame name. */
+function _phonePortraitProject(): boolean {
+  return Math.min(window.innerWidth, window.innerHeight) <= 430 && state().portraitMode;
+}
+
+/** Return all tab indices — CSS overflow-x:auto on .version-tabs handles scrolling. */
+function windowedTabIndices(tabs: any[], _activeIdx: number, _isPortrait: boolean): number[] {
+  return tabs.map((_, i) => i);
 }
 
 export function renderAll(): void {
@@ -224,12 +224,12 @@ export function renderMainFrame(div: HTMLElement, fid: number): void {
         : '';
     const colorDots = drawToolbarHTML(fid, 'data-cfid', fid);
     const cCanvasBorder = isCReorder
-      ? 'border:2px solid #e53935;border-radius:var(--radius-sm);'
+      ? 'border:2px solid #d52632;border-radius:var(--radius-sm);'
       : 'border:2px solid var(--accent);border-radius:var(--radius-sm);';
     const cVerHidden = ver && ver.hidden;
     div.innerHTML = `
       <div class="frame-num ver-frame-num">${
-        f.label ? `<span class="frame-label-tag">${f.label}&thinsp;${getFrameStripLabel(f, ccStrip)}</span>` : '<span></span>'
+        f.label ? `<span class="frame-label-tag">${_phonePortraitProject() ? '' : f.label + '&thinsp;'}${getFrameStripLabel(f, ccStrip)}</span>` : '<span></span>'
       }<div class="version-tabs${
         s.reorderFid === fid ? ' locked-dim' : s.verReorderFid === fid && s.verReorderStrip === ccStrip ? ' locked' : ''
       }">${tabsHTML}</div>${
@@ -557,7 +557,7 @@ export function renderVersionFrame(div: HTMLElement, fid: number, strip: StripTy
   div.style.opacity = '';
   // Red outline when frame re-order is active
   if (s.reorderFid === fid) {
-    div.style.borderColor = '#e53935';
+    div.style.borderColor = '#d52632';
   }
   const _verHidden = ver && ver.hidden;
   const isMainInline = strip === 'ver' && (s.crossCompare[fid] ?? -1) >= 0 && s.currentViewMode === 'ver';
@@ -704,13 +704,13 @@ export function renderVersionFrame(div: HTMLElement, fid: number, strip: StripTy
       : '';
   const colorDots = drawToolbarHTML(fid, 'data-fid', fid);
   const canvasBorder = isVReorder
-    ? 'border:2px solid #e53935;border-radius:var(--radius-sm);'
+    ? 'border:2px solid #d52632;border-radius:var(--radius-sm);'
     : (getStripCrossCompare(fid, strip) ?? -1) >= 0 && s.currentViewMode === 'ver'
     ? 'border:2px solid var(--accent);border-radius:var(--radius-sm);'
     : '';
   div.innerHTML = `
     <div class="frame-num ver-frame-num">${
-      f && f.label ? `<span class="frame-label-tag ver-label-combo" data-editverlabel="${fid}">${f.label}&thinsp;${getFrameStripLabel(f, strip)}</span>` : '<span></span>'
+      f && f.label ? `<span class="frame-label-tag ver-label-combo" data-editverlabel="${fid}">${_phonePortraitProject() ? '' : f.label + '&thinsp;'}${getFrameStripLabel(f, strip)}</span>` : '<span></span>'
     }<div class="version-tabs${
     s.reorderFid === fid ? ' locked-dim' : s.verReorderFid === fid && s.verReorderStrip === strip ? ' locked' : ''
   }">${tabsHTML}</div>${

@@ -635,14 +635,28 @@ async function loadCloudProject(p: CloudProject): Promise<void> {
     const ok = await confirmReplaceUnsaved();
     if (!ok) return;
   }
+
+  // Show loading progress overlay
+  const progressEl = document.getElementById('progressOverlay');
+  const progressBar = document.getElementById('progressBar') as HTMLElement | null;
+  const progressLabel = document.getElementById('progressLabel') as HTMLElement | null;
+  if (progressEl) { progressEl.classList.remove('hidden'); }
+  if (progressLabel) progressLabel.textContent = 'Loading project…';
+  if (progressBar) progressBar.style.width = '10%';
+
   try {
     // 1. Flush-save current project before switching (blocking)
     await flushSyncNow();
+    if (progressBar) progressBar.style.width = '20%';
     // 2. Pause auto-sync to prevent cross-contamination during load
     setProjectSwitchInFlight(true);
     // 3. Load new project from cloud
+    if (progressLabel) progressLabel.textContent = 'Downloading…';
     const tree = await api.get<CloudProjectTree>(`/projects/${encodeURIComponent(p.id)}/sync`, getToken());
+    if (progressBar) progressBar.style.width = '50%';
+    if (progressLabel) progressLabel.textContent = 'Applying…';
     await applyCloudTreeToStore(tree);
+    if (progressBar) progressBar.style.width = '85%';
     updateLastKnownTimestamp(tree.project.updated_at);
     setCurrentProject({ projectId: p.id, name: p.name, lastSavedAt: tree.project.updated_at });
     fhTrack('project_opened', { name: p.name });
@@ -650,8 +664,11 @@ async function loadCloudProject(p: CloudProject): Promise<void> {
     autoPhoneMainView();
     // 4. Update sync hash BEFORE resuming — so sync sees the new project as baseline
     updateSyncHash();
-    showToast('Project loaded');
+    if (progressBar) progressBar.style.width = '100%';
+    setTimeout(() => { if (progressEl) progressEl.classList.add('hidden'); }, 300);
+    // Progress bar already signals completion — no toast needed
   } catch (e) {
+    if (progressEl) progressEl.classList.add('hidden');
     showToast(asMessage(e, 'Could not load project.'));
   } finally {
     // 5. Resume auto-sync
@@ -1089,6 +1106,34 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
     hiddenFrameIds: g.hiddenFrameIds.map((fid) => localToServerFrame.get(fid) || '').filter(Boolean),
   }));
 
+  // Migrate PDF-adjust localStorage entries from 'local' → real project ID.
+  // When a user first imports a PDF into a new (unsaved) project, rects and
+  // the filename hint are stored under the key prefix "…_local_…". Once the
+  // project is saved to cloud and gets a server UUID, we need to re-key those
+  // entries so the sync can find them.
+  const localRectsPrefix = 'pdfAdjustRects_local_';
+  const keysToMigrate: string[] = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k && k.startsWith(localRectsPrefix)) keysToMigrate.push(k);
+  }
+  for (const oldKey of keysToMigrate) {
+    const fileName = oldKey.slice(localRectsPrefix.length);
+    const newKey = `pdfAdjustRects_${projectId}_${fileName}`;
+    if (!localStorage.getItem(newKey)) {
+      try { localStorage.setItem(newKey, localStorage.getItem(oldKey)!); } catch { /* quota */ }
+    }
+    localStorage.removeItem(oldKey);
+  }
+  const localLastPdf = localStorage.getItem('pdfAdjustLastFile_local');
+  if (localLastPdf) {
+    const newLastKey = `pdfAdjustLastFile_${projectId}`;
+    if (!localStorage.getItem(newLastKey)) {
+      try { localStorage.setItem(newLastKey, localLastPdf); } catch { /* quota */ }
+    }
+    localStorage.removeItem('pdfAdjustLastFile_local');
+  }
+
   // Collect all PDF adjust rect entries for this project from localStorage
   const pdfAdjustRects: Record<string, any> = {};
   const rectsPrefix = `pdfAdjustRects_${projectId}_`;
@@ -1100,12 +1145,16 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
     }
   }
 
+  // Last imported PDF filename for Adjust tool hint
+  const lastPdfName = localStorage.getItem(`pdfAdjustLastFile_${projectId}`) || undefined;
+
   const metadata = JSON.stringify({
     stripDefs: s.stripDefs,
     groups: metaGroups,
     nextGroupId: s.nextGroupId,
     portraitMode: s.portraitMode,
     pdfAdjustRects: Object.keys(pdfAdjustRects).length > 0 ? pdfAdjustRects : undefined,
+    pdfAdjustLastFile: lastPdfName,
   });
 
   // Upload all images to R2 in parallel
@@ -1323,6 +1372,10 @@ async function applyCloudTreeToStore(tree: CloudProjectTree): Promise<void> {
             localStorage.setItem(`pdfAdjustRects_${pid}_${fileName}`, JSON.stringify(data));
           } catch { /* quota — skip */ }
         }
+      }
+      // Restore last PDF filename for Adjust tool hint
+      if (meta.pdfAdjustLastFile && typeof meta.pdfAdjustLastFile === 'string') {
+        try { localStorage.setItem(`pdfAdjustLastFile_${tree.project.id}`, meta.pdfAdjustLastFile); } catch { /* skip */ }
       }
     } catch {
       // Ignore malformed metadata — use defaults

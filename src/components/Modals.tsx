@@ -63,7 +63,7 @@ export function Modals() {
             <button
               className="btn"
               id="confirmYes"
-              style={{ background: '#e53935', borderColor: '#e53935', color: '#fff' }}
+              style={{ background: '#d52632', borderColor: '#d52632', color: '#fff' }}
             >
               Yes
             </button>

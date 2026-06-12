@@ -23,6 +23,7 @@ interface AdjustRect {
   x: number; y: number; w: number; h: number; // relative to page (0–1)
   pageIdx: number;
   adjusted?: boolean; // true if user moved/resized this rect
+  labelText?: string; // extracted label text (e.g. "2B OPTIONAL") for display
 }
 
 interface PageData {
@@ -60,10 +61,42 @@ const RECT_BORDERS = {
 };
 
 // ---------------------------------------------------------------------------
+// Minimum label rect size — pad small auto-detected number rects so they're
+// easy to see and grab with a finger on iPad touch screens.
+// ---------------------------------------------------------------------------
+
+const MIN_LABEL_W = 0.06; // 6% of page width
+const MIN_LABEL_H = 0.03; // 3% of page height
+
+function padLabelRect(x: number, y: number, w: number, h: number): { x: number; y: number; w: number; h: number } {
+  if (w >= MIN_LABEL_W && h >= MIN_LABEL_H) return { x, y, w, h };
+  const nw = Math.max(w, MIN_LABEL_W);
+  const nh = Math.max(h, MIN_LABEL_H);
+  // Center the padding around the original rect
+  return { x: x - (nw - w) / 2, y: y - (nh - h) / 2, w: nw, h: nh };
+}
+
+// ---------------------------------------------------------------------------
 // Persist rect overlay per project + PDF filename (localStorage)
 // ---------------------------------------------------------------------------
 
 const STORAGE_PREFIX = 'pdfAdjustRects_';
+
+// ---------------------------------------------------------------------------
+// Remember last imported PDF filename per project (localStorage)
+// ---------------------------------------------------------------------------
+
+const LAST_PDF_PREFIX = 'pdfAdjustLastFile_';
+
+function saveLastPdfName(fileName: string): void {
+  const pid = getCurrentProject().projectId || 'local';
+  try { localStorage.setItem(`${LAST_PDF_PREFIX}${pid}`, fileName); } catch { /* silent */ }
+}
+
+function getLastPdfName(): string | null {
+  const pid = getCurrentProject().projectId || 'local';
+  return localStorage.getItem(`${LAST_PDF_PREFIX}${pid}`);
+}
 
 function storageKey(fileName: string, pid?: string): string {
   const id = pid ?? getCurrentProject().projectId ?? 'local';
@@ -76,7 +109,7 @@ function saveRectsForFile(): void {
   const key = storageKey(_currentFile.name);
   const data = _pages.map(p => ({
     pageNum: p.pageNum,
-    rects: p.rects.map(r => ({ id: r.id, type: r.type, x: r.x, y: r.y, w: r.w, h: r.h, adjusted: r.adjusted })),
+    rects: p.rects.map(r => ({ id: r.id, type: r.type, pageIdx: r.pageIdx, x: r.x, y: r.y, w: r.w, h: r.h, adjusted: r.adjusted, labelText: r.labelText })),
   }));
   try {
     localStorage.setItem(key, JSON.stringify(data));
@@ -150,58 +183,171 @@ function updateRectCounts(): void {
 }
 
 // ---------------------------------------------------------------------------
+// Page navigation sidebar — numbered dots, scroll-tracking + click-to-jump
+// ---------------------------------------------------------------------------
+
+function buildPageNav(): void {
+  const nav = document.getElementById('pdfAdjustPageNav');
+  if (!nav) return;
+  nav.innerHTML = '';
+  if (_pages.length <= 1) return;
+
+  // Track (thin vertical line)
+  nav.style.cssText =
+    'position:absolute;right:12px;top:16px;bottom:16px;width:24px;z-index:10;' +
+    'display:flex;flex-direction:column;align-items:center;pointer-events:none;';
+
+  const track = document.createElement('div');
+  track.id = 'pdfAdjustNavTrack';
+  track.style.cssText =
+    'position:absolute;top:0;bottom:0;width:3px;background:#333;border-radius:2px;pointer-events:auto;cursor:pointer;';
+  nav.appendChild(track);
+
+  // Thumb (moves along the track, shows page number)
+  const thumb = document.createElement('div');
+  thumb.id = 'pdfAdjustNavThumb';
+  thumb.style.cssText =
+    'position:absolute;left:50%;transform:translateX(-50%);' +
+    'min-width:28px;height:22px;border-radius:11px;background:#d52632;' +
+    'color:#fff;font-size:11px;font-family:monospace;font-weight:bold;' +
+    'display:flex;align-items:center;justify-content:center;' +
+    'pointer-events:none;transition:top 0.12s ease-out;padding:0 6px;white-space:nowrap;';
+  thumb.textContent = '1 / ' + _pages.length;
+  nav.appendChild(thumb);
+
+  // Click on track to jump to page
+  track.addEventListener('click', (e) => {
+    const trackRect = track.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (e.clientY - trackRect.top) / trackRect.height));
+    const targetPage = Math.round(ratio * (_pages.length - 1));
+    const pageEls = document.querySelectorAll('.pdfAdjustPage');
+    if (pageEls[targetPage]) pageEls[targetPage].scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+
+  // Wire scroll listener — throttled to one rAF per frame to avoid layout thrashing
+  const scrollEl = document.getElementById('pdfAdjustPages');
+  if (scrollEl) {
+    let _navRafPending = false;
+    scrollEl.addEventListener('scroll', () => {
+      if (!_navRafPending) {
+        _navRafPending = true;
+        requestAnimationFrame(() => { _navRafPending = false; updatePageNavThumb(); });
+      }
+    }, { passive: true });
+    requestAnimationFrame(updatePageNavThumb);
+  }
+}
+
+function updatePageNavThumb(): void {
+  const scrollEl = document.getElementById('pdfAdjustPages');
+  const track = document.getElementById('pdfAdjustNavTrack');
+  const thumb = document.getElementById('pdfAdjustNavThumb');
+  if (!scrollEl || !track || !thumb) return;
+
+  const pageEls = scrollEl.querySelectorAll('.pdfAdjustPage');
+  if (pageEls.length === 0) return;
+
+  // Find current page
+  const containerTop = scrollEl.getBoundingClientRect().top;
+  const containerH = scrollEl.clientHeight;
+  let activeIdx = 0;
+  for (let i = 0; i < pageEls.length; i++) {
+    const rect = pageEls[i].getBoundingClientRect();
+    if (rect.top <= containerTop + containerH * 0.4) activeIdx = i;
+  }
+
+  // Position thumb along the track
+  const trackH = track.clientHeight;
+  const thumbH = thumb.clientHeight;
+  const maxTop = trackH - thumbH;
+  const ratio = _pages.length > 1 ? activeIdx / (_pages.length - 1) : 0;
+  thumb.style.top = Math.round(ratio * maxTop) + 'px';
+  thumb.textContent = (activeIdx + 1) + ' / ' + _pages.length;
+}
+
+// ---------------------------------------------------------------------------
+// Phone detection — Adjust tool is iPad/desktop only
+// ---------------------------------------------------------------------------
+
+function isPhone(): boolean {
+  return Math.min(window.innerWidth, window.innerHeight) <= 430;
+}
+
+/**
+ * Show overlay telling the user to use iPad or desktop for adjustments.
+ * Same style as the "rotate phone" overlay. Tap anywhere to dismiss.
+ */
+export function showPhoneAdjustMessage(): void {
+  const overlay = document.createElement('div');
+  overlay.className = 'rotate-msg show';
+  overlay.style.zIndex = '100000';
+  overlay.innerHTML = '<span>To adjust the imported storyboard,<br>please use iPad or desktop.</span>';
+  const dismiss = (e?: Event) => { if (e) { e.stopPropagation(); e.preventDefault(); } overlay.remove(); };
+  overlay.addEventListener('click', dismiss);
+  document.body.appendChild(overlay);
+  setTimeout(() => overlay.remove(), 5000);
+}
+
+// ---------------------------------------------------------------------------
 // Open the adjustment overlay
 // ---------------------------------------------------------------------------
 
 export function openPdfAdjust(): void {
   if (_overlay) return;
 
+  // Phone: show message instead of Adjust tool
+  if (isPhone()) { showPhoneAdjustMessage(); return; }
+
   const overlay = document.createElement('div');
   overlay.id = 'pdfAdjustOverlay';
   overlay.style.cssText =
     'position:fixed;inset:0;z-index:100000;background:#111;' +
-    'display:flex;flex-direction:column;overflow:hidden;';
+    'display:flex;flex-direction:column;overflow:hidden;' +
+    'padding-top:env(safe-area-inset-top);';
 
-  overlay.innerHTML = `
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:#1a1a1a;border-bottom:1px solid #333;flex-shrink:0;">
-      <span style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;font-size:15px;font-weight:600;color:#fff;">Adjust PDF Import</span>
-      <span id="pdfAdjustCounter" style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;font-size:13px;color:#888;flex:1;text-align:center;"></span>
-      <div style="display:flex;gap:8px;">
-        <button id="pdfAdjustAddImage" style="padding:5px 12px;border-radius:6px;border:1px solid #00c850;background:transparent;color:#00c850;font-size:12px;cursor:pointer;">+ Image</button>
-        <button id="pdfAdjustAddText" style="padding:5px 12px;border-radius:6px;border:1px solid #3c82ff;background:transparent;color:#3c82ff;font-size:12px;cursor:pointer;">+ Text</button>
-        <button id="pdfAdjustAddLabel" style="padding:5px 12px;border-radius:6px;border:1px solid #ff3c3c;background:transparent;color:#ff3c3c;font-size:12px;cursor:pointer;">+ Number</button>
-        <button id="pdfAdjustApply" style="padding:5px 16px;border-radius:6px;border:none;background:#c94432;color:#fff;font-size:12px;font-weight:600;cursor:pointer;">Apply</button>
-        <button id="pdfAdjustClose" style="padding:5px 12px;border-radius:6px;border:1px solid #555;background:transparent;color:#ccc;font-size:12px;cursor:pointer;">Close</button>
+  // Two modes: picker card (menu re-open) vs full work area (first import via openPdfAdjustWithResults)
+  const isReopen = !_currentFile;
+  const lastPdf = isReopen ? getLastPdfName() : null;
+
+  if (isReopen) {
+    // Menu → Adjust PDF Import: show picker card
+    overlay.innerHTML = `
+      <div id="pdfAdjustPickerCard" style="flex:1;display:flex;align-items:center;justify-content:center;">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:16px;max-width:420px;text-align:center;">
+          <span style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;font-size:17px;font-weight:600;color:#fff;">Adjust PDF Import</span>
+          ${lastPdf ? `<span style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;font-size:14px;color:#ccc;">Select <span style="color:#d52632;">the same PDF</span> to continue adjusting the data for the import</span>` : ''}
+          ${lastPdf ? `<span style="font-family:monospace;font-size:15px;font-weight:600;color:#ddd;">${lastPdf}</span>` : ''}
+          <label style="cursor:pointer;">
+            <span style="display:inline-block;padding:10px 28px;border-radius:8px;border:none;background:#d52632;color:#fff;font-size:14px;font-weight:600;font-family:-apple-system,BlinkMacSystemFont,sans-serif;cursor:pointer;">Select PDF File</span>
+            <input type="file" accept=".pdf" id="pdfAdjustFileInput" style="display:none;">
+          </label>
+          <button id="pdfAdjustCloseAlt" style="margin-top:8px;padding:6px 16px;border-radius:6px;border:1px solid #555;background:transparent;color:#888;font-size:12px;cursor:pointer;font-family:-apple-system,BlinkMacSystemFont,sans-serif;">Close</button>
+        </div>
       </div>
-    </div>
-    <div style="display:flex;align-items:center;justify-content:center;padding:12px;background:#1a1a1a;border-bottom:1px solid #333;flex-shrink:0;">
-      <label style="display:flex;align-items:center;gap:8px;padding:8px 20px;border-radius:8px;border:2px dashed #555;cursor:pointer;color:#aaa;font-size:13px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;">
-        <span id="pdfAdjustFileName">Select a PDF file</span>
-        <input type="file" accept=".pdf" id="pdfAdjustFileInput" style="display:none;">
-      </label>
-    </div>
-    <div style="display:flex;gap:8px;padding:8px 16px;background:#1a1a1a;flex-shrink:0;">
-      <span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#00c850;">◼ Image</span>
-      <span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#3c82ff;">◼ Text</span>
-      <span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#ff3c3c;">◼ Number</span>
-      <span style="font-size:11px;color:#666;margin-left:8px;">Drag corners to resize. Drag middle to move. Tap to select, Delete to remove.</span>
-    </div>
-    <div id="pdfAdjustPages" style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:24px;align-items:center;"></div>
-  `;
+    `;
+  } else {
+    // First import: straight to work area (no picker card)
+    overlay.innerHTML = buildWorkAreaHTML();
+  }
 
   document.body.appendChild(overlay);
   _overlay = overlay;
 
-  // Wire events
-  document.getElementById('pdfAdjustClose')!.addEventListener('click', closePdfAdjust);
-  document.getElementById('pdfAdjustFileInput')!.addEventListener('change', onFileSelect);
-  document.getElementById('pdfAdjustApply')!.addEventListener('click', onApply);
-  document.getElementById('pdfAdjustAddImage')!.addEventListener('click', () => addRectToCurrentPage('image'));
-  document.getElementById('pdfAdjustAddText')!.addEventListener('click', () => addRectToCurrentPage('text'));
-  document.getElementById('pdfAdjustAddLabel')!.addEventListener('click', () => addRectToCurrentPage('label'));
-
   // Global key handler for delete
   document.addEventListener('keydown', onKeyDown);
+
+  if (isReopen) {
+    // Picker card events
+    document.getElementById('pdfAdjustCloseAlt')!.addEventListener('click', closePdfAdjust);
+    document.getElementById('pdfAdjustFileInput')!.addEventListener('change', onFileSelect);
+  } else {
+    // Work area events (first import via openPdfAdjustWithResults)
+    document.getElementById('pdfAdjustClose')!.addEventListener('click', closePdfAdjust);
+    document.getElementById('pdfAdjustApply')!.addEventListener('click', onApply);
+    document.getElementById('pdfAdjustAddImage')!.addEventListener('click', () => addRectToCurrentPage('image'));
+    document.getElementById('pdfAdjustAddText')!.addEventListener('click', () => addRectToCurrentPage('text'));
+    document.getElementById('pdfAdjustAddLabel')!.addEventListener('click', () => addRectToCurrentPage('label'));
+  }
 }
 
 /**
@@ -219,6 +365,7 @@ export async function openPdfAdjustWithResults(file: File, frames: ExtractedFram
     textX: f.textX, textY: f.textY, textW: f.textW, textH: f.textH,
   })) as any;
   _currentFile = file;
+  saveLastPdfName(file.name);
 
   // Open the overlay UI
   openPdfAdjust();
@@ -227,7 +374,6 @@ export async function openPdfAdjustWithResults(file: File, frames: ExtractedFram
   try {
     const ab = await file.arrayBuffer();
     _pdfDoc = await pdfjsLib.getDocument({ data: ab }).promise;
-    document.getElementById('pdfAdjustFileName')!.textContent = file.name;
     await renderPagesWithPreExtractedFrames();
   } catch (err) {
     showToast('Could not render PDF pages');
@@ -265,13 +411,17 @@ async function renderPagesWithPreExtractedFrames(): Promise<void> {
         const pw = f.pageW, ph = f.pageH;
         pageData.rects.push({ id: `p${p}_img_${rectId++}`, type: 'image', pageIdx, x: f.imgX / pw, y: f.imgY / ph, w: f.imgW / pw, h: f.imgH / ph });
         if (f.labelX != null && f.labelW != null) {
-          pageData.rects.push({ id: `p${p}_lbl_${rectId++}`, type: 'label', pageIdx, x: f.labelX / pw, y: f.labelY / ph, w: f.labelW / pw, h: f.labelH / ph });
+          const lbl = padLabelRect(f.labelX / pw, f.labelY / ph, f.labelW / pw, f.labelH / ph);
+          pageData.rects.push({ id: `p${p}_lbl_${rectId++}`, type: 'label', pageIdx, ...lbl, labelText: f.label || '' });
         }
-        if (f.textX != null && f.textW != null) {
+        if (f.textX != null && f.textW != null && f.textContent) {
           pageData.rects.push({ id: `p${p}_txt_${rectId++}`, type: 'text', pageIdx, x: f.textX / pw, y: f.textY / ph, w: f.textW / pw, h: f.textH / ph });
         }
       }
     }
+
+    // Enforce rule: blue text rects must never overlap green image rects
+    resolveRectsForPage(pageData);
 
     // Build page DOM element
     const pageEl = document.createElement('div');
@@ -282,8 +432,15 @@ async function renderPagesWithPreExtractedFrames(): Promise<void> {
     label.style.cssText = 'position:absolute;top:-20px;left:0;font-size:11px;color:#666;font-family:monospace;';
     label.textContent = `Page ${p} — ${pageFrames.length} frame${pageFrames.length !== 1 ? 's' : ''}`;
     pageEl.appendChild(label);
-    canvas.style.cssText = 'display:block;max-width:90vw;height:auto;';
-    pageEl.appendChild(canvas);
+    // Use <img> instead of <canvas> in DOM — static images are far cheaper
+    // for the GPU compositor during scroll (canvas = live texture = jank).
+    // Keep original canvas in _pages for extraction.
+    const img = new Image();
+    img.src = canvas.toDataURL('image/jpeg', 0.92);
+    img.style.cssText = 'display:block;max-width:90vw;height:auto;';
+    img.width = canvas.width;
+    img.height = canvas.height;
+    pageEl.appendChild(img);
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('viewBox', `0 0 ${canvas.width} ${canvas.height}`);
     svg.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;';
@@ -298,6 +455,7 @@ async function renderPagesWithPreExtractedFrames(): Promise<void> {
     renderRectsForPage(pageIdx);
   }
   updateRectCounts();
+  buildPageNav();
   showToast(`${(_extractedFrames as any[]).length} frames — review and press Apply`);
 }
 
@@ -321,13 +479,53 @@ export function closePdfAdjust(): void {
 // File loading
 // ---------------------------------------------------------------------------
 
+function buildWorkAreaHTML(): string {
+  return `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:#1a1a1a;border-bottom:1px solid #333;flex-shrink:0;">
+      <span style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;font-size:15px;font-weight:600;color:#fff;">Adjust PDF Import</span>
+      <span id="pdfAdjustCounter" style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;font-size:13px;color:#888;flex:1;text-align:center;"></span>
+      <div style="display:flex;gap:8px;">
+        <button id="pdfAdjustAddImage" style="padding:5px 12px;border-radius:6px;border:1px solid #00c850;background:transparent;color:#00c850;font-size:12px;cursor:pointer;">+ Image</button>
+        <button id="pdfAdjustAddText" style="padding:5px 12px;border-radius:6px;border:1px solid #3c82ff;background:transparent;color:#3c82ff;font-size:12px;cursor:pointer;">+ Text</button>
+        <button id="pdfAdjustAddLabel" style="padding:5px 12px;border-radius:6px;border:1px solid #ff3c3c;background:transparent;color:#ff3c3c;font-size:12px;cursor:pointer;">+ Number</button>
+        <button id="pdfAdjustApply" style="padding:5px 16px;border-radius:6px;border:none;background:#d52632;color:#fff;font-size:12px;font-weight:600;cursor:pointer;">Apply</button>
+        <button id="pdfAdjustClose" style="padding:5px 12px;border-radius:6px;border:1px solid #555;background:transparent;color:#ccc;font-size:12px;cursor:pointer;">Close</button>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;padding:8px 16px;background:#1a1a1a;border-bottom:1px solid #333;flex-shrink:0;">
+      <span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#00c850;">◼ Image</span>
+      <span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#3c82ff;">◼ Text</span>
+      <span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#ff3c3c;">◼ Number</span>
+      <span style="font-size:11px;color:#666;margin-left:8px;">Drag corners to resize. Drag middle to move. Tap to select.</span>
+    </div>
+    <div style="flex:1;display:flex;overflow:hidden;position:relative;">
+      <div id="pdfAdjustPages" style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:24px;align-items:center;"></div>
+      <div id="pdfAdjustPageNav" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:6px;z-index:10;"></div>
+    </div>
+  `;
+}
+
+function switchToWorkArea(): void {
+  if (!_overlay) return;
+  _overlay.innerHTML = buildWorkAreaHTML();
+  // Wire work area events
+  document.getElementById('pdfAdjustClose')!.addEventListener('click', closePdfAdjust);
+  document.getElementById('pdfAdjustApply')!.addEventListener('click', onApply);
+  document.getElementById('pdfAdjustAddImage')!.addEventListener('click', () => addRectToCurrentPage('image'));
+  document.getElementById('pdfAdjustAddText')!.addEventListener('click', () => addRectToCurrentPage('text'));
+  document.getElementById('pdfAdjustAddLabel')!.addEventListener('click', () => addRectToCurrentPage('label'));
+}
+
 async function onFileSelect(e: Event): Promise<void> {
   const input = e.target as HTMLInputElement;
   const file = input.files?.[0];
   if (!file) return;
 
+  // Switch from picker card to full work area
+  switchToWorkArea();
+
   _currentFile = file;
-  document.getElementById('pdfAdjustFileName')!.textContent = file.name;
+  saveLastPdfName(file.name);
   showToast('Loading PDF…');
 
   try {
@@ -385,10 +583,11 @@ async function renderAllPages(): Promise<void> {
     _pages.push(pageData);
 
     if (savedRects) {
-      // RESTORE saved rects for this page
+      // RESTORE saved rects for this page — ensure pageIdx is set
+      // (older saved data may not include pageIdx)
       const savedPage = savedRects.find(sp => sp.pageNum === p);
       if (savedPage) {
-        pageData.rects = savedPage.rects.map(r => ({ ...r }));
+        pageData.rects = savedPage.rects.map(r => ({ ...r, pageIdx: r.pageIdx ?? pageIdx }));
       }
     } else {
       // BUILD rects from fresh extraction results
@@ -402,12 +601,13 @@ async function renderAllPages(): Promise<void> {
             x: f.imgX / pw, y: f.imgY! / ph, w: f.imgW / pw, h: f.imgH! / ph,
           });
           if (f.labelX != null && f.labelW != null) {
+            const lbl = padLabelRect(f.labelX / pw, f.labelY! / ph, f.labelW / pw, f.labelH! / ph);
             pageData.rects.push({
               id: `p${p}_lbl_${rectId++}`, type: 'label', pageIdx,
-              x: f.labelX / pw, y: f.labelY! / ph, w: f.labelW / pw, h: f.labelH! / ph,
+              ...lbl, labelText: f.label || '',
             });
           }
-          if (f.textX != null && f.textW != null) {
+          if (f.textX != null && f.textW != null && f.textContent) {
             pageData.rects.push({
               id: `p${p}_txt_${rectId++}`, type: 'text', pageIdx,
               x: f.textX / pw, y: f.textY! / ph, w: f.textW / pw, h: f.textH! / ph,
@@ -416,6 +616,9 @@ async function renderAllPages(): Promise<void> {
         }
       }
     }
+
+    // Enforce rule: blue text rects must never overlap green image rects
+    resolveRectsForPage(pageData);
 
     // Build page element
     const pageEl = document.createElement('div');
@@ -429,8 +632,14 @@ async function renderAllPages(): Promise<void> {
     label.textContent = `Page ${p} — ${totalRects} frame${totalRects !== 1 ? 's' : ''}`;
     pageEl.appendChild(label);
 
-    canvas.style.cssText = 'display:block;max-width:90vw;height:auto;';
-    pageEl.appendChild(canvas);
+    // Use <img> instead of <canvas> in DOM — static images are far cheaper
+    // for the GPU compositor during scroll (canvas = live texture = jank).
+    const img = new Image();
+    img.src = canvas.toDataURL('image/jpeg', 0.92);
+    img.style.cssText = 'display:block;max-width:90vw;height:auto;';
+    img.width = canvas.width;
+    img.height = canvas.height;
+    pageEl.appendChild(img);
 
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('viewBox', `0 0 ${canvas.width} ${canvas.height}`);
@@ -448,6 +657,7 @@ async function renderAllPages(): Promise<void> {
     renderRectsForPage(pageIdx);
   }
   updateRectCounts();
+  buildPageNav();
 
   const totalFrames = _pages.reduce((s, p) => s + p.rects.filter(r => r.type === 'image').length, 0);
   if (savedRects) {
@@ -610,6 +820,9 @@ function renderRectsForPage(pageIdx: number): void {
   const page = _pages[pageIdx];
   if (!page) return;
 
+  // Clean up any previous delete button on this page
+  svg.parentElement?.querySelector('.pdfAdjustDelBtn')?.remove();
+
   svg.innerHTML = '';
   for (const rect of page.rects) {
     const px = rect.x * page.width;
@@ -630,9 +843,9 @@ function renderRectsForPage(pageIdx: number): void {
     if (isActive) r.setAttribute('stroke-dasharray', '6,3');
     svg.appendChild(r);
 
-    // Corner handles (only for active rect)
+    // Corner handles + delete button (only for active rect)
     if (isActive) {
-      const handleSize = 8;
+      const handleSize = 10;
       for (const [hx, hy, name] of [
         [px, py, 'nw'], [px + pw, py, 'ne'],
         [px, py + ph, 'sw'], [px + pw, py + ph, 'se'],
@@ -647,17 +860,48 @@ function renderRectsForPage(pageIdx: number): void {
         handle.setAttribute('stroke-width', '2');
         svg.appendChild(handle);
       }
+
+      // Red × delete button at top-right corner — as HTML element above interact layer
+      const pageEl = svg.parentElement!;
+      // Remove any previous delete button
+      pageEl.querySelector('.pdfAdjustDelBtn')?.remove();
+      const delBtn = document.createElement('div');
+      delBtn.className = 'pdfAdjustDelBtn';
+      // Position as percentage of page (rect coords are 0–1)
+      delBtn.style.cssText =
+        'position:absolute;z-index:20;width:24px;height:24px;border-radius:50%;' +
+        'background:#cc2222;border:2px solid #fff;cursor:pointer;' +
+        'display:flex;align-items:center;justify-content:center;' +
+        'font-size:14px;font-weight:bold;color:#fff;line-height:1;' +
+        'touch-action:manipulation;box-shadow:0 1px 4px rgba(0,0,0,0.5);' +
+        `top:calc(${rect.y * 100}% - 12px);left:calc(${(rect.x + rect.w) * 100}% - 12px);`;
+      delBtn.textContent = '×';
+      delBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const p = _pages[rect.pageIdx];
+        if (p) {
+          p.rects = p.rects.filter(r => r.id !== rect.id);
+          _activeRect = null;
+          renderRectsForPage(rect.pageIdx);
+          updateRectCounts();
+        }
+      });
+      delBtn.addEventListener('touchstart', (e) => { e.stopPropagation(); }, { passive: true });
+      pageEl.appendChild(delBtn);
     }
 
-    // Type label
+    // Type label (show actual label text for red/label rects when available)
+    const isLabelWithText = rect.type === 'label' && rect.labelText;
     const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
     text.setAttribute('x', String(px + 4));
-    text.setAttribute('y', String(py + 12));
+    text.setAttribute('y', String(isLabelWithText ? py - 8 : py + 12));
     text.setAttribute('fill', RECT_BORDERS[rect.type]);
-    text.setAttribute('font-size', '10');
+    text.setAttribute('font-size', isLabelWithText ? '22' : '10');
     text.setAttribute('font-family', 'monospace');
     text.setAttribute('font-weight', 'bold');
-    text.textContent = rect.type === 'label' ? 'NUMBER' : rect.type.toUpperCase();
+    text.textContent = isLabelWithText
+      ? rect.labelText!
+      : rect.type === 'label' ? 'NUMBER' : rect.type.toUpperCase();
     svg.appendChild(text);
   }
 }
@@ -685,8 +929,19 @@ function wireInteraction(el: HTMLElement, pageIdx: number): void {
     // so small rects (labels/numbers) are easy to grab and move, not just resize.
     if (_activeRect && _activeRect.pageIdx === pageIdx) {
       const r = _activeRect;
+
+      // Center priority zone: inner 60% of rect is always MOVE,
+      // so there's always room to reposition even on small rects.
+      const cx = r.x + r.w / 2;
+      const cy = r.y + r.h / 2;
+      if (Math.abs(pos.x - cx) < r.w * 0.3 && Math.abs(pos.y - cy) < r.h * 0.3) {
+        return { rect: r, handle: 'move' };
+      }
+
+      // Corner hit area — 1.5% min (was 3%), capped so it never exceeds
+      // 35% of the rect's shortest side to avoid swallowing tiny rects.
       const minDim = Math.min(r.w, r.h);
-      const handleR = Math.max(0.005, Math.min(0.015, minDim * 0.15));
+      const handleR = Math.min(Math.max(0.015, minDim * 0.25), minDim * 0.35);
       const corners = [
         { x: r.x, y: r.y, name: 'nw' },
         { x: r.x + r.w, y: r.y, name: 'ne' },
@@ -835,6 +1090,85 @@ function onKeyDown(e: KeyboardEvent): void {
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
+// Clip blue text rects so they never overlap green image rects.
+// Text should never be read from inside a picture area.  If a blue rect
+// overlaps a green rect, shorten it from the side with the smallest
+// penetration.  Any blue rect clipped to near-zero size is removed.
+// ---------------------------------------------------------------------------
+function resolveRectsForPage(pageData: PageData): void {
+  const imageRects = pageData.rects.filter(r => r.type === 'image');
+  const blueRects = pageData.rects.filter(r => r.type === 'text');
+  const redRects = pageData.rects.filter(r => r.type === 'label');
+
+  // Helper: resolve overlap between `mover` and `fixed` by shrinking `mover`
+  // along the direction of smallest penetration.
+  function resolveOverlap(mover: AdjustRect, fixed: { x: number; y: number; w: number; h: number }): void {
+    const oL = Math.max(mover.x, fixed.x);
+    const oR = Math.min(mover.x + mover.w, fixed.x + fixed.w);
+    const oT = Math.max(mover.y, fixed.y);
+    const oB = Math.min(mover.y + mover.h, fixed.y + fixed.h);
+    if (oL >= oR || oT >= oB) return; // no overlap
+
+    const penTop = (fixed.y + fixed.h) - mover.y;
+    const penBottom = (mover.y + mover.h) - fixed.y;
+    const penLeft = (fixed.x + fixed.w) - mover.x;
+    const penRight = (mover.x + mover.w) - fixed.x;
+
+    const pens = [
+      { dir: 'top' as const, val: penTop },
+      { dir: 'bottom' as const, val: penBottom },
+      { dir: 'left' as const, val: penLeft },
+      { dir: 'right' as const, val: penRight },
+    ].filter(p => p.val > 0).sort((a, b) => a.val - b.val);
+
+    if (pens.length === 0) return;
+    const clip = pens[0];
+
+    switch (clip.dir) {
+      case 'top':    mover.h -= clip.val; mover.y += clip.val; break;
+      case 'bottom': mover.h -= clip.val; break;
+      case 'left':   mover.w -= clip.val; mover.x += clip.val; break;
+      case 'right':  mover.w -= clip.val; break;
+    }
+  }
+
+  // Pass 1: blue rects must not overlap green image rects
+  for (const blue of blueRects) {
+    if (blue.adjusted) continue;
+    for (const green of imageRects) {
+      resolveOverlap(blue, green);
+    }
+  }
+
+  // Pass 2: blue rects must not overlap each other
+  const sortedBlue = blueRects
+    .filter(b => !b.adjusted)
+    .sort((a, b) => a.y - b.y || a.x - b.x);
+  for (let i = 1; i < sortedBlue.length; i++) {
+    for (let j = 0; j < i; j++) {
+      resolveOverlap(sortedBlue[i], sortedBlue[j]);
+    }
+  }
+
+  // Pass 3: red label rects must not overlap each other
+  const sortedRed = redRects
+    .filter(r => !r.adjusted)
+    .sort((a, b) => a.y - b.y || a.x - b.x);
+  for (let i = 1; i < sortedRed.length; i++) {
+    for (let j = 0; j < i; j++) {
+      resolveOverlap(sortedRed[i], sortedRed[j]);
+    }
+  }
+
+  // Remove any rects shrunk to zero/negative size (blue or red)
+  pageData.rects = pageData.rects.filter(r => {
+    if (r.type === 'text') return r.w > 0.005 && r.h > 0.005;
+    if (r.type === 'label') return r.w > 0.005 && r.h > 0.005;
+    return true; // green image rects untouched
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Clean OCR text for blue rects: strip leading label numbers and short noise
 // lines that bleed in from the image/label area above the text.
 // ---------------------------------------------------------------------------
@@ -948,11 +1282,11 @@ async function onApply(): Promise<void> {
   const progressWrap = document.createElement('div');
   progressWrap.style.cssText = 'display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:16px;';
   progressWrap.innerHTML = `
-    <div id="pdfAdjustProgressLabel" style="font-size:15px;color:#ccc;font-family:-apple-system,BlinkMacSystemFont,sans-serif;font-weight:600;">Applying adjustments…</div>
-    <div style="width:60%;max-width:400px;height:6px;background:#333;border-radius:3px;overflow:hidden;">
-      <div id="pdfAdjustProgressBar" style="width:0%;height:100%;background:#c94432;transition:width 0.15s;border-radius:3px;"></div>
+    <div id="pdfAdjustProgressLabel" style="font-family:monospace;font-size:12px;color:#888;">Applying adjustments…</div>
+    <div style="width:260px;height:4px;background:#333;border-radius:2px;overflow:hidden;">
+      <div id="pdfAdjustProgressBar" style="width:0%;height:100%;background:#d52632;transition:width 0.2s;border-radius:2px;"></div>
     </div>
-    <div id="pdfAdjustProgressDetail" style="font-size:12px;color:#666;font-family:monospace;"></div>
+    <div id="pdfAdjustProgressDetail" style="font-size:11px;color:#555;font-family:monospace;"></div>
   `;
   pagesContainer.appendChild(progressWrap);
 
@@ -975,6 +1309,11 @@ async function onApply(): Promise<void> {
     const framesToLoad: { src: string; label: string; cropW: number; cropH: number; textContent: string; pageIdx?: number; sortY?: number; sortX?: number; rectId?: string }[] = [];
     const processedRectIds = new Set<string>();
     let processedSoFar = 0;
+
+    // Cross-page offset accumulators — used as fallback when a page has
+    // too few auto rects to compute its own pattern.
+    const globalRedOffsets: { dx: number; dy: number }[] = [];
+    const globalBlueOffsets: { dx: number; dy: number }[] = [];
 
     // Process ALL pages — even if there are blank/divider pages between pages
     // with rects. The loop visits every page; pages without image rects are
@@ -1120,57 +1459,92 @@ async function onApply(): Promise<void> {
           const lx = Math.round(lr.x * pageW), ly = Math.round(lr.y * pageH);
           const lw = Math.round(lr.w * pageW), lh = Math.round(lr.h * pageH);
 
-          // 1) PDF text layer — items overlapping this rect
-          const items = textItems.filter(t =>
-            t.x + t.w > lx && t.x < lx + lw &&
-            t.y + t.h > ly && t.y < ly + lh
-          );
-          let text = items.sort((a, b) => a.y - b.y || a.x - b.x).map(t => t.text).join(' ').trim();
+          let text = '';
 
-          // 2) OCR fallback — upscale 3× for better digit recognition
-          if (!text && lw > 3 && lh > 3) {
-            try {
-              const ocrScale = 3;
-              const ocrW = lw * ocrScale, ocrH = lh * ocrScale;
-              const ocrCrop = document.createElement('canvas');
-              ocrCrop.width = ocrW; ocrCrop.height = ocrH;
-              const ctx = ocrCrop.getContext('2d')!;
-              ctx.imageSmoothingEnabled = true;
-              ctx.imageSmoothingQuality = 'high';
-              ctx.drawImage(pc, lx, ly, lw, lh, 0, 0, ocrW, ocrH);
-              const worker = await createWorker('eng', 1, {
-                workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/worker.min.js',
-                corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5/tesseract-core.wasm.js',
-              } as any);
-              await worker.setParameters({
-                tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz.-/: ',
-              } as any);
-              const result = await worker.recognize(ocrCrop.toDataURL('image/png'));
-              text = (result.data.text || '').trim();
-              await worker.terminate();
-            } catch { /* silent */ }
+          // For non-adjusted rects with a pre-extracted label, use it directly
+          // (handlePDF already determined the correct label via matchLabel + ANNOT)
+          if (!lr.adjusted && lr.labelText) {
+            text = lr.labelText;
+          } else {
+            // 1) PDF text layer — items whose CENTER falls inside this rect.
+            //    Rectangle = truth: only read what the rect actually encompasses.
+            const items = textItems.filter(t => {
+              const cx = t.x + t.w / 2;
+              const cy = t.y + t.h / 2;
+              return cx >= lx && cx <= lx + lw && cy >= ly && cy <= ly + lh;
+            });
+            text = items.sort((a, b) => a.y - b.y || a.x - b.x).map(t => t.text).join(' ').trim();
+
+            // 2) OCR fallback — upscale 5× + binarize for better digit recognition
+            if (!text && lw > 3 && lh > 3) {
+              try {
+                const ocrScale = 5;
+                const ocrW = lw * ocrScale, ocrH = lh * ocrScale;
+                const ocrCrop = document.createElement('canvas');
+                ocrCrop.width = ocrW; ocrCrop.height = ocrH;
+                const ctx = ocrCrop.getContext('2d')!;
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+                ctx.drawImage(pc, lx, ly, lw, lh, 0, 0, ocrW, ocrH);
+                // Binarize: convert to high-contrast black on white for OCR accuracy
+                const imgData = ctx.getImageData(0, 0, ocrW, ocrH);
+                const d = imgData.data;
+                for (let pi2 = 0; pi2 < d.length; pi2 += 4) {
+                  const g = d[pi2] * 0.299 + d[pi2 + 1] * 0.587 + d[pi2 + 2] * 0.114;
+                  const bw = g < 140 ? 0 : 255;
+                  d[pi2] = d[pi2 + 1] = d[pi2 + 2] = bw;
+                }
+                ctx.putImageData(imgData, 0, 0);
+                const worker = await createWorker('eng', 1, {
+                  workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/worker.min.js',
+                  corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5/tesseract-core.wasm.js',
+                } as any);
+                await worker.setParameters({
+                  tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz.-/: ',
+                } as any);
+                const result = await worker.recognize(ocrCrop.toDataURL('image/png'));
+                text = (result.data.text || '').trim();
+                await worker.terminate();
+              } catch { /* silent */ }
+            }
+
+            // 3) If both failed, try matchLabel from the text layer as last resort
+            if (!text) {
+              const mlResult = matchLabel(textItems, lx, ly, lw, lh, true) as { text: string } | null;
+              if (mlResult) text = mlResult.text;
+            }
+
+            // Common OCR corrections for labels (i/l/| → 1, o/O → 0)
+            if (text) {
+              text = text.replace(/^[il|]$/, '1').replace(/^[oO]$/, '0');
+            }
           }
 
-          // 3) If both failed, try matchLabel from the text layer as last resort
-          if (!text) {
-            const mlResult = matchLabel(textItems, lx, ly, lw, lh, true) as { text: string } | null;
-            if (mlResult) text = mlResult.text;
-          }
-
-          // Common OCR corrections for labels (i/l/| → 1, o/O → 0)
           if (text) {
-            text = text.replace(/^[il|]$/, '1').replace(/^[oO]$/, '0');
-          }
-
-          if (text) {
+            lr.labelText = text; // persist extracted label back to rect for next session
             readings.push({ text, cx: lx + lw / 2, cy: ly + lh / 2, adjusted: !!lr.adjusted });
-            console.log(`[pdfAdjust] RED rect read "${text}" at (${lx + lw / 2}, ${ly + lh / 2}) adjusted=${!!lr.adjusted}`);
+            console.log(`[pdfAdjust] RED rect read "${text}" at (${lx + lw / 2}, ${ly + lh / 2}) adjusted=${!!lr.adjusted} ${!lr.adjusted && lr.labelText ? '(from handlePDF)' : ''}`);
           }
         }
 
-        // Compute pattern from NON-adjusted rects only (need ≥2 for reliable pattern)
-        const autoLabelRects = allLabelRects.filter(r => !r.adjusted);
-        const offsets: { dx: number; dy: number }[] = [];
+        // Deduplicate: same text + same position (within 30px) = overlapping rects
+        const dedupedReadings: typeof readings = [];
+        for (const rd of readings) {
+          const isDupe = dedupedReadings.some(
+            ex => ex.text === rd.text &&
+            Math.abs(ex.cx - rd.cx) < 30 && Math.abs(ex.cy - rd.cy) < 30
+          );
+          if (!isDupe) dedupedReadings.push(rd);
+        }
+        if (dedupedReadings.length < readings.length) {
+          console.log(`[pdfAdjust] RED dedup: ${readings.length} → ${dedupedReadings.length} (removed ${readings.length - dedupedReadings.length} overlapping duplicates)`);
+        }
+
+        // Compute pattern from ALL remaining rects (auto + user-adjusted).
+        // User-adjusted rects are correctly positioned, so including them
+        // produces a more accurate median offset (outvotes any wrong auto rects).
+        const autoLabelRects = allLabelRects;
+        const pageRedOffsets: { dx: number; dy: number }[] = [];
         if (autoLabelRects.length >= 2) {
           for (const lr of autoLabelRects) {
             const lcx = Math.round(lr.x * pageW) + Math.round(lr.w * pageW) / 2;
@@ -1183,47 +1557,83 @@ async function onApply(): Promise<void> {
               const d = Math.abs(lcx - icx) + Math.abs(lcy - icy);
               if (d < nearDist) { nearDist = d; nearImgCx = icx; nearImgCy = icy; }
             }
-            offsets.push({ dx: nearImgCx - lcx, dy: nearImgCy - lcy });
+            pageRedOffsets.push({ dx: nearImgCx - lcx, dy: nearImgCy - lcy });
           }
+          // Accumulate for cross-page fallback
+          globalRedOffsets.push(...pageRedOffsets);
         }
+
+        // Three-tier pattern resolution:
+        // 1) Page-level pattern (≥2 auto rects on this page)
+        // 2) Cross-page pattern (accumulated from all other pages)
+        // 3) Per-reading nearest-image fallback (last resort)
         let medDx = 0, medDy = 0;
-        if (offsets.length >= 2) {
-          const dxs = offsets.map(o => o.dx).sort((a, b) => a - b);
-          const dys = offsets.map(o => o.dy).sort((a, b) => a - b);
+        let redMode = 'nearest-image';
+        if (pageRedOffsets.length >= 2) {
+          const dxs = pageRedOffsets.map(o => o.dx).sort((a, b) => a - b);
+          const dys = pageRedOffsets.map(o => o.dy).sort((a, b) => a - b);
           medDx = dxs[Math.floor(dxs.length / 2)];
           medDy = dys[Math.floor(dys.length / 2)];
+          redMode = 'page-pattern';
+        } else if (globalRedOffsets.length >= 2) {
+          const dxs = globalRedOffsets.map(o => o.dx).sort((a, b) => a - b);
+          const dys = globalRedOffsets.map(o => o.dy).sort((a, b) => a - b);
+          medDx = dxs[Math.floor(dxs.length / 2)];
+          medDy = dys[Math.floor(dys.length / 2)];
+          redMode = 'cross-page-pattern';
         }
-        console.log(`[pdfAdjust] RED pattern: ${autoLabelRects.length} auto rects → offset (${medDx.toFixed(0)}, ${medDy.toFixed(0)})`);
+        console.log(`[pdfAdjust] RED pattern: ${autoLabelRects.length} auto rects, mode=${redMode}, offset (${medDx.toFixed(0)}, ${medDy.toFixed(0)})`);
 
-        // Sort readings by distance to nearest frame (closest first = best matches first)
-        readings.sort((a, b) => {
+        // Compute per-reading target
+        const hasRedPattern = medDx !== 0 || medDy !== 0;
+        const redTargets: { reading: typeof dedupedReadings[0]; tx: number; ty: number }[] = [];
+        for (const rd of dedupedReadings) {
+          let tx: number, ty: number;
+          if (hasRedPattern) {
+            tx = rd.cx + medDx;
+            ty = rd.cy + medDy;
+          } else {
+            // Last resort: find nearest image to this label rect (no direction bias)
+            let nearDist = Infinity;
+            tx = rd.cx; ty = rd.cy;
+            for (const ir of pageImageRects) {
+              const icx = Math.round(ir.x * pageW) + Math.round(ir.w * pageW) / 2;
+              const icy = Math.round(ir.y * pageH) + Math.round(ir.h * pageH) / 2;
+              const d = Math.abs(rd.cx - icx) + Math.abs(rd.cy - icy);
+              if (d < nearDist) { nearDist = d; tx = icx; ty = icy; }
+            }
+          }
+          redTargets.push({ reading: rd, tx, ty });
+        }
+        console.log(`[pdfAdjust] RED assignment: ${redMode} mode, ${redTargets.length} readings`);
+
+        // Sort by distance to nearest frame (closest first = best matches first)
+        redTargets.sort((a, b) => {
           let aMin = Infinity, bMin = Infinity;
           for (let fi = 0; fi < pageFrames.length; fi++) {
             const fx = (pageFrames[fi].sortX ?? 0) + (pageFrames[fi].cropW ?? 0) / 2;
             const fy = (pageFrames[fi].sortY ?? 0) + (pageFrames[fi].cropH ?? 0) / 2;
-            aMin = Math.min(aMin, Math.abs(a.cx + medDx - fx) + Math.abs(a.cy + medDy - fy));
-            bMin = Math.min(bMin, Math.abs(b.cx + medDx - fx) + Math.abs(b.cy + medDy - fy));
+            aMin = Math.min(aMin, Math.abs(a.tx - fx) + Math.abs(a.ty - fy));
+            bMin = Math.min(bMin, Math.abs(b.tx - fx) + Math.abs(b.ty - fy));
           }
           return aMin - bMin;
         });
 
         // Greedy 1:1 assignment — closest matches first
-        for (const rd of readings) {
-          const expectedX = rd.cx + medDx;
-          const expectedY = rd.cy + medDy;
+        for (const rt of redTargets) {
           let bestIdx = -1;
           let bestDist = Infinity;
           for (let fi = 0; fi < pageFrames.length; fi++) {
             if (claimed.has(fi)) continue;
             const fx = (pageFrames[fi].sortX ?? 0) + (pageFrames[fi].cropW ?? 0) / 2;
             const fy = (pageFrames[fi].sortY ?? 0) + (pageFrames[fi].cropH ?? 0) / 2;
-            const dist = Math.abs(expectedX - fx) + Math.abs(expectedY - fy);
+            const dist = Math.abs(rt.tx - fx) + Math.abs(rt.ty - fy);
             if (dist < bestDist) { bestDist = dist; bestIdx = fi; }
           }
           if (bestIdx >= 0) {
-            pageFrames[bestIdx].label = rd.text;
+            pageFrames[bestIdx].label = rt.reading.text;
             claimed.add(bestIdx);
-            console.log(`[pdfAdjust] RED "${rd.text}" ${rd.adjusted ? '(user)' : '(auto)'} → frame #${bestIdx} (dist=${bestDist.toFixed(0)})`);
+            console.log(`[pdfAdjust] RED "${rt.reading.text}" ${rt.reading.adjusted ? '(user)' : '(auto)'} → frame #${bestIdx} target(${rt.tx.toFixed(0)},${rt.ty.toFixed(0)}) dist=${bestDist.toFixed(0)}`);
           }
         }
       }
@@ -1246,12 +1656,36 @@ async function onApply(): Promise<void> {
           const bw = Math.round(br.w * pageW), bh = Math.round(br.h * pageH);
           console.log(`[pdfAdjust] BLUE rect ${br.id} area: (${bx},${by}) ${bw}×${bh} adjusted=${!!br.adjusted}`);
 
-          // READ from PDF text layer — items overlapping this rect, EXCLUDING red zones
-          const items = textItemsNoLabels.filter(t =>
-            t.x + t.w > bx && t.x < bx + bw &&
-            t.y + t.h > by && t.y < by + bh
-          );
-          let text = items.sort((a, b) => a.y - b.y || a.x - b.x).map(t => t.text).join(' ').trim();
+          // READ from PDF text layer — items overlapping this rect,
+          // EXCLUDING red zones AND green image zones (text is never read
+          // from inside a picture area).
+          // Exception: if the user manually adjusted this blue rect, their
+          // positioning has priority — skip green-zone exclusion.
+          const items = textItemsNoLabels.filter(t => {
+            if (!(t.x + t.w > bx && t.x < bx + bw && t.y + t.h > by && t.y < by + bh)) return false;
+            // Exclude text whose center falls inside any green image rect
+            // (only for auto-placed rects — user adjustments have priority)
+            if (!br.adjusted) {
+              const tcx = t.x + t.w / 2, tcy = t.y + t.h / 2;
+              for (const ir of pageImageRects) {
+                const ix = Math.round(ir.x * pageW), iy = Math.round(ir.y * pageH);
+                const iw = Math.round(ir.w * pageW), ih = Math.round(ir.h * pageH);
+                if (tcx >= ix && tcx <= ix + iw && tcy >= iy && tcy <= iy + ih) return false;
+              }
+            }
+            return true;
+          });
+          // Group text items by Y position (same logic as matchText) to preserve line breaks
+          items.sort((a, b) => a.y - b.y || a.x - b.x);
+          const lines: typeof items[] = [];
+          for (const item of items) {
+            if (lines.length > 0 && Math.abs(item.y - lines[lines.length - 1][0].y) < 12) {
+              lines[lines.length - 1].push(item);
+            } else {
+              lines.push([item]);
+            }
+          }
+          let text = lines.map(ln => ln.map(i => i.text).join(' ')).join('\n').trim();
           console.log(`[pdfAdjust] BLUE rect ${br.id}: text layer found ${items.length} items → "${text.slice(0, 60)}"`);
 
           // OCR fallback if text layer empty
@@ -1285,75 +1719,102 @@ async function onApply(): Promise<void> {
           }
         }
 
-        // Deduplicate: if same short text appears multiple times, it's junk (watermark/footer)
-        const textCounts = new Map<string, number>();
-        for (const br of blueReadings) {
-          const key = br.text.trim().toLowerCase();
-          textCounts.set(key, (textCounts.get(key) || 0) + 1);
-        }
-        const cleanReadings = blueReadings.filter(br => {
-          const key = br.text.trim().toLowerCase();
-          const isDupe = textCounts.get(key)! > 1 && br.text.length < 30;
-          if (isDupe) console.log(`[pdfAdjust] BLUE filtered junk duplicate: "${br.text}"`);
-          return !isDupe;
-        });
+        // All readings are valid — identical text can legitimately appear for
+        // different frames (e.g. "Note: postman" for 13A and 13B).
+        const cleanReadings = blueReadings;
 
-        // Compute pattern from NON-adjusted blue rects (need ≥2 for reliable pattern)
-        const autoBlueRects = allBlueRects.filter(r => !r.adjusted);
-        const blueOffsets: { dx: number; dy: number }[] = [];
-        if (autoBlueRects.length >= 2) {
-          for (const br of autoBlueRects) {
-            const bcx = Math.round(br.x * pageW) + Math.round(br.w * pageW) / 2;
-            const bcy = Math.round(br.y * pageH) + Math.round(br.h * pageH) / 2;
+        // Compute pattern from ALL remaining readings (auto + user-adjusted).
+        // User-adjusted rects improve the median offset accuracy.
+        const autoCleanReadings = cleanReadings;
+        const pageBlueOffsets: { dx: number; dy: number }[] = [];
+        if (autoCleanReadings.length >= 2) {
+          for (const br of autoCleanReadings) {
             let nearDist = Infinity;
             let nearImgCx = 0, nearImgCy = 0;
             for (const ir of pageImageRects) {
               const icx = Math.round(ir.x * pageW) + Math.round(ir.w * pageW) / 2;
               const icy = Math.round(ir.y * pageH) + Math.round(ir.h * pageH) / 2;
-              const d = Math.abs(bcx - icx) + Math.abs(bcy - icy);
+              const d = Math.abs(br.cx - icx) + Math.abs(br.cy - icy);
               if (d < nearDist) { nearDist = d; nearImgCx = icx; nearImgCy = icy; }
             }
-            blueOffsets.push({ dx: nearImgCx - bcx, dy: nearImgCy - bcy });
+            pageBlueOffsets.push({ dx: nearImgCx - br.cx, dy: nearImgCy - br.cy });
           }
+          // Accumulate for cross-page fallback
+          globalBlueOffsets.push(...pageBlueOffsets);
         }
+
+        // Three-tier pattern resolution:
+        // 1) Page-level pattern (≥2 clean auto readings on this page)
+        // 2) Cross-page pattern (accumulated from all other pages — captures THIS PDF's layout)
+        // 3) Per-reading nearest-image fallback (last resort, no direction bias)
         let blueMedDx = 0, blueMedDy = 0;
-        if (blueOffsets.length >= 2) {
-          const dxs = blueOffsets.map(o => o.dx).sort((a, b) => a - b);
-          const dys = blueOffsets.map(o => o.dy).sort((a, b) => a - b);
+        let blueMode = 'nearest-image';
+        if (pageBlueOffsets.length >= 2) {
+          const dxs = pageBlueOffsets.map(o => o.dx).sort((a, b) => a - b);
+          const dys = pageBlueOffsets.map(o => o.dy).sort((a, b) => a - b);
           blueMedDx = dxs[Math.floor(dxs.length / 2)];
           blueMedDy = dys[Math.floor(dys.length / 2)];
+          blueMode = 'page-pattern';
+        } else if (globalBlueOffsets.length >= 2) {
+          const dxs = globalBlueOffsets.map(o => o.dx).sort((a, b) => a - b);
+          const dys = globalBlueOffsets.map(o => o.dy).sort((a, b) => a - b);
+          blueMedDx = dxs[Math.floor(dxs.length / 2)];
+          blueMedDy = dys[Math.floor(dys.length / 2)];
+          blueMode = 'cross-page-pattern';
         }
-        console.log(`[pdfAdjust] BLUE pattern: ${autoBlueRects.length} auto rects → offset (${blueMedDx.toFixed(0)}, ${blueMedDy.toFixed(0)}), ${cleanReadings.length} clean readings (${blueReadings.length - cleanReadings.length} junk removed) to assign to ${pageFrames.length} frames`);
+        console.log(`[pdfAdjust] BLUE pattern: ${autoCleanReadings.length} clean auto readings, mode=${blueMode}, offset (${blueMedDx.toFixed(0)}, ${blueMedDy.toFixed(0)}), ${cleanReadings.length} readings to assign to ${pageFrames.length} frames`);
 
-        // Sort readings by distance to nearest frame (closest first = best matches first)
-        cleanReadings.sort((a, b) => {
+        // Compute per-reading target
+        const hasPattern = blueMedDx !== 0 || blueMedDy !== 0;
+        const blueTargets: { reading: typeof cleanReadings[0]; tx: number; ty: number }[] = [];
+        for (const bd of cleanReadings) {
+          let tx: number, ty: number;
+          if (hasPattern) {
+            tx = bd.cx + blueMedDx;
+            ty = bd.cy + blueMedDy;
+          } else {
+            // Last resort: find nearest image to this text rect (no direction bias —
+            // text could be below, to the right, or spanning multiple images)
+            let nearDist = Infinity;
+            tx = bd.cx; ty = bd.cy;
+            for (const ir of pageImageRects) {
+              const icx = Math.round(ir.x * pageW) + Math.round(ir.w * pageW) / 2;
+              const icy = Math.round(ir.y * pageH) + Math.round(ir.h * pageH) / 2;
+              const d = Math.abs(bd.cx - icx) + Math.abs(bd.cy - icy);
+              if (d < nearDist) { nearDist = d; tx = icx; ty = icy; }
+            }
+          }
+          blueTargets.push({ reading: bd, tx, ty });
+        }
+        console.log(`[pdfAdjust] BLUE assignment: ${blueMode} mode, ${blueTargets.length} readings`);
+
+        // Sort by distance to nearest frame (closest first = best matches first)
+        blueTargets.sort((a, b) => {
           let aMin = Infinity, bMin = Infinity;
           for (let fi = 0; fi < pageFrames.length; fi++) {
             const fx = (pageFrames[fi].sortX ?? 0) + (pageFrames[fi].cropW ?? 0) / 2;
             const fy = (pageFrames[fi].sortY ?? 0) + (pageFrames[fi].cropH ?? 0) / 2;
-            aMin = Math.min(aMin, Math.abs(a.cx + blueMedDx - fx) + Math.abs(a.cy + blueMedDy - fy));
-            bMin = Math.min(bMin, Math.abs(b.cx + blueMedDx - fx) + Math.abs(b.cy + blueMedDy - fy));
+            aMin = Math.min(aMin, Math.abs(a.tx - fx) + Math.abs(a.ty - fy));
+            bMin = Math.min(bMin, Math.abs(b.tx - fx) + Math.abs(b.ty - fy));
           }
           return aMin - bMin;
         });
 
         // Greedy 1:1 assignment — closest matches first
-        for (const bd of cleanReadings) {
-          const expectedX = bd.cx + blueMedDx;
-          const expectedY = bd.cy + blueMedDy;
+        for (const bt of blueTargets) {
           let bestIdx = -1;
           let bestDist = Infinity;
           for (let fi = 0; fi < pageFrames.length; fi++) {
             if (claimed.has(fi)) continue;
             const fx = (pageFrames[fi].sortX ?? 0) + (pageFrames[fi].cropW ?? 0) / 2;
             const fy = (pageFrames[fi].sortY ?? 0) + (pageFrames[fi].cropH ?? 0) / 2;
-            const dist = Math.abs(expectedX - fx) + Math.abs(expectedY - fy);
+            const dist = Math.abs(bt.tx - fx) + Math.abs(bt.ty - fy);
             if (dist < bestDist) { bestDist = dist; bestIdx = fi; }
           }
           if (bestIdx >= 0) {
-            pageFrames[bestIdx].textContent = bd.text;
+            pageFrames[bestIdx].textContent = bt.reading.text;
             claimed.add(bestIdx);
-            console.log(`[pdfAdjust] BLUE "${bd.text.slice(0, 40)}" ${bd.adjusted ? '(user)' : '(auto)'} → frame #${bestIdx} (dist=${bestDist.toFixed(0)})`);
+            console.log(`[pdfAdjust] BLUE "${bt.reading.text.slice(0, 40)}" ${bt.reading.adjusted ? '(user)' : '(auto)'} → frame #${bestIdx} target(${bt.tx.toFixed(0)},${bt.ty.toFixed(0)}) dist=${bestDist.toFixed(0)}`);
           }
         }
       }
@@ -1470,7 +1931,17 @@ async function onApply(): Promise<void> {
                   const dist = Math.abs(tx - ix) + Math.abs(ty - iy);
                   if (dist < pageW * 0.3) {
                     const txtItems = textItems.filter(t => t.x + t.w > tx && t.x < tx + tw && t.y + t.h > ty && t.y < ty + th);
-                    let uText = txtItems.sort((a, b) => a.y - b.y || a.x - b.x).map(t => t.text).join(' ').trim();
+                    // Group by Y position to preserve line breaks
+                    txtItems.sort((a, b) => a.y - b.y || a.x - b.x);
+                    const uLines: typeof txtItems[] = [];
+                    for (const ti of txtItems) {
+                      if (uLines.length > 0 && Math.abs(ti.y - uLines[uLines.length - 1][0].y) < 12) {
+                        uLines[uLines.length - 1].push(ti);
+                      } else {
+                        uLines.push([ti]);
+                      }
+                    }
+                    let uText = uLines.map(ln => ln.map(i => i.text).join(' ')).join('\n').trim();
                     if (!uText && tw > 10 && th > 10) {
                       try {
                         const ocrCrop = document.createElement('canvas');
@@ -1509,22 +1980,66 @@ async function onApply(): Promise<void> {
       console.log(`[pdfAdjust] All ${expectedCount} image rects extracted successfully`);
     }
 
-    // Sort frames by position: page order, then top-to-bottom, left-to-right
+    // Sort frames by position: page order, then top-to-bottom, left-to-right.
+    // Uses IMAGE rect center points + proximity clustering so overlapping
+    // rects from adjacent rows don't scramble the reading order.
     setApplyProgress(85, 'Sorting frames…');
     if (framesToLoad.length > 1) {
+      // Compute center Y for each frame
+      const withCenter = framesToLoad.map(f => ({
+        f,
+        cx: (f.sortX ?? 0) + (f.cropW ?? 0) / 2,
+        cy: (f.sortY ?? 0) + (f.cropH ?? 0) / 2,
+      }));
+
+      // Proximity-cluster into rows: sort by center Y, then group frames
+      // whose center Y is within half the median height of the previous frame.
       const medH = framesToLoad.map(f => f.cropH).sort((a, b) => a - b)[Math.floor(framesToLoad.length / 2)] || 100;
-      const rowBucket = medH * 0.5;
-      framesToLoad.sort((a, b) => {
-        if ((a.pageIdx ?? 0) !== (b.pageIdx ?? 0)) return (a.pageIdx ?? 0) - (b.pageIdx ?? 0);
-        const rowA = Math.floor((a.sortY ?? 0) / rowBucket);
-        const rowB = Math.floor((b.sortY ?? 0) / rowBucket);
-        return rowA !== rowB ? rowA - rowB : (a.sortX ?? 0) - (b.sortX ?? 0);
-      });
+      const rowThreshold = medH * 0.4;
+
+      // Group per-page, then cluster rows within each page
+      const pageGroups = new Map<number, typeof withCenter>();
+      for (const item of withCenter) {
+        const pi = item.f.pageIdx ?? 0;
+        if (!pageGroups.has(pi)) pageGroups.set(pi, []);
+        pageGroups.get(pi)!.push(item);
+      }
+
+      const sorted: typeof framesToLoad = [];
+      const pageKeys = [...pageGroups.keys()].sort((a, b) => a - b);
+      for (const pi of pageKeys) {
+        const items = pageGroups.get(pi)!;
+        // Sort by center Y first
+        items.sort((a, b) => a.cy - b.cy);
+
+        // Cluster into rows by proximity
+        const rows: typeof items[] = [];
+        for (const item of items) {
+          if (rows.length === 0 || item.cy - rows[rows.length - 1][0].cy > rowThreshold) {
+            rows.push([item]);
+          } else {
+            rows[rows.length - 1].push(item);
+          }
+        }
+
+        // Within each row, sort left-to-right by center X
+        for (const row of rows) {
+          row.sort((a, b) => a.cx - b.cx);
+          for (const item of row) sorted.push(item.f);
+        }
+      }
+
+      // Replace framesToLoad contents with sorted order
+      framesToLoad.length = 0;
+      framesToLoad.push(...sorted);
     }
 
     // Labels from red rects are authoritative — no re-sequencing.
     // The user/extraction placed specific numbers on specific images.
     setApplyProgress(88, 'Finalising labels…');
+
+    // Re-save rects now that labelText has been populated from extraction/OCR
+    saveRectsForFile();
 
     setApplyProgress(92, 'Loading into app…', `${framesToLoad.length} frames`);
     await new Promise(r => setTimeout(r, 50));

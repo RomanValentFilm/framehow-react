@@ -196,12 +196,29 @@ export function initFramehow(): void {
   });
 
   // Main Menu dropdown — flush-save on open (safety net before potential project switch)
-  document.getElementById('mainMenuBtn')!.addEventListener('click', (e) => {
+  // Guard: on iOS/iPadOS, touch→click synthesis can let the document listener
+  // fire in the same tick despite stopPropagation, instantly closing the menu.
+  let _menuGuard = false;
+  const menuBtn = document.getElementById('mainMenuBtn')!;
+  menuBtn.style.touchAction = 'manipulation'; // remove 300ms double-tap delay
+  menuBtn.addEventListener('click', (e) => {
     e.stopPropagation();
-    document.getElementById('mainMenu')!.classList.toggle('open');
+    e.preventDefault();
+    const menu = document.getElementById('mainMenu')!;
+    menu.classList.toggle('open');
+    _menuGuard = true;
+    setTimeout(() => { _menuGuard = false; }, 80);
     void flushSyncNow(); // non-blocking save — ensures current work is safe
   });
-  document.addEventListener('click', () => document.getElementById('mainMenu')!.classList.remove('open'));
+  // Prevent menu-item clicks from bubbling to the document close handler —
+  // on iOS/iPadOS the bubble can race with the item handler and swallow taps.
+  document.getElementById('mainMenu')!.addEventListener('click', (e) => {
+    e.stopPropagation();
+  });
+  document.addEventListener('click', () => {
+    if (_menuGuard) return;
+    document.getElementById('mainMenu')!.classList.remove('open');
+  });
 
   // ── Global: dismiss any active MOVE/reorder when clicking elsewhere ─
   document.addEventListener('click', (e: MouseEvent) => {
@@ -252,28 +269,34 @@ export function initFramehow(): void {
   window.addEventListener('fh:open-signpost', () => openNewProjectModal());
 
   // Menu > New Project
-  document.getElementById('menuNewProject')!.addEventListener('click', async () => {
+  document.getElementById('menuNewProject')!.addEventListener('click', () => {
     document.getElementById('mainMenu')!.classList.remove('open');
     const cp = getCurrentProject();
     if (state().frames.length > 0) {
-      // Flush-save current project before switching (blocking)
-      await flushSyncNow();
       if (cp.projectId) {
-        try { await flowSaveProject(); } catch { /* best effort */ }
+        // Already saved — flush in background (state snapshot is synchronous),
+        // then reset immediately so the UI feels instant.
+        void flushSyncNow();
       } else {
-        const ok = await import('./modals').then(m => m.showConfirm('Save your current work before starting a new project?'));
-        if (ok) {
-          await flowSaveProject();
-        }
+        // Never saved — ask user asynchronously, then proceed
+        void (async () => {
+          const ok = await import('./modals').then(m => m.showConfirm('Save your current work before starting a new project?'));
+          if (ok) {
+            await flowSaveProject();
+          }
+          resetStoryboardState();
+          clearCurrentProject();
+          renderAll();
+          updateFrameBadge();
+          openNewProjectModal();
+        })();
+        return; // async path handles the rest
       }
       resetStoryboardState();
       clearCurrentProject();
       renderAll();
       updateFrameBadge();
     }
-    // If frames were cleared or already empty, renderAll shows the modal
-    // But if renderAll already triggered the modal, we don't double-show
-    // (showNewProjectModal guards against double-open)
     openNewProjectModal();
   });
   document.getElementById('menuExport')!.addEventListener('click', () => {
@@ -518,9 +541,9 @@ export function initFramehow(): void {
       if (isPhone && (view === 'overview' || view === 'grid4')) {
         const om = document.getElementById('overviewPhoneMsg')!;
         om.classList.add('show');
-        const dismiss = () => {
+        const dismiss = (e?: Event) => {
+          if (e) { e.stopPropagation(); e.preventDefault(); }
           om.classList.remove('show');
-          om.removeEventListener('click', dismiss);
         };
         om.addEventListener('click', dismiss, { once: true });
         setTimeout(() => om.classList.remove('show'), 3000);
@@ -587,9 +610,9 @@ export function initFramehow(): void {
           if (current.length >= 2) {
             const om = document.getElementById('maxStripsMsg')!;
             om.classList.add('show');
-            const dismiss = () => om.classList.remove('show');
+            const dismiss = (e?: Event) => { if (e) { e.stopPropagation(); e.preventDefault(); } om.classList.remove('show'); };
             om.addEventListener('click', dismiss, { once: true });
-            setTimeout(dismiss, 3000);
+            setTimeout(() => om.classList.remove('show'), 3000);
             return;
           }
           current.push(strip);

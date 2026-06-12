@@ -287,11 +287,11 @@ function openGroupEditor(existing: FrameGroup | null): void {
       <label class="group-frame-toggle" data-fid="${f.id}" style="
         display:flex;align-items:center;gap:12px;padding:8px 10px;
         border-radius:8px;cursor:pointer;
-        background:${checked ? 'rgba(201,68,50,0.15)' : 'transparent'};
-        border:1px solid ${checked ? '#c94432' : '#333'};
+        background:${checked ? 'rgba(213,38,50,0.15)' : 'transparent'};
+        border:1px solid ${checked ? '#d52632' : '#333'};
       ">
         <input type="checkbox" data-fid="${f.id}" ${checked ? 'checked' : ''} style="
-          width:18px;height:18px;accent-color:#c94432;cursor:pointer;flex-shrink:0;
+          width:18px;height:18px;accent-color:#d52632;cursor:pointer;flex-shrink:0;
         ">
         ${thumbSrc
           ? `<img data-thumb-fid="${f.id}" src="${thumbSrc}" style="width:115px;height:77px;object-fit:cover;border-radius:4px;flex-shrink:0;">`
@@ -331,8 +331,8 @@ function openGroupEditor(existing: FrameGroup | null): void {
     </div>
     <div style="display:flex;gap:10px;justify-content:flex-end;">
       ${existing ? `<button class="group-delete-btn" style="
-        padding:10px 18px;border-radius:8px;border:1px solid #c94432;
-        background:transparent;color:#c94432;font-size:14px;font-weight:600;
+        padding:10px 18px;border-radius:8px;border:1px solid #d52632;
+        background:transparent;color:#d52632;font-size:14px;font-weight:600;
         cursor:pointer;margin-right:auto;
         font-family:-apple-system,BlinkMacSystemFont,sans-serif;
       ">Delete</button>` : ''}
@@ -343,7 +343,7 @@ function openGroupEditor(existing: FrameGroup | null): void {
       ">Cancel</button>
       <button class="group-save-btn" style="
         padding:10px 18px;border-radius:8px;border:none;
-        background:#c94432;color:#fff;font-size:14px;font-weight:600;cursor:pointer;
+        background:#d52632;color:#fff;font-size:14px;font-weight:600;cursor:pointer;
         font-family:-apple-system,BlinkMacSystemFont,sans-serif;
       ">Save</button>
     </div>`;
@@ -370,8 +370,8 @@ function openGroupEditor(existing: FrameGroup | null): void {
   function updateToggleVisual(cb: Element) {
     const label = cb.closest('.group-frame-toggle') as HTMLElement;
     const checked = (cb as HTMLInputElement).checked;
-    label.style.background = checked ? 'rgba(201,68,50,0.15)' : 'transparent';
-    label.style.borderColor = checked ? '#c94432' : '#333';
+    label.style.background = checked ? 'rgba(213,38,50,0.15)' : 'transparent';
+    label.style.borderColor = checked ? '#d52632' : '#333';
   }
   box.querySelectorAll('input[type="checkbox"]').forEach(cb => {
     cb.addEventListener('change', () => updateToggleVisual(cb));
@@ -412,7 +412,7 @@ function openGroupEditor(existing: FrameGroup | null): void {
   box.querySelector('.group-save-btn')?.addEventListener('click', () => {
     const name = nameInput.value.trim();
     if (!name) {
-      nameInput.style.borderColor = '#c94432';
+      nameInput.style.borderColor = '#d52632';
       nameInput.focus();
       return;
     }

@@ -29,7 +29,7 @@ export function showNewProjectModal(onChoice: (choice: NewProjectChoice) => void
     'padding:20px 24px;max-width:300px;width:100%;color:#fff;' +
     'font-family:-apple-system,BlinkMacSystemFont,sans-serif;';
 
-  const accentBg = 'background:#c8432a;';
+  const accentBg = 'background:#d52632;';
   const btnBase =
     'width:100%;padding:14px 16px;border-radius:8px;border:none;' +
     'color:#fff;font-size:15px;font-weight:600;cursor:pointer;text-align:center;' +
@@ -101,7 +101,7 @@ export function showToast(msg: string): void {
 export function showCamBlockedMsg(): void {
   const m = document.getElementById('camBlockedMsg')!;
   m.classList.add('show');
-  m.addEventListener('click', () => m.classList.remove('show'), { once: true });
+  m.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); m.classList.remove('show'); }, { once: true });
   setTimeout(() => m.classList.remove('show'), 8000);
 }
 
@@ -304,8 +304,8 @@ export function showConfirmDefaultNo(msg: string): Promise<boolean> {
     modal.classList.remove('hidden');
     const yes = document.getElementById('confirmYes') as HTMLButtonElement;
     const no = document.getElementById('confirmNo') as HTMLButtonElement;
-    no.style.background = '#e53935';
-    no.style.borderColor = '#e53935';
+    no.style.background = '#d52632';
+    no.style.borderColor = '#d52632';
     no.style.color = '#fff';
     yes.style.background = '';
     yes.style.borderColor = '';
@@ -317,8 +317,8 @@ export function showConfirmDefaultNo(msg: string): Promise<boolean> {
       no.style.background = '';
       no.style.borderColor = '';
       no.style.color = '';
-      yes.style.background = '#e53935';
-      yes.style.borderColor = '#e53935';
+      yes.style.background = '#d52632';
+      yes.style.borderColor = '#d52632';
       yes.style.color = '#fff';
       resolve(result);
     }

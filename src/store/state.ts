@@ -91,9 +91,9 @@ export interface StripDef {
 // STRIP3 = 'refs'  (originally "references")
 // The buttonLabel is what users see and can rename via Customise.
 export const DEFAULT_STRIP_DEFS: StripDef[] = [
-  { id: 'ver',   buttonLabel: 'STRIP1', defaultFrameLabel: 'vers',  prefix: 'v' },
-  { id: 'floor', buttonLabel: 'STRIP2', defaultFrameLabel: 'floor', prefix: 'f' },
-  { id: 'refs',  buttonLabel: 'STRIP3', defaultFrameLabel: 'refs',  prefix: 'r' },
+  { id: 'ver',   buttonLabel: 'VERSN', defaultFrameLabel: 'vers',  prefix: 'v' },
+  { id: 'floor', buttonLabel: 'FLOOR', defaultFrameLabel: 'floor', prefix: 'f' },
+  { id: 'refs',  buttonLabel: 'REFS',  defaultFrameLabel: 'refs',  prefix: 'r' },
 ];
 
 export interface StripClipboard {

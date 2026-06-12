@@ -119,13 +119,13 @@ export function setProjectSwitchInFlight(v: boolean): void {
 export async function flushSyncNow(): Promise<void> {
   if (!_syncFn || !cp.projectId || !isLoggedIn()) return;
   if (cloudSyncInFlight) return; // already syncing
-  const hash = storeHash();
-  if (hash === lastSyncHash) return; // nothing changed
+  if (_storeVersion === lastSyncVersion) return; // nothing changed
   const pid = cp.projectId;
+  const ver = _storeVersion;
   cloudSyncInFlight = true;
   try {
     await _syncFn(pid);
-    lastSyncHash = hash;
+    lastSyncVersion = ver;
     cp = { ...cp, lastSavedAt: Date.now(), dirty: false };
     _pendingSyncIds.delete(pid);
     emit();
@@ -155,7 +155,7 @@ async function retryPendingSyncs(): Promise<void> {
     cloudSyncInFlight = true;
     try {
       await _syncFn(currentPid);
-      lastSyncHash = storeHash();
+      lastSyncVersion = _storeVersion;
       cp = { ...cp, lastSavedAt: Date.now(), dirty: false };
       _pendingSyncIds.delete(currentPid);
       hideOfflineBanner();
@@ -195,46 +195,35 @@ async function runAutosave(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Cloud sync: runs on a fixed interval. Compares a simple hash of the
-// current store state to the last-synced hash; only calls the server when
-// something actually changed.
+// Cloud sync: runs on a fixed interval. Uses a lightweight change counter
+// instead of JSON.stringify to detect mutations — the old approach serialized
+// the entire store (including base64 images) every 5 seconds, which caused
+// significant jank on iPad.
 // ---------------------------------------------------------------------------
 
-let lastSyncHash = '';
+let _storeVersion = 0;
+let lastSyncVersion = -1;
+
+/** Bump the change counter. Called by the Zustand subscriber in startAutosave. */
+export function bumpStoreVersion(): void { _storeVersion++; }
 
 /**
  * Call after applying cloud data to the store (pull-on-focus, load project)
  * so the interval sync doesn't immediately re-push the same data.
  */
 export function updateSyncHash(): void {
-  lastSyncHash = storeHash();
+  lastSyncVersion = _storeVersion;
 }
 
 /** True when local store has changed since the last successful cloud sync. */
 export function hasLocalChanges(): boolean {
-  if (!lastSyncHash) return false; // Never synced — no baseline to compare
-  return storeHash() !== lastSyncHash;
+  if (lastSyncVersion < 0) return false; // Never synced — no baseline
+  return _storeVersion !== lastSyncVersion;
 }
 
-/** Cheap hash of the sync-relevant parts of the store. */
+/** Cheap change detection — just compare counters. */
 function storeHash(): string {
-  const s = useStore.getState();
-  // JSON.stringify the data-bearing parts. This is fast enough at <100 frames.
-  try {
-    return JSON.stringify({
-      frames: s.frames,
-      versions: s.versions,
-      activeTab: s.activeTab,
-      floorVersions: s.floorVersions,
-      floorActiveTab: s.floorActiveTab,
-      refsVersions: s.refsVersions,
-      refsActiveTab: s.refsActiveTab,
-      nextId: s.nextId,
-      name: cp.name,
-    });
-  } catch {
-    return '';
-  }
+  return String(_storeVersion);
 }
 
 // ---------------------------------------------------------------------------
@@ -291,13 +280,13 @@ async function runCloudSync(): Promise<void> {
   if (_projectSwitchInFlight) return; // Don't push during project switch — would contaminate the new project
 
   // Check if anything actually changed since last sync
-  const hash = storeHash();
-  if (hash === lastSyncHash) return;
+  if (_storeVersion === lastSyncVersion) return;
 
+  const ver = _storeVersion;
   cloudSyncInFlight = true;
   try {
     await _syncFn(cp.projectId);
-    lastSyncHash = hash;
+    lastSyncVersion = ver;
     cp = { ...cp, lastSavedAt: Date.now(), dirty: false };
     hideOfflineBanner();
     emit();
@@ -308,7 +297,7 @@ async function runCloudSync(): Promise<void> {
     if (e?.status === 409 && _pullFn) {
       console.info('[autosync] conflict detected, triggering pull');
       // Don't retry pushing — let the pull handle reconciliation.
-      lastSyncHash = hash; // Mark as "handled" so we don't keep re-pushing
+      lastSyncVersion = ver; // Mark as "handled" so we don't keep re-pushing
       try { await _pullFn(); } catch { /* pull handles its own errors */ }
     } else if (!navigator.onLine || (e instanceof TypeError)) {
       // Show offline banner if the failure looks like a network issue
@@ -329,8 +318,9 @@ async function runCloudSync(): Promise<void> {
  *   if anything changed. No need to detect individual mutations.
  */
 export function startAutosave(): void {
-  // Zustand subscriber for IDB autosave (quick local persistence)
+  // Zustand subscriber: bump change counter (for sync) + schedule IDB autosave
   useStore.subscribe(() => {
+    bumpStoreVersion();
     scheduleAutosave();
   });
 
