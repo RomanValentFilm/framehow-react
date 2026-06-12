@@ -2,14 +2,13 @@
 
 ## Deployment
 
-Git branch is `dev` (working branch). Cloudflare Pages production branch is `main`.
+Git branch is `v4.4`. Cloudflare Pages production branch is `main`.
 
-### Testing (preview)
+### Dev / preview
 ```
-cd ~/Desktop/Framehow\ Files/framehow-react && npm run build && npx wrangler pages deploy dist --project-name framehow-react
+cd ~/Desktop/Framehow\ Files/framehow-react && npm run build && npx wrangler pages deploy dist --project-name framehow-react --branch dev
 ```
-- Deploys to preview URL (e.g. `https://<hash>.framehow-react.pages.dev`)
-- Alias: `dev.framehow-react.pages.dev`
+- Deploys to preview URL (e.g. `dev.framehow-react.pages.dev`)
 
 ### Production (live — framehow.com/app)
 ```
@@ -32,6 +31,16 @@ cd ~/Desktop/Framehow\ Files/framehow-react && rm -rf dist tsconfig.tsbuildinfo 
 - Build must run on Mac (node_modules are darwin-arm64)
 
 ## Versions
+
+### v4.6.000 — 2026-06-12 (live on framehow.com/app)
+**Menu responsiveness + iPhone 9:16 strip labels + tab windowing removal + default strip names**
+
+Changes from v4.5.030:
+- `src/lib/init.ts` — Menu responsiveness: `stopPropagation` on `#mainMenu` container to prevent iOS tap races; non-blocking save on New Project (fire-and-forget `flushSyncNow`)
+- `src/styles/globals.css` — `touch-action:manipulation` on `.load-menu` and `.new-project-modal .np-btn`
+- `src/lib/render.ts` — iPhone 9:16 strip labels: `_phonePortraitProject()` helper hides repeated main-frame name from strip cards (VERSN/FLOOR/REFS); `windowedTabIndices` simplified to always return all tabs (CSS overflow handles scrolling)
+- `src/store/state.ts` — Default strip button labels: STRIP1→VERSN, STRIP2→FLOOR, STRIP3→REFS
+- `CLAUDE.md` — Corrected git branch name (`v4.4`), added `--branch dev` to dev deploy command
 
 ### v4.0 — 2026-05-26
 **Fresh start from v3.8** — clean codebase, no v3.9 FLOOR/REFS changes.
