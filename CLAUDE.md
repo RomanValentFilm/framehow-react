@@ -30,17 +30,47 @@ cd ~/Desktop/Framehow\ Files/framehow-react && rm -rf dist tsconfig.tsbuildinfo 
 - postbuild copies `landing.html` to `dist/index.html`, hero image to `dist/img/`, writes `_redirects` for SPA routing
 - Build must run on Mac (node_modules are darwin-arm64)
 
-## Saving a version snapshot
+## SAVE procedure (when user says "save", "new version", or "save everywhere")
 
-When the user says "save" or "save to desktop", create a snapshot in `~/Desktop/Framehow Files/framehow-react-versions/vX.Y.ZZZ/`.
-The snapshot is a full copy of the project **excluding**: `node_modules`, `dist`, `.git`, `framehow-react-versions`, `backend/node_modules`, `backend/.wrangler`.
-The resulting folder (~4-5MB) must contain everything a developer needs to work on the project:
+When the user says save, do ALL 4 steps. Production deploy only when user explicitly says so.
+
+### Step 1: Git commit + push to GitHub
+```
+# Done from sandbox (commit) + user runs push:
+cd ~/Desktop/Framehow\ Files/framehow-react && git push origin v4.4
+```
+
+### Step 2: Desktop backup snapshot
+Copy project to `framehow-react-versions/vX.Y.ZZZ/` excluding node_modules, dist, .git, etc:
 ```
 cd ~/Desktop/Framehow\ Files/framehow-react-versions && cp -R ../framehow-react vX.Y.ZZZ && rm -rf vX.Y.ZZZ/node_modules vX.Y.ZZZ/dist vX.Y.ZZZ/.git vX.Y.ZZZ/framehow-react-versions vX.Y.ZZZ/backend/node_modules vX.Y.ZZZ/backend/.wrangler
 ```
-User must run this on their Mac (sandbox can't do it due to permissions).
+
+### Step 3: Build + deploy to Cloudflare dev
+```
+cd ~/Desktop/Framehow\ Files/framehow-react && npm run build && npx wrangler pages deploy dist --project-name framehow-react --branch dev
+```
+
+### Step 4: Bump version — working copy is now vX.Y.ZZZ+1
+Update the version entry in CLAUDE.md to the new version number. The working directory `framehow-react/` is now the next version, ready for new changes.
+
+### Combined Terminal command (user runs this — steps 1+2+3 in one go):
+```
+cd ~/Desktop/Framehow\ Files/framehow-react && git push origin v4.4 && cd ../framehow-react-versions && cp -R ../framehow-react vX.Y.ZZZ && rm -rf vX.Y.ZZZ/node_modules vX.Y.ZZZ/dist vX.Y.ZZZ/.git vX.Y.ZZZ/framehow-react-versions vX.Y.ZZZ/backend/node_modules vX.Y.ZZZ/backend/.wrangler && cd ../framehow-react && npm run build && npx wrangler pages deploy dist --project-name framehow-react --branch dev
+```
+Replace `vX.Y.ZZZ` with the actual version number. User must run on Mac (sandbox can't do it).
 
 ## Versions
+
+### v4.6.001 — 2026-06-16 (dev)
+**3x2 grid view — text scroll fix, cross-compare arrows, iPhone landscape, equal spacing**
+
+Changes from v4.6.000:
+- `src/styles/globals.css` — Text block: overflow hidden by default, scroll only on focus; left+right arrows always visible & tappable in 3x2; 3x2 button visible on iPhone landscape (removed opacity:0.5 rule); narrower button padding for iPad fit
+- `src/lib/overview.ts` — Text block click/blur handler (g3-text-active class toggle, scroll reset on blur); "HIDE" button text in 3x2; extracted `recalcGrid3x2Margins()` — all vertical gaps = 3vw
+- `src/lib/init.ts` — Floor/Refs from 3x2 use renderAll(); 3x2 allowed on iPhone landscape (portrait shows toast); recalcGrid3x2Margins registered as window global
+- `src/lib/view.ts` — Resize recalc wrapped in rAF; portrait rotation exits 3x2 and clears crossCompare
+- `src/lib/actions.ts` — CAM photo in main strip single view: state-level crossCompare instead of per-strip
 
 ### v4.6.000 — 2026-06-12 (live on framehow.com/app)
 **Menu responsiveness + iPhone 9:16 strip labels + tab windowing removal + default strip names**
