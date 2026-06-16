@@ -38,6 +38,7 @@
   .vb-off-btn{background:#d52632;color:#fff;border-color:#d52632;font-size:10px;padding:0 6px;height:20px;display:flex;align-items:center;gap:2px;}
   .vb-desktop-only{display:flex;}
   @media (max-width:430px) and (orientation:portrait){.vb-desktop-only{display:none;}}
+  @media (max-height:430px) and (orientation:landscape){.grid3x2-card-wrap .pictxt-btn{display:none!important;}.grid3x2-card-wrap .act-btn[data-mact="new"],.grid3x2-card-wrap .act-btn[data-mact="upload"],.grid3x2-card-wrap .act-btn[data-mact="delete"]{display:none!important;}}
   /* Single-strip layout: center the column with capped width */
   .columns.strips-1 .strip-col{margin:0 auto;}
   @media (orientation:landscape){

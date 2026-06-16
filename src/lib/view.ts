@@ -676,7 +676,7 @@ export function handleOrientationFlip(): void {
   const isPhone = Math.min(newW, newH) <= 430;
   const isPhonePortrait = isPhone && newH > newW;
   if (isPhonePortrait) {
-    // iPhone portrait: always return to MAIN single strip view (exit 3x2 too)
+    // iPhone portrait: always MAIN single strip (including 3x2 exit)
     useStore.setState({ activeStrips: ['main'], currentViewMode: 'main', crossCompare: {} });
     const renderAll = (window as any).__fh_renderAll;
     if (renderAll) renderAll();
