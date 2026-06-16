@@ -522,8 +522,15 @@ export function initFramehow(): void {
         return;
       }
       if (view === '3x2') {
-        if (isPhone && h >= w) {
-          showToast('Rotate to landscape for 3×2 view');
+        if (h > w) {
+          // Portrait (phone or tablet): show rotate overlay
+          const overlay = document.getElementById('g3RotateMsg');
+          if (overlay) {
+            overlay.classList.add('show');
+            const dismiss = () => { overlay.classList.remove('show'); };
+            overlay.addEventListener('click', dismiss, { once: true });
+            setTimeout(dismiss, 5000);
+          }
           return;
         }
         const s = state();

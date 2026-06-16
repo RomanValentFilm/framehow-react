@@ -824,7 +824,8 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
       `<button class="vtab${i === ai ? ' active' : ''}" data-g3tab="${fid}" data-g3idx="${i}">${t.label || tabPrefix + (i + 1)}</button>`
     ).join('') + `<button class="vtab-add" data-g3vadd="${fid}">+</button>`;
 
-    wrap.innerHTML = `<div class="frame-card" data-g3fid="${fid}">
+    const mainReorder = s.reorderFid === fid;
+    wrap.innerHTML = `<div class="frame-card${mainReorder ? ' g3-reorder-active' : ''}" data-g3fid="${fid}">
       <div class="frame-num ver-frame-num">
         <span class="frame-label-tag">${f.label || '#'} ${getFrameStripLabel(f, companionStrip)}</span>
         <div class="version-tabs">${tabsHTML}</div>
@@ -938,7 +939,8 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
       ? 'Pic/Txt/<span class="ptt-bold">Tbl</span>'
       : '<span class="ptt-bold">Pic</span>/Txt/Tbl';
 
-    wrap.innerHTML = `<div class="frame-card" data-g3fid="${fid}">
+    const g3Reorder = s.reorderFid === fid;
+    wrap.innerHTML = `<div class="frame-card${g3Reorder ? ' g3-reorder-active' : ''}" data-g3fid="${fid}">
       <div class="frame-num"><span class="frame-label-tag" data-editlabel="${fid}">${f.label || '#'}</span><button class="vtab pictxt-btn${
       viewMode ? ' active' : ''
     }" data-mact="pictxt" data-mfid="${fid}">${btnLabel}</button><div class="reorder-group${

@@ -661,6 +661,8 @@ export function handleOrientationFlip(): void {
   (window as any)._lastWinH = newH;
 
   document.getElementById('rotateMsg')!.classList.remove('show');
+  const g3Overlay = document.getElementById('g3RotateMsg');
+  if (g3Overlay) g3Overlay.classList.remove('show');
   if (!flipped) return;
 
   // Block scroll handler during the entire orientation transition.
@@ -684,6 +686,11 @@ export function handleOrientationFlip(): void {
     if (s.activeStrips.length > 2) {
       useStore.setState({ activeStrips: s.activeStrips.slice(0, 2) });
     }
+  } else if (!isPhone && newH > newW && state().currentViewMode === 'grid3x2') {
+    // iPad/tablet rotated to portrait while in 3x2: exit to MAIN+VERSN double strip
+    useStore.setState({ activeStrips: ['main', 'ver'] as any, currentViewMode: 'both', crossCompare: {} });
+    const renderAll = (window as any).__fh_renderAll;
+    if (renderAll) renderAll();
   }
   syncCardHeights();
   if (!fid) return;

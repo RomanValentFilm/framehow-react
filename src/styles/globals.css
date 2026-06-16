@@ -80,6 +80,14 @@
   .grid3x2-card-wrap .nav-arrow{font-size:28px!important;width:36px!important;height:36px!important;}
   .grid3x2-card-wrap .nav-arrow-left{opacity:1!important;pointer-events:auto!important;}
   .grid3x2-card-wrap .nav-arrow-right{opacity:1!important;pointer-events:auto!important;}
+  .grid3x2-card-wrap .frame-card.g3-reorder-active{border:3px solid #d52632;}
+  .grid3x2-card-wrap .frame-label-tag,
+  .grid3x2-card-wrap .reorder-label,
+  .grid3x2-card-wrap .vtab-add{position:relative;}
+  .grid3x2-card-wrap .frame-label-tag::after,
+  .grid3x2-card-wrap .pictxt-btn::after,
+  .grid3x2-card-wrap .reorder-label::after,
+  .grid3x2-card-wrap .vtab-add::after{content:'';position:absolute;inset:-8px -6px;}
   .grid3x2-page-sep{grid-column:1/-1;height:0;border-top:2px solid #000;margin:0 -3vw;}
   .g3-text-block{color:#000;font-size:12px;line-height:1.4;padding:6px 4px 6px 4px;height:calc(1.4em * 5 + 12px);overflow-y:hidden;white-space:pre-wrap;word-break:break-word;cursor:text;outline:none;background:transparent;scrollbar-width:thin;}
   .g3-text-block.g3-text-active{overflow-y:scroll;}

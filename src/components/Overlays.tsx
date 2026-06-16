@@ -35,6 +35,13 @@ export function Overlays() {
           to select another one.
         </span>
       </div>
+      <div className="rotate-msg" id="g3RotateMsg">
+        <span>
+          Please rotate the screen,<br />
+          the 3×2 view is available<br />
+          only in landscape view
+        </span>
+      </div>
       <div className="swipe-hint" id="swipeHint">
         <div className="swipe-hint-inner">
           <div className="swipe-label">Swipe over image</div>
