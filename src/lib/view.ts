@@ -191,13 +191,14 @@ export function syncCardHeights(): void {
 export function _updateCenterFid(): void {
   const s = state();
   const scrollEl =
-    s.currentViewMode === 'overview' || s.currentViewMode === 'grid4'
+    s.currentViewMode === 'overview' || s.currentViewMode === 'grid4' || s.currentViewMode === 'grid3x2'
       ? document.getElementById('overviewScroll')
       : s.currentViewMode === 'ver'
       ? activeCompanionScrollEl()
       : document.getElementById('mainScroll');
   if (!scrollEl || !s.frames.length) return;
-  const sel = s.currentViewMode === 'overview' || s.currentViewMode === 'grid4' ? '.overview-row' : '.frame-card';
+  const sel = s.currentViewMode === 'grid3x2' ? '.grid3x2-card-wrap'
+    : s.currentViewMode === 'overview' || s.currentViewMode === 'grid4' ? '.overview-row' : '.frame-card';
   const cards = scrollEl.querySelectorAll(sel);
   const screenMid = window.innerHeight / 2;
   let best: HTMLElement | null = null,
@@ -211,14 +212,16 @@ export function _updateCenterFid(): void {
       best = card as HTMLElement;
     }
   }
-  if (best) useStore.setState({ centerFid: best.dataset.ofid || best.dataset.mfid || best.dataset.vfid || null });
+  if (best) useStore.setState({ centerFid: best.dataset.g3fid || best.dataset.ofid || best.dataset.mfid || best.dataset.vfid || null });
 }
 
 export function scrollAnchorTo(fid: string | number | null): void {
   if (!fid) return;
   const s = state();
   let target: HTMLElement | null = null;
-  if (s.currentViewMode === 'overview' || s.currentViewMode === 'grid4')
+  if (s.currentViewMode === 'grid3x2')
+    target = document.querySelector(`#overviewScroll .grid3x2-card-wrap[data-g3fid="${fid}"]`) as HTMLElement | null;
+  else if (s.currentViewMode === 'overview' || s.currentViewMode === 'grid4')
     target = document.querySelector(`#overviewScroll .overview-row[data-ofid="${fid}"]`) as HTMLElement | null;
   else if (s.currentViewMode === 'ver') {
     const scrollEl = activeCompanionScrollEl();
@@ -241,7 +244,7 @@ export function setViewMode(mode: ViewMode, keepCompare?: boolean, forceAnchorFi
   let anchorFid: string | null = forceAnchorFid || null;
   if (!anchorFid) {
     const visibleScroll =
-      s.currentViewMode === 'overview' || s.currentViewMode === 'grid4'
+      s.currentViewMode === 'overview' || s.currentViewMode === 'grid4' || s.currentViewMode === 'grid3x2'
         ? document.getElementById('overviewScroll')
         : s.currentViewMode === 'ver'
         ? activeCompanionScrollEl()
@@ -250,6 +253,8 @@ export function setViewMode(mode: ViewMode, keepCompare?: boolean, forceAnchorFi
       const cards =
         s.currentViewMode === 'overview' || s.currentViewMode === 'grid4'
           ? visibleScroll.querySelectorAll('.overview-row')
+          : s.currentViewMode === 'grid3x2'
+          ? visibleScroll.querySelectorAll('.grid3x2-card-wrap')
           : visibleScroll.querySelectorAll('.frame-card');
       let anchorCard: HTMLElement | null = null;
       const screenMid = window.innerHeight / 2;
@@ -263,7 +268,7 @@ export function setViewMode(mode: ViewMode, keepCompare?: boolean, forceAnchorFi
           anchorCard = card as HTMLElement;
         }
       }
-      anchorFid = anchorCard ? (anchorCard.dataset.ofid || anchorCard.dataset.mfid || anchorCard.dataset.vfid || null) : null;
+      anchorFid = anchorCard ? (anchorCard.dataset.ofid || anchorCard.dataset.g3fid || anchorCard.dataset.mfid || anchorCard.dataset.vfid || null) : null;
     }
   }
 
@@ -288,20 +293,40 @@ export function setViewMode(mode: ViewMode, keepCompare?: boolean, forceAnchorFi
     });
   }
   const columnsEl = document.querySelector('.columns')!;
-  columnsEl.classList.remove('view-overview', 'view-grid4', 'strips-1', 'strips-2', 'strips-3', 'strips-4');
+  columnsEl.classList.remove('view-overview', 'view-grid4', 'view-grid3x2', 'strips-1', 'strips-2', 'strips-3', 'strips-4');
   if (mode === 'overview') columnsEl.classList.add('view-overview');
   else if (mode === 'grid4') columnsEl.classList.add('view-grid4');
+  else if (mode === 'grid3x2') columnsEl.classList.add('view-grid3x2');
   else columnsEl.classList.add(`strips-${state().activeStrips.length}`);
   document.querySelectorAll('.view-btn:not(.strip-toggle)').forEach((b) => {
-    b.classList.toggle('active', (b as HTMLElement).dataset.view === mode);
+    const bv = (b as HTMLElement).dataset.view;
+    b.classList.toggle('active', bv === mode || (bv === '3x2' && mode === 'grid3x2'));
   });
   document.querySelectorAll('.strip-toggle').forEach((b) => {
     const strip = (b as HTMLElement).dataset.strip as string;
-    b.classList.toggle('active', state().activeStrips.includes(strip as any));
+    const isGridMode = mode === 'grid3x2';
+    b.classList.toggle('active', !isGridMode && state().activeStrips.includes(strip as any));
   });
 
-  if (mode === 'overview' || mode === 'grid4') {
-    const fn = mode === 'grid4' ? (window as any).__fh_renderGrid4 : (window as any).__fh_renderOverview;
+  // Sync column visibility when entering strip modes (after exiting grid)
+  if (mode !== 'overview' && mode !== 'grid4' && mode !== 'grid3x2') {
+    const strips = state().activeStrips;
+    const mc = document.getElementById('mainCol');
+    const vc = document.getElementById('verCol');
+    const fc = document.getElementById('floorCol');
+    const rc = document.getElementById('refsCol');
+    if (mc) mc.style.display = strips.includes('main') ? '' : 'none';
+    if (vc) vc.style.display = strips.includes('ver' as any) ? '' : 'none';
+    if (fc) fc.style.display = strips.includes('floor' as any) ? '' : 'none';
+    if (rc) rc.style.display = strips.includes('refs' as any) ? '' : 'none';
+  }
+
+  if (mode === 'overview' || mode === 'grid4' || mode === 'grid3x2') {
+    const fn = mode === 'grid4'
+      ? (window as any).__fh_renderGrid4
+      : mode === 'grid3x2'
+      ? (window as any).__fh_renderGrid3x2
+      : (window as any).__fh_renderOverview;
     if (fn) fn();
   } else {
     document.getElementById('overviewScroll')!.innerHTML = '';
@@ -309,12 +334,19 @@ export function setViewMode(mode: ViewMode, keepCompare?: boolean, forceAnchorFi
       const fn = (window as any).__fh_renderMainFrame;
       if (fn) fn(div, parseInt((div as HTMLElement).dataset.mfid!));
     });
-    document.querySelectorAll('.frame-card[data-vfid]').forEach((div) => {
-      const fn = (window as any).__fh_renderVersionFrame;
-      if (fn) fn(div, parseInt((div as HTMLElement).dataset.vfid!));
-    });
+    // Re-render version cards per scroll container with the correct strip type
+    const renderVer = (window as any).__fh_renderVersionFrame;
+    if (renderVer) {
+      (['ver', 'floor', 'refs'] as const).forEach((strip) => {
+        const scrollId = strip === 'ver' ? 'versionsScroll' : strip + 'Scroll';
+        const scrollEl = document.getElementById(scrollId);
+        if (scrollEl) scrollEl.querySelectorAll('.frame-card[data-vfid]').forEach((div) => {
+          renderVer(div, parseInt((div as HTMLElement).dataset.vfid!), strip);
+        });
+      });
+    }
   }
-  if (mode !== 'overview' && mode !== 'grid4') syncCardHeights();
+  if (mode !== 'overview' && mode !== 'grid4' && mode !== 'grid3x2') syncCardHeights();
 
   if (anchorFid) {
     void (columnsEl as HTMLElement).offsetHeight;
@@ -642,8 +674,8 @@ export function handleOrientationFlip(): void {
   const isPhone = Math.min(newW, newH) <= 430;
   const isPhonePortrait = isPhone && newH > newW;
   if (isPhonePortrait) {
-    // iPhone portrait: always return to MAIN single strip view
-    useStore.setState({ activeStrips: ['main'], currentViewMode: 'main' });
+    // iPhone portrait: always return to MAIN single strip view (exit 3x2 too)
+    useStore.setState({ activeStrips: ['main'], currentViewMode: 'main', crossCompare: {} });
     const renderAll = (window as any).__fh_renderAll;
     if (renderAll) renderAll();
   } else if (isPhone && newW > newH) {
@@ -715,6 +747,13 @@ export function wireScrollHandlers(): void {
 
       syncCardHeights();
       handleOrientationFlip();  // does its own multi-delay anchoring when flipped
+      // Recalc grid3x2 margins on resize — wrap in rAF so layout is settled
+      if (state().currentViewMode === 'grid3x2') {
+        requestAnimationFrame(() => {
+          const fn = (window as any).__fh_recalcGrid3x2Margins;
+          if (fn) fn();
+        });
+      }
     }, 150);
   });
   window.addEventListener('orientationchange', () => {

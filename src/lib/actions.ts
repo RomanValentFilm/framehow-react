@@ -30,7 +30,7 @@ import {
 } from './helpers';
 import { snapshotFrame } from './drawing';
 import { renderAll, renderMainFrame, renderVersionFrame } from './render';
-import { renderOverviewRow, renderGrid4Row } from './overview';
+import { renderOverviewRow, renderGrid4Row, renderGrid3x2Card } from './overview';
 import { showConfirm, showDeleteChoice, showGroupDeleteChoice, showToast, showVersionChoice, openTextModal } from './modals';
 import { fhTrack } from './tracking';
 import { drawFit } from './drawing';
@@ -251,13 +251,22 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
         }
         if ((f.strokes || []).length > 0) f.drawMode = true;
       }
-      renderMainFrame(div, fid);
-      const vdiv2 = document.querySelector(`.frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
-      if (vdiv2) renderVersionFrame(vdiv2, fid);
-      scrollFrameIntoView(fid, 'main');
+      const cs = state();
+      if (cs.currentViewMode === 'grid3x2') {
+        // div may be detached — find wrap by fid instead
+        const cardWrap = document.querySelector(`#overviewScroll .grid3x2-card-wrap[data-g3fid="${fid}"]`) as HTMLElement | null;
+        const renderFn = (window as any).__fh_renderGrid3x2Card;
+        if (cardWrap && renderFn) renderFn(cardWrap, fid);
+        useStore.setState({ overviewAction: false });
+      } else {
+        renderMainFrame(div, fid);
+        const vdiv2 = document.querySelector(`.frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
+        if (vdiv2) renderVersionFrame(vdiv2, fid);
+        scrollFrameIntoView(fid, 'main');
+      }
     });
   } else if (action === 'upload') {
-    if (s.currentViewMode === 'overview' || s.currentViewMode === 'grid4') {
+    if (s.currentViewMode === 'overview' || s.currentViewMode === 'grid4' || s.currentViewMode === 'grid3x2') {
       if (!isMainEmpty(f)) {
         showConfirm('Are you sure you want to override the content inside the Main Frame?').then((ok) => {
           if (!ok) return;
@@ -294,9 +303,14 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
       renderMainFrame(div, fid);
       const vdiv = document.querySelector(`.frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
       if (vdiv) renderVersionFrame(vdiv, fid);
-      if (s.currentViewMode === 'overview' || s.currentViewMode === 'grid4') {
-        const ovRow = document.querySelector(`#overviewScroll .overview-row[data-ofid="${fid}"]`) as HTMLElement | null;
-        if (ovRow) { s.currentViewMode === 'grid4' ? renderGrid4Row(ovRow, fid) : renderOverviewRow(ovRow, fid); }
+      if (s.currentViewMode === 'overview' || s.currentViewMode === 'grid4' || s.currentViewMode === 'grid3x2') {
+        if (s.currentViewMode === 'grid3x2') {
+          const cw = document.querySelector(`#overviewScroll .grid3x2-card-wrap[data-g3fid="${fid}"]`) as HTMLElement | null;
+          if (cw) renderGrid3x2Card(cw, fid);
+        } else {
+          const ovRow = document.querySelector(`#overviewScroll .overview-row[data-ofid="${fid}"]`) as HTMLElement | null;
+          if (ovRow) { s.currentViewMode === 'grid4' ? renderGrid4Row(ovRow, fid) : renderOverviewRow(ovRow, fid); }
+        }
       }
     };
     if (f.src || (f.strokes && f.strokes.length > 0)) {
@@ -414,8 +428,13 @@ export function handleAction(action: string, fid: number, div: HTMLElement, from
       }
       rerender();
       if (wasOverview) {
-        const ovRow = document.querySelector(`#overviewScroll .overview-row[data-ofid="${fid}"]`) as HTMLElement | null;
-        if (ovRow) { s.currentViewMode === 'grid4' ? renderGrid4Row(ovRow, fid) : renderOverviewRow(ovRow, fid); }
+        if (s.currentViewMode === 'grid3x2') {
+          const cw = document.querySelector(`#overviewScroll .grid3x2-card-wrap[data-g3fid="${fid}"]`) as HTMLElement | null;
+          if (cw) renderGrid3x2Card(cw, fid);
+        } else {
+          const ovRow = document.querySelector(`#overviewScroll .overview-row[data-ofid="${fid}"]`) as HTMLElement | null;
+          if (ovRow) { s.currentViewMode === 'grid4' ? renderGrid4Row(ovRow, fid) : renderOverviewRow(ovRow, fid); }
+        }
         useStore.setState({ overviewAction: false });
       } else {
         scrollFrameIntoView(fid, strip);
@@ -484,7 +503,7 @@ export function handleAction(action: string, fid: number, div: HTMLElement, from
         }
         relabelStripVersions(fid, strip);
         rerender();
-        if (s.currentViewMode === 'overview' || s.currentViewMode === 'grid4') {
+        if (s.currentViewMode === 'overview' || s.currentViewMode === 'grid4' || s.currentViewMode === 'grid3x2') {
           const row = document.querySelector(`#overviewScroll .overview-row[data-ofid="${fid}"]`) as HTMLElement | null;
           if (row) { s.currentViewMode === 'grid4' ? renderGrid4Row(row, fid) : renderOverviewRow(row, fid); }
         }
@@ -497,7 +516,7 @@ export function handleAction(action: string, fid: number, div: HTMLElement, from
         setStripActiveTab(fid, strip, Math.min(getStripActiveTab(fid, strip), allVers.length - 1));
         relabelStripVersions(fid, strip);
         rerender();
-        if (s.currentViewMode === 'overview' || s.currentViewMode === 'grid4') {
+        if (s.currentViewMode === 'overview' || s.currentViewMode === 'grid4' || s.currentViewMode === 'grid3x2') {
           const row = document.querySelector(`#overviewScroll .overview-row[data-ofid="${fid}"]`) as HTMLElement | null;
           if (row) { s.currentViewMode === 'grid4' ? renderGrid4Row(row, fid) : renderOverviewRow(row, fid); }
         }
@@ -513,6 +532,7 @@ export function applyCapturedImage(dataURL: string, target: any): void {
   const strip: StripType = target.stripType || 'ver';
   const scrollId = stripScrollId(strip);
   snapshotFrame(fid, fromMain ? 'main' : strip);
+  let capturedToVersion = false;
   if (fromMain) {
     const f = s.frames.find((fr) => fr.id === fid);
     if (f && isMainEmpty(f)) {
@@ -521,16 +541,22 @@ export function applyCapturedImage(dataURL: string, target: any): void {
       const md = document.querySelector(`#mainScroll .frame-card[data-mfid="${fid}"]`) as HTMLElement | null;
       if (md) renderMainFrame(md, fid);
     } else {
+      capturedToVersion = true;
       const t = autoNewStripVersionIfNeeded(fid, strip);
       t.type = 'upload';
       t.bgImage = dataURL;
-      if (s.currentViewMode === 'main') setStripCrossCompare(fid, strip, getStripActiveTab(fid, strip));
+      if (s.currentViewMode === 'main') {
+        // Show captured version inline in main card (cross-compare)
+        s.crossCompare[fid] = getStripActiveTab(fid, strip);
+        s.crossCompareStrip[fid] = strip;
+      }
       const md = document.querySelector(`#mainScroll .frame-card[data-mfid="${fid}"]`) as HTMLElement | null;
       if (md) renderMainFrame(md, fid);
       const vd = document.querySelector(`#${scrollId} .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
       if (vd) renderVersionFrame(vd, fid, strip);
     }
   } else if (fromCompare) {
+    capturedToVersion = true;
     const t = autoNewStripVersionIfNeeded(fid, strip);
     t.type = 'upload';
     t.bgImage = dataURL;
@@ -539,6 +565,7 @@ export function applyCapturedImage(dataURL: string, target: any): void {
     const vd = document.querySelector(`#${scrollId} .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
     if (vd) renderVersionFrame(vd, fid, strip);
   } else {
+    capturedToVersion = true;
     const t = autoNewStripVersionIfNeeded(fid, strip);
     t.type = 'upload';
     t.bgImage = dataURL;
@@ -550,7 +577,15 @@ export function applyCapturedImage(dataURL: string, target: any): void {
   }
   // toast removed
   useStore.setState({ centerFid: String(fid) });
-  if (s.currentViewMode === 'overview' || s.currentViewMode === 'grid4') {
+  if (s.currentViewMode === 'grid3x2') {
+    // After camera capture in grid3x2, switch card to show the captured version
+    // (unless image went directly to an empty main canvas)
+    if (capturedToVersion) {
+      s.crossCompare[fid] = getStripActiveTab(fid, strip as StripType);
+    }
+    const cw = document.querySelector(`#overviewScroll .grid3x2-card-wrap[data-g3fid="${fid}"]`) as HTMLElement | null;
+    if (cw) renderGrid3x2Card(cw, fid);
+  } else if (s.currentViewMode === 'overview' || s.currentViewMode === 'grid4') {
     const ovRow = document.querySelector(`#overviewScroll .overview-row[data-ofid="${fid}"]`) as HTMLElement | null;
     if (ovRow) { s.currentViewMode === 'grid4' ? renderGrid4Row(ovRow, fid) : renderOverviewRow(ovRow, fid); }
   }

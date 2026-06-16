@@ -83,9 +83,10 @@ export function renderAll(): void {
   // Sync column layout classes with current state
   const columnsEl = document.querySelector('.columns');
   if (columnsEl) {
-    columnsEl.classList.remove('view-overview', 'view-grid4', 'strips-1', 'strips-2', 'strips-3', 'strips-4');
+    columnsEl.classList.remove('view-overview', 'view-grid4', 'view-grid3x2', 'strips-1', 'strips-2', 'strips-3', 'strips-4');
     if (s.currentViewMode === 'overview') columnsEl.classList.add('view-overview');
     else if (s.currentViewMode === 'grid4') columnsEl.classList.add('view-grid4');
+    else if (s.currentViewMode === 'grid3x2') columnsEl.classList.add('view-grid3x2');
     else columnsEl.classList.add(`strips-${s.activeStrips.length}`);
   }
   const mainCol = document.getElementById('mainCol') as HTMLElement;
@@ -97,11 +98,14 @@ export function renderAll(): void {
   if (floorCol) floorCol.style.display = s.activeStrips.includes('floor') ? '' : 'none';
   if (refsCol) refsCol.style.display = s.activeStrips.includes('refs') ? '' : 'none';
   document.querySelectorAll('.view-btn:not(.strip-toggle)').forEach((b) => {
-    b.classList.toggle('active', (b as HTMLElement).dataset.view === s.currentViewMode);
+    const bv = (b as HTMLElement).dataset.view;
+    b.classList.toggle('active', bv === s.currentViewMode || (bv === '3x2' && s.currentViewMode === 'grid3x2'));
   });
   document.querySelectorAll('.strip-toggle').forEach((b) => {
     const strip = (b as HTMLElement).dataset.strip as StripType;
-    b.classList.toggle('active', s.activeStrips.includes(strip));
+    // Only suppress strip toggles in grid3x2 (it always uses ver internally)
+    const isGridMode = s.currentViewMode === 'grid3x2';
+    b.classList.toggle('active', !isGridMode && s.activeStrips.includes(strip));
     // Sync button label from stripDefs
     const def = s.stripDefs.find((d) => d.id === strip);
     if (def) b.textContent = def.buttonLabel;
@@ -135,6 +139,9 @@ export function renderAll(): void {
     if (fn) fn();
   } else if (s.currentViewMode === 'grid4') {
     const fn = (window as any).__fh_renderGrid4;
+    if (fn) fn();
+  } else if (s.currentViewMode === 'grid3x2') {
+    const fn = (window as any).__fh_renderGrid3x2;
     if (fn) fn();
   }
   updateFrameBadge();
@@ -764,7 +771,11 @@ export function renderVersionFrame(div: HTMLElement, fid: number, strip: StripTy
     vUnhideBtn.addEventListener('click', () => {
       unhideVersion(ver, fid);
       renderVersionFrame(div, fid, strip);
-      if (s.currentViewMode === 'overview' || s.currentViewMode === 'grid4') {
+      if (s.currentViewMode === 'grid3x2') {
+        const cw = document.querySelector(`#overviewScroll .grid3x2-card-wrap[data-g3fid="${fid}"]`) as HTMLElement | null;
+        const fn = (window as any).__fh_renderGrid3x2Card;
+        if (cw && fn) fn(cw, fid);
+      } else if (s.currentViewMode === 'overview' || s.currentViewMode === 'grid4') {
         const row = document.querySelector(`#overviewScroll .overview-row[data-ofid="${fid}"]`) as HTMLElement | null;
         if (row) {
           if (s.currentViewMode === 'grid4') { const fn = (window as any).__fh_renderGrid4Row; if (fn) fn(row, fid); }

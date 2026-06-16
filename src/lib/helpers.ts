@@ -278,7 +278,7 @@ export function clearAllDrawActive(): void {
     }
   }
   if (!changed) return;
-  if (s.currentViewMode === 'overview' || s.currentViewMode === 'grid4') return;
+  if (s.currentViewMode === 'overview' || s.currentViewMode === 'grid4' || s.currentViewMode === 'grid3x2') return;
   document.querySelectorAll('.frame-card[data-mfid]').forEach((div) => {
     const fid = parseInt((div as HTMLElement).dataset.mfid!);
     // avoid circular import — render.ts wires this through window

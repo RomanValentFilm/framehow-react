@@ -30,6 +30,16 @@ cd ~/Desktop/Framehow\ Files/framehow-react && rm -rf dist tsconfig.tsbuildinfo 
 - postbuild copies `landing.html` to `dist/index.html`, hero image to `dist/img/`, writes `_redirects` for SPA routing
 - Build must run on Mac (node_modules are darwin-arm64)
 
+## Saving a version snapshot
+
+When the user says "save" or "save to desktop", create a snapshot in `~/Desktop/Framehow Files/framehow-react-versions/vX.Y.ZZZ/`.
+The snapshot is a full copy of the project **excluding**: `node_modules`, `dist`, `.git`, `framehow-react-versions`, `backend/node_modules`, `backend/.wrangler`.
+The resulting folder (~4-5MB) must contain everything a developer needs to work on the project:
+```
+cd ~/Desktop/Framehow\ Files/framehow-react-versions && cp -R ../framehow-react vX.Y.ZZZ && rm -rf vX.Y.ZZZ/node_modules vX.Y.ZZZ/dist vX.Y.ZZZ/.git vX.Y.ZZZ/framehow-react-versions vX.Y.ZZZ/backend/node_modules vX.Y.ZZZ/backend/.wrangler
+```
+User must run this on their Mac (sandbox can't do it due to permissions).
+
 ## Versions
 
 ### v4.6.000 — 2026-06-12 (live on framehow.com/app)

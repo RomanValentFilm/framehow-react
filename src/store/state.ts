@@ -53,7 +53,7 @@ export interface Version {
 export type StripType = 'main' | 'ver' | 'floor' | 'refs';
 export type LayoutMode = 'auto' | 'overview' | 'grid4';
 // Keep ViewMode for backward compat during transition
-export type ViewMode = 'main' | 'ver' | 'both' | 'overview' | 'grid4';
+export type ViewMode = 'main' | 'ver' | 'both' | 'overview' | 'grid4' | 'grid3x2';
 export type DrawActiveOrigin = 'main' | 'ver' | 'floor' | 'refs' | null;
 
 export interface FrameSnapshot {

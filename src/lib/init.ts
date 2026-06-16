@@ -5,7 +5,7 @@
 
 import { state, useStore, isTouch, resetStoryboardState } from '../store/state';
 import { renderAll, renderMainFrame, renderVersionFrame } from './render';
-import { renderOverview, renderOverviewRow, renderGrid4, renderGrid4Row } from './overview';
+import { renderOverview, renderOverviewRow, renderGrid4, renderGrid4Row, renderGrid3x2, renderGrid3x2Card, recalcGrid3x2Margins } from './overview';
 import { handleAction, handleMainAction } from './actions';
 import { setViewMode, autoPhoneMainView, wireScrollHandlers, scrollAnchorTo } from './view';
 import {
@@ -66,6 +66,10 @@ export function initFramehow(): void {
   (window as any).__fh_renderOverviewRow = renderOverviewRow;
   (window as any).__fh_renderGrid4 = renderGrid4;
   (window as any).__fh_renderGrid4Row = renderGrid4Row;
+  (window as any).__fh_renderGrid3x2 = renderGrid3x2;
+  (window as any).__fh_renderGrid3x2Card = renderGrid3x2Card;
+  (window as any).__fh_recalcGrid3x2Margins = recalcGrid3x2Margins;
+  (window as any).__fh_setViewMode = setViewMode;
   (window as any).__fh_handleMainAction = handleMainAction;
   (window as any).__fh_handleAction = handleAction;
   (window as any).__fh_clearAllDrawActive = clearAllDrawActive;
@@ -518,12 +522,20 @@ export function initFramehow(): void {
         return;
       }
       if (view === '3x2') {
-        if (isPhone) {
-          showToast('This view is available only on iPad and Desktop');
+        if (isPhone && h >= w) {
+          showToast('Rotate to landscape for 3×2 view');
           return;
         }
-        // TODO: wire up 3x2 function
-        showToast('Coming soon');
+        const s = state();
+        // Toggle off if already in 3×2
+        if (s.currentViewMode === 'grid3x2') {
+          setViewMode('both');
+          return;
+        }
+        // Pick companion strip (for cross-swipe to version)
+        const companion = s.activeStrips.find((st: string) => st !== 'main') || 'ver';
+        useStore.setState({ activeStrips: ['main', companion] as any });
+        setViewMode('grid3x2' as any);
         return;
       }
 
@@ -578,6 +590,20 @@ export function initFramehow(): void {
       const isPhone = Math.min(w, h) <= 430;
       const isPhonePortrait = isPhone && h > w;
       const isPhoneLandscape = isPhone && w > h;
+
+      // In grid3x2: clicking any strip button exits to that strip's view
+      // Must use renderAll() because strip scroll containers (floor/refs) may
+      // not have frame cards — they're only built when the strip is in activeStrips.
+      if (s.currentViewMode === 'grid3x2') {
+        useStore.setState({ crossCompare: {} });
+        if (strip === 'main') {
+          useStore.setState({ activeStrips: ['main'], currentViewMode: 'main' });
+        } else {
+          useStore.setState({ activeStrips: ['main', strip] as any, currentViewMode: 'both' });
+        }
+        renderAll();
+        return;
+      }
 
       // In 1+2V / GRID4 mode: MAIN locked on, switch companion strip
       if (s.currentViewMode === 'overview' || s.currentViewMode === 'grid4') {
@@ -727,7 +753,10 @@ export function initFramehow(): void {
           } else {
             renderVersionFrame(div, fid, strip);
           }
-          if (state().currentViewMode === 'overview' || state().currentViewMode === 'grid4') {
+          if (state().currentViewMode === 'grid3x2') {
+            const cw = document.querySelector(`#overviewScroll .grid3x2-card-wrap[data-g3fid="${fid}"]`) as HTMLElement | null;
+            if (cw) renderGrid3x2Card(cw, fid);
+          } else if (state().currentViewMode === 'overview' || state().currentViewMode === 'grid4') {
             const ovRow = document.querySelector(`#overviewScroll .overview-row[data-ofid="${fid}"]`) as HTMLElement | null;
             if (ovRow) { state().currentViewMode === 'grid4' ? renderGrid4Row(ovRow, fid) : renderOverviewRow(ovRow, fid); }
           }
