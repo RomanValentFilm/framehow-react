@@ -161,7 +161,6 @@ function renderSetupEditForm(bar: HTMLElement, setupId: string): void {
       <input class="setup-name-input" id="setupEditNameInput" type="text" maxlength="7" value="${su.name}" autocomplete="off" />
       <div class="setup-color-picker">${colorsHTML}</div>
       <button class="setup-create-btn" id="setupEditSaveBtn">SAVE</button>
-      <button class="setup-cancel-btn" id="setupEditCancelBtn">CANCEL</button>
       <button class="setup-delete-btn" id="setupEditDeleteBtn">DELETE</button>
     </div>
   `;
@@ -191,11 +190,6 @@ function renderSetupEditForm(bar: HTMLElement, setupId: string): void {
     su.name = name;
     su.colorIndex = selectedCI;
     bumpRenderTick();
-    renderSetupBarEdit(bar);
-  });
-
-  // Wire CANCEL
-  bar.querySelector('#setupEditCancelBtn')!.addEventListener('click', () => {
     renderSetupBarEdit(bar);
   });
 
