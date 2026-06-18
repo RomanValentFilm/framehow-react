@@ -150,8 +150,8 @@ export function renderAll(): void {
   }
   updateFrameBadge();
   updateGroupButtonState();
-  // Wire setup toggle overlays if in setup mode
-  if (state().setupMode) wireSetupClicks();
+  // Wire setup toggle buttons if in setup edit mode
+  if (state().setupEditing) wireSetupClicks();
   // Sync SETUPS button active state
   document.getElementById('setupsBtn')?.classList.toggle('active', state().setupMode);
   requestAnimationFrame(() => scheduleSyncHeights());

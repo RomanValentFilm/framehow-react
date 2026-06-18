@@ -1085,7 +1085,7 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
         let _tapX = 0, _tapY = 0;
         canvasWrap.addEventListener('pointerdown', (e) => { _tapX = e.clientX; _tapY = e.clientY; }, { passive: true });
         canvasWrap.addEventListener('click', (e) => {
-          if ((e.target as HTMLElement).closest('.act-btn,.fs-btn,.star-btn,.nav-arrow,.setup-toggle-overlay')) return;
+          if ((e.target as HTMLElement).closest('.act-btn,.fs-btn,.star-btn,.nav-arrow,.setup-toggle-btn')) return;
           if (s.drawingInProgress || s.drawSuppressClick) return;
           const dx = Math.abs(e.clientX - _tapX), dy = Math.abs(e.clientY - _tapY);
           if (dx > 15 || dy > 15) return; // was a swipe, not a tap
@@ -1102,8 +1102,8 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
     // Cross-swipe/arrows: swipe right → show version content
     if (!s.drawActive[fid]) _addGrid3x2Nav(wrap, fid, false);
   }
-  // Wire setup toggle overlays
-  if (state().setupMode) wireSetupClicks(wrap);
+  // Wire setup toggle buttons
+  if (state().setupEditing) wireSetupClicks(wrap);
 }
 
 /** Add swipe (touch) and arrow (desktop) navigation for 3×2 cards.

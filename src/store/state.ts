@@ -193,6 +193,7 @@ export interface FrameHowState {
   setups: Setup[];
   activeSetupId: string | null;
   setupMode: boolean;
+  setupEditing: boolean;   // true = toggle buttons visible, assigning frames
   nextSetupId: number;
   // bumped manually by the imperative core to wake any React subscribers
   // that need to react to mutable state changes (e.g., frame badge count).
@@ -273,6 +274,7 @@ const initial: FrameHowState = {
   setups: [],
   activeSetupId: null,
   setupMode: false,
+  setupEditing: false,
   nextSetupId: 1,
   renderTick: 0,
 };
