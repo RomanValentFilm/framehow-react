@@ -39,7 +39,7 @@ import { openExportModal, openPptxModal, runExport, runPptxExport, openImageExpo
 import { wireCameraEvents } from './camera';
 import { openFullscreen } from './fullscreen';
 import { toggleGroupSidebar } from './groups';
-import { toggleSetupMode } from './setups';
+import { toggleSetupMode, handleSetupFrameClick } from './setups';
 import { startHeartbeat, fhTrack } from './tracking';
 import {
   bootstrapAccountSystem,
@@ -198,6 +198,16 @@ export function initFramehow(): void {
       vi = +btn.dataset.fsvi!,
       origin = btn.dataset.fsorigin as 'main' | 'ver' | 'floor' | 'refs';
     openFullscreen(fid, vi, origin);
+  });
+
+  // Setup frame assignment — delegated so it works regardless of render timing
+  document.addEventListener('click', (e: MouseEvent) => {
+    const btn = (e.target as HTMLElement).closest('[data-setup-fid]') as HTMLElement | null;
+    if (!btn) return;
+    e.stopPropagation();
+    e.preventDefault();
+    const fid = parseInt(btn.dataset.setupFid!, 10);
+    handleSetupFrameClick(fid);
   });
 
   // Main Menu dropdown — flush-save on open (safety net before potential project switch)

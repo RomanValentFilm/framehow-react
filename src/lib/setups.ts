@@ -44,7 +44,7 @@ export function toggleSetupMode(): void {
   }
 }
 
-/** Render the setup bar in EDIT state: ▼ [PILL] "TAP FRAMES..." [DONE] [DELETE] */
+/** Render the setup bar in EDIT state: ▼ [PILL] "TAP FRAMES..." [DONE] */
 function renderSetupBarEdit(bar: HTMLElement): void {
   const s = state();
   const active = s.setups.find((su) => su.id === s.activeSetupId);
@@ -61,9 +61,8 @@ function renderSetupBarEdit(bar: HTMLElement): void {
     <div class="setup-bar-inner">
       <button class="setup-dropdown-arrow" id="setupDropdownBtn" title="Choose setup">▼</button>
       <span class="setup-pill active-pill" style="background:${col.hex};color:${textCol}">${active.name}</span>
-      <span class="setup-helper-text">TAP FRAMES TO ADD TO / REMOVE FROM SETUP</span>
+      <span class="setup-helper-text">TAP FRAMES TO ADD / REMOVE</span>
       <button class="setup-done-btn" id="setupDoneBtn">DONE</button>
-      <button class="setup-delete-btn" id="setupDeleteBtn">DELETE</button>
     </div>
     <div class="setup-dropdown" id="setupDropdown" style="display:none"></div>
   `;
@@ -74,11 +73,6 @@ function renderSetupBarEdit(bar: HTMLElement): void {
   // Wire DONE → exit setup mode entirely
   bar.querySelector('#setupDoneBtn')!.addEventListener('click', () => {
     toggleSetupMode();
-  });
-
-  // Wire DELETE SETUP
-  bar.querySelector('#setupDeleteBtn')!.addEventListener('click', () => {
-    _deleteActiveSetup(bar);
   });
 
   // Re-render to show toggle buttons on canvases
@@ -99,7 +93,7 @@ function _wireDropdown(bar: HTMLElement): void {
   });
 }
 
-/** Render the dropdown menu: + NEW first, then existing setups as coloured pills. */
+/** Render the dropdown menu: + NEW first, then existing setups as coloured pills with EDIT. */
 function renderSetupDropdown(dd: HTMLElement): void {
   const s = state();
   let html = '<button class="setup-dd-item setup-dd-new" data-setup-new="1">+ NEW</button>';
@@ -107,7 +101,10 @@ function renderSetupDropdown(dd: HTMLElement): void {
     const col = SETUP_COLORS[su.colorIndex] || SETUP_COLORS[0];
     const textCol = needsDarkText(col.hex) ? '#000' : '#fff';
     const isActive = su.id === s.activeSetupId;
-    html += `<button class="setup-dd-item${isActive ? ' setup-dd-active' : ''}" data-setup-select="${su.id}" style="background:${col.hex};color:${textCol}">${su.name}</button>`;
+    html += `<div class="setup-dd-row${isActive ? ' setup-dd-active' : ''}">
+      <button class="setup-dd-item" data-setup-select="${su.id}" style="background:${col.hex};color:${textCol}">${su.name}</button>
+      <button class="setup-dd-edit" data-setup-edit="${su.id}" title="Edit setup">EDIT</button>
+    </div>`;
   }
   dd.innerHTML = html;
 
@@ -118,7 +115,7 @@ function renderSetupDropdown(dd: HTMLElement): void {
     renderSetupCreateForm(bar);
   });
 
-  // Wire selection
+  // Wire selection (click on the pill → switch to that setup)
   dd.querySelectorAll('[data-setup-select]').forEach((btn) =>
     btn.addEventListener('click', () => {
       const id = (btn as HTMLElement).dataset.setupSelect!;
@@ -128,6 +125,87 @@ function renderSetupDropdown(dd: HTMLElement): void {
       renderSetupBarEdit(document.getElementById('setupBar')!);
     })
   );
+
+  // Wire EDIT buttons → open edit form for that setup
+  dd.querySelectorAll('[data-setup-edit]').forEach((btn) =>
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = (btn as HTMLElement).dataset.setupEdit!;
+      dd.style.display = 'none';
+      renderSetupEditForm(document.getElementById('setupBar')!, id);
+    })
+  );
+}
+
+/** Render an edit form for a specific setup: rename, recolour, delete. */
+function renderSetupEditForm(bar: HTMLElement, setupId: string): void {
+  const s = state();
+  const su = s.setups.find((x) => x.id === setupId);
+  if (!su) return;
+
+  // Pause editing while in the edit form
+  useStore.setState({ setupEditing: false, activeSetupId: setupId });
+
+  // Build colour circles — mark taken ones (except current setup's colour)
+  const usedColors = new Set(s.setups.filter((x) => x.id !== setupId).map((x) => x.colorIndex));
+  let colorsHTML = '';
+  for (let i = 0; i < SETUP_COLORS.length; i++) {
+    const col = SETUP_COLORS[i];
+    const taken = usedColors.has(i);
+    const selected = i === su.colorIndex;
+    colorsHTML += `<button class="setup-color-circle${selected ? ' selected' : ''}${taken ? ' taken' : ''}" data-ci="${i}" style="background:${col.hex}" title="${col.name}"${taken ? ' disabled' : ''}></button>`;
+  }
+
+  bar.innerHTML = `
+    <div class="setup-bar-inner setup-edit-form">
+      <input class="setup-name-input" id="setupEditNameInput" type="text" maxlength="7" value="${su.name}" autocomplete="off" />
+      <div class="setup-color-picker">${colorsHTML}</div>
+      <button class="setup-create-btn" id="setupEditSaveBtn">SAVE</button>
+      <button class="setup-cancel-btn" id="setupEditCancelBtn">CANCEL</button>
+      <button class="setup-delete-btn" id="setupEditDeleteBtn">DELETE</button>
+    </div>
+  `;
+
+  let selectedCI = su.colorIndex;
+
+  // Wire colour selection
+  bar.querySelectorAll('.setup-color-circle:not(.taken)').forEach((circle) =>
+    circle.addEventListener('click', () => {
+      bar.querySelectorAll('.setup-color-circle').forEach((c) => c.classList.remove('selected'));
+      circle.classList.add('selected');
+      selectedCI = parseInt((circle as HTMLElement).dataset.ci!);
+    })
+  );
+
+  // Wire SAVE
+  bar.querySelector('#setupEditSaveBtn')!.addEventListener('click', () => {
+    const input = document.getElementById('setupEditNameInput') as HTMLInputElement;
+    const name = input.value.trim().toUpperCase();
+    if (!name) { showToast('Enter a name'); return; }
+    if (name.length > 7) { showToast('Max 7 characters'); return; }
+    // Check duplicate (exclude self)
+    const latest = state();
+    if (latest.setups.some((x) => x.name === name && x.id !== setupId)) { showToast('Name already used'); return; }
+
+    // Apply changes
+    su.name = name;
+    su.colorIndex = selectedCI;
+    bumpRenderTick();
+    renderSetupBarEdit(bar);
+  });
+
+  // Wire CANCEL
+  bar.querySelector('#setupEditCancelBtn')!.addEventListener('click', () => {
+    renderSetupBarEdit(bar);
+  });
+
+  // Wire DELETE
+  bar.querySelector('#setupEditDeleteBtn')!.addEventListener('click', () => {
+    _deleteSetup(bar, setupId);
+  });
+
+  // Auto-focus
+  (document.getElementById('setupEditNameInput') as HTMLInputElement)?.focus();
 }
 
 /** Render the setup creation form: name input + colour circles + CREATE. */
@@ -212,19 +290,18 @@ function renderSetupCreateForm(bar: HTMLElement): void {
 
 // ─── Delete setup ─────────────────────────────────────────────────────
 
-/** Delete the active setup after confirmation. Untags all frames. */
-async function _deleteActiveSetup(bar: HTMLElement): Promise<void> {
+/** Delete a setup by ID after confirmation. Untags all frames. */
+async function _deleteSetup(bar: HTMLElement, setupId: string): Promise<void> {
   const s = state();
-  const active = s.setups.find((su) => su.id === s.activeSetupId);
-  if (!active) return;
+  const target = s.setups.find((su) => su.id === setupId);
+  if (!target) return;
 
   const ok = await showConfirm(
-    `Delete setup "${active.name}"? All frames marked with this setup will be un-tagged.`
+    `Delete setup "${target.name}"? All frames marked with this setup will be un-tagged.`
   );
   if (!ok) return;
 
   // Untag all frames that belong to this setup
-  const setupId = active.id;
   for (const f of s.frames) {
     if (f.setupId === setupId) f.setupId = null;
   }
