@@ -50,18 +50,18 @@ export interface Setup {
 
 /** 12-colour palette for setups. */
 export const SETUP_COLORS: { name: string; hex: string }[] = [
-  { name: 'DAYLIGHT',      hex: '#F5E6A3' },
-  { name: 'EARLY MORNING', hex: '#F4C87A' },
-  { name: 'LATE MORNING',  hex: '#E8A855' },
-  { name: 'MIDDAY',        hex: '#E8D44D' },
-  { name: 'AFTERNOON',     hex: '#D4A843' },
-  { name: 'GOLDEN HOUR',   hex: '#E8943A' },
-  { name: 'SUNSET',        hex: '#D4613A' },
-  { name: 'BLUE HOUR',     hex: '#5B7FA5' },
-  { name: 'NIGHT',         hex: '#2E4A6E' },
-  { name: 'FOREST NIGHT',  hex: '#2E5E4A' },
-  { name: 'BROWN',         hex: '#6B4C3B' },
-  { name: 'NIGHT BLACK',   hex: '#1A1A2E' },
+  { name: 'DAYLIGHT',      hex: '#CFE2F6' },
+  { name: 'EARLY MORNING', hex: '#88BDE6' },
+  { name: 'LATE MORNING',  hex: '#4DB6B3' },
+  { name: 'MIDDAY',        hex: '#FFD23F' },
+  { name: 'AFTERNOON',     hex: '#F97316' },
+  { name: 'GOLDEN HOUR',   hex: '#D35400' },
+  { name: 'SUNSET',        hex: '#FF4D6D' },
+  { name: 'BLUE HOUR',     hex: '#9D1B60' },
+  { name: 'NIGHT',         hex: '#0F2D52' },
+  { name: 'FOREST NIGHT',  hex: '#1E3D2F' },
+  { name: 'BROWN',         hex: '#5B3A26' },
+  { name: 'NIGHT BLACK',   hex: '#0A0A0A' },
 ];
 
 export interface Version {
