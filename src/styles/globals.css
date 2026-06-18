@@ -43,6 +43,7 @@
   .setup-bar{background:var(--surface);border-bottom:1px solid var(--border);padding:4px 10px;position:sticky;top:calc(52px + env(safe-area-inset-top) * 0.5 + 33px);z-index:9;}
   .setup-bar-inner{display:flex;align-items:center;gap:8px;min-height:28px;}
   .setup-dropdown-arrow{font-size:12px;background:none;border:1px solid var(--border);border-radius:3px;color:#ccc;cursor:pointer;padding:2px 6px;line-height:1;}
+  .setup-dropdown-arrow.disabled{opacity:.3;cursor:default;pointer-events:none;}
   .setup-pill{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.05em;padding:3px 10px;border-radius:12px;white-space:nowrap;line-height:1;}
   .setup-helper-text{font-family:var(--mono);font-size:11px;color:#808080;white-space:nowrap;}
   .setup-done-btn{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.05em;padding:3px 12px;border:1px solid var(--accent);border-radius:3px;background:transparent;color:var(--accent);cursor:pointer;line-height:1;}
@@ -62,20 +63,21 @@
   .setup-create-btn{font-family:var(--mono);font-size:12px;font-weight:700;padding:3px 12px;border:1px solid var(--accent);border-radius:3px;background:var(--accent);color:#000;cursor:pointer;line-height:1;}
   .setup-cancel-btn{font-family:var(--mono);font-size:11px;padding:3px 8px;border:1px solid var(--border);border-radius:3px;background:transparent;color:#808080;cursor:pointer;line-height:1;}
   /* Setup colour tag on canvas (always visible when assigned) */
-  .setup-tag{position:absolute;bottom:4px;right:4px;font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.05em;padding:1px 5px;border-radius:3px;line-height:1.2;pointer-events:none;z-index:3;}
-  /* Setup "+" ADD TO SETUP overlay — centered on canvas, arrow-style transparency */
-  .setup-add-overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,0.35);color:rgba(255,255,255,0.7);cursor:pointer;z-index:5;border:none;padding:0;font-family:var(--mono);pointer-events:auto;-webkit-tap-highlight-color:transparent;touch-action:manipulation;transition:background .15s;}
-  .setup-add-overlay:hover{background:rgba(0,0,0,0.5);color:rgba(255,255,255,0.9);}
-  .setup-add-plus{font-size:32px;font-weight:300;line-height:1;}
-  .setup-add-label{font-size:10px;font-weight:700;letter-spacing:.08em;margin-top:2px;}
-  /* Clickable pill tag in edit mode (click to remove from setup) */
-  .setup-tag-btn{pointer-events:auto;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation;border:none;transition:opacity .15s;}
+  .setup-tag{position:absolute;bottom:4px;right:4px;font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.05em;padding:0 8px;border-radius:4px;line-height:1.2;pointer-events:none;z-index:3;height:10%;min-height:18px;max-height:36px;display:flex;align-items:center;}
+  /* Setup "+" ADD TO SETUP — centred rectangle badge, arrow-style transparency */
+  .setup-add-overlay{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,0.45);color:rgba(255,255,255,0.7);cursor:pointer;z-index:5;border:none;padding:8px 18px;border-radius:6px;font-family:var(--mono);pointer-events:auto;-webkit-tap-highlight-color:transparent;touch-action:manipulation;transition:background .15s;}
+  .setup-add-overlay:hover{background:rgba(0,0,0,0.6);color:rgba(255,255,255,0.9);}
+  .setup-add-plus{font-size:28px;font-weight:300;line-height:1;}
+  .setup-add-label{font-size:9px;font-weight:700;letter-spacing:.08em;margin-top:2px;}
+  /* Clickable pill tag in edit mode — 10% canvas height */
+  .setup-tag-btn{pointer-events:auto;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation;border:none;transition:opacity .15s;height:10%;min-height:18px;max-height:36px;display:flex;align-items:center;padding:0 8px;border-radius:4px;}
   .setup-tag-btn:hover{opacity:.8;}
   /* EDIT button in setup bar */
   .setup-edit-btn{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.05em;padding:3px 10px;border:1px solid var(--border);border-radius:3px;background:transparent;color:#ccc;cursor:pointer;line-height:1;}
   .setup-edit-btn:hover{border-color:var(--accent);color:var(--accent);}
-  .setup-delete-btn{font-family:var(--mono);font-size:11px;font-weight:500;letter-spacing:.05em;padding:3px 10px;border:1px solid var(--border);border-radius:3px;background:transparent;color:var(--text-faint);cursor:pointer;line-height:1;margin-left:auto;opacity:.6;}
-  .setup-delete-btn:hover{opacity:1;border-color:#999;color:#ccc;}
+  .setup-delete-btn{font-family:var(--mono);font-size:13px;font-weight:700;letter-spacing:.04em;padding:3px 5px;border:1px solid var(--border);border-radius:3px;background:transparent;color:#808080;cursor:pointer;line-height:1;margin-left:auto;white-space:nowrap;}
+  @media (hover:hover){.setup-delete-btn:hover{color:#e6e6e6;border-color:var(--border-strong);}}
+  @media (pointer:coarse){.setup-delete-btn{padding:4px 5px 2px;}}
   /* Setup-lock: block all UI except setup bar + setup canvas controls */
   body.setup-lock .view-bar{pointer-events:none;opacity:.35;}
   body.setup-lock .view-bar #setupsBtn{pointer-events:auto;opacity:1;}

@@ -15,8 +15,8 @@ export function toggleSetupMode(): void {
   if (!bar) return;
 
   if (s.setupMode) {
-    // Exit setup mode entirely
-    useStore.setState({ setupMode: false, setupEditing: false, activeSetupId: null });
+    // Exit setup mode entirely (keep activeSetupId so we remember last-used)
+    useStore.setState({ setupMode: false, setupEditing: false });
     bar.style.display = 'none';
     bar.innerHTML = '';
     document.body.classList.remove('setup-lock');
@@ -36,48 +36,15 @@ export function toggleSetupMode(): void {
     // First time — show creation form
     renderSetupCreateForm(bar);
   } else {
-    // Show bar in VIEW state with first setup selected
-    useStore.setState({ activeSetupId: s.setups[0].id });
-    renderSetupBarView(bar);
-  }
-}
-
-/** Render the setup bar in VIEW state: ▼ [PILL] [EDIT] */
-function renderSetupBarView(bar: HTMLElement): void {
-  const s = state();
-  const active = s.setups.find((su) => su.id === s.activeSetupId);
-  if (!active) {
-    renderSetupCreateForm(bar);
-    return;
-  }
-  const col = SETUP_COLORS[active.colorIndex] || SETUP_COLORS[0];
-  const textCol = needsDarkText(col.hex) ? '#000' : '#fff';
-
-  useStore.setState({ setupEditing: false });
-
-  bar.innerHTML = `
-    <div class="setup-bar-inner">
-      <button class="setup-dropdown-arrow" id="setupDropdownBtn" title="Choose setup">▼</button>
-      <span class="setup-pill active-pill" style="background:${col.hex};color:${textCol}">${active.name}</span>
-      <button class="setup-edit-btn" id="setupEditBtn">EDIT</button>
-    </div>
-    <div class="setup-dropdown" id="setupDropdown" style="display:none"></div>
-  `;
-
-  // Wire EDIT
-  bar.querySelector('#setupEditBtn')!.addEventListener('click', () => {
+    // Open straight into edit mode with last-used (or first) setup
+    const activeId = s.activeSetupId && s.setups.some((su) => su.id === s.activeSetupId)
+      ? s.activeSetupId : s.setups[0].id;
+    useStore.setState({ activeSetupId: activeId });
     renderSetupBarEdit(bar);
-  });
-
-  // Wire dropdown
-  _wireDropdown(bar);
-
-  // Re-render (no toggle buttons in view mode, just tags)
-  const renderAll = (window as any).__fh_renderAll;
-  if (renderAll) renderAll();
+  }
 }
 
-/** Render the setup bar in EDIT state: ▼ [PILL] "TAP FRAMES..." [DONE] */
+/** Render the setup bar in EDIT state: ▼ [PILL] "TAP FRAMES..." [DONE] [DELETE] */
 function renderSetupBarEdit(bar: HTMLElement): void {
   const s = state();
   const active = s.setups.find((su) => su.id === s.activeSetupId);
@@ -96,23 +63,23 @@ function renderSetupBarEdit(bar: HTMLElement): void {
       <span class="setup-pill active-pill" style="background:${col.hex};color:${textCol}">${active.name}</span>
       <span class="setup-helper-text">TAP FRAMES TO ADD TO / REMOVE FROM SETUP</span>
       <button class="setup-done-btn" id="setupDoneBtn">DONE</button>
-      <button class="setup-delete-btn" id="setupDeleteBtn">DELETE SETUP</button>
+      <button class="setup-delete-btn" id="setupDeleteBtn">DELETE</button>
     </div>
     <div class="setup-dropdown" id="setupDropdown" style="display:none"></div>
   `;
 
-  // Wire DONE → back to view state
+  // Wire dropdown (stays active — user can switch setups mid-edit)
+  _wireDropdown(bar);
+
+  // Wire DONE → exit setup mode entirely
   bar.querySelector('#setupDoneBtn')!.addEventListener('click', () => {
-    renderSetupBarView(bar);
+    toggleSetupMode();
   });
 
   // Wire DELETE SETUP
   bar.querySelector('#setupDeleteBtn')!.addEventListener('click', () => {
     _deleteActiveSetup(bar);
   });
-
-  // Wire dropdown
-  _wireDropdown(bar);
 
   // Re-render to show toggle buttons on canvases
   const renderAll = (window as any).__fh_renderAll;
@@ -157,8 +124,8 @@ function renderSetupDropdown(dd: HTMLElement): void {
       const id = (btn as HTMLElement).dataset.setupSelect!;
       useStore.setState({ activeSetupId: id });
       dd.style.display = 'none';
-      // Switch to view mode for the newly selected setup
-      renderSetupBarView(document.getElementById('setupBar')!);
+      // Switch setup and stay in edit mode
+      renderSetupBarEdit(document.getElementById('setupBar')!);
     })
   );
 }
@@ -230,12 +197,12 @@ function renderSetupCreateForm(bar: HTMLElement): void {
     renderSetupBarEdit(bar);
   });
 
-  // Wire CANCEL (back to view state with existing setups)
+  // Wire CANCEL (back to edit state with existing setups)
   bar.querySelector('#setupCancelBtn')?.addEventListener('click', () => {
     const latest = state();
     if (latest.setups.length > 0) {
       useStore.setState({ activeSetupId: latest.activeSetupId || latest.setups[0].id });
-      renderSetupBarView(bar);
+      renderSetupBarEdit(bar);
     }
   });
 
@@ -274,7 +241,7 @@ async function _deleteActiveSetup(bar: HTMLElement): Promise<void> {
   bumpRenderTick();
 
   if (remaining.length > 0) {
-    renderSetupBarView(bar);
+    renderSetupBarEdit(bar);
   } else {
     // No setups left — show create form
     renderSetupCreateForm(bar);
