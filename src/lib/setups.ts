@@ -123,6 +123,9 @@ function renderSetupDropdown(dd: HTMLElement): void {
       dd.style.display = 'none';
       // Switch setup and stay in edit mode
       renderSetupBarEdit(document.getElementById('setupBar')!);
+      // Re-render all canvases so +/pill state reflects the new active setup
+      const renderAll = (window as any).__fh_renderAll;
+      if (renderAll) renderAll();
     })
   );
 

@@ -80,7 +80,7 @@
   /* EDIT button in setup bar */
   .setup-edit-btn{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.05em;padding:3px 10px;border:1px solid var(--border);border-radius:3px;background:transparent;color:#ccc;cursor:pointer;line-height:1;}
   .setup-edit-btn:hover{border-color:var(--accent);color:var(--accent);}
-  .setup-delete-btn{font-family:var(--mono);font-size:13px;font-weight:700;letter-spacing:.04em;padding:3px 5px;border:1px solid var(--border);border-radius:3px;background:transparent;color:#808080;cursor:pointer;line-height:1;margin-left:auto;white-space:nowrap;}
+  .setup-delete-btn{font-family:var(--mono);font-size:13px;font-weight:700;letter-spacing:.04em;padding:3px 5px;border:1px solid var(--border);border-radius:3px;background:transparent;color:#808080;cursor:pointer;line-height:1;white-space:nowrap;}
   @media (hover:hover){.setup-delete-btn:hover{color:#e6e6e6;border-color:var(--border-strong);}}
   @media (pointer:coarse){.setup-delete-btn{padding:4px 5px 2px;}}
   /* Setup-lock: block all UI except setup bar + setup canvas controls */
@@ -95,6 +95,8 @@
   body.setup-lock .frame-label-tag{pointer-events:none;}
   body.setup-lock .color-row{pointer-events:none;opacity:.35;}
   body.setup-lock .group-sidebar{pointer-events:none;opacity:.35;}
+  body.setup-lock .nav-arrow{pointer-events:none;opacity:.35;}
+  body.setup-lock .g3-text-block{pointer-events:none;opacity:.35;}
   body.setup-lock .setup-bar{pointer-events:auto;opacity:1;}
   /* Single-strip layout: center the column with capped width */
   .columns.strips-1 .strip-col{margin:0 auto;}

@@ -27,7 +27,7 @@ import { restoreCanvas, restoreMainCanvas, setupMainDrawing } from './drawing';
 import { renderVersionFrame } from './render';
 import { showLabelEdit, showVerLabelEdit, showDeleteChoice, showConfirm } from './modals';
 import { getVisibleFrames, removeFrameFromGroup } from './groups';
-import { setupTagHTML, wireSetupClicks } from './setups';
+import { setupTagHTML } from './setups';
 
 export function renderOverview(): void {
   const overviewScroll = document.getElementById('overviewScroll')!;
@@ -1086,6 +1086,7 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
         canvasWrap.addEventListener('pointerdown', (e) => { _tapX = e.clientX; _tapY = e.clientY; }, { passive: true });
         canvasWrap.addEventListener('click', (e) => {
           if ((e.target as HTMLElement).closest('.act-btn,.fs-btn,.star-btn,.nav-arrow,[data-setup-fid]')) return;
+          if (state().setupMode) return; // Block canvas navigation while setup bar is open
           if (s.drawingInProgress || s.drawSuppressClick) return;
           const dx = Math.abs(e.clientX - _tapX), dy = Math.abs(e.clientY - _tapY);
           if (dx > 15 || dy > 15) return; // was a swipe, not a tap
@@ -1102,8 +1103,10 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
     // Cross-swipe/arrows: swipe right → show version content
     if (!s.drawActive[fid]) _addGrid3x2Nav(wrap, fid, false);
   }
-  // Wire setup toggle buttons
-  if (state().setupEditing) wireSetupClicks(wrap);
+  // NOTE: wireSetupClicks is NOT called here — the global call in renderAll
+  // (render.ts line 156) already wires all [data-setup-fid] buttons. Adding
+  // a second handler here would cause double-toggle (assign then immediately
+  // unassign) so the click appears to do nothing.
 }
 
 /** Add swipe (touch) and arrow (desktop) navigation for 3×2 cards.
@@ -1124,6 +1127,7 @@ function _addGrid3x2Nav(wrap: HTMLElement, fid: number, isVersion: boolean): voi
       const dy = e.changedTouches[0].clientY - sy;
       if (Math.abs(dx) < 50 || Math.abs(dy) > Math.abs(dx) * 0.7) return;
       if (state().drawingInProgress) return;
+      if (state().setupMode) return; // Block swipe navigation during setup mode
       if (isVersion && dx > 0) {
         const cur = s.crossCompare[fid] ?? 0;
         if (cur > 0) {
