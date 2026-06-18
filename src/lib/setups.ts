@@ -2,9 +2,9 @@
 // Each setup has a name (max 7 chars, UPPERCASE) and a colour from the 12-colour palette.
 // Frames can belong to at most one setup. A colour tag shows on the canvas in all views.
 
-import { state, useStore, SETUP_COLORS } from '../store/state';
+import { state, useStore, SETUP_COLORS, bumpRenderTick } from '../store/state';
 import type { Setup } from '../store/state';
-import { showToast } from './modals';
+import { showToast, showConfirm } from './modals';
 
 // ─── Setup bar rendering ───────────────────────────────────────────────
 
@@ -94,6 +94,7 @@ function renderSetupBarEdit(bar: HTMLElement): void {
       <span class="setup-pill active-pill" style="background:${col.hex};color:${textCol}">${active.name}</span>
       <span class="setup-helper-text">TAP FRAMES TO ADD TO / REMOVE FROM SETUP</span>
       <button class="setup-done-btn" id="setupDoneBtn">DONE</button>
+      <button class="setup-delete-btn" id="setupDeleteBtn">DELETE SETUP</button>
     </div>
     <div class="setup-dropdown" id="setupDropdown" style="display:none"></div>
   `;
@@ -101,6 +102,11 @@ function renderSetupBarEdit(bar: HTMLElement): void {
   // Wire DONE → back to view state
   bar.querySelector('#setupDoneBtn')!.addEventListener('click', () => {
     renderSetupBarView(bar);
+  });
+
+  // Wire DELETE SETUP
+  bar.querySelector('#setupDeleteBtn')!.addEventListener('click', () => {
+    _deleteActiveSetup(bar);
   });
 
   // Wire dropdown
@@ -235,6 +241,44 @@ function renderSetupCreateForm(bar: HTMLElement): void {
   (document.getElementById('setupNameInput') as HTMLInputElement)?.focus();
 }
 
+// ─── Delete setup ─────────────────────────────────────────────────────
+
+/** Delete the active setup after confirmation. Untags all frames. */
+async function _deleteActiveSetup(bar: HTMLElement): Promise<void> {
+  const s = state();
+  const active = s.setups.find((su) => su.id === s.activeSetupId);
+  if (!active) return;
+
+  const ok = await showConfirm(
+    `Delete setup "${active.name}"? All frames marked with this setup will be un-tagged.`
+  );
+  if (!ok) return;
+
+  // Untag all frames that belong to this setup
+  const setupId = active.id;
+  for (const f of s.frames) {
+    if (f.setupId === setupId) f.setupId = null;
+  }
+
+  // Remove setup from list
+  const remaining = s.setups.filter((su) => su.id !== setupId);
+  const newActiveId = remaining.length > 0 ? remaining[0].id : null;
+
+  useStore.setState({
+    setups: remaining,
+    activeSetupId: newActiveId,
+    setupEditing: false,
+  });
+  bumpRenderTick();
+
+  if (remaining.length > 0) {
+    renderSetupBarView(bar);
+  } else {
+    // No setups left — show create form
+    renderSetupCreateForm(bar);
+  }
+}
+
 // ─── Frame assignment ──────────────────────────────────────────────────
 
 /** Handle a click on a main frame card's toggle button while in setup edit mode.
@@ -253,6 +297,9 @@ export function handleSetupFrameClick(fid: number): void {
     // Assign (or reassign from different setup)
     f.setupId = s.activeSetupId;
   }
+
+  // Bump render tick so Zustand subscribers notice the in-place mutation
+  bumpRenderTick();
 
   // Re-render to update toggle buttons + tags
   const renderAll = (window as any).__fh_renderAll;

@@ -64,13 +64,15 @@
   /* Setup colour tag on canvas (always visible when assigned) */
   .setup-tag{position:absolute;bottom:4px;right:4px;font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.05em;padding:1px 5px;border-radius:3px;line-height:1.2;pointer-events:none;z-index:3;}
   /* Setup toggle button — pill in bottom-right, ~10% canvas height */
-  .setup-toggle-btn{position:absolute;bottom:4%;right:3%;height:10%;min-height:18px;max-height:36px;padding:0 10px;border-radius:999px;font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.05em;cursor:pointer;z-index:5;display:flex;align-items:center;justify-content:center;transition:background .15s,border-color .15s;}
+  .setup-toggle-btn{position:absolute;bottom:4%;right:3%;height:10%;min-height:18px;max-height:36px;padding:0 10px;border-radius:999px;font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.05em;cursor:pointer;z-index:5;display:flex;align-items:center;justify-content:center;transition:background .15s,border-color .15s;pointer-events:auto;-webkit-tap-highlight-color:transparent;touch-action:manipulation;}
   .setup-toggle-empty{background:transparent;border:2px solid rgba(255,255,255,.5);color:transparent;min-width:50px;}
   .setup-toggle-empty:hover{border-color:rgba(255,255,255,.8);}
   .setup-toggle-assigned{border:2px solid transparent;min-width:50px;}
   /* EDIT button in setup bar */
   .setup-edit-btn{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.05em;padding:3px 10px;border:1px solid var(--border);border-radius:3px;background:transparent;color:#ccc;cursor:pointer;line-height:1;}
   .setup-edit-btn:hover{border-color:var(--accent);color:var(--accent);}
+  .setup-delete-btn{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.05em;padding:3px 10px;border:1px solid rgba(213,38,50,.5);border-radius:3px;background:transparent;color:rgba(213,38,50,.8);cursor:pointer;line-height:1;margin-left:auto;}
+  .setup-delete-btn:hover{border-color:#d52632;color:#d52632;background:rgba(213,38,50,.1);}
   /* Single-strip layout: center the column with capped width */
   .columns.strips-1 .strip-col{margin:0 auto;}
   @media (orientation:landscape){

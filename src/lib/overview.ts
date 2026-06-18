@@ -253,7 +253,7 @@ export function renderOverviewRow(row: HTMLElement, fid: number): void {
       })
     );
     fc.addEventListener('click', (e) => {
-      if ((e.target as HTMLElement).closest('.act-btn,.color-dot,.thick-btn,.eraser-btn,.vtab-add,.reorder-label,[data-oveditver]')) return;
+      if ((e.target as HTMLElement).closest('.act-btn,.color-dot,.thick-btn,.eraser-btn,.vtab-add,.reorder-label,[data-oveditver],.setup-toggle-btn')) return;
       if (!document.contains(fc)) return;
       if (state().drawingInProgress || state().drawSuppressClick) return;
       if ((e.target as HTMLElement).tagName === 'CANVAS' && s.drawActive[fid] && vi === getStripActiveTab(fid, companionStrip)) return;
@@ -621,7 +621,7 @@ export function renderGrid4Row(row: HTMLElement, fid: number): void {
     const fc = colWrap.querySelector('.frame-card') as HTMLElement;
     // Click on version card → select it
     fc.addEventListener('click', (e) => {
-      if ((e.target as HTMLElement).closest('.act-btn,.color-dot,.thick-btn,.eraser-btn,[data-g4verlabel]')) return;
+      if ((e.target as HTMLElement).closest('.act-btn,.color-dot,.thick-btn,.eraser-btn,[data-g4verlabel],.setup-toggle-btn')) return;
       if (state().drawingInProgress || state().drawSuppressClick) return;
       if ((e.target as HTMLElement).tagName === 'CANVAS' && s.drawActive[fid] && vi === getStripActiveTab(fid, companionStrip)) return;
       setStripActiveTab(fid, companionStrip, vi);
