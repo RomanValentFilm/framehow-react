@@ -6,7 +6,7 @@
 // active tab) — UI-only state (drawActive, hover, etc.) is omitted. On
 // restore we merge the payload back into the live store.
 
-import type { Frame, Version, FrameGroup, StripDef } from '../store/state';
+import type { Frame, Version, FrameGroup, StripDef, Setup } from '../store/state';
 import { useStore, DEFAULT_STRIP_DEFS } from '../store/state';
 
 const DB_NAME = 'framehow';
@@ -39,6 +39,9 @@ export interface CurrentProjectSnapshot {
   refsActiveTab?: Record<number, number>;
   /** Strip definitions (v4.0+) */
   stripDefs?: StripDef[];
+  /** Setups — colour-coded labels (v4.6+) */
+  setups?: Setup[];
+  nextSetupId?: number;
 }
 
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -113,6 +116,8 @@ export function snapshotFromStore(projectId: string | null, name: string | null)
     refsVersions: s.stripVersions.refs || {},
     refsActiveTab: s.stripActiveTab.refs || {},
     stripDefs: s.stripDefs,
+    setups: s.setups,
+    nextSetupId: s.nextSetupId,
   };
 }
 
@@ -172,6 +177,8 @@ export function applySnapshotToStore(snap: CurrentProjectSnapshot): void {
     groups: snap.groups ?? [],
     nextGroupId: snap.nextGroupId ?? 1,
     stripDefs: snap.stripDefs ?? DEFAULT_STRIP_DEFS,
+    setups: snap.setups ?? [],
+    nextSetupId: snap.nextSetupId ?? 1,
     renderTick: prev.renderTick + 1,
   }));
 }

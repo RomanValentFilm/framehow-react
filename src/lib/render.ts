@@ -38,6 +38,7 @@ import { restoreCanvas, restoreMainCanvas, setupDrawing, setupMainDrawing } from
 import { addCrossSwipe, addNavArrows, scheduleSyncHeights } from './view';
 import { showLabelEdit, showVerLabelEdit } from './modals';
 import { getVisibleFrames, updateGroupButtonState } from './groups';
+import { setupTagHTML, wireSetupClicks } from './setups';
 
 /** iPhone + 9:16 project → strip cards skip the repeated main-frame name. */
 function _phonePortraitProject(): boolean {
@@ -116,6 +117,9 @@ export function renderAll(): void {
   // Show/hide view-bar based on whether we have frames
   const viewBarEl = document.querySelector('.view-bar') as HTMLElement | null;
   if (viewBarEl) viewBarEl.style.display = s.frames.length ? '' : 'none';
+  // Show/hide setup-bar based on setup mode
+  const setupBarEl = document.getElementById('setupBar') as HTMLElement | null;
+  if (setupBarEl && !s.setupMode) setupBarEl.style.display = 'none';
 
   const visibleFrames = getVisibleFrames();
   if (!visibleFrames.length) {
@@ -146,6 +150,10 @@ export function renderAll(): void {
   }
   updateFrameBadge();
   updateGroupButtonState();
+  // Wire setup toggle overlays if in setup mode
+  if (state().setupMode) wireSetupClicks();
+  // Sync SETUPS button active state
+  document.getElementById('setupsBtn')?.classList.toggle('active', state().setupMode);
   requestAnimationFrame(() => scheduleSyncHeights());
 }
 
@@ -434,7 +442,7 @@ export function renderMainFrame(div: HTMLElement, fid: number): void {
       f.drawMode
         ? `<canvas id="${mcid}" width="${f.cropW || 960}" height="${f.cropH || 540}"></canvas>`
         : `<img src="${f.src}" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;">`
-    }${fsButtonHTML(fid, 0, 'main')}</div>`;
+    }${fsButtonHTML(fid, 0, 'main')}${setupTagHTML(fid)}</div>`;
   }
   const btnLabel2 =
     viewMode2 === 'text'
@@ -593,7 +601,7 @@ export function renderVersionFrame(div: HTMLElement, fid: number, strip: StripTy
         f.drawMode
           ? `<canvas id="${mcid}" width="${f.cropW || 960}" height="${f.cropH || 540}"></canvas>`
           : `<img src="${f.src}" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;">`
-      }${fsButtonHTML(fid, 0, 'main')}</div>`;
+      }${fsButtonHTML(fid, 0, 'main')}${setupTagHTML(fid)}</div>`;
     }
     const btnLabel3 =
       viewMode3 === 'text'

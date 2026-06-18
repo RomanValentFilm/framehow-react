@@ -1148,6 +1148,12 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   // Last imported PDF filename for Adjust tool hint
   const lastPdfName = localStorage.getItem(`pdfAdjustLastFile_${projectId}`) || undefined;
 
+  // Build frame→setup mapping for sync (stored in metadata to avoid D1 schema change)
+  const frameSetups: Record<number, string> = {};
+  for (const f of s.frames) {
+    if (f.setupId) frameSetups[f.id] = f.setupId;
+  }
+
   const metadata = JSON.stringify({
     stripDefs: s.stripDefs,
     groups: metaGroups,
@@ -1155,6 +1161,9 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
     portraitMode: s.portraitMode,
     pdfAdjustRects: Object.keys(pdfAdjustRects).length > 0 ? pdfAdjustRects : undefined,
     pdfAdjustLastFile: lastPdfName,
+    setups: s.setups.length > 0 ? s.setups : undefined,
+    nextSetupId: s.nextSetupId > 1 ? s.nextSetupId : undefined,
+    frameSetups: Object.keys(frameSetups).length > 0 ? frameSetups : undefined,
   });
 
   // Upload all images to R2 in parallel
@@ -1341,6 +1350,9 @@ async function applyCloudTreeToStore(tree: CloudProjectTree): Promise<void> {
   let restoredStripDefs: import('../store/state').StripDef[] | undefined;
   let restoredGroups: import('../store/state').FrameGroup[] = [];
   let restoredNextGroupId = 1;
+  let restoredSetups: import('../store/state').Setup[] = [];
+  let restoredNextSetupId = 1;
+  let restoredFrameSetups: Record<number, string> = {};
   let isPortrait = newFrames.length > 0 && newFrames[0].cropH > newFrames[0].cropW;
 
   if (tree.project.metadata) {
@@ -1377,8 +1389,28 @@ async function applyCloudTreeToStore(tree: CloudProjectTree): Promise<void> {
       if (meta.pdfAdjustLastFile && typeof meta.pdfAdjustLastFile === 'string') {
         try { localStorage.setItem(`pdfAdjustLastFile_${tree.project.id}`, meta.pdfAdjustLastFile); } catch { /* skip */ }
       }
+      // Restore setups
+      if (meta.setups && Array.isArray(meta.setups)) {
+        restoredSetups = meta.setups;
+      }
+      if (meta.nextSetupId != null) {
+        restoredNextSetupId = meta.nextSetupId;
+      }
+      // Restore frame→setup mapping (uses server UUIDs, needs remapping)
+      if (meta.frameSetups && typeof meta.frameSetups === 'object') {
+        // frameSetups in metadata uses local frame IDs (numeric) as keys
+        restoredFrameSetups = meta.frameSetups;
+      }
     } catch {
       // Ignore malformed metadata — use defaults
+    }
+  }
+
+  // Apply frame→setup mapping from metadata
+  if (Object.keys(restoredFrameSetups).length > 0) {
+    for (const f of newFrames) {
+      const sid = restoredFrameSetups[f.id];
+      if (sid) f.setupId = sid;
     }
   }
 
@@ -1414,6 +1446,10 @@ async function applyCloudTreeToStore(tree: CloudProjectTree): Promise<void> {
     groups: restoredGroups,
     activeGroupId: null,
     nextGroupId: restoredNextGroupId,
+    setups: restoredSetups,
+    activeSetupId: null,
+    setupMode: false,
+    nextSetupId: restoredNextSetupId,
     drawColor: {},
     drawWidth: {},
     drawEraser: {},

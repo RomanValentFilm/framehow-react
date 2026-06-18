@@ -38,7 +38,31 @@ export interface Frame {
   tableData: TableData | null;
   hidden?: boolean;
   stripLabels?: Record<string, string>;
+  setupId?: string | null;
 }
+
+/** A named colour-coded setup (lighting / time-of-day label for frames). */
+export interface Setup {
+  id: string;
+  name: string;        // max 7 chars, stored UPPERCASE
+  colorIndex: number;  // 0-11 index into SETUP_COLORS
+}
+
+/** 12-colour palette for setups. */
+export const SETUP_COLORS: { name: string; hex: string }[] = [
+  { name: 'DAYLIGHT',      hex: '#F5E6A3' },
+  { name: 'EARLY MORNING', hex: '#F4C87A' },
+  { name: 'LATE MORNING',  hex: '#E8A855' },
+  { name: 'MIDDAY',        hex: '#E8D44D' },
+  { name: 'AFTERNOON',     hex: '#D4A843' },
+  { name: 'GOLDEN HOUR',   hex: '#E8943A' },
+  { name: 'SUNSET',        hex: '#D4613A' },
+  { name: 'BLUE HOUR',     hex: '#5B7FA5' },
+  { name: 'NIGHT',         hex: '#2E4A6E' },
+  { name: 'FOREST NIGHT',  hex: '#2E5E4A' },
+  { name: 'BROWN',         hex: '#6B4C3B' },
+  { name: 'NIGHT BLACK',   hex: '#1A1A2E' },
+];
 
 export interface Version {
   id: number;
@@ -165,6 +189,11 @@ export interface FrameHowState {
   groups: FrameGroup[];
   activeGroupId: number | null;  // null = ALL
   nextGroupId: number;
+  /** Setups — colour-coded lighting/time-of-day labels for frames */
+  setups: Setup[];
+  activeSetupId: string | null;
+  setupMode: boolean;
+  nextSetupId: number;
   // bumped manually by the imperative core to wake any React subscribers
   // that need to react to mutable state changes (e.g., frame badge count).
   renderTick: number;
@@ -241,6 +270,10 @@ const initial: FrameHowState = {
   groups: [],
   activeGroupId: null,
   nextGroupId: 1,
+  setups: [],
+  activeSetupId: null,
+  setupMode: false,
+  nextSetupId: 1,
   renderTick: 0,
 };
 
@@ -280,6 +313,10 @@ export function resetStoryboardState(): void {
     groups: [],
     activeGroupId: null,
     nextGroupId: 1,
+    setups: [],
+    activeSetupId: null,
+    setupMode: false,
+    nextSetupId: 1,
     renderTick: state().renderTick + 1,
   });
 }

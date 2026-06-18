@@ -39,6 +39,7 @@ import { openExportModal, openPptxModal, runExport, runPptxExport, openImageExpo
 import { wireCameraEvents } from './camera';
 import { openFullscreen } from './fullscreen';
 import { toggleGroupSidebar } from './groups';
+import { toggleSetupMode } from './setups';
 import { startHeartbeat, fhTrack } from './tracking';
 import {
   bootstrapAccountSystem,
@@ -543,6 +544,11 @@ export function initFramehow(): void {
         const companion = s.activeStrips.find((st: string) => st !== 'main') || 'ver';
         useStore.setState({ activeStrips: ['main', companion] as any });
         setViewMode('grid3x2' as any);
+        return;
+      }
+
+      if (view === 'setups') {
+        toggleSetupMode();
         return;
       }
 

@@ -27,6 +27,7 @@ import { restoreCanvas, restoreMainCanvas, setupMainDrawing } from './drawing';
 import { renderVersionFrame } from './render';
 import { showLabelEdit, showVerLabelEdit, showDeleteChoice, showConfirm } from './modals';
 import { getVisibleFrames, removeFrameFromGroup } from './groups';
+import { setupTagHTML, wireSetupClicks } from './setups';
 
 export function renderOverview(): void {
   const overviewScroll = document.getElementById('overviewScroll')!;
@@ -97,7 +98,7 @@ export function renderOverviewRow(row: HTMLElement, fid: number): void {
       f.drawMode
         ? `<canvas id="${mcid}" width="${f.cropW || 960}" height="${f.cropH || 540}"></canvas>`
         : `<img src="${f.src}" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;">`
-    }${fsButtonHTML(fid, 0, 'main')}</div>`;
+    }${fsButtonHTML(fid, 0, 'main')}${setupTagHTML(fid)}</div>`;
   }
   const btnLabel =
     viewMode === 'text'
@@ -475,7 +476,7 @@ export function renderGrid4Row(row: HTMLElement, fid: number): void {
       f.drawMode
         ? `<canvas id="${mcid}" width="${f.cropW || 960}" height="${f.cropH || 540}"></canvas>`
         : `<img src="${f.src}" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;">`
-    }${fsButtonHTML(fid, 0, 'main')}</div>`;
+    }${fsButtonHTML(fid, 0, 'main')}${setupTagHTML(fid)}</div>`;
   }
   const btnLabel =
     viewMode === 'text'
@@ -931,7 +932,7 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
         f.drawMode
           ? `<canvas id="${mcid}" width="${f.cropW || 960}" height="${f.cropH || 540}"></canvas>`
           : `<img src="${f.src}" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;">`
-      }${fsButtonHTML(fid, 0, 'main')}</div>`;
+      }${fsButtonHTML(fid, 0, 'main')}${setupTagHTML(fid)}</div>`;
     }
     const btnLabel = viewMode === 'text'
       ? 'Pic/<span class="ptt-bold">Txt</span>/Tbl'
@@ -1084,7 +1085,7 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
         let _tapX = 0, _tapY = 0;
         canvasWrap.addEventListener('pointerdown', (e) => { _tapX = e.clientX; _tapY = e.clientY; }, { passive: true });
         canvasWrap.addEventListener('click', (e) => {
-          if ((e.target as HTMLElement).closest('.act-btn,.fs-btn,.star-btn,.nav-arrow')) return;
+          if ((e.target as HTMLElement).closest('.act-btn,.fs-btn,.star-btn,.nav-arrow,.setup-toggle-overlay')) return;
           if (s.drawingInProgress || s.drawSuppressClick) return;
           const dx = Math.abs(e.clientX - _tapX), dy = Math.abs(e.clientY - _tapY);
           if (dx > 15 || dy > 15) return; // was a swipe, not a tap
@@ -1101,6 +1102,8 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
     // Cross-swipe/arrows: swipe right → show version content
     if (!s.drawActive[fid]) _addGrid3x2Nav(wrap, fid, false);
   }
+  // Wire setup toggle overlays
+  if (state().setupMode) wireSetupClicks(wrap);
 }
 
 /** Add swipe (touch) and arrow (desktop) navigation for 3×2 cards.
