@@ -71,8 +71,8 @@
   /* Setup colour tag on canvas (always visible when assigned) */
   .setup-tag{position:absolute;bottom:4px;right:4px;font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.05em;padding:0 8px;border-radius:4px;line-height:1.2;pointer-events:none;z-index:3;height:10%;min-height:18px;max-height:36px;display:flex;align-items:center;}
   /* Setup "+" ADD TO SETUP — centred rectangle badge, arrow-style transparency */
-  .setup-add-overlay{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,0.45);color:rgba(255,255,255,0.7);cursor:pointer;z-index:5;border:none;padding:8px 18px;border-radius:6px;font-family:var(--mono);pointer-events:auto;-webkit-tap-highlight-color:transparent;touch-action:manipulation;transition:background .15s;}
-  .setup-add-overlay:hover{background:rgba(0,0,0,0.6);color:rgba(255,255,255,0.9);}
+  .setup-add-overlay{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,0.35);color:#fff;cursor:pointer;z-index:5;border:none;padding:8px 18px;border-radius:6px;font-family:var(--mono);pointer-events:auto;-webkit-tap-highlight-color:transparent;touch-action:manipulation;transition:background .15s;}
+  .setup-add-overlay:hover{background:rgba(0,0,0,0.55);}
   .setup-add-plus{font-size:28px;font-weight:300;line-height:1;}
   .setup-add-label{font-size:9px;font-weight:700;letter-spacing:.08em;margin-top:2px;}
   /* Clickable pill tag in edit mode — 10% canvas height */
@@ -96,7 +96,8 @@
   body.setup-lock .frame-label-tag{pointer-events:none;}
   body.setup-lock .color-row{pointer-events:none;opacity:.35;}
   body.setup-lock .group-sidebar{pointer-events:none;opacity:.35;}
-  body.setup-lock .nav-arrow{pointer-events:none;opacity:.35;}
+  body.setup-lock .nav-arrow{pointer-events:none;display:none;}
+  body.setup-lock .fs-btn{pointer-events:none;display:none;}
   body.setup-lock .g3-text-block{pointer-events:none;opacity:.35;}
   body.setup-lock .setup-bar{pointer-events:auto;opacity:1;background:var(--surface);border-top:1px solid var(--border);border-bottom:1px solid var(--border);}
   /* Single-strip layout: center the column with capped width */
