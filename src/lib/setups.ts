@@ -19,15 +19,17 @@ export function toggleSetupMode(): void {
     useStore.setState({ setupMode: false, setupEditing: false, activeSetupId: null });
     bar.style.display = 'none';
     bar.innerHTML = '';
+    document.body.classList.remove('setup-lock');
     document.getElementById('setupsBtn')?.classList.remove('active');
     const renderAll = (window as any).__fh_renderAll;
     if (renderAll) renderAll();
     return;
   }
 
-  // Enter setup mode
+  // Enter setup mode — lock all other UI
   useStore.setState({ setupMode: true, setupEditing: false });
   bar.style.display = '';
+  document.body.classList.add('setup-lock');
   document.getElementById('setupsBtn')?.classList.add('active');
 
   if (s.setups.length === 0) {
@@ -308,9 +310,10 @@ export function handleSetupFrameClick(fid: number): void {
 
 // ─── Colour tag HTML ───────────────────────────────────────────────────
 
-/** Return HTML for the setup colour tag on a canvas + toggle button when editing.
- *  - Always: shows colour tag if frame has a setup assigned
- *  - In edit mode (setupEditing): shows a pill-shaped toggle button in bottom-right */
+/** Return HTML for the setup colour tag on a canvas + add/remove controls when editing.
+ *  - Always: shows colour pill tag in bottom-right if frame has a setup assigned
+ *  - In edit mode: frame IN current setup → clickable pill (tap to remove)
+ *  - In edit mode: frame NOT in current setup → centred "+" ADD TO SETUP overlay (tap to add/reassign) */
 export function setupTagHTML(fid: number): string {
   const s = state();
   const f = s.frames.find((fr) => fr.id === fid);
@@ -321,27 +324,26 @@ export function setupTagHTML(fid: number): string {
   const hasSetup = f && f.setupId;
 
   if (isEditing) {
-    // In edit mode: show a pill toggle button in bottom-right
     if (isAssignedToActive && hasSetup) {
-      // Assigned to current setup → filled pill with name
+      // Assigned to current setup → clickable pill in bottom-right (tap to remove)
       const setup = s.setups.find((su) => su.id === f.setupId);
       if (setup) {
         const col = SETUP_COLORS[setup.colorIndex] || SETUP_COLORS[0];
         const textCol = needsDarkText(col.hex) ? '#000' : '#fff';
-        html += `<button class="setup-toggle-btn setup-toggle-assigned" data-setup-fid="${fid}" style="background:${col.hex};color:${textCol};border-color:${col.hex}">${setup.name}</button>`;
+        html += `<button class="setup-tag setup-tag-btn" data-setup-fid="${fid}" style="background:${col.hex};color:${textCol}">${setup.name}</button>`;
       }
-    } else if (hasSetup) {
-      // Assigned to DIFFERENT setup → show that setup's tag (not editable looking) + empty toggle
-      const setup = s.setups.find((su) => su.id === f.setupId);
-      if (setup) {
-        const col = SETUP_COLORS[setup.colorIndex] || SETUP_COLORS[0];
-        const textCol = needsDarkText(col.hex) ? '#000' : '#fff';
-        html += `<span class="setup-tag" style="background:${col.hex};color:${textCol}">${setup.name}</span>`;
-      }
-      html += `<button class="setup-toggle-btn setup-toggle-empty" data-setup-fid="${fid}"></button>`;
     } else {
-      // Not assigned → empty outline pill
-      html += `<button class="setup-toggle-btn setup-toggle-empty" data-setup-fid="${fid}"></button>`;
+      // Not in current setup → show "+" ADD TO SETUP overlay
+      // If in a different setup, also show that setup's pill tag underneath
+      if (hasSetup) {
+        const setup = s.setups.find((su) => su.id === f.setupId);
+        if (setup) {
+          const col = SETUP_COLORS[setup.colorIndex] || SETUP_COLORS[0];
+          const textCol = needsDarkText(col.hex) ? '#000' : '#fff';
+          html += `<span class="setup-tag" style="background:${col.hex};color:${textCol}">${setup.name}</span>`;
+        }
+      }
+      html += `<button class="setup-add-overlay" data-setup-fid="${fid}"><span class="setup-add-plus">+</span><span class="setup-add-label">ADD TO SETUP</span></button>`;
     }
   } else {
     // Normal mode (not editing): just show the colour tag if assigned

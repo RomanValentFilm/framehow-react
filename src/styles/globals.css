@@ -40,7 +40,7 @@
   @media (max-width:430px) and (orientation:portrait){.vb-desktop-only{display:none;}}
   @media (max-height:430px) and (orientation:landscape){.grid3x2-card-wrap .pictxt-btn{display:none!important;}.grid3x2-card-wrap .act-btn[data-mact="new"],.grid3x2-card-wrap .act-btn[data-mact="upload"],.grid3x2-card-wrap .act-btn[data-mact="delete"]{display:none!important;}}
   /* ─── Setup bar ─── */
-  .setup-bar{background:var(--surface);border-bottom:1px solid var(--border);padding:4px 10px;position:relative;z-index:9;}
+  .setup-bar{background:var(--surface);border-bottom:1px solid var(--border);padding:4px 10px;position:sticky;top:calc(52px + env(safe-area-inset-top) * 0.5 + 33px);z-index:9;}
   .setup-bar-inner{display:flex;align-items:center;gap:8px;min-height:28px;}
   .setup-dropdown-arrow{font-size:12px;background:none;border:1px solid var(--border);border-radius:3px;color:#ccc;cursor:pointer;padding:2px 6px;line-height:1;}
   .setup-pill{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.05em;padding:3px 10px;border-radius:12px;white-space:nowrap;line-height:1;}
@@ -63,16 +63,32 @@
   .setup-cancel-btn{font-family:var(--mono);font-size:11px;padding:3px 8px;border:1px solid var(--border);border-radius:3px;background:transparent;color:#808080;cursor:pointer;line-height:1;}
   /* Setup colour tag on canvas (always visible when assigned) */
   .setup-tag{position:absolute;bottom:4px;right:4px;font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.05em;padding:1px 5px;border-radius:3px;line-height:1.2;pointer-events:none;z-index:3;}
-  /* Setup toggle button — pill in bottom-right, ~10% canvas height */
-  .setup-toggle-btn{position:absolute;bottom:4%;right:3%;height:10%;min-height:18px;max-height:36px;padding:0 10px;border-radius:999px;font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.05em;cursor:pointer;z-index:5;display:flex;align-items:center;justify-content:center;transition:background .15s,border-color .15s;pointer-events:auto;-webkit-tap-highlight-color:transparent;touch-action:manipulation;}
-  .setup-toggle-empty{background:transparent;border:2px solid rgba(255,255,255,.5);color:transparent;min-width:50px;}
-  .setup-toggle-empty:hover{border-color:rgba(255,255,255,.8);}
-  .setup-toggle-assigned{border:2px solid transparent;min-width:50px;}
+  /* Setup "+" ADD TO SETUP overlay — centered on canvas, arrow-style transparency */
+  .setup-add-overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,0.35);color:rgba(255,255,255,0.7);cursor:pointer;z-index:5;border:none;padding:0;font-family:var(--mono);pointer-events:auto;-webkit-tap-highlight-color:transparent;touch-action:manipulation;transition:background .15s;}
+  .setup-add-overlay:hover{background:rgba(0,0,0,0.5);color:rgba(255,255,255,0.9);}
+  .setup-add-plus{font-size:32px;font-weight:300;line-height:1;}
+  .setup-add-label{font-size:10px;font-weight:700;letter-spacing:.08em;margin-top:2px;}
+  /* Clickable pill tag in edit mode (click to remove from setup) */
+  .setup-tag-btn{pointer-events:auto;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation;border:none;transition:opacity .15s;}
+  .setup-tag-btn:hover{opacity:.8;}
   /* EDIT button in setup bar */
   .setup-edit-btn{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.05em;padding:3px 10px;border:1px solid var(--border);border-radius:3px;background:transparent;color:#ccc;cursor:pointer;line-height:1;}
   .setup-edit-btn:hover{border-color:var(--accent);color:var(--accent);}
-  .setup-delete-btn{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.05em;padding:3px 10px;border:1px solid rgba(213,38,50,.5);border-radius:3px;background:transparent;color:rgba(213,38,50,.8);cursor:pointer;line-height:1;margin-left:auto;}
-  .setup-delete-btn:hover{border-color:#d52632;color:#d52632;background:rgba(213,38,50,.1);}
+  .setup-delete-btn{font-family:var(--mono);font-size:11px;font-weight:500;letter-spacing:.05em;padding:3px 10px;border:1px solid var(--border);border-radius:3px;background:transparent;color:var(--text-faint);cursor:pointer;line-height:1;margin-left:auto;opacity:.6;}
+  .setup-delete-btn:hover{opacity:1;border-color:#999;color:#ccc;}
+  /* Setup-lock: block all UI except setup bar + setup canvas controls */
+  body.setup-lock .view-bar{pointer-events:none;opacity:.35;}
+  body.setup-lock .view-bar #setupsBtn{pointer-events:auto;opacity:1;}
+  body.setup-lock #mainMenuBtn{pointer-events:none;opacity:.35;}
+  body.setup-lock .version-actions{pointer-events:none;opacity:.35;}
+  body.setup-lock .version-tabs{pointer-events:none;opacity:.35;}
+  body.setup-lock .frame-num .vtab-add{pointer-events:none;opacity:.35;}
+  body.setup-lock .frame-num .reorder-group{pointer-events:none;opacity:.35;}
+  body.setup-lock .frame-num .pictxt-btn{pointer-events:none;opacity:.35;}
+  body.setup-lock .frame-label-tag{pointer-events:none;}
+  body.setup-lock .color-row{pointer-events:none;opacity:.35;}
+  body.setup-lock .group-sidebar{pointer-events:none;opacity:.35;}
+  body.setup-lock .setup-bar{pointer-events:auto;opacity:1;}
   /* Single-strip layout: center the column with capped width */
   .columns.strips-1 .strip-col{margin:0 auto;}
   @media (orientation:landscape){

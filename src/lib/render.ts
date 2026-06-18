@@ -120,6 +120,8 @@ export function renderAll(): void {
   // Show/hide setup-bar based on setup mode
   const setupBarEl = document.getElementById('setupBar') as HTMLElement | null;
   if (setupBarEl && !s.setupMode) setupBarEl.style.display = 'none';
+  // Lock all other UI while setup mode is open
+  document.body.classList.toggle('setup-lock', !!s.setupMode);
 
   const visibleFrames = getVisibleFrames();
   if (!visibleFrames.length) {

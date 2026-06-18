@@ -209,6 +209,7 @@ export function initFramehow(): void {
   menuBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     e.preventDefault();
+    if (state().setupMode) return; // locked while setup bar is open
     const menu = document.getElementById('mainMenu')!;
     menu.classList.toggle('open');
     _menuGuard = true;
@@ -505,6 +506,9 @@ export function initFramehow(): void {
       const isPhonePortrait = isPhone && h > w;
       const view = (b as HTMLElement).dataset.view as string;
 
+      // Block everything except SETUPS button while setup mode is open
+      if (state().setupMode && view !== 'setups') return;
+
       // Left-side buttons: iPad/Desktop only
       if (view === 'group') {
         if (isPhonePortrait) {
@@ -597,6 +601,7 @@ export function initFramehow(): void {
   // Strip toggle buttons (middle group) — toggle strips, auto-derive layout
   document.querySelectorAll('.strip-toggle').forEach((b) =>
     b.addEventListener('click', () => {
+      if (state().setupMode) return; // locked while setup bar is open
       const strip = (b as HTMLElement).dataset.strip as 'main' | 'ver' | 'floor' | 'refs';
       const s = state();
       const w = window.innerWidth, h = window.innerHeight;

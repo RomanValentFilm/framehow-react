@@ -38,6 +38,7 @@ import { openCamera, getCameraTarget, clearCameraTarget, setOnCapturedImage } fr
 
 export function handleMainAction(action: string, fid: number, div: HTMLElement): void {
   const s = state();
+  if (s.setupMode) return; // locked while setup bar is open
   const f = s.frames.find((fr) => fr.id === fid);
   if (!f) return;
   const idx = s.frames.indexOf(f);
@@ -358,6 +359,7 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
 
 export function handleAction(action: string, fid: number, div: HTMLElement, fromCompare?: boolean, strip: StripType = 'ver'): void {
   const s = state();
+  if (s.setupMode) return; // locked while setup bar is open
   const ai = getStripActiveTab(fid, strip);
   const vers = getStripVersions(fid, strip);
   const ver = vers[ai];
