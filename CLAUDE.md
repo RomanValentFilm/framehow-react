@@ -27,7 +27,7 @@ cd ~/Desktop/Framehow\ Files/framehow-react && git add -A && git commit -m "v4.6
 ### Version numbering
 - `APP_VERSION` constant in `src/store/state.ts` — displayed in toolbar next to logo
 - Format: `v4.6.0XX` where XX increments with each deploy
-- Current: `v4.6.016`
+- Current: `v4.6.017`
 - Production: `v4.6.013`
 
 ### Clean rebuild (if changes don't appear)
@@ -105,8 +105,16 @@ Replace `vX.Y.ZZZ` with the actual version number. User must run on Mac (sandbox
 
 ## Versions
 
+### v4.6.017 — 2026-06-19 (dev)
+**Separator spacing + setup CANCEL button**
+
+Changes from v4.6.015:
+- `src/styles/globals.css` — `.vb-sep` margin 2px → 6px on each side
+- `src/lib/setups.ts` — CANCEL button always shown in create form (was hidden when no setups exist); exits setup mode if no setups
+- `src/store/state.ts` — APP_VERSION bumped to v4.6.017
+
 ### v4.6.016 — 2026-06-19 (dev)
-**View bar separator spacing**
+**View bar separator spacing (not deployed)**
 
 Changes from v4.6.015:
 - `src/styles/globals.css` — `.vb-sep` margin 2px → 4px on each side

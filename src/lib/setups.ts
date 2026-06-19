@@ -255,7 +255,7 @@ function renderSetupCreateForm(bar: HTMLElement): void {
       <input class="setup-name-input" id="setupNameInput" type="text" maxlength="7" placeholder="NAME" autocomplete="off" />
       <div class="setup-color-picker">${colorsHTML}</div>
       <button class="setup-create-btn" id="setupCreateBtn">CREATE</button>
-      ${s.setups.length > 0 ? '<button class="setup-cancel-btn" id="setupCancelBtn">CANCEL</button>' : ''}
+      <button class="setup-cancel-btn" id="setupCancelBtn">CANCEL</button>
     </div>
   `;
 
@@ -298,12 +298,14 @@ function renderSetupCreateForm(bar: HTMLElement): void {
     renderSetupBarEdit(bar);
   });
 
-  // Wire CANCEL (back to edit state with existing setups)
-  bar.querySelector('#setupCancelBtn')?.addEventListener('click', () => {
+  // Wire CANCEL — back to edit state if setups exist, otherwise exit setup mode
+  bar.querySelector('#setupCancelBtn')!.addEventListener('click', () => {
     const latest = state();
     if (latest.setups.length > 0) {
       useStore.setState({ activeSetupId: latest.activeSetupId || latest.setups[0].id });
       renderSetupBarEdit(bar);
+    } else {
+      toggleSetupMode(); // exit setup mode entirely
     }
   });
 
