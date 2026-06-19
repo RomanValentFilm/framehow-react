@@ -898,14 +898,27 @@ export async function saveNow(): Promise<void> {
     }
   }
 
-  // 4. Sync the current state to /sync.
+  // 4. Wait for any background sync (flushSyncNow) to finish first.
+  //    On iOS, opening the menu fires flushSyncNow() which can still be
+  //    in flight when the user taps Save. If we sync concurrently the
+  //    server rejects the second request as a conflict.
+  if (isPushInFlight()) {
+    showToast('WAIT…');
+    const MAX_WAIT = 15_000;
+    const start = Date.now();
+    while (isPushInFlight() && Date.now() - start < MAX_WAIT) {
+      await new Promise(r => setTimeout(r, 100));
+    }
+  }
+
+  // 5. Sync the current state to /sync.
   try {
     await syncCurrentToServer(projectId);
     markSaved(projectId);
     updateSyncHash();
     updateLastKnownTimestamp(Date.now());
     fhTrack('project_saved');
-    showToast('Saved.');
+    showToast('SAVED.');
   } catch (e) {
     showToast(asMessage(e, 'Could not save project.'));
   }

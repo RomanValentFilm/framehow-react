@@ -27,7 +27,7 @@ cd ~/Desktop/Framehow\ Files/framehow-react && git add -A && git commit -m "v4.6
 ### Version numbering
 - `APP_VERSION` constant in `src/store/state.ts` — displayed in toolbar next to logo
 - Format: `v4.6.0XX` where XX increments with each deploy
-- Current: `v4.6.014`
+- Current: `v4.6.015`
 - Production: `v4.6.013`
 
 ### Clean rebuild (if changes don't appear)
@@ -104,6 +104,15 @@ Replace `vX.Y.ZZZ` with the actual version number. User must run on Mac (sandbox
 - View-bar height: 28px on iPad (13px font), 26px on iPhone (11px font)
 
 ## Versions
+
+### v4.6.015 — 2026-06-19 (dev)
+**iOS Save race condition fix + view bar reorganization**
+
+Changes from v4.6.013:
+- `src/lib/accountFlow.ts` — `saveNow()` now waits for any in-flight background sync (`flushSyncNow`) to finish before syncing; shows "WAIT…" toast during wait, "SAVED." on success
+- `src/components/ViewBar.tsx` — 3×2VIEW moved from left group to middle group with `.vb-sep` vertical separator before MAIN
+- `src/styles/globals.css` — added `.vb-sep` rule (1px wide, 16px tall, border-colored vertical line)
+- `src/store/state.ts` — APP_VERSION bumped to v4.6.015
 
 ### v4.6.013 — 2026-06-19 (dev)
 **Setup-bar positioning + touch targets**
