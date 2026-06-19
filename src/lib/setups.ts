@@ -535,7 +535,7 @@ function showStripTagOverlay(fid: number, vi: number, strip: StripType): void {
   overlay.className = 'strip-tag-overlay';
   overlay.innerHTML = `
     <div class="strip-tag-overlay-box">
-      <p class="strip-tag-overlay-title">Share this image with all<br><span class="setup-tag" style="background:${col.hex};color:${textCol};position:static;display:inline-flex;vertical-align:middle;pointer-events:none;margin:4px 0;">${setup.name}</span><br>SETUP marked frames?</p>
+      <p class="strip-tag-overlay-title">Share this image with all<br><span class="setup-tag" style="background:${col.hex};color:${textCol};position:static;display:inline-flex;vertical-align:middle;pointer-events:none;margin:6px 0;font-size:16px;padding:4px 14px;min-height:28px;">${setup.name}</span><br>SETUP marked frames?</p>
       <p class="strip-tag-overlay-desc">This image will appear in the ${stripLabel} strip of every main frame tagged ${setup.name}.</p>
       <label class="strip-tag-overlay-dismiss"><input type="checkbox" id="stripTagDismissCheck" /> Don't show this again</label>
       <div class="strip-tag-overlay-btns">

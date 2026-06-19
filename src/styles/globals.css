@@ -83,7 +83,7 @@
   .setup-add-label{font-size:12px;font-weight:700;letter-spacing:.08em;margin-top:3px;}
   /* Strip tag pill — bottom-right of VERSN/FLOOR/REFS canvases */
   .strip-tag{position:absolute;bottom:4px;right:4px;font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.05em;padding:0 8px;border-radius:4px;line-height:1.2;z-index:6;height:10%;min-height:18px;max-height:36px;display:flex;align-items:center;cursor:pointer;-webkit-tap-highlight-color:transparent;transition:opacity .15s;}
-  .strip-tag-empty{background:rgba(0,0,0,0.6);border:1.5px solid rgba(255,255,255,0.5);color:transparent;opacity:0.6;min-width:48px;}
+  .strip-tag-empty{background:rgba(0,0,0,0.6);border:1.5px solid rgba(255,255,255,0.5);color:transparent;opacity:0.6;}
   .strip-tag-empty:hover{opacity:1;border-color:rgba(255,255,255,0.9);}
   .strip-tag-filled{border:none;}
   .strip-tag-filled:hover{opacity:0.85;}
