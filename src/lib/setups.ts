@@ -3,7 +3,8 @@
 // Frames can belong to at most one setup. A colour tag shows on the canvas in all views.
 
 import { state, useStore, SETUP_COLORS, bumpRenderTick } from '../store/state';
-import type { Setup } from '../store/state';
+import type { Setup, StripType } from '../store/state';
+import { getStripVersions } from './helpers';
 import { showToast, showConfirm } from './modals';
 
 // ─── Setup bar rendering ───────────────────────────────────────────────
@@ -439,6 +440,140 @@ export function wireSetupClicks(container: HTMLElement | Document = document): v
       handleSetupFrameClick(fid);
     })
   );
+}
+
+// ─── Strip tags (VERSN / FLOOR / REFS) ────────────────────────────────
+
+/**
+ * Returns HTML for the strip-tag pill in the bottom-right corner of a
+ * VERSN/FLOOR/REFS canvas. Shows only when the parent MAIN frame has a
+ * SETUP assigned. The pill is either empty (outline) or filled (tagged).
+ */
+export function stripTagHTML(fid: number, vi: number, strip: StripType): string {
+  if (strip === 'main') return ''; // MAIN frames use setupTagHTML instead
+
+  const s = state();
+  const mainFrame = s.frames.find((f) => f.id === fid);
+  if (!mainFrame || !mainFrame.setupId) return ''; // no SETUP on this MAIN frame
+
+  const setup = s.setups.find((su) => su.id === mainFrame.setupId);
+  if (!setup) return '';
+
+  const ver = getStripVersions(fid, strip)[vi];
+  const isTagged = ver?.setupTagged;
+  const col = SETUP_COLORS[setup.colorIndex] || SETUP_COLORS[0];
+  const textCol = needsDarkText(col.hex) ? '#000' : '#fff';
+
+  if (isTagged) {
+    // Filled pill — shows SETUP name in colour
+    return `<button class="strip-tag strip-tag-filled" data-striptag-fid="${fid}" data-striptag-vi="${vi}" data-striptag-strip="${strip}" style="background:${col.hex};color:${textCol}">${setup.name}</button>`;
+  }
+  // Empty pill — outline only
+  return `<button class="strip-tag strip-tag-empty" data-striptag-fid="${fid}" data-striptag-vi="${vi}" data-striptag-strip="${strip}"></button>`;
+}
+
+/**
+ * Wire click handlers on strip-tag pills. Call after rendering.
+ */
+export function wireStripTagClicks(container: HTMLElement | Document = document): void {
+  container.querySelectorAll('[data-striptag-fid]').forEach((btn) =>
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      const el = btn as HTMLElement;
+      const fid = parseInt(el.dataset.striptagFid!, 10);
+      const vi = parseInt(el.dataset.striptagVi!, 10);
+      const strip = el.dataset.striptagStrip! as StripType;
+      handleStripTagClick(fid, vi, strip);
+    })
+  );
+}
+
+/** Handle a strip-tag pill click — show confirmation overlay or toggle directly. */
+function handleStripTagClick(fid: number, vi: number, strip: StripType): void {
+  const s = state();
+  const ver = getStripVersions(fid, strip)[vi];
+  if (!ver) return;
+
+  if (ver.setupTagged) {
+    // Already tagged → untag
+    ver.setupTagged = false;
+    bumpRenderTick();
+    const renderAll = (window as any).__fh_renderAll;
+    if (renderAll) renderAll();
+    return;
+  }
+
+  // Not tagged — show confirmation overlay (unless dismissed for this project)
+  if (s.stripTagInfoDismissed) {
+    applyStripTag(fid, vi, strip);
+    return;
+  }
+
+  showStripTagOverlay(fid, vi, strip);
+}
+
+/** Show the confirmation overlay before tagging. */
+function showStripTagOverlay(fid: number, vi: number, strip: StripType): void {
+  const s = state();
+  const mainFrame = s.frames.find((f) => f.id === fid);
+  if (!mainFrame || !mainFrame.setupId) return;
+  const setup = s.setups.find((su) => su.id === mainFrame.setupId);
+  if (!setup) return;
+  const col = SETUP_COLORS[setup.colorIndex] || SETUP_COLORS[0];
+  const textCol = needsDarkText(col.hex) ? '#000' : '#fff';
+
+  // Get the strip's display name (e.g. "VERSN", "FLOOR", "REFS")
+  const stripDef = s.stripDefs.find((d) => d.id === strip);
+  const stripLabel = stripDef ? stripDef.buttonLabel : strip.toUpperCase();
+
+  // Remove any existing overlay
+  document.getElementById('stripTagOverlay')?.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'stripTagOverlay';
+  overlay.className = 'strip-tag-overlay';
+  overlay.innerHTML = `
+    <div class="strip-tag-overlay-box">
+      <p class="strip-tag-overlay-title">Share this frame with all <span class="setup-tag" style="background:${col.hex};color:${textCol};position:static;display:inline-flex;vertical-align:middle;pointer-events:none;">${setup.name}</span> SETUP frames?</p>
+      <p class="strip-tag-overlay-desc">It will appear in the ${stripLabel} strip of every main frame tagged ${setup.name}.</p>
+      <label class="strip-tag-overlay-dismiss"><input type="checkbox" id="stripTagDismissCheck" /> Don't show this again</label>
+      <div class="strip-tag-overlay-btns">
+        <button class="strip-tag-overlay-ok" id="stripTagOk">OK</button>
+        <button class="strip-tag-overlay-cancel" id="stripTagCancel">CANCEL</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  overlay.querySelector('#stripTagOk')!.addEventListener('click', () => {
+    const dismiss = (document.getElementById('stripTagDismissCheck') as HTMLInputElement).checked;
+    if (dismiss) {
+      useStore.setState({ stripTagInfoDismissed: true });
+    }
+    overlay.remove();
+    applyStripTag(fid, vi, strip);
+  });
+
+  overlay.querySelector('#stripTagCancel')!.addEventListener('click', () => {
+    overlay.remove();
+  });
+}
+
+/** Apply the strip tag and copy content to same-SETUP frames. */
+function applyStripTag(fid: number, vi: number, strip: StripType): void {
+  const s = state();
+  const ver = getStripVersions(fid, strip)[vi];
+  if (!ver) return;
+
+  // Mark this version as tagged
+  ver.setupTagged = true;
+
+  // TODO: Copy content to first tab of all same-SETUP frames (Step 2)
+
+  bumpRenderTick();
+  const renderAll = (window as any).__fh_renderAll;
+  if (renderAll) renderAll();
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────

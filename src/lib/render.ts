@@ -38,7 +38,7 @@ import { restoreCanvas, restoreMainCanvas, setupDrawing, setupMainDrawing } from
 import { addCrossSwipe, addNavArrows, scheduleSyncHeights } from './view';
 import { showLabelEdit, showVerLabelEdit } from './modals';
 import { getVisibleFrames, updateGroupButtonState } from './groups';
-import { setupTagHTML, wireSetupClicks } from './setups';
+import { setupTagHTML, wireSetupClicks, stripTagHTML, wireStripTagClicks } from './setups';
 
 /** iPhone + 9:16 project → strip cards skip the repeated main-frame name. */
 function _phonePortraitProject(): boolean {
@@ -154,6 +154,8 @@ export function renderAll(): void {
   updateGroupButtonState();
   // Wire setup toggle buttons if in setup edit mode
   if (state().setupEditing) wireSetupClicks();
+  // Wire strip-tag pill clicks (always — they only render when applicable)
+  wireStripTagClicks();
   // Sync SETUPS button active state
   document.getElementById('setupsBtn')?.classList.toggle('active', state().setupMode);
   requestAnimationFrame(() => scheduleSyncHeights());
@@ -740,7 +742,7 @@ export function renderVersionFrame(div: HTMLElement, fid: number, strip: StripTy
     f?.cropW || 960
   }" height="${f?.cropH || 540}"${_verHidden ? ' style="pointer-events:none;"' : ''}></canvas>${
       !_verHidden && ver && ver.type === 'empty' && (getStripCrossCompare(fid, strip) ?? -1) < 0 ? '<div class="canvas-hint"><span>choose an action below</span></div>' : ''
-    }${!_verHidden ? starHTML(fid, ai, strip) : ''}${!_verHidden ? fsButtonHTML(fid, ai, strip) : ''}</div></div>
+    }${!_verHidden ? starHTML(fid, ai, strip) : ''}${!_verHidden ? fsButtonHTML(fid, ai, strip) : ''}${!_verHidden ? stripTagHTML(fid, ai, strip) : ''}</div></div>
       ${
         !_verHidden && s.drawActive[fid] === strip
           ? `<div class="color-row">${colorDots}</div>`

@@ -81,6 +81,25 @@
   .setup-add-overlay:hover{background:rgba(0,0,0,0.55);}
   .setup-add-plus{font-size:32px;font-weight:700;line-height:1;}
   .setup-add-label{font-size:12px;font-weight:700;letter-spacing:.08em;margin-top:3px;}
+  /* Strip tag pill — bottom-right of VERSN/FLOOR/REFS canvases */
+  .strip-tag{position:absolute;bottom:4px;right:4px;font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.05em;padding:0 8px;border-radius:4px;line-height:1.2;z-index:6;height:10%;min-height:18px;max-height:36px;display:flex;align-items:center;cursor:pointer;-webkit-tap-highlight-color:transparent;transition:opacity .15s;}
+  .strip-tag-empty{background:rgba(0,0,0,0.6);border:1.5px solid rgba(255,255,255,0.5);color:transparent;opacity:0.6;min-width:28px;}
+  .strip-tag-empty:hover{opacity:1;border-color:rgba(255,255,255,0.9);}
+  .strip-tag-filled{border:none;}
+  .strip-tag-filled:hover{opacity:0.85;}
+  .draw-active .strip-tag{display:none;}
+  /* Strip tag confirmation overlay */
+  .strip-tag-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;}
+  .strip-tag-overlay-box{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:24px;max-width:380px;width:90%;text-align:center;}
+  .strip-tag-overlay-title{font-family:var(--mono);font-size:14px;font-weight:700;margin:0 0 10px;}
+  .strip-tag-overlay-desc{font-size:12px;color:#888;margin:0 0 16px;line-height:1.4;}
+  .strip-tag-overlay-dismiss{font-size:11px;color:#888;display:flex;align-items:center;justify-content:center;gap:6px;margin:0 0 16px;cursor:pointer;}
+  .strip-tag-overlay-dismiss input{margin:0;}
+  .strip-tag-overlay-btns{display:flex;gap:10px;justify-content:center;}
+  .strip-tag-overlay-ok{font-family:var(--mono);font-size:12px;font-weight:700;padding:6px 20px;border:none;border-radius:4px;background:#2563eb;color:#fff;cursor:pointer;}
+  .strip-tag-overlay-ok:hover{background:#1d4ed8;}
+  .strip-tag-overlay-cancel{font-family:var(--mono);font-size:12px;font-weight:700;padding:6px 20px;border:1px solid var(--border);border-radius:4px;background:transparent;color:var(--fg);cursor:pointer;}
+  .strip-tag-overlay-cancel:hover{background:var(--bg-hover);}
   /* Clickable pill tag in edit mode — 10% canvas height */
   .setup-tag-btn{pointer-events:auto;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation;border:none;transition:opacity .15s;height:10%;min-height:18px;max-height:36px;display:flex;align-items:center;padding:0 8px;border-radius:4px;}
   .setup-tag-btn:hover{opacity:.8;}

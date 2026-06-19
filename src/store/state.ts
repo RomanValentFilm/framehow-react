@@ -50,7 +50,7 @@ export interface Setup {
 
 /** 12-colour palette for setups. */
 /** App version — bump before every deploy. */
-export const APP_VERSION = 'v4.6.017';
+export const APP_VERSION = 'v4.6.018';
 
 export const SETUP_COLORS: { name: string; hex: string }[] = [
   { name: 'DAYLIGHT',      hex: '#CFE2F6' },
@@ -75,6 +75,8 @@ export interface Version {
   bgImage: string | null;
   hidden?: boolean;
   starred?: boolean;
+  /** Tagged with parent MAIN frame's SETUP — shares content across same-SETUP frames */
+  setupTagged?: boolean;
 }
 
 export type StripType = 'main' | 'ver' | 'floor' | 'refs';
@@ -198,6 +200,8 @@ export interface FrameHowState {
   setupMode: boolean;
   setupEditing: boolean;   // true = toggle buttons visible, assigning frames
   nextSetupId: number;
+  /** Per-project: user dismissed the strip-tag info overlay */
+  stripTagInfoDismissed: boolean;
   // bumped manually by the imperative core to wake any React subscribers
   // that need to react to mutable state changes (e.g., frame badge count).
   renderTick: number;
@@ -279,6 +283,7 @@ const initial: FrameHowState = {
   setupMode: false,
   setupEditing: false,
   nextSetupId: 1,
+  stripTagInfoDismissed: false,
   renderTick: 0,
 };
 
@@ -322,6 +327,7 @@ export function resetStoryboardState(): void {
     activeSetupId: null,
     setupMode: false,
     nextSetupId: 1,
+    stripTagInfoDismissed: false,
     renderTick: state().renderTick + 1,
   });
 }
