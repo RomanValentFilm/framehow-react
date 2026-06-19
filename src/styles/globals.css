@@ -311,7 +311,7 @@
   .pictxt-btn,.pictxt-btn.active{font-weight:400!important;font-family:var(--font)!important;}
   .pictxt-btn .ptt-bold{font-weight:700!important;color:var(--accent)!important;}
   .pictxt-btn.active{color:#b3b3b3;border-color:#fff;}
-  .version-actions{display:flex;gap:6px;flex-wrap:wrap;padding:3px 10px 10px;align-content:flex-start;justify-content:center;}
+  .version-actions{display:flex;gap:6px;flex-wrap:wrap;padding:3px 10px;align-content:flex-start;justify-content:center;}
   .act-btn{font-family:var(--font);font-size:11px;font-weight:500;padding:2px 8px;border-radius:var(--radius-sm);border:2px solid var(--border);background:var(--surface2);color:#b8b8b8;cursor:pointer;display:flex;align-items:center;gap:5px;transition:background .3s,color .3s,border-color .3s;-webkit-tap-highlight-color:transparent;}
   .act-btn[data-mact="undo"],.act-btn[data-action="undo"],.act-btn[data-cact="undo"]{padding:2px 6px;}
   /* Hover styling only on real hover devices — iOS otherwise requires 2 taps (first = hover, second = click) */
@@ -482,6 +482,8 @@
     .toolbar.tb-hide{transform:translateY(-100%);}
     .view-bar.tb-hide{transform:translateY(calc(-52px - env(safe-area-inset-top) * 0.5));padding-top:env(safe-area-inset-top);}
     .columns{padding-top:calc(82px + env(safe-area-inset-top) * 0.5);}
+    body.setup-lock .setup-bar{position:fixed;top:calc(80px + env(safe-area-inset-top) * 0.5);left:0;right:0;z-index:25;}
+    body.setup-lock .columns{padding-top:calc(112px + env(safe-area-inset-top) * 0.5);}
   }
   /* iPhone: toolbar scrolls naturally, view-bar sticks at top. No JS. */
   @media (hover:none) and (pointer:coarse) and (max-width:430px),
@@ -493,6 +495,8 @@
     .view-bar.tb-hide{transform:none;}
     .columns{padding-top:0;}
     .view-btn{padding:3px 4px;font-size:11px;}
+    body.setup-lock .setup-bar{position:sticky;top:calc(env(safe-area-inset-top) + 28px);left:auto;right:auto;z-index:19;}
+    body.setup-lock .columns{padding-top:0;}
   }
 
   /* PWA standalone: fixed gray strip behind battery bar. z-index:15 sits
