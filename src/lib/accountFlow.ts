@@ -25,6 +25,7 @@ import {
   getCurrentProject,
   hasLocalChanges,
   markSaved,
+  isLoadInFlight,
   isPushInFlight,
   registerCloudSync,
   registerPullFn,
@@ -865,6 +866,13 @@ export function showSaveToaster(): void {
 // ---------------------------------------------------------------------------
 
 export async function saveNow(): Promise<void> {
+  // 0. Block save if project is still loading (pull or project switch in progress).
+  //    Saving incomplete state would overwrite good data on the server.
+  if (isLoadInFlight()) {
+    showToast('Project still loading…');
+    return;
+  }
+
   // 1. Ensure project name.
   let cp = getCurrentProject();
   if (!cp.name) {

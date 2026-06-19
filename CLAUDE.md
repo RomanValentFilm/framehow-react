@@ -106,10 +106,11 @@ Replace `vX.Y.ZZZ` with the actual version number. User must run on Mac (sandbox
 ## Versions
 
 ### v4.6.015 — 2026-06-19 (dev)
-**iOS Save race condition fix + view bar reorganization**
+**iOS Save race fix + load guard + view bar reorganization**
 
 Changes from v4.6.013:
-- `src/lib/accountFlow.ts` — `saveNow()` now waits for any in-flight background sync (`flushSyncNow`) to finish before syncing; shows "WAIT…" toast during wait, "SAVED." on success
+- `src/lib/accountFlow.ts` — `saveNow()` waits for in-flight background sync before syncing (shows "WAIT…" / "SAVED."); blocks save entirely if project still loading ("Project still loading…")
+- `src/lib/currentProject.ts` — `flushSyncNow()` now checks `_pullInFlight` and `_projectSwitchInFlight` (was missing); added `isLoadInFlight()` export
 - `src/components/ViewBar.tsx` — 3×2VIEW moved from left group to middle group with `.vb-sep` vertical separator before MAIN
 - `src/styles/globals.css` — added `.vb-sep` rule (1px wide, 16px tall, border-colored vertical line)
 - `src/store/state.ts` — APP_VERSION bumped to v4.6.015

@@ -119,6 +119,8 @@ export function setProjectSwitchInFlight(v: boolean): void {
 export async function flushSyncNow(): Promise<void> {
   if (!_syncFn || !cp.projectId || !isLoggedIn()) return;
   if (cloudSyncInFlight) return; // already syncing
+  if (_pullInFlight) return;     // don't push while pulling — images may still be loading
+  if (_projectSwitchInFlight) return; // don't push during project switch
   if (_storeVersion === lastSyncVersion) return; // nothing changed
   const pid = cp.projectId;
   const ver = _storeVersion;
@@ -171,6 +173,11 @@ async function retryPendingSyncs(): Promise<void> {
 /** True when the push-sync interval is actively syncing to cloud. */
 export function isPushInFlight(): boolean {
   return cloudSyncInFlight;
+}
+
+/** True when a pull (load from cloud) is in progress — images may still be downloading. */
+export function isLoadInFlight(): boolean {
+  return _pullInFlight || _projectSwitchInFlight;
 }
 
 function scheduleAutosave(): void {
