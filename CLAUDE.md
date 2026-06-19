@@ -4,18 +4,31 @@
 
 Git branch is `v4.4`. Cloudflare Pages production branch is `main`.
 
-### Dev / preview
+### DEPLOY WORKFLOW — ALWAYS follow this order:
+1. Claude bumps `APP_VERSION` in `src/store/state.ts` (e.g. `v4.6.010` → `v4.6.011`)
+2. Claude gives user a single Terminal command that: commits → builds → deploys
+3. User runs the command on their Mac
+
+### Dev / preview (commit + build + deploy)
 ```
-cd ~/Desktop/Framehow\ Files/framehow-react && npm run build && npx wrangler pages deploy dist --project-name framehow-react --branch dev
+cd ~/Desktop/Framehow\ Files/framehow-react && git add -A && git commit -m "v4.6.0XX: description" && npm run build && npx wrangler pages deploy dist --project-name framehow-react --branch dev
 ```
 - Deploys to preview URL (e.g. `dev.framehow-react.pages.dev`)
+- Every deploy MUST be committed to git first so we can diff/rollback
 
 ### Production (live — framehow.com/app)
 ```
-cd ~/Desktop/Framehow\ Files/framehow-react && npm run build && npx wrangler pages deploy dist --project-name framehow-react --branch main
+cd ~/Desktop/Framehow\ Files/framehow-react && git add -A && git commit -m "v4.6.0XX: description" && npm run build && npx wrangler pages deploy dist --project-name framehow-react --branch main
 ```
 - Serves on **framehow.com/app** (custom domain)
 - MUST use `--branch main` — without it, wrangler auto-detects the `dev` git branch and deploys to preview only
+- Deploy to production ONLY when user explicitly says so
+
+### Version numbering
+- `APP_VERSION` constant in `src/store/state.ts` — displayed in toolbar next to logo
+- Format: `v4.6.0XX` where XX increments with each deploy
+- Current: `v4.6.010`
+- Production: `v4.5.030`
 
 ### Clean rebuild (if changes don't appear)
 ```
