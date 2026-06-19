@@ -88,17 +88,17 @@
   .strip-tag-filled{border:none;}
   .strip-tag-filled:hover{opacity:0.85;}
   .draw-active .strip-tag{display:none;}
-  /* Strip tag confirmation overlay — matches confirm-modal design */
-  .strip-tag-overlay{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:350;display:flex;align-items:center;justify-content:center;}
-  .strip-tag-overlay-box{background:var(--surface);border:1px solid var(--border-strong);border-radius:var(--radius);padding:20px;width:min(360px,88vw);text-align:center;}
-  .strip-tag-overlay-title{font-size:14px;color:var(--text);line-height:1.5;margin:0 0 10px;}
-  .strip-tag-overlay-desc{font-size:14px;color:var(--text);line-height:1.5;margin:0 0 18px;}
-  .strip-tag-overlay-dismiss{font-size:12px;color:var(--text);display:flex;align-items:center;justify-content:center;gap:6px;margin:0 0 18px;cursor:pointer;}
+  /* Strip tag confirmation overlay — matches account-modal design */
+  .strip-tag-overlay{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:350;display:flex;align-items:center;justify-content:center;padding:16px;}
+  .strip-tag-overlay-box{background:var(--surface);border:1px solid var(--border-strong);border-radius:var(--radius);padding:20px 22px;width:min(420px,100%);text-align:center;}
+  .strip-tag-overlay-title{font-size:18px;font-weight:600;color:#fff;line-height:1.5;margin:0 0 10px;}
+  .strip-tag-overlay-desc{font-size:14px;color:#aaa;line-height:1.5;margin:0 0 18px;}
+  .strip-tag-overlay-dismiss{font-size:12px;color:#aaa;display:flex;align-items:center;justify-content:center;gap:6px;margin:0 0 18px;cursor:pointer;}
   .strip-tag-overlay-dismiss input{margin:0;}
-  .strip-tag-overlay-btns{display:flex;justify-content:center;gap:10px;}
-  .strip-tag-overlay-ok,.strip-tag-overlay-cancel{font-size:13px;padding:6px 16px;border-radius:var(--radius);cursor:pointer;font-family:inherit;}
-  .strip-tag-overlay-ok{background:#d52632;border:1px solid #d52632;color:#fff;}
-  .strip-tag-overlay-ok:hover{background:#b91f2a;}
+  .strip-tag-overlay-btns{display:flex;justify-content:center;gap:8px;margin-top:16px;}
+  .strip-tag-overlay-ok,.strip-tag-overlay-cancel{font-size:13px;padding:9px 18px;border-radius:var(--radius);cursor:pointer;font-family:inherit;}
+  .strip-tag-overlay-ok{background:var(--accent);border:1px solid var(--accent);color:#fff;}
+  .strip-tag-overlay-ok:hover{background:#b01f2a;}
   .strip-tag-overlay-cancel{background:transparent;border:1px solid var(--border-strong);color:var(--text);}
   .strip-tag-overlay-cancel:hover{background:var(--surface);}
   /* Clickable pill tag in edit mode — 10% canvas height */
