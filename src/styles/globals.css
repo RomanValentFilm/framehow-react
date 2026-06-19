@@ -49,6 +49,7 @@
   .setup-helper-text{font-family:var(--mono);font-size:11px;color:#808080;white-space:nowrap;}
   .setup-done-btn{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.05em;padding:3px 12px;border:1px solid var(--accent);border-radius:3px;background:var(--accent);color:#000;cursor:pointer;line-height:1;}
   .setup-done-btn:hover{background:var(--accent);color:#fff;}
+  @media (pointer:coarse){.setup-dropdown-arrow{position:relative;}.setup-dropdown-arrow::after{content:'';position:absolute;top:-10px;right:-10px;bottom:-10px;left:-10px;}.setup-done-btn{position:relative;}.setup-done-btn::after{content:'';position:absolute;top:-10px;right:-10px;bottom:-10px;left:-10px;}}
   .setup-dropdown{position:absolute;left:10px;top:100%;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px;z-index:20;display:flex;flex-direction:column;gap:10px;min-width:120px;box-shadow:0 4px 12px rgba(0,0,0,.4);}
   .setup-dd-item{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.05em;padding:4px 10px;border-radius:4px;border:none;cursor:pointer;text-align:left;white-space:nowrap;line-height:1;}
   .setup-dd-new{font-size:13px;letter-spacing:.04em;background:transparent;color:#808080;border:1px solid var(--border);text-align:center;}
@@ -311,7 +312,7 @@
   .pictxt-btn,.pictxt-btn.active{font-weight:400!important;font-family:var(--font)!important;}
   .pictxt-btn .ptt-bold{font-weight:700!important;color:var(--accent)!important;}
   .pictxt-btn.active{color:#b3b3b3;border-color:#fff;}
-  .version-actions{display:flex;gap:6px;flex-wrap:wrap;padding:5px 10px;align-content:flex-start;justify-content:center;}
+  .version-actions{display:flex;gap:6px;flex-wrap:wrap;padding:3px 10px;align-content:flex-start;justify-content:center;}
   .act-btn{font-family:var(--font);font-size:11px;font-weight:500;padding:2px 8px;border-radius:var(--radius-sm);border:2px solid var(--border);background:var(--surface2);color:#b8b8b8;cursor:pointer;display:flex;align-items:center;gap:5px;transition:background .3s,color .3s,border-color .3s;-webkit-tap-highlight-color:transparent;}
   .act-btn[data-mact="undo"],.act-btn[data-action="undo"],.act-btn[data-cact="undo"]{padding:2px 6px;}
   /* Hover styling only on real hover devices — iOS otherwise requires 2 taps (first = hover, second = click) */
