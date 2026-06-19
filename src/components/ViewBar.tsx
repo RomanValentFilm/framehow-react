@@ -7,7 +7,7 @@ export function ViewBar() {
         {/* LEFT GROUP — iPad/Desktop only */}
         <div className="view-btns vb-left">
           <button className="view-btn vb-desktop-only" data-view="group" title="Group">GROUP</button>
-          <button className="view-btn vb-desktop-only" data-view="3x2" title="3×2">3×2</button>
+          <button className="view-btn vb-desktop-only" data-view="3x2" title="3×2 View">3×2{' '}VIEW</button>
           <button className="view-btn vb-desktop-only" data-view="setups" id="setupsBtn" title="Setups">SETUPS</button>
         </div>
 

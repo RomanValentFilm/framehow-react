@@ -59,7 +59,7 @@ function renderSetupBarEdit(bar: HTMLElement): void {
 
   bar.innerHTML = `
     <div class="setup-bar-inner">
-      <button class="setup-dropdown-arrow" id="setupDropdownBtn" title="Choose setup">▼</button>
+      <button class="setup-dropdown-arrow" id="setupDropdownBtn" title="Choose setup">▶</button>
       <span class="setup-pill active-pill" style="background:${col.hex};color:${textCol}">${active.name}</span>
       <span class="setup-helper-text">TAP FRAMES TO ADD / REMOVE</span>
       <button class="setup-done-btn" id="setupDoneBtn">DONE</button>
@@ -80,15 +80,37 @@ function renderSetupBarEdit(bar: HTMLElement): void {
   if (renderAll) renderAll();
 }
 
+/** Close dropdown + reset arrow. */
+function _closeDropdown(): void {
+  const dd = document.getElementById('setupDropdown');
+  const btn = document.getElementById('setupDropdownBtn');
+  if (dd) dd.style.display = 'none';
+  if (btn) btn.textContent = '▶';
+}
+
 /** Wire the dropdown arrow + menu. Used in both view and edit states. */
 function _wireDropdown(bar: HTMLElement): void {
-  bar.querySelector('#setupDropdownBtn')!.addEventListener('click', () => {
+  const btn = bar.querySelector('#setupDropdownBtn')!;
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
     const dd = document.getElementById('setupDropdown')!;
     if (dd.style.display === 'none') {
       renderSetupDropdown(dd);
       dd.style.display = '';
+      btn.textContent = '▼';
+      // Close dropdown when clicking outside
+      setTimeout(() => {
+        const closer = (ev: MouseEvent) => {
+          const target = ev.target as HTMLElement;
+          if (!dd.contains(target) && target !== btn) {
+            _closeDropdown();
+            document.removeEventListener('click', closer, true);
+          }
+        };
+        document.addEventListener('click', closer, true);
+      }, 0);
     } else {
-      dd.style.display = 'none';
+      _closeDropdown();
     }
   });
 }
@@ -96,7 +118,9 @@ function _wireDropdown(bar: HTMLElement): void {
 /** Render the dropdown menu: + NEW first, then existing setups as coloured pills with EDIT. */
 function renderSetupDropdown(dd: HTMLElement): void {
   const s = state();
-  let html = '<button class="setup-dd-item setup-dd-new" data-setup-new="1">+ NEW</button>';
+  let html = s.setups.length < 12
+    ? '<button class="setup-dd-item setup-dd-new" data-setup-new="1">+NEW</button>'
+    : '';
   for (const su of s.setups) {
     const col = SETUP_COLORS[su.colorIndex] || SETUP_COLORS[0];
     const textCol = needsDarkText(col.hex) ? '#000' : '#fff';
@@ -110,7 +134,7 @@ function renderSetupDropdown(dd: HTMLElement): void {
 
   // Wire + NEW
   dd.querySelector('[data-setup-new]')?.addEventListener('click', () => {
-    dd.style.display = 'none';
+    _closeDropdown();
     const bar = document.getElementById('setupBar')!;
     renderSetupCreateForm(bar);
   });
@@ -120,7 +144,7 @@ function renderSetupDropdown(dd: HTMLElement): void {
     btn.addEventListener('click', () => {
       const id = (btn as HTMLElement).dataset.setupSelect!;
       useStore.setState({ activeSetupId: id });
-      dd.style.display = 'none';
+      _closeDropdown();
       // Switch setup and stay in edit mode
       renderSetupBarEdit(document.getElementById('setupBar')!);
       // Re-render all canvases so +/pill state reflects the new active setup
@@ -134,7 +158,7 @@ function renderSetupDropdown(dd: HTMLElement): void {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const id = (btn as HTMLElement).dataset.setupEdit!;
-      dd.style.display = 'none';
+      _closeDropdown();
       renderSetupEditForm(document.getElementById('setupBar')!, id);
     })
   );
@@ -156,7 +180,8 @@ function renderSetupEditForm(bar: HTMLElement, setupId: string): void {
     const col = SETUP_COLORS[i];
     const taken = usedColors.has(i);
     const selected = i === su.colorIndex;
-    colorsHTML += `<button class="setup-color-circle${selected ? ' selected' : ''}${taken ? ' taken' : ''}" data-ci="${i}" style="background:${col.hex}" title="${col.name}"${taken ? ' disabled' : ''}></button>`;
+    const light = taken && needsDarkText(col.hex);
+    colorsHTML += `<button class="setup-color-circle${selected ? ' selected' : ''}${taken ? ' taken' : ''}${light ? ' light' : ''}" data-ci="${i}" style="background:${col.hex}"${taken ? ' disabled' : ''}></button>`;
   }
 
   bar.innerHTML = `
@@ -215,7 +240,8 @@ function renderSetupCreateForm(bar: HTMLElement): void {
   for (let i = 0; i < SETUP_COLORS.length; i++) {
     const col = SETUP_COLORS[i];
     const taken = usedColors.has(i);
-    colorsHTML += `<button class="setup-color-circle${i === 0 && !taken ? ' selected' : ''}${taken ? ' taken' : ''}" data-ci="${i}" style="background:${col.hex}" title="${col.name}"${taken ? ' disabled' : ''}></button>`;
+    const light = taken && needsDarkText(col.hex);
+    colorsHTML += `<button class="setup-color-circle${i === 0 && !taken ? ' selected' : ''}${taken ? ' taken' : ''}${light ? ' light' : ''}" data-ci="${i}" style="background:${col.hex}"${taken ? ' disabled' : ''}></button>`;
   }
 
   // Pick first available colour

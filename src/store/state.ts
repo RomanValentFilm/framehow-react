@@ -49,18 +49,21 @@ export interface Setup {
 }
 
 /** 12-colour palette for setups. */
+/** App version — bump before every deploy. */
+export const APP_VERSION = 'v4.6.010';
+
 export const SETUP_COLORS: { name: string; hex: string }[] = [
   { name: 'DAYLIGHT',      hex: '#CFE2F6' },
   { name: 'EARLY MORNING', hex: '#88BDE6' },
   { name: 'LATE MORNING',  hex: '#4DB6B3' },
   { name: 'MIDDAY',        hex: '#FFD23F' },
   { name: 'AFTERNOON',     hex: '#F97316' },
-  { name: 'GOLDEN HOUR',   hex: '#D35400' },
+  { name: 'GOLDEN HOUR',   hex: '#E23A2F' },
   { name: 'SUNSET',        hex: '#FF4D6D' },
   { name: 'BLUE HOUR',     hex: '#9D1B60' },
-  { name: 'NIGHT',         hex: '#0F2D52' },
-  { name: 'FOREST NIGHT',  hex: '#1E3D2F' },
-  { name: 'BROWN',         hex: '#5B3A26' },
+  { name: 'NIGHT',         hex: '#1974D2' },
+  { name: 'FOREST NIGHT',  hex: '#2E7D56' },
+  { name: 'BROWN',         hex: '#8B5E3C' },
   { name: 'NIGHT BLACK',   hex: '#0A0A0A' },
 ];
 

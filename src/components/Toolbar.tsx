@@ -1,8 +1,11 @@
+import { APP_VERSION } from '../store/state';
+
 export function Toolbar() {
   return (
     <div className="toolbar" id="mainToolbar">
       <div className="logo">
         Frame<span>how</span>
+        <span style={{fontSize:'9px',color:'#555',marginLeft:'6px',letterSpacing:'0.02em'}}>{APP_VERSION}</span>
       </div>
       <span className="frame-badge" id="frameBadge">no frames</span>
       <span className="toolbar-project-name" id="toolbarProjectName">UNTITLED</span>

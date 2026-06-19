@@ -20,7 +20,7 @@
   @media (hover:hover){.btn:hover{background:var(--surface2);}}
   .btn:active{background:#111;color:#fff;border-color:#888;transition:none;}
   .btn-accent{background:var(--accent);color:#fff;border-color:var(--accent);}
-  @media (hover:hover){.btn-accent:hover{background:#b03b25;}}
+  @media (hover:hover){.btn-accent:hover{background:#b01f2a;}}
   .btn-accent:active{background:#111;color:#fff;border-color:#888;transition:none;}
   .columns{display:flex;align-items:flex-start;flex:1;width:100%;}
   .strip-col{display:flex;flex-direction:column;flex:1;min-width:0;}
@@ -45,17 +45,17 @@
   .setup-dropdown-arrow{font-size:12px;background:none;border:1px solid var(--border);border-radius:3px;color:#ccc;cursor:pointer;padding:2px 6px;line-height:1;}
   .setup-dropdown-arrow.disabled{opacity:.3;cursor:default;pointer-events:none;}
   .setup-pill{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.05em;padding:4px 10px;border-radius:4px;white-space:nowrap;line-height:1;}
-  .setup-pill.active-pill{outline:2px solid #fff;outline-offset:2px;}
+  .setup-pill.active-pill{box-shadow:0 0 0 2px #fff;}
   .setup-helper-text{font-family:var(--mono);font-size:11px;color:#808080;white-space:nowrap;}
-  .setup-done-btn{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.05em;padding:3px 12px;border:1px solid var(--accent);border-radius:3px;background:transparent;color:var(--accent);cursor:pointer;line-height:1;}
-  .setup-done-btn:hover{background:var(--accent);color:#000;}
-  .setup-dropdown{position:absolute;left:10px;top:100%;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:6px;z-index:20;display:flex;flex-direction:column;gap:6px;min-width:120px;box-shadow:0 4px 12px rgba(0,0,0,.4);}
+  .setup-done-btn{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.05em;padding:3px 12px;border:1px solid var(--accent);border-radius:3px;background:var(--accent);color:#000;cursor:pointer;line-height:1;}
+  .setup-done-btn:hover{background:var(--accent);color:#fff;}
+  .setup-dropdown{position:absolute;left:10px;top:100%;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px;z-index:20;display:flex;flex-direction:column;gap:10px;min-width:120px;box-shadow:0 4px 12px rgba(0,0,0,.4);}
   .setup-dd-item{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.05em;padding:4px 10px;border-radius:4px;border:none;cursor:pointer;text-align:left;white-space:nowrap;line-height:1;}
-  .setup-dd-new{background:transparent;color:#808080;border:1px solid var(--border);text-align:center;}
-  @media (hover:hover){.setup-dd-new:hover{color:#ccc;border-color:var(--border-strong);}}
+  .setup-dd-new{font-size:13px;letter-spacing:.04em;background:transparent;color:#808080;border:1px solid var(--border);text-align:center;}
+  @media (hover:hover){.setup-dd-new:hover{color:#e6e6e6;border-color:var(--border-strong);}}
   .setup-dd-row{display:flex;align-items:center;gap:8px;}
   .setup-dd-row .setup-dd-item{flex:1;}
-  .setup-dd-active .setup-dd-item{outline:2px solid #fff;outline-offset:2px;}
+  .setup-dd-active .setup-dd-item{box-shadow:0 0 0 2px #fff;}
   .setup-dd-edit{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.04em;padding:4px 6px;border:1px solid var(--border);border-radius:3px;background:transparent;color:#808080;cursor:pointer;line-height:1;white-space:nowrap;}
   @media (hover:hover){.setup-dd-edit:hover{color:#ccc;border-color:var(--border-strong);}}
   .setup-edit-form{flex-wrap:wrap;}
@@ -65,7 +65,11 @@
   .setup-color-picker{display:flex;gap:4px;align-items:center;flex-wrap:wrap;}
   .setup-color-circle{width:20px;height:20px;border-radius:3px;border:2px solid transparent;cursor:pointer;padding:0;transition:border-color .15s;}
   .setup-color-circle.selected{border-color:#fff;box-shadow:0 0 0 1px rgba(255,255,255,.3);}
-  .setup-color-circle.taken{opacity:.25;cursor:not-allowed;}
+  .setup-color-circle.taken{cursor:not-allowed;position:relative;}
+  .setup-color-circle.taken::before,.setup-color-circle.taken::after{content:'';position:absolute;top:50%;left:50%;width:60%;height:2px;background:#fff;border-radius:1px;}
+  .setup-color-circle.taken::before{transform:translate(-50%,-50%) rotate(45deg);}
+  .setup-color-circle.taken::after{transform:translate(-50%,-50%) rotate(-45deg);}
+  .setup-color-circle.taken.light::before,.setup-color-circle.taken.light::after{background:#000;}
   .setup-create-btn{font-family:var(--mono);font-size:12px;font-weight:700;padding:3px 12px;border:1px solid var(--accent);border-radius:3px;background:var(--accent);color:#000;cursor:pointer;line-height:1;}
   .setup-cancel-btn{font-family:var(--mono);font-size:11px;padding:3px 8px;border:1px solid var(--border);border-radius:3px;background:transparent;color:#808080;cursor:pointer;line-height:1;}
   /* Setup colour tag on canvas (always visible when assigned) */
@@ -73,8 +77,8 @@
   /* Setup "+" ADD TO SETUP — centred rectangle badge, arrow-style transparency */
   .setup-add-overlay{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,0.35);color:#fff;cursor:pointer;z-index:5;border:none;padding:8px 18px;border-radius:6px;font-family:var(--mono);pointer-events:auto;-webkit-tap-highlight-color:transparent;touch-action:manipulation;transition:background .15s;}
   .setup-add-overlay:hover{background:rgba(0,0,0,0.55);}
-  .setup-add-plus{font-size:28px;font-weight:300;line-height:1;}
-  .setup-add-label{font-size:9px;font-weight:700;letter-spacing:.08em;margin-top:2px;}
+  .setup-add-plus{font-size:32px;font-weight:700;line-height:1;}
+  .setup-add-label{font-size:12px;font-weight:700;letter-spacing:.08em;margin-top:3px;}
   /* Clickable pill tag in edit mode — 10% canvas height */
   .setup-tag-btn{pointer-events:auto;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation;border:none;transition:opacity .15s;height:10%;min-height:18px;max-height:36px;display:flex;align-items:center;padding:0 8px;border-radius:4px;}
   .setup-tag-btn:hover{opacity:.8;}
@@ -198,7 +202,7 @@
   /* New Project modal */
   .new-project-modal .np-btn{touch-action:manipulation;}
   .new-project-modal .np-btn:active{background:#111 !important;color:#fff;transition:none;}
-  @media (hover:hover){.new-project-modal .np-btn:hover{background:#b03b25 !important;}}
+  @media (hover:hover){.new-project-modal .np-btn:hover{background:#b01f2a !important;}}
   @media (hover:hover){.new-project-modal .np-btn[data-choice="cancel"]:hover{background:#333 !important;}}
   .load-menu-wrap{position:relative;display:inline-block;}
   .load-menu{position:absolute;top:100%;right:0;margin-top:6px;background:var(--surface);border:1px solid var(--border-strong);border-radius:var(--radius);overflow:hidden;z-index:100;min-width:210px;box-shadow:0 8px 24px rgba(0,0,0,.4);display:none;touch-action:manipulation;}
@@ -537,7 +541,7 @@
   .account-actions-stack{display:flex;flex-direction:column;gap:8px;}
   .account-actions-stack .btn{width:100%;text-align:center;padding:10px 14px;}
   .btn-danger{background:var(--accent);color:#fff;border-color:var(--accent);}
-  @media (hover:hover){.btn-danger:hover{background:#b03b25;}}
+  @media (hover:hover){.btn-danger:hover{background:#b01f2a;}}
   .btn-danger:active{background:#111;color:#fff;border-color:#888;transition:none;}
   .account-header-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;}
   .account-header-row h2{margin:0;}
