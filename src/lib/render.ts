@@ -38,7 +38,7 @@ import { restoreCanvas, restoreMainCanvas, setupDrawing, setupMainDrawing } from
 import { addCrossSwipe, addNavArrows, scheduleSyncHeights } from './view';
 import { showLabelEdit, showVerLabelEdit } from './modals';
 import { getVisibleFrames, updateGroupButtonState } from './groups';
-import { setupTagHTML, wireSetupClicks, stripTagHTML, wireStripTagClicks } from './setups';
+import { setupTagHTML, wireSetupClicks, stripTagHTML } from './setups';
 
 /** iPhone + 9:16 project → strip cards skip the repeated main-frame name. */
 function _phonePortraitProject(): boolean {
@@ -154,8 +154,7 @@ export function renderAll(): void {
   updateGroupButtonState();
   // Wire setup toggle buttons if in setup edit mode
   if (state().setupEditing) wireSetupClicks();
-  // Wire strip-tag pill clicks (always — they only render when applicable)
-  wireStripTagClicks();
+  // Strip-tag pill clicks handled via document-level delegation in init.ts
   // Sync SETUPS button active state
   document.getElementById('setupsBtn')?.classList.toggle('active', state().setupMode);
   requestAnimationFrame(() => scheduleSyncHeights());

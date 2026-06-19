@@ -39,7 +39,7 @@ import { openExportModal, openPptxModal, runExport, runPptxExport, openImageExpo
 import { wireCameraEvents } from './camera';
 import { openFullscreen } from './fullscreen';
 import { toggleGroupSidebar } from './groups';
-import { toggleSetupMode, handleSetupFrameClick } from './setups';
+import { toggleSetupMode, handleSetupFrameClick, handleStripTagClick } from './setups';
 import { startHeartbeat, fhTrack } from './tracking';
 import {
   bootstrapAccountSystem,
@@ -208,6 +208,18 @@ export function initFramehow(): void {
     e.preventDefault();
     const fid = parseInt(btn.dataset.setupFid!, 10);
     handleSetupFrameClick(fid);
+  });
+
+  // Strip-tag pill — delegated so clicks work even when canvas has image content
+  document.addEventListener('click', (e: MouseEvent) => {
+    const btn = (e.target as HTMLElement).closest('[data-striptag-fid]') as HTMLElement | null;
+    if (!btn) return;
+    e.stopPropagation();
+    e.preventDefault();
+    const fid = parseInt(btn.dataset.striptagFid!, 10);
+    const vi = parseInt(btn.dataset.striptagVi!, 10);
+    const strip = btn.dataset.striptagStrip! as StripType;
+    handleStripTagClick(fid, vi, strip);
   });
 
   // Main Menu dropdown — flush-save on open (safety net before potential project switch)

@@ -468,8 +468,8 @@ export function stripTagHTML(fid: number, vi: number, strip: StripType): string 
     // Filled pill — shows SETUP name in colour
     return `<button class="strip-tag strip-tag-filled" data-striptag-fid="${fid}" data-striptag-vi="${vi}" data-striptag-strip="${strip}" style="background:${col.hex};color:${textCol}">${setup.name}</button>`;
   }
-  // Empty pill — outline only
-  return `<button class="strip-tag strip-tag-empty" data-striptag-fid="${fid}" data-striptag-vi="${vi}" data-striptag-strip="${strip}"></button>`;
+  // Empty pill — shows "TAG" text
+  return `<button class="strip-tag strip-tag-empty" data-striptag-fid="${fid}" data-striptag-vi="${vi}" data-striptag-strip="${strip}">TAG</button>`;
 }
 
 /**
@@ -490,7 +490,7 @@ export function wireStripTagClicks(container: HTMLElement | Document = document)
 }
 
 /** Handle a strip-tag pill click — show confirmation overlay or toggle directly. */
-function handleStripTagClick(fid: number, vi: number, strip: StripType): void {
+export function handleStripTagClick(fid: number, vi: number, strip: StripType): void {
   const s = state();
   const ver = getStripVersions(fid, strip)[vi];
   if (!ver) return;

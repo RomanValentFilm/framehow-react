@@ -27,8 +27,8 @@ cd ~/Desktop/Framehow\ Files/framehow-react && git add -A && git commit -m "v4.6
 ### Version numbering
 - `APP_VERSION` constant in `src/store/state.ts` — displayed in toolbar next to logo
 - Format: `v4.6.0XX` where XX increments with each deploy
-- Current: `v4.6.018`
-- Production: `v4.6.013`
+- Current: `v4.6.020`
+- Production: `v4.6.017`
 
 ### Clean rebuild (if changes don't appear)
 ```
@@ -104,6 +104,16 @@ Replace `vX.Y.ZZZ` with the actual version number. User must run on Mac (sandbox
 - View-bar height: 28px on iPad (13px font), 26px on iPhone (11px font)
 
 ## Versions
+
+### v4.6.020 — 2026-06-19 (dev)
+**Strip tag polish — click fix, TAG text, overlay redesign**
+
+Changes from v4.6.017:
+- `src/lib/init.ts` — Added document-level delegated click handler for `[data-striptag-fid]` (fixes strip tag pill not triggering when canvas has image content); imported `handleStripTagClick` from setups
+- `src/lib/setups.ts` — Exported `handleStripTagClick`; empty pill now shows "TAG" text
+- `src/lib/render.ts` — Removed `wireStripTagClicks` import and call (delegation in init.ts handles it)
+- `src/styles/globals.css` — `.strip-tag-empty` color changed from transparent to `#fff` (shows TAG text); `.strip-tag-overlay-box` background → transparent, border → none (matches rotate-screen style); `.strip-tag-overlay-desc` margin-top 0 → 16px (gap between sentences)
+- `src/store/state.ts` — APP_VERSION bumped through v4.6.018→019→020
 
 ### v4.6.017 — 2026-06-19 (dev)
 **Separator spacing + setup CANCEL button**
