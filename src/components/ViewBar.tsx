@@ -4,18 +4,19 @@ export function ViewBar() {
   return (
     <>
       <div className="view-bar">
-        {/* LEFT GROUP — iPad/Desktop only */}
+        {/* LEFT GROUP — arrangement tools (iPad/Desktop only) */}
         <div className="view-btns vb-left">
           <button className="view-btn vb-desktop-only" data-view="group" title="Group">GROUP</button>
-          <button className="view-btn vb-desktop-only" data-view="3x2" title="3×2 View">3×2VIEW</button>
           <button className="view-btn vb-desktop-only" data-view="setups" id="setupsBtn" title="Setups">SETUPS</button>
         </div>
 
         {/* Flexible spacer */}
         <div className="vb-spacer" />
 
-        {/* MIDDLE GROUP — strip selectors (toggleable), built from stripDefs */}
+        {/* MIDDLE GROUP — view modes + strip selectors */}
         <div className="view-btns vb-middle">
+          <button className="view-btn vb-desktop-only" data-view="3x2" title="3×2 View">3×2VIEW</button>
+          <div className="vb-sep" />
           <button className="view-btn strip-toggle active" data-strip="main" title="Main Strip">MAIN</button>
           {DEFAULT_STRIP_DEFS.map((def, i) => (
             <button
