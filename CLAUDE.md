@@ -27,7 +27,7 @@ cd ~/Desktop/Framehow\ Files/framehow-react && git add -A && git commit -m "v4.6
 ### Version numbering
 - `APP_VERSION` constant in `src/store/state.ts` — displayed in toolbar next to logo
 - Format: `v4.6.0XX` where XX increments with each deploy
-- Current: `v4.6.010`
+- Current: `v4.6.013`
 - Production: `v4.5.030`
 
 ### Clean rebuild (if changes don't appear)
@@ -73,7 +73,63 @@ cd ~/Desktop/Framehow\ Files/framehow-react && git push origin v4.4 && cd ../fra
 ```
 Replace `vX.Y.ZZZ` with the actual version number. User must run on Mac (sandbox can't do it).
 
+## CRITICAL RULES
+- User controls when to deploy. NEVER deploy without explicit permission.
+- First-time import flow must NEVER be changed.
+- `_v3.4` backup files must NOT be changed.
+- Build must run on user's Mac — sandbox can't build.
+- `isPhone = Math.min(w, h) <= 430` — iPad is NOT isPhone.
+- Git can't use `git checkout --` due to mounted filesystem. Use `git show HEAD:file > /tmp/file && cat /tmp/file > file`.
+- Git commit must run on user's Mac (sandbox can't write .git).
+- `bumpRenderTick()` needed after in-place state mutations.
+- `(window as any).__fh_renderAll` pattern for calling renderAll from imperative code.
+- Chrome cache can serve stale JS bundles — fix with DevTools → Application → Storage → Clear site data.
+
+## PENDING WORK (as of v4.6.013)
+
+### Implemented (needs testing on device):
+1. **iPad: setup-bar follows view-bar on scroll** — uses CSS `.view-bar.tb-hide + .setup-bar` adjacent sibling selector to adjust `top` when toolbar hides. Scoped under `body.setup-lock`, no `!important`.
+2. **iPhone LANDSCAPE: setup-bar sticky below view-bar** — `top:calc(env(safe-area-inset-top) + 26px)` matches actual view-bar height (26px on iPhone).
+3. **iPhone PORTRAIT: setup-bar wraps to two lines** — `flex-wrap:wrap` on `.setup-bar-inner` in portrait media query.
+
+### Not yet implemented:
+1. **iPhone PORTRAIT: SAVE/DELETE inline with color squares** — in edit/create forms, SAVE/DELETE should sit inline with the last color square row rather than wrapping to a separate line.
+
+### Key technical context for setup-bar positioning:
+- iPad media query: `@media (hover:none) and (pointer:coarse)` — view-bar is `position:fixed`
+- iPhone media query: `@media (hover:none) and (pointer:coarse) and (max-width:430px), (max-height:430px)`
+- CSS class `setup-lock` on body disables all UI except setup controls
+- The view-bar and setup-bar use `position:sticky` on desktop
+- iPad scroll-hide: toolbar+viewbar get `tb-hide` class via JS in view.ts; setup-bar follows via CSS `+` sibling selector
+- View-bar height: 28px on iPad (13px font), 26px on iPhone (11px font)
+
 ## Versions
+
+### v4.6.013 — 2026-06-19 (dev)
+**Setup-bar positioning + touch targets**
+
+Changes from v4.6.011:
+- `src/styles/globals.css` — 3×2VIEW button gap removed; arrow+DONE invisible 10px touch zone (`::after` pseudo-element) on pointer:coarse; iPad `body.setup-lock .view-bar.tb-hide + .setup-bar{top:calc(safe+25px)}` so setup-bar follows view-bar on scroll; iPhone setup-bar top 28px→26px (matches actual view-bar height); iPhone portrait `.setup-bar-inner{flex-wrap:wrap}` so DONE stays visible
+- `src/store/state.ts` — APP_VERSION bumped to v4.6.013
+- `src/components/ViewBar.tsx` — 3×2 VIEW text: removed space between 3×2 and VIEW
+
+### v4.6.011 — 2026-06-19 (dev)
+**Frame card padding + setup-bar first positioning attempt**
+
+Changes from v4.6.010:
+- `src/styles/globals.css` — `.version-actions` padding: `3px 10px 10px` → `3px 10px` (equal top/bottom); iPad: `body.setup-lock .setup-bar{position:fixed;top:calc(80px+safe*0.5)}` inside touch query; iPhone: `body.setup-lock .setup-bar{position:sticky;top:calc(safe+28px)}` inside iPhone query
+- `src/store/state.ts` — APP_VERSION bumped to v4.6.011
+
+### v4.6.010 — 2026-06-19 (dev, committed but deploy had issues)
+**Setup polish — re-applied all good changes from session**
+
+Changes from v4.6.009:
+- `src/store/state.ts` — APP_VERSION constant; color palette: #6→#E23A2F, #9→#1974D2, #10→#2E7D56, #11→#8B5E3C
+- `src/styles/globals.css` — hover #b03b25→#b01f2a (3 spots); active pill box-shadow; DONE btn red fill; dropdown padding 8px/gap 10px; +NEW btn styling; +ADD text bigger/bolder; taken colors X marks (white + dark); active dropdown item box-shadow
+- `src/lib/setups.ts` — arrow toggle ▶/▼; _closeDropdown() helper; click-outside-to-close; max 12 setups; +NEW no space; remove title tooltips; light class on taken colors
+- `src/components/ViewBar.tsx` — 3×2 → 3×2 VIEW with hair space (U+200A)
+- `src/components/Toolbar.tsx` — APP_VERSION label next to logo
+- `landing.html` — hover #b03b25→#b01f2a (2 spots)
 
 ### v4.6.001 — 2026-06-16 (dev)
 **3x2 grid view — text scroll fix, cross-compare arrows, iPhone landscape, equal spacing**
