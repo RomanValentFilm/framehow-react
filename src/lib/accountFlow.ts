@@ -27,6 +27,7 @@ import {
   markSaved,
   isLoadInFlight,
   isPushInFlight,
+  setCloudSyncInFlight,
   registerCloudSync,
   registerPullFn,
   setCurrentProject,
@@ -920,6 +921,9 @@ export async function saveNow(): Promise<void> {
   }
 
   // 5. Sync the current state to /sync.
+  //    Set cloudSyncInFlight so the 5-second runCloudSync interval doesn't
+  //    fire a concurrent sync while we're uploading images / POSTing.
+  setCloudSyncInFlight(true);
   try {
     await syncCurrentToServer(projectId);
     markSaved(projectId);
@@ -929,6 +933,8 @@ export async function saveNow(): Promise<void> {
     showToast('SAVED.');
   } catch (e) {
     showToast(asMessage(e, 'Could not save project.'));
+  } finally {
+    setCloudSyncInFlight(false);
   }
 }
 
@@ -942,6 +948,9 @@ async function startNewProject(): Promise<void> {
   resetStoryboardState();
   useStore.setState({ portraitMode: false });
   clearCurrentProject();
+  // Clear stale timestamp from previous project so the first sync for the new
+  // project doesn't carry an old base_updated_at that could trigger a 409.
+  lastKnownUpdatedAt = null;
   // Refresh DOM
   (window as any).__fh_renderAll?.();
   // Show Signpost modal so the user can pick what to do next
@@ -1048,6 +1057,11 @@ function uuid(): string {
 }
 
 async function syncCurrentToServer(projectId: string): Promise<void> {
+  // Safety net: refuse to push zero frames — prevents wiping a project on the server
+  if (state().frames.length === 0) {
+    console.warn('[sync] Aborted: state has 0 frames — refusing to overwrite server data');
+    return;
+  }
   // Flush in-progress text/table edits from DOM to frame objects before snapshotting
   saveOpenTextEdits();
   saveOpenTableEdits();
@@ -1883,8 +1897,19 @@ async function tryPullFromCloud(): Promise<void> {
         return;
       }
 
+      // Show loading bar while applying remote changes (prevents image flicker)
+      const progressEl = document.getElementById('progressOverlay');
+      const progressBar = document.getElementById('progressBar') as HTMLElement | null;
+      const progressLabel = document.getElementById('progressLabel') as HTMLElement | null;
+      if (progressEl) progressEl.classList.remove('hidden');
+      if (progressBar) progressBar.style.width = '10%';
+      if (progressLabel) progressLabel.textContent = 'Syncing…';
+
       // Different device but we have local changes — conflict
       if (remoteDeviceId && localHasChanges) {
+        // Hide loading bar during conflict dialog — user needs to decide
+        if (progressEl) progressEl.classList.add('hidden');
+
         const choice: ConflictChoice = await showConflictDialog(
           remoteDeviceName,
           formatTimeAgo(remoteUpdatedAt),
@@ -1895,6 +1920,11 @@ async function tryPullFromCloud(): Promise<void> {
           lastKnownUpdatedAt = remoteUpdatedAt;
           return;
         }
+
+        // Re-show loading bar for merge/cloud apply
+        if (progressEl) progressEl.classList.remove('hidden');
+        if (progressBar) progressBar.style.width = '30%';
+        if (progressLabel) progressLabel.textContent = 'Applying…';
 
         if (choice === 'merge') {
           // Save current local state before applying cloud
@@ -1907,6 +1937,7 @@ async function tryPullFromCloud(): Promise<void> {
 
           // Apply cloud tree to build cloud frames in local format
           await applyCloudTreeToStore(tree);
+          if (progressBar) progressBar.style.width = '70%';
           const cloudState = useStore.getState();
           const cloudFrames = cloudState.frames.map((f) => ({ ...f }));
           const cloudVersionsCopy: Record<number, Version[]> = {};
@@ -1977,9 +2008,11 @@ async function tryPullFromCloud(): Promise<void> {
 
           lastKnownUpdatedAt = remoteUpdatedAt;
           markSaved(cp.projectId!);
+          if (progressBar) progressBar.style.width = '100%';
           (window as any).__fh_renderAll?.();
           autoPhoneMainView();
           updateSyncHash();
+          setTimeout(() => { if (progressEl) progressEl.classList.add('hidden'); }, 300);
           showToast('Merged — duplicate frames marked with "?"');
           return;
         }
@@ -1987,8 +2020,11 @@ async function tryPullFromCloud(): Promise<void> {
         // choice === 'cloud' — fall through to apply cloud version
       }
 
+      if (progressBar) progressBar.style.width = '40%';
+      if (progressLabel) progressLabel.textContent = 'Updating…';
       lastKnownUpdatedAt = remoteUpdatedAt;
       await applyCloudTreeToStore(tree);
+      if (progressBar) progressBar.style.width = '90%';
       markSaved(cp.projectId!);
       (window as any).__fh_renderAll?.();
       autoPhoneMainView();
@@ -1996,9 +2032,13 @@ async function tryPullFromCloud(): Promise<void> {
       // which can modify the store. If we hash before that, the push interval sees a stale hash
       // and re-pushes, causing a ping-pong loop between devices.
       updateSyncHash();
+      if (progressBar) progressBar.style.width = '100%';
+      setTimeout(() => { if (progressEl) progressEl.classList.add('hidden'); }, 300);
     }
   } catch {
     // Silent — don't disturb the user if the check fails.
+    const pEl = document.getElementById('progressOverlay');
+    if (pEl) pEl.classList.add('hidden');
   } finally {
     pullInFlight = false;
     setPullInFlight(false);

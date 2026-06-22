@@ -27,8 +27,8 @@ cd ~/Desktop/Framehow\ Files/framehow-react && git add -A && git commit -m "v4.6
 ### Version numbering
 - `APP_VERSION` constant in `src/store/state.ts` — displayed in toolbar next to logo
 - Format: `v4.6.0XX` where XX increments with each deploy
-- Current: `v4.6.020`
-- Production: `v4.6.017`
+- Current: `v4.6.022`
+- Production: `v4.6.022`
 
 ### Clean rebuild (if changes don't appear)
 ```
@@ -104,6 +104,21 @@ Replace `vX.Y.ZZZ` with the actual version number. User must run on Mac (sandbox
 - View-bar height: 28px on iPad (13px font), 26px on iPhone (11px font)
 
 ## Versions
+
+### v4.6.022 — 2026-06-22 (dev + production)
+**Loading bar during pull-on-focus sync**
+
+Changes from v4.6.021:
+- `src/lib/accountFlow.ts` — `tryPullFromCloud()` now shows progressOverlay ("Syncing…" → "Updating…" → done) during `applyCloudTreeToStore`, covering image download flicker; loading bar hidden during conflict dialog, re-shown for merge/cloud apply; catch block hides overlay on error
+- `src/store/state.ts` — APP_VERSION bumped to v4.6.022
+
+### v4.6.021 — 2026-06-22 (dev + production)
+**Fix concurrent sync race in saveNow**
+
+Changes from v4.6.020:
+- `src/lib/accountFlow.ts` — `saveNow()` now wraps `syncCurrentToServer` with `setCloudSyncInFlight(true/false)` to prevent 5-second `runCloudSync` interval from firing a concurrent sync during image uploads (caused 409 conflict → "Something went wrong"); `startNewProject()` resets `lastKnownUpdatedAt = null` so new projects don't carry stale timestamps; removed duplicate zero-frame guard from accidental sed double-insert
+- `src/lib/currentProject.ts` — Added `setCloudSyncInFlight()` export so `saveNow` can block background sync
+- `src/store/state.ts` — APP_VERSION bumped to v4.6.021
 
 ### v4.6.020 — 2026-06-19 (dev)
 **Strip tag polish — click fix, TAG text, overlay redesign**

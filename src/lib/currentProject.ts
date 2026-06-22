@@ -175,6 +175,11 @@ export function isPushInFlight(): boolean {
   return cloudSyncInFlight;
 }
 
+/** Block/unblock runCloudSync from outside (used by saveNow to prevent concurrent syncs). */
+export function setCloudSyncInFlight(v: boolean): void {
+  cloudSyncInFlight = v;
+}
+
 /** True when a pull (load from cloud) is in progress — images may still be downloading. */
 export function isLoadInFlight(): boolean {
   return _pullInFlight || _projectSwitchInFlight;
