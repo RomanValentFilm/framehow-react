@@ -4,7 +4,7 @@
 
 import { state, useStore, SETUP_COLORS, bumpRenderTick } from '../store/state';
 import type { Setup, StripType } from '../store/state';
-import { getStripVersions, ensureStripVersions, stripTabPrefix, relabelStripVersions } from './helpers';
+import { getStripVersions, ensureStripVersions, stripTabPrefix, relabelStripVersions, reorderByStars } from './helpers';
 import { showToast, showConfirm } from './modals';
 
 // ─── Setup bar rendering ───────────────────────────────────────────────
@@ -575,6 +575,7 @@ export function handleStripTagClick(fid: number, vi: number, strip: StripType): 
         s.dismissedCopies[`${fid}:${strip}:${ver.bgImage}`] = true;
       }
       ver.setupTagged = undefined; // becomes regular user content
+      reorderByStars(fid, strip); // starred versions move ahead of this untagged content
       relabelStripVersions(fid, strip);
       bumpRenderTick();
       const renderAll = (window as any).__fh_renderAll;
@@ -584,6 +585,7 @@ export function handleStripTagClick(fid: number, vi: number, strip: StripType): 
 
     // ORIGIN → stays as user content on THIS frame only. Copies on other frames stay tagged.
     ver.setupTagged = undefined;
+    reorderByStars(fid, strip); // starred versions move ahead of this untagged content
     relabelStripVersions(fid, strip);
     bumpRenderTick();
     const renderAll = (window as any).__fh_renderAll;
