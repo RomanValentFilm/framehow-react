@@ -1081,6 +1081,8 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
 
   // Map local frame id → server frame UUID (needed for group remapping)
   const localToServerFrame = new Map<number, string>();
+  // Map version UUID → setupTagged value (stored in metadata to avoid D1 schema change)
+  const versionTags: Record<string, 'origin' | 'copy'> = {};
 
   s.frames.forEach((f, i) => {
     const frameId = uuid();
@@ -1122,6 +1124,10 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
         }
         if (lv.bgImage && isLocalImage(lv.bgImage)) {
           imageUploads.push({ versionId: vid, src: lv.bgImage });
+        }
+        // Track strip-tag state for metadata (avoids D1 schema change)
+        if (lv.setupTagged) {
+          versionTags[vid] = lv.setupTagged;
         }
       }
     };
@@ -1199,6 +1205,8 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
     setups: s.setups.length > 0 ? s.setups : undefined,
     nextSetupId: s.nextSetupId > 1 ? s.nextSetupId : undefined,
     frameSetups: Object.keys(frameSetups).length > 0 ? frameSetups : undefined,
+    versionTags: Object.keys(versionTags).length > 0 ? versionTags : undefined,
+    stripTagInfoDismissed: s.stripTagInfoDismissed || undefined,
   });
 
   // Upload all images to R2 in parallel
@@ -1300,6 +1308,8 @@ async function applyCloudTreeToStore(tree: CloudProjectTree): Promise<void> {
 
   // Map server frame UUID → local numeric id (for group remapping on download)
   const serverToLocalFrame = new Map<string, number>();
+  // Map server version UUID → local Version object (for restoring setupTagged from metadata)
+  const serverVidToLocalVer = new Map<string, import('../store/state').Version>();
 
   for (const strip of stripsSorted) {
     const stripFrames = (framesByStrip.get(strip.id) ?? []).sort((a, b) => a.sort_order - b.sort_order);
@@ -1360,7 +1370,7 @@ async function applyCloudTreeToStore(tree: CloudProjectTree): Promise<void> {
           let rawType = sv.type;
           const colonIdx = rawType.indexOf(':');
           if (colonIdx !== -1) rawType = rawType.slice(colonIdx + 1);
-          return {
+          const localVer: import('../store/state').Version = {
             id: j + 1,
             label: sv.label ?? '',
             type: (rawType === 'drawing' || rawType === 'upload' || rawType === 'empty') ? rawType as 'drawing' | 'upload' | 'empty' : 'empty' as const,
@@ -1369,6 +1379,8 @@ async function applyCloudTreeToStore(tree: CloudProjectTree): Promise<void> {
             hidden: !!sv.hidden,
             starred: !!sv.starred,
           };
+          serverVidToLocalVer.set(sv.id, localVer);
+          return localVer;
         });
       };
 
@@ -1388,6 +1400,7 @@ async function applyCloudTreeToStore(tree: CloudProjectTree): Promise<void> {
   let restoredSetups: import('../store/state').Setup[] = [];
   let restoredNextSetupId = 1;
   let restoredFrameSetups: Record<number, string> = {};
+  let restoredStripTagInfoDismissed = false;
   let isPortrait = newFrames.length > 0 && newFrames[0].cropH > newFrames[0].cropW;
 
   if (tree.project.metadata) {
@@ -1435,6 +1448,19 @@ async function applyCloudTreeToStore(tree: CloudProjectTree): Promise<void> {
       if (meta.frameSetups && typeof meta.frameSetups === 'object') {
         // frameSetups in metadata uses local frame IDs (numeric) as keys
         restoredFrameSetups = meta.frameSetups;
+      }
+      // Restore strip-tag state (origin/copy) from version UUID map
+      if (meta.versionTags && typeof meta.versionTags === 'object') {
+        for (const [vid, tag] of Object.entries(meta.versionTags)) {
+          const localVer = serverVidToLocalVer.get(vid);
+          if (localVer && (tag === 'origin' || tag === 'copy')) {
+            localVer.setupTagged = tag;
+          }
+        }
+      }
+      // Restore stripTagInfoDismissed
+      if (meta.stripTagInfoDismissed) {
+        restoredStripTagInfoDismissed = true;
       }
     } catch {
       // Ignore malformed metadata — use defaults
@@ -1508,6 +1534,7 @@ async function applyCloudTreeToStore(tree: CloudProjectTree): Promise<void> {
     fsOverlayActive: null,
     currentViewMode: 'both',
     portraitMode: isPortrait,
+    stripTagInfoDismissed: restoredStripTagInfoDismissed,
     renderTick: prev.renderTick + 1,
   }));
   (window as any).__fh_renderAll?.();

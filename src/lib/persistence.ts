@@ -42,6 +42,8 @@ export interface CurrentProjectSnapshot {
   /** Setups — colour-coded labels (v4.6+) */
   setups?: Setup[];
   nextSetupId?: number;
+  /** Whether the strip-tag confirmation overlay has been dismissed */
+  stripTagInfoDismissed?: boolean;
 }
 
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -118,6 +120,7 @@ export function snapshotFromStore(projectId: string | null, name: string | null)
     stripDefs: s.stripDefs,
     setups: s.setups,
     nextSetupId: s.nextSetupId,
+    stripTagInfoDismissed: s.stripTagInfoDismissed || undefined,
   };
 }
 
@@ -179,6 +182,7 @@ export function applySnapshotToStore(snap: CurrentProjectSnapshot): void {
     stripDefs: snap.stripDefs ?? DEFAULT_STRIP_DEFS,
     setups: snap.setups ?? [],
     nextSetupId: snap.nextSetupId ?? 1,
+    stripTagInfoDismissed: snap.stripTagInfoDismissed ?? false,
     renderTick: prev.renderTick + 1,
   }));
 }

@@ -39,7 +39,7 @@ import { openExportModal, openPptxModal, runExport, runPptxExport, openImageExpo
 import { wireCameraEvents } from './camera';
 import { openFullscreen } from './fullscreen';
 import { toggleGroupSidebar } from './groups';
-import { toggleSetupMode, handleSetupFrameClick, handleStripTagClick } from './setups';
+import { toggleSetupMode, handleSetupFrameClick, handleSetupRemoveClick, handleStripTagClick, showSetupPillHint } from './setups';
 import { startHeartbeat, fhTrack } from './tracking';
 import {
   bootstrapAccountSystem,
@@ -220,6 +220,25 @@ export function initFramehow(): void {
     const vi = parseInt(btn.dataset.striptagVi!, 10);
     const strip = btn.dataset.striptagStrip! as StripType;
     handleStripTagClick(fid, vi, strip);
+  });
+
+  // Setup pill hint — tap a setup pill on main frame in normal mode → show hint + pulse SETUPS btn
+  document.addEventListener('click', (e: MouseEvent) => {
+    const btn = (e.target as HTMLElement).closest('[data-setup-hint]') as HTMLElement | null;
+    if (!btn) return;
+    e.stopPropagation();
+    e.preventDefault();
+    showSetupPillHint();
+  });
+
+  // Setup pill remove — tap another setup's pill in edit mode → remove that setup from the frame
+  document.addEventListener('click', (e: MouseEvent) => {
+    const btn = (e.target as HTMLElement).closest('[data-setup-remove-fid]') as HTMLElement | null;
+    if (!btn) return;
+    e.stopPropagation();
+    e.preventDefault();
+    const fid = parseInt((btn as HTMLElement).dataset.setupRemoveFid!, 10);
+    handleSetupRemoveClick(fid);
   });
 
   // Main Menu dropdown — flush-save on open (safety net before potential project switch)

@@ -27,7 +27,7 @@ import { restoreCanvas, restoreMainCanvas, setupMainDrawing } from './drawing';
 import { renderVersionFrame } from './render';
 import { showLabelEdit, showVerLabelEdit, showDeleteChoice, showConfirm } from './modals';
 import { getVisibleFrames, removeFrameFromGroup } from './groups';
-import { setupTagHTML } from './setups';
+import { setupTagHTML, stripTagHTML } from './setups';
 
 export function renderOverview(): void {
   const overviewScroll = document.getElementById('overviewScroll')!;
@@ -226,7 +226,7 @@ export function renderOverviewRow(row: HTMLElement, fid: number): void {
         s.drawActive[fid] === companionStrip && isActive ? ' draw-active' : ''
       }" style="aspect-ratio:${f.cropW || 16}/${f.cropH || 9}"><canvas id="${vcid}" width="${f.cropW || 960}" height="${f.cropH || 540}"></canvas>${
       ver.type === 'empty' ? '<div class="canvas-hint"><span>click to choose action</span></div>' : ''
-    }${starHTML(fid, vi, companionStrip)}${fsButtonHTML(fid, vi, companionStrip)}</div></div>
+    }${starHTML(fid, vi, companionStrip)}${fsButtonHTML(fid, vi, companionStrip)}${stripTagHTML(fid, vi, companionStrip)}</div></div>
       ${s.drawActive[fid] === companionStrip && isActive ? `<div class="color-row">${colorDotsVer}</div>` : ''}
       <div class="version-actions">
         <button class="act-btn" data-action="upload" data-fid="${fid}">Load</button>
@@ -253,7 +253,7 @@ export function renderOverviewRow(row: HTMLElement, fid: number): void {
       })
     );
     fc.addEventListener('click', (e) => {
-      if ((e.target as HTMLElement).closest('.act-btn,.color-dot,.thick-btn,.eraser-btn,.vtab-add,.reorder-label,[data-oveditver],[data-setup-fid]')) return;
+      if ((e.target as HTMLElement).closest('.act-btn,.color-dot,.thick-btn,.eraser-btn,.vtab-add,.reorder-label,[data-oveditver],[data-setup-fid],[data-striptag-fid],[data-setup-hint],[data-setup-remove-fid]')) return;
       if (!document.contains(fc)) return;
       if (state().drawingInProgress || state().drawSuppressClick) return;
       if ((e.target as HTMLElement).tagName === 'CANVAS' && s.drawActive[fid] && vi === getStripActiveTab(fid, companionStrip)) return;
@@ -604,7 +604,7 @@ export function renderGrid4Row(row: HTMLElement, fid: number): void {
         s.drawActive[fid] === companionStrip && isActive ? ' draw-active' : ''
       }" style="aspect-ratio:${ar}"><canvas id="${vcid}" width="${f.cropW || 960}" height="${f.cropH || 540}"></canvas>${
       ver.type === 'empty' ? '<div class="canvas-hint"><span>click to choose action</span></div>' : ''
-    }${starHTML(fid, vi, companionStrip)}${fsButtonHTML(fid, vi, companionStrip)}</div></div>
+    }${starHTML(fid, vi, companionStrip)}${fsButtonHTML(fid, vi, companionStrip)}${stripTagHTML(fid, vi, companionStrip)}</div></div>
       ${s.drawActive[fid] === companionStrip && isActive ? `<div class="color-row">${colorDotsVer}</div>` : ''}
       <div class="version-actions">
         <button class="act-btn" data-action="upload" data-fid="${fid}">Load</button>
@@ -621,7 +621,7 @@ export function renderGrid4Row(row: HTMLElement, fid: number): void {
     const fc = colWrap.querySelector('.frame-card') as HTMLElement;
     // Click on version card → select it
     fc.addEventListener('click', (e) => {
-      if ((e.target as HTMLElement).closest('.act-btn,.color-dot,.thick-btn,.eraser-btn,[data-g4verlabel],[data-setup-fid]')) return;
+      if ((e.target as HTMLElement).closest('.act-btn,.color-dot,.thick-btn,.eraser-btn,[data-g4verlabel],[data-setup-fid],[data-striptag-fid],[data-setup-hint],[data-setup-remove-fid]')) return;
       if (state().drawingInProgress || state().drawSuppressClick) return;
       if ((e.target as HTMLElement).tagName === 'CANVAS' && s.drawActive[fid] && vi === getStripActiveTab(fid, companionStrip)) return;
       setStripActiveTab(fid, companionStrip, vi);
@@ -835,7 +835,7 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
         s.drawActive[fid] === companionStrip ? ' draw-active' : ''
       }" style="aspect-ratio:${ar}"><canvas id="${vcid}" width="${f.cropW || 960}" height="${f.cropH || 540}"></canvas>${
         ver.type === 'empty' ? '<div class="canvas-hint"><span>choose an action below</span></div>' : ''
-      }${starHTML(fid, ai, companionStrip)}${fsButtonHTML(fid, ai, companionStrip)}</div></div>
+      }${starHTML(fid, ai, companionStrip)}${fsButtonHTML(fid, ai, companionStrip)}${stripTagHTML(fid, ai, companionStrip)}</div></div>
       ${s.drawActive[fid] === companionStrip ? `<div class="color-row">${colorDots}</div>` : ''}
       <div class="version-actions">
         <button class="act-btn" data-action="upload" data-fid="${fid}">Load</button>

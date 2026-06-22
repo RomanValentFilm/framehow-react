@@ -4,7 +4,7 @@
 
 import { state, useStore, SETUP_COLORS, bumpRenderTick } from '../store/state';
 import type { Setup, StripType } from '../store/state';
-import { getStripVersions } from './helpers';
+import { getStripVersions, ensureStripVersions, stripTabPrefix, relabelStripVersions } from './helpers';
 import { showToast, showConfirm } from './modals';
 
 // ─── Setup bar rendering ───────────────────────────────────────────────
@@ -327,9 +327,12 @@ async function _deleteSetup(bar: HTMLElement, setupId: string): Promise<void> {
   );
   if (!ok) return;
 
-  // Untag all frames that belong to this setup
+  // Untag all frames that belong to this setup — clear copies first
   for (const f of s.frames) {
-    if (f.setupId === setupId) f.setupId = null;
+    if (f.setupId === setupId) {
+      clearCopyTaggedVersions(f.id);
+      f.setupId = null;
+    }
   }
 
   // Remove setup from list
@@ -363,17 +366,45 @@ export function handleSetupFrameClick(fid: number): void {
   if (!f) return;
 
   if (f.setupId === s.activeSetupId) {
-    // Unassign
+    // Unassign — clear any copy-tagged strip content first
+    const oldSetupId = f.setupId;
+    clearCopyTaggedVersions(f.id);
     f.setupId = null;
+    // Re-propagate remaining origins in the old setup (cleans up copies this frame produced)
+    if (oldSetupId) propagateAllSetupTags(oldSetupId);
   } else {
+    // Reassigning from different setup — clear old copies before switching
+    const oldSetupId = f.setupId;
+    if (oldSetupId) clearCopyTaggedVersions(f.id);
     // Assign (or reassign from different setup)
     f.setupId = s.activeSetupId;
+    // Re-propagate old setup (remove copies this frame produced)
+    if (oldSetupId) propagateAllSetupTags(oldSetupId);
+    // Propagate existing tags from new setup to include this frame
+    if (s.activeSetupId) propagateAllSetupTags(s.activeSetupId);
   }
 
   // Bump render tick so Zustand subscribers notice the in-place mutation
   bumpRenderTick();
 
   // Re-render to update toggle buttons + tags
+  const renderAll = (window as any).__fh_renderAll;
+  if (renderAll) renderAll();
+}
+
+/** Remove whatever setup is assigned to this frame (regardless of active setup). */
+export function handleSetupRemoveClick(fid: number): void {
+  const s = state();
+  const f = s.frames.find((fr) => fr.id === fid);
+  if (!f || !f.setupId) return;
+
+  const oldSetupId = f.setupId;
+  clearCopyTaggedVersions(f.id);
+  f.setupId = null;
+  // Re-propagate remaining origins so copies from this frame's origins get cleaned up
+  propagateAllSetupTags(oldSetupId);
+
+  bumpRenderTick();
   const renderAll = (window as any).__fh_renderAll;
   if (renderAll) renderAll();
 }
@@ -395,34 +426,34 @@ export function setupTagHTML(fid: number): string {
 
   if (isEditing) {
     if (isAssignedToActive && hasSetup) {
-      // Assigned to current setup → clickable pill in bottom-right (tap to remove)
+      // Assigned to current setup → "TAP BELOW TO REMOVE" label + clickable pill (tap to remove)
       const setup = s.setups.find((su) => su.id === f.setupId);
       if (setup) {
         const col = SETUP_COLORS[setup.colorIndex] || SETUP_COLORS[0];
         const textCol = needsDarkText(col.hex) ? '#000' : '#fff';
-        html += `<button class="setup-tag setup-tag-btn" data-setup-fid="${fid}" style="background:${col.hex};color:${textCol}">${setup.name}</button>`;
+        html += `<div class="setup-remove-overlay" data-setup-fid="${fid}"><span class="setup-remove-label">TAP BELOW<br>TO REMOVE</span></div><button class="setup-tag setup-tag-btn" data-setup-fid="${fid}" style="background:${col.hex};color:${textCol}">${setup.name}</button>`;
       }
     } else {
       // Not in current setup → show "+" ADD TO SETUP overlay
-      // If in a different setup, also show that setup's pill tag underneath
+      // If in a different setup, also show that setup's pill as a clickable remove button
       if (hasSetup) {
         const setup = s.setups.find((su) => su.id === f.setupId);
         if (setup) {
           const col = SETUP_COLORS[setup.colorIndex] || SETUP_COLORS[0];
           const textCol = needsDarkText(col.hex) ? '#000' : '#fff';
-          html += `<span class="setup-tag" style="background:${col.hex};color:${textCol}">${setup.name}</span>`;
+          html += `<div class="setup-remove-overlay" data-setup-remove-fid="${fid}"><span class="setup-remove-label">TAP BELOW<br>TO REMOVE</span></div><button class="setup-tag setup-tag-btn setup-tag-remove" data-setup-remove-fid="${fid}" style="background:${col.hex};color:${textCol}">${setup.name}</button>`;
         }
       }
       html += `<button class="setup-add-overlay" data-setup-fid="${fid}"><span class="setup-add-plus">+</span><span class="setup-add-label">ADD TO SETUP</span></button>`;
     }
   } else {
-    // Normal mode (not editing): just show the colour tag if assigned
+    // Normal mode (not editing): clickable pill → shows hint overlay + pulses SETUPS button
     if (hasSetup) {
       const setup = s.setups.find((su) => su.id === f!.setupId);
       if (setup) {
         const col = SETUP_COLORS[setup.colorIndex] || SETUP_COLORS[0];
         const textCol = needsDarkText(col.hex) ? '#000' : '#fff';
-        html += `<span class="setup-tag" style="background:${col.hex};color:${textCol}">${setup.name}</span>`;
+        html += `<button class="setup-tag setup-tag-hint" data-setup-hint="1" style="background:${col.hex};color:${textCol}">${setup.name}</button>`;
       }
     }
   }
@@ -440,6 +471,42 @@ export function wireSetupClicks(container: HTMLElement | Document = document): v
       handleSetupFrameClick(fid);
     })
   );
+}
+
+// ─── Cascade cleanup ──────────────────────────────────────────────────
+
+/** Clear all 'copy'-tagged strip versions for a given frame across all strips.
+ *  Called when a frame loses its SETUP (unassign or delete). Origins stay. */
+function clearCopyTaggedVersions(fid: number): void {
+  const strips: StripType[] = ['ver', 'floor', 'refs'];
+  for (const strip of strips) {
+    const vers = getStripVersions(fid, strip);
+    if (!vers) continue;
+    for (const v of vers) {
+      if (v.setupTagged === 'copy') {
+        v.bgImage = null;
+        v.strokes = [];
+        v.type = 'empty';
+        v.setupTagged = undefined;
+      }
+    }
+  }
+}
+
+/** Re-propagate all existing strip tags across every frame in a setup.
+ *  Call after adding/removing a frame so copies stay in sync. */
+function propagateAllSetupTags(setupId: string): void {
+  const s = state();
+  const strips: StripType[] = ['ver', 'floor', 'refs'];
+  for (const strip of strips) {
+    for (const f of s.frames) {
+      if (f.setupId !== setupId) continue;
+      const vers = getStripVersions(f.id, strip);
+      if (vers.some((v) => v.setupTagged === 'origin')) {
+        reapplyStripTags(f.id, strip);
+      }
+    }
+  }
 }
 
 // ─── Strip tags (VERSN / FLOOR / REFS) ────────────────────────────────
@@ -496,8 +563,10 @@ export function handleStripTagClick(fid: number, vi: number, strip: StripType): 
   if (!ver) return;
 
   if (ver.setupTagged) {
-    // Already tagged → untag
-    ver.setupTagged = false;
+    // Already tagged → untag this version, then redistribute remaining origins
+    ver.setupTagged = undefined;
+    // Reapply remaining origins (clears orphaned copies, re-slots in order)
+    reapplyStripTags(fid, strip);
     bumpRenderTick();
     const renderAll = (window as any).__fh_renderAll;
     if (renderAll) renderAll();
@@ -560,20 +629,113 @@ function showStripTagOverlay(fid: number, vi: number, strip: StripType): void {
   });
 }
 
-/** Apply the strip tag and copy content to same-SETUP frames. */
+/** Apply the strip tag and copy content to same-SETUP frames.
+ *  Supports multiple origins per strip — each origin maps to the next
+ *  slot on target frames (creating new versions if needed). */
 function applyStripTag(fid: number, vi: number, strip: StripType): void {
   const s = state();
   const ver = getStripVersions(fid, strip)[vi];
   if (!ver) return;
 
-  // Mark this version as tagged
-  ver.setupTagged = true;
+  // Find the parent MAIN frame's setupId
+  const mainFrame = s.frames.find((f) => f.id === fid);
+  if (!mainFrame || !mainFrame.setupId) return;
 
-  // TODO: Copy content to first tab of all same-SETUP frames (Step 2)
+  // Mark this version as the origin
+  ver.setupTagged = 'origin';
+
+  // Re-apply ALL origins for this frame+strip so slots are assigned in order
+  reapplyStripTags(fid, strip);
 
   bumpRenderTick();
   const renderAll = (window as any).__fh_renderAll;
   if (renderAll) renderAll();
+}
+
+/**
+ * Clear all copies on same-SETUP frames, then re-copy all origins in order.
+ * Called after tagging/untagging to keep target slots consistent.
+ */
+function reapplyStripTags(fid: number, strip: StripType): void {
+  const s = state();
+  const mainFrame = s.frames.find((f) => f.id === fid);
+  if (!mainFrame || !mainFrame.setupId) return;
+  const setupId = mainFrame.setupId;
+
+  // Collect all origin versions on this frame's strip, in array order
+  const sourceVers = getStripVersions(fid, strip);
+  const origins = sourceVers.filter((v) => v.setupTagged === 'origin');
+
+  const sameSetupFrames = s.frames.filter((f) => f.setupId === setupId && f.id !== fid);
+  const prefix = stripTabPrefix(strip);
+
+  for (const targetFrame of sameSetupFrames) {
+    const targetVers = ensureStripVersions(targetFrame.id, strip);
+
+    // Clear all existing copies on this target
+    for (const tv of targetVers) {
+      if (tv.setupTagged === 'copy') {
+        tv.bgImage = null;
+        tv.strokes = [];
+        tv.type = 'empty';
+        tv.setupTagged = undefined;
+      }
+    }
+
+    // Copy each origin to the next available slot
+    for (let oi = 0; oi < origins.length; oi++) {
+      const orig = origins[oi];
+
+      // Find or create the target slot at index oi
+      while (targetVers.length <= oi) {
+        const n = targetVers.length + 1;
+        targetVers.push({ id: n, label: `${prefix}${n}`, type: 'empty', strokes: [], bgImage: null });
+      }
+      const target = targetVers[oi];
+      // Don't clobber an origin on the target
+      if (target.setupTagged === 'origin') continue;
+      target.bgImage = orig.bgImage;
+      target.strokes = orig.strokes.map((s) => ({ ...s }));
+      target.type = orig.bgImage ? 'upload' : orig.strokes.length > 0 ? 'drawing' : 'empty';
+      target.setupTagged = 'copy';
+    }
+
+    // Relabel after adding/clearing versions
+    relabelStripVersions(targetFrame.id, strip);
+  }
+}
+
+// ─── Setup pill hint (tap pill in normal mode) ────────────────────────
+
+/** Show a small grey overlay hint + pulse the SETUPS button. */
+export function showSetupPillHint(): void {
+  // Don't show if already visible
+  if (document.getElementById('setupPillHint')) return;
+
+  // Create overlay
+  const overlay = document.createElement('div');
+  overlay.id = 'setupPillHint';
+  overlay.className = 'setup-pill-hint';
+  overlay.innerHTML = `
+    <div class="setup-pill-hint-box">
+      <p>Tap <strong>SETUPS</strong> on top of the page<br>to edit main frame assignments</p>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  // Dismiss on tap anywhere
+  const dismiss = () => {
+    overlay.remove();
+    document.removeEventListener('click', dismiss, true);
+  };
+  // Delay listener so the current click doesn't immediately dismiss
+  setTimeout(() => document.addEventListener('click', dismiss, true), 50);
+
+  // Auto-dismiss after 5 seconds
+  setTimeout(() => {
+    if (overlay.parentNode) overlay.remove();
+    document.removeEventListener('click', dismiss, true);
+  }, 5000);
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────
