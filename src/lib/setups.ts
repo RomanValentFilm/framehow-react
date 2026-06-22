@@ -478,7 +478,6 @@ export function wireSetupClicks(container: HTMLElement | Document = document): v
 /** Clear all 'copy'-tagged strip versions for a given frame across all strips.
  *  Called when a frame loses its SETUP (unassign or delete). Origins stay. */
 function clearCopyTaggedVersions(fid: number): void {
-  const s = state();
   const strips: StripType[] = ['ver', 'floor', 'refs'];
   for (const strip of strips) {
     const vers = getStripVersions(fid, strip);
@@ -490,12 +489,6 @@ function clearCopyTaggedVersions(fid: number): void {
         v.type = 'empty';
         v.setupTagged = undefined;
       }
-    }
-  }
-  // Clear any dismissals for this frame (it's leaving the setup)
-  for (const key of Object.keys(s.dismissedCopies)) {
-    if (key.startsWith(`${fid}:`)) {
-      delete s.dismissedCopies[key];
     }
   }
 }
@@ -569,13 +562,13 @@ export function handleStripTagClick(fid: number, vi: number, strip: StripType): 
     const mainFrame = s.frames.find((f) => f.id === fid);
 
     if (ver.setupTagged === 'copy') {
-      // COPY → stays on this frame as normal user content.
-      // Remember bgImage so reapplyStripTags won't create a NEW copy of the same image.
-      if (ver.bgImage) {
-        s.dismissedCopies[`${fid}:${strip}:${ver.bgImage}`] = true;
+      // COPY → remove it from this frame
+      const vers = getStripVersions(fid, strip);
+      const idx = vers.indexOf(ver);
+      if (idx >= 0) vers.splice(idx, 1);
+      if (vers.length === 0) {
+        vers.push({ id: 1, label: '', type: 'empty' as const, strokes: [], bgImage: null });
       }
-      ver.setupTagged = undefined; // becomes regular user content
-      reorderByStars(fid, strip); // starred versions move ahead of this untagged content
       relabelStripVersions(fid, strip);
       bumpRenderTick();
       const renderAll = (window as any).__fh_renderAll;
@@ -664,15 +657,6 @@ function applyStripTag(fid: number, vi: number, strip: StripType): void {
   // Mark this version as the origin
   ver.setupTagged = 'origin';
 
-  // Clear any dismissals for this image so copies can be (re)created
-  if (ver.bgImage) {
-    for (const key of Object.keys(s.dismissedCopies)) {
-      if (key.endsWith(`:${strip}:${ver.bgImage}`)) {
-        delete s.dismissedCopies[key];
-      }
-    }
-  }
-
   // Re-apply ALL origins for this frame+strip so slots are assigned in order
   reapplyStripTags(fid, strip);
 
@@ -729,11 +713,9 @@ function reapplyStripTags(fid: number, strip: StripType): void {
         // Own origins stay as real origin objects
         for (const orig of ownOrigins) taggedFront.push(orig);
       } else {
-        // Foreign origins → fresh copy versions (skip if user dismissed this copy)
+        // Foreign origins → fresh copy versions
         for (const orig of srcOrigins) {
           activeOriginImages.add(orig.bgImage);
-          const dismissKey = `${targetFrame.id}:${strip}:${orig.bgImage}`;
-          if (s.dismissedCopies[dismissKey]) continue; // user removed this copy
           taggedFront.push({
             id: 0,
             label: '',
@@ -753,16 +735,10 @@ function reapplyStripTags(fid: number, strip: StripType): void {
       }
     }
 
-    // Deduplicate: if the same image is in tagged front AND user content, drop from user content
-    const taggedImages = new Set(taggedFront.filter((v) => v.bgImage).map((v) => v.bgImage));
-
-    // Rebuild: tagged front, then user content (minus duplicates)
+    // Rebuild: tagged front, then user content
     targetVers.length = 0;
     for (const tv of taggedFront) targetVers.push(tv);
-    for (const uv of userContent) {
-      if (uv.bgImage && taggedImages.has(uv.bgImage)) continue; // duplicate of tagged image
-      targetVers.push(uv);
-    }
+    for (const uv of userContent) targetVers.push(uv);
 
     // Ensure at least one version exists (don't leave a strip empty)
     if (targetVers.length === 0) {
