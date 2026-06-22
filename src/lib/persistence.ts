@@ -44,6 +44,8 @@ export interface CurrentProjectSnapshot {
   nextSetupId?: number;
   /** Whether the strip-tag confirmation overlay has been dismissed */
   stripTagInfoDismissed?: boolean;
+  /** Copies the user manually removed via untag — prevents recreation */
+  dismissedCopies?: Record<string, boolean>;
 }
 
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -121,6 +123,7 @@ export function snapshotFromStore(projectId: string | null, name: string | null)
     setups: s.setups,
     nextSetupId: s.nextSetupId,
     stripTagInfoDismissed: s.stripTagInfoDismissed || undefined,
+    dismissedCopies: Object.keys(s.dismissedCopies).length > 0 ? s.dismissedCopies : undefined,
   };
 }
 
@@ -183,6 +186,7 @@ export function applySnapshotToStore(snap: CurrentProjectSnapshot): void {
     setups: snap.setups ?? [],
     nextSetupId: snap.nextSetupId ?? 1,
     stripTagInfoDismissed: snap.stripTagInfoDismissed ?? false,
+    dismissedCopies: snap.dismissedCopies ?? {},
     renderTick: prev.renderTick + 1,
   }));
 }

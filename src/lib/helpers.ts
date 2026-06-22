@@ -172,13 +172,16 @@ export function addNewVersion(fid: number, newVer: Version): void {
 export function reorderByStars(fid: number, strip: StripType = 'ver'): void {
   const vers = getStripVersions(fid, strip);
   if (!vers || vers.length === 0) return;
-  const visible = vers.filter((v) => !v.hidden);
-  const hidden = vers.filter((v) => v.hidden);
+  // Tagged versions (origin + copy) always stay at the FRONT in their existing order
+  const tagged = vers.filter((v) => v.setupTagged);
+  const untagged = vers.filter((v) => !v.setupTagged);
+  const visible = untagged.filter((v) => !v.hidden);
+  const hidden = untagged.filter((v) => v.hidden);
   const visStarred = visible.filter((v) => v.starred);
   const visUnstarred = visible.filter((v) => !v.starred);
   const hidStarred = hidden.filter((v) => v.starred);
   const hidUnstarred = hidden.filter((v) => !v.starred);
-  const newOrder = [...visStarred, ...visUnstarred, ...hidStarred, ...hidUnstarred];
+  const newOrder = [...tagged, ...visStarred, ...visUnstarred, ...hidStarred, ...hidUnstarred];
   vers.length = 0;
   newOrder.forEach((v) => vers.push(v));
 }
@@ -200,13 +203,21 @@ export function unhideVersion(ver: Version, fid: number, strip: StripType = 'ver
   const curIdx = vers.indexOf(ver);
   if (curIdx >= 0) {
     vers.splice(curIdx, 1);
+    // Find the end of the tagged-front section (origins + copies always stay first)
+    let afterTagged = 0;
+    for (let i = 0; i < vers.length; i++) {
+      if (vers[i].setupTagged) afterTagged = i + 1;
+      else break;
+    }
     if (ver.starred) {
-      let lastVisStarred = -1;
-      for (let i = 0; i < vers.length; i++) {
+      // Insert after last visible starred, but never before tagged front
+      let lastVisStarred = afterTagged - 1;
+      for (let i = afterTagged; i < vers.length; i++) {
         if (!vers[i].hidden && vers[i].starred) lastVisStarred = i;
       }
-      vers.splice(lastVisStarred + 1, 0, ver);
-      setStripActiveTab(fid, strip, lastVisStarred + 1);
+      const insertAt = lastVisStarred + 1;
+      vers.splice(insertAt, 0, ver);
+      setStripActiveTab(fid, strip, insertAt);
     } else {
       let lastVisible = -1;
       for (let i = vers.length - 1; i >= 0; i--) {

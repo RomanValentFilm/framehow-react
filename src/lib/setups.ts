@@ -478,6 +478,7 @@ export function wireSetupClicks(container: HTMLElement | Document = document): v
 /** Clear all 'copy'-tagged strip versions for a given frame across all strips.
  *  Called when a frame loses its SETUP (unassign or delete). Origins stay. */
 function clearCopyTaggedVersions(fid: number): void {
+  const s = state();
   const strips: StripType[] = ['ver', 'floor', 'refs'];
   for (const strip of strips) {
     const vers = getStripVersions(fid, strip);
@@ -491,6 +492,12 @@ function clearCopyTaggedVersions(fid: number): void {
       }
     }
   }
+  // Clear any dismissals for this frame (it's leaving the setup)
+  for (const key of Object.keys(s.dismissedCopies)) {
+    if (key.startsWith(`${fid}:`)) {
+      delete s.dismissedCopies[key];
+    }
+  }
 }
 
 /** Re-propagate all existing strip tags across every frame in a setup.
@@ -498,14 +505,10 @@ function clearCopyTaggedVersions(fid: number): void {
 function propagateAllSetupTags(setupId: string): void {
   const s = state();
   const strips: StripType[] = ['ver', 'floor', 'refs'];
+  const anyFrame = s.frames.find((f) => f.setupId === setupId);
+  if (!anyFrame) return;
   for (const strip of strips) {
-    for (const f of s.frames) {
-      if (f.setupId !== setupId) continue;
-      const vers = getStripVersions(f.id, strip);
-      if (vers.some((v) => v.setupTagged === 'origin')) {
-        reapplyStripTags(f.id, strip);
-      }
-    }
+    reapplyStripTags(anyFrame.id, strip);
   }
 }
 
@@ -563,10 +566,25 @@ export function handleStripTagClick(fid: number, vi: number, strip: StripType): 
   if (!ver) return;
 
   if (ver.setupTagged) {
-    // Already tagged → untag this version, then redistribute remaining origins
+    const mainFrame = s.frames.find((f) => f.id === fid);
+
+    if (ver.setupTagged === 'copy') {
+      // COPY → stays on this frame as normal user content.
+      // Remember bgImage so reapplyStripTags won't create a NEW copy of the same image.
+      if (ver.bgImage) {
+        s.dismissedCopies[`${fid}:${strip}:${ver.bgImage}`] = true;
+      }
+      ver.setupTagged = undefined; // becomes regular user content
+      relabelStripVersions(fid, strip);
+      bumpRenderTick();
+      const renderAll = (window as any).__fh_renderAll;
+      if (renderAll) renderAll();
+      return;
+    }
+
+    // ORIGIN → stays as user content on THIS frame only. Copies on other frames stay tagged.
     ver.setupTagged = undefined;
-    // Reapply remaining origins (clears orphaned copies, re-slots in order)
-    reapplyStripTags(fid, strip);
+    relabelStripVersions(fid, strip);
     bumpRenderTick();
     const renderAll = (window as any).__fh_renderAll;
     if (renderAll) renderAll();
@@ -653,8 +671,12 @@ function applyStripTag(fid: number, vi: number, strip: StripType): void {
 }
 
 /**
- * Clear all copies on same-SETUP frames, then re-copy all origins in order.
- * Called after tagging/untagging to keep target slots consistent.
+ * Setup-wide tag propagation: collect origins from ALL frames in the setup,
+ * then rebuild every frame's version list so that:
+ *   - Tagged content (own origins + foreign copies) is at the FRONT
+ *   - User's own untagged content follows, never overwritten
+ *   - Order follows storyboard frame order
+ * fid is only used to look up the setupId.
  */
 function reapplyStripTags(fid: number, strip: StripType): void {
   const s = state();
@@ -662,45 +684,75 @@ function reapplyStripTags(fid: number, strip: StripType): void {
   if (!mainFrame || !mainFrame.setupId) return;
   const setupId = mainFrame.setupId;
 
-  // Collect all origin versions on this frame's strip, in array order
-  const sourceVers = getStripVersions(fid, strip);
-  const origins = sourceVers.filter((v) => v.setupTagged === 'origin');
+  // All frames in this setup, in storyboard order
+  const setupFrames = s.frames.filter((f) => f.setupId === setupId);
 
-  const sameSetupFrames = s.frames.filter((f) => f.setupId === setupId && f.id !== fid);
-  const prefix = stripTabPrefix(strip);
+  // Collect origins per frame: Map<frameId, originVersions[]>
+  const originsByFrame = new Map<number, import('../store/state').Version[]>();
+  for (const f of setupFrames) {
+    const vers = getStripVersions(f.id, strip);
+    const origins = vers.filter((v) => v.setupTagged === 'origin');
+    if (origins.length > 0) originsByFrame.set(f.id, origins);
+  }
 
-  for (const targetFrame of sameSetupFrames) {
+  // For each frame, rebuild its version list
+  for (const targetFrame of setupFrames) {
     const targetVers = ensureStripVersions(targetFrame.id, strip);
 
-    // Clear all existing copies on this target
-    for (const tv of targetVers) {
-      if (tv.setupTagged === 'copy') {
-        tv.bgImage = null;
-        tv.strokes = [];
-        tv.type = 'empty';
-        tv.setupTagged = undefined;
+    // Own origins on this frame (keep the actual objects)
+    const ownOrigins = targetVers.filter((v) => v.setupTagged === 'origin');
+    // User's untagged content that actually has something — empty versions
+    // are just placeholders and should be filled by copies, not preserved
+    const userContent = targetVers.filter((v) => !v.setupTagged && v.type !== 'empty');
+
+    // Collect existing copies and track which origin bgImages are still active
+    const existingCopies = targetVers.filter((v) => v.setupTagged === 'copy');
+    const activeOriginImages = new Set<string | null>();
+
+    // Build the tagged-front section in storyboard order:
+    // for each frame that has origins, if it's THIS frame → keep own origins,
+    // if it's another frame → create copies
+    const taggedFront: import('../store/state').Version[] = [];
+    for (const [sourceId, srcOrigins] of originsByFrame) {
+      if (sourceId === targetFrame.id) {
+        // Own origins stay as real origin objects
+        for (const orig of ownOrigins) taggedFront.push(orig);
+      } else {
+        // Foreign origins → fresh copy versions (skip if user dismissed this copy)
+        for (const orig of srcOrigins) {
+          activeOriginImages.add(orig.bgImage);
+          const dismissKey = `${targetFrame.id}:${strip}:${orig.bgImage}`;
+          if (s.dismissedCopies[dismissKey]) continue; // user removed this copy
+          taggedFront.push({
+            id: 0,
+            label: '',
+            bgImage: orig.bgImage,
+            strokes: orig.strokes.map((st) => ({ ...st })),
+            type: (orig.bgImage ? 'upload' : orig.strokes.length > 0 ? 'drawing' : 'empty') as 'empty' | 'drawing' | 'upload',
+            setupTagged: 'copy' as const,
+          });
+        }
       }
     }
 
-    // Copy each origin to the next available slot
-    for (let oi = 0; oi < origins.length; oi++) {
-      const orig = origins[oi];
-
-      // Find or create the target slot at index oi
-      while (targetVers.length <= oi) {
-        const n = targetVers.length + 1;
-        targetVers.push({ id: n, label: `${prefix}${n}`, type: 'empty', strokes: [], bgImage: null });
+    // Orphaned copies: their origin was untagged but copies stay tagged at the front
+    for (const c of existingCopies) {
+      if (!activeOriginImages.has(c.bgImage)) {
+        taggedFront.push(c); // keep as tagged copy
       }
-      const target = targetVers[oi];
-      // Don't clobber an origin on the target
-      if (target.setupTagged === 'origin') continue;
-      target.bgImage = orig.bgImage;
-      target.strokes = orig.strokes.map((s) => ({ ...s }));
-      target.type = orig.bgImage ? 'upload' : orig.strokes.length > 0 ? 'drawing' : 'empty';
-      target.setupTagged = 'copy';
     }
 
-    // Relabel after adding/clearing versions
+    // Rebuild: tagged front, then user content
+    targetVers.length = 0;
+    for (const tv of taggedFront) targetVers.push(tv);
+    for (const uv of userContent) targetVers.push(uv);
+
+    // Ensure at least one version exists (don't leave a strip empty)
+    if (targetVers.length === 0) {
+      targetVers.push({ id: 1, label: '', type: 'empty', strokes: [], bgImage: null });
+    }
+
+    // Relabel v1, v2, v3... / f1, f2... after reordering
     relabelStripVersions(targetFrame.id, strip);
   }
 }
