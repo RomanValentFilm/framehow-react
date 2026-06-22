@@ -664,6 +664,15 @@ function applyStripTag(fid: number, vi: number, strip: StripType): void {
   // Mark this version as the origin
   ver.setupTagged = 'origin';
 
+  // Clear any dismissals for this image so copies can be (re)created
+  if (ver.bgImage) {
+    for (const key of Object.keys(s.dismissedCopies)) {
+      if (key.endsWith(`:${strip}:${ver.bgImage}`)) {
+        delete s.dismissedCopies[key];
+      }
+    }
+  }
+
   // Re-apply ALL origins for this frame+strip so slots are assigned in order
   reapplyStripTags(fid, strip);
 
@@ -744,10 +753,16 @@ function reapplyStripTags(fid: number, strip: StripType): void {
       }
     }
 
-    // Rebuild: tagged front, then user content
+    // Deduplicate: if the same image is in tagged front AND user content, drop from user content
+    const taggedImages = new Set(taggedFront.filter((v) => v.bgImage).map((v) => v.bgImage));
+
+    // Rebuild: tagged front, then user content (minus duplicates)
     targetVers.length = 0;
     for (const tv of taggedFront) targetVers.push(tv);
-    for (const uv of userContent) targetVers.push(uv);
+    for (const uv of userContent) {
+      if (uv.bgImage && taggedImages.has(uv.bgImage)) continue; // duplicate of tagged image
+      targetVers.push(uv);
+    }
 
     // Ensure at least one version exists (don't leave a strip empty)
     if (targetVers.length === 0) {
