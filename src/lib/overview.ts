@@ -1085,7 +1085,7 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
         let _tapX = 0, _tapY = 0;
         canvasWrap.addEventListener('pointerdown', (e) => { _tapX = e.clientX; _tapY = e.clientY; }, { passive: true });
         canvasWrap.addEventListener('click', (e) => {
-          if ((e.target as HTMLElement).closest('.act-btn,.fs-btn,.star-btn,.nav-arrow,[data-setup-fid]')) return;
+          if ((e.target as HTMLElement).closest('.act-btn,.fs-btn,.star-btn,.nav-arrow,[data-setup-fid],[data-striptag-fid],[data-setup-hint],[data-setup-remove-fid]')) return;
           if (state().setupMode) return; // Block canvas navigation while setup bar is open
           if (s.drawingInProgress || s.drawSuppressClick) return;
           const dx = Math.abs(e.clientX - _tapX), dy = Math.abs(e.clientY - _tapY);
