@@ -134,11 +134,9 @@ function renderSetupDropdown(dd: HTMLElement): void {
   }
   dd.innerHTML = html;
 
-  // Wire + NEW
+  // Wire + NEW — render create form inside the dropdown (bar stays visible above)
   dd.querySelector('[data-setup-new]')?.addEventListener('click', () => {
-    _closeDropdown();
-    const bar = document.getElementById('setupBar')!;
-    renderSetupCreateForm(bar);
+    renderSetupCreateFormInDropdown(dd);
   });
 
   // Wire selection (click on the pill → switch to that setup)
@@ -155,13 +153,12 @@ function renderSetupDropdown(dd: HTMLElement): void {
     })
   );
 
-  // Wire EDIT buttons → open edit form for that setup
+  // Wire EDIT buttons → open edit form inside the dropdown
   dd.querySelectorAll('[data-setup-edit]').forEach((btn) =>
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const id = (btn as HTMLElement).dataset.setupEdit!;
-      _closeDropdown();
-      renderSetupEditForm(document.getElementById('setupBar')!, id);
+      renderSetupEditFormInDropdown(dd, id);
     })
   );
 }
@@ -313,6 +310,142 @@ function renderSetupCreateForm(bar: HTMLElement): void {
 
   // Auto-focus
   (document.getElementById('setupNameInput') as HTMLInputElement)?.focus();
+}
+
+/** Render the edit form for a setup INSIDE the dropdown (bar with arrow+pill stays above). */
+function renderSetupEditFormInDropdown(dd: HTMLElement, setupId: string): void {
+  const s = state();
+  const su = s.setups.find((x) => x.id === setupId);
+  if (!su) return;
+
+  const usedColors = new Set(s.setups.filter((x) => x.id !== setupId).map((x) => x.colorIndex));
+  let colorsHTML = '';
+  for (let i = 0; i < SETUP_COLORS.length; i++) {
+    const col = SETUP_COLORS[i];
+    const taken = usedColors.has(i);
+    const selected = i === su.colorIndex;
+    const light = taken && needsDarkText(col.hex);
+    colorsHTML += `<button class="setup-color-circle${selected ? ' selected' : ''}${taken ? ' taken' : ''}${light ? ' light' : ''}" data-ci="${i}" style="background:${col.hex}"${taken ? ' disabled' : ''}></button>`;
+  }
+
+  dd.innerHTML = `
+    <div class="setup-edit-form">
+      <input class="setup-name-input" id="setupEditNameInput" type="text" maxlength="7" value="${su.name}" autocomplete="off" />
+      <div class="setup-color-picker">${colorsHTML}</div>
+      <button class="setup-create-btn" id="setupEditSaveBtn">SAVE</button>
+      <button class="setup-delete-btn" id="setupEditDeleteBtn">DELETE</button>
+    </div>
+  `;
+
+  let selectedCI = su.colorIndex;
+
+  dd.querySelectorAll('.setup-color-circle:not(.taken)').forEach((circle) =>
+    circle.addEventListener('click', () => {
+      dd.querySelectorAll('.setup-color-circle').forEach((c) => c.classList.remove('selected'));
+      circle.classList.add('selected');
+      selectedCI = parseInt((circle as HTMLElement).dataset.ci!);
+    })
+  );
+
+  dd.querySelector('#setupEditSaveBtn')!.addEventListener('click', () => {
+    const input = document.getElementById('setupEditNameInput') as HTMLInputElement;
+    const name = input.value.trim().toUpperCase();
+    if (!name) { showToast('Enter a name'); return; }
+    if (name.length > 7) { showToast('Max 7 characters'); return; }
+    const latest = state();
+    if (latest.setups.some((x) => x.name === name && x.id !== setupId)) { showToast('Name already used'); return; }
+
+    su.name = name;
+    su.colorIndex = selectedCI;
+    bumpRenderTick();
+    _closeDropdown();
+    const bar = document.getElementById('setupBar')!;
+    renderSetupBarEdit(bar);
+  });
+
+  dd.querySelector('#setupEditDeleteBtn')!.addEventListener('click', () => {
+    _closeDropdown();
+    const bar = document.getElementById('setupBar')!;
+    _deleteSetup(bar, setupId);
+  });
+
+  (dd.querySelector('#setupEditNameInput') as HTMLInputElement)?.focus();
+}
+
+/** Render the create-setup form INSIDE the dropdown (bar with arrow+pill stays above). */
+function renderSetupCreateFormInDropdown(dd: HTMLElement): void {
+  const s = state();
+  const usedColors = new Set(s.setups.map((x) => x.colorIndex));
+
+  let colorsHTML = '';
+  for (let i = 0; i < SETUP_COLORS.length; i++) {
+    const col = SETUP_COLORS[i];
+    const taken = usedColors.has(i);
+    const light = taken && needsDarkText(col.hex);
+    colorsHTML += `<button class="setup-color-circle${taken ? ' taken' : ''}${light ? ' light' : ''}" data-ci="${i}" style="background:${col.hex}"${taken ? ' disabled' : ''}></button>`;
+  }
+
+  // Pick first available colour
+  let defaultCI = 0;
+  for (let i = 0; i < SETUP_COLORS.length; i++) {
+    if (!usedColors.has(i)) { defaultCI = i; break; }
+  }
+
+  dd.innerHTML = `
+    <div class="setup-create-form">
+      <input class="setup-name-input" id="setupNameInput" type="text" maxlength="7" placeholder="NAME" autocomplete="off" />
+      <div class="setup-color-picker">${colorsHTML}</div>
+      <button class="setup-create-btn" id="setupCreateBtn">CREATE</button>
+      <button class="setup-cancel-btn" id="setupCancelBtn">CANCEL</button>
+    </div>
+  `;
+
+  // Pre-select first available colour
+  let selectedCI = defaultCI;
+  dd.querySelectorAll('.setup-color-circle:not(.taken)').forEach((circle) => {
+    if (parseInt((circle as HTMLElement).dataset.ci!) === defaultCI) {
+      circle.classList.add('selected');
+    }
+  });
+
+  // Wire colour selection
+  dd.querySelectorAll('.setup-color-circle:not(.taken)').forEach((circle) =>
+    circle.addEventListener('click', () => {
+      dd.querySelectorAll('.setup-color-circle').forEach((c) => c.classList.remove('selected'));
+      circle.classList.add('selected');
+      selectedCI = parseInt((circle as HTMLElement).dataset.ci!);
+    })
+  );
+
+  // Wire CREATE → create setup and go into edit mode
+  dd.querySelector('#setupCreateBtn')!.addEventListener('click', () => {
+    const input = document.getElementById('setupNameInput') as HTMLInputElement;
+    const name = input.value.trim().toUpperCase();
+    if (!name) { showToast('Enter a name'); return; }
+    if (name.length > 7) { showToast('Max 7 characters'); return; }
+    const latest = state();
+    if (latest.setups.some((su) => su.name === name)) { showToast('Name already used'); return; }
+
+    const id = 'setup_' + latest.nextSetupId;
+    const newSetup: Setup = { id, name, colorIndex: selectedCI };
+    useStore.setState((prev) => ({
+      setups: [...prev.setups, newSetup],
+      activeSetupId: id,
+      nextSetupId: prev.nextSetupId + 1,
+    }));
+
+    _closeDropdown();
+    const bar = document.getElementById('setupBar')!;
+    renderSetupBarEdit(bar);
+  });
+
+  // Wire CANCEL → back to dropdown list
+  dd.querySelector('#setupCancelBtn')!.addEventListener('click', () => {
+    renderSetupDropdown(dd);
+  });
+
+  // Auto-focus
+  (dd.querySelector('#setupNameInput') as HTMLInputElement)?.focus();
 }
 
 // ─── Delete setup ─────────────────────────────────────────────────────
