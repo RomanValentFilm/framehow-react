@@ -512,7 +512,7 @@
   .exp-ver-actions button:hover{background:var(--surface2);color:var(--text);}
   .exp-ver-hidden{opacity:.5;}
   @media (hover:none) and (pointer:coarse){
-    html,body{overflow-x:hidden;}
+    html{overflow-x:hidden;}
     .fs-overlay{padding:51px 20px 20px;}
     .fs-overlay > .fs-close{top:31px;}
     .toolbar{position:fixed;top:0;left:0;right:0;z-index:40;}
@@ -527,10 +527,10 @@
   /* iPhone: toolbar scrolls naturally, view-bar sticks at top. No JS. */
   @media (hover:none) and (pointer:coarse) and (max-width:430px),
          (hover:none) and (pointer:coarse) and (max-height:430px){
-    html,body{overflow-x:clip;}
+    html{overflow-x:clip;}
     .toolbar{position:relative;top:auto;left:auto;right:auto;z-index:40;padding-top:calc(env(safe-area-inset-top) * 0.55);height:calc(52px + env(safe-area-inset-top) * 0.55);}
     .toolbar.tb-hide{transform:none;}
-    .view-bar{position:sticky;top:env(safe-area-inset-top);left:auto;right:auto;padding:3px 6px;z-index:20;}
+    .view-bar{position:-webkit-sticky;position:sticky;top:env(safe-area-inset-top);left:auto;right:auto;padding:3px 6px;z-index:20;background:var(--surface);border-bottom:1px solid var(--border);}
     .view-bar.tb-hide{transform:none;}
     .columns{padding-top:0;}
     .view-btn{padding:3px 4px;font-size:11px;}
