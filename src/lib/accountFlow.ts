@@ -26,6 +26,7 @@ import {
   hasLocalChanges,
   markSaved,
   isLoadInFlight,
+  isPullIncomplete,
   isPushInFlight,
   setCloudSyncInFlight,
   registerCloudSync,
@@ -33,6 +34,7 @@ import {
   setCurrentProject,
   setProjectName,
   setPullInFlight,
+  setPullIncomplete,
   setProjectSwitchInFlight,
   flushSyncNow,
   updateSyncHash,
@@ -1056,10 +1058,43 @@ function uuid(): string {
   return crypto.randomUUID();
 }
 
+/** Count non-null images across all frames and strip versions in the current state. */
+function countCurrentImages(): number {
+  const s = state();
+  let count = 0;
+  for (const f of s.frames) {
+    if (f.src) count++;
+  }
+  for (const stripId of ['ver', 'floor', 'refs'] as const) {
+    const map = s.stripVersions[stripId];
+    if (!map) continue;
+    for (const fid of Object.keys(map)) {
+      const vers = map[+fid];
+      if (!vers) continue;
+      for (const v of vers) {
+        if (v.bgImage) count++;
+      }
+    }
+  }
+  return count;
+}
+
 async function syncCurrentToServer(projectId: string): Promise<void> {
   // Safety net: refuse to push zero frames — prevents wiping a project on the server
   if (state().frames.length === 0) {
     console.warn('[sync] Aborted: state has 0 frames — refusing to overwrite server data');
+    return;
+  }
+  // Safety net: refuse to push if the last pull didn't load all images.
+  if (isPullIncomplete()) {
+    console.warn('[sync] Aborted: last pull was incomplete (some R2 fetches failed) — refusing to push partial state');
+    return;
+  }
+  // Safety net: refuse to push if all images disappeared but the project previously had them.
+  // This catches the race where a pull loaded structure but R2 images haven't arrived yet.
+  const currentImageCount = countCurrentImages();
+  if (currentImageCount === 0 && _lastKnownImageCount > 0) {
+    console.warn(`[sync] Aborted: state has 0 images but last known count was ${_lastKnownImageCount} — refusing to overwrite server data`);
     return;
   }
   // Flush in-progress text/table edits from DOM to frame objects before snapshotting
@@ -1265,6 +1300,8 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   // Update lastKnownUpdatedAt so that the pull-on-focus mechanism doesn't
   // see our own push as a "newer remote version" and try to apply it.
   lastKnownUpdatedAt = now;
+  // Record the image count after a successful push so the next guard comparison is accurate.
+  _lastKnownImageCount = countCurrentImages();
 }
 
 async function applyCloudTreeToStore(tree: CloudProjectTree): Promise<void> {
@@ -1543,6 +1580,8 @@ async function applyCloudTreeToStore(tree: CloudProjectTree): Promise<void> {
   const token = getToken();
   if (!token) return;
 
+  const expectedImageCount = mainImageTasks.length + versionImageTasks.length;
+  let fetchedImageCount = 0;
   const allFetches: Promise<void>[] = [];
 
   for (const task of mainImageTasks) {
@@ -1556,6 +1595,7 @@ async function applyCloudTreeToStore(tree: CloudProjectTree): Promise<void> {
           updated[idx] = { ...updated[idx], src: dataUrl };
           useStore.setState((prev) => ({ frames: updated, renderTick: prev.renderTick + 1 }));
           (window as any).__fh_renderAll?.();
+          fetchedImageCount++;
         })
         .catch((e) => console.warn('[sync] failed to fetch main image', task.r2Key, e)),
     );
@@ -1585,6 +1625,7 @@ async function applyCloudTreeToStore(tree: CloudProjectTree): Promise<void> {
             renderTick: prev.renderTick + 1,
           }));
           (window as any).__fh_renderAll?.();
+          fetchedImageCount++;
         })
         .catch((e) => console.warn('[sync] failed to fetch version image', task.strip, task.r2Key, e)),
     );
@@ -1592,6 +1633,17 @@ async function applyCloudTreeToStore(tree: CloudProjectTree): Promise<void> {
 
   // Wait for all images to load before returning (caller can show a toast).
   await Promise.all(allFetches);
+
+  // SAFETY: Only update the image-count baseline if ALL expected images loaded.
+  // If some R2 fetches failed, keep the old baseline so the push guard in
+  // syncCurrentToServer blocks any push of this incomplete state.
+  if (fetchedImageCount === expectedImageCount) {
+    _lastKnownImageCount = countCurrentImages();
+    setPullIncomplete(false);
+  } else {
+    console.warn(`[sync] Incomplete pull: ${fetchedImageCount}/${expectedImageCount} images loaded — blocking sync push`);
+    setPullIncomplete(true);
+  }
 }
 
 function parseStrokes(json: string | undefined): Stroke[] {
@@ -1761,6 +1813,13 @@ let lastKnownUpdatedAt: number | null = null;
 let pullInFlight = false;
 let lastPullAt = 0;
 const PULL_COOLDOWN_MS = 3_000; // Don't check more often than every 3s
+
+// Image-count safeguard: tracks how many images the project had after the last
+// successful sync or pull. If the count drops to 0 unexpectedly, we refuse to
+// push — this prevents a corrupt (imageless) state from overwriting good cloud data.
+let _lastKnownImageCount = 0;
+// _pullIncomplete flag lives in currentProject.ts (avoids circular import).
+// Set via setPullIncomplete() after a pull — blocks IDB autosave + sync push.
 
 
 function startPullOnFocus(): void {
@@ -2041,6 +2100,11 @@ async function tryPullFromCloud(): Promise<void> {
           updateSyncHash();
           setTimeout(() => { if (progressEl) progressEl.classList.add('hidden'); }, 300);
           showToast('Merged — duplicate frames marked with "?"');
+          // Retry if some images failed during the merge pull
+          if (isPullIncomplete()) {
+            console.info('[sync] Scheduling retry pull in 5s (incomplete image load after merge)');
+            setTimeout(() => { void tryPullFromCloud(); }, 5_000);
+          }
           return;
         }
 
@@ -2061,6 +2125,13 @@ async function tryPullFromCloud(): Promise<void> {
       updateSyncHash();
       if (progressBar) progressBar.style.width = '100%';
       setTimeout(() => { if (progressEl) progressEl.classList.add('hidden'); }, 300);
+
+      // If some R2 images failed to load, schedule an automatic retry.
+      // The retry re-pulls the full tree so ALL images get another chance.
+      if (isPullIncomplete()) {
+        console.info('[sync] Scheduling retry pull in 5s (incomplete image load)');
+        setTimeout(() => { void tryPullFromCloud(); }, 5_000);
+      }
     }
   } catch {
     // Silent — don't disturb the user if the check fails.

@@ -111,6 +111,12 @@ export function setProjectSwitchInFlight(v: boolean): void {
   _projectSwitchInFlight = v;
 }
 
+/** True when the last cloud pull failed to load all images from R2.
+ *  While set, both IDB autosave and cloud sync push are blocked. */
+let _pullIncomplete = false;
+export function setPullIncomplete(v: boolean): void { _pullIncomplete = v; }
+export function isPullIncomplete(): boolean { return _pullIncomplete; }
+
 /**
  * Immediately push current project to cloud (if dirty). Returns when done.
  * Use before switching projects to ensure current work is saved first.
@@ -180,9 +186,9 @@ export function setCloudSyncInFlight(v: boolean): void {
   cloudSyncInFlight = v;
 }
 
-/** True when a pull (load from cloud) is in progress — images may still be downloading. */
+/** True when a pull (load from cloud) is in progress, or the last pull failed to load all images. */
 export function isLoadInFlight(): boolean {
-  return _pullInFlight || _projectSwitchInFlight;
+  return _pullInFlight || _projectSwitchInFlight || _pullIncomplete;
 }
 
 function scheduleAutosave(): void {
@@ -192,6 +198,14 @@ function scheduleAutosave(): void {
 
 async function runAutosave(): Promise<void> {
   autosaveTimer = null;
+  // SAFETY: Don't snapshot while a cloud pull is loading images —
+  // bgImage fields may still be null (R2 fetches in progress).
+  // Also skip if the last pull was incomplete (some images failed to load).
+  if (_pullInFlight || _projectSwitchInFlight || _pullIncomplete) {
+    // Retry after debounce — the pull will finish and reschedule anyway.
+    scheduleAutosave();
+    return;
+  }
   try {
     const snap = snapshotFromStore(cp.projectId, cp.name);
     // Only persist if there's actually something to remember. An empty
