@@ -60,9 +60,10 @@ function renderSetupBarEdit(bar: HTMLElement): void {
 
   bar.innerHTML = `
     <div class="setup-bar-inner">
+      <span class="setup-helper-text">TAP FRAMES TO ADD TO / REMOVE FROM</span>
       <button class="setup-dropdown-arrow" id="setupDropdownBtn" title="Choose setup">▶</button>
       <span class="setup-pill active-pill" style="background:${col.hex};color:${textCol}">${active.name}</span>
-      <span class="setup-helper-text">TAP FRAMES TO ADD / REMOVE</span>
+      <span class="setup-helper-text">SETUP</span>
       <button class="setup-done-btn" id="setupDoneBtn">DONE</button>
     </div>
     <div class="setup-dropdown" id="setupDropdown" style="display:none"></div>
