@@ -559,27 +559,38 @@ export function handleStripTagClick(fid: number, vi: number, strip: StripType): 
   if (!ver) return;
 
   if (ver.setupTagged) {
+    // UNTAG — remove this image from the tag system entirely.
+    // Origin stays as user content on its frame; all copies are deleted everywhere.
+    const targetImage = ver.bgImage;
     const mainFrame = s.frames.find((f) => f.id === fid);
+    const setupId = mainFrame?.setupId;
+    const setupFrames = setupId ? s.frames.filter((f) => f.setupId === setupId) : [mainFrame!];
 
-    if (ver.setupTagged === 'copy') {
-      // COPY → remove it from this frame
-      const vers = getStripVersions(fid, strip);
-      const idx = vers.indexOf(ver);
-      if (idx >= 0) vers.splice(idx, 1);
+    // 1) Find and untag the origin (could be on this frame or another)
+    for (const sf of setupFrames) {
+      const vers = getStripVersions(sf.id, strip);
+      for (const v of vers) {
+        if (v.setupTagged === 'origin' && v.bgImage === targetImage) {
+          v.setupTagged = undefined; // becomes regular user content
+        }
+      }
+    }
+
+    // 2) Remove ALL copies of this image from ALL setup frames
+    for (const sf of setupFrames) {
+      const vers = getStripVersions(sf.id, strip);
+      for (let i = vers.length - 1; i >= 0; i--) {
+        if (vers[i].setupTagged === 'copy' && vers[i].bgImage === targetImage) {
+          vers.splice(i, 1);
+        }
+      }
       if (vers.length === 0) {
         vers.push({ id: 1, label: '', type: 'empty' as const, strokes: [], bgImage: null });
       }
-      relabelStripVersions(fid, strip);
-      bumpRenderTick();
-      const renderAll = (window as any).__fh_renderAll;
-      if (renderAll) renderAll();
-      return;
+      reorderByStars(sf.id, strip);
+      relabelStripVersions(sf.id, strip);
     }
 
-    // ORIGIN → stays as user content on THIS frame only. Copies on other frames stay tagged.
-    ver.setupTagged = undefined;
-    reorderByStars(fid, strip); // starred versions move ahead of this untagged content
-    relabelStripVersions(fid, strip);
     bumpRenderTick();
     const renderAll = (window as any).__fh_renderAll;
     if (renderAll) renderAll();
@@ -700,10 +711,6 @@ function reapplyStripTags(fid: number, strip: StripType): void {
     // are just placeholders and should be filled by copies, not preserved
     const userContent = targetVers.filter((v) => !v.setupTagged && v.type !== 'empty');
 
-    // Collect existing copies and track which origin bgImages are still active
-    const existingCopies = targetVers.filter((v) => v.setupTagged === 'copy');
-    const activeOriginImages = new Set<string | null>();
-
     // Build the tagged-front section in storyboard order:
     // for each frame that has origins, if it's THIS frame → keep own origins,
     // if it's another frame → create copies
@@ -715,7 +722,6 @@ function reapplyStripTags(fid: number, strip: StripType): void {
       } else {
         // Foreign origins → fresh copy versions
         for (const orig of srcOrigins) {
-          activeOriginImages.add(orig.bgImage);
           taggedFront.push({
             id: 0,
             label: '',
@@ -725,13 +731,6 @@ function reapplyStripTags(fid: number, strip: StripType): void {
             setupTagged: 'copy' as const,
           });
         }
-      }
-    }
-
-    // Orphaned copies: their origin was untagged but copies stay tagged at the front
-    for (const c of existingCopies) {
-      if (!activeOriginImages.has(c.bgImage)) {
-        taggedFront.push(c); // keep as tagged copy
       }
     }
 
