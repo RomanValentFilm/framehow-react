@@ -99,6 +99,9 @@ function _wireDropdown(bar: HTMLElement): void {
     if (dd.style.display === 'none') {
       renderSetupDropdown(dd);
       dd.style.display = '';
+      // Position dropdown below the arrow button
+      const btnEl = btn as HTMLElement;
+      dd.style.left = btnEl.offsetLeft + 'px';
       btn.textContent = '▼';
       // Close dropdown when clicking outside
       setTimeout(() => {
