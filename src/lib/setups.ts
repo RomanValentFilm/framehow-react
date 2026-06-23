@@ -815,7 +815,7 @@ export function showSetupPillHint(): void {
   overlay.className = 'setup-pill-hint';
   overlay.innerHTML = `
     <div class="setup-pill-hint-box">
-      <p>Tap <strong>SETUPS</strong> on top of the page<br>to edit main frame assignments</p>
+      <p>To edit Main Frame's SETUP assignments,<br>click <strong>SETUPS</strong> in the upper left corner of the page.</p>
     </div>
   `;
   document.body.appendChild(overlay);
