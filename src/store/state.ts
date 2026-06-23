@@ -204,6 +204,8 @@ export interface FrameHowState {
   nextSetupId: number;
   /** Per-project: user dismissed the strip-tag info overlay */
   stripTagInfoDismissed: boolean;
+  /** Per-project: user dismissed the strip-untag info overlay */
+  stripUntagInfoDismissed: boolean;
   // bumped manually by the imperative core to wake any React subscribers
   // that need to react to mutable state changes (e.g., frame badge count).
   renderTick: number;
@@ -286,6 +288,7 @@ const initial: FrameHowState = {
   setupEditing: false,
   nextSetupId: 1,
   stripTagInfoDismissed: false,
+  stripUntagInfoDismissed: false,
   renderTick: 0,
 };
 
@@ -330,6 +333,7 @@ export function resetStoryboardState(): void {
     setupMode: false,
     nextSetupId: 1,
     stripTagInfoDismissed: false,
+    stripUntagInfoDismissed: false,
     renderTick: state().renderTick + 1,
   });
 }

@@ -559,41 +559,12 @@ export function handleStripTagClick(fid: number, vi: number, strip: StripType): 
   if (!ver) return;
 
   if (ver.setupTagged) {
-    // UNTAG — remove this image from the tag system entirely.
-    // Origin stays as user content on its frame; all copies are deleted everywhere.
-    const targetImage = ver.bgImage;
-    const mainFrame = s.frames.find((f) => f.id === fid);
-    const setupId = mainFrame?.setupId;
-    const setupFrames = setupId ? s.frames.filter((f) => f.setupId === setupId) : [mainFrame!];
-
-    // 1) Find and untag the origin (could be on this frame or another)
-    for (const sf of setupFrames) {
-      const vers = getStripVersions(sf.id, strip);
-      for (const v of vers) {
-        if (v.setupTagged === 'origin' && v.bgImage === targetImage) {
-          v.setupTagged = undefined; // becomes regular user content
-        }
-      }
+    // Show untag confirmation overlay (unless dismissed for this project)
+    if (s.stripUntagInfoDismissed) {
+      executeUntag(fid, strip, ver);
+      return;
     }
-
-    // 2) Remove ALL copies of this image from ALL setup frames
-    for (const sf of setupFrames) {
-      const vers = getStripVersions(sf.id, strip);
-      for (let i = vers.length - 1; i >= 0; i--) {
-        if (vers[i].setupTagged === 'copy' && vers[i].bgImage === targetImage) {
-          vers.splice(i, 1);
-        }
-      }
-      if (vers.length === 0) {
-        vers.push({ id: 1, label: '', type: 'empty' as const, strokes: [], bgImage: null });
-      }
-      reorderByStars(sf.id, strip);
-      relabelStripVersions(sf.id, strip);
-    }
-
-    bumpRenderTick();
-    const renderAll = (window as any).__fh_renderAll;
-    if (renderAll) renderAll();
+    showStripUntagOverlay(fid, strip, ver);
     return;
   }
 
@@ -628,7 +599,7 @@ function showStripTagOverlay(fid: number, vi: number, strip: StripType): void {
   overlay.className = 'strip-tag-overlay';
   overlay.innerHTML = `
     <div class="strip-tag-overlay-box">
-      <p class="strip-tag-overlay-title">Share this image with all<br><span class="setup-tag" style="background:${col.hex};color:${textCol};position:static;display:inline-flex;vertical-align:middle;pointer-events:none;margin:6px 0;font-size:16px;padding:4px 14px;min-height:28px;">${setup.name}</span><br>SETUP marked frames?</p>
+      <p class="strip-tag-overlay-title">Share this image with all<br><span class="setup-tag" style="background:${col.hex};color:${textCol};position:static;display:inline-flex;vertical-align:middle;pointer-events:none;margin:6px 0;font-size:16px;padding:4px 14px;min-height:28px;">${setup.name}</span> SETUP<br>marked frames?</p>
       <p class="strip-tag-overlay-desc">This image will appear in the ${stripLabel} strip of every main frame tagged ${setup.name}.</p>
       <label class="strip-tag-overlay-dismiss"><input type="checkbox" id="stripTagDismissCheck" /> Don't show this again</label>
       <div class="strip-tag-overlay-btns">
@@ -649,6 +620,88 @@ function showStripTagOverlay(fid: number, vi: number, strip: StripType): void {
   });
 
   overlay.querySelector('#stripTagCancel')!.addEventListener('click', () => {
+    overlay.remove();
+  });
+}
+
+/** Execute the actual untag — remove this image from the tag system entirely.
+ *  Origin stays as user content on its frame; all copies are deleted everywhere. */
+function executeUntag(fid: number, strip: StripType, ver: import('../store/state').Version): void {
+  const s = state();
+  const targetImage = ver.bgImage;
+  const mainFrame = s.frames.find((f) => f.id === fid);
+  const setupId = mainFrame?.setupId;
+  const setupFrames = setupId ? s.frames.filter((f) => f.setupId === setupId) : [mainFrame!];
+
+  // 1) Find and untag the origin (could be on this frame or another)
+  for (const sf of setupFrames) {
+    const vers = getStripVersions(sf.id, strip);
+    for (const v of vers) {
+      if (v.setupTagged === 'origin' && v.bgImage === targetImage) {
+        v.setupTagged = undefined; // becomes regular user content
+      }
+    }
+  }
+
+  // 2) Remove ALL copies of this image from ALL setup frames
+  for (const sf of setupFrames) {
+    const vers = getStripVersions(sf.id, strip);
+    for (let i = vers.length - 1; i >= 0; i--) {
+      if (vers[i].setupTagged === 'copy' && vers[i].bgImage === targetImage) {
+        vers.splice(i, 1);
+      }
+    }
+    if (vers.length === 0) {
+      vers.push({ id: 1, label: '', type: 'empty' as const, strokes: [], bgImage: null });
+    }
+    reorderByStars(sf.id, strip);
+    relabelStripVersions(sf.id, strip);
+  }
+
+  bumpRenderTick();
+  const renderAll = (window as any).__fh_renderAll;
+  if (renderAll) renderAll();
+}
+
+/** Show the confirmation overlay before untagging. */
+function showStripUntagOverlay(fid: number, strip: StripType, ver: import('../store/state').Version): void {
+  const s = state();
+  const mainFrame = s.frames.find((f) => f.id === fid);
+  if (!mainFrame || !mainFrame.setupId) return;
+  const setup = s.setups.find((su) => su.id === mainFrame.setupId);
+  if (!setup) return;
+  const col = SETUP_COLORS[setup.colorIndex] || SETUP_COLORS[0];
+  const textCol = needsDarkText(col.hex) ? '#000' : '#fff';
+
+  // Remove any existing overlay
+  document.getElementById('stripTagOverlay')?.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'stripTagOverlay';
+  overlay.className = 'strip-tag-overlay';
+  overlay.innerHTML = `
+    <div class="strip-tag-overlay-box">
+      <p class="strip-tag-overlay-title">Untagging this image will remove it from all <span class="setup-tag" style="background:${col.hex};color:${textCol};position:static;display:inline-flex;vertical-align:middle;pointer-events:none;margin:4px 2px;font-size:16px;padding:4px 14px;min-height:28px;">${setup.name}</span> SETUP marked frames.</p>
+      <p class="strip-tag-overlay-desc">The original image stays in its source frame.</p>
+      <label class="strip-tag-overlay-dismiss"><input type="checkbox" id="stripUntagDismissCheck" /> Don't show this again</label>
+      <div class="strip-tag-overlay-btns">
+        <button class="strip-tag-overlay-ok" id="stripUntagOk">OK</button>
+        <button class="strip-tag-overlay-cancel" id="stripUntagCancel">CANCEL</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  overlay.querySelector('#stripUntagOk')!.addEventListener('click', () => {
+    const dismiss = (document.getElementById('stripUntagDismissCheck') as HTMLInputElement).checked;
+    if (dismiss) {
+      useStore.setState({ stripUntagInfoDismissed: true });
+    }
+    overlay.remove();
+    executeUntag(fid, strip, ver);
+  });
+
+  overlay.querySelector('#stripUntagCancel')!.addEventListener('click', () => {
     overlay.remove();
   });
 }
