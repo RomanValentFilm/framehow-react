@@ -2385,6 +2385,13 @@ export async function bootstrapAccountSystem(): Promise<void> {
       clearDirtyState(); // IDB restore is not a user change
       (window as any).__fh_renderAll?.();
       autoPhoneMainView();
+
+      // Kick off a cloud pull now that projectId is set.
+      // The focus/visibility events fired before bootstrap set the projectId,
+      // so the initial pull attempt bailed. This ensures we fetch cloud changes.
+      if (snap.projectId && isLoggedIn()) {
+        void tryPullFromCloud();
+      }
     }
   } catch (e) {
     console.warn('[accountFlow] IDB restore failed', e);
