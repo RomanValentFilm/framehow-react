@@ -230,8 +230,33 @@ async function runAutosave(): Promise<void> {
 let _storeVersion = 0;
 let lastSyncVersion = -1;
 
-/** Bump the change counter. Called by the Zustand subscriber in startAutosave. */
-export function bumpStoreVersion(): void { _storeVersion++; }
+// ---------------------------------------------------------------------------
+// Version-bump suppression: during a cloud pull (and for a grace period after),
+// suppress _storeVersion bumps so that setState calls from applying cloud data,
+// rendering, autoPhoneMainView, showSwipeHint, React effects, etc. don't trick
+// the push interval into thinking there are "local changes" to push back.
+// This prevents the ping-pong sync loop between devices.
+// ---------------------------------------------------------------------------
+let _suppressVersionBump = false;
+let _suppressTimer: number | null = null;
+
+/** Suppress version bumps for the given duration (ms). Called before applying
+ *  cloud data so system-generated setState calls don't trigger a push. */
+export function suppressVersionBumps(durationMs: number): void {
+  _suppressVersionBump = true;
+  if (_suppressTimer !== null) clearTimeout(_suppressTimer);
+  _suppressTimer = window.setTimeout(() => {
+    _suppressVersionBump = false;
+    _suppressTimer = null;
+  }, durationMs);
+}
+
+/** Bump the change counter. Called by the Zustand subscriber in startAutosave.
+ *  Skipped when suppressed (during/after a cloud pull). */
+export function bumpStoreVersion(): void {
+  if (_suppressVersionBump) return;
+  _storeVersion++;
+}
 
 /**
  * Call after applying cloud data to the store (pull-on-focus, load project)

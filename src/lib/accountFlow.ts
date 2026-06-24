@@ -38,6 +38,7 @@ import {
   setProjectSwitchInFlight,
   flushSyncNow,
   updateSyncHash,
+  suppressVersionBumps,
 } from './currentProject';
 import { applySnapshotToStore, loadSnapshot, snapshotFromStore } from './persistence';
 import { showConfirm, showConflictDialog, showToast } from './modals';
@@ -659,6 +660,8 @@ async function loadCloudProject(p: CloudProject): Promise<void> {
     const tree = await api.get<CloudProjectTree>(`/projects/${encodeURIComponent(p.id)}/sync`, getToken());
     if (progressBar) progressBar.style.width = '50%';
     if (progressLabel) progressLabel.textContent = 'Applying…';
+    // Suppress version bumps during load so system setState calls don't trigger a push
+    suppressVersionBumps(5000);
     await applyCloudTreeToStore(tree);
     if (progressBar) progressBar.style.width = '85%';
     updateLastKnownTimestamp(tree.project.updated_at);
@@ -1052,6 +1055,7 @@ interface CloudProjectTree {
   versions: Array<{ id: string; frame_id: string; label: string | null; type: string; hidden: number; starred: number; updated_at: number }>;
   images: Array<{ id: string; version_id: string; r2_key: string; width: number | null; height: number | null; size_bytes: number | null; content_type: string | null; updated_at: number }>;
   drawings: Array<{ id: string; version_id: string; drawing_data: string; updated_at: number }>;
+  deletions?: Array<{ id: string; entity_type: string; entity_id: string; deleted_at: number; device_id: string | null }>;
 }
 
 function uuid(): string {
@@ -1065,7 +1069,7 @@ function countCurrentImages(): number {
   for (const f of s.frames) {
     if (f.src) count++;
   }
-  for (const stripId of ['ver', 'floor', 'refs'] as const) {
+  for (const stripId of Object.keys(s.stripVersions)) {
     const map = s.stripVersions[stripId];
     if (!map) continue;
     for (const fid of Object.keys(map)) {
@@ -1312,6 +1316,13 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
       versions,
       images,
       drawings,
+      deletions: _pendingTombstones.map((t) => ({
+        id: t.id,
+        entity_type: t.entity_type,
+        entity_id: t.entity_id,
+        deleted_at: t.deleted_at,
+        device_id: t.device_id,
+      })),
     },
     getToken(),
   );
@@ -1320,6 +1331,8 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   lastKnownUpdatedAt = now;
   // Record the image count after a successful push so the next guard comparison is accurate.
   _lastKnownImageCount = countCurrentImages();
+  // Clear pending tombstones after successful push
+  _pendingTombstones = [];
 
   // ---------------------------------------------------------------------------
   // Persist server IDs + r2Keys back to the Zustand store so the next push
@@ -1376,6 +1389,29 @@ async function applyCloudTreeToStore(tree: CloudProjectTree): Promise<void> {
   let nextId = 1;
   const newFrames: Frame[] = [];
 
+  // ---------------------------------------------------------------------------
+  // DIFF-AND-PATCH: Build lookups from current local state so we can carry
+  // forward images that haven't changed (same r2Key). This avoids wiping
+  // images to null and re-fetching them, eliminating the dangerous empty window.
+  // ---------------------------------------------------------------------------
+  const prev = useStore.getState();
+  const existingFrameByServerId = new Map<string, Frame>();
+  for (const f of prev.frames) {
+    if (f.serverFrameId) existingFrameByServerId.set(f.serverFrameId, f);
+  }
+  const existingVersionByServerId = new Map<string, Version>();
+  for (const stripId of Object.keys(prev.stripVersions)) {
+    const map = prev.stripVersions[stripId];
+    if (!map) continue;
+    for (const fid of Object.keys(map)) {
+      const vers = map[+fid];
+      if (!vers) continue;
+      for (const v of vers) {
+        if (v.serverVersionId) existingVersionByServerId.set(v.serverVersionId, v);
+      }
+    }
+  }
+
   // Per-strip version/tab maps
   const verVersions: Record<number, Version[]> = {};
   const floorVersions: Record<number, Version[]> = {};
@@ -1402,11 +1438,23 @@ async function applyCloudTreeToStore(tree: CloudProjectTree): Promise<void> {
   const imageByVersion = new Map<string, string>();
   for (const img of tree.images) imageByVersion.set(img.version_id, img.r2_key);
 
+  // ---------------------------------------------------------------------------
+  // TOMBSTONES: Build a set of entity IDs that were explicitly deleted.
+  // Combines server-side tombstones (from other devices) and local pending
+  // tombstones (deletions on this device not yet pushed). Any frame or version
+  // whose server ID is in this set gets filtered out during structure build.
+  // ---------------------------------------------------------------------------
+  const tombstonedIds = new Set<string>();
+  if (tree.deletions) {
+    for (const d of tree.deletions) tombstonedIds.add(d.entity_id);
+  }
+  for (const t of _pendingTombstones) tombstonedIds.add(t.entity_id);
+
   // Track which local frame/version needs an image fetched from R2.
   // We'll apply structure first, then fill images in asynchronously.
   const mainImageTasks: Array<{ localId: number; r2Key: string }> = [];
   // strip → localId → versionIdx → r2Key
-  type VersionImageTask = { strip: 'ver' | 'floor' | 'refs'; localId: number; versionIdx: number; r2Key: string };
+  type VersionImageTask = { strip: string; localId: number; versionIdx: number; r2Key: string };
   const versionImageTasks: VersionImageTask[] = [];
 
   // Map server frame UUID → local numeric id (for group remapping on download)
@@ -1417,6 +1465,9 @@ async function applyCloudTreeToStore(tree: CloudProjectTree): Promise<void> {
   for (const strip of stripsSorted) {
     const stripFrames = (framesByStrip.get(strip.id) ?? []).sort((a, b) => a.sort_order - b.sort_order);
     for (const sf of stripFrames) {
+      // TOMBSTONE: skip frames that were explicitly deleted
+      if (tombstonedIds.has(sf.id)) continue;
+
       const localId = nextId++;
       serverToLocalFrame.set(sf.id, localId);
       const allVersions = (versionsByFrame.get(sf.id) ?? []).sort((a, b) => a.updated_at - b.updated_at);
@@ -1428,7 +1479,10 @@ async function applyCloudTreeToStore(tree: CloudProjectTree): Promise<void> {
 
       // Check if main version has an image in R2
       const mainR2Key = mainV ? imageByVersion.get(mainV.id) : undefined;
-      if (mainR2Key) mainImageTasks.push({ localId, r2Key: mainR2Key });
+      // DIFF: check if we already have this exact image locally
+      const existingFrame = existingFrameByServerId.get(sf.id);
+      const mainImageUnchanged = mainR2Key && existingFrame?.r2Key === mainR2Key && existingFrame.src;
+      if (mainR2Key && !mainImageUnchanged) mainImageTasks.push({ localId, r2Key: mainR2Key });
 
       // Parse strip_labels: prefer strip_labels JSON, fall back to version_label
       let stripLabels: Record<string, string> | undefined;
@@ -1441,7 +1495,8 @@ async function applyCloudTreeToStore(tree: CloudProjectTree): Promise<void> {
 
       newFrames.push({
         id: localId,
-        src: '',  // filled async below
+        // DIFF: carry forward existing image if r2Key matches, otherwise empty (fetched async)
+        src: mainImageUnchanged ? existingFrame!.src : '',
         label: sf.label ?? '',
         stripLabels,
         hidden: !!sf.hidden,
@@ -1469,10 +1524,15 @@ async function applyCloudTreeToStore(tree: CloudProjectTree): Promise<void> {
       }
 
       // Helper: map server versions to local Version[] for a specific strip
-      const mapVersions = (svList: typeof sideVs, stripName: 'ver' | 'floor' | 'refs') => {
-        return svList.map((sv, j) => {
+      const mapVersions = (svList: typeof sideVs, stripName: string) => {
+        // TOMBSTONE: filter out versions that were explicitly deleted
+        const filtered = svList.filter((sv) => !tombstonedIds.has(sv.id));
+        return filtered.map((sv, j) => {
           const r2Key = imageByVersion.get(sv.id);
-          if (r2Key) versionImageTasks.push({ strip: stripName, localId, versionIdx: j, r2Key });
+          // DIFF: check if we already have this exact image locally
+          const existingVer = existingVersionByServerId.get(sv.id);
+          const imageUnchanged = r2Key && existingVer?.r2Key === r2Key && existingVer.bgImage;
+          if (r2Key && !imageUnchanged) versionImageTasks.push({ strip: stripName, localId, versionIdx: j, r2Key });
           // Strip the prefix from the type to get the raw type
           let rawType = sv.type;
           const colonIdx = rawType.indexOf(':');
@@ -1482,7 +1542,8 @@ async function applyCloudTreeToStore(tree: CloudProjectTree): Promise<void> {
             label: sv.label ?? '',
             type: (rawType === 'drawing' || rawType === 'upload' || rawType === 'empty') ? rawType as 'drawing' | 'upload' | 'empty' : 'empty' as const,
             strokes: parseStrokes(drawingByVersion.get(sv.id)),
-            bgImage: null as string | null,  // filled async below
+            // DIFF: carry forward existing image if r2Key matches
+            bgImage: imageUnchanged ? existingVer!.bgImage : null as string | null,
             hidden: !!sv.hidden,
             starred: !!sv.starred,
             // Persist server ID + r2Key for diff-based sync
@@ -1679,18 +1740,24 @@ async function applyCloudTreeToStore(tree: CloudProjectTree): Promise<void> {
       fetchImageFromR2(task.r2Key, token)
         .then((dataUrl) => {
           const s = useStore.getState();
-          // Pick the right strip map based on the task's strip
-          const stripKey = task.strip === 'ver' ? 'versions'
-            : task.strip === 'floor' ? 'floorVersions'
-            : 'refsVersions';
-          const versMap = s[stripKey] as Record<number, Version[]>;
+          // Use the generic stripVersions map — works for any strip, present or future
+          const versMap = s.stripVersions[task.strip];
+          if (!versMap) return;
           const vers = versMap[task.localId];
           if (!vers || !vers[task.versionIdx]) return;
           const updatedVers = [...vers];
           updatedVers[task.versionIdx] = { ...updatedVers[task.versionIdx], bgImage: dataUrl };
+          // Legacy alias keys for the three built-in strips (they point to the same
+          // objects at init, but setState merges shallowly so we update both)
+          const legacyKey = task.strip === 'ver' ? 'versions'
+            : task.strip === 'floor' ? 'floorVersions'
+            : task.strip === 'refs' ? 'refsVersions'
+            : null;
+          const legacyUpdate = legacyKey
+            ? { [legacyKey]: { ...(s[legacyKey] as Record<number, Version[]>), [task.localId]: updatedVers } }
+            : {};
           useStore.setState((prev) => ({
-            [stripKey]: { ...(prev[stripKey] as Record<number, Version[]>), [task.localId]: updatedVers },
-            // Also update the generic map
+            ...legacyUpdate,
             stripVersions: {
               ...prev.stripVersions,
               [task.strip]: { ...prev.stripVersions[task.strip], [task.localId]: updatedVers },
@@ -1894,6 +1961,36 @@ let _lastKnownImageCount = 0;
 // _pullIncomplete flag lives in currentProject.ts (avoids circular import).
 // Set via setPullIncomplete() after a pull — blocks IDB autosave + sync push.
 
+// ---------------------------------------------------------------------------
+// Tombstones — track explicit user deletions so other devices remove them too.
+// Pending tombstones are accumulated locally and flushed in the next push.
+// ---------------------------------------------------------------------------
+interface Tombstone {
+  id: string;
+  entity_type: 'frame' | 'version';
+  entity_id: string;   // serverFrameId or serverVersionId
+  deleted_at: number;
+  device_id: string;
+}
+
+let _pendingTombstones: Tombstone[] = [];
+
+/**
+ * Record a tombstone for an explicit user deletion.
+ * Only records if the entity has a server ID (i.e. it was synced to cloud).
+ * Called from frame/version delete handlers in actions.ts and overview.ts.
+ */
+export function recordTombstone(entityType: 'frame' | 'version', serverEntityId: string | undefined): void {
+  if (!serverEntityId) return; // Never synced — no tombstone needed
+  _pendingTombstones.push({
+    id: crypto.randomUUID(),
+    entity_type: entityType,
+    entity_id: serverEntityId,
+    deleted_at: Date.now(),
+    device_id: getDeviceId(),
+  });
+}
+
 
 function startPullOnFocus(): void {
   if (pullOnFocusActive) return;
@@ -2095,6 +2192,9 @@ async function tryPullFromCloud(): Promise<void> {
           }
 
           // Apply cloud tree to build cloud frames in local format
+          // Suppress version bumps so system-generated setState calls don't
+          // trick the push interval into thinking there are local changes.
+          suppressVersionBumps(5000);
           await applyCloudTreeToStore(tree);
           if (progressBar) progressBar.style.width = '70%';
           const cloudState = useStore.getState();
@@ -2187,6 +2287,10 @@ async function tryPullFromCloud(): Promise<void> {
       if (progressBar) progressBar.style.width = '40%';
       if (progressLabel) progressLabel.textContent = 'Updating…';
       lastKnownUpdatedAt = remoteUpdatedAt;
+      // Suppress version bumps so system-generated setState calls from applying
+      // cloud data, image fetching, renderAll, autoPhoneMainView, showSwipeHint,
+      // and React effects don't trick the push interval into re-pushing.
+      suppressVersionBumps(5000);
       await applyCloudTreeToStore(tree);
       if (progressBar) progressBar.style.width = '90%';
       markSaved(cp.projectId!);

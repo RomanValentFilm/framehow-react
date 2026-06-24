@@ -35,6 +35,7 @@ import { showConfirm, showDeleteChoice, showGroupDeleteChoice, showToast, showVe
 import { fhTrack } from './tracking';
 import { drawFit } from './drawing';
 import { openCamera, getCameraTarget, clearCameraTarget, setOnCapturedImage } from './camera';
+import { recordTombstone } from './accountFlow';
 
 export function handleMainAction(action: string, fid: number, div: HTMLElement): void {
   const s = state();
@@ -344,6 +345,14 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
           updateFrameBadge();
           renderAll();
         } else {
+          // Record tombstones BEFORE removing from state
+          recordTombstone('frame', f.serverFrameId);
+          // Also tombstone all synced versions across all strips
+          for (const stripId of Object.keys(s.stripVersions)) {
+            const vers = s.stripVersions[stripId]?.[fid];
+            if (!vers) continue;
+            for (const v of vers) recordTombstone('version', v.serverVersionId);
+          }
           s.frames.splice(idx, 1);
           delete s.versions[fid];
           delete s.activeTab[fid];
@@ -510,6 +519,8 @@ export function handleAction(action: string, fid: number, div: HTMLElement, from
           if (row) { s.currentViewMode === 'grid4' ? renderGrid4Row(row, fid) : renderOverviewRow(row, fid); }
         }
       } else {
+        // Record tombstone BEFORE removing from state
+        recordTombstone('version', ver.serverVersionId);
         snapshotFrame(fid, strip);
         const allVers = getStripVersions(fid, strip);
         const curIdx = allVers.indexOf(ver);

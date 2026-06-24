@@ -195,6 +195,7 @@ export function updateUndoButtons(fid: number): void {
 
 export function setupMainDrawing(cvs: HTMLCanvasElement, fid: number): void {
   let isDrawing = false,
+    isErasing = false,
     cur: Stroke | null = null;
   const f = state().frames.find((fr) => fr.id === fid);
   function getPos(e: MouseEvent | TouchEvent): { x: number; y: number } {
@@ -218,6 +219,7 @@ export function setupMainDrawing(cvs: HTMLCanvasElement, fid: number): void {
   function start(e: MouseEvent | TouchEvent): void {
     const s = state();
     if (s.drawEraser[fid]) {
+      isErasing = true;
       eraseAtPoint(getPos(e));
       return;
     }
@@ -226,6 +228,12 @@ export function setupMainDrawing(cvs: HTMLCanvasElement, fid: number): void {
     cur = { color: s.drawColor[fid] || COLORS[0], width: s.drawWidth[fid] || 6, points: [getPos(e)] };
   }
   function move(e: MouseEvent | TouchEvent): void {
+    // Eraser drag: erase any stroke the pointer passes over
+    if (isErasing) {
+      e.preventDefault();
+      eraseAtPoint(getPos(e));
+      return;
+    }
     if (!isDrawing || !cur) return;
     e.preventDefault();
     const p = getPos(e);
@@ -248,11 +256,12 @@ export function setupMainDrawing(cvs: HTMLCanvasElement, fid: number): void {
       f.strokes.push(cur);
       updateUndoButtons(fid);
     }
-    if (isDrawing) {
+    if (isDrawing || isErasing) {
       useStore.setState({ drawSuppressClick: true });
     }
     useStore.setState({ drawingInProgress: false });
     isDrawing = false;
+    isErasing = false;
     cur = null;
   }
   cvs.addEventListener('mousedown', start);
@@ -266,6 +275,7 @@ export function setupMainDrawing(cvs: HTMLCanvasElement, fid: number): void {
 
 export function setupDrawing(cvs: HTMLCanvasElement, fid: number, ai: number, strip: StripType = 'ver'): void {
   let isDrawing = false,
+    isErasing = false,
     cur: Stroke | null = null;
   const ver = getStripVersions(fid, strip)[ai];
   function getPos(e: MouseEvent | TouchEvent): { x: number; y: number } {
@@ -289,6 +299,7 @@ export function setupDrawing(cvs: HTMLCanvasElement, fid: number, ai: number, st
   function start(e: MouseEvent | TouchEvent): void {
     const s = state();
     if (s.drawEraser[fid]) {
+      isErasing = true;
       eraseAtPoint(getPos(e));
       return;
     }
@@ -297,6 +308,12 @@ export function setupDrawing(cvs: HTMLCanvasElement, fid: number, ai: number, st
     cur = { color: s.drawColor[fid] || COLORS[0], width: s.drawWidth[fid] || 6, points: [getPos(e)] };
   }
   function move(e: MouseEvent | TouchEvent): void {
+    // Eraser drag: erase any stroke the pointer passes over
+    if (isErasing) {
+      e.preventDefault();
+      eraseAtPoint(getPos(e));
+      return;
+    }
     if (!isDrawing || !cur) return;
     e.preventDefault();
     const p = getPos(e);
@@ -319,11 +336,12 @@ export function setupDrawing(cvs: HTMLCanvasElement, fid: number, ai: number, st
       ver.strokes.push(cur);
       updateUndoButtons(fid);
     }
-    if (isDrawing) {
+    if (isDrawing || isErasing) {
       useStore.setState({ drawSuppressClick: true });
     }
     useStore.setState({ drawingInProgress: false });
     isDrawing = false;
+    isErasing = false;
     cur = null;
   }
   cvs.addEventListener('mousedown', start);

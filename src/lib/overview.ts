@@ -28,6 +28,7 @@ import { renderVersionFrame } from './render';
 import { showLabelEdit, showVerLabelEdit, showDeleteChoice, showConfirm } from './modals';
 import { getVisibleFrames, removeFrameFromGroup } from './groups';
 import { setupTagHTML, stripTagHTML } from './setups';
+import { recordTombstone } from './accountFlow';
 
 export function renderOverview(): void {
   const overviewScroll = document.getElementById('overviewScroll')!;
@@ -1031,6 +1032,14 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
                 f.hidden = true;
               } else {
                 const s3 = state();
+                // Record tombstones BEFORE removing from state
+                recordTombstone('frame', f.serverFrameId);
+                // Also tombstone all synced versions across all strips
+                for (const stripId of Object.keys(s3.stripVersions)) {
+                  const vers = s3.stripVersions[stripId]?.[fid];
+                  if (!vers) continue;
+                  for (const v of vers) recordTombstone('version', v.serverVersionId);
+                }
                 const idx2 = s3.frames.findIndex((x: any) => x.id === fid);
                 if (idx2 >= 0) s3.frames.splice(idx2, 1);
                 delete s3.versions[fid];

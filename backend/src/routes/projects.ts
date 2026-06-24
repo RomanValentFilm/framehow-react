@@ -271,6 +271,7 @@ interface ProjectTree {
     updated_at: number;
   }>;
   drawings: Array<{ id: string; version_id: string; drawing_data: string; updated_at: number }>;
+  deletions: Array<{ id: string; entity_type: string; entity_id: string; deleted_at: number; device_id: string | null }>;
 }
 
 function placeholders(n: number): string {
@@ -280,7 +281,7 @@ function placeholders(n: number): string {
 async function loadProjectTree(db: D1Database, projectId: string): Promise<ProjectTree> {
   // Use subqueries instead of IN (?, ?, ...) to avoid D1's 100-variable limit.
   // All queries filter through project_id, so only 1 bind param each.
-  const [projectResult, stripsResult, framesResult, versionsResult, imagesResult, drawingsResult] = await db.batch([
+  const [projectResult, stripsResult, framesResult, versionsResult, imagesResult, drawingsResult, deletionsResult] = await db.batch([
     db.prepare(
       "SELECT id, name, created_at, updated_at, last_device_id, last_device_name, metadata FROM projects WHERE id = ?",
     ).bind(projectId),
@@ -317,6 +318,12 @@ async function loadProjectTree(db: D1Database, projectId: string): Promise<Proje
            WHERE s.project_id = ?
          )`,
     ).bind(projectId),
+    // Tombstones: only return deletions from the last 30 days
+    db.prepare(
+      `SELECT id, entity_type, entity_id, deleted_at, device_id
+         FROM project_deletions
+        WHERE project_id = ? AND deleted_at > ?`,
+    ).bind(projectId, Date.now() - 30 * 24 * 60 * 60 * 1000),
   ]);
 
   const project = (projectResult.results as any[])[0] as ProjectTree["project"];
@@ -327,6 +334,7 @@ async function loadProjectTree(db: D1Database, projectId: string): Promise<Proje
     versions: versionsResult.results as ProjectTree["versions"],
     images: imagesResult.results as ProjectTree["images"],
     drawings: drawingsResult.results as ProjectTree["drawings"],
+    deletions: deletionsResult.results as ProjectTree["deletions"],
   };
 }
 
@@ -372,6 +380,7 @@ interface SyncPayload {
     updated_at: number;
   }>;
   drawings: Array<{ id: string; version_id: string; drawing_data: string; updated_at: number }>;
+  deletions: Array<{ id: string; entity_type: string; entity_id: string; deleted_at: number; device_id: string | null }>;
 }
 
 type Parsed<T> = { value: T } | { error: { code: string; message: string } };
@@ -494,6 +503,19 @@ function parseSyncPayload(body: unknown): Parsed<SyncPayload> {
     drawings.push({ id, version_id, drawing_data, updated_at });
   }
 
+  const deletions: SyncPayload["deletions"] = [];
+  for (const raw of asArray(b.deletions)) {
+    const r = raw as Record<string, unknown>;
+    const id = asStr(r.id);
+    const entity_type = asStr(r.entity_type);
+    const entity_id = asStr(r.entity_id);
+    const deleted_at = asInt(r.deleted_at);
+    const device_id = typeof r.device_id === "string" ? r.device_id.slice(0, 100) : null;
+    if (!id || !entity_type || !entity_id || deleted_at === null) return err("deletions[]");
+    if (entity_type !== "frame" && entity_type !== "version") return err("deletions[].entity_type");
+    deletions.push({ id, entity_type, entity_id, deleted_at, device_id });
+  }
+
   return {
     value: {
       project: { name: projName, updated_at: projUpdated, base_updated_at: baseUpdatedAt, device_id: deviceId, device_name: deviceName, metadata },
@@ -502,6 +524,7 @@ function parseSyncPayload(body: unknown): Parsed<SyncPayload> {
       versions,
       images,
       drawings,
+      deletions,
     },
   };
 
@@ -614,6 +637,18 @@ async function applySync(db: D1Database, projectId: string, payload: SyncPayload
            VALUES (?, ?, ?, ?)`,
         )
         .bind(d.id, d.version_id, d.drawing_data, d.updated_at),
+    );
+  }
+
+  // Tombstones: INSERT OR IGNORE — idempotent, same tombstone may arrive multiple times
+  for (const del of payload.deletions) {
+    stmts.push(
+      db
+        .prepare(
+          `INSERT OR IGNORE INTO project_deletions (id, project_id, entity_type, entity_id, deleted_at, device_id)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+        )
+        .bind(del.id, projectId, del.entity_type, del.entity_id, del.deleted_at, del.device_id),
     );
   }
 
