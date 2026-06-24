@@ -27,7 +27,7 @@ cd ~/Desktop/Framehow\ Files/framehow-react && git add -A && git commit -m "v4.6
 ### Version numbering
 - `APP_VERSION` constant in `src/store/state.ts` — displayed in toolbar next to logo
 - Format: `v4.6.0XX` where XX increments with each deploy
-- Current: `v4.6.023`
+- Current: `v4.6.028`
 - Production: `v4.6.022`
 
 ### Clean rebuild (if changes don't appear)
@@ -104,6 +104,27 @@ Replace `vX.Y.ZZZ` with the actual version number. User must run on Mac (sandbox
 - View-bar height: 28px on iPad (13px font), 26px on iPhone (11px font)
 
 ## Versions
+
+### v4.6.028 — 2026-06-24 (dev)
+**Prevent image loss during cross-device sync**
+
+Changes from v4.6.027:
+- `src/lib/accountFlow.ts` — Added `countCurrentImages()` helper counting all non-null images across frames and strip versions; `syncCurrentToServer()` refuses to push if `_pullIncomplete` is true or if image count dropped to 0 from >0; `_lastKnownImageCount` updated after successful push and pull; `applyCloudTreeToStore()` tracks expected vs fetched image count — if any R2 fetch fails, sets `_pullIncomplete=true` and schedules auto-retry in 5s; retry also wired for merge path in `tryPullFromCloud()`
+- `src/lib/currentProject.ts` — Added `_pullIncomplete` flag with `setPullIncomplete()`/`isPullIncomplete()` exports; `runAutosave()` blocks IDB snapshot when `_pullIncomplete` is true; `isLoadInFlight()` includes `_pullIncomplete`
+- `src/store/state.ts` — APP_VERSION bumped to v4.6.028
+
+Three-layer safeguard:
+1. `_pullInFlight` — blocks all saves/syncs during entire pull+image-load window
+2. `_pullIncomplete` — blocks saves/syncs when R2 fetches partially fail, auto-retries
+3. Image count guard — refuses push if all images vanished unexpectedly
+
+### v4.6.027 — 2026-06-23 (dev)
+**Fix iPhone view-bar disappearing on scroll**
+
+Changes from v4.6.022:
+- `src/styles/globals.css` — Removed `overflow-x:hidden` and `overflow-x:clip` from `body` (kept only on `html`) in touch device and iPhone media queries to prevent WebKit formatting context issues with `position:sticky`; added `-webkit-sticky` fallback and explicit `background:var(--surface)` to iPhone view-bar rule
+- `src/lib/currentProject.ts` — `runAutosave()` blocks IDB snapshot while `_pullInFlight || _projectSwitchInFlight` is true (prevents saving imageless state during cloud pull)
+- `src/store/state.ts` — APP_VERSION bumped to v4.6.027
 
 ### v4.6.022 — 2026-06-22 (dev + production)
 **Loading bar during pull-on-focus sync**
@@ -287,6 +308,77 @@ Changes:
 
 ### v3.4 — 2026-05-20
 Previous stable version (GRID4 view mode, iOS fullscreen overlay fix, etc.)
+
+## NEXT: Sync Refactor — "Never Empty" Architecture (v4.6.029+)
+
+### Problem
+Current `applyCloudTreeToStore` wipes ALL images (sets bgImage=null, src=''), rebuilds frames from scratch, then fetches images from R2 one by one. This creates a window where the store has frames with no images. If anything goes wrong during that window (Safari purges tab, network fails, autosave fires), the imageless state gets persisted and can overwrite good cloud data.
+
+v4.6.028 added three layers of guards (pullInFlight, pullIncomplete, image count), but they're band-aids. The root fix is: **never create the empty state in the first place.**
+
+### Core Principle
+**An image can only disappear through an explicit user action (delete), never through a system process (sync, pull, load).**
+
+### Design: Diff-and-Patch with Tombstones
+
+#### Step 1: Add `r2Key` tracking to local state
+- Add `r2Key?: string` to `Frame` interface (for main frame images)
+- Add `r2Key?: string` to `Version` interface (for strip version images)
+- When an image is fetched from R2, store the R2 key alongside the base64 data URL
+- When a user uploads a new local image, `r2Key` is cleared (image is local, not from R2 yet)
+- After a successful push, update `r2Key` with the key returned from the upload
+
+#### Step 2: Diff-based pull (replace `applyCloudTreeToStore`)
+Instead of "clear everything → rebuild → fetch," do:
+
+For each frame in cloud data:
+1. **Same image** (cloud r2Key === local r2Key) → keep local image, don't fetch. Update labels/order/metadata only
+2. **Different image** (cloud r2Key !== local r2Key) → fetch new image from R2, swap ONLY after successful fetch. If fetch fails, keep old image
+3. **New frame** (exists in cloud, not locally) → fetch image, add frame only once image is ready
+4. **Frame missing from cloud** → do NOT remove unless a tombstone exists (see step 3)
+
+The image field is NEVER set to null or empty during this process.
+
+#### Step 3: Tombstone system for explicit deletions
+When user explicitly deletes a frame or clears an image:
+1. Client records a deletion event: `{ frame_id, deleted_at, device_id }`
+2. Deletion is synced to cloud alongside the push payload
+3. On pull: only remove local frames/images if a matching tombstone exists
+
+**D1 schema addition:**
+```sql
+CREATE TABLE IF NOT EXISTS project_deletions (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  frame_id TEXT NOT NULL,        -- server frame UUID
+  version_id TEXT,               -- null = main frame deleted, non-null = specific version
+  deleted_at INTEGER NOT NULL,
+  device_id TEXT NOT NULL,
+  FOREIGN KEY (project_id) REFERENCES projects(id)
+);
+CREATE INDEX idx_deletions_project ON project_deletions(project_id);
+```
+
+**Sync API changes:**
+- Push payload gets a new `deletions` array
+- Pull response includes `deletions` array (filtered to deletions since last pull)
+- Tombstones can be garbage-collected after 30 days (all devices will have synced by then)
+
+#### Step 4: Remove band-aid guards
+Once diff-and-patch + tombstones are working:
+- `_pullIncomplete` flag becomes unnecessary (images are never cleared)
+- `_lastKnownImageCount` guard becomes unnecessary
+- `_pullInFlight` blocking IDB autosave becomes unnecessary (autosave is always safe because images are never null)
+- `_pullInFlight` still needed to prevent push during pull (structural consistency)
+
+### Implementation Order
+1. Add `r2Key` to Frame + Version interfaces, persist in IDB, include in sync payload
+2. Refactor `applyCloudTreeToStore` → diff-and-patch (compare r2Keys, keep unchanged images)
+3. Add `project_deletions` table to D1 (migration)
+4. Add tombstone recording on user delete actions
+5. Add tombstone sync (push deletions, pull deletions)
+6. Apply tombstones during diff-based pull
+7. Remove old guards, test cross-device scenarios
 
 ## Backend
 

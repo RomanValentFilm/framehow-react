@@ -1112,15 +1112,26 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   const frames: Array<{ id: string; strip_id: string; label: string | null; sort_order: number; crop_w: number | null; crop_h: number | null; text_content: string | null; table_data: string | null; version_label: string | null; strip_labels: string | null; hidden: boolean; updated_at: number }> = [];
   const versions: Array<{ id: string; frame_id: string; label: string | null; type: string; hidden: boolean; starred: boolean; updated_at: number }> = [];
   const drawings: Array<{ id: string; version_id: string; drawing_data: string; updated_at: number }> = [];
-  const imageUploads: Array<{ versionId: string; src: string }> = [];
+  const imageUploads: Array<{
+    versionId: string; src: string;
+    // Tracking fields so we can write r2Key back to the store after upload
+    _localFrameId?: number; _isMain?: boolean;
+    _stripType?: string; _versionIdx?: number;
+  }> = [];
 
   // Map local frame id → server frame UUID (needed for group remapping)
   const localToServerFrame = new Map<number, string>();
   // Map version UUID → setupTagged value (stored in metadata to avoid D1 schema change)
   const versionTags: Record<string, 'origin' | 'copy'> = {};
 
+  // Track which local frames/versions got which server UUIDs so we can
+  // persist them back to the store after a successful push.
+  const frameIdUpdates: Array<{ localId: number; serverFrameId: string; serverMainVersionId: string }> = [];
+  const versionIdUpdates: Array<{ stripType: string; localFrameId: number; versionIdx: number; serverVersionId: string }> = [];
+
   s.frames.forEach((f, i) => {
-    const frameId = uuid();
+    // Reuse existing server UUID if available; generate new only for fresh frames.
+    const frameId = f.serverFrameId || uuid();
     localToServerFrame.set(f.id, frameId);
 
     frames.push({
@@ -1135,20 +1146,23 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
     });
 
     // Frame-level strokes → "main" version
-    const mainVersionId = uuid();
+    const mainVersionId = f.serverMainVersionId || uuid();
+    frameIdUpdates.push({ localId: f.id, serverFrameId: frameId, serverMainVersionId: mainVersionId });
+
     versions.push({ id: mainVersionId, frame_id: frameId, label: 'main', type: 'main', hidden: false, starred: false, updated_at: now });
     if (f.strokes && f.strokes.length > 0) {
       drawings.push({ id: uuid(), version_id: mainVersionId, drawing_data: JSON.stringify(f.strokes), updated_at: now });
     }
     if (f.src && isLocalImage(f.src)) {
-      imageUploads.push({ versionId: mainVersionId, src: f.src });
+      imageUploads.push({ versionId: mainVersionId, src: f.src, _localFrameId: f.id, _isMain: true });
     }
 
     // Helper: push versions for a strip type with optional type prefix
-    const pushStripVersions = (stripVersions: Version[] | undefined, prefix: string) => {
+    const pushStripVersions = (stripVersions: Version[] | undefined, prefix: string, stripType: string) => {
       if (!stripVersions) return;
-      for (const lv of stripVersions) {
-        const vid = uuid();
+      stripVersions.forEach((lv, vi) => {
+        const vid = lv.serverVersionId || uuid();
+        versionIdUpdates.push({ stripType, localFrameId: f.id, versionIdx: vi, serverVersionId: vid });
         const fullType = prefix ? `${prefix}:${lv.type}` : lv.type;
         versions.push({
           id: vid, frame_id: frameId, label: lv.label || null, type: fullType,
@@ -1158,20 +1172,20 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
           drawings.push({ id: uuid(), version_id: vid, drawing_data: JSON.stringify(lv.strokes), updated_at: now });
         }
         if (lv.bgImage && isLocalImage(lv.bgImage)) {
-          imageUploads.push({ versionId: vid, src: lv.bgImage });
+          imageUploads.push({ versionId: vid, src: lv.bgImage, _localFrameId: f.id, _stripType: stripType, _versionIdx: vi });
         }
         // Track strip-tag state for metadata (avoids D1 schema change)
         if (lv.setupTagged) {
           versionTags[vid] = lv.setupTagged;
         }
-      }
+      });
     };
 
     // Ver strip versions (no prefix for backward compat with existing synced data)
-    pushStripVersions(s.stripVersions.ver?.[f.id], '');
+    pushStripVersions(s.stripVersions.ver?.[f.id], '', 'ver');
     // Floor and refs strip versions (prefixed types)
-    pushStripVersions(s.stripVersions.floor?.[f.id], 'floor');
-    pushStripVersions(s.stripVersions.refs?.[f.id], 'refs');
+    pushStripVersions(s.stripVersions.floor?.[f.id], 'floor', 'floor');
+    pushStripVersions(s.stripVersions.refs?.[f.id], 'refs', 'refs');
   });
 
   // Build metadata JSON: stripDefs, groups (with remapped frame IDs), portraitMode, pdfAdjustRects
@@ -1252,12 +1266,15 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
     updated_at: number;
   }> = [];
 
+  // Map versionId → r2_key for writing back to the store after push
+  const uploadedR2Keys = new Map<string, { r2Key: string; task: typeof imageUploads[0] }>();
+
   if (imageUploads.length > 0) {
     const results = await Promise.all(
       imageUploads.map(async (task) => {
         try {
           const r = await uploadImageToR2(task.src, token);
-          return { versionId: task.versionId, ...r };
+          return { task, versionId: task.versionId, ...r };
         } catch (e) {
           console.warn('[sync] image upload failed for version', task.versionId, e);
           return null; // Skip failed uploads — structure still syncs
@@ -1276,6 +1293,7 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
         content_type: r.content_type,
         updated_at: now,
       });
+      uploadedR2Keys.set(r.versionId, { r2Key: r.r2_key, task: r.task });
     }
   }
   const res = await api.post<CloudProjectTree & { conflict?: boolean }>(
@@ -1302,6 +1320,54 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   lastKnownUpdatedAt = now;
   // Record the image count after a successful push so the next guard comparison is accurate.
   _lastKnownImageCount = countCurrentImages();
+
+  // ---------------------------------------------------------------------------
+  // Persist server IDs + r2Keys back to the Zustand store so the next push
+  // reuses them and the diff-based pull can match frames by UUID.
+  // ---------------------------------------------------------------------------
+  useStore.setState((prev) => {
+    const updatedFrames = prev.frames.map((f) => {
+      const upd = frameIdUpdates.find((u) => u.localId === f.id);
+      if (!upd) return f;
+      const patched = { ...f, serverFrameId: upd.serverFrameId, serverMainVersionId: upd.serverMainVersionId };
+      // Check if this frame's main image was uploaded — store r2Key
+      const mainUpload = uploadedR2Keys.get(upd.serverMainVersionId);
+      if (mainUpload?.task._isMain) patched.r2Key = mainUpload.r2Key;
+      return patched;
+    });
+
+    const updatedStripVersions = { ...prev.stripVersions };
+    for (const vu of versionIdUpdates) {
+      const stripMap = updatedStripVersions[vu.stripType];
+      if (!stripMap) continue;
+      const vers = stripMap[vu.localFrameId];
+      if (!vers || !vers[vu.versionIdx]) continue;
+      const v = vers[vu.versionIdx];
+      if (v.serverVersionId === vu.serverVersionId) {
+        // Check r2Key only
+        const r2Info = uploadedR2Keys.get(vu.serverVersionId);
+        if (r2Info) {
+          const updatedVers = [...vers];
+          updatedVers[vu.versionIdx] = { ...v, r2Key: r2Info.r2Key };
+          updatedStripVersions[vu.stripType] = { ...stripMap, [vu.localFrameId]: updatedVers };
+        }
+      } else {
+        const updatedVers = [...vers];
+        const r2Info = uploadedR2Keys.get(vu.serverVersionId);
+        updatedVers[vu.versionIdx] = { ...v, serverVersionId: vu.serverVersionId, ...(r2Info ? { r2Key: r2Info.r2Key } : {}) };
+        updatedStripVersions[vu.stripType] = { ...stripMap, [vu.localFrameId]: updatedVers };
+      }
+    }
+
+    return {
+      frames: updatedFrames,
+      stripVersions: updatedStripVersions,
+      // Legacy aliases point to same objects
+      versions: updatedStripVersions.ver || prev.versions,
+      floorVersions: updatedStripVersions.floor || prev.floorVersions,
+      refsVersions: updatedStripVersions.refs || prev.refsVersions,
+    };
+  });
 }
 
 async function applyCloudTreeToStore(tree: CloudProjectTree): Promise<void> {
@@ -1385,6 +1451,10 @@ async function applyCloudTreeToStore(tree: CloudProjectTree): Promise<void> {
         drawMode: mainStrokes.length > 0,
         textContent: sf.text_content ?? '',
         tableData: sf.table_data ? parseTableData(sf.table_data) : null,
+        // Persist server IDs + r2Key so the diff-based pull can match frames
+        serverFrameId: sf.id,
+        serverMainVersionId: mainV?.id,
+        r2Key: mainR2Key || undefined,
       });
 
       // Sort side versions into strips by parsing the type prefix.
@@ -1415,6 +1485,9 @@ async function applyCloudTreeToStore(tree: CloudProjectTree): Promise<void> {
             bgImage: null as string | null,  // filled async below
             hidden: !!sv.hidden,
             starred: !!sv.starred,
+            // Persist server ID + r2Key for diff-based sync
+            serverVersionId: sv.id,
+            r2Key: r2Key || undefined,
           };
           serverVidToLocalVer.set(sv.id, localVer);
           return localVer;

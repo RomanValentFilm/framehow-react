@@ -39,6 +39,12 @@ export interface Frame {
   hidden?: boolean;
   stripLabels?: Record<string, string>;
   setupId?: string | null;
+  /** Server UUID — persists across syncs so we can diff local vs cloud. */
+  serverFrameId?: string;
+  /** Server UUID for the implicit "main" version entry (holds strokes + image). */
+  serverMainVersionId?: string;
+  /** R2 object key for the main frame image. Null/undefined = local or empty. */
+  r2Key?: string;
 }
 
 /** A named colour-coded setup (lighting / time-of-day label for frames). */
@@ -50,7 +56,7 @@ export interface Setup {
 
 /** 12-colour palette for setups. */
 /** App version — bump before every deploy. */
-export const APP_VERSION = 'v4.6.028';
+export const APP_VERSION = 'v4.7.001';
 
 export const SETUP_COLORS: { name: string; hex: string }[] = [
   { name: 'DAYLIGHT',      hex: '#CFE2F6' },
@@ -79,6 +85,10 @@ export interface Version {
    *  'origin' = the source version where the user clicked TAG.
    *  'copy'   = image propagated from an origin to other same-SETUP frames. */
   setupTagged?: 'origin' | 'copy';
+  /** Server UUID — persists across syncs so we can diff local vs cloud. */
+  serverVersionId?: string;
+  /** R2 object key for this version's image. Null/undefined = local or empty. */
+  r2Key?: string;
 }
 
 export type StripType = 'main' | 'ver' | 'floor' | 'refs';
