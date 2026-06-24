@@ -71,13 +71,10 @@ export function renderAll(): void {
   const mainScroll = document.getElementById('mainScroll')!;
   const versionsScroll = document.getElementById('versionsScroll')!;
   const overviewScroll = document.getElementById('overviewScroll')!;
-  mainScroll.innerHTML = '';
-  versionsScroll.innerHTML = '';
-  overviewScroll.innerHTML = '';
   const floorScroll = document.getElementById('floorScroll')!;
   const refsScroll = document.getElementById('refsScroll')!;
-  if (floorScroll) floorScroll.innerHTML = '';
-  if (refsScroll) refsScroll.innerHTML = '';
+  // NOTE: Don't clear innerHTML here — build new content into fragments
+  // first, then swap with replaceChildren() to avoid the blank-flash.
   const s = state();
   // Toggle portrait-mode class on body for CSS sizing
   document.body.classList.toggle('portrait-mode', !!s.portraitMode);
@@ -125,21 +122,40 @@ export function renderAll(): void {
 
   const visibleFrames = getVisibleFrames();
   if (!visibleFrames.length) {
-    // Empty state — just clear the scroll areas
-    mainScroll.innerHTML = '<div class="empty-state" id="emptyStateMain"></div>';
-    versionsScroll.innerHTML = '';
+    // Empty state — swap in one shot
+    const emptyDiv = document.createElement('div');
+    emptyDiv.className = 'empty-state';
+    emptyDiv.id = 'emptyStateMain';
+    mainScroll.replaceChildren(emptyDiv);
+    versionsScroll.replaceChildren();
+    if (floorScroll) floorScroll.replaceChildren();
+    if (refsScroll) refsScroll.replaceChildren();
+    overviewScroll.replaceChildren();
     return;
   }
+  // Build all frame cards into fragments FIRST (offscreen), then swap
+  // into the DOM in one shot. Eliminates the blank-flash that happened
+  // when innerHTML='' cleared everything before rebuilding.
+  const mainFrag = document.createDocumentFragment();
+  const verFrag = document.createDocumentFragment();
+  const floorFrag = document.createDocumentFragment();
+  const refsFrag = document.createDocumentFragment();
   visibleFrames.forEach((f) => {
-    mainScroll.appendChild(buildMainFrame(f));
-    versionsScroll.appendChild(buildVersionFrame(f.id));
-    if (s.activeStrips.includes('floor') && floorScroll) {
-      floorScroll.appendChild(buildVersionFrame(f.id, 'floor'));
+    mainFrag.appendChild(buildMainFrame(f));
+    verFrag.appendChild(buildVersionFrame(f.id));
+    if (s.activeStrips.includes('floor')) {
+      floorFrag.appendChild(buildVersionFrame(f.id, 'floor'));
     }
-    if (s.activeStrips.includes('refs') && refsScroll) {
-      refsScroll.appendChild(buildVersionFrame(f.id, 'refs'));
+    if (s.activeStrips.includes('refs')) {
+      refsFrag.appendChild(buildVersionFrame(f.id, 'refs'));
     }
   });
+  // Atomic swap — old children removed and new ones inserted in one operation
+  mainScroll.replaceChildren(mainFrag);
+  versionsScroll.replaceChildren(verFrag);
+  overviewScroll.replaceChildren();
+  if (floorScroll) floorScroll.replaceChildren(floorFrag);
+  if (refsScroll) refsScroll.replaceChildren(refsFrag);
   if (s.currentViewMode === 'overview') {
     const fn = (window as any).__fh_renderOverview;
     if (fn) fn();

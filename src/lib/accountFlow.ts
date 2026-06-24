@@ -2041,7 +2041,12 @@ function startPullOnFocus(): void {
   startHeartbeatSender();
 
   const safePull = async () => {
-    await waitForDeviceLock();
+    // Start pull in background while device lock overlay is showing —
+    // the overlay covers the screen so any rendering behind it is invisible.
+    // This way data is ready the instant the lock clears.
+    const pullP = tryPullFromCloud().catch(() => {});
+    await Promise.all([waitForDeviceLock(), pullP]);
+    // One final pull after lock clears to catch last-second pushes
     if (!isDeviceLocked()) void tryPullFromCloud();
   };
 
