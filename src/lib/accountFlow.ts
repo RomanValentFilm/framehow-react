@@ -2319,14 +2319,18 @@ async function tryPullFromCloud(): Promise<void> {
           await applyCloudTreeToStore(tree);
           if (progressBar) progressBar.style.width = '90%';
         }
+        // renderAll + autoPhoneMainView call setState — keep them inside
+        // the system action so their setState calls don't mark dirty
+        // and trigger a push of stale data.
+        (window as any).__fh_renderAll?.();
+        autoPhoneMainView();
       } finally {
         endSystemAction();
       }
 
       lastKnownUpdatedAt = remoteUpdatedAt;
       markSaved(cp.projectId!);
-      (window as any).__fh_renderAll?.();
-      autoPhoneMainView();
+      clearDirtyState(); // Pull is not a user change — prevent stale push
       if (progressBar) progressBar.style.width = '100%';
       setTimeout(() => { if (progressEl) progressEl.classList.add('hidden'); }, 300);
 
@@ -2374,6 +2378,10 @@ export async function bootstrapAccountSystem(): Promise<void> {
       beginSystemAction();
       try {
         applySnapshotToStore(snap);
+        // renderAll + autoPhoneMainView call setState — keep them inside
+        // the system action so their setState calls don't mark dirty.
+        (window as any).__fh_renderAll?.();
+        autoPhoneMainView();
       } finally {
         endSystemAction();
       }
@@ -2383,8 +2391,6 @@ export async function bootstrapAccountSystem(): Promise<void> {
         lastSavedAt: snap.projectId ? snap.lastModified : null,
       });
       clearDirtyState(); // IDB restore is not a user change
-      (window as any).__fh_renderAll?.();
-      autoPhoneMainView();
 
       // Kick off a cloud pull now that projectId is set.
       // The focus/visibility events fired before bootstrap set the projectId,
