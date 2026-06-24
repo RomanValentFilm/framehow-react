@@ -23,7 +23,9 @@ import {
 import {
   clearCurrentProject,
   getCurrentProject,
-  hasLocalChanges,
+  isDirty,
+  getDirtyFrameIds,
+  clearDirtyState,
   markSaved,
   isLoadInFlight,
   isPullIncomplete,
@@ -37,12 +39,11 @@ import {
   setPullIncomplete,
   setProjectSwitchInFlight,
   flushSyncNow,
-  updateSyncHash,
-  suppressVersionBumps,
+  beginSystemAction,
+  endSystemAction,
 } from './currentProject';
 import { applySnapshotToStore, loadSnapshot, snapshotFromStore } from './persistence';
-import { showConfirm, showConflictDialog, showToast } from './modals';
-import type { ConflictChoice } from './modals';
+import { showConfirm, showToast } from './modals';
 import { saveOpenTextEdits, saveOpenTableEdits } from './helpers';
 import { resetStoryboardState, state, useStore } from '../store/state';
 import type { Frame, Stroke, Version } from '../store/state';
@@ -660,17 +661,20 @@ async function loadCloudProject(p: CloudProject): Promise<void> {
     const tree = await api.get<CloudProjectTree>(`/projects/${encodeURIComponent(p.id)}/sync`, getToken());
     if (progressBar) progressBar.style.width = '50%';
     if (progressLabel) progressLabel.textContent = 'Applying…';
-    // Suppress version bumps during load so system setState calls don't trigger a push
-    suppressVersionBumps(5000);
-    await applyCloudTreeToStore(tree);
+    // System action: prevent setState calls from being treated as user changes
+    beginSystemAction();
+    try {
+      await applyCloudTreeToStore(tree);
+    } finally {
+      endSystemAction();
+    }
     if (progressBar) progressBar.style.width = '85%';
     updateLastKnownTimestamp(tree.project.updated_at);
     setCurrentProject({ projectId: p.id, name: p.name, lastSavedAt: tree.project.updated_at });
+    clearDirtyState(); // Fresh project load — nothing dirty
     fhTrack('project_opened', { name: p.name });
     (window as any).__fh_renderAll?.();
     autoPhoneMainView();
-    // 4. Update sync hash BEFORE resuming — so sync sees the new project as baseline
-    updateSyncHash();
     if (progressBar) progressBar.style.width = '100%';
     setTimeout(() => { if (progressEl) progressEl.classList.add('hidden'); }, 300);
     // Progress bar already signals completion — no toast needed
@@ -926,13 +930,13 @@ export async function saveNow(): Promise<void> {
   }
 
   // 5. Sync the current state to /sync.
-  //    Set cloudSyncInFlight so the 5-second runCloudSync interval doesn't
+  //    Set cloudSyncInFlight so the debounced push doesn't
   //    fire a concurrent sync while we're uploading images / POSTing.
   setCloudSyncInFlight(true);
   try {
     await syncCurrentToServer(projectId);
     markSaved(projectId);
-    updateSyncHash();
+    clearDirtyState();
     updateLastKnownTimestamp(Date.now());
     fhTrack('project_saved');
     showToast('SAVED.');
@@ -1383,7 +1387,15 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   });
 }
 
-async function applyCloudTreeToStore(tree: CloudProjectTree): Promise<void> {
+/**
+ * Apply cloud project tree to the local store.
+ * @param tree - The cloud project tree to apply.
+ * @param keepLocalFrameIds - Optional set of server frame UUIDs to keep locally.
+ *   When provided, frames whose server ID is in this set will preserve their
+ *   local version (image, strokes, versions) instead of taking the cloud version.
+ *   This enables per-frame merge: dirty frames stay local, clean frames take cloud.
+ */
+async function applyCloudTreeToStore(tree: CloudProjectTree, keepLocalFrameIds?: ReadonlySet<string>): Promise<void> {
   // Map server tree back into the local Frame[] / versions[] shape.
   // We assign new local numeric ids that don't clash with the existing autoincrement.
   let nextId = 1;
@@ -1470,6 +1482,34 @@ async function applyCloudTreeToStore(tree: CloudProjectTree): Promise<void> {
 
       const localId = nextId++;
       serverToLocalFrame.set(sf.id, localId);
+
+      // PER-FRAME MERGE: if this frame was modified locally (dirty), keep the
+      // local version entirely — image, strokes, versions. Skip cloud data.
+      if (keepLocalFrameIds?.has(sf.id)) {
+        const existingFrame = existingFrameByServerId.get(sf.id);
+        if (existingFrame) {
+          newFrames.push({ ...existingFrame, id: localId });
+          // Preserve local versions for all strips
+          for (const stripId of Object.keys(prev.stripVersions)) {
+            const map = prev.stripVersions[stripId];
+            if (map && map[existingFrame.id]) {
+              const target = stripId === 'ver' ? verVersions
+                : stripId === 'floor' ? floorVersions
+                : stripId === 'refs' ? refsVersions : null;
+              if (target) {
+                target[localId] = map[existingFrame.id].map((v, i) => ({ ...v, id: i + 1 }));
+              }
+              const tabTarget = stripId === 'ver' ? verActiveTab
+                : stripId === 'floor' ? floorActiveTab
+                : stripId === 'refs' ? refsActiveTab : null;
+              if (tabTarget) tabTarget[localId] = 0;
+            }
+          }
+          continue; // Skip cloud processing for this frame
+        }
+        // If no existing local frame (shouldn't happen), fall through to cloud
+      }
+
       const allVersions = (versionsByFrame.get(sf.id) ?? []).sort((a, b) => a.updated_at - b.updated_at);
 
       // Treat the first "main"-typed version as frame-level strokes
@@ -2124,7 +2164,7 @@ function mergeFrames(
 
 async function tryPullFromCloud(): Promise<void> {
   if (pullInFlight) return;
-  if (isPushInFlight()) return;    // Don't pull while a push is uploading — let the push finish first
+  if (isPushInFlight()) return;
   if (Date.now() - lastPullAt < PULL_COOLDOWN_MS) return;
   if (!isLoggedIn()) return;
   const cp = getCurrentProject();
@@ -2145,173 +2185,65 @@ async function tryPullFromCloud(): Promise<void> {
       const remoteDeviceId = tree.project.last_device_id;
       const remoteDeviceName = tree.project.last_device_name || 'another device';
       const localDeviceId = getDeviceId();
-      const localHasChanges = hasLocalChanges();
 
-      // Same device pushed — this is our own data reflecting back. Just update timestamp.
+      // Same device pushed — our own data reflecting back. Just update timestamp.
       if (remoteDeviceId === localDeviceId) {
         lastKnownUpdatedAt = remoteUpdatedAt;
         return;
       }
 
-      // Show loading bar while applying remote changes (prevents image flicker)
+      // Different device has newer data — auto-merge per frame.
+      // Dirty frames (modified locally since last push) are kept.
+      // Clean frames take the cloud version.
+      const dirtyIds = getDirtyFrameIds();
+      const hasDirtyFrames = isDirty() && dirtyIds.size > 0;
+
+      // Show loading bar
       const progressEl = document.getElementById('progressOverlay');
       const progressBar = document.getElementById('progressBar') as HTMLElement | null;
       const progressLabel = document.getElementById('progressLabel') as HTMLElement | null;
       if (progressEl) progressEl.classList.remove('hidden');
       if (progressBar) progressBar.style.width = '10%';
-      if (progressLabel) progressLabel.textContent = 'Syncing…';
+      if (progressLabel) progressLabel.textContent = hasDirtyFrames
+        ? `Merging changes from ${remoteDeviceName}…`
+        : `Syncing from ${remoteDeviceName}…`;
 
-      // Different device but we have local changes — conflict
-      if (remoteDeviceId && localHasChanges) {
-        // Hide loading bar during conflict dialog — user needs to decide
-        if (progressEl) progressEl.classList.add('hidden');
-
-        const choice: ConflictChoice = await showConflictDialog(
-          remoteDeviceName,
-          formatTimeAgo(remoteUpdatedAt),
-        );
-
-        if (choice === 'local') {
-          // User chose to keep local — the next interval sync will push local to cloud.
-          lastKnownUpdatedAt = remoteUpdatedAt;
-          return;
-        }
-
-        // Re-show loading bar for merge/cloud apply
-        if (progressEl) progressEl.classList.remove('hidden');
-        if (progressBar) progressBar.style.width = '30%';
-        if (progressLabel) progressLabel.textContent = 'Applying…';
-
-        if (choice === 'merge') {
-          // Save current local state before applying cloud
-          const localState = useStore.getState();
-          const localFramesCopy = localState.frames.map((f) => ({ ...f }));
-          const localVersionsCopy: Record<number, Version[]> = {};
-          for (const fid in localState.versions) {
-            localVersionsCopy[+fid] = localState.versions[+fid].map((v) => ({ ...v }));
-          }
-
-          // Apply cloud tree to build cloud frames in local format
-          // Suppress version bumps so system-generated setState calls don't
-          // trick the push interval into thinking there are local changes.
-          suppressVersionBumps(5000);
+      // System action: all setState calls inside are NOT user changes
+      beginSystemAction();
+      try {
+        if (hasDirtyFrames) {
+          // Per-frame merge: keep dirty local frames, take cloud for the rest
+          if (progressBar) progressBar.style.width = '30%';
+          await applyCloudTreeToStore(tree, dirtyIds);
+          if (progressBar) progressBar.style.width = '90%';
+          showToast(`Synced — kept ${dirtyIds.size} local frame${dirtyIds.size > 1 ? 's' : ''}`);
+        } else {
+          // No local changes — take cloud fully
+          if (progressBar) progressBar.style.width = '40%';
           await applyCloudTreeToStore(tree);
-          if (progressBar) progressBar.style.width = '70%';
-          const cloudState = useStore.getState();
-          const cloudFrames = cloudState.frames.map((f) => ({ ...f }));
-          const cloudVersionsCopy: Record<number, Version[]> = {};
-          for (const fid in cloudState.versions) {
-            cloudVersionsCopy[+fid] = cloudState.versions[+fid].map((v) => ({ ...v }));
-          }
-
-          // Merge: cloud as base, local differences as duplicates
-          const { frames: mergedFrames, versions: mergedVersions } = mergeFrames(
-            cloudFrames, cloudVersionsCopy,
-            localFramesCopy, localVersionsCopy,
-          );
-
-          // Build activeTab for merged frames
-          const mergedActiveTab: Record<number, number> = {};
-          for (const f of mergedFrames) mergedActiveTab[f.id] = 0;
-
-          const mergedIsPortrait = mergedFrames.length > 0 && mergedFrames[0].cropH > mergedFrames[0].cropW;
-          const mFloor: Record<number, Version[]> = {};
-          const mRefs: Record<number, Version[]> = {};
-          const mFloorTab: Record<number, number> = {};
-          const mRefsTab: Record<number, number> = {};
-          const mVerCC: Record<number, number> = {};
-          const mFloorCC: Record<number, number> = {};
-          const mRefsCC: Record<number, number> = {};
-          const mVerPFS: Record<number, any> = {};
-          const mFloorPFS: Record<number, any> = {};
-          const mRefsPFS: Record<number, any> = {};
-          useStore.setState((prev) => ({
-            frames: mergedFrames,
-            stripVersions: { ver: mergedVersions, floor: mFloor, refs: mRefs },
-            stripActiveTab: { ver: mergedActiveTab, floor: mFloorTab, refs: mRefsTab },
-            stripCrossCompare: { ver: mVerCC, floor: mFloorCC, refs: mRefsCC },
-            stripPrevFrameState: { ver: mVerPFS, floor: mFloorPFS, refs: mRefsPFS },
-            versions: mergedVersions,
-            activeTab: mergedActiveTab,
-            floorVersions: mFloor,
-            floorActiveTab: mFloorTab,
-            floorCrossCompare: mFloorCC,
-            floorPrevFrameState: mFloorPFS,
-            refsVersions: mRefs,
-            refsActiveTab: mRefsTab,
-            refsCrossCompare: mRefsCC,
-            refsPrevFrameState: mRefsPFS,
-            drawColor: {},
-            drawWidth: {},
-            drawEraser: {},
-            drawActive: {},
-            showText: {},
-            crossCompare: mVerCC,
-            prevFrameState: mVerPFS,
-            nextId: Math.max(...mergedFrames.map((f) => f.id), 0) + 1,
-            reorderFid: null,
-            verReorderFid: null,
-            verReorderStrip: null,
-            stripClipboard: null,
-            imgTarget: null,
-            mainImgTarget: null,
-            ovExpandedFid: null,
-            drawingInProgress: false,
-            drawSuppressClick: false,
-            overviewAction: false,
-            fsOverlayActive: null,
-            currentViewMode: 'both',
-            portraitMode: mergedIsPortrait,
-            renderTick: prev.renderTick + 1,
-          }));
-
-          lastKnownUpdatedAt = remoteUpdatedAt;
-          markSaved(cp.projectId!);
-          if (progressBar) progressBar.style.width = '100%';
-          (window as any).__fh_renderAll?.();
-          autoPhoneMainView();
-          updateSyncHash();
-          setTimeout(() => { if (progressEl) progressEl.classList.add('hidden'); }, 300);
-          showToast('Merged — duplicate frames marked with "?"');
-          // Retry if some images failed during the merge pull
-          if (isPullIncomplete()) {
-            console.info('[sync] Scheduling retry pull in 5s (incomplete image load after merge)');
-            setTimeout(() => { void tryPullFromCloud(); }, 5_000);
-          }
-          return;
+          if (progressBar) progressBar.style.width = '90%';
         }
-
-        // choice === 'cloud' — fall through to apply cloud version
+      } finally {
+        endSystemAction();
       }
 
-      if (progressBar) progressBar.style.width = '40%';
-      if (progressLabel) progressLabel.textContent = 'Updating…';
       lastKnownUpdatedAt = remoteUpdatedAt;
-      // Suppress version bumps so system-generated setState calls from applying
-      // cloud data, image fetching, renderAll, autoPhoneMainView, showSwipeHint,
-      // and React effects don't trick the push interval into re-pushing.
-      suppressVersionBumps(5000);
-      await applyCloudTreeToStore(tree);
-      if (progressBar) progressBar.style.width = '90%';
       markSaved(cp.projectId!);
       (window as any).__fh_renderAll?.();
       autoPhoneMainView();
-      // updateSyncHash AFTER renderAll — renderAll calls saveOpenTextEdits/saveOpenTableEdits
-      // which can modify the store. If we hash before that, the push interval sees a stale hash
-      // and re-pushes, causing a ping-pong loop between devices.
-      updateSyncHash();
       if (progressBar) progressBar.style.width = '100%';
       setTimeout(() => { if (progressEl) progressEl.classList.add('hidden'); }, 300);
 
-      // If some R2 images failed to load, schedule an automatic retry.
-      // The retry re-pulls the full tree so ALL images get another chance.
+      // If dirty frames were preserved, they need pushing to cloud
+      // (the next user action or blur will trigger a push)
+
+      // Retry if some R2 images failed to load
       if (isPullIncomplete()) {
         console.info('[sync] Scheduling retry pull in 5s (incomplete image load)');
         setTimeout(() => { void tryPullFromCloud(); }, 5_000);
       }
     }
   } catch {
-    // Silent — don't disturb the user if the check fails.
     const pEl = document.getElementById('progressOverlay');
     if (pEl) pEl.classList.add('hidden');
   } finally {
@@ -2343,17 +2275,20 @@ export async function bootstrapAccountSystem(): Promise<void> {
     const snap = await loadSnapshot();
     if (snap && snap.frames.length > 0) {
       dismissNewProjectModal();
-      applySnapshotToStore(snap);
+      beginSystemAction();
+      try {
+        applySnapshotToStore(snap);
+      } finally {
+        endSystemAction();
+      }
       setCurrentProject({
         projectId: snap.projectId,
         name: snap.name,
         lastSavedAt: snap.projectId ? snap.lastModified : null,
       });
+      clearDirtyState(); // IDB restore is not a user change
       (window as any).__fh_renderAll?.();
       autoPhoneMainView();
-      // Set baseline hash so pull-on-focus doesn't silently override the
-      // restored state (which includes activeGroupId, local edits, etc.).
-      updateSyncHash();
     }
   } catch (e) {
     console.warn('[accountFlow] IDB restore failed', e);

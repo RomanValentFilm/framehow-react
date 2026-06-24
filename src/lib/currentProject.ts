@@ -2,9 +2,13 @@
 // id (if saved), name, dirty flag — and debounces persistence to IndexedDB
 // whenever the storyboard changes.
 //
-// This is intentionally separate from the Zustand store: project metadata
-// has different lifecycle and concerns from the UI/data state, and keeping
-// it here means the existing imperative core doesn't need to know about it.
+// SYNC MODEL (v4.7.005):
+// - Push: debounced 3s after user action + immediate on blur. No interval.
+// - Pull: on focus (visibility change). Per-frame merge on pull.
+// - System actions (applying pulled data, rendering) are wrapped in
+//   beginSystemAction/endSystemAction — they never trigger a push.
+// - _dirtyFrameIds tracks which frames the user modified since last push.
+//   On pull, dirty frames are kept; clean frames take cloud version.
 
 import { useStore } from '../store/state';
 import { clearSnapshot, saveSnapshot, snapshotFromStore } from './persistence';
@@ -63,19 +67,17 @@ export function markSaved(projectId: string): void {
 
 export function clearCurrentProject(): void {
   cp = { projectId: null, name: null, lastSavedAt: null, dirty: false };
+  _dirty = false;
+  _dirtyFrameIds.clear();
   emit();
   void clearSnapshot();
 }
 
 // ---------------------------------------------------------------------------
-// Autosave: persist the storyboard to IDB regularly, and sync to cloud
-// every few seconds via a simple interval. The interval approach is
-// deliberately mutation-agnostic — it doesn't need to detect individual
-// changes. It just snapshots whatever the current state is and pushes it.
+// Autosave: persist the storyboard to IDB with debounce.
 // ---------------------------------------------------------------------------
 
 const AUTOSAVE_DEBOUNCE_MS = 800;
-const CLOUD_SYNC_INTERVAL_MS = 5_000;
 let autosaveTimer: number | null = null;
 let cloudSyncInFlight = false;
 
@@ -117,28 +119,86 @@ let _pullIncomplete = false;
 export function setPullIncomplete(v: boolean): void { _pullIncomplete = v; }
 export function isPullIncomplete(): boolean { return _pullIncomplete; }
 
-/**
- * Immediately push current project to cloud (if dirty). Returns when done.
- * Use before switching projects to ensure current work is saved first.
- * If the push fails (offline), queues the project for retry when back online.
- */
+// ---------------------------------------------------------------------------
+// SYNC ENGINE — event-driven, no interval
+// ---------------------------------------------------------------------------
+//
+// _isSystemAction: true while applying cloud data / loading projects.
+//   When true, Zustand subscriber skips marking changes as dirty.
+//
+// _dirty: true when user has made changes that need pushing.
+//
+// _dirtyFrameIds: server UUIDs of frames modified by the user since last push.
+//   Used during pull to decide which frames to keep (local) vs take (cloud).
+// ---------------------------------------------------------------------------
+
+let _isSystemAction = false;
+let _dirty = false;
+const _dirtyFrameIds = new Set<string>();
+
+/** Wrap system operations (pull, load, apply snapshot) to prevent
+ *  their setState calls from being treated as user changes. */
+export function beginSystemAction(): void { _isSystemAction = true; }
+export function endSystemAction(): void { _isSystemAction = false; }
+
+/** True when user has made unpushed changes. */
+export function isDirty(): boolean { return _dirty; }
+
+/** Get the set of server frame UUIDs modified locally since last push. */
+export function getDirtyFrameIds(): ReadonlySet<string> { return _dirtyFrameIds; }
+
+/** Called after a successful push to clear dirty state. */
+export function clearDirtyState(): void {
+  _dirty = false;
+  _dirtyFrameIds.clear();
+}
+
+/** Mark a frame as modified by the user. Pass the serverFrameId (UUID).
+ *  Frames without a serverFrameId (new, not yet pushed) don't need marking —
+ *  they'll be included in the push automatically.
+ *  Also call for frame-level metadata changes (label, hidden, etc.). */
+export function markDirtyFrame(serverFrameId: string | undefined): void {
+  if (serverFrameId) _dirtyFrameIds.add(serverFrameId);
+}
+
+// ---------------------------------------------------------------------------
+// Debounced push: 3 seconds after last user change.
+// Also pushes immediately on blur (tab loses focus).
+// ---------------------------------------------------------------------------
+
+const SYNC_DEBOUNCE_MS = 3_000;
+let _syncDebounceTimer: number | null = null;
+
+function scheduleSyncPush(): void {
+  if (_syncDebounceTimer !== null) clearTimeout(_syncDebounceTimer);
+  _syncDebounceTimer = window.setTimeout(() => {
+    _syncDebounceTimer = null;
+    void runCloudSync();
+  }, SYNC_DEBOUNCE_MS);
+}
+
+/** Immediately push if dirty (used on blur and before project switch). */
 export async function flushSyncNow(): Promise<void> {
+  // Cancel any pending debounce
+  if (_syncDebounceTimer !== null) {
+    clearTimeout(_syncDebounceTimer);
+    _syncDebounceTimer = null;
+  }
   if (!_syncFn || !cp.projectId || !isLoggedIn()) return;
-  if (cloudSyncInFlight) return; // already syncing
-  if (_pullInFlight) return;     // don't push while pulling — images may still be loading
-  if (_projectSwitchInFlight) return; // don't push during project switch
-  if (_storeVersion === lastSyncVersion) return; // nothing changed
+  if (cloudSyncInFlight) return;
+  if (_pullInFlight) return;
+  if (_projectSwitchInFlight) return;
+  if (!_dirty) return;
   const pid = cp.projectId;
-  const ver = _storeVersion;
   cloudSyncInFlight = true;
   try {
     await _syncFn(pid);
-    lastSyncVersion = ver;
+    clearDirtyState();
     cp = { ...cp, lastSavedAt: Date.now(), dirty: false };
     _pendingSyncIds.delete(pid);
+    hideOfflineBanner();
     emit();
   } catch {
-    // Offline or failed — queue for retry when back online
     _pendingSyncIds.add(pid);
   } finally {
     cloudSyncInFlight = false;
@@ -147,7 +207,7 @@ export async function flushSyncNow(): Promise<void> {
 
 // ---------------------------------------------------------------------------
 // Pending sync queue: projects whose flush failed (offline). Retried when
-// the device comes back online or on the next sync interval while online.
+// the device comes back online.
 // ---------------------------------------------------------------------------
 
 const _pendingSyncIds = new Set<string>();
@@ -156,32 +216,30 @@ async function retryPendingSyncs(): Promise<void> {
   if (!_syncFn || !isLoggedIn() || !navigator.onLine) return;
   if (_pendingSyncIds.size === 0) return;
   if (cloudSyncInFlight || _projectSwitchInFlight) return;
-  // Only retry if we're currently on one of the pending projects
-  // (we can only push the project that's currently loaded in state)
   const currentPid = cp.projectId;
-  if (currentPid && _pendingSyncIds.has(currentPid)) {
+  if (currentPid && _pendingSyncIds.has(currentPid) && _dirty) {
     cloudSyncInFlight = true;
     try {
       await _syncFn(currentPid);
-      lastSyncVersion = _storeVersion;
+      clearDirtyState();
       cp = { ...cp, lastSavedAt: Date.now(), dirty: false };
       _pendingSyncIds.delete(currentPid);
       hideOfflineBanner();
       emit();
     } catch {
-      // Still offline — will retry next tick
+      // Still offline — will retry on next online event
     } finally {
       cloudSyncInFlight = false;
     }
   }
 }
 
-/** True when the push-sync interval is actively syncing to cloud. */
+/** True when the push-sync is actively syncing to cloud. */
 export function isPushInFlight(): boolean {
   return cloudSyncInFlight;
 }
 
-/** Block/unblock runCloudSync from outside (used by saveNow to prevent concurrent syncs). */
+/** Block/unblock cloud sync from outside (used by saveNow). */
 export function setCloudSyncInFlight(v: boolean): void {
   cloudSyncInFlight = v;
 }
@@ -198,18 +256,12 @@ function scheduleAutosave(): void {
 
 async function runAutosave(): Promise<void> {
   autosaveTimer = null;
-  // SAFETY: Don't snapshot while a cloud pull is loading images —
-  // bgImage fields may still be null (R2 fetches in progress).
-  // Also skip if the last pull was incomplete (some images failed to load).
   if (_pullInFlight || _projectSwitchInFlight || _pullIncomplete) {
-    // Retry after debounce — the pull will finish and reschedule anyway.
     scheduleAutosave();
     return;
   }
   try {
     const snap = snapshotFromStore(cp.projectId, cp.name);
-    // Only persist if there's actually something to remember. An empty
-    // storyboard with no name is the equivalent of "no current project".
     if (snap.frames.length === 0 && cp.name === null) {
       await clearSnapshot();
       return;
@@ -221,75 +273,49 @@ async function runAutosave(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Cloud sync: runs on a fixed interval. Uses a lightweight change counter
-// instead of JSON.stringify to detect mutations — the old approach serialized
-// the entire store (including base64 images) every 5 seconds, which caused
-// significant jank on iPad.
+// Cloud sync push — triggered by debounce timer or flush.
 // ---------------------------------------------------------------------------
 
-let _storeVersion = 0;
-let lastSyncVersion = -1;
+async function runCloudSync(): Promise<void> {
+  if (!_syncFn) return;
+  if (!cp.projectId) return;
+  if (!isLoggedIn()) return;
+  if (cloudSyncInFlight) return;
+  if (_pullInFlight) return;
+  if (_projectSwitchInFlight) return;
+  if (!_dirty) return;
 
-// ---------------------------------------------------------------------------
-// Version-bump suppression: during a cloud pull (and for a grace period after),
-// suppress _storeVersion bumps so that setState calls from applying cloud data,
-// rendering, autoPhoneMainView, showSwipeHint, React effects, etc. don't trick
-// the push interval into thinking there are "local changes" to push back.
-// This prevents the ping-pong sync loop between devices.
-// ---------------------------------------------------------------------------
-let _suppressVersionBump = false;
-let _suppressTimer: number | null = null;
-
-/** Suppress version bumps for the given duration (ms). Called before applying
- *  cloud data so system-generated setState calls don't trigger a push. */
-export function suppressVersionBumps(durationMs: number): void {
-  _suppressVersionBump = true;
-  if (_suppressTimer !== null) clearTimeout(_suppressTimer);
-  _suppressTimer = window.setTimeout(() => {
-    _suppressVersionBump = false;
-    _suppressTimer = null;
-  }, durationMs);
-}
-
-/** Bump the change counter. Called by the Zustand subscriber in startAutosave.
- *  Skipped when suppressed (during/after a cloud pull). */
-export function bumpStoreVersion(): void {
-  if (_suppressVersionBump) return;
-  _storeVersion++;
-}
-
-/**
- * Call after applying cloud data to the store (pull-on-focus, load project)
- * so the interval sync doesn't immediately re-push the same data.
- */
-export function updateSyncHash(): void {
-  lastSyncVersion = _storeVersion;
-}
-
-/** True when local store has changed since the last successful cloud sync. */
-export function hasLocalChanges(): boolean {
-  if (lastSyncVersion < 0) return false; // Never synced — no baseline
-  return _storeVersion !== lastSyncVersion;
-}
-
-/** Cheap change detection — just compare counters. */
-function storeHash(): string {
-  return String(_storeVersion);
+  cloudSyncInFlight = true;
+  try {
+    await _syncFn(cp.projectId);
+    clearDirtyState();
+    cp = { ...cp, lastSavedAt: Date.now(), dirty: false };
+    hideOfflineBanner();
+    emit();
+  } catch (e: any) {
+    console.warn('[sync] push failed', e);
+    if (e?.status === 409 && _pullFn) {
+      console.info('[sync] conflict (409), triggering pull');
+      try { await _pullFn(); } catch { /* pull handles its own errors */ }
+    } else if (!navigator.onLine || (e instanceof TypeError)) {
+      showOfflineBanner();
+    }
+  } finally {
+    cloudSyncInFlight = false;
+  }
 }
 
 // ---------------------------------------------------------------------------
-// Offline banner — shown once when sync fails. User can dismiss it.
-// Won't show again for 15 minutes after dismissal. Clears when back online.
+// Offline banner
 // ---------------------------------------------------------------------------
 
-const OFFLINE_COOLDOWN_MS = 15 * 60 * 1000; // 15 minutes
+const OFFLINE_COOLDOWN_MS = 15 * 60 * 1000;
 let offlineBanner: HTMLElement | null = null;
 let isOffline = false;
 let offlineDismissedAt = 0;
 
 function showOfflineBanner(): void {
   if (isOffline) return;
-  // Respect the 15-minute cooldown after user dismissed the banner
   if (Date.now() - offlineDismissedAt < OFFLINE_COOLDOWN_MS) return;
   isOffline = true;
   if (!offlineBanner) {
@@ -318,78 +344,57 @@ function showOfflineBanner(): void {
 function hideOfflineBanner(): void {
   if (!isOffline) return;
   isOffline = false;
-  offlineDismissedAt = 0; // Reset cooldown on successful sync
+  offlineDismissedAt = 0;
   if (offlineBanner) offlineBanner.style.display = 'none';
-}
-
-async function runCloudSync(): Promise<void> {
-  if (!_syncFn) return;
-  if (!cp.projectId) return;       // Not yet saved to cloud — manual save first
-  if (!isLoggedIn()) return;       // Can't sync without auth
-  if (cloudSyncInFlight) return;   // Already in progress
-  if (_pullInFlight) return;       // Don't push while pulling — images loading would cause false changes
-  if (_projectSwitchInFlight) return; // Don't push during project switch — would contaminate the new project
-
-  // Check if anything actually changed since last sync
-  if (_storeVersion === lastSyncVersion) return;
-
-  const ver = _storeVersion;
-  cloudSyncInFlight = true;
-  try {
-    await _syncFn(cp.projectId);
-    lastSyncVersion = ver;
-    cp = { ...cp, lastSavedAt: Date.now(), dirty: false };
-    hideOfflineBanner();
-    emit();
-  } catch (e: any) {
-    console.warn('[autosync] failed', e);
-    // 409 = conflict: server has newer data from another device.
-    // Trigger a pull so the user sees the conflict dialog.
-    if (e?.status === 409 && _pullFn) {
-      console.info('[autosync] conflict detected, triggering pull');
-      // Don't retry pushing — let the pull handle reconciliation.
-      lastSyncVersion = ver; // Mark as "handled" so we don't keep re-pushing
-      try { await _pullFn(); } catch { /* pull handles its own errors */ }
-    } else if (!navigator.onLine || (e instanceof TypeError)) {
-      // Show offline banner if the failure looks like a network issue
-      showOfflineBanner();
-    }
-    // Will retry on next interval tick
-  } finally {
-    cloudSyncInFlight = false;
-  }
 }
 
 /**
  * Start the autosave and cloud-sync systems. Call once at app boot.
  *
- * IDB autosave: triggered by zustand subscriber (detects reference changes)
- *   AND by the cloud-sync interval (catches in-place mutations).
- * Cloud sync: a simple 5-second interval that hashes the store and syncs
- *   if anything changed. No need to detect individual mutations.
+ * IDB autosave: triggered by zustand subscriber.
+ * Cloud sync: event-driven — pushes on user action (debounced) and on blur.
+ * No interval. System actions are wrapped to prevent false positives.
  */
 export function startAutosave(): void {
-  // Zustand subscriber: bump change counter (for sync) + schedule IDB autosave
+  // Zustand subscriber: schedule IDB autosave + detect user changes
   useStore.subscribe(() => {
-    bumpStoreVersion();
     scheduleAutosave();
+    // Only mark dirty when a USER (not system) action changes the store
+    if (!_isSystemAction) {
+      _dirty = true;
+      scheduleSyncPush();
+    }
   });
 
-  // Fixed-interval cloud sync — mutation-agnostic, catches everything
-  setInterval(() => {
-    // Also save to IDB on every tick to catch in-place mutations
-    scheduleAutosave();
-    // Sync to cloud
-    void runCloudSync();
-    // Retry any pending syncs from failed project switches
-    void retryPendingSyncs();
-  }, CLOUD_SYNC_INTERVAL_MS);
+  // Push immediately when tab loses focus (user switching to another device)
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden' && _dirty && cp.projectId) {
+      void flushSyncNow();
+    }
+  });
 
-  // Listen for browser online/offline events to show/hide banner immediately
+  // Listen for browser online/offline events
   window.addEventListener('offline', showOfflineBanner);
   window.addEventListener('online', () => {
     hideOfflineBanner();
-    // Retry pending syncs now that we're back online
     void retryPendingSyncs();
   });
+
+  // Safety net: retry pending syncs every 60 seconds (for edge cases only)
+  setInterval(() => { void retryPendingSyncs(); }, 60_000);
 }
+
+// ---------------------------------------------------------------------------
+// DEPRECATED / REMOVED (kept as no-ops for backward compat during transition)
+// These were part of the old interval-based sync. They'll be cleaned up once
+// all call sites are updated.
+// ---------------------------------------------------------------------------
+
+/** @deprecated Use beginSystemAction/endSystemAction instead. */
+export function bumpStoreVersion(): void { /* no-op */ }
+/** @deprecated No longer needed — dirty tracking is automatic. */
+export function updateSyncHash(): void { /* no-op */ }
+/** @deprecated Use isDirty() instead. */
+export function hasLocalChanges(): boolean { return _dirty; }
+/** @deprecated Use beginSystemAction/endSystemAction instead. */
+export function suppressVersionBumps(_durationMs: number): void { /* no-op */ }
