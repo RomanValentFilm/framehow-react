@@ -43,7 +43,8 @@ import {
   endSystemAction,
 } from './currentProject';
 import { applySnapshotToStore, loadSnapshot, snapshotFromStore } from './persistence';
-import { showConfirm, showToast } from './modals';
+import { showConfirm, showToast, showFrameConflictPicker } from './modals';
+import type { FrameConflict } from './modals';
 import { saveOpenTextEdits, saveOpenTableEdits } from './helpers';
 import { resetStoryboardState, state, useStore } from '../store/state';
 import type { Frame, Stroke, Version } from '../store/state';
@@ -2192,9 +2193,10 @@ async function tryPullFromCloud(): Promise<void> {
         return;
       }
 
-      // Different device has newer data — auto-merge per frame.
-      // Dirty frames (modified locally since last push) are kept.
-      // Clean frames take the cloud version.
+      // Different device has newer data — smart per-frame merge:
+      //  - Frames only edited locally → keep local
+      //  - Frames only edited on cloud → take cloud
+      //  - Same frame edited on BOTH → show side-by-side picker
       const dirtyIds = getDirtyFrameIds();
       const hasDirtyFrames = isDirty() && dirtyIds.size > 0;
 
@@ -2208,17 +2210,111 @@ async function tryPullFromCloud(): Promise<void> {
         ? `Merging changes from ${remoteDeviceName}…`
         : `Syncing from ${remoteDeviceName}…`;
 
+      // ---------------------------------------------------------------
+      // Detect same-frame conflicts: dirty locally AND changed in cloud
+      // ---------------------------------------------------------------
+      let keepLocalIds: ReadonlySet<string> | undefined;
+
+      if (hasDirtyFrames) {
+        if (progressBar) progressBar.style.width = '20%';
+
+        // Build cloud r2Key map: serverFrameId → mainR2Key
+        const cloudR2Keys = new Map<string, string | undefined>();
+        const versionsByFrame = new Map<string, typeof tree.versions>();
+        for (const v of tree.versions) {
+          if (!versionsByFrame.has(v.frame_id)) versionsByFrame.set(v.frame_id, []);
+          versionsByFrame.get(v.frame_id)!.push(v);
+        }
+        const imageByVersion = new Map<string, string>();
+        for (const img of tree.images) imageByVersion.set(img.version_id, img.r2_key);
+
+        for (const cf of tree.frames) {
+          const mainV = (versionsByFrame.get(cf.id) ?? []).find((v) => v.type === 'main');
+          cloudR2Keys.set(cf.id, mainV ? imageByVersion.get(mainV.id) : undefined);
+        }
+
+        // Build cloud label map for conflict picker
+        const cloudLabelMap = new Map<string, string>();
+        for (const cf of tree.frames) cloudLabelMap.set(cf.id, cf.label ?? '');
+
+        // Separate dirty frames into conflicting vs. safe-local
+        const prev = useStore.getState();
+        const conflictingIds: string[] = [];
+        const safeLocalIds = new Set<string>();
+
+        for (const sfId of dirtyIds) {
+          const cloudR2 = cloudR2Keys.get(sfId);
+          const localFrame = prev.frames.find((f) => f.serverFrameId === sfId);
+          const localR2 = localFrame?.r2Key;
+
+          // Conflict: cloud has a DIFFERENT image than what we last synced
+          if (cloudR2 && cloudR2 !== localR2) {
+            conflictingIds.push(sfId);
+          } else {
+            // Only modified locally — safe to keep
+            safeLocalIds.add(sfId);
+          }
+        }
+
+        if (conflictingIds.length > 0) {
+          // Fetch cloud thumbnails for the conflict picker
+          if (progressBar) progressBar.style.width = '30%';
+          if (progressLabel) progressLabel.textContent = 'Loading previews for conflict…';
+
+          const token = getToken();
+          const conflicts: FrameConflict[] = [];
+
+          for (const sfId of conflictingIds) {
+            const localFrame = prev.frames.find((f) => f.serverFrameId === sfId);
+            const cloudR2 = cloudR2Keys.get(sfId);
+            let cloudSrc = '';
+            if (cloudR2 && token) {
+              try { cloudSrc = await fetchImageFromR2(cloudR2, token); } catch { /* empty */ }
+            }
+            conflicts.push({
+              serverFrameId: sfId,
+              label: localFrame?.label || cloudLabelMap.get(sfId) || '?',
+              localSrc: localFrame?.src || '',
+              cloudSrc,
+              localDeviceName: getDeviceName(),
+              cloudDeviceName: remoteDeviceName,
+            });
+          }
+
+          // Hide progress while picker is shown
+          if (progressEl) progressEl.classList.add('hidden');
+
+          // Show picker — user taps one thumbnail per conflict
+          const choices = await showFrameConflictPicker(conflicts);
+
+          // Re-show progress
+          if (progressEl) progressEl.classList.remove('hidden');
+          if (progressBar) progressBar.style.width = '50%';
+
+          // Build final keep-local set: safe locals + user-chose-local conflicts
+          const finalKeep = new Set(safeLocalIds);
+          for (const [sfId, choice] of choices) {
+            if (choice === 'local') finalKeep.add(sfId);
+            // 'cloud' → not in keepLocal → applyCloudTreeToStore takes cloud version
+          }
+          keepLocalIds = finalKeep;
+        } else {
+          // All dirty frames are safe (no cloud changes to them)
+          keepLocalIds = dirtyIds;
+        }
+      }
+
       // System action: all setState calls inside are NOT user changes
       beginSystemAction();
       try {
-        if (hasDirtyFrames) {
-          // Per-frame merge: keep dirty local frames, take cloud for the rest
-          if (progressBar) progressBar.style.width = '30%';
-          await applyCloudTreeToStore(tree, dirtyIds);
+        if (keepLocalIds && keepLocalIds.size > 0) {
+          // Per-frame merge: keep selected local frames, take cloud for the rest
+          if (progressBar) progressBar.style.width = '70%';
+          await applyCloudTreeToStore(tree, keepLocalIds);
           if (progressBar) progressBar.style.width = '90%';
-          showToast(`Synced — kept ${dirtyIds.size} local frame${dirtyIds.size > 1 ? 's' : ''}`);
+          showToast(`Synced — kept ${keepLocalIds.size} local frame${keepLocalIds.size > 1 ? 's' : ''}`);
         } else {
-          // No local changes — take cloud fully
+          // No local changes (or user chose cloud for everything) — take cloud fully
           if (progressBar) progressBar.style.width = '40%';
           await applyCloudTreeToStore(tree);
           if (progressBar) progressBar.style.width = '90%';

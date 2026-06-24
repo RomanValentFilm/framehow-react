@@ -188,6 +188,7 @@ export async function flushSyncNow(): Promise<void> {
   if (cloudSyncInFlight) return;
   if (_pullInFlight) return;
   if (_projectSwitchInFlight) return;
+  if (_pullIncomplete) return;   // Never push while project is still loading images
   if (!_dirty) return;
   const pid = cp.projectId;
   cloudSyncInFlight = true;
@@ -283,6 +284,7 @@ async function runCloudSync(): Promise<void> {
   if (cloudSyncInFlight) return;
   if (_pullInFlight) return;
   if (_projectSwitchInFlight) return;
+  if (_pullIncomplete) return;   // Never push while project is still loading images
   if (!_dirty) return;
 
   cloudSyncInFlight = true;

@@ -220,6 +220,109 @@ export function showConflictDialog(deviceName: string, timeAgo: string): Promise
   });
 }
 
+// ---------------------------------------------------------------------------
+// Per-frame conflict picker: shows thumbnails side by side for each
+// frame that was edited on both devices. User taps one to keep it.
+// Returns a Map of serverFrameId → 'local' | 'cloud'.
+// ---------------------------------------------------------------------------
+
+export interface FrameConflict {
+  serverFrameId: string;
+  label: string;        // Frame label (e.g. "1" or user label)
+  localSrc: string;     // Local frame image (data URL or empty)
+  cloudSrc: string;     // Cloud frame image (data URL or empty)
+  localDeviceName: string;
+  cloudDeviceName: string;
+}
+
+export function showFrameConflictPicker(
+  conflicts: FrameConflict[],
+): Promise<Map<string, 'local' | 'cloud'>> {
+  return new Promise((resolve) => {
+    const results = new Map<string, 'local' | 'cloud'>();
+    let currentIdx = 0;
+
+    const overlay = document.createElement('div');
+    overlay.style.cssText =
+      'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,0.7);' +
+      'display:flex;align-items:center;justify-content:center;padding:16px;';
+
+    function renderConflict(idx: number) {
+      const c = conflicts[idx];
+      const total = conflicts.length;
+      const counter = total > 1 ? ` (${idx + 1}/${total})` : '';
+      overlay.innerHTML = '';
+
+      const box = document.createElement('div');
+      box.style.cssText =
+        'background:#1e1e1e;border:1px solid #444;border-radius:12px;' +
+        'padding:20px 24px;max-width:420px;width:100%;color:#fff;' +
+        'font-family:-apple-system,BlinkMacSystemFont,sans-serif;';
+
+      // Placeholder for empty images
+      const localImg = c.localSrc
+        ? `<img src="${c.localSrc}" style="width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:6px;background:#333;" />`
+        : `<div style="width:100%;aspect-ratio:16/9;background:#333;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#666;font-size:12px;">No image</div>`;
+      const cloudImg = c.cloudSrc
+        ? `<img src="${c.cloudSrc}" style="width:100%;aspect-ratio:16/9;object-fit:cover;border-radius:6px;background:#333;" />`
+        : `<div style="width:100%;aspect-ratio:16/9;background:#333;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#666;font-size:12px;">No image</div>`;
+
+      box.innerHTML = `
+        <h3 style="margin:0 0 6px;font-size:15px;font-weight:600;">
+          Frame "${c.label}" edited on both devices${counter}
+        </h3>
+        <p style="margin:0 0 14px;font-size:13px;color:#999;">Tap the version you want to keep</p>
+        <div style="display:flex;gap:10px;">
+          <div class="conflict-pick" data-choice="local" style="
+            flex:1;cursor:pointer;border:2px solid transparent;border-radius:8px;
+            padding:6px;transition:border-color 0.15s;
+          ">
+            ${localImg}
+            <div style="text-align:center;margin-top:6px;font-size:12px;font-weight:500;color:#aaa;">
+              ${c.localDeviceName}
+            </div>
+          </div>
+          <div class="conflict-pick" data-choice="cloud" style="
+            flex:1;cursor:pointer;border:2px solid transparent;border-radius:8px;
+            padding:6px;transition:border-color 0.15s;
+          ">
+            ${cloudImg}
+            <div style="text-align:center;margin-top:6px;font-size:12px;font-weight:500;color:#aaa;">
+              ${c.cloudDeviceName}
+            </div>
+          </div>
+        </div>
+      `;
+      overlay.appendChild(box);
+
+      // Hover/active styles
+      const picks = box.querySelectorAll('.conflict-pick');
+      picks.forEach((el) => {
+        (el as HTMLElement).addEventListener('mouseenter', () => {
+          (el as HTMLElement).style.borderColor = '#4caf50';
+        });
+        (el as HTMLElement).addEventListener('mouseleave', () => {
+          (el as HTMLElement).style.borderColor = 'transparent';
+        });
+        (el as HTMLElement).addEventListener('click', () => {
+          const choice = (el as HTMLElement).dataset.choice as 'local' | 'cloud';
+          results.set(c.serverFrameId, choice);
+          currentIdx++;
+          if (currentIdx < conflicts.length) {
+            renderConflict(currentIdx);
+          } else {
+            overlay.remove();
+            resolve(results);
+          }
+        });
+      });
+    }
+
+    document.body.appendChild(overlay);
+    renderConflict(0);
+  });
+}
+
 export function showLabelEdit(currentLabel: string): Promise<string | null> {
   return new Promise((resolve) => {
     const modal = document.getElementById('labelModal')!;
