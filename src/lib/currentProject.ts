@@ -321,7 +321,7 @@ async function runCloudSync(): Promise<void> {
   } catch (e: any) {
     console.warn('[sync] push failed', e);
     if (e?.status === 409 && _pullFn) {
-      console.info('[sync] conflict (409), triggering pull');
+      // Conflict (409) — pull first, then user can push
       try { await _pullFn(); } catch { /* pull handles its own errors */ }
     } else if (!navigator.onLine || (e instanceof TypeError)) {
       showOfflineBanner();
@@ -406,7 +406,5 @@ export function startAutosave(): void {
     void retryPendingSyncs();
   });
 
-  // Safety net: retry pending syncs every 60 seconds (for edge cases only)
-  setInterval(() => { void retryPendingSyncs(); }, 60_000);
 }
 

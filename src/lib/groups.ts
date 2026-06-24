@@ -4,6 +4,7 @@
 import { state, useStore } from '../store/state';
 import type { Frame, FrameGroup } from '../store/state';
 import { rasterizeMain } from './rasterize';
+import { escH } from './helpers';
 
 let _sidebarEl: HTMLElement | null = null;
 let _overlayEl: HTMLElement | null = null;
@@ -189,7 +190,7 @@ function buildSidebarHTML(): string {
     const count = g.frameIds.filter(id => s.frames.some(f => f.id === id)).length;
     groupsHTML += `
       <div class="group-item${isActive ? ' active' : ''}" data-gid="${g.id}">
-        <span class="group-name">${escHtml(g.name)}</span>
+        <span class="group-name">${escH(g.name)}</span>
         <span class="group-edit-btn" data-edit="${g.id}">edit</span>
         <span class="group-count">${count}</span>
       </div>`;
@@ -297,8 +298,8 @@ function openGroupEditor(existing: FrameGroup | null): void {
           ? `<img data-thumb-fid="${f.id}" src="${thumbSrc}" style="width:115px;height:77px;object-fit:cover;border-radius:4px;flex-shrink:0;">`
           : `<div style="width:115px;height:77px;background:#333;border-radius:4px;flex-shrink:0;"></div>`}
         <div style="flex:1;min-width:0;">
-          <div style="font-size:13px;font-weight:600;">${escHtml(label)}</div>
-          ${desc ? `<div style="font-size:11px;color:#888;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(desc)}</div>` : ''}
+          <div style="font-size:13px;font-weight:600;">${escH(label)}</div>
+          ${desc ? `<div style="font-size:11px;color:#888;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escH(desc)}</div>` : ''}
         </div>
       </label>`;
   }
@@ -308,7 +309,7 @@ function openGroupEditor(existing: FrameGroup | null): void {
       <div style="font-weight:700;font-size:15px;margin-bottom:12px;">
         ${existing ? 'Edit Group' : 'New Group'}
       </div>
-      <input type="text" class="group-name-input" value="${existing ? escHtml(existing.name) : ''}"
+      <input type="text" class="group-name-input" value="${existing ? escH(existing.name) : ''}"
         placeholder="Group name (e.g. Kitchen, Scene 2)"
         style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid #555;
         background:#2a2a2a;color:#fff;font-size:14px;outline:none;
@@ -468,8 +469,4 @@ function triggerRerender(): void {
   updateGroupButtonState();
   const renderAll = (window as any).__fh_renderAll;
   if (renderAll) renderAll();
-}
-
-function escHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }

@@ -2346,7 +2346,7 @@ async function tryPullFromCloud(): Promise<void> {
 
       // Retry if some R2 images failed to load
       if (isPullIncomplete()) {
-        console.info('[sync] Scheduling retry pull in 5s (incomplete image load)');
+        // Retry pull in 5s — some R2 images failed to load
         setTimeout(() => { void tryPullFromCloud(); }, 5_000);
       }
     }

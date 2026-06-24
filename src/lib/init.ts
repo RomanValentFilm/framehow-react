@@ -855,7 +855,7 @@ export function initFramehow(): void {
           if (!w) return;
           w.addEventListener('statechange', () => {
             if (w.state === 'installed' && navigator.serviceWorker.controller) {
-              console.log('Framehow update available — reload to apply.');
+              // Update available — next reload will use the new version
             }
           });
         });

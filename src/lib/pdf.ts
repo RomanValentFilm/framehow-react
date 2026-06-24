@@ -627,7 +627,6 @@ export async function handlePDF(file: File): Promise<void> {
         c.rh = c.h / pageH;
       });
       allCandidates.push({ page, candidates, pageNum: p, pageW, pageH, inverted: result.inverted });
-      console.log(`[StripBoard] Page ${p}: ${candidates.length} candidates (${pageW}x${pageH})`);
     }
 
     const allSizes = allCandidates.flatMap((pc) => pc.candidates).map((c: any) => ({ rw: c.rw, rh: c.rh }));
@@ -701,9 +700,6 @@ export async function handlePDF(file: File): Promise<void> {
               }
             }
             if (aligned) {
-              console.log(
-                `[StripBoard] Illustration-over-text swap: using ${removed.length} top-row candidates instead of ${filtered.length} bottom-row`
-              );
               filtered = removed;
             }
           }
@@ -811,7 +807,6 @@ export async function handlePDF(file: File): Promise<void> {
             // Check if label order already matches spatial order
             const needsFix = numberedLabels.some((nl, i) => nl.label !== labelsSorted[i]?.label);
             if (needsFix) {
-              console.log(`[StripBoard] Label-order fix: spatial order doesn't match label order, reassigning`);
               // Re-assign: the topmost frame gets the lowest label, etc.
               for (let ci = 0; ci < numberedLabels.length; ci++) {
                 sorted[numberedLabels[ci].idx].label = labelsSorted[ci].label;
@@ -822,11 +817,6 @@ export async function handlePDF(file: File): Promise<void> {
         finalCandidates = sorted;
       }
 
-      console.log(
-        `[StripBoard] Page ${i + 1}: ${candidates.length} raw → ${filtered.length} dom-filtered → ${
-          finalCandidates.length
-        } final (labels: ${labelled.length})`
-      );
       if (finalCandidates.length === 0) continue;
 
       const rowTops = [...new Set(finalCandidates.map((c) => c.y))].sort((a, b) => a - b);
@@ -978,7 +968,6 @@ export async function handlePDF(file: File): Promise<void> {
           frame.labelW = lateLbl.w;
           frame.labelH = lateLbl.h;
           usedLabelsSet.add(frame.label);
-          console.log(`[StripBoard] Late label assign: page ${pi + 1}, "${frame.label}" → frame at position ${allFrames.indexOf(frame)} (${lateLbl.x},${lateLbl.y})`);
           li++;
         }
       }
@@ -997,9 +986,6 @@ export async function handlePDF(file: File): Promise<void> {
         medDY = median(dys);
       const medFW = median(fws),
         medFH = median(fhs);
-      console.log(
-        `[StripBoard] Label-anchor: ${labelAnchors.length} anchors, medDX=${medDX.toFixed(3)}, medDY=${medDY.toFixed(3)}, medFW=${medFW.toFixed(3)}, medFH=${medFH.toFixed(3)}`
-      );
       const existingNums = allFrames
         .map((f) => parseInt((f.label || '').match(/^(\d+)/)?.[1] || ''))
         .filter((n) => !isNaN(n));
@@ -1019,17 +1005,11 @@ export async function handlePDF(file: File): Promise<void> {
           if (!existingNums.includes(n)) expectedNums.add(n);
         }
       }
-      console.log(
-        `[StripBoard] Label-anchor: existing nums=${JSON.stringify([...new Set(existingNums)].sort((a, b) => a - b))}, expected gaps=${JSON.stringify([...expectedNums])}`
-      );
       const zeroFramePages = new Set<number>();
       for (let pi = 0; pi < allCandidates.length; pi++) {
         if (!allFrames.some((f) => f.pageIdx === pi)) zeroFramePages.add(pi);
       }
-      console.log(`[StripBoard] Label-anchor: zero-frame pages=${JSON.stringify([...zeroFramePages])}`);
-      if (expectedNums.size === 0 && zeroFramePages.size === 0) {
-        console.log('[StripBoard] Label-anchor: no gaps to fill and no zero-frame pages, skipping recovery');
-      } else {
+      if (expectedNums.size > 0 || zeroFramePages.size > 0) {
         const usedLabels = new Set<string>();
         for (const f of allFrames) {
           if (!f.label) continue;
@@ -1088,7 +1068,6 @@ export async function handlePDF(file: File): Promise<void> {
               const recMean = recSG / recN;
               const recVar = recSG2 / recN - recMean * recMean;
               if (recDark / recN < 0.02 || recVar < 800) {
-                console.log(`[StripBoard] Recovery: skipped "${labelText}" — blank region (dark=${(recDark/recN).toFixed(3)}, var=${recVar.toFixed(0)})`);
                 continue;
               }
             }
@@ -1186,7 +1165,6 @@ export async function handlePDF(file: File): Promise<void> {
               allFrames.push(frameData);
             }
           }
-          console.log(`[StripBoard] Label-anchor recovery: found ${recovered.length} frames filling sequence gaps`);
         }
       }
     }
@@ -1242,7 +1220,6 @@ export async function handlePDF(file: File): Promise<void> {
             imgX: minX, imgY: minY, imgW: ecW, imgH: ecH,
             textX: _ecTX, textY: _ecTY, textW: _ecTW, textH: _ecTH,
           });
-          console.log(`[StripBoard] End-card detected on last page: ${cw}x${ch} at (${cx},${cy})`);
         }
       }
     }
@@ -1264,9 +1241,6 @@ export async function handlePDF(file: File): Promise<void> {
       const wideRatio = widePages / allCandidates.length;
       if (pageAR >= 1.5 && invertedRatio > 0.5 && wideRatio > 0.5) {
         forceFullPage = true;
-        console.log(
-          `[StripBoard] Full-page detected: page AR=${pageAR.toFixed(2)}, dark-bg=${invertedCount}/${allCandidates.length}, wide-cand pages=${widePages}/${allCandidates.length} → forcing full-page mode`
-        );
       }
       // Wide cinematic pages with dark backgrounds whose frame-detection produces
       // no convergent dominant size (image content causes false column splits that
@@ -1274,15 +1248,9 @@ export async function handlePDF(file: File): Promise<void> {
       // Fall back to full-page mode — each page IS the frame.
       if (!forceFullPage && pageAR >= 1.5 && invertedRatio > 0.5 && dominantRW === null) {
         forceFullPage = true;
-        console.log(
-          `[StripBoard] Full-page detected: wide+inverted (AR=${pageAR.toFixed(2)}, dark-bg=${invertedCount}/${allCandidates.length}) with no convergent frame size → full-page mode`
-        );
       }
     }
     const tooFewFrames = pdf.numPages > 1 && allFrames.length > 0 && allFrames.length < Math.ceil(pdf.numPages * 0.5);
-    console.log(
-      `[StripBoard] Extraction: ${allFrames.length} frames from ${pdf.numPages} pages (dominantRW=${dominantRW?.toFixed(3)}, force=${forceFullPage}, tooFew=${tooFewFrames})`
-    );
     if (allFrames.length === 0 || tooFewFrames || forceFullPage) {
       allFrames.length = 0;
       setProgress(90, 'Full-page mode — extracting pages…');

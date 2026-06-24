@@ -118,7 +118,6 @@ function saveRectsForFile(): void {
       const oldKey = storageKey(_currentFile.name, 'local');
       if (localStorage.getItem(oldKey)) localStorage.removeItem(oldKey);
     }
-    console.log(`[pdfAdjust] Saved ${data.reduce((s, p) => s + p.rects.length, 0)} rects → "${key}"`);
   } catch { /* quota exceeded — silent */ }
 }
 
@@ -136,7 +135,6 @@ function loadRectsForFile(fileName: string): { pageNum: number; rects: AdjustRec
       // Migrate: move from 'local' to project key
       localStorage.setItem(key, raw);
       localStorage.removeItem(localKey);
-      console.log(`[pdfAdjust] Migrated rects from "local" → "${key}"`);
     }
   }
 
@@ -147,7 +145,6 @@ function loadRectsForFile(fileName: string): { pageNum: number; rects: AdjustRec
     for (const page of data) {
       if (!Array.isArray(page.rects)) return null;
     }
-    console.log(`[pdfAdjust] Restored ${data.reduce((s, p) => s + p.rects.length, 0)} rects for "${fileName}"`);
     return data;
   } catch {
     return null;
@@ -163,7 +160,6 @@ export function clearRectsForProject(projectId: string): void {
     if (k && k.startsWith(prefix)) toRemove.push(k);
   }
   for (const k of toRemove) localStorage.removeItem(k);
-  if (toRemove.length > 0) console.log(`[pdfAdjust] Cleared ${toRemove.length} saved rect entries for project ${projectId}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -1265,12 +1261,6 @@ async function onApply(): Promise<void> {
   // Save rect overlay for recall next time this PDF is opened
   saveRectsForFile();
 
-  console.log(`[pdfAdjust] Apply: ${expectedCount} image rects across ${_pages.length} pages`);
-  for (let pi = 0; pi < _pages.length; pi++) {
-    const pgImgs = _pages[pi].rects.filter(r => r.type === 'image').length;
-    if (pgImgs > 0) console.log(`  Page ${pi + 1}: ${pgImgs} images`);
-  }
-
   // --- Show progress bar inside the Adjust overlay ---
   const applyBtn = document.getElementById('pdfAdjustApply') as HTMLButtonElement;
   if (applyBtn) { applyBtn.disabled = true; applyBtn.style.opacity = '0.5'; }
@@ -1523,7 +1513,6 @@ async function onApply(): Promise<void> {
           if (text) {
             lr.labelText = text; // persist extracted label back to rect for next session
             readings.push({ text, cx: lx + lw / 2, cy: ly + lh / 2, adjusted: !!lr.adjusted });
-            console.log(`[pdfAdjust] RED rect read "${text}" at (${lx + lw / 2}, ${ly + lh / 2}) adjusted=${!!lr.adjusted} ${!lr.adjusted && lr.labelText ? '(from handlePDF)' : ''}`);
           }
         }
 
@@ -1536,10 +1525,6 @@ async function onApply(): Promise<void> {
           );
           if (!isDupe) dedupedReadings.push(rd);
         }
-        if (dedupedReadings.length < readings.length) {
-          console.log(`[pdfAdjust] RED dedup: ${readings.length} → ${dedupedReadings.length} (removed ${readings.length - dedupedReadings.length} overlapping duplicates)`);
-        }
-
         // Compute pattern from ALL remaining rects (auto + user-adjusted).
         // User-adjusted rects are correctly positioned, so including them
         // produces a more accurate median offset (outvotes any wrong auto rects).
@@ -1582,8 +1567,6 @@ async function onApply(): Promise<void> {
           medDy = dys[Math.floor(dys.length / 2)];
           redMode = 'cross-page-pattern';
         }
-        console.log(`[pdfAdjust] RED pattern: ${autoLabelRects.length} auto rects, mode=${redMode}, offset (${medDx.toFixed(0)}, ${medDy.toFixed(0)})`);
-
         // Compute per-reading target
         const hasRedPattern = medDx !== 0 || medDy !== 0;
         const redTargets: { reading: typeof dedupedReadings[0]; tx: number; ty: number }[] = [];
@@ -1605,8 +1588,6 @@ async function onApply(): Promise<void> {
           }
           redTargets.push({ reading: rd, tx, ty });
         }
-        console.log(`[pdfAdjust] RED assignment: ${redMode} mode, ${redTargets.length} readings`);
-
         // Sort by distance to nearest frame (closest first = best matches first)
         redTargets.sort((a, b) => {
           let aMin = Infinity, bMin = Infinity;
@@ -1633,7 +1614,6 @@ async function onApply(): Promise<void> {
           if (bestIdx >= 0) {
             pageFrames[bestIdx].label = rt.reading.text;
             claimed.add(bestIdx);
-            console.log(`[pdfAdjust] RED "${rt.reading.text}" ${rt.reading.adjusted ? '(user)' : '(auto)'} → frame #${bestIdx} target(${rt.tx.toFixed(0)},${rt.ty.toFixed(0)}) dist=${bestDist.toFixed(0)}`);
           }
         }
       }
@@ -1654,7 +1634,6 @@ async function onApply(): Promise<void> {
         for (const br of allBlueRects) {
           const bx = Math.round(br.x * pageW), by = Math.round(br.y * pageH);
           const bw = Math.round(br.w * pageW), bh = Math.round(br.h * pageH);
-          console.log(`[pdfAdjust] BLUE rect ${br.id} area: (${bx},${by}) ${bw}×${bh} adjusted=${!!br.adjusted}`);
 
           // READ from PDF text layer — items overlapping this rect,
           // EXCLUDING red zones AND green image zones (text is never read
@@ -1686,7 +1665,6 @@ async function onApply(): Promise<void> {
             }
           }
           let text = lines.map(ln => ln.map(i => i.text).join(' ')).join('\n').trim();
-          console.log(`[pdfAdjust] BLUE rect ${br.id}: text layer found ${items.length} items → "${text.slice(0, 60)}"`);
 
           // OCR fallback if text layer empty
           if (!text && bw > 10 && bh > 10) {
@@ -1701,7 +1679,6 @@ async function onApply(): Promise<void> {
               const result = await worker.recognize(ocrCrop.toDataURL('image/png'));
               text = (result.data.text || '').trim();
               await worker.terminate();
-              console.log(`[pdfAdjust] BLUE rect ${br.id}: OCR fallback → "${text.slice(0, 60)}"`);
             } catch (ocrErr) {
               console.warn(`[pdfAdjust] BLUE rect ${br.id}: OCR failed`, ocrErr);
             }
@@ -1762,8 +1739,6 @@ async function onApply(): Promise<void> {
           blueMedDy = dys[Math.floor(dys.length / 2)];
           blueMode = 'cross-page-pattern';
         }
-        console.log(`[pdfAdjust] BLUE pattern: ${autoCleanReadings.length} clean auto readings, mode=${blueMode}, offset (${blueMedDx.toFixed(0)}, ${blueMedDy.toFixed(0)}), ${cleanReadings.length} readings to assign to ${pageFrames.length} frames`);
-
         // Compute per-reading target
         const hasPattern = blueMedDx !== 0 || blueMedDy !== 0;
         const blueTargets: { reading: typeof cleanReadings[0]; tx: number; ty: number }[] = [];
@@ -1786,8 +1761,6 @@ async function onApply(): Promise<void> {
           }
           blueTargets.push({ reading: bd, tx, ty });
         }
-        console.log(`[pdfAdjust] BLUE assignment: ${blueMode} mode, ${blueTargets.length} readings`);
-
         // Sort by distance to nearest frame (closest first = best matches first)
         blueTargets.sort((a, b) => {
           let aMin = Infinity, bMin = Infinity;
@@ -1814,7 +1787,6 @@ async function onApply(): Promise<void> {
           if (bestIdx >= 0) {
             pageFrames[bestIdx].textContent = bt.reading.text;
             claimed.add(bestIdx);
-            console.log(`[pdfAdjust] BLUE "${bt.reading.text.slice(0, 40)}" ${bt.reading.adjusted ? '(user)' : '(auto)'} → frame #${bestIdx} target(${bt.tx.toFixed(0)},${bt.ty.toFixed(0)}) dist=${bestDist.toFixed(0)}`);
           }
         }
       }
@@ -1966,7 +1938,6 @@ async function onApply(): Promise<void> {
                 label, cropW: cw, cropH: ch, textContent,
                 pageIdx: pi, sortY: iy, sortX: ix, rectId: ir.id,
               });
-              console.log(`[pdfAdjust] Recovered rect ${ir.id} page ${pi + 1}: label="${label}"`);
             } catch (recErr) {
               console.error(`[pdfAdjust] Could not recover rect ${missed.rect.id}:`, recErr);
             }
@@ -1975,9 +1946,6 @@ async function onApply(): Promise<void> {
           console.error(`[pdfAdjust] Could not recover page ${pi + 1}:`, pageErr);
         }
       }
-      console.log(`[pdfAdjust] After recovery: ${framesToLoad.length} frames`);
-    } else {
-      console.log(`[pdfAdjust] All ${expectedCount} image rects extracted successfully`);
     }
 
     // Sort frames by position: page order, then top-to-bottom, left-to-right.
