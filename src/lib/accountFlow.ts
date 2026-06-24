@@ -1127,6 +1127,12 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
     _localFrameId?: number; _isMain?: boolean;
     _stripType?: string; _versionIdx?: number;
   }> = [];
+  const images: Array<{
+    id: string; version_id: string; r2_key: string;
+    width: number | null; height: number | null;
+    size_bytes: number | null; content_type: string | null;
+    updated_at: number;
+  }> = [];
 
   // Map local frame id → server frame UUID (needed for group remapping)
   const localToServerFrame = new Map<number, string>();
@@ -1283,13 +1289,7 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
     stripTagInfoDismissed: s.stripTagInfoDismissed || undefined,
   });
 
-  // Upload all images to R2 in parallel
-  const images: Array<{
-    id: string; version_id: string; r2_key: string;
-    width: number | null; height: number | null;
-    size_bytes: number | null; content_type: string | null;
-    updated_at: number;
-  }> = [];
+  // Upload NEW images to R2 in parallel (images with existing r2Key were already added above)
 
   // Map versionId → r2_key for writing back to the store after push
   const uploadedR2Keys = new Map<string, { r2Key: string; task: typeof imageUploads[0] }>();
