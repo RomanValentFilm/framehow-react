@@ -472,6 +472,7 @@ export function handleAction(action: string, fid: number, div: HTMLElement, from
       ver.type = s.stripClipboard.bgImage ? 'upload' : 'drawing';
       ver.strokes = JSON.parse(JSON.stringify(s.stripClipboard.strokes || []));
       ver.bgImage = s.stripClipboard.bgImage || null;
+      ver.r2Key = undefined; // Clear so sync uploads the pasted image
       rerender();
     } else {
       const allVers = getStripVersions(fid, strip);
@@ -559,6 +560,7 @@ export function applyCapturedImage(dataURL: string, target: any): void {
       const t = autoNewStripVersionIfNeeded(fid, strip);
       t.type = 'upload';
       t.bgImage = dataURL;
+      t.r2Key = undefined; // Clear so sync uploads the new image
       if (s.currentViewMode === 'main') {
         // Show captured version inline in main card (cross-compare)
         s.crossCompare[fid] = getStripActiveTab(fid, strip);
@@ -574,6 +576,7 @@ export function applyCapturedImage(dataURL: string, target: any): void {
     const t = autoNewStripVersionIfNeeded(fid, strip);
     t.type = 'upload';
     t.bgImage = dataURL;
+    t.r2Key = undefined; // Clear so sync uploads the new image
     setStripCrossCompare(fid, strip, getStripActiveTab(fid, strip));
     renderMainFrame(div, fid);
     const vd = document.querySelector(`#${scrollId} .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
@@ -583,6 +586,7 @@ export function applyCapturedImage(dataURL: string, target: any): void {
     const t = autoNewStripVersionIfNeeded(fid, strip);
     t.type = 'upload';
     t.bgImage = dataURL;
+    t.r2Key = undefined; // Clear so sync uploads the new image
     renderVersionFrame(div, fid, strip);
     const nai = getStripActiveTab(fid, strip);
     const cvsPfx = `cvs_${strip}_${fid}_${nai}`;

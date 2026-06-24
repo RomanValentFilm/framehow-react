@@ -67,6 +67,9 @@ export function startHeartbeat(): void {
   if (heartbeatStarted) return;
   heartbeatStarted = true;
   fhTrack('app_opened');
-  // Heartbeat every 2 minutes (was 5 — shorter interval = better duration accuracy)
-  setInterval(() => fhTrack('heartbeat'), 2 * 60 * 1000);
+  // Heartbeat every 2 minutes — only when tab is visible (skip background/suspended)
+  setInterval(() => {
+    if (document.visibilityState === 'hidden') return;
+    fhTrack('heartbeat');
+  }, 2 * 60 * 1000);
 }

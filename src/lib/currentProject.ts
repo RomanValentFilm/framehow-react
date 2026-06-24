@@ -3,7 +3,7 @@
 // whenever the storyboard changes.
 //
 // SYNC MODEL (v4.7.005):
-// - Push: debounced 3s after user action + immediate on blur. No interval.
+// - Push: debounced 5s after user action + immediate on blur. No interval.
 // - Pull: on focus (visibility change). Per-frame merge on pull.
 // - System actions (applying pulled data, rendering) are wrapped in
 //   beginSystemAction/endSystemAction — they never trigger a push.

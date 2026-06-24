@@ -1162,8 +1162,16 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
     if (f.strokes && f.strokes.length > 0) {
       drawings.push({ id: uuid(), version_id: mainVersionId, drawing_data: JSON.stringify(f.strokes), updated_at: now });
     }
-    if (f.src && isLocalImage(f.src)) {
+    if (f.src && isLocalImage(f.src) && !f.r2Key) {
+      // New image — needs uploading to R2
       imageUploads.push({ versionId: mainVersionId, src: f.src, _localFrameId: f.id, _isMain: true });
+    } else if (f.r2Key) {
+      // Already in R2 — reuse the existing key (no upload needed)
+      images.push({
+        id: uuid(), version_id: mainVersionId, r2_key: f.r2Key,
+        width: null, height: null, size_bytes: null, content_type: null,
+        updated_at: now,
+      });
     }
 
     // Helper: push versions for a strip type with optional type prefix
@@ -1180,8 +1188,16 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
         if (lv.strokes && lv.strokes.length > 0) {
           drawings.push({ id: uuid(), version_id: vid, drawing_data: JSON.stringify(lv.strokes), updated_at: now });
         }
-        if (lv.bgImage && isLocalImage(lv.bgImage)) {
+        if (lv.bgImage && isLocalImage(lv.bgImage) && !lv.r2Key) {
+          // New version image — needs uploading
           imageUploads.push({ versionId: vid, src: lv.bgImage, _localFrameId: f.id, _stripType: stripType, _versionIdx: vi });
+        } else if (lv.r2Key) {
+          // Already in R2 — reuse the existing key
+          images.push({
+            id: uuid(), version_id: vid, r2_key: lv.r2Key,
+            width: null, height: null, size_bytes: null, content_type: null,
+            updated_at: now,
+          });
         }
         // Track strip-tag state for metadata (avoids D1 schema change)
         if (lv.setupTagged) {

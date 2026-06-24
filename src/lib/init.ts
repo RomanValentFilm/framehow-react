@@ -751,6 +751,7 @@ export function initFramehow(): void {
         const target = autoNewVersionIfNeeded(fid);
         target.type = 'upload';
         target.bgImage = (ev.target as FileReader).result as string;
+        target.r2Key = undefined; // Clear so sync uploads the new image
         if (state().currentViewMode === 'main') s.crossCompare[fid] = s.activeTab[fid];
         renderMainFrame(div, fid);
         const vd = document.querySelector(`#versionsScroll .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
@@ -758,6 +759,7 @@ export function initFramehow(): void {
         // toast removed
       } else {
         f.src = (ev.target as FileReader).result as string;
+        f.r2Key = undefined; // Clear so sync uploads the new image
         f.drawMode = false;
         renderMainFrame(div, fid);
         const vd = document.querySelector(`#versionsScroll .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
@@ -792,8 +794,9 @@ export function initFramehow(): void {
           const target = autoNewStripVersionIfNeeded(fid, strip);
           target.type = 'upload';
           target.bgImage = dataURL;
+          target.r2Key = undefined; // Clear so sync uploads the new image
         } else {
-          // Additional files: create new version tabs
+          // Additional files: create new version tabs (new versions have no r2Key by default)
           const allVers = getStripVersions(fid, strip);
           const n = allVers.length + 1;
           const prefix = stripTabPrefix(strip);
