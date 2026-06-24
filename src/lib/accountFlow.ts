@@ -1883,7 +1883,6 @@ export async function flowAccountOrSignIn(): Promise<void> {
 
 const HEARTBEAT_INTERVAL_MS = 5_000;
 const HEARTBEAT_STALE_MS = 10_000; // heartbeat older than this = device stopped
-let _heartbeatTimer: number | null = null;
 let _lastUserActivity = 0;
 let _deviceLockOverlay: HTMLElement | null = null;
 
@@ -2072,10 +2071,8 @@ function startPullOnFocus(): void {
   });
   window.addEventListener('focus', () => void safePull());
 
-  // Periodic pull every 30s
-  setInterval(() => {
-    if (document.hasFocus() && !isDeviceLocked()) void tryPullFromCloud();
-  }, 30_000);
+  // No periodic poll — pull-on-focus + wake-from-idle cover all cases.
+  // This keeps server requests to a minimum.
 
   // Wake-from-idle: if idle 10+ seconds and user clicks, check heartbeat first
   let _lastInteraction = Date.now();
@@ -2088,17 +2085,6 @@ function startPullOnFocus(): void {
   }
   document.addEventListener('mousedown', onWakeFromIdle, true);
   document.addEventListener('touchstart', onWakeFromIdle, true);
-}
-
-function formatTimeAgo(ts: number): string {
-  const diff = Math.max(0, Date.now() - ts);
-  const mins = Math.floor(diff / 60_000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins} min ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  return `${days}d ago`;
 }
 
 /**

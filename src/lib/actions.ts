@@ -36,7 +36,6 @@ import { fhTrack } from './tracking';
 import { drawFit } from './drawing';
 import { openCamera, getCameraTarget, clearCameraTarget, setOnCapturedImage } from './camera';
 import { recordTombstone } from './accountFlow';
-import { markDirtyFrame } from './currentProject';
 
 export function handleMainAction(action: string, fid: number, div: HTMLElement): void {
   const s = state();

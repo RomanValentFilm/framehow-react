@@ -2,13 +2,39 @@
 // id (if saved), name, dirty flag — and debounces persistence to IndexedDB
 // whenever the storyboard changes.
 //
-// SYNC MODEL (v4.7.005):
-// - Push: debounced 5s after user action + immediate on blur. No interval.
-// - Pull: on focus (visibility change). Per-frame merge on pull.
-// - System actions (applying pulled data, rendering) are wrapped in
-//   beginSystemAction/endSystemAction — they never trigger a push.
-// - _dirtyFrameIds tracks which frames the user modified since last push.
-//   On pull, dirty frames are kept; clean frames take cloud version.
+// ═══════════════════════════════════════════════════════════════════════════
+// SYNC RULES (v4.7.006) — in plain English
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// PUSH (sending your changes to the server):
+//  1. When you make a change, it waits 5 seconds then pushes — so rapid
+//     actions batch into one push instead of flooding the server.
+//  2. When you leave the tab (blur), it pushes immediately — your work is
+//     saved before you switch to another device.
+//  3. Only NEW images get uploaded — images already in R2 reuse their key.
+//  4. If the push fails (offline), it retries when you come back online.
+//  5. If the server says "conflict" (409), it pulls first, then you can push.
+//  6. Never pushes while a pull is loading or the project is still opening.
+//
+// PULL (getting the other device's changes):
+//  7. When you open/switch to the tab, it checks for newer cloud data.
+//  8. After the app boots from saved state, it pulls once (1.5s delay).
+//  9. Per-frame merge: your dirty frames stay, clean frames take cloud.
+// 10. If the same frame was changed on both devices → side-by-side picker.
+// 11. Images that haven't changed are kept from local cache (no re-download).
+//
+// HEARTBEAT (device lock — prevents two people editing at once):
+// 12. While you're active, your device sends a "heartbeat" every 5 seconds.
+// 13. When you switch devices, the new device sees the heartbeat and waits.
+// 14. When the first device goes idle (10s), heartbeat stops → lock clears.
+// 15. Pull runs in parallel with the lock wait — data is ready instantly.
+//
+// SAFETY:
+// 16. System actions (pulls, loads, renders) are wrapped so they don't
+//     accidentally trigger a push of stale data.
+// 17. Tombstones track frame/version deletions so they sync across devices.
+// 18. Image-count guard refuses to push zero-image state over good data.
+// ═══════════════════════════════════════════════════════════════════════════
 
 import { useStore } from '../store/state';
 import { clearSnapshot, saveSnapshot, snapshotFromStore } from './persistence';
@@ -153,16 +179,9 @@ export function clearDirtyState(): void {
   _dirtyFrameIds.clear();
 }
 
-/** Mark a frame as modified by the user. Pass the serverFrameId (UUID).
- *  Frames without a serverFrameId (new, not yet pushed) don't need marking —
- *  they'll be included in the push automatically.
- *  Also call for frame-level metadata changes (label, hidden, etc.). */
-export function markDirtyFrame(serverFrameId: string | undefined): void {
-  if (serverFrameId) _dirtyFrameIds.add(serverFrameId);
-}
 
 // ---------------------------------------------------------------------------
-// Debounced push: 3 seconds after last user change.
+// Debounced push: 5 seconds after last user change.
 // Also pushes immediately on blur (tab loses focus).
 // ---------------------------------------------------------------------------
 
@@ -391,17 +410,3 @@ export function startAutosave(): void {
   setInterval(() => { void retryPendingSyncs(); }, 60_000);
 }
 
-// ---------------------------------------------------------------------------
-// DEPRECATED / REMOVED (kept as no-ops for backward compat during transition)
-// These were part of the old interval-based sync. They'll be cleaned up once
-// all call sites are updated.
-// ---------------------------------------------------------------------------
-
-/** @deprecated Use beginSystemAction/endSystemAction instead. */
-export function bumpStoreVersion(): void { /* no-op */ }
-/** @deprecated No longer needed — dirty tracking is automatic. */
-export function updateSyncHash(): void { /* no-op */ }
-/** @deprecated Use isDirty() instead. */
-export function hasLocalChanges(): boolean { return _dirty; }
-/** @deprecated Use beginSystemAction/endSystemAction instead. */
-export function suppressVersionBumps(_durationMs: number): void { /* no-op */ }
