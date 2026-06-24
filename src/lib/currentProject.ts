@@ -77,7 +77,7 @@ export function clearCurrentProject(): void {
 // Autosave: persist the storyboard to IDB with debounce.
 // ---------------------------------------------------------------------------
 
-const AUTOSAVE_DEBOUNCE_MS = 800;
+const AUTOSAVE_DEBOUNCE_MS = 2_000;  // Was 800 — give rapid actions room to finish
 let autosaveTimer: number | null = null;
 let cloudSyncInFlight = false;
 
@@ -166,7 +166,7 @@ export function markDirtyFrame(serverFrameId: string | undefined): void {
 // Also pushes immediately on blur (tab loses focus).
 // ---------------------------------------------------------------------------
 
-const SYNC_DEBOUNCE_MS = 3_000;
+const SYNC_DEBOUNCE_MS = 5_000;  // Was 3s — let rapid edits settle before pushing
 let _syncDebounceTimer: number | null = null;
 
 function scheduleSyncPush(): void {
@@ -255,12 +255,15 @@ function scheduleAutosave(): void {
   autosaveTimer = window.setTimeout(runAutosave, AUTOSAVE_DEBOUNCE_MS);
 }
 
+let _autosaveInFlight = false;
 async function runAutosave(): Promise<void> {
   autosaveTimer = null;
+  if (_autosaveInFlight) return;              // Don't overlap heavy IDB writes
   if (_pullInFlight || _projectSwitchInFlight || _pullIncomplete) {
     scheduleAutosave();
     return;
   }
+  _autosaveInFlight = true;
   try {
     const snap = snapshotFromStore(cp.projectId, cp.name);
     if (snap.frames.length === 0 && cp.name === null) {
@@ -270,6 +273,8 @@ async function runAutosave(): Promise<void> {
     await saveSnapshot(snap);
   } catch (e) {
     console.warn('[currentProject] autosave failed', e);
+  } finally {
+    _autosaveInFlight = false;
   }
 }
 

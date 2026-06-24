@@ -2394,9 +2394,10 @@ export async function bootstrapAccountSystem(): Promise<void> {
 
       // Kick off a cloud pull now that projectId is set.
       // The focus/visibility events fired before bootstrap set the projectId,
-      // so the initial pull attempt bailed. This ensures we fetch cloud changes.
+      // so the initial pull attempt bailed. Delay slightly so the UI settles
+      // before we start network requests + image loading.
       if (snap.projectId && isLoggedIn()) {
-        void tryPullFromCloud();
+        setTimeout(() => void tryPullFromCloud(), 1_500);
       }
     }
   } catch (e) {
