@@ -55,18 +55,26 @@ cd ~/Desktop/Framehow\ Files/framehow-react && rm -rf dist tsconfig.tsbuildinfo 
 ##
 ## The terminal command (steps A+B+C combined):
 ## A = git add + commit + push (saves current version to GitHub)
-## B = cp backup to framehow-react-versions/vCURRENT/ (< 5MB, no node_modules/dist/.git)
+## B = cp backup to ~/Desktop/Framehow Files/framehow-react-versions/vCURRENT/ (< 5MB, no node_modules/dist/.git)
+##     IMPORTANT: backup path is ~/Desktop/Framehow\ Files/framehow-react-versions/ (INSIDE "Framehow Files")
+##     DO NOT use ~/Desktop/framehow-react-versions/ — that is WRONG
 ## C = npm run build + wrangler pages deploy --branch=dev (deploys current version)
 ##
 ## Template (replace vX.Y.ZZZ with current version, e.g. v4.7.011):
 ## ```
-## cd ~/Desktop/Framehow\ Files/framehow-react && git add -A && git commit -m "vX.Y.ZZZ: DESCRIPTION" && git push origin v4.4 && cd ../framehow-react-versions && cp -R ../framehow-react vX.Y.ZZZ && rm -rf vX.Y.ZZZ/node_modules vX.Y.ZZZ/dist vX.Y.ZZZ/.git vX.Y.ZZZ/framehow-react-versions vX.Y.ZZZ/backend/node_modules vX.Y.ZZZ/backend/.wrangler && cd ../framehow-react && npm run build && npx wrangler pages deploy dist --project-name=framehow-react --branch=dev
+## cd ~/Desktop/Framehow\ Files/framehow-react && git add -A && git commit -m "vX.Y.ZZZ – DESCRIPTION" && git push origin v4.4 && cd ../framehow-react-versions && cp -R ../framehow-react vX.Y.ZZZ && rm -rf vX.Y.ZZZ/node_modules vX.Y.ZZZ/dist vX.Y.ZZZ/.git vX.Y.ZZZ/framehow-react-versions vX.Y.ZZZ/backend/node_modules vX.Y.ZZZ/backend/.wrangler && cd ../framehow-react && npm run build && npx wrangler pages deploy dist --project-name=framehow-react --branch=dev
 ## ```
 ##
 ## After success, Claude bumps state.ts to vX.Y.ZZZ+1 and adds a new
 ## "working copy" entry in CLAUDE.md Versions section.
 ## The backup must be < 5MB (currently ~2.3MB).
 ## Production deploy ONLY when user explicitly says so.
+##
+## REPORTING: After 4 steps save is complete, tell the user:
+##   1. vX.Y.ZZZ saved to GitHub, desktop, and deployed to dev
+##   2. vX.Y.ZZZ pushed to GitHub
+##   3. vX.Y.ZZZ backed up to desktop › framehow-react-versions
+##   4. New working version is vX.Y.ZZZ+1
 
 ## CRITICAL RULES
 - User controls when to deploy. NEVER deploy without explicit permission.
@@ -103,8 +111,17 @@ cd ~/Desktop/Framehow\ Files/framehow-react && rm -rf dist tsconfig.tsbuildinfo 
 ### v4.7.012 — 2026-06-26 (dev — working copy)
 Next version, continues from v4.7.011.
 
-### v4.7.014 — 2026-06-26 (dev — working copy)
-Next version, continues from v4.7.013.
+### v4.7.015 — 2026-06-26 (dev — working copy)
+Next version, continues from v4.7.014.
+
+### v4.7.014 — 2026-06-26 (dev — deployed)
+**R2 orphan cleanup, daily expired project purge, restore modal UI polish**
+
+Changes:
+- `backend/src/routes/cleanup.ts` — New admin endpoints: `POST /admin/cleanup/orphans` (batched R2 orphan scan+delete, 500 per call), `POST /admin/cleanup/expired-projects` (purge projects deleted >7 days), `GET /admin/cleanup/preview` (dry-run).
+- `backend/src/index.ts` — Wired cleanup routes, added `scheduled` cron handler for daily purge at 3 AM UTC.
+- `backend/wrangler.toml` — Added `[triggers] crons = ["0 3 * * *"]`.
+- `src/lib/accountFlow.ts` — Restore modal: hide overlay before confirm dialog (z-index fix), simplified button labels to actual time + clock time (gray/white), improved `formatTimeAgo` wording.
 
 ### v4.7.013 — 2026-06-26 (dev — deployed)
 **Restore Project feature — backend snapshots + frontend modal**
