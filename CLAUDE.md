@@ -111,8 +111,11 @@ cd ~/Desktop/Framehow\ Files/framehow-react && rm -rf dist tsconfig.tsbuildinfo 
 ### v4.7.012 — 2026-06-26 (dev — working copy)
 Next version, continues from v4.7.011.
 
-### v4.7.015 — 2026-06-26 (dev — working copy)
-Next version, continues from v4.7.014.
+### v4.7.016 — 2026-06-26 (dev — working copy)
+Next version, continues from v4.7.015.
+
+### v4.7.015 — 2026-06-26 (dev — deployed)
+**CLAUDE.md 4-step save docs update — backup path fix, reporting format**
 
 ### v4.7.014 — 2026-06-26 (dev — deployed)
 **R2 orphan cleanup, daily expired project purge, restore modal UI polish**

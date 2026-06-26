@@ -36,6 +36,7 @@ import { fhTrack } from './tracking';
 import { drawFit } from './drawing';
 import { openCamera, getCameraTarget, clearCameraTarget, setOnCapturedImage } from './camera';
 import { recordTombstone } from './accountFlow';
+import { openFullscreen } from './fullscreen';
 
 export function handleMainAction(action: string, fid: number, div: HTMLElement): void {
   const s = state();
@@ -225,12 +226,8 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
     updateFrameBadge();
     renderAll();
   } else if (action === 'draw') {
-    if (!wasDrawing) { s.drawActive[fid] = 'main'; fhTrack('draw_used', { strip: 'main' }); }
-    f.drawMode = true;
-    renderMainFrame(div, fid);
-    const vdiv = document.querySelector(`.frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
-    if (vdiv) renderVersionFrame(vdiv, fid);
-    scrollFrameIntoView(fid, 'main');
+    fhTrack('draw_used', { strip: 'main' });
+    openFullscreen(fid, 0, 'main');
   } else if (action === 'write') {
     fhTrack('write_used', { strip: 'main' });
     f.strokes = f.strokes || [];
@@ -403,11 +400,8 @@ export function handleAction(action: string, fid: number, div: HTMLElement, from
   clearAllDrawActive();
 
   if (action === 'draw') {
-    if (!wasDrawing) { s.drawActive[fid] = strip; fhTrack('draw_used', { strip }); }
-    else if (s.overviewAction) s.drawEraser[fid] = false;
-    ver.type = 'drawing';
-    rerender();
-    scrollFrameIntoView(fid, strip);
+    fhTrack('draw_used', { strip });
+    openFullscreen(fid, ai, strip);
   } else if (action === 'upload') {
     useStore.setState({ imgTarget: { fid, div, fromCompare, stripType: strip } });
     (document.getElementById('imgInput') as HTMLInputElement).removeAttribute('capture');

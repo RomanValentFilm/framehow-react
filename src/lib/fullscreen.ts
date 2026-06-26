@@ -1,11 +1,19 @@
 // Fullscreen overlay (desktop/tablet only) — opens a frame or version
 // in a large overlay with the same drawing toolbar.
 
-import { state, useStore } from '../store/state';
+import { COLORS, state, useStore } from '../store/state';
 import type { StripType } from '../store/state';
 import { drawToolbarHTML, starHTML, getStripVersions } from './helpers';
 import { restoreCanvas, restoreMainCanvas, setupDrawing, setupMainDrawing } from './drawing';
 import { resetToolbarState } from './view';
+
+// Default draw settings: blue, middle thickness, no eraser
+const DEFAULT_DRAW_COLOR = COLORS[4]; // #3080e0 blue
+const DEFAULT_DRAW_WIDTH = 12;        // middle thickness
+
+// Global "last used" — persists across frames within the session
+let _lastColor: string = DEFAULT_DRAW_COLOR;
+let _lastWidth: number = DEFAULT_DRAW_WIDTH;
 
 const fsCollapseSVG = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M4 14h6v6M20 10h-6V4M10 14l-7 7M14 10l7-7"/></svg>';
 
@@ -19,6 +27,11 @@ export function openFullscreen(fid: number, vi: number, origin: 'main' | 'ver' |
   const isMain = origin === 'main';
   const src: any = isMain ? f : ver;
   if (!src) return;
+
+  // Apply last-used color/width (carries across frames), eraser always off
+  s.drawColor[fid] = _lastColor;
+  s.drawWidth[fid] = _lastWidth;
+  s.drawEraser[fid] = false;
 
   const overlay = document.createElement('div');
   overlay.className = 'fs-overlay';
@@ -90,22 +103,33 @@ export function openFullscreen(fid: number, vi: number, origin: 'main' | 'ver' |
         const c = (d as HTMLElement).dataset.color!;
         state().drawColor[fid] = c;
         state().drawEraser[fid] = false;
-        // Draw color only — don't overwrite existing text overlay color
+        _lastColor = c; // remember globally
         overlay.querySelectorAll('.color-dot').forEach((dd) =>
           dd.classList.toggle('selected', (dd as HTMLElement).dataset.color === c)
         );
-        overlay.querySelectorAll('.thick-btn').forEach((dd) => dd.classList.remove('selected'));
+        // re-highlight active thickness
+        const tw = String(state().drawWidth[fid] || _lastWidth);
+        overlay.querySelectorAll('.thick-btn').forEach((dd) =>
+          dd.classList.toggle('selected', (dd as HTMLElement).dataset.tw === tw)
+        );
         overlay.querySelectorAll('.eraser-btn').forEach((dd) => dd.classList.remove('selected'));
       })
     );
     overlay.querySelectorAll('.thick-btn').forEach((d) =>
       d.addEventListener('click', () => {
-        state().drawWidth[fid] = parseInt((d as HTMLElement).dataset.tw!);
+        const w = parseInt((d as HTMLElement).dataset.tw!);
+        state().drawWidth[fid] = w;
         state().drawEraser[fid] = false;
+        _lastWidth = w; // remember globally
         overlay.querySelectorAll('.thick-btn').forEach((dd) =>
           dd.classList.toggle('selected', (dd as HTMLElement).dataset.tw === (d as HTMLElement).dataset.tw)
         );
         overlay.querySelectorAll('.eraser-btn').forEach((dd) => dd.classList.remove('selected'));
+        // re-highlight active color
+        const cc = state().drawColor[fid] || _lastColor;
+        overlay.querySelectorAll('.color-dot').forEach((dd) =>
+          dd.classList.toggle('selected', (dd as HTMLElement).dataset.color === cc)
+        );
       })
     );
     overlay.querySelectorAll('.eraser-btn').forEach((d) =>
