@@ -103,8 +103,18 @@ cd ~/Desktop/Framehow\ Files/framehow-react && rm -rf dist tsconfig.tsbuildinfo 
 ### v4.7.012 — 2026-06-26 (dev — working copy)
 Next version, continues from v4.7.011.
 
-### v4.7.013 — 2026-06-26 (dev — working copy)
-Next version, continues from v4.7.012.
+### v4.7.014 — 2026-06-26 (dev — working copy)
+Next version, continues from v4.7.013.
+
+### v4.7.013 — 2026-06-26 (dev — deployed)
+**Restore Project feature — backend snapshots + frontend modal**
+
+Changes:
+- `backend/migrations/0010_project_snapshots.sql` — New `project_snapshots` table for storing project tree JSON at points in time.
+- `backend/src/routes/projects.ts` — `maybeCreateSnapshot` (every 10 min during push), `forceCreateSnapshot`, `thinSnapshots` (retention policy), `GET /snapshots`, `POST /restore/:snapshotId`.
+- `src/lib/accountFlow.ts` — `openRestoreModal` (fetches snapshots, groups into time buckets, dark modal UI), `performRestore` (progress bar, applies restored tree), `flowRestoreProject` entry point.
+- `src/components/Toolbar.tsx` — Restore Project menu button with separator gaps.
+- `src/lib/init.ts` — Click handler for Restore Project button.
 
 ### v4.7.012 — 2026-06-26 (dev — deployed)
 **Incomplete load overlay — blocks interaction when images fail to download**

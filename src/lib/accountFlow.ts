@@ -2022,26 +2022,26 @@ async function openRestoreModal(projectId: string): Promise<void> {
 
   // Define time buckets
   const buckets: Array<{ label: string; minAge: number; maxAge: number }> = [
-    { label: 'Last 10 min',  minAge: 0,                    maxAge: 10 * 60 * 1000 },
-    { label: 'Last 20 min',  minAge: 10 * 60 * 1000,       maxAge: 20 * 60 * 1000 },
-    { label: 'Last 30 min',  minAge: 20 * 60 * 1000,       maxAge: 30 * 60 * 1000 },
-    { label: '~1 hour ago',  minAge: 40 * 60 * 1000,       maxAge: 80 * 60 * 1000 },
-    { label: '~2 hours ago', minAge: 80 * 60 * 1000,       maxAge: 3 * 60 * 60 * 1000 },
-    { label: '~3 hours ago', minAge: 3 * 60 * 60 * 1000,   maxAge: 4.5 * 60 * 60 * 1000 },
-    { label: '~5 hours ago', minAge: 4 * 60 * 60 * 1000,   maxAge: 12 * 60 * 60 * 1000 },
-    { label: '~15 hours ago',minAge: 12 * 60 * 60 * 1000,  maxAge: 24 * 60 * 60 * 1000 },
-    { label: 'Yesterday',    minAge: 24 * 60 * 60 * 1000,  maxAge: 48 * 60 * 60 * 1000 },
+    { label: '10 min ago',  minAge: 0,                    maxAge: 10 * 60 * 1000 },
+    { label: '20 min ago',  minAge: 10 * 60 * 1000,       maxAge: 20 * 60 * 1000 },
+    { label: '30 min ago',  minAge: 20 * 60 * 1000,       maxAge: 30 * 60 * 1000 },
+    { label: '1 hour ago',  minAge: 40 * 60 * 1000,       maxAge: 80 * 60 * 1000 },
+    { label: '2 hours ago', minAge: 80 * 60 * 1000,       maxAge: 3 * 60 * 60 * 1000 },
+    { label: '3 hours ago', minAge: 3 * 60 * 60 * 1000,   maxAge: 4.5 * 60 * 60 * 1000 },
+    { label: '5 hours ago', minAge: 4 * 60 * 60 * 1000,   maxAge: 12 * 60 * 60 * 1000 },
+    { label: '15 hours ago',minAge: 12 * 60 * 60 * 1000,  maxAge: 24 * 60 * 60 * 1000 },
+    { label: 'Yesterday',   minAge: 24 * 60 * 60 * 1000,  maxAge: 48 * 60 * 60 * 1000 },
   ];
 
   // Match each bucket to the best (most recent) snapshot in its range
-  const matched: Array<{ label: string; snapshot: { id: string; created_at: number }; timeAgo: string }> = [];
+  const matched: Array<{ label: string; snapshot: { id: string; created_at: number }; timeAgo: string; clockTime: string }> = [];
   for (const b of buckets) {
     const match = snapshots.find((s) => {
       const age = now - s.created_at;
       return age >= b.minAge && age < b.maxAge;
     });
     if (match) {
-      matched.push({ label: b.label, snapshot: match, timeAgo: formatTimeAgo(now - match.created_at) });
+      matched.push({ label: b.label, snapshot: match, timeAgo: formatTimeAgo(now - match.created_at), clockTime: formatClockTime(match.created_at) });
     }
   }
 
@@ -2080,14 +2080,16 @@ async function openRestoreModal(projectId: string): Promise<void> {
         'background:#2a2a2a;border:1px solid #444;border-radius:8px;' +
         'color:#fff;font-size:14px;cursor:pointer;text-align:left;' +
         'transition:background 0.15s;';
-      btn.innerHTML = `<span style="font-weight:600;">${m.label}</span>` +
-        `<span style="float:right;color:#888;font-size:12px;">${m.timeAgo}</span>`;
+      btn.innerHTML = `<span style="color:#888;">${m.timeAgo}</span>` +
+        `<span style="color:#555;margin:0 8px;">›</span>` +
+        `<span style="float:right;color:#fff;">${m.clockTime}</span>`;
       btn.addEventListener('mouseenter', () => { btn.style.background = '#333'; });
       btn.addEventListener('mouseleave', () => { btn.style.background = '#2a2a2a'; });
       btn.addEventListener('click', async () => {
-        const confirmMsg = `Restore project to "${m.label}" (${m.timeAgo})?\n\nYour current state will be saved as a restore point before restoring.`;
+        overlay.style.display = 'none';
+        const confirmMsg = `Restore project to ${m.timeAgo} (${m.clockTime})?\n\nYour current state will be saved as a restore point before restoring.`;
         const ok = await showConfirm(confirmMsg);
-        if (!ok) return;
+        if (!ok) { overlay.style.display = 'flex'; return; }
         overlay.remove();
         await performRestore(projectId, m.snapshot.id);
         resolve();
@@ -2119,9 +2121,18 @@ function formatTimeAgo(ms: number): string {
   const mins = Math.round(ms / 60000);
   if (mins < 60) return `${mins} min ago`;
   const hours = Math.round(ms / 3600000);
-  if (hours < 24) return `${hours}h ago`;
+  if (hours === 1) return '1 hour ago';
+  if (hours < 24) return `${hours} hours ago`;
+  if (hours < 48) return 'yesterday';
   const days = Math.round(ms / 86400000);
-  return `${days}d ago`;
+  return `${days} days ago`;
+}
+
+function formatClockTime(timestamp: number): string {
+  const d = new Date(timestamp);
+  const h = d.getHours().toString().padStart(2, '0');
+  const m = d.getMinutes().toString().padStart(2, '0');
+  return `${h}:${m}`;
 }
 
 async function performRestore(projectId: string, snapshotId: string): Promise<void> {

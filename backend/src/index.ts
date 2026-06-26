@@ -5,6 +5,7 @@ import userRouter from "./routes/user";
 import projectsRouter from "./routes/projects";
 import uploadRouter from "./routes/upload";
 import analyticsRouter from "./routes/analytics";
+import cleanupRouter, { purgeExpiredProjects } from "./routes/cleanup";
 
 const app = new Hono<{ Bindings: Env; Variables: AppVariables }>();
 
@@ -30,6 +31,8 @@ app.route("/projects", projectsRouter);
 app.route("/", uploadRouter);
 // Analytics: /track (public) + /analytics/* (admin-only)
 app.route("/", analyticsRouter);
+// Cleanup: /admin/cleanup/* (admin-only)
+app.route("/", cleanupRouter);
 
 app.notFound((c) => c.json({ error: { code: "not_found", message: "Not found." } }, 404));
 
@@ -38,4 +41,21 @@ app.onError((err, c) => {
   return c.json({ error: { code: "internal", message: "Something went wrong." } }, 500);
 });
 
-export default app;
+// ---------------------------------------------------------------------------
+// Cron trigger — runs daily, purges projects deleted > 7 days ago
+// ---------------------------------------------------------------------------
+export default {
+  fetch: app.fetch,
+  async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
+    ctx.waitUntil(
+      (async () => {
+        if (!env.IMAGES_BUCKET) {
+          console.log("[cron] IMAGES_BUCKET not configured, skipping cleanup");
+          return;
+        }
+        const result = await purgeExpiredProjects(env.DB, env.IMAGES_BUCKET);
+        console.log("[cron] daily cleanup done:", JSON.stringify(result));
+      })(),
+    );
+  },
+};

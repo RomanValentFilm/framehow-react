@@ -29,3 +29,7 @@ migrations_dir = "migrations"
 [[r2_buckets]]
 binding = "IMAGES_BUCKET"
 bucket_name = "framehow-storage"
+
+# Cron trigger — daily cleanup of expired projects (deleted > 7 days ago)
+[triggers]
+crons = ["0 3 * * *"]
