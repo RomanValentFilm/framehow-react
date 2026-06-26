@@ -105,9 +105,6 @@ Replace `vX.Y.ZZZ` with the actual version number. User must run on Mac (sandbox
 
 ## Versions
 
-### v4.7.012 — 2026-06-26 (dev — working copy)
-Next version, continues from v4.7.011.
-
 ### v4.7.011 — 2026-06-26 (dev — deployed)
 **Cross-device sync fixes (idle-wake, focus/blur ordering, delta push, frame guard)**
 
