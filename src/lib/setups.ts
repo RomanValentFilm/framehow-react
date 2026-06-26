@@ -4,7 +4,7 @@
 
 import { state, useStore, SETUP_COLORS, bumpRenderTick } from '../store/state';
 import type { Setup, StripType } from '../store/state';
-import { getStripVersions, ensureStripVersions, stripTabPrefix, relabelStripVersions, reorderByStars } from './helpers';
+import { getStripVersions, ensureStripVersions, stripTabPrefix, relabelStripVersions, reorderByStars, getStripActiveTab, setStripActiveTab } from './helpers';
 import { showToast, showConfirm } from './modals';
 
 // ─── Setup bar rendering ───────────────────────────────────────────────
@@ -480,7 +480,9 @@ export function wireSetupClicks(container: HTMLElement | Document = document): v
 // ─── Cascade cleanup ──────────────────────────────────────────────────
 
 /** Clear all 'copy'-tagged strip versions for a given frame across all strips.
- *  Called when a frame loses its SETUP (unassign or delete). Origins stay. */
+ *  Called when a frame loses its SETUP (unassign or delete).
+ *  Also clears 'origin' markers — they become regular user content.
+ *  Without this, old origins would be propagated into the new setup. */
 function clearCopyTaggedVersions(fid: number): void {
   const strips: StripType[] = ['ver', 'floor', 'refs'];
   for (const strip of strips) {
@@ -491,6 +493,9 @@ function clearCopyTaggedVersions(fid: number): void {
         v.bgImage = null;
         v.strokes = [];
         v.type = 'empty';
+        v.setupTagged = undefined;
+      } else if (v.setupTagged === 'origin') {
+        // Origin becomes regular content — no longer participates in tag propagation
         v.setupTagged = undefined;
       }
     }
@@ -660,6 +665,11 @@ function executeUntag(fid: number, strip: StripType, ver: import('../store/state
     }
     reorderByStars(sf.id, strip);
     relabelStripVersions(sf.id, strip);
+    // Clamp activeTab — splicing may have left it pointing past the array end
+    const curTab = getStripActiveTab(sf.id, strip);
+    if (curTab >= vers.length) {
+      setStripActiveTab(sf.id, strip, Math.max(0, vers.length - 1));
+    }
   }
 
   bumpRenderTick();

@@ -1,7 +1,7 @@
 // Main + version strip card rendering. Ported from the original `renderMainFrame`,
 // `renderVersionFrame`, `buildMainFrame`, `buildVersionFrame`, `renderAll`.
 
-import { state, useStore } from '../store/state';
+import { state, useStore, bumpRenderTick } from '../store/state';
 import type { StripType } from '../store/state';
 import {
   drawToolbarHTML,
@@ -522,9 +522,14 @@ export function renderMainFrame(div: HTMLElement, fid: number): void {
   );
   div.querySelectorAll('[data-editlabel]').forEach((el) =>
     el.addEventListener('click', async () => {
-      const result = await showLabelEdit(f.label);
+      // Re-read the frame from current state — the closure's `f` may be stale
+      // after a sync pull replaced the frames array.
+      const currentF = state().frames.find((fr) => fr.id === fid);
+      if (!currentF) return;
+      const result = await showLabelEdit(currentF.label);
       if (result === null) return;
-      f.label = result;
+      currentF.label = result;
+      bumpRenderTick();
       renderAll();
     })
   );
@@ -685,9 +690,12 @@ export function renderVersionFrame(div: HTMLElement, fid: number, strip: StripTy
     );
     div.querySelectorAll('[data-editlabel]').forEach((el) =>
       el.addEventListener('click', async () => {
-        const result = await showLabelEdit(f.label);
+        const currentF = state().frames.find((fr) => fr.id === fid);
+        if (!currentF) return;
+        const result = await showLabelEdit(currentF.label);
         if (result === null) return;
-        f.label = result;
+        currentF.label = result;
+        bumpRenderTick();
         renderAll();
       })
     );

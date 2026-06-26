@@ -366,6 +366,8 @@ async function sumOtherProjectImageBytes(
 
 interface SyncPayload {
   project: { name: string; updated_at: number; base_updated_at?: number; device_id?: string; device_name?: string; metadata?: string | null };
+  /** When true, only dirty frames are included — server UPSERTs instead of full replace. */
+  partial: boolean;
   strips: Array<{ id: string; label: string | null; sort_order: number; updated_at: number }>;
   frames: Array<{ id: string; strip_id: string; label: string | null; sort_order: number; crop_w: number | null; crop_h: number | null; text_content: string | null; table_data: string | null; version_label: string | null; strip_labels: string | null; hidden: boolean; updated_at: number }>;
   versions: Array<{ id: string; frame_id: string; label: string | null; type: string; hidden: boolean; starred: boolean; updated_at: number }>;
@@ -413,6 +415,8 @@ function parseSyncPayload(body: unknown): Parsed<SyncPayload> {
   const deviceId = typeof projObj.device_id === "string" ? projObj.device_id.slice(0, 100) : undefined;
   const deviceName = typeof projObj.device_name === "string" ? projObj.device_name.slice(0, 100) : undefined;
   const metadata = typeof projObj.metadata === "string" ? projObj.metadata : null;
+
+  const partial = b.partial === true;
 
   const strips: SyncPayload["strips"] = [];
   for (const raw of asArray(b.strips)) {
@@ -519,6 +523,7 @@ function parseSyncPayload(body: unknown): Parsed<SyncPayload> {
   return {
     value: {
       project: { name: projName, updated_at: projUpdated, base_updated_at: baseUpdatedAt, device_id: deviceId, device_name: deviceName, metadata },
+      partial,
       strips,
       frames,
       versions,
@@ -537,9 +542,19 @@ function parseSyncPayload(body: unknown): Parsed<SyncPayload> {
 }
 
 async function applySync(db: D1Database, projectId: string, payload: SyncPayload, now: number) {
-  // Full replacement of children. With FK ON DELETE CASCADE and D1's default
-  // PRAGMA foreign_keys=OFF, we must delete bottom-up explicitly.
-  const stmts = [
+  if (payload.partial) {
+    await applySyncPartial(db, projectId, payload, now);
+  } else {
+    await applySyncFull(db, projectId, payload, now);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// FULL SYNC — delete everything for this project, re-insert from payload.
+// Used for first push, fallback, or backward-compatible full pushes.
+// ---------------------------------------------------------------------------
+async function applySyncFull(db: D1Database, projectId: string, payload: SyncPayload, now: number) {
+  const stmts: D1PreparedStatement[] = [
     // bottom-up delete
     db.prepare(
       `DELETE FROM drawings
@@ -580,77 +595,180 @@ async function applySync(db: D1Database, projectId: string, payload: SyncPayload
   // Inserts
   for (const s of payload.strips) {
     stmts.push(
-      db
-        .prepare(
-          `INSERT INTO strips (id, project_id, label, sort_order, updated_at)
-           VALUES (?, ?, ?, ?, ?)`,
-        )
-        .bind(s.id, projectId, s.label, s.sort_order, s.updated_at),
+      db.prepare(
+        `INSERT INTO strips (id, project_id, label, sort_order, updated_at)
+         VALUES (?, ?, ?, ?, ?)`,
+      ).bind(s.id, projectId, s.label, s.sort_order, s.updated_at),
     );
   }
+  appendFrameInserts(db, stmts, payload, now);
+
+  // Tombstones: INSERT OR IGNORE — idempotent, same tombstone may arrive multiple times
+  appendTombstoneInserts(db, stmts, payload, projectId);
+
+  await db.batch(stmts);
+}
+
+// ---------------------------------------------------------------------------
+// PARTIAL (DELTA) SYNC — only dirty frames are in the payload.
+// Server deletes+reinserts those specific frames and their children.
+// All other frames are left untouched.
+// ---------------------------------------------------------------------------
+async function applySyncPartial(db: D1Database, projectId: string, payload: SyncPayload, now: number) {
+  // Look up the existing strip for this project. In partial mode, the
+  // frontend may generate a new strip UUID each push. We remap to the
+  // existing one so frames reference the correct strip_id.
+  const existingStrip = await db.prepare(
+    "SELECT id FROM strips WHERE project_id = ? LIMIT 1",
+  ).bind(projectId).first<{ id: string }>();
+
+  const stmts: D1PreparedStatement[] = [];
+
+  if (existingStrip) {
+    // Remap all incoming frames to the existing strip
+    for (const f of payload.frames) {
+      f.strip_id = existingStrip.id;
+    }
+  } else {
+    // First push — insert the strip
+    if (payload.strips.length > 0) {
+      const s = payload.strips[0];
+      stmts.push(
+        db.prepare(
+          `INSERT INTO strips (id, project_id, label, sort_order, updated_at)
+           VALUES (?, ?, ?, ?, ?)`,
+        ).bind(s.id, projectId, s.label, s.sort_order, s.updated_at),
+      );
+    }
+  }
+
+  // For each dirty frame: delete its children (bottom-up), then delete the frame.
   for (const f of payload.frames) {
     stmts.push(
-      db
-        .prepare(
-          `INSERT INTO frames (id, strip_id, label, sort_order, crop_w, crop_h, text_content, table_data, version_label, strip_labels, hidden, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        )
-        .bind(f.id, f.strip_id, f.label, f.sort_order, f.crop_w, f.crop_h, f.text_content, f.table_data, f.version_label, f.strip_labels, f.hidden ? 1 : 0, f.updated_at),
+      db.prepare(
+        `DELETE FROM drawings WHERE version_id IN (SELECT id FROM versions WHERE frame_id = ?)`,
+      ).bind(f.id),
+    );
+    stmts.push(
+      db.prepare(
+        `DELETE FROM images WHERE version_id IN (SELECT id FROM versions WHERE frame_id = ?)`,
+      ).bind(f.id),
+    );
+    stmts.push(
+      db.prepare("DELETE FROM versions WHERE frame_id = ?").bind(f.id),
+    );
+    stmts.push(
+      db.prepare("DELETE FROM frames WHERE id = ?").bind(f.id),
+    );
+  }
+
+  // Apply tombstones: actively delete the entities they reference.
+  // In full mode this isn't needed (everything is deleted). In partial mode
+  // we must explicitly remove tombstoned frames/versions that aren't in the
+  // dirty set.
+  for (const del of payload.deletions) {
+    if (del.entity_type === "frame") {
+      stmts.push(
+        db.prepare(
+          `DELETE FROM drawings WHERE version_id IN (SELECT id FROM versions WHERE frame_id = ?)`,
+        ).bind(del.entity_id),
+      );
+      stmts.push(
+        db.prepare(
+          `DELETE FROM images WHERE version_id IN (SELECT id FROM versions WHERE frame_id = ?)`,
+        ).bind(del.entity_id),
+      );
+      stmts.push(
+        db.prepare("DELETE FROM versions WHERE frame_id = ?").bind(del.entity_id),
+      );
+      stmts.push(
+        db.prepare("DELETE FROM frames WHERE id = ?").bind(del.entity_id),
+      );
+    } else if (del.entity_type === "version") {
+      stmts.push(
+        db.prepare("DELETE FROM drawings WHERE version_id = ?").bind(del.entity_id),
+      );
+      stmts.push(
+        db.prepare("DELETE FROM images WHERE version_id = ?").bind(del.entity_id),
+      );
+      stmts.push(
+        db.prepare("DELETE FROM versions WHERE id = ?").bind(del.entity_id),
+      );
+    }
+  }
+
+  // Re-insert dirty frames and their children
+  appendFrameInserts(db, stmts, payload, now);
+
+  // Record tombstones for future pulls by other devices
+  appendTombstoneInserts(db, stmts, payload, projectId);
+
+  // Update project metadata
+  stmts.push(
+    db.prepare(
+      "UPDATE projects SET name = ?, updated_at = ?, last_device_id = COALESCE(?, last_device_id), last_device_name = COALESCE(?, last_device_name), metadata = ? WHERE id = ?",
+    ).bind(
+      payload.project.name,
+      Math.max(payload.project.updated_at, now),
+      payload.project.device_id ?? null,
+      payload.project.device_name ?? null,
+      payload.project.metadata ?? null,
+      projectId,
+    ),
+  );
+
+  await db.batch(stmts);
+}
+
+// ---------------------------------------------------------------------------
+// Shared helpers for both full and partial sync
+// ---------------------------------------------------------------------------
+function appendFrameInserts(db: D1Database, stmts: D1PreparedStatement[], payload: SyncPayload, now: number) {
+  for (const f of payload.frames) {
+    stmts.push(
+      db.prepare(
+        `INSERT INTO frames (id, strip_id, label, sort_order, crop_w, crop_h, text_content, table_data, version_label, strip_labels, hidden, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(f.id, f.strip_id, f.label, f.sort_order, f.crop_w, f.crop_h, f.text_content, f.table_data, f.version_label, f.strip_labels, f.hidden ? 1 : 0, f.updated_at),
     );
   }
   for (const v of payload.versions) {
     stmts.push(
-      db
-        .prepare(
-          `INSERT INTO versions (id, frame_id, label, type, hidden, starred, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        )
-        .bind(v.id, v.frame_id, v.label, v.type, v.hidden ? 1 : 0, v.starred ? 1 : 0, v.updated_at),
+      db.prepare(
+        `INSERT INTO versions (id, frame_id, label, type, hidden, starred, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(v.id, v.frame_id, v.label, v.type, v.hidden ? 1 : 0, v.starred ? 1 : 0, v.updated_at),
     );
   }
   for (const img of payload.images) {
     stmts.push(
-      db
-        .prepare(
-          `INSERT INTO images
-             (id, version_id, r2_key, width, height, size_bytes, content_type, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        )
-        .bind(
-          img.id,
-          img.version_id,
-          img.r2_key,
-          img.width,
-          img.height,
-          img.size_bytes,
-          img.content_type,
-          now,
-          img.updated_at,
-        ),
+      db.prepare(
+        `INSERT INTO images
+           (id, version_id, r2_key, width, height, size_bytes, content_type, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(
+        img.id, img.version_id, img.r2_key, img.width, img.height,
+        img.size_bytes, img.content_type, now, img.updated_at,
+      ),
     );
   }
   for (const d of payload.drawings) {
     stmts.push(
-      db
-        .prepare(
-          `INSERT INTO drawings (id, version_id, drawing_data, updated_at)
-           VALUES (?, ?, ?, ?)`,
-        )
-        .bind(d.id, d.version_id, d.drawing_data, d.updated_at),
+      db.prepare(
+        `INSERT INTO drawings (id, version_id, drawing_data, updated_at)
+         VALUES (?, ?, ?, ?)`,
+      ).bind(d.id, d.version_id, d.drawing_data, d.updated_at),
     );
   }
+}
 
-  // Tombstones: INSERT OR IGNORE — idempotent, same tombstone may arrive multiple times
+function appendTombstoneInserts(db: D1Database, stmts: D1PreparedStatement[], payload: SyncPayload, projectId: string) {
   for (const del of payload.deletions) {
     stmts.push(
-      db
-        .prepare(
-          `INSERT OR IGNORE INTO project_deletions (id, project_id, entity_type, entity_id, deleted_at, device_id)
-           VALUES (?, ?, ?, ?, ?, ?)`,
-        )
-        .bind(del.id, projectId, del.entity_type, del.entity_id, del.deleted_at, del.device_id),
+      db.prepare(
+        `INSERT OR IGNORE INTO project_deletions (id, project_id, entity_type, entity_id, deleted_at, device_id)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+      ).bind(del.id, projectId, del.entity_type, del.entity_id, del.deleted_at, del.device_id),
     );
   }
-
-  await db.batch(stmts);
 }

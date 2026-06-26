@@ -6,7 +6,36 @@ a `git tag` in this repo (`git tag` to list, `git checkout <tag>` to roll back).
 
 ---
 
-## v1.2 — 2026-05-05  *(current)*
+## v4.7.011 — 2026-06-26  *(current — dev)*
+### Cross-device sync fixes (iPad ↔ Desktop ↔ iPhone)
+
+1. **Idle-wake pull** (`accountFlow.ts`) — When the Desktop browser window stays
+   open and visible but the user works on iPad, no `focus`/`blur` events fire.
+   Now detects idle resumption: if 10+ seconds pass with no input and the user
+   then moves the mouse, scrolls, or touches the screen, it cancels any pending
+   push, checks the heartbeat, shows the 10-second wait overlay, and pulls from
+   the server. Covers `mousemove`, `mousedown`, `keydown`, `scroll`, `wheel`
+   (Desktop) and `touchstart`, `scroll` (iPad/iPhone). 5-second cooldown
+   prevents rapid-fire pulls.
+
+2. **Focus/blur push/pull ordering** (`accountFlow.ts`, `currentProject.ts`) —
+   On focus: cancel pending push timers → block all new pushes → check heartbeat
+   → pull from server → unblock pushes. On blur: flush-push immediately so data
+   reaches the server before switching devices. Prevents stale Desktop data from
+   overwriting newer iPad work.
+
+3. **Delta push completeness** (`accountFlow.ts`) — `versionTags` (setup tags on
+   strip versions) are now collected from ALL frames, not just dirty ones during
+   partial/delta pushes. Groups and metadata-only changes (no frame fingerprint
+   change) no longer skip the push.
+
+4. **Frame count guard** (`accountFlow.ts`) — Frame count can never decrease
+   unless tombstones account for the difference. Prevents accidental data loss
+   from partial sync race conditions.
+
+---
+
+## v1.2 — 2026-05-05
 ### iOS export — "Save / Share" modal + native share sheet
 - After PDF / PPTX / Images-zip generates on iOS, a small in-app modal
   appears with the filename and a **Save / Share** button.

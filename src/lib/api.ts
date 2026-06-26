@@ -4,7 +4,8 @@
 // All errors normalize to ApiError so callers can `catch (e: ApiError)` and
 // surface `e.message` to the UI without further parsing.
 
-const RAW = (import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8787').trim();
+// Default to production API. Override with VITE_API_BASE_URL in .env.local for local dev.
+const RAW = (import.meta.env.VITE_API_BASE_URL ?? 'https://framehow-api.roman-cbd.workers.dev').trim();
 export const API_BASE_URL: string = RAW.replace(/\/+$/, '');
 
 export interface ApiError {

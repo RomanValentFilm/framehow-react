@@ -474,16 +474,24 @@ export function handleAction(action: string, fid: number, div: HTMLElement, from
       ver.r2Key = undefined; // Clear so sync uploads the pasted image
       rerender();
     } else {
-      const allVers = getStripVersions(fid, strip);
-      const n = allVers.length + 1;
-      const newVer = {
-        id: n,
-        label: `v${n}`,
-        type: (s.stripClipboard.bgImage ? 'upload' : 'drawing') as 'upload' | 'drawing',
-        strokes: JSON.parse(JSON.stringify(s.stripClipboard.strokes || [])),
-        bgImage: s.stripClipboard.bgImage || null,
-      };
-      addNewStripVersion(fid, strip, newVer);
+      // If the current version is empty, paste INTO it instead of creating a new one
+      if (ver && ver.type === 'empty') {
+        ver.type = s.stripClipboard.bgImage ? 'upload' : 'drawing';
+        ver.strokes = JSON.parse(JSON.stringify(s.stripClipboard.strokes || []));
+        ver.bgImage = s.stripClipboard.bgImage || null;
+        ver.r2Key = undefined; // Clear so sync uploads the pasted image
+      } else {
+        const allVers = getStripVersions(fid, strip);
+        const n = allVers.length + 1;
+        const newVer = {
+          id: n,
+          label: `v${n}`,
+          type: (s.stripClipboard.bgImage ? 'upload' : 'drawing') as 'upload' | 'drawing',
+          strokes: JSON.parse(JSON.stringify(s.stripClipboard.strokes || [])),
+          bgImage: s.stripClipboard.bgImage || null,
+        };
+        addNewStripVersion(fid, strip, newVer);
+      }
       if (fromCompare) setStripCrossCompare(fid, strip, getStripActiveTab(fid, strip));
       rerender();
     }

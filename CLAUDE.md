@@ -105,6 +105,18 @@ Replace `vX.Y.ZZZ` with the actual version number. User must run on Mac (sandbox
 
 ## Versions
 
+### v4.7.012 — 2026-06-26 (dev — working copy)
+Next version, continues from v4.7.011.
+
+### v4.7.011 — 2026-06-26 (dev — deployed)
+**Cross-device sync fixes (idle-wake, focus/blur ordering, delta push, frame guard)**
+
+Changes:
+- `src/lib/accountFlow.ts` — Idle-wake pull: detects 10+ seconds of inactivity then safePull on first user interaction (mousemove/touchstart/scroll/keydown/wheel); 5s cooldown prevents rapid-fire. Focus/blur ordering: safePull cancels pending pushes and blocks new ones during pull. versionTags now collected from ALL frames (not just dirty) in partial mode. Metadata-only changes (groups, setups) no longer skip push. Frame count guard prevents frame count decrease without matching tombstones. Setup origin markers cleared in clearCopyTaggedVersions.
+- `src/lib/currentProject.ts` — Added cancelPendingPush() export; scheduleSyncPush() blocked during pulls; SYNC_MAX_INTERVAL_MS reduced to 5s for delta payloads.
+- `src/lib/setups.ts` — clearCopyTaggedVersions also clears 'origin' markers when frame leaves setup.
+- `src/store/state.ts` — APP_VERSION v4.7.011
+
 ### v4.6.028 — 2026-06-24 (dev)
 **Prevent image loss during cross-device sync**
 

@@ -1,6 +1,6 @@
 // Full Overview rendering — main + grid of versions for each frame, side-by-side.
 
-import { state, useStore, isTouch } from '../store/state';
+import { state, useStore, isTouch, bumpRenderTick } from '../store/state';
 import type { StripType } from '../store/state';
 import {
   drawToolbarHTML,
@@ -166,9 +166,12 @@ export function renderOverviewRow(row: HTMLElement, fid: number): void {
   );
   mainCard.querySelectorAll('[data-editlabel]').forEach((el) =>
     el.addEventListener('click', async () => {
-      const result = await showLabelEdit(f.label);
+      const currentF = state().frames.find((fr) => fr.id === fid);
+      if (!currentF) return;
+      const result = await showLabelEdit(currentF.label);
       if (result === null) return;
-      f.label = result;
+      currentF.label = result;
+      bumpRenderTick();
       const fn = (window as any).__fh_renderAll;
       if (fn) fn();
     })
@@ -540,9 +543,12 @@ export function renderGrid4Row(row: HTMLElement, fid: number): void {
   );
   mainCard.querySelectorAll('[data-editlabel]').forEach((el) =>
     el.addEventListener('click', async () => {
-      const result = await showLabelEdit(f.label);
+      const currentF = state().frames.find((fr) => fr.id === fid);
+      if (!currentF) return;
+      const result = await showLabelEdit(currentF.label);
       if (result === null) return;
-      f.label = result;
+      currentF.label = result;
+      bumpRenderTick();
       const fn = (window as any).__fh_renderAll;
       if (fn) fn();
     })
@@ -1072,9 +1078,12 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
     // Label edit
     card.querySelectorAll('[data-editlabel]').forEach((el) =>
       el.addEventListener('click', async () => {
-        const result = await showLabelEdit(f.label);
+        const currentF = state().frames.find((fr) => fr.id === fid);
+        if (!currentF) return;
+        const result = await showLabelEdit(currentF.label);
         if (result === null) return;
-        f.label = result;
+        currentF.label = result;
+        bumpRenderTick();
         const fn = (window as any).__fh_renderGrid3x2;
         if (fn) fn();
       })

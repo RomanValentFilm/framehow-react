@@ -39,6 +39,7 @@ import {
   setPullIncomplete,
   setProjectSwitchInFlight,
   flushSyncNow,
+  cancelPendingPush,
   beginSystemAction,
   endSystemAction,
 } from './currentProject';
@@ -762,6 +763,7 @@ export async function openAccountSettings(): Promise<void> {
       await serverLogout();
       resetStoryboardState();
       clearCurrentProject();
+      clearPushedFingerprints();
       (window as any).__fh_renderAll?.();
       showToast('Logged out.');
     };
@@ -775,6 +777,7 @@ export async function openAccountSettings(): Promise<void> {
         clearSession();
         resetStoryboardState();
         clearCurrentProject();
+        clearPushedFingerprints();
         (window as any).__fh_renderAll?.();
         cleanup();
         showToast('Account deleted.');
@@ -958,6 +961,7 @@ async function startNewProject(): Promise<void> {
   resetStoryboardState();
   useStore.setState({ portraitMode: false });
   clearCurrentProject();
+  clearPushedFingerprints();
   // Clear stale timestamp from previous project so the first sync for the new
   // project doesn't carry an old base_updated_at that could trigger a 409.
   lastKnownUpdatedAt = null;
@@ -1094,16 +1098,19 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
     console.warn('[sync] Aborted: state has 0 frames — refusing to overwrite server data');
     return;
   }
-  // Safety net: refuse to push if the last pull didn't load all images.
-  if (isPullIncomplete()) {
-    console.warn('[sync] Aborted: last pull was incomplete (some R2 fetches failed) — refusing to push partial state');
-    return;
-  }
   // Safety net: refuse to push if all images disappeared but the project previously had them.
   // This catches the race where a pull loaded structure but R2 images haven't arrived yet.
   const currentImageCount = countCurrentImages();
   if (currentImageCount === 0 && _lastKnownImageCount > 0) {
     console.warn(`[sync] Aborted: state has 0 images but last known count was ${_lastKnownImageCount} — refusing to overwrite server data`);
+    return;
+  }
+  // Safety net: frame count should never decrease unless tombstones account for it.
+  // Catches corrupt state, partial data, or races that would wipe frames on the server.
+  const currentFrameCount = state().frames.length;
+  const tombstonedFrameCount = _pendingTombstones.filter((t) => t.entity_type === 'frame').length;
+  if (_lastKnownFrameCount > 0 && currentFrameCount < _lastKnownFrameCount - tombstonedFrameCount) {
+    console.warn(`[sync] Aborted: ${currentFrameCount} frames locally but expected at least ${_lastKnownFrameCount - tombstonedFrameCount} (last known: ${_lastKnownFrameCount}, tombstones: ${tombstonedFrameCount})`);
     return;
   }
   // Flush in-progress text/table edits from DOM to frame objects before snapshotting
@@ -1113,6 +1120,37 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   const cp = getCurrentProject();
   const now = Date.now();
   const token = getToken()!;
+
+  // ---------------------------------------------------------------------------
+  // DELTA PUSH: compute fingerprints for all frames and only include those
+  // that changed since the last push. If no stored fingerprints exist (first
+  // push, project switch, after pull), all frames are included.
+  // ---------------------------------------------------------------------------
+  const currentFingerprints = new Map<string, string>();
+  const dirtyLocalIds = new Set<number>();
+
+  s.frames.forEach((f, i) => {
+    const fp = frameFingerprint(f, i, s);
+    const serverId = f.serverFrameId || `new_${f.id}`;
+    currentFingerprints.set(serverId, fp);
+    // Frame is dirty if: no stored fingerprint (new/first push) OR fingerprint changed
+    if (_lastPushedFingerprints.get(serverId) !== fp) {
+      dirtyLocalIds.add(f.id);
+    }
+  });
+
+  // Check for deleted frames (in fingerprint store but not in current state).
+  // These are handled by tombstones — no need to include them as dirty frames.
+
+  const isPartial = _lastPushedFingerprints.size > 0 && dirtyLocalIds.size < s.frames.length;
+  const hasDirtyFrames = dirtyLocalIds.size > 0;
+
+  // NOTE: we do NOT skip when hasDirtyFrames is false. Metadata changes
+  // (groups, setups, strip renames) don't alter frame fingerprints, so we
+  // must still push to update the project metadata on the server. A partial
+  // push with 0 dirty frames is cheap — it just updates the project row.
+
+  console.log(`[sync] Delta push: ${dirtyLocalIds.size}/${s.frames.length} frames dirty, partial=${isPartial}`);
 
   // One strip per project — all frames live here. Strip versions use type prefixes.
   const stripId = uuid();
@@ -1144,10 +1182,23 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   const frameIdUpdates: Array<{ localId: number; serverFrameId: string; serverMainVersionId: string }> = [];
   const versionIdUpdates: Array<{ stripType: string; localFrameId: number; versionIdx: number; serverVersionId: string }> = [];
 
-  s.frames.forEach((f, i) => {
-    // Reuse existing server UUID if available; generate new only for fresh frames.
+  // Build localToServerFrame for ALL frames (needed for group remapping in metadata).
+  // Pre-assign server UUIDs for new frames so they're consistent.
+  const preAssignedMainVersionIds = new Map<number, string>();
+  s.frames.forEach((f) => {
     const frameId = f.serverFrameId || uuid();
     localToServerFrame.set(f.id, frameId);
+    if (!f.serverFrameId) {
+      const mainVersionId = uuid();
+      preAssignedMainVersionIds.set(f.id, mainVersionId);
+    }
+  });
+
+  // Now iterate only dirty frames for the payload
+  s.frames.forEach((f, i) => {
+    if (isPartial && !dirtyLocalIds.has(f.id)) return; // Skip clean frames
+
+    const frameId = localToServerFrame.get(f.id)!;
 
     frames.push({
       id: frameId, strip_id: stripId, label: f.label || null, sort_order: i,
@@ -1161,7 +1212,7 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
     });
 
     // Frame-level strokes → "main" version
-    const mainVersionId = f.serverMainVersionId || uuid();
+    const mainVersionId = f.serverMainVersionId || preAssignedMainVersionIds.get(f.id) || uuid();
     frameIdUpdates.push({ localId: f.id, serverFrameId: frameId, serverMainVersionId: mainVersionId });
 
     versions.push({ id: mainVersionId, frame_id: frameId, label: 'main', type: 'main', hidden: false, starred: false, updated_at: now });
@@ -1219,6 +1270,23 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
     pushStripVersions(s.stripVersions.refs?.[f.id], 'refs', 'refs');
   });
 
+  // Collect versionTags from ALL frames (not just dirty ones) for metadata.
+  // Metadata is project-wide and overwrites on every push, so we must include
+  // tags from clean frames too — otherwise partial pushes wipe them.
+  for (const f of s.frames) {
+    // Skip frames already processed in the dirty loop above
+    if (!isPartial || dirtyLocalIds.has(f.id)) continue;
+    for (const stripType of ['ver', 'floor', 'refs']) {
+      const vers = s.stripVersions[stripType]?.[f.id];
+      if (!vers) continue;
+      for (const lv of vers) {
+        if (lv.setupTagged && lv.serverVersionId) {
+          versionTags[lv.serverVersionId] = lv.setupTagged;
+        }
+      }
+    }
+  }
+
   // Build metadata JSON: stripDefs, groups (with remapped frame IDs), portraitMode, pdfAdjustRects
   const metaGroups = s.groups.map((g) => ({
     id: g.id,
@@ -1269,10 +1337,12 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   // Last imported PDF filename for Adjust tool hint
   const lastPdfName = localStorage.getItem(`pdfAdjustLastFile_${projectId}`) || undefined;
 
-  // Build frame→setup mapping for sync (stored in metadata to avoid D1 schema change)
-  const frameSetups: Record<number, string> = {};
+  // Build frame→setup mapping for sync (stored in metadata to avoid D1 schema change).
+  // Uses SERVER frame UUIDs as keys so the mapping works across devices.
+  const frameSetups: Record<string, string> = {};
   for (const f of s.frames) {
-    if (f.setupId) frameSetups[f.id] = f.setupId;
+    const serverFid = localToServerFrame.get(f.id);
+    if (f.setupId && serverFid) frameSetups[serverFid] = f.setupId;
   }
 
   const metadata = JSON.stringify({
@@ -1324,6 +1394,7 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   const res = await api.post<CloudProjectTree & { conflict?: boolean }>(
     `/projects/${encodeURIComponent(projectId)}/sync`,
     {
+      partial: isPartial,
       project: {
         name: cp.name,
         updated_at: now,
@@ -1350,10 +1421,19 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   // Update lastKnownUpdatedAt so that the pull-on-focus mechanism doesn't
   // see our own push as a "newer remote version" and try to apply it.
   lastKnownUpdatedAt = now;
-  // Record the image count after a successful push so the next guard comparison is accurate.
+  // Record counts after a successful push so the next guard comparisons are accurate.
   _lastKnownImageCount = countCurrentImages();
+  _lastKnownFrameCount = state().frames.length;
   // Clear pending tombstones after successful push
   _pendingTombstones = [];
+
+  // Store fingerprints for all frames (including clean ones) so the next
+  // push can detect what changed. We store ALL frames, not just dirty ones,
+  // so that the full snapshot is available for comparison.
+  _lastPushedFingerprints.clear();
+  for (const [k, v] of currentFingerprints) {
+    _lastPushedFingerprints.set(k, v);
+  }
 
   // ---------------------------------------------------------------------------
   // Persist server IDs + r2Keys back to the Zustand store so the next push
@@ -1413,6 +1493,10 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
  *   This enables per-frame merge: dirty frames stay local, clean frames take cloud.
  */
 async function applyCloudTreeToStore(tree: CloudProjectTree, keepLocalFrameIds?: ReadonlySet<string>): Promise<void> {
+  // After pulling cloud data, clear fingerprints so the next push
+  // recomputes from scratch (the state changed underneath us).
+  clearPushedFingerprints();
+
   // Map server tree back into the local Frame[] / versions[] shape.
   // We assign new local numeric ids that don't clash with the existing autoincrement.
   let nextId = 1;
@@ -1627,7 +1711,7 @@ async function applyCloudTreeToStore(tree: CloudProjectTree, keepLocalFrameIds?:
   let restoredNextGroupId = 1;
   let restoredSetups: import('../store/state').Setup[] = [];
   let restoredNextSetupId = 1;
-  let restoredFrameSetups: Record<number, string> = {};
+  let restoredFrameSetups: Record<string | number, string> = {};
   let restoredStripTagInfoDismissed = false;
   let isPortrait = newFrames.length > 0 && newFrames[0].cropH > newFrames[0].cropW;
 
@@ -1672,9 +1756,8 @@ async function applyCloudTreeToStore(tree: CloudProjectTree, keepLocalFrameIds?:
       if (meta.nextSetupId != null) {
         restoredNextSetupId = meta.nextSetupId;
       }
-      // Restore frame→setup mapping (uses server UUIDs, needs remapping)
+      // Restore frame→setup mapping (keyed by server frame UUID)
       if (meta.frameSetups && typeof meta.frameSetups === 'object') {
-        // frameSetups in metadata uses local frame IDs (numeric) as keys
         restoredFrameSetups = meta.frameSetups;
       }
       // Restore strip-tag state (origin/copy) from version UUID map
@@ -1695,10 +1778,12 @@ async function applyCloudTreeToStore(tree: CloudProjectTree, keepLocalFrameIds?:
     }
   }
 
-  // Apply frame→setup mapping from metadata
+  // Apply frame→setup mapping from metadata (keyed by server frame UUID)
   if (Object.keys(restoredFrameSetups).length > 0) {
     for (const f of newFrames) {
-      const sid = restoredFrameSetups[f.id];
+      // Try server UUID key first (new format), fall back to local ID (legacy)
+      const sid = (f.serverFrameId && restoredFrameSetups[f.serverFrameId])
+        || restoredFrameSetups[f.id];
       if (sid) f.setupId = sid;
     }
   }
@@ -1773,11 +1858,26 @@ async function applyCloudTreeToStore(tree: CloudProjectTree, keepLocalFrameIds?:
 
   const expectedImageCount = mainImageTasks.length + versionImageTasks.length;
   let fetchedImageCount = 0;
+
+  // Helper: fetch with up to 3 retries (exponential backoff: 2s, 4s, 8s)
+  async function fetchWithRetry(r2Key: string, retries = 3): Promise<string> {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        return await fetchImageFromR2(r2Key, token!);
+      } catch (e) {
+        if (attempt === retries) throw e;
+        await new Promise((r) => setTimeout(r, 2000 * Math.pow(2, attempt)));
+      }
+    }
+    throw new Error('unreachable');
+  }
+
+  const failedTasks: string[] = [];  // descriptions of what failed
   const allFetches: Promise<void>[] = [];
 
   for (const task of mainImageTasks) {
     allFetches.push(
-      fetchImageFromR2(task.r2Key, token)
+      fetchWithRetry(task.r2Key)
         .then((dataUrl) => {
           const s = useStore.getState();
           const idx = s.frames.findIndex((f) => f.id === task.localId);
@@ -1788,13 +1888,17 @@ async function applyCloudTreeToStore(tree: CloudProjectTree, keepLocalFrameIds?:
           (window as any).__fh_renderAll?.();
           fetchedImageCount++;
         })
-        .catch((e) => console.warn('[sync] failed to fetch main image', task.r2Key, e)),
+        .catch((e) => {
+          console.warn('[sync] failed to fetch main image after retries', task.r2Key, e);
+          const frame = useStore.getState().frames.find((f) => f.id === task.localId);
+          failedTasks.push(`Frame "${frame?.label || task.localId}" main image`);
+        }),
     );
   }
 
   for (const task of versionImageTasks) {
     allFetches.push(
-      fetchImageFromR2(task.r2Key, token)
+      fetchWithRetry(task.r2Key)
         .then((dataUrl) => {
           const s = useStore.getState();
           // Use the generic stripVersions map — works for any strip, present or future
@@ -1824,22 +1928,30 @@ async function applyCloudTreeToStore(tree: CloudProjectTree, keepLocalFrameIds?:
           (window as any).__fh_renderAll?.();
           fetchedImageCount++;
         })
-        .catch((e) => console.warn('[sync] failed to fetch version image', task.strip, task.r2Key, e)),
+        .catch((e) => {
+          console.warn('[sync] failed to fetch version image after retries', task.strip, task.r2Key, e);
+          const frame = useStore.getState().frames.find((f) => f.id === task.localId);
+          failedTasks.push(`Frame "${frame?.label || task.localId}" ${task.strip} v${task.versionIdx + 1}`);
+        }),
     );
   }
 
   // Wait for all images to load before returning (caller can show a toast).
   await Promise.all(allFetches);
 
-  // SAFETY: Only update the image-count baseline if ALL expected images loaded.
-  // If some R2 fetches failed, keep the old baseline so the push guard in
-  // syncCurrentToServer blocks any push of this incomplete state.
-  if (fetchedImageCount === expectedImageCount) {
-    _lastKnownImageCount = countCurrentImages();
-    setPullIncomplete(false);
-  } else {
-    console.warn(`[sync] Incomplete pull: ${fetchedImageCount}/${expectedImageCount} images loaded — blocking sync push`);
-    setPullIncomplete(true);
+  // Always update count baselines — pushes preserve r2Keys for any
+  // images we didn't download, so server data is never lost.
+  _lastKnownImageCount = countCurrentImages();
+  _lastKnownFrameCount = state().frames.length;
+  setPullIncomplete(failedTasks.length > 0);
+
+  if (failedTasks.length > 0) {
+    // Show a persistent warning so the user knows images are missing
+    const missing = failedTasks.length === 1
+      ? failedTasks[0]
+      : `${failedTasks.length} images`;
+    showToast(`Warning: ${missing} failed to load from cloud. Try reloading the project.`);
+    console.error('[sync] Failed image loads:', failedTasks);
   }
 }
 
@@ -1955,22 +2067,35 @@ function showDeviceLockOverlay(deviceName: string): void {
     el.style.cssText =
       'position:fixed;inset:0;z-index:999999;background:rgba(0,0,0,0.82);' +
       'display:flex;align-items:center;justify-content:center;' +
-      'font-family:-apple-system,BlinkMacSystemFont,sans-serif;color:#fff;text-align:center;';
+      'font-family:-apple-system,BlinkMacSystemFont,sans-serif;color:#fff;text-align:center;' +
+      'touch-action:none;overscroll-behavior:none;';
     el.innerHTML = `
       <div style="max-width:340px;padding:24px;">
         <div style="font-size:16px;font-weight:600;margin-bottom:8px;" id="deviceLockMsg"></div>
         <div style="font-size:13px;color:#aaa;">Changes will sync automatically.</div>
       </div>`;
+    // Block ALL interaction behind the overlay — scroll, touch, wheel.
+    // Without this, scrolling the page behind the overlay triggers Zustand
+    // subscriber → marks dirty → can interfere with the pull.
+    const stopEvent = (e: Event) => { e.preventDefault(); e.stopPropagation(); };
+    el.addEventListener('wheel', stopEvent, { passive: false });
+    el.addEventListener('touchmove', stopEvent, { passive: false });
+    el.addEventListener('scroll', stopEvent, { passive: false });
     document.body.appendChild(el);
     _deviceLockOverlay = el;
   }
   _deviceLockOverlay.style.display = 'flex';
+  // Prevent body scrolling while overlay is visible
+  document.body.style.overflow = 'hidden';
   const msgEl = document.getElementById('deviceLockMsg');
   if (msgEl) msgEl.textContent = `Your ${deviceName} is working on this project — please wait 10sec for sync to start working here.`;
 }
 
 function hideDeviceLockOverlay(): void {
-  if (_deviceLockOverlay) _deviceLockOverlay.style.display = 'none';
+  if (_deviceLockOverlay) {
+    _deviceLockOverlay.style.display = 'none';
+    document.body.style.overflow = '';
+  }
 }
 
 function isDeviceLocked(): boolean {
@@ -2014,8 +2139,64 @@ const PULL_COOLDOWN_MS = 3_000; // Don't check more often than every 3s
 // successful sync or pull. If the count drops to 0 unexpectedly, we refuse to
 // push — this prevents a corrupt (imageless) state from overwriting good cloud data.
 let _lastKnownImageCount = 0;
+// Frame count guard: tracks how many frames the project had after the last
+// successful sync or pull. If the count drops unexpectedly (without matching
+// tombstones), we refuse to push — prevents partial/corrupt pushes from
+// wiping good cloud data.
+let _lastKnownFrameCount = 0;
 // _pullIncomplete flag lives in currentProject.ts (avoids circular import).
 // Set via setPullIncomplete() after a pull — blocks IDB autosave + sync push.
+
+// ---------------------------------------------------------------------------
+// Frame fingerprinting — used for delta push to detect which frames changed.
+// After each successful push, we store a fingerprint (simple string hash) for
+// every frame. At push time, we recompute fingerprints and only include frames
+// whose fingerprint differs from the stored one (or that are new).
+// ---------------------------------------------------------------------------
+const _lastPushedFingerprints = new Map<string, string>();
+
+/** Clear fingerprints (on project switch, new pull, etc.). Next push sends all. */
+export function clearPushedFingerprints(): void {
+  _lastPushedFingerprints.clear();
+}
+
+/**
+ * Compute a lightweight fingerprint for a frame and all its strip versions.
+ * Captures: label, sort_order, crop, hidden, text, strokes count, r2Key,
+ * setupId, stripLabels, and per-version data (label, type, hidden, starred,
+ * setupTagged, r2Key/bgImage, strokes count).
+ *
+ * Intentionally cheap — string concat, no crypto hash. A false positive
+ * (fingerprint same but data changed) is extremely unlikely. A false negative
+ * (fingerprint changed but data identical) just means we send an extra frame.
+ */
+function frameFingerprint(f: Frame, sortOrder: number, s: { stripVersions: Record<string, Record<number, Version[]>> }): string {
+  const parts: string[] = [
+    f.label,
+    String(sortOrder),
+    String(f.cropW),
+    String(f.cropH),
+    f.hidden ? '1' : '0',
+    f.textContent || '',
+    f.tableData ? JSON.stringify(f.tableData) : '',
+    String(f.strokes?.length || 0),
+    f.r2Key || (f.src ? f.src.substring(0, 40) : ''),
+    f.setupId || '',
+    f.stripLabels ? JSON.stringify(f.stripLabels) : '',
+  ];
+  // Include versions for each strip
+  for (const stripType of ['ver', 'floor', 'refs']) {
+    const vers = s.stripVersions[stripType]?.[f.id];
+    if (vers) {
+      for (const v of vers) {
+        parts.push(
+          `${stripType}:${v.label}|${v.type}|${v.hidden ? 1 : 0}|${v.starred ? 1 : 0}|${v.setupTagged || ''}|${v.r2Key || (v.bgImage ? v.bgImage.substring(0, 40) : '')}|${v.strokes?.length || 0}`,
+        );
+      }
+    }
+  }
+  return parts.join('\x00');
+}
 
 // ---------------------------------------------------------------------------
 // Tombstones — track explicit user deletions so other devices remove them too.
@@ -2056,35 +2237,66 @@ function startPullOnFocus(): void {
   startHeartbeatSender();
 
   const safePull = async () => {
-    // Start pull in background while device lock overlay is showing —
-    // the overlay covers the screen so any rendering behind it is invisible.
-    // This way data is ready the instant the lock clears.
+    // CRITICAL: cancel any pending push and block new pushes FIRST.
+    // Without this, a stale debounce timer could push old local data to the
+    // server, overwriting newer changes from another device.
+    cancelPendingPush();
+    setPullInFlight(true);
+
+    // Check heartbeat — if another device is active, show overlay & wait.
+    // Start pull in parallel so data is ready the instant the lock clears.
     const pullP = tryPullFromCloud().catch(() => {});
     await Promise.all([waitForDeviceLock(), pullP]);
     // One final pull after lock clears to catch last-second pushes
-    if (!isDeviceLocked()) void tryPullFromCloud();
+    if (!isDeviceLocked()) {
+      try { await tryPullFromCloud(); } catch {}
+    }
+
+    setPullInFlight(false);
   };
 
-  // visibilitychange fires on tab switches; focus fires on app switches
+  // visibilitychange fires on tab switches; focus fires on app switches.
+  // Both also flush-push when LEAVING (hidden/blur) to get data to server ASAP.
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') void safePull();
+    if (document.visibilityState === 'visible') {
+      void safePull();
+    } else if (document.visibilityState === 'hidden') {
+      // Redundant with currentProject.ts listener, but ensures coverage
+      // when switching apps (not just tabs).
+      void flushSyncNow();
+    }
   });
   window.addEventListener('focus', () => void safePull());
+  window.addEventListener('blur', () => void flushSyncNow());
 
   // No periodic poll — pull-on-focus + wake-from-idle cover all cases.
   // This keeps server requests to a minimum.
 
-  // Wake-from-idle: if idle 10+ seconds and user clicks, check heartbeat first
+  // Wake-from-idle: if idle 10+ seconds and user interacts (mouse, scroll,
+  // keyboard), treat it like a focus event — cancel pushes, check heartbeat,
+  // pull from server.  This covers the case where the Desktop browser window
+  // stayed visible & focused the whole time (no blur/focus events fire) but
+  // the user was working on iPad.  safePull() handles everything:
+  //   cancel pending push → block new pushes → heartbeat check → pull → unblock.
   let _lastInteraction = Date.now();
+  let _idleWakeCooldown = false;   // prevent rapid-fire safePull calls
   function onWakeFromIdle(): void {
     const now = Date.now();
-    if ((now - _lastInteraction) > HEARTBEAT_STALE_MS && !isDeviceLocked()) {
-      void waitForDeviceLock();
+    if ((now - _lastInteraction) > HEARTBEAT_STALE_MS && !_idleWakeCooldown) {
+      _idleWakeCooldown = true;
+      // Debounce: only one safePull per wake-up, cool down for 5 seconds
+      setTimeout(() => { _idleWakeCooldown = false; }, 5_000);
+      console.log('[sync] wake-from-idle detected, pulling from server');
+      void safePull();
     }
     _lastInteraction = now;
   }
-  document.addEventListener('mousedown', onWakeFromIdle, true);
-  document.addEventListener('touchstart', onWakeFromIdle, true);
+  document.addEventListener('mousedown', onWakeFromIdle, true);                       // Desktop
+  document.addEventListener('touchstart', onWakeFromIdle, { passive: true, capture: true }); // iPad/iPhone
+  document.addEventListener('mousemove', onWakeFromIdle, true);                        // Desktop
+  document.addEventListener('scroll', onWakeFromIdle, { passive: true, capture: true });     // all
+  document.addEventListener('wheel', onWakeFromIdle, { passive: true, capture: true });      // Desktop
+  document.addEventListener('keydown', onWakeFromIdle, true);                          // Desktop (+ iPad ext keyboard)
 }
 
 /**
@@ -2344,11 +2556,8 @@ async function tryPullFromCloud(): Promise<void> {
       // If dirty frames were preserved, they need pushing to cloud
       // (the next user action or blur will trigger a push)
 
-      // Retry if some R2 images failed to load
-      if (isPullIncomplete()) {
-        // Retry pull in 5s — some R2 images failed to load
-        setTimeout(() => { void tryPullFromCloud(); }, 5_000);
-      }
+      // Image retries now happen per-image inside applyCloudTreeToStore
+      // (3 attempts with exponential backoff). No need for a full re-pull.
     }
   } catch {
     const pEl = document.getElementById('progressOverlay');

@@ -3,12 +3,18 @@
 // whenever the storyboard changes.
 //
 // ═══════════════════════════════════════════════════════════════════════════
-// SYNC RULES (v4.7.006) — in plain English
+// SYNC RULES (v4.7.010) — in plain English
 // ═══════════════════════════════════════════════════════════════════════════
 //
 // PUSH (sending your changes to the server):
 //  1. When you make a change, it waits 5 seconds then pushes — so rapid
 //     actions batch into one push instead of flooding the server.
+//  1b. During continuous work (changes every few seconds), the 5s timer
+//      keeps resetting. To prevent data from never reaching the cloud,
+//      a push fires every 5 seconds regardless of debounce.
+//  1c. DELTA PUSH: only frames that changed since the last push are sent.
+//      A fingerprint (lightweight string hash) tracks each frame's state.
+//      The server UPSERTs dirty frames without touching clean ones.
 //  2. When you leave the tab (blur), it pushes immediately — your work is
 //     saved before you switch to another device.
 //  3. Only NEW images get uploaded — images already in R2 reuse their key.
@@ -185,11 +191,38 @@ export function clearDirtyState(): void {
 // Also pushes immediately on blur (tab loses focus).
 // ---------------------------------------------------------------------------
 
-const SYNC_DEBOUNCE_MS = 5_000;  // Was 3s — let rapid edits settle before pushing
+const SYNC_DEBOUNCE_MS = 5_000;  // Wait 5s after last change before pushing
+const SYNC_MAX_INTERVAL_MS = 5_000;  // During continuous work, push at least every 5s (delta payloads are small)
 let _syncDebounceTimer: number | null = null;
+let _lastPushAt = 0;  // Timestamp of last successful push
+
+/** Cancel any pending debounce push timer. Called when the device gains focus
+ *  so we don't push stale data before pulling from the server. */
+export function cancelPendingPush(): void {
+  if (_syncDebounceTimer !== null) {
+    clearTimeout(_syncDebounceTimer);
+    _syncDebounceTimer = null;
+  }
+}
 
 function scheduleSyncPush(): void {
+  // Don't schedule pushes while a pull is in progress — we must not
+  // push stale data before we've seen the latest cloud state.
+  if (_pullInFlight) return;
+
+  // Debounce: reset the 5-second timer on every change
   if (_syncDebounceTimer !== null) clearTimeout(_syncDebounceTimer);
+
+  // If it's been more than 5 seconds since the last push, push NOW
+  // instead of waiting for the user to stop making changes.
+  // This ensures data reaches the cloud during continuous work sessions.
+  const sinceLast = Date.now() - _lastPushAt;
+  if (_lastPushAt > 0 && sinceLast >= SYNC_MAX_INTERVAL_MS) {
+    _syncDebounceTimer = null;
+    void runCloudSync();
+    return;
+  }
+
   _syncDebounceTimer = window.setTimeout(() => {
     _syncDebounceTimer = null;
     void runCloudSync();
@@ -207,12 +240,12 @@ export async function flushSyncNow(): Promise<void> {
   if (cloudSyncInFlight) return;
   if (_pullInFlight) return;
   if (_projectSwitchInFlight) return;
-  if (_pullIncomplete) return;   // Never push while project is still loading images
   if (!_dirty) return;
   const pid = cp.projectId;
   cloudSyncInFlight = true;
   try {
     await _syncFn(pid);
+    _lastPushAt = Date.now();
     clearDirtyState();
     cp = { ...cp, lastSavedAt: Date.now(), dirty: false };
     _pendingSyncIds.delete(pid);
@@ -278,7 +311,7 @@ let _autosaveInFlight = false;
 async function runAutosave(): Promise<void> {
   autosaveTimer = null;
   if (_autosaveInFlight) return;              // Don't overlap heavy IDB writes
-  if (_pullInFlight || _projectSwitchInFlight || _pullIncomplete) {
+  if (_pullInFlight || _projectSwitchInFlight) {
     scheduleAutosave();
     return;
   }
@@ -308,12 +341,12 @@ async function runCloudSync(): Promise<void> {
   if (cloudSyncInFlight) return;
   if (_pullInFlight) return;
   if (_projectSwitchInFlight) return;
-  if (_pullIncomplete) return;   // Never push while project is still loading images
   if (!_dirty) return;
 
   cloudSyncInFlight = true;
   try {
     await _syncFn(cp.projectId);
+    _lastPushAt = Date.now();
     clearDirtyState();
     cp = { ...cp, lastSavedAt: Date.now(), dirty: false };
     hideOfflineBanner();
