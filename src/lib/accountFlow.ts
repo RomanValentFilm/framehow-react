@@ -1982,6 +1982,187 @@ export async function flowLoadProject(): Promise<void> {
   await openProjectList();
 }
 
+export async function flowRestoreProject(): Promise<void> {
+  if (!isLoggedIn()) {
+    showToast('Sign in to restore a project.');
+    return;
+  }
+  const cp = getCurrentProject();
+  if (!cp.projectId) {
+    showToast('Save the project first before restoring.');
+    return;
+  }
+  await openRestoreModal(cp.projectId);
+}
+
+// ---------------------------------------------------------------------------
+// Restore Project modal — shows available snapshots grouped by time buckets
+// ---------------------------------------------------------------------------
+
+async function openRestoreModal(projectId: string): Promise<void> {
+  // Fetch available snapshots from the server
+  let snapshots: Array<{ id: string; created_at: number }>;
+  try {
+    const res = await api.get<{ snapshots: Array<{ id: string; created_at: number }> }>(
+      `/projects/${encodeURIComponent(projectId)}/snapshots`,
+      getToken(),
+    );
+    snapshots = res.snapshots;
+  } catch {
+    showToast('Could not load restore points.');
+    return;
+  }
+
+  if (snapshots.length === 0) {
+    showToast('No restore points available yet — they are created automatically every 10 minutes.');
+    return;
+  }
+
+  const now = Date.now();
+
+  // Define time buckets
+  const buckets: Array<{ label: string; minAge: number; maxAge: number }> = [
+    { label: 'Last 10 min',  minAge: 0,                    maxAge: 10 * 60 * 1000 },
+    { label: 'Last 20 min',  minAge: 10 * 60 * 1000,       maxAge: 20 * 60 * 1000 },
+    { label: 'Last 30 min',  minAge: 20 * 60 * 1000,       maxAge: 30 * 60 * 1000 },
+    { label: '~1 hour ago',  minAge: 40 * 60 * 1000,       maxAge: 80 * 60 * 1000 },
+    { label: '~2 hours ago', minAge: 80 * 60 * 1000,       maxAge: 3 * 60 * 60 * 1000 },
+    { label: '~3 hours ago', minAge: 3 * 60 * 60 * 1000,   maxAge: 4.5 * 60 * 60 * 1000 },
+    { label: '~5 hours ago', minAge: 4 * 60 * 60 * 1000,   maxAge: 12 * 60 * 60 * 1000 },
+    { label: '~15 hours ago',minAge: 12 * 60 * 60 * 1000,  maxAge: 24 * 60 * 60 * 1000 },
+    { label: 'Yesterday',    minAge: 24 * 60 * 60 * 1000,  maxAge: 48 * 60 * 60 * 1000 },
+  ];
+
+  // Match each bucket to the best (most recent) snapshot in its range
+  const matched: Array<{ label: string; snapshot: { id: string; created_at: number }; timeAgo: string }> = [];
+  for (const b of buckets) {
+    const match = snapshots.find((s) => {
+      const age = now - s.created_at;
+      return age >= b.minAge && age < b.maxAge;
+    });
+    if (match) {
+      matched.push({ label: b.label, snapshot: match, timeAgo: formatTimeAgo(now - match.created_at) });
+    }
+  }
+
+  if (matched.length === 0) {
+    showToast('No restore points available yet — they are created automatically every 10 minutes.');
+    return;
+  }
+
+  // Build and show the modal
+  return new Promise<void>((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText =
+      'position:fixed;inset:0;z-index:999998;background:rgba(0,0,0,0.7);' +
+      'display:flex;align-items:center;justify-content:center;' +
+      'font-family:-apple-system,BlinkMacSystemFont,sans-serif;';
+
+    const modal = document.createElement('div');
+    modal.style.cssText =
+      'background:#1a1a1a;border-radius:12px;padding:24px;max-width:360px;width:90%;' +
+      'color:#fff;text-align:center;max-height:80vh;overflow-y:auto;';
+
+    const title = document.createElement('div');
+    title.textContent = 'Restore Project';
+    title.style.cssText = 'font-size:18px;font-weight:600;margin-bottom:16px;';
+    modal.appendChild(title);
+
+    const subtitle = document.createElement('div');
+    subtitle.textContent = 'Choose a restore point:';
+    subtitle.style.cssText = 'font-size:13px;color:#aaa;margin-bottom:16px;';
+    modal.appendChild(subtitle);
+
+    for (const m of matched) {
+      const btn = document.createElement('button');
+      btn.style.cssText =
+        'display:block;width:100%;padding:12px 16px;margin-bottom:8px;' +
+        'background:#2a2a2a;border:1px solid #444;border-radius:8px;' +
+        'color:#fff;font-size:14px;cursor:pointer;text-align:left;' +
+        'transition:background 0.15s;';
+      btn.innerHTML = `<span style="font-weight:600;">${m.label}</span>` +
+        `<span style="float:right;color:#888;font-size:12px;">${m.timeAgo}</span>`;
+      btn.addEventListener('mouseenter', () => { btn.style.background = '#333'; });
+      btn.addEventListener('mouseleave', () => { btn.style.background = '#2a2a2a'; });
+      btn.addEventListener('click', async () => {
+        const confirmMsg = `Restore project to "${m.label}" (${m.timeAgo})?\n\nYour current state will be saved as a restore point before restoring.`;
+        const ok = await showConfirm(confirmMsg);
+        if (!ok) return;
+        overlay.remove();
+        await performRestore(projectId, m.snapshot.id);
+        resolve();
+      });
+      modal.appendChild(btn);
+    }
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.style.cssText =
+      'display:block;width:100%;padding:12px 16px;margin-top:8px;' +
+      'background:transparent;border:1px solid #555;border-radius:8px;' +
+      'color:#aaa;font-size:14px;cursor:pointer;';
+    cancelBtn.addEventListener('click', () => {
+      overlay.remove();
+      resolve();
+    });
+    modal.appendChild(cancelBtn);
+
+    overlay.appendChild(modal);
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) { overlay.remove(); resolve(); }
+    });
+    document.body.appendChild(overlay);
+  });
+}
+
+function formatTimeAgo(ms: number): string {
+  const mins = Math.round(ms / 60000);
+  if (mins < 60) return `${mins} min ago`;
+  const hours = Math.round(ms / 3600000);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(ms / 86400000);
+  return `${days}d ago`;
+}
+
+async function performRestore(projectId: string, snapshotId: string): Promise<void> {
+  const progressEl = document.getElementById('progressOverlay');
+  const progressBar = document.getElementById('progressBar') as HTMLElement | null;
+  const progressLabel = document.getElementById('progressLabel') as HTMLElement | null;
+  if (progressEl) progressEl.classList.remove('hidden');
+  if (progressBar) progressBar.style.width = '10%';
+  if (progressLabel) progressLabel.textContent = 'Restoring…';
+
+  try {
+    if (progressBar) progressBar.style.width = '30%';
+    const tree = await api.post<CloudProjectTree>(
+      `/projects/${encodeURIComponent(projectId)}/restore/${encodeURIComponent(snapshotId)}`,
+      undefined,
+      getToken(),
+    );
+    if (progressBar) progressBar.style.width = '60%';
+    if (progressLabel) progressLabel.textContent = 'Loading images…';
+
+    beginSystemAction();
+    try {
+      await applyCloudTreeToStore(tree);
+    } finally {
+      endSystemAction();
+    }
+
+    if (progressBar) progressBar.style.width = '100%';
+    clearDirtyState();
+    (window as any).__fh_renderAll?.();
+    showToast('Project restored successfully.');
+    setTimeout(() => {
+      if (progressEl) progressEl.classList.add('hidden');
+      if (isPullIncomplete()) showIncompleteLoadOverlay();
+    }, 300);
+  } catch (e) {
+    if (progressEl) progressEl.classList.add('hidden');
+    showToast(asMessage(e, 'Could not restore project.'));
+  }
+}
+
 export async function flowAccountOrSignIn(): Promise<void> {
   if (isLoggedIn()) await openAccountSettings();
   else await openAccountModal('login');

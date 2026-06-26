@@ -103,6 +103,15 @@ cd ~/Desktop/Framehow\ Files/framehow-react && rm -rf dist tsconfig.tsbuildinfo 
 ### v4.7.012 — 2026-06-26 (dev — working copy)
 Next version, continues from v4.7.011.
 
+### v4.7.013 — 2026-06-26 (dev — working copy)
+Next version, continues from v4.7.012.
+
+### v4.7.012 — 2026-06-26 (dev — deployed)
+**Incomplete load overlay — blocks interaction when images fail to download**
+
+Changes:
+- `src/lib/accountFlow.ts` — Added fullscreen overlay ("Couldn't load all content — check your connection") with Retry/Dismiss buttons when R2 image fetches fail; overlay shows after progress bar hides (no overlap); Retry triggers fresh pull; Dismiss lets user browse but _pullIncomplete stays true (no push/save of half-loaded state).
+
 ### v4.7.011 — 2026-06-26 (dev — deployed)
 **Cross-device sync fixes (idle-wake, focus/blur ordering, delta push, frame guard)**
 

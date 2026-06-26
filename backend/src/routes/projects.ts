@@ -244,7 +244,121 @@ projects.post("/:id/sync", async (c) => {
   }
 
   const now = Date.now();
+
+  // Snapshot: save a copy of the current state before overwriting,
+  // but only if 10+ minutes have passed since the last snapshot.
+  await maybeCreateSnapshot(c.env.DB, project.id, now);
+
   await applySync(c.env.DB, project.id, payload, now);
+
+  return c.json(await loadProjectTree(c.env.DB, project.id));
+});
+
+// ---------------------------------------------------------------------------
+// GET /projects/:id/snapshots — list available restore points
+// ---------------------------------------------------------------------------
+projects.get("/:id/snapshots", async (c) => {
+  const me = c.get("user");
+  const id = c.req.param("id");
+  const project = await loadOwnedProject(c.env.DB, me.id, id);
+  if (!project) return jsonError(c, 404, "not_found", "Project not found.");
+
+  const result = await c.env.DB
+    .prepare(
+      `SELECT id, created_at FROM project_snapshots
+       WHERE project_id = ? ORDER BY created_at DESC`,
+    )
+    .bind(project.id)
+    .all<{ id: string; created_at: number }>();
+
+  return c.json({ snapshots: result.results });
+});
+
+// ---------------------------------------------------------------------------
+// POST /projects/:id/restore/:snapshotId — restore project to a snapshot
+// ---------------------------------------------------------------------------
+projects.post("/:id/restore/:snapshotId", async (c) => {
+  const me = c.get("user");
+  const id = c.req.param("id");
+  const snapshotId = c.req.param("snapshotId");
+  const project = await loadOwnedProject(c.env.DB, me.id, id);
+  if (!project) return jsonError(c, 404, "not_found", "Project not found.");
+
+  const snap = await c.env.DB
+    .prepare("SELECT tree_json, created_at FROM project_snapshots WHERE id = ? AND project_id = ?")
+    .bind(snapshotId, project.id)
+    .first<{ tree_json: string; created_at: number }>();
+  if (!snap) return jsonError(c, 404, "not_found", "Snapshot not found.");
+
+  // Save a snapshot of the CURRENT state before restoring (so user can undo the restore)
+  const now = Date.now();
+  await forceCreateSnapshot(c.env.DB, project.id, now);
+
+  // Parse the snapshot tree and re-apply it as a full sync
+  const tree: ProjectTree = JSON.parse(snap.tree_json);
+
+  // Delete all current project content and rebuild from snapshot
+  const stripIds = tree.strips.map((s) => s.id);
+  if (stripIds.length > 0) {
+    // Delete existing content first
+    await c.env.DB.batch([
+      c.env.DB.prepare("DELETE FROM strips WHERE project_id = ?").bind(project.id),
+    ]);
+  } else {
+    await c.env.DB.prepare("DELETE FROM strips WHERE project_id = ?").bind(project.id).run();
+  }
+
+  // Re-insert strips, frames, versions, images, drawings from snapshot
+  const stmts: D1PreparedStatement[] = [];
+
+  for (const s of tree.strips) {
+    stmts.push(
+      c.env.DB.prepare(
+        "INSERT INTO strips (id, project_id, label, sort_order, updated_at) VALUES (?, ?, ?, ?, ?)",
+      ).bind(s.id, project.id, s.label, s.sort_order, now),
+    );
+  }
+  for (const f of tree.frames) {
+    stmts.push(
+      c.env.DB.prepare(
+        `INSERT INTO frames (id, strip_id, label, sort_order, crop_w, crop_h, text_content, table_data, version_label, strip_labels, hidden, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(f.id, f.strip_id, f.label, f.sort_order, f.crop_w, f.crop_h, f.text_content, f.table_data, f.version_label, f.strip_labels, f.hidden, now),
+    );
+  }
+  for (const v of tree.versions) {
+    stmts.push(
+      c.env.DB.prepare(
+        "INSERT INTO versions (id, frame_id, label, type, hidden, starred, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      ).bind(v.id, v.frame_id, v.label, v.type, v.hidden, v.starred, now),
+    );
+  }
+  for (const img of tree.images) {
+    stmts.push(
+      c.env.DB.prepare(
+        "INSERT INTO images (id, version_id, r2_key, width, height, size_bytes, content_type, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      ).bind(img.id, img.version_id, img.r2_key, img.width, img.height, img.size_bytes, img.content_type, now),
+    );
+  }
+  for (const d of tree.drawings) {
+    stmts.push(
+      c.env.DB.prepare(
+        "INSERT INTO drawings (id, version_id, drawing_data, updated_at) VALUES (?, ?, ?, ?)",
+      ).bind(d.id, d.version_id, d.drawing_data, now),
+    );
+  }
+
+  // Update project metadata + timestamp
+  stmts.push(
+    c.env.DB.prepare(
+      "UPDATE projects SET metadata = ?, updated_at = ? WHERE id = ?",
+    ).bind(tree.project.metadata, now, project.id),
+  );
+
+  if (stmts.length > 0) await c.env.DB.batch(stmts);
+
+  // Thin snapshots after restore
+  await thinSnapshots(c.env.DB, project.id, now);
 
   return c.json(await loadProjectTree(c.env.DB, project.id));
 });
@@ -771,4 +885,117 @@ function appendTombstoneInserts(db: D1Database, stmts: D1PreparedStatement[], pa
       ).bind(del.id, projectId, del.entity_type, del.entity_id, del.deleted_at, del.device_id),
     );
   }
+}
+
+// ===========================================================================
+// SNAPSHOTS — automatic restore points
+// ===========================================================================
+
+const SNAPSHOT_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
+
+/**
+ * Save a snapshot of the current project state if 10+ minutes since last snapshot.
+ * Called before each sync push so the pre-push state is preserved.
+ */
+async function maybeCreateSnapshot(db: D1Database, projectId: string, now: number): Promise<void> {
+  const latest = await db.prepare(
+    "SELECT created_at FROM project_snapshots WHERE project_id = ? ORDER BY created_at DESC LIMIT 1",
+  ).bind(projectId).first<{ created_at: number }>();
+
+  if (latest && (now - latest.created_at) < SNAPSHOT_INTERVAL_MS) return;
+
+  await forceCreateSnapshot(db, projectId, now);
+
+  // Thin old snapshots after creating a new one
+  await thinSnapshots(db, projectId, now);
+}
+
+/**
+ * Unconditionally save a snapshot (used before restore and when interval elapsed).
+ */
+async function forceCreateSnapshot(db: D1Database, projectId: string, now: number): Promise<void> {
+  const tree = await loadProjectTree(db, projectId);
+  // Skip snapshot if project is empty (no frames)
+  if (tree.frames.length === 0) return;
+
+  const id = newId();
+  await db.prepare(
+    "INSERT INTO project_snapshots (id, project_id, tree_json, created_at) VALUES (?, ?, ?, ?)",
+  ).bind(id, projectId, JSON.stringify(tree), now).run();
+}
+
+/**
+ * Enforce the retention policy by deleting snapshots that fall outside the
+ * allowed buckets:
+ *   - Last hour: every 10 min (5 max)
+ *   - 1–4 hours: one per hour (3 max)
+ *   - 5–24 hours: one per 4 hours (2 max)
+ *   - Older than 24h: one ("yesterday")
+ *   - Older than 48h: delete all
+ */
+async function thinSnapshots(db: D1Database, projectId: string, now: number): Promise<void> {
+  const all = await db.prepare(
+    "SELECT id, created_at FROM project_snapshots WHERE project_id = ? ORDER BY created_at DESC",
+  ).bind(projectId).all<{ id: string; created_at: number }>();
+
+  const snaps = all.results;
+  if (snaps.length <= 1) return;
+
+  const keep = new Set<string>();
+
+  // Bucket boundaries in ms
+  const ONE_HOUR   = 60 * 60 * 1000;
+  const FOUR_HOURS = 4 * ONE_HOUR;
+  const TWENTY_FOUR_HOURS = 24 * ONE_HOUR;
+  const FORTY_EIGHT_HOURS = 48 * ONE_HOUR;
+
+  // Last hour: keep every 10-min snapshot (max 5 by natural creation interval)
+  // 1–4 hours: keep one per hour (3 buckets: 1h, 2h, 3h)
+  // 5–24 hours: keep one per 4 hours (2 buckets: ~5h, ~15h)
+  // 24–48 hours: keep one ("yesterday")
+  // Older than 48h: delete
+
+  // Last hour — keep all
+  for (const s of snaps) {
+    const age = now - s.created_at;
+    if (age <= ONE_HOUR) keep.add(s.id);
+  }
+
+  // 1–4 hours — one per hour
+  for (let h = 1; h < 4; h++) {
+    const bucketStart = now - (h + 1) * ONE_HOUR;
+    const bucketEnd   = now - h * ONE_HOUR;
+    const best = snaps.find((s) => s.created_at > bucketStart && s.created_at <= bucketEnd);
+    if (best) keep.add(best.id);
+  }
+
+  // 5–24 hours — one per 4 hours (buckets at ~5h and ~15h roughly)
+  // Bucket 1: 4–12 hours
+  const b1 = snaps.find((s) => {
+    const age = now - s.created_at;
+    return age > FOUR_HOURS && age <= 12 * ONE_HOUR;
+  });
+  if (b1) keep.add(b1.id);
+
+  // Bucket 2: 12–24 hours
+  const b2 = snaps.find((s) => {
+    const age = now - s.created_at;
+    return age > 12 * ONE_HOUR && age <= TWENTY_FOUR_HOURS;
+  });
+  if (b2) keep.add(b2.id);
+
+  // Older than 24h — keep the most recent one
+  const yesterday = snaps.find((s) => (now - s.created_at) > TWENTY_FOUR_HOURS);
+  if (yesterday) keep.add(yesterday.id);
+
+  // Delete everything not in keep, plus anything older than 48h
+  const toDelete = snaps.filter((s) =>
+    !keep.has(s.id) || (now - s.created_at) > FORTY_EIGHT_HOURS,
+  );
+  if (toDelete.length === 0) return;
+
+  const stmts = toDelete.map((s) =>
+    db.prepare("DELETE FROM project_snapshots WHERE id = ?").bind(s.id),
+  );
+  await db.batch(stmts);
 }

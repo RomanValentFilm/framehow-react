@@ -45,6 +45,7 @@ import {
   bootstrapAccountSystem,
   flowAccountOrSignIn,
   flowLoadProject,
+  flowRestoreProject,
   flowSaveProject,
   isToasterShowing,
   showSaveToaster,
@@ -374,6 +375,12 @@ export function initFramehow(): void {
   document.getElementById('menuAccount')!.addEventListener('click', () => {
     document.getElementById('mainMenu')!.classList.remove('open');
     void flowAccountOrSignIn();
+  });
+
+  // Restore Project
+  document.getElementById('menuRestoreProject')!.addEventListener('click', () => {
+    document.getElementById('mainMenu')!.classList.remove('open');
+    void flowRestoreProject();
   });
 
   // Adjust PDF Import
