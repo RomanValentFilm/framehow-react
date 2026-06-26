@@ -43,35 +43,30 @@ cd ~/Desktop/Framehow\ Files/framehow-react && rm -rf dist tsconfig.tsbuildinfo 
 - postbuild copies `landing.html` to `dist/index.html`, hero image to `dist/img/`, writes `_redirects` for SPA routing
 - Build must run on Mac (node_modules are darwin-arm64)
 
-## SAVE procedure (when user says "save", "new version", or "save everywhere")
-
-When the user says save, do ALL 4 steps. Production deploy only when user explicitly says so.
-
-### Step 1: Git commit + push to GitHub
-```
-# Done from sandbox (commit) + user runs push:
-cd ~/Desktop/Framehow\ Files/framehow-react && git push origin v4.4
-```
-
-### Step 2: Desktop backup snapshot
-Copy project to `framehow-react-versions/vX.Y.ZZZ/` excluding node_modules, dist, .git, etc:
-```
-cd ~/Desktop/Framehow\ Files/framehow-react-versions && cp -R ../framehow-react vX.Y.ZZZ && rm -rf vX.Y.ZZZ/node_modules vX.Y.ZZZ/dist vX.Y.ZZZ/.git vX.Y.ZZZ/framehow-react-versions vX.Y.ZZZ/backend/node_modules vX.Y.ZZZ/backend/.wrangler
-```
-
-### Step 3: Build + deploy to Cloudflare dev
-```
-cd ~/Desktop/Framehow\ Files/framehow-react && npm run build && npx wrangler pages deploy dist --project-name framehow-react --branch dev
-```
-
-### Step 4: Bump version — working copy is now vX.Y.ZZZ+1
-Update the version entry in CLAUDE.md to the new version number. The working directory `framehow-react/` is now the next version, ready for new changes.
-
-### Combined Terminal command (user runs this — steps 1+2+3 in one go):
-```
-cd ~/Desktop/Framehow\ Files/framehow-react && git push origin v4.4 && cd ../framehow-react-versions && cp -R ../framehow-react vX.Y.ZZZ && rm -rf vX.Y.ZZZ/node_modules vX.Y.ZZZ/dist vX.Y.ZZZ/.git vX.Y.ZZZ/framehow-react-versions vX.Y.ZZZ/backend/node_modules vX.Y.ZZZ/backend/.wrangler && cd ../framehow-react && npm run build && npx wrangler pages deploy dist --project-name framehow-react --branch dev
-```
-Replace `vX.Y.ZZZ` with the actual version number. User must run on Mac (sandbox can't do it).
+## "4 STEPS SAVE" — triggered when user says "4 steps save", "save", "new version", or "save everywhere"
+##
+## CRITICAL: Follow this EXACT order. Do NOT bump the version until AFTER the
+## user has run the terminal command and it succeeded.
+##
+## Step 1: Verify state.ts has the CURRENT version (NOT the next one)
+## Step 2: Give user ONE terminal command that does steps A+B+C below
+## Step 3: WAIT for user to paste the terminal output confirming success
+## Step 4: ONLY THEN bump version in state.ts + CLAUDE.md
+##
+## The terminal command (steps A+B+C combined):
+## A = git add + commit + push (saves current version to GitHub)
+## B = cp backup to framehow-react-versions/vCURRENT/ (< 5MB, no node_modules/dist/.git)
+## C = npm run build + wrangler pages deploy --branch=dev (deploys current version)
+##
+## Template (replace vX.Y.ZZZ with current version, e.g. v4.7.011):
+## ```
+## cd ~/Desktop/Framehow\ Files/framehow-react && git add -A && git commit -m "vX.Y.ZZZ: DESCRIPTION" && git push origin v4.4 && cd ../framehow-react-versions && cp -R ../framehow-react vX.Y.ZZZ && rm -rf vX.Y.ZZZ/node_modules vX.Y.ZZZ/dist vX.Y.ZZZ/.git vX.Y.ZZZ/framehow-react-versions vX.Y.ZZZ/backend/node_modules vX.Y.ZZZ/backend/.wrangler && cd ../framehow-react && npm run build && npx wrangler pages deploy dist --project-name=framehow-react --branch=dev
+## ```
+##
+## After success, Claude bumps state.ts to vX.Y.ZZZ+1 and adds a new
+## "working copy" entry in CLAUDE.md Versions section.
+## The backup must be < 5MB (currently ~2.3MB).
+## Production deploy ONLY when user explicitly says so.
 
 ## CRITICAL RULES
 - User controls when to deploy. NEVER deploy without explicit permission.
@@ -104,6 +99,9 @@ Replace `vX.Y.ZZZ` with the actual version number. User must run on Mac (sandbox
 - View-bar height: 28px on iPad (13px font), 26px on iPhone (11px font)
 
 ## Versions
+
+### v4.7.012 — 2026-06-26 (dev — working copy)
+Next version, continues from v4.7.011.
 
 ### v4.7.011 — 2026-06-26 (dev — deployed)
 **Cross-device sync fixes (idle-wake, focus/blur ordering, delta push, frame guard)**
@@ -318,76 +316,14 @@ Changes:
 ### v3.4 — 2026-05-20
 Previous stable version (GRID4 view mode, iOS fullscreen overlay fix, etc.)
 
-## NEXT: Sync Refactor — "Never Empty" Architecture (v4.6.029+)
+## COMPLETED: "Never Empty" Sync Architecture (done as of v4.7.011)
 
-### Problem
-Current `applyCloudTreeToStore` wipes ALL images (sets bgImage=null, src=''), rebuilds frames from scratch, then fetches images from R2 one by one. This creates a window where the store has frames with no images. If anything goes wrong during that window (Safari purges tab, network fails, autosave fires), the imageless state gets persisted and can overwrite good cloud data.
-
-v4.6.028 added three layers of guards (pullInFlight, pullIncomplete, image count), but they're band-aids. The root fix is: **never create the empty state in the first place.**
-
-### Core Principle
-**An image can only disappear through an explicit user action (delete), never through a system process (sync, pull, load).**
-
-### Design: Diff-and-Patch with Tombstones
-
-#### Step 1: Add `r2Key` tracking to local state
-- Add `r2Key?: string` to `Frame` interface (for main frame images)
-- Add `r2Key?: string` to `Version` interface (for strip version images)
-- When an image is fetched from R2, store the R2 key alongside the base64 data URL
-- When a user uploads a new local image, `r2Key` is cleared (image is local, not from R2 yet)
-- After a successful push, update `r2Key` with the key returned from the upload
-
-#### Step 2: Diff-based pull (replace `applyCloudTreeToStore`)
-Instead of "clear everything → rebuild → fetch," do:
-
-For each frame in cloud data:
-1. **Same image** (cloud r2Key === local r2Key) → keep local image, don't fetch. Update labels/order/metadata only
-2. **Different image** (cloud r2Key !== local r2Key) → fetch new image from R2, swap ONLY after successful fetch. If fetch fails, keep old image
-3. **New frame** (exists in cloud, not locally) → fetch image, add frame only once image is ready
-4. **Frame missing from cloud** → do NOT remove unless a tombstone exists (see step 3)
-
-The image field is NEVER set to null or empty during this process.
-
-#### Step 3: Tombstone system for explicit deletions
-When user explicitly deletes a frame or clears an image:
-1. Client records a deletion event: `{ frame_id, deleted_at, device_id }`
-2. Deletion is synced to cloud alongside the push payload
-3. On pull: only remove local frames/images if a matching tombstone exists
-
-**D1 schema addition:**
-```sql
-CREATE TABLE IF NOT EXISTS project_deletions (
-  id TEXT PRIMARY KEY,
-  project_id TEXT NOT NULL,
-  frame_id TEXT NOT NULL,        -- server frame UUID
-  version_id TEXT,               -- null = main frame deleted, non-null = specific version
-  deleted_at INTEGER NOT NULL,
-  device_id TEXT NOT NULL,
-  FOREIGN KEY (project_id) REFERENCES projects(id)
-);
-CREATE INDEX idx_deletions_project ON project_deletions(project_id);
-```
-
-**Sync API changes:**
-- Push payload gets a new `deletions` array
-- Pull response includes `deletions` array (filtered to deletions since last pull)
-- Tombstones can be garbage-collected after 30 days (all devices will have synced by then)
-
-#### Step 4: Remove band-aid guards
-Once diff-and-patch + tombstones are working:
-- `_pullIncomplete` flag becomes unnecessary (images are never cleared)
-- `_lastKnownImageCount` guard becomes unnecessary
-- `_pullInFlight` blocking IDB autosave becomes unnecessary (autosave is always safe because images are never null)
-- `_pullInFlight` still needed to prevent push during pull (structural consistency)
-
-### Implementation Order
-1. Add `r2Key` to Frame + Version interfaces, persist in IDB, include in sync payload
-2. Refactor `applyCloudTreeToStore` → diff-and-patch (compare r2Keys, keep unchanged images)
-3. Add `project_deletions` table to D1 (migration)
-4. Add tombstone recording on user delete actions
-5. Add tombstone sync (push deletions, pull deletions)
-6. Apply tombstones during diff-based pull
-7. Remove old guards, test cross-device scenarios
+All items implemented and deployed:
+- r2Key tracking on Frame + Version (diff-based pull skips unchanged images)
+- Diff-and-patch pull (applyCloudTreeToStore compares r2Keys, never wipes images)
+- Tombstones (deleted frames/versions tracked and synced, filtered on pull)
+- Delta push (fingerprint-based, only changed frames sent)
+- Safety guards kept as belt-and-suspenders: image count guard, frame count guard, _pullIncomplete flag
 
 ## Backend
 

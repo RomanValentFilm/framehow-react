@@ -678,8 +678,12 @@ async function loadCloudProject(p: CloudProject): Promise<void> {
     (window as any).__fh_renderAll?.();
     autoPhoneMainView();
     if (progressBar) progressBar.style.width = '100%';
-    setTimeout(() => { if (progressEl) progressEl.classList.add('hidden'); }, 300);
-    // Progress bar already signals completion — no toast needed
+    setTimeout(() => {
+      if (progressEl) progressEl.classList.add('hidden');
+      // Show incomplete overlay AFTER progress bar is gone
+      if (isPullIncomplete()) showIncompleteLoadOverlay();
+      else hideIncompleteLoadOverlay();
+    }, 300);
   } catch (e) {
     if (progressEl) progressEl.classList.add('hidden');
     showToast(asMessage(e, 'Could not load project.'));
@@ -1946,11 +1950,6 @@ async function applyCloudTreeToStore(tree: CloudProjectTree, keepLocalFrameIds?:
   setPullIncomplete(failedTasks.length > 0);
 
   if (failedTasks.length > 0) {
-    // Show a persistent warning so the user knows images are missing
-    const missing = failedTasks.length === 1
-      ? failedTasks[0]
-      : `${failedTasks.length} images`;
-    showToast(`Warning: ${missing} failed to load from cloud. Try reloading the project.`);
     console.error('[sync] Failed image loads:', failedTasks);
   }
 }
@@ -2089,6 +2088,68 @@ function showDeviceLockOverlay(deviceName: string): void {
   document.body.style.overflow = 'hidden';
   const msgEl = document.getElementById('deviceLockMsg');
   if (msgEl) msgEl.textContent = `Your ${deviceName} is working on this project — please wait 10sec for sync to start working here.`;
+}
+
+// ---------------------------------------------------------------------------
+// Incomplete-load overlay: shown when a pull failed to fetch all content.
+// Blocks interaction (like device lock), offers Retry / Dismiss.
+// ---------------------------------------------------------------------------
+let _incompleteLoadOverlay: HTMLElement | null = null;
+
+function showIncompleteLoadOverlay(): void {
+  if (!_incompleteLoadOverlay) {
+    const el = document.createElement('div');
+    el.id = 'incompleteLoadOverlay';
+    el.style.cssText =
+      'position:fixed;inset:0;z-index:999999;background:rgba(0,0,0,0.82);' +
+      'display:flex;align-items:center;justify-content:center;' +
+      'font-family:-apple-system,BlinkMacSystemFont,sans-serif;color:#fff;text-align:center;' +
+      'touch-action:none;overscroll-behavior:none;';
+    el.innerHTML = `
+      <div style="max-width:340px;padding:24px;">
+        <div style="font-size:16px;font-weight:600;margin-bottom:8px;">
+          Couldn’t load all content
+        </div>
+        <div style="font-size:13px;color:#aaa;margin-bottom:20px;">
+          Check your internet connection and try again.
+        </div>
+        <div style="display:flex;gap:12px;justify-content:center;">
+          <button id="incompleteRetryBtn" style="
+            padding:10px 24px;border-radius:8px;border:none;
+            background:#fff;color:#000;font-size:14px;font-weight:600;
+            cursor:pointer;">Retry</button>
+          <button id="incompleteDismissBtn" style="
+            padding:10px 24px;border-radius:8px;border:1px solid #555;
+            background:transparent;color:#aaa;font-size:14px;font-weight:500;
+            cursor:pointer;">Dismiss</button>
+        </div>
+      </div>`;
+    const stopEvent = (e: Event) => { e.preventDefault(); e.stopPropagation(); };
+    el.addEventListener('wheel', stopEvent, { passive: false });
+    el.addEventListener('touchmove', stopEvent, { passive: false });
+    el.addEventListener('scroll', stopEvent, { passive: false });
+    document.body.appendChild(el);
+    _incompleteLoadOverlay = el;
+
+    // Retry: pull again from cloud
+    el.querySelector('#incompleteRetryBtn')!.addEventListener('click', () => {
+      hideIncompleteLoadOverlay();
+      void tryPullFromCloud();
+    });
+    // Dismiss: let user work, but _pullIncomplete stays true (no push/save)
+    el.querySelector('#incompleteDismissBtn')!.addEventListener('click', () => {
+      hideIncompleteLoadOverlay();
+    });
+  }
+  _incompleteLoadOverlay.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+}
+
+function hideIncompleteLoadOverlay(): void {
+  if (_incompleteLoadOverlay) {
+    _incompleteLoadOverlay.style.display = 'none';
+    document.body.style.overflow = '';
+  }
 }
 
 function hideDeviceLockOverlay(): void {
@@ -2551,13 +2612,12 @@ async function tryPullFromCloud(): Promise<void> {
       markSaved(cp.projectId!);
       clearDirtyState(); // Pull is not a user change — prevent stale push
       if (progressBar) progressBar.style.width = '100%';
-      setTimeout(() => { if (progressEl) progressEl.classList.add('hidden'); }, 300);
-
-      // If dirty frames were preserved, they need pushing to cloud
-      // (the next user action or blur will trigger a push)
-
-      // Image retries now happen per-image inside applyCloudTreeToStore
-      // (3 attempts with exponential backoff). No need for a full re-pull.
+      setTimeout(() => {
+        if (progressEl) progressEl.classList.add('hidden');
+        // Show incomplete overlay AFTER progress bar is gone
+        if (isPullIncomplete()) showIncompleteLoadOverlay();
+        else hideIncompleteLoadOverlay();
+      }, 300);
     }
   } catch {
     const pEl = document.getElementById('progressOverlay');
