@@ -46,7 +46,7 @@ export function toggleSetupMode(): void {
   }
 }
 
-/** Render the setup bar in EDIT state: ▼ [PILL] "TAP FRAMES..." [DONE] */
+/** Render the setup bar in EDIT state: inline pills + NEW + EDIT + instruction + separator + DONE */
 function renderSetupBarEdit(bar: HTMLElement): void {
   const s = state();
   const active = s.setups.find((su) => su.id === s.activeSetupId);
@@ -54,24 +54,66 @@ function renderSetupBarEdit(bar: HTMLElement): void {
     renderSetupCreateForm(bar);
     return;
   }
-  const col = SETUP_COLORS[active.colorIndex] || SETUP_COLORS[0];
-  const textCol = needsDarkText(col.hex) ? '#000' : '#fff';
 
   useStore.setState({ setupEditing: true });
 
+  const isPhone = Math.min(window.innerWidth, window.innerHeight) <= 430;
+
+  // Build pills HTML — active gets white ring, others dimmed
+  let pillsHTML = '';
+  for (const su of s.setups) {
+    const col = SETUP_COLORS[su.colorIndex] || SETUP_COLORS[0];
+    const textCol = needsDarkText(col.hex) ? '#000' : '#fff';
+    const isAct = su.id === s.activeSetupId;
+    pillsHTML += `<button class="setup-pill${isAct ? ' active-pill' : ' dim'}" data-setup-pill="${su.id}" style="background:${col.hex};color:${textCol}">${su.name}</button>`;
+  }
+
+  // +NEW and EDIT buttons (max 12 setups for +NEW)
+  const newBtnHTML = s.setups.length < 12
+    ? '<button class="setup-new-btn" id="setupNewBtn">+NEW</button>'
+    : '';
+  const editBtnHTML = '<button class="setup-edit-btn" id="setupEditBtn">EDIT</button>';
+
+  // Instruction text (hidden on iPhone)
+  const instrHTML = isPhone ? '' : '<span class="setup-helper-text">CLICK FRAMES BELOW TO ADD / REMOVE</span>';
+  const rightText = isPhone ? '' : '<span class="setup-helper-text">click when</span>';
+
   bar.innerHTML = `
     <div class="setup-bar-inner">
-      <span class="setup-helper-text">TAP FRAMES TO ADD TO / REMOVE FROM</span>
-      <button class="setup-dropdown-arrow" id="setupDropdownBtn" title="Choose setup">▶</button>
-      <span class="setup-pill active-pill" style="background:${col.hex};color:${textCol}">${active.name}</span>
-      <span class="setup-helper-text">SETUP</span>
-      <button class="setup-done-btn" id="setupDoneBtn">DONE</button>
+      <div class="setup-bar-pills">
+        ${pillsHTML}
+        ${newBtnHTML}
+        ${editBtnHTML}
+        ${instrHTML}
+      </div>
+      <div class="setup-bar-right">
+        <span class="setup-bar-sep"></span>
+        ${rightText}
+        <button class="setup-done-btn" id="setupDoneBtn">DONE</button>
+      </div>
     </div>
-    <div class="setup-dropdown" id="setupDropdown" style="display:none"></div>
   `;
 
-  // Wire dropdown (stays active — user can switch setups mid-edit)
-  _wireDropdown(bar);
+  // Wire pill clicks — tap to switch active setup
+  bar.querySelectorAll('[data-setup-pill]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = (btn as HTMLElement).dataset.setupPill!;
+      useStore.setState({ activeSetupId: id });
+      renderSetupBarEdit(bar);
+      const renderAll = (window as any).__fh_renderAll;
+      if (renderAll) renderAll();
+    });
+  });
+
+  // Wire +NEW → show inline creation form as second row
+  bar.querySelector('#setupNewBtn')?.addEventListener('click', () => {
+    _showInlineCreateForm(bar);
+  });
+
+  // Wire EDIT → show inline edit form for active pill as second row
+  bar.querySelector('#setupEditBtn')!.addEventListener('click', () => {
+    _showInlineEditForm(bar);
+  });
 
   // Wire DONE → exit setup mode entirely
   bar.querySelector('#setupDoneBtn')!.addEventListener('click', () => {
@@ -83,91 +125,150 @@ function renderSetupBarEdit(bar: HTMLElement): void {
   if (renderAll) renderAll();
 }
 
-/** Close dropdown + reset arrow. */
-function _closeDropdown(): void {
-  const dd = document.getElementById('setupDropdown');
-  const btn = document.getElementById('setupDropdownBtn');
-  if (dd) dd.style.display = 'none';
-  if (btn) btn.textContent = '▶';
-}
+/** Show inline creation form as a second row below the pills. */
+function _showInlineCreateForm(bar: HTMLElement): void {
+  // Remove existing inline row if any
+  bar.querySelector('.setup-create-row')?.remove();
 
-/** Wire the dropdown arrow + menu. Used in both view and edit states. */
-function _wireDropdown(bar: HTMLElement): void {
-  const btn = bar.querySelector('#setupDropdownBtn')!;
-  btn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const dd = document.getElementById('setupDropdown')!;
-    if (dd.style.display === 'none') {
-      renderSetupDropdown(dd);
-      dd.style.display = '';
-      // Position dropdown below the arrow button
-      const btnEl = btn as HTMLElement;
-      dd.style.left = btnEl.offsetLeft + 'px';
-      btn.textContent = '▼';
-      // Close dropdown when clicking outside
-      setTimeout(() => {
-        const closer = (ev: MouseEvent) => {
-          const target = ev.target as HTMLElement;
-          if (!dd.contains(target) && target !== btn) {
-            _closeDropdown();
-            document.removeEventListener('click', closer, true);
-          }
-        };
-        document.addEventListener('click', closer, true);
-      }, 0);
-    } else {
-      _closeDropdown();
-    }
-  });
-}
-
-/** Render the dropdown menu: + NEW first, then existing setups as coloured pills with EDIT. */
-function renderSetupDropdown(dd: HTMLElement): void {
   const s = state();
-  let html = s.setups.length < 12
-    ? '<button class="setup-dd-item setup-dd-new" data-setup-new="1">+NEW</button>'
-    : '';
-  for (const su of s.setups) {
-    const col = SETUP_COLORS[su.colorIndex] || SETUP_COLORS[0];
-    const textCol = needsDarkText(col.hex) ? '#000' : '#fff';
-    const isActive = su.id === s.activeSetupId;
-    html += `<div class="setup-dd-row${isActive ? ' setup-dd-active' : ''}">
-      <button class="setup-dd-item" data-setup-select="${su.id}" style="background:${col.hex};color:${textCol}">${su.name}</button>
-      <button class="setup-dd-edit" data-setup-edit="${su.id}" title="Edit setup">EDIT</button>
-    </div>`;
-  }
-  dd.innerHTML = html;
+  const usedColors = new Set(s.setups.map((su) => su.colorIndex));
 
-  // Wire + NEW
-  dd.querySelector('[data-setup-new]')?.addEventListener('click', () => {
-    _closeDropdown();
-    const bar = document.getElementById('setupBar')!;
-    renderSetupCreateForm(bar);
+  // Find first available colour
+  let defaultCI = 0;
+  for (let i = 0; i < SETUP_COLORS.length; i++) {
+    if (!usedColors.has(i)) { defaultCI = i; break; }
+  }
+
+  let colorsHTML = '';
+  for (let i = 0; i < SETUP_COLORS.length; i++) {
+    const col = SETUP_COLORS[i];
+    const taken = usedColors.has(i);
+    const selected = !taken && i === defaultCI;
+    const light = taken && needsDarkText(col.hex);
+    colorsHTML += `<button class="setup-color-circle${selected ? ' selected' : ''}${taken ? ' taken' : ''}${light ? ' light' : ''}" data-ci="${i}" style="background:${col.hex}"${taken ? ' disabled' : ''}></button>`;
+  }
+
+  const row = document.createElement('div');
+  row.className = 'setup-create-row';
+  row.innerHTML = `
+    <input class="setup-name-input" id="setupInlineNameInput" type="text" maxlength="7" placeholder="NAME" autocomplete="one-time-code" />
+    <div class="setup-color-picker">${colorsHTML}</div>
+    <button class="setup-create-btn" id="setupInlineCreateBtn">CREATE</button>
+    <button class="setup-cancel-btn" id="setupInlineCancelBtn">CANCEL</button>
+  `;
+  bar.appendChild(row);
+
+  let selectedCI = defaultCI;
+
+  // Wire colour selection
+  row.querySelectorAll('.setup-color-circle:not(.taken)').forEach((circle) =>
+    circle.addEventListener('click', () => {
+      row.querySelectorAll('.setup-color-circle').forEach((c) => c.classList.remove('selected'));
+      circle.classList.add('selected');
+      selectedCI = parseInt((circle as HTMLElement).dataset.ci!);
+    })
+  );
+
+  // Wire CREATE
+  row.querySelector('#setupInlineCreateBtn')!.addEventListener('click', () => {
+    const input = document.getElementById('setupInlineNameInput') as HTMLInputElement;
+    const name = input.value.trim().toUpperCase();
+    if (!name) { showToast('Enter a name'); return; }
+    if (name.length > 7) { showToast('Max 7 characters'); return; }
+    const latest = state();
+    if (latest.setups.some((su) => su.name === name)) { showToast('Name already used'); return; }
+
+    const id = 'setup_' + latest.nextSetupId;
+    const newSetup: Setup = { id, name, colorIndex: selectedCI };
+    useStore.setState((prev) => ({
+      setups: [...prev.setups, newSetup],
+      activeSetupId: id,
+      nextSetupId: prev.nextSetupId + 1,
+    }));
+
+    renderSetupBarEdit(bar);
+    void flushSyncNow(); // STP-1: create setup → CREATE
   });
 
-  // Wire selection (click on the pill → switch to that setup)
-  dd.querySelectorAll('[data-setup-select]').forEach((btn) =>
-    btn.addEventListener('click', () => {
-      const id = (btn as HTMLElement).dataset.setupSelect!;
-      useStore.setState({ activeSetupId: id });
-      _closeDropdown();
-      // Switch setup and stay in edit mode
-      renderSetupBarEdit(document.getElementById('setupBar')!);
-      // Re-render all canvases so +/pill state reflects the new active setup
-      const renderAll = (window as any).__fh_renderAll;
-      if (renderAll) renderAll();
+  // Wire CANCEL — remove the creation row
+  row.querySelector('#setupInlineCancelBtn')!.addEventListener('click', () => {
+    row.remove();
+  });
+
+  // Auto-focus
+  (document.getElementById('setupInlineNameInput') as HTMLInputElement)?.focus();
+}
+
+/** Show inline edit form for the active setup as a second row below the pills. */
+function _showInlineEditForm(bar: HTMLElement): void {
+  // Remove existing inline row if any
+  bar.querySelector('.setup-create-row')?.remove();
+
+  const s = state();
+  const su = s.setups.find((x) => x.id === s.activeSetupId);
+  if (!su) return;
+
+  // Build colour circles — mark taken ones (except current setup's colour)
+  const usedColors = new Set(s.setups.filter((x) => x.id !== su.id).map((x) => x.colorIndex));
+  let colorsHTML = '';
+  for (let i = 0; i < SETUP_COLORS.length; i++) {
+    const col = SETUP_COLORS[i];
+    const taken = usedColors.has(i);
+    const selected = i === su.colorIndex;
+    const light = taken && needsDarkText(col.hex);
+    colorsHTML += `<button class="setup-color-circle${selected ? ' selected' : ''}${taken ? ' taken' : ''}${light ? ' light' : ''}" data-ci="${i}" style="background:${col.hex}"${taken ? ' disabled' : ''}></button>`;
+  }
+
+  const row = document.createElement('div');
+  row.className = 'setup-create-row';
+  row.innerHTML = `
+    <input class="setup-name-input" id="setupInlineEditNameInput" type="text" maxlength="7" value="${su.name}" autocomplete="one-time-code" />
+    <div class="setup-color-picker">${colorsHTML}</div>
+    <button class="setup-create-btn" id="setupInlineEditSaveBtn">SAVE</button>
+    <button class="setup-delete-btn" id="setupInlineEditDeleteBtn">DELETE</button>
+    <button class="setup-cancel-btn" id="setupInlineEditCancelBtn">CANCEL</button>
+  `;
+  bar.appendChild(row);
+
+  let selectedCI = su.colorIndex;
+
+  // Wire colour selection
+  row.querySelectorAll('.setup-color-circle:not(.taken)').forEach((circle) =>
+    circle.addEventListener('click', () => {
+      row.querySelectorAll('.setup-color-circle').forEach((c) => c.classList.remove('selected'));
+      circle.classList.add('selected');
+      selectedCI = parseInt((circle as HTMLElement).dataset.ci!);
     })
   );
 
-  // Wire EDIT buttons → open edit form for that setup
-  dd.querySelectorAll('[data-setup-edit]').forEach((btn) =>
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const id = (btn as HTMLElement).dataset.setupEdit!;
-      _closeDropdown();
-      renderSetupEditForm(document.getElementById('setupBar')!, id);
-    })
-  );
+  // Wire SAVE
+  row.querySelector('#setupInlineEditSaveBtn')!.addEventListener('click', () => {
+    const input = document.getElementById('setupInlineEditNameInput') as HTMLInputElement;
+    const name = input.value.trim().toUpperCase();
+    if (!name) { showToast('Enter a name'); return; }
+    if (name.length > 7) { showToast('Max 7 characters'); return; }
+    const latest = state();
+    if (latest.setups.some((x) => x.name === name && x.id !== su.id)) { showToast('Name already used'); return; }
+
+    su.name = name;
+    su.colorIndex = selectedCI;
+    bumpRenderTick();
+    renderSetupBarEdit(bar);
+    void flushSyncNow(); // STP-2: edit setup → SAVE
+  });
+
+  // Wire DELETE
+  row.querySelector('#setupInlineEditDeleteBtn')!.addEventListener('click', () => {
+    _deleteSetup(bar, su.id);
+  });
+
+  // Wire CANCEL — remove the edit row
+  row.querySelector('#setupInlineEditCancelBtn')!.addEventListener('click', () => {
+    row.remove();
+  });
+
+  // Auto-focus
+  (document.getElementById('setupInlineEditNameInput') as HTMLInputElement)?.focus();
 }
 
 /** Render an edit form for a specific setup: rename, recolour, delete. */
