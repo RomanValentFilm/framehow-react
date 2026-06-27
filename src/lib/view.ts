@@ -779,7 +779,25 @@ export function wireScrollHandlers(): void {
 
   // iPhone: toolbar scrolls naturally via CSS. No JS show/hide needed.
   const isPhoneAtInit = Math.min(window.innerWidth, window.innerHeight) <= 430;
-  if (isPhoneAtInit) return;
+  if (isPhoneAtInit) {
+    // Landscape: toggle extra top padding on the view-bar when it's stuck at
+    // the top (toolbar scrolled off). This pushes buttons below the iOS
+    // status-bar tap zone that triggers scroll-to-top.
+    const vb = document.querySelector('.view-bar') as HTMLElement | null;
+    const tb = document.getElementById('mainToolbar');
+    if (vb && tb) {
+      window.addEventListener('scroll', () => {
+        if (window.innerWidth <= window.innerHeight) {
+          // Portrait: never stuck-pad
+          vb.classList.remove('vb-stuck');
+          return;
+        }
+        const tbBottom = tb.getBoundingClientRect().bottom;
+        vb.classList.toggle('vb-stuck', tbBottom <= 0);
+      }, { passive: true });
+    }
+    return;
+  }
 
   // iPad: JS-controlled show/hide
   let hidden = false;

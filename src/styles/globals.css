@@ -542,6 +542,14 @@
     .setup-bar-inner{flex-wrap:wrap;}
     .setup-helper-text{font-size:9px;}
   }
+  /* iPhone landscape: when view-bar is stuck at top (toolbar scrolled off),
+     add padding to push buttons below the iOS status-bar tap zone. */
+  @media (hover:none) and (pointer:coarse) and (max-height:430px) and (orientation:landscape){
+    .view-bar.vb-stuck{padding-top:11px;}
+    .view-btn{position:relative;}
+    .view-btn::after{content:'';position:absolute;top:-6px;bottom:-6px;left:-4px;right:-4px;}
+    body.setup-lock .view-bar.vb-stuck + .setup-bar{top:calc(env(safe-area-inset-top) + 34px);}
+  }
 
   /* PWA standalone: fixed gray strip behind battery bar. z-index:15 sits
      below toolbar (40) and view-bar (20/30) so toolbar is never covered. */
