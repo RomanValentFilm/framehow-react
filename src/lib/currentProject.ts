@@ -179,6 +179,14 @@ export function isDirty(): boolean { return _dirty; }
 /** Get the set of server frame UUIDs modified locally since last push. */
 export function getDirtyFrameIds(): ReadonlySet<string> { return _dirtyFrameIds; }
 
+/** Explicitly mark a frame dirty by its server UUID.
+ *  Use this for in-place mutations (e.g. setting noteHolder.note) where
+ *  the object reference doesn't change so the ref-based subscriber can't
+ *  detect the change automatically. */
+export function markFrameDirty(serverFrameId: string): void {
+  _dirtyFrameIds.add(serverFrameId);
+}
+
 /** Called after a successful push to clear dirty state. */
 export function clearDirtyState(): void {
   _dirty = false;
@@ -251,7 +259,25 @@ export async function flushSyncNow(): Promise<void> {
     _pendingSyncIds.delete(pid);
     hideOfflineBanner();
     emit();
-  } catch {
+  } catch (e: unknown) {
+    const err = e as { status?: number };
+    if (err?.status === 409 && _pullFn) {
+      // 409 conflict: another device pushed since our last sync.
+      // Pull to merge (our _dirtyFrameIds protect local changes),
+      // then schedule a retry push with updated base_updated_at.
+      cloudSyncInFlight = false; // release lock so pull can proceed
+      try {
+        await _pullFn();
+        // tryPullFromCloud calls clearDirtyState() after merge, but our
+        // kept-local frames still need to be pushed. Re-mark dirty and
+        // schedule a push — base_updated_at is now up-to-date.
+        _dirty = true;
+        scheduleSyncPush();
+      } catch {
+        _pendingSyncIds.add(pid);
+      }
+      return; // skip the finally's cloudSyncInFlight = false (already cleared)
+    }
     _pendingSyncIds.add(pid);
   } finally {
     cloudSyncInFlight = false;
@@ -415,14 +441,44 @@ function hideOfflineBanner(): void {
  * No interval. System actions are wrapped to prevent false positives.
  */
 export function startAutosave(): void {
-  // Zustand subscriber: schedule IDB autosave + detect user changes
+  // Zustand subscriber: schedule IDB autosave + detect user changes.
+  // Also tracks WHICH frames changed so the pull-merge logic can keep
+  // dirty local frames instead of blindly overwriting them with cloud data.
+  let _prevFrameRefs = new Map<number, object>(); // frame.id → frame object ref
+  let _prevStripVerRefs = new Map<string, object>(); // "strip:fid" → versions array ref
   useStore.subscribe(() => {
     scheduleAutosave();
+    const s = useStore.getState();
     // Only mark dirty when a USER (not system) action changes the store
     if (!_isSystemAction) {
       _dirty = true;
+      // Track which frames changed — wrapped in try/catch so scheduleSyncPush
+      // is ALWAYS reached even if the tracking logic has an edge-case error.
+      try {
+        for (const f of s.frames) {
+          if (!f.serverFrameId) continue;
+          if (_prevFrameRefs.get(f.id) !== f) _dirtyFrameIds.add(f.serverFrameId);
+          for (const strip of ['ver', 'floor', 'refs'] as const) {
+            const curVers = s.stripVersions[strip]?.[f.id];
+            if (_prevStripVerRefs.get(`${strip}:${f.id}`) !== curVers) {
+              _dirtyFrameIds.add(f.serverFrameId);
+            }
+          }
+        }
+      } catch { /* tracking is best-effort — sync must never break */ }
       scheduleSyncPush();
     }
+    // ALWAYS update refs — including after system actions (pulls, loads) —
+    // so the next user action only marks actually-changed frames as dirty.
+    try {
+      _prevFrameRefs = new Map(s.frames.map((f) => [f.id, f]));
+      const newRefs = new Map<string, object>();
+      for (const strip of ['ver', 'floor', 'refs'] as const) {
+        const m = s.stripVersions[strip];
+        if (m) for (const fid of Object.keys(m)) newRefs.set(`${strip}:${fid}`, m[+fid]);
+      }
+      _prevStripVerRefs = newRefs;
+    } catch { /* best-effort */ }
   });
 
   // Push immediately when tab loses focus (user switching to another device)

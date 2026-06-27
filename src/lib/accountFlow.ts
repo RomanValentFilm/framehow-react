@@ -1064,8 +1064,8 @@ async function fetchImageFromR2(r2Key: string, token: string): Promise<string> {
 interface CloudProjectTree {
   project: { id: string; name: string; created_at: number; updated_at: number; last_device_id: string | null; last_device_name: string | null; metadata: string | null };
   strips: Array<{ id: string; project_id: string; label: string | null; sort_order: number; updated_at: number }>;
-  frames: Array<{ id: string; strip_id: string; label: string | null; sort_order: number; crop_w: number | null; crop_h: number | null; text_content: string | null; table_data: string | null; version_label: string | null; strip_labels: string | null; hidden: number; updated_at: number }>;
-  versions: Array<{ id: string; frame_id: string; label: string | null; type: string; hidden: number; starred: number; updated_at: number }>;
+  frames: Array<{ id: string; strip_id: string; label: string | null; sort_order: number; crop_w: number | null; crop_h: number | null; text_content: string | null; table_data: string | null; version_label: string | null; strip_labels: string | null; hidden: number; note: string | null; updated_at: number }>;
+  versions: Array<{ id: string; frame_id: string; label: string | null; type: string; hidden: number; starred: number; note: string | null; updated_at: number }>;
   images: Array<{ id: string; version_id: string; r2_key: string; width: number | null; height: number | null; size_bytes: number | null; content_type: string | null; updated_at: number }>;
   drawings: Array<{ id: string; version_id: string; drawing_data: string; updated_at: number }>;
   deletions?: Array<{ id: string; entity_type: string; entity_id: string; deleted_at: number; device_id: string | null }>;
@@ -1160,8 +1160,8 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   const stripId = uuid();
   const strips = [{ id: stripId, label: 'Main', sort_order: 0, updated_at: now }];
 
-  const frames: Array<{ id: string; strip_id: string; label: string | null; sort_order: number; crop_w: number | null; crop_h: number | null; text_content: string | null; table_data: string | null; version_label: string | null; strip_labels: string | null; hidden: boolean; updated_at: number }> = [];
-  const versions: Array<{ id: string; frame_id: string; label: string | null; type: string; hidden: boolean; starred: boolean; updated_at: number }> = [];
+  const frames: Array<{ id: string; strip_id: string; label: string | null; sort_order: number; crop_w: number | null; crop_h: number | null; text_content: string | null; table_data: string | null; version_label: string | null; strip_labels: string | null; hidden: boolean; note: string | null; updated_at: number }> = [];
+  const versions: Array<{ id: string; frame_id: string; label: string | null; type: string; hidden: boolean; starred: boolean; note: string | null; updated_at: number }> = [];
   const drawings: Array<{ id: string; version_id: string; drawing_data: string; updated_at: number }> = [];
   const imageUploads: Array<{
     versionId: string; src: string;
@@ -1212,6 +1212,7 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
       version_label: f.stripLabels?.ver || null,
       strip_labels: f.stripLabels ? JSON.stringify(f.stripLabels) : null,
       hidden: !!f.hidden,
+      note: f.note || null,
       updated_at: now,
     });
 
@@ -1219,7 +1220,7 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
     const mainVersionId = f.serverMainVersionId || preAssignedMainVersionIds.get(f.id) || uuid();
     frameIdUpdates.push({ localId: f.id, serverFrameId: frameId, serverMainVersionId: mainVersionId });
 
-    versions.push({ id: mainVersionId, frame_id: frameId, label: 'main', type: 'main', hidden: false, starred: false, updated_at: now });
+    versions.push({ id: mainVersionId, frame_id: frameId, label: 'main', type: 'main', hidden: false, starred: false, note: null, updated_at: now });
     if (f.strokes && f.strokes.length > 0) {
       drawings.push({ id: uuid(), version_id: mainVersionId, drawing_data: JSON.stringify(f.strokes), updated_at: now });
     }
@@ -1244,7 +1245,7 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
         const fullType = prefix ? `${prefix}:${lv.type}` : lv.type;
         versions.push({
           id: vid, frame_id: frameId, label: lv.label || null, type: fullType,
-          hidden: !!lv.hidden, starred: !!lv.starred, updated_at: now,
+          hidden: !!lv.hidden, starred: !!lv.starred, note: lv.note || null, updated_at: now,
         });
         if (lv.strokes && lv.strokes.length > 0) {
           drawings.push({ id: uuid(), version_id: vid, drawing_data: JSON.stringify(lv.strokes), updated_at: now });
@@ -1651,6 +1652,7 @@ async function applyCloudTreeToStore(tree: CloudProjectTree, keepLocalFrameIds?:
         drawMode: mainStrokes.length > 0,
         textContent: sf.text_content ?? '',
         tableData: sf.table_data ? parseTableData(sf.table_data) : null,
+        note: sf.note ?? '',
         // Persist server IDs + r2Key so the diff-based pull can match frames
         serverFrameId: sf.id,
         serverMainVersionId: mainV?.id,
@@ -1691,6 +1693,7 @@ async function applyCloudTreeToStore(tree: CloudProjectTree, keepLocalFrameIds?:
             bgImage: imageUnchanged ? existingVer!.bgImage : null as string | null,
             hidden: !!sv.hidden,
             starred: !!sv.starred,
+            note: sv.note ?? '',
             // Persist server ID + r2Key for diff-based sync
             serverVersionId: sv.id,
             r2Key: r2Key || undefined,
@@ -2189,6 +2192,15 @@ const HEARTBEAT_STALE_MS = 10_000; // heartbeat older than this = device stopped
 let _lastUserActivity = 0;
 let _deviceLockOverlay: HTMLElement | null = null;
 
+/**
+ * Signal that the user is actively working — keeps the heartbeat sender alive.
+ * Call this from any UI that captures input (note modals, draw canvas, etc.)
+ * so other devices still see the "10 sec wait" overlay.
+ */
+export function signalActivity(): void {
+  _lastUserActivity = Date.now();
+}
+
 /** Send a heartbeat to the server — "this device is actively working". */
 async function sendHeartbeat(): Promise<void> {
   const cp = getCurrentProject();
@@ -2204,11 +2216,17 @@ async function sendHeartbeat(): Promise<void> {
 
 /** Start sending heartbeats while the user is active. */
 function startHeartbeatSender(): void {
-  // Track user activity
+  // Track user activity — ANY interaction keeps the heartbeat alive so other
+  // devices see the "10 sec wait" overlay. Includes scroll/wheel/mousemove
+  // because scrolling through a storyboard without clicking is still "working".
   const onActivity = () => { _lastUserActivity = Date.now(); };
   document.addEventListener('mousedown', onActivity, true);
   document.addEventListener('touchstart', onActivity, true);
   document.addEventListener('keydown', onActivity, true);
+  document.addEventListener('scroll', onActivity, { passive: true, capture: true });
+  document.addEventListener('wheel', onActivity, { passive: true, capture: true });
+  document.addEventListener('mousemove', onActivity, true);
+  document.addEventListener('touchmove', onActivity, { passive: true, capture: true });
 
   // Send heartbeat every 5 seconds, but ONLY if the user was active in the last 10 seconds
   setInterval(() => {
@@ -2436,6 +2454,7 @@ function frameFingerprint(f: Frame, sortOrder: number, s: { stripVersions: Recor
     f.r2Key || (f.src ? f.src.substring(0, 40) : ''),
     f.setupId || '',
     f.stripLabels ? JSON.stringify(f.stripLabels) : '',
+    f.note || '',
   ];
   // Include versions for each strip
   for (const stripType of ['ver', 'floor', 'refs']) {
@@ -2443,7 +2462,7 @@ function frameFingerprint(f: Frame, sortOrder: number, s: { stripVersions: Recor
     if (vers) {
       for (const v of vers) {
         parts.push(
-          `${stripType}:${v.label}|${v.type}|${v.hidden ? 1 : 0}|${v.starred ? 1 : 0}|${v.setupTagged || ''}|${v.r2Key || (v.bgImage ? v.bgImage.substring(0, 40) : '')}|${v.strokes?.length || 0}`,
+          `${stripType}:${v.label}|${v.type}|${v.hidden ? 1 : 0}|${v.starred ? 1 : 0}|${v.setupTagged || ''}|${v.r2Key || (v.bgImage ? v.bgImage.substring(0, 40) : '')}|${v.strokes?.length || 0}|${v.note || ''}`,
         );
       }
     }

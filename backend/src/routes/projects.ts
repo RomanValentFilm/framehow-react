@@ -321,16 +321,16 @@ projects.post("/:id/restore/:snapshotId", async (c) => {
   for (const f of tree.frames) {
     stmts.push(
       c.env.DB.prepare(
-        `INSERT INTO frames (id, strip_id, label, sort_order, crop_w, crop_h, text_content, table_data, version_label, strip_labels, hidden, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).bind(f.id, f.strip_id, f.label, f.sort_order, f.crop_w, f.crop_h, f.text_content, f.table_data, f.version_label, f.strip_labels, f.hidden, now),
+        `INSERT INTO frames (id, strip_id, label, sort_order, crop_w, crop_h, text_content, table_data, version_label, strip_labels, hidden, note, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(f.id, f.strip_id, f.label, f.sort_order, f.crop_w, f.crop_h, f.text_content, f.table_data, f.version_label, f.strip_labels, f.hidden, f.note ?? null, now),
     );
   }
   for (const v of tree.versions) {
     stmts.push(
       c.env.DB.prepare(
-        "INSERT INTO versions (id, frame_id, label, type, hidden, starred, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      ).bind(v.id, v.frame_id, v.label, v.type, v.hidden, v.starred, now),
+        "INSERT INTO versions (id, frame_id, label, type, hidden, starred, note, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      ).bind(v.id, v.frame_id, v.label, v.type, v.hidden, v.starred, v.note ?? null, now),
     );
   }
   for (const img of tree.images) {
@@ -372,8 +372,8 @@ export default projects;
 interface ProjectTree {
   project: { id: string; name: string; created_at: number; updated_at: number; last_device_id: string | null; last_device_name: string | null; metadata: string | null };
   strips: Array<{ id: string; project_id: string; label: string | null; sort_order: number; updated_at: number }>;
-  frames: Array<{ id: string; strip_id: string; label: string | null; sort_order: number; crop_w: number | null; crop_h: number | null; text_content: string | null; table_data: string | null; version_label: string | null; strip_labels: string | null; hidden: number; updated_at: number }>;
-  versions: Array<{ id: string; frame_id: string; label: string | null; type: string; hidden: number; starred: number; updated_at: number }>;
+  frames: Array<{ id: string; strip_id: string; label: string | null; sort_order: number; crop_w: number | null; crop_h: number | null; text_content: string | null; table_data: string | null; version_label: string | null; strip_labels: string | null; hidden: number; note: string | null; updated_at: number }>;
+  versions: Array<{ id: string; frame_id: string; label: string | null; type: string; hidden: number; starred: number; note: string | null; updated_at: number }>;
   images: Array<{
     id: string;
     version_id: string;
@@ -404,12 +404,12 @@ async function loadProjectTree(db: D1Database, projectId: string): Promise<Proje
          FROM strips WHERE project_id = ? ORDER BY sort_order`,
     ).bind(projectId),
     db.prepare(
-      `SELECT id, strip_id, label, sort_order, crop_w, crop_h, text_content, table_data, version_label, strip_labels, hidden, updated_at
+      `SELECT id, strip_id, label, sort_order, crop_w, crop_h, text_content, table_data, version_label, strip_labels, hidden, note, updated_at
          FROM frames WHERE strip_id IN (SELECT id FROM strips WHERE project_id = ?)
         ORDER BY sort_order`,
     ).bind(projectId),
     db.prepare(
-      `SELECT id, frame_id, label, type, hidden, starred, updated_at
+      `SELECT id, frame_id, label, type, hidden, starred, note, updated_at
          FROM versions WHERE frame_id IN (
            SELECT f.id FROM frames f JOIN strips s ON s.id = f.strip_id WHERE s.project_id = ?
          ) ORDER BY updated_at`,
@@ -483,8 +483,8 @@ interface SyncPayload {
   /** When true, only dirty frames are included — server UPSERTs instead of full replace. */
   partial: boolean;
   strips: Array<{ id: string; label: string | null; sort_order: number; updated_at: number }>;
-  frames: Array<{ id: string; strip_id: string; label: string | null; sort_order: number; crop_w: number | null; crop_h: number | null; text_content: string | null; table_data: string | null; version_label: string | null; strip_labels: string | null; hidden: boolean; updated_at: number }>;
-  versions: Array<{ id: string; frame_id: string; label: string | null; type: string; hidden: boolean; starred: boolean; updated_at: number }>;
+  frames: Array<{ id: string; strip_id: string; label: string | null; sort_order: number; crop_w: number | null; crop_h: number | null; text_content: string | null; table_data: string | null; version_label: string | null; strip_labels: string | null; hidden: boolean; note: string | null; updated_at: number }>;
+  versions: Array<{ id: string; frame_id: string; label: string | null; type: string; hidden: boolean; starred: boolean; note: string | null; updated_at: number }>;
   images: Array<{
     id: string;
     version_id: string;
@@ -560,9 +560,10 @@ function parseSyncPayload(body: unknown): Parsed<SyncPayload> {
     const version_label = asNullableStr(r.version_label, MAX_LABEL_LEN);
     const strip_labels = r.strip_labels === null || r.strip_labels === undefined ? null : asStr(r.strip_labels);
     const hidden = r.hidden === true || r.hidden === 1;
+    const note = r.note === null || r.note === undefined ? null : asStr(r.note);
     if (!id || !strip_id || sort_order === null || updated_at === null || label === undefined || version_label === undefined) return err("frames[]");
     if (!stripIdSet.has(strip_id)) return err("frames[].strip_id (unknown)");
-    frames.push({ id, strip_id, label, sort_order, crop_w, crop_h, text_content, table_data, version_label: version_label ?? null, strip_labels, hidden, updated_at });
+    frames.push({ id, strip_id, label, sort_order, crop_w, crop_h, text_content, table_data, version_label: version_label ?? null, strip_labels, hidden, note, updated_at });
   }
 
   const frameIdSet = new Set(frames.map((f) => f.id));
@@ -577,11 +578,12 @@ function parseSyncPayload(body: unknown): Parsed<SyncPayload> {
     const label = asNullableStr(r.label, MAX_LABEL_LEN);
     const hidden = r.hidden === true || r.hidden === 1;
     const starred = r.starred === true || r.starred === 1;
+    const note = r.note === null || r.note === undefined ? null : asStr(r.note);
     if (!id || !frame_id || !type || type.length > MAX_VERSION_TYPE_LEN || updated_at === null || label === undefined) {
       return err("versions[]");
     }
     if (!frameIdSet.has(frame_id)) return err("versions[].frame_id (unknown)");
-    versions.push({ id, frame_id, label, type, hidden, starred, updated_at });
+    versions.push({ id, frame_id, label, type, hidden, starred, note, updated_at });
   }
 
   const versionIdSet = new Set(versions.map((v) => v.id));
@@ -841,17 +843,17 @@ function appendFrameInserts(db: D1Database, stmts: D1PreparedStatement[], payloa
   for (const f of payload.frames) {
     stmts.push(
       db.prepare(
-        `INSERT INTO frames (id, strip_id, label, sort_order, crop_w, crop_h, text_content, table_data, version_label, strip_labels, hidden, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).bind(f.id, f.strip_id, f.label, f.sort_order, f.crop_w, f.crop_h, f.text_content, f.table_data, f.version_label, f.strip_labels, f.hidden ? 1 : 0, f.updated_at),
+        `INSERT INTO frames (id, strip_id, label, sort_order, crop_w, crop_h, text_content, table_data, version_label, strip_labels, hidden, note, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(f.id, f.strip_id, f.label, f.sort_order, f.crop_w, f.crop_h, f.text_content, f.table_data, f.version_label, f.strip_labels, f.hidden ? 1 : 0, f.note ?? null, f.updated_at),
     );
   }
   for (const v of payload.versions) {
     stmts.push(
       db.prepare(
-        `INSERT INTO versions (id, frame_id, label, type, hidden, starred, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      ).bind(v.id, v.frame_id, v.label, v.type, v.hidden ? 1 : 0, v.starred ? 1 : 0, v.updated_at),
+        `INSERT INTO versions (id, frame_id, label, type, hidden, starred, note, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(v.id, v.frame_id, v.label, v.type, v.hidden ? 1 : 0, v.starred ? 1 : 0, v.note ?? null, v.updated_at),
     );
   }
   for (const img of payload.images) {

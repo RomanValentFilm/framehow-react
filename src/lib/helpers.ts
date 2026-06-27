@@ -1,9 +1,9 @@
 // Reusable helper utilities — HTML fragments, version manipulation,
 // state cleanup, and inline view-mode helpers.
 
-import { COLORS, state, useStore, DEFAULT_STRIP_DEFS } from '../store/state';
+import { COLORS, state, useStore, DEFAULT_STRIP_DEFS, bumpRenderTick } from '../store/state';
 import type { Version, Frame, Stroke, TableData, StripType, FrameSnapshot } from '../store/state';
-import { getCurrentProject } from './currentProject';
+import { getCurrentProject, flushSyncNow, markFrameDirty } from './currentProject';
 
 /** Scroll a frame card into the center of the visible area after re-render.
  *  Uses requestAnimationFrame to wait for layout to settle.
@@ -37,8 +37,121 @@ export function escH(s: string): string {
 
 const fsExpandSVG = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>';
 
+// Note icon SVGs: 2.5 lines (empty) vs 4 full lines (has text)
+const noteEmptySVG = '<svg viewBox="0 0 36 36" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="0" y="0" width="36" height="36" rx="3"/><line x1="7" y1="8" x2="29" y2="8"/><line x1="7" y1="15" x2="29" y2="15"/><line x1="7" y1="22" x2="14" y2="22"/></svg>';
+const noteFullSVG = '<svg viewBox="0 0 36 36" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="0" y="0" width="36" height="36" rx="3"/><line x1="7" y1="7" x2="29" y2="7"/><line x1="7" y1="14" x2="29" y2="14"/><line x1="7" y1="21" x2="29" y2="21"/><line x1="7" y1="28" x2="29" y2="28"/></svg>';
+
+/** Get the note text for a specific frame/version slot. */
+function getNoteText(fid: number, vi: number, origin: 'main' | 'ver' | 'floor' | 'refs'): string {
+  const s = state();
+  if (origin === 'main') {
+    const f = s.frames.find((x) => x.id === fid);
+    return f?.note || '';
+  }
+  const vers = s.stripVersions[origin]?.[fid];
+  const v = vers?.[vi];
+  return v?.note || '';
+}
+
+export function noteIconSVG(fid: number, vi: number = 0, origin: 'main' | 'ver' | 'floor' | 'refs' = 'main'): string {
+  const note = getNoteText(fid, vi, origin);
+  return note.trim() ? noteFullSVG : noteEmptySVG;
+}
+
 export function fsButtonHTML(fid: number, vi: number, origin: 'main' | 'ver' | 'floor' | 'refs'): string {
-  return `<button class="fs-btn" data-fsfid="${fid}" data-fsvi="${vi}" data-fsorigin="${origin}">${fsExpandSVG}</button>`;
+  return `<button class="fs-btn" data-fsfid="${fid}" data-fsvi="${vi}" data-fsorigin="${origin}">${noteIconSVG(fid, vi, origin)}</button>`;
+}
+
+export function openNoteModal(fid: number, vi: number, origin: 'main' | 'ver' | 'floor' | 'refs', updateIcon: () => void): void {
+  const s = state();
+
+  // Find the target object that holds the note
+  let noteHolder: { note?: string } | undefined;
+  if (origin === 'main') {
+    noteHolder = s.frames.find((x) => x.id === fid);
+  } else {
+    noteHolder = s.stripVersions[origin]?.[fid]?.[vi];
+  }
+  if (!noteHolder) return;
+
+  // Block scroll/touch behind modal (same pattern as device lock overlay)
+  document.body.style.overflow = 'hidden';
+
+  const modalOverlay = document.createElement('div');
+  modalOverlay.style.cssText =
+    'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,0.6);' +
+    'display:flex;align-items:center;justify-content:center;padding:16px;' +
+    'touch-action:none;overscroll-behavior:none;';
+  const stopEvent = (e: Event) => { e.preventDefault(); e.stopPropagation(); };
+  modalOverlay.addEventListener('wheel', stopEvent, { passive: false });
+  modalOverlay.addEventListener('touchmove', stopEvent, { passive: false });
+
+  // Detect phone: either dimension < 600 catches portrait + landscape
+  const isPhone = Math.min(window.innerWidth, window.innerHeight) < 600;
+
+  const box = document.createElement('div');
+  box.style.cssText =
+    'background:#111;border:none;border-radius:12px;' +
+    `padding:${isPhone ? '8px' : '10px'};` +
+    `width:${isPhone ? '340px' : '680px'};max-width:90vw;max-height:85vh;color:#fff;` +
+    'font-family:-apple-system,BlinkMacSystemFont,sans-serif;';
+
+  // Phone: smaller textarea. Desktop/tablet: taller.
+  const textareaHeight = isPhone ? '160px' : '320px';
+
+  box.innerHTML = `
+    <textarea id="fsNoteArea" style="
+      width:100%;height:${textareaHeight};background:#111;border:none;border-radius:8px;
+      color:#fff;font-size:14px;padding:10px;resize:none;outline:none;
+      font-family:-apple-system,BlinkMacSystemFont,sans-serif;line-height:1.5;
+      box-sizing:border-box;
+    " placeholder="NOTE for this frame...">${escH(noteHolder.note || '')}</textarea>
+    <div style="display:flex;gap:10px;margin-top:8px;justify-content:flex-end;">
+      <button id="fsNoteCancel" style="
+        padding:10px 20px;border-radius:8px;border:1px solid #555;
+        background:#2a2a2a;color:#ccc;font-size:14px;font-weight:500;cursor:pointer;
+      ">Cancel</button>
+      <button id="fsNoteOk" style="
+        padding:10px 20px;border-radius:8px;border:none;
+        background:#d52632;color:#fff;font-size:14px;font-weight:600;cursor:pointer;
+      ">OK</button>
+    </div>`;
+
+  modalOverlay.appendChild(box);
+  document.body.appendChild(modalOverlay);
+  const area = document.getElementById('fsNoteArea') as HTMLTextAreaElement;
+  setTimeout(() => area.focus(), 50);
+
+  // No keepAlive needed — typing in the textarea fires keydown which the
+  // heartbeat sender's capture-phase listener on `document` already picks up.
+  // When the user pauses for 10+ seconds (reading/thinking), the heartbeat
+  // naturally goes stale and the other device can proceed — this is correct,
+  // the note text lives in the textarea DOM, not in Zustand state, so a pull
+  // from the other device won't overwrite uncommitted text.
+
+  function cleanup() {
+    modalOverlay.remove();
+    document.body.style.overflow = '';
+  }
+
+  document.getElementById('fsNoteOk')!.addEventListener('click', () => {
+    noteHolder!.note = area.value;
+    bumpRenderTick(); // trigger Zustand subscriber → marks dirty + re-renders all icons
+    cleanup();
+    updateIcon();
+    // In-place mutation doesn't change the object reference, so the
+    // ref-based _dirtyFrameIds tracker won't catch it. Explicitly mark
+    // the frame dirty so a pull merge won't overwrite the note.
+    const frame = s.frames.find((f) => f.id === fid);
+    if (frame?.serverFrameId) markFrameDirty(frame.serverFrameId);
+    // Flush immediately — don't wait for the 5-second debounce.
+    // The other device may pull as soon as the heartbeat goes stale (~10s),
+    // so the note MUST be on the server well before that.
+    void flushSyncNow();
+  });
+  document.getElementById('fsNoteCancel')!.addEventListener('click', cleanup);
+  modalOverlay.addEventListener('click', (e) => { if (e.target === modalOverlay) cleanup(); });
+  area.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); cleanup(); } });
 }
 
 export function starHTML(fid: number, vi: number, strip: StripType = 'ver'): string {

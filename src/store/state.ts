@@ -45,6 +45,8 @@ export interface Frame {
   serverMainVersionId?: string;
   /** R2 object key for the main frame image. Null/undefined = local or empty. */
   r2Key?: string;
+  /** Free-text note attached to this frame (shown via notepad icon in fullscreen canvas). */
+  note?: string;
 }
 
 /** A named colour-coded setup (lighting / time-of-day label for frames). */
@@ -56,7 +58,7 @@ export interface Setup {
 
 /** 12-colour palette for setups. */
 /** App version — bump before every deploy. */
-export const APP_VERSION = 'v4.7.016';
+export const APP_VERSION = 'v4.7.017';
 
 export const SETUP_COLORS: { name: string; hex: string }[] = [
   { name: 'DAYLIGHT',      hex: '#CFE2F6' },
@@ -89,6 +91,8 @@ export interface Version {
   serverVersionId?: string;
   /** R2 object key for this version's image. Null/undefined = local or empty. */
   r2Key?: string;
+  /** Free-text note attached to this version (shown via notepad icon). */
+  note?: string;
 }
 
 export type StripType = 'main' | 'ver' | 'floor' | 'refs';

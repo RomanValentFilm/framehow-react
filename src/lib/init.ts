@@ -26,6 +26,8 @@ import {
   stripScrollId,
   stripTabPrefix,
   relabelStripVersions,
+  openNoteModal,
+  noteIconSVG,
 } from './helpers';
 import type { StripType } from '../store/state';
 import { snapshotFrame } from './drawing';
@@ -37,7 +39,7 @@ import { handlePDF } from './pdf';
 import { handleFolderImages, startFromScratch, startPortrait } from './files';
 import { openExportModal, openPptxModal, runExport, runPptxExport, openImageExportModal, runImageExport, openPortraitExportModal, runPortraitExport, openPortraitImageExportModal, runPortraitImageExport, updateExportVisibility, buildVersionPicker, buildPptxVersionPicker } from './exports';
 import { wireCameraEvents } from './camera';
-import { openFullscreen } from './fullscreen';
+// openFullscreen is now triggered by DRAW button (actions.ts), not the fs-btn
 import { toggleGroupSidebar } from './groups';
 import { toggleSetupMode, handleSetupFrameClick, handleSetupRemoveClick, handleStripTagClick, showSetupPillHint } from './setups';
 import { startHeartbeat, fhTrack } from './tracking';
@@ -190,15 +192,18 @@ export function initFramehow(): void {
     }
   });
 
-  // Fullscreen button delegated handler
+  // Note button delegated handler (replaced fullscreen expand)
   document.addEventListener('click', (e: MouseEvent) => {
     const btn = (e.target as HTMLElement).closest('.fs-btn') as HTMLElement | null;
     if (!btn) return;
     e.stopPropagation();
-    const fid = +btn.dataset.fsfid!,
-      vi = +btn.dataset.fsvi!,
-      origin = btn.dataset.fsorigin as 'main' | 'ver' | 'floor' | 'refs';
-    openFullscreen(fid, vi, origin);
+    const fid = +btn.dataset.fsfid!;
+    const vi = +(btn.dataset.fsvi ?? 0);
+    const origin = (btn.dataset.fsorigin ?? 'main') as 'main' | 'ver' | 'floor' | 'refs';
+    openNoteModal(fid, vi, origin, () => {
+      // Update the icon to reflect whether note has content
+      btn.innerHTML = noteIconSVG(fid, vi, origin);
+    });
   });
 
   // Setup frame assignment — delegated so it works regardless of render timing

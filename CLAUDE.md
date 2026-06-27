@@ -111,8 +111,15 @@ cd ~/Desktop/Framehow\ Files/framehow-react && rm -rf dist tsconfig.tsbuildinfo 
 ### v4.7.012 — 2026-06-26 (dev — working copy)
 Next version, continues from v4.7.011.
 
-### v4.7.016 — 2026-06-26 (dev — working copy)
-Next version, continues from v4.7.015.
+### v4.7.017 — 2026-06-26 (dev — working copy)
+Next version, continues from v4.7.016.
+
+### v4.7.016 — 2026-06-26 (dev — deployed)
+**DRAW button opens fullscreen canvas everywhere, global color/thickness memory**
+
+Changes:
+- `src/lib/actions.ts` — DRAW button (`handleMainAction` + `handleAction`) now calls `openFullscreen()` instead of toggling inline draw mode. Covers all views: list, grid 3x2, groups, setups, main frames, version strips, cross-compare.
+- `src/lib/fullscreen.ts` — Global `_lastColor` / `_lastWidth` track last used color+thickness across frames. Defaults: blue (#3080e0) + middle (12px). Eraser always off on open. Color and thickness stay highlighted together.
 
 ### v4.7.015 — 2026-06-26 (dev — deployed)
 **CLAUDE.md 4-step save docs update — backup path fix, reporting format**
