@@ -21,7 +21,7 @@ export function AccountModals() {
         <div className="account-card">
           <h2>Name your project</h2>
           <div className="account-row">
-            <input type="text" id="projectNameInput" maxLength={200} />
+            <input type="text" id="projectNameInput" maxLength={200} autoComplete="one-time-code" />
           </div>
           <div className="account-error" id="projectNameError" />
           <div className="account-btns">
@@ -179,7 +179,7 @@ export function AccountModals() {
         <div className="account-card">
           <h2>Rename project</h2>
           <div className="account-row">
-            <input type="text" id="renameProjectInput" maxLength={200} />
+            <input type="text" id="renameProjectInput" maxLength={200} autoComplete="one-time-code" />
           </div>
           <div className="account-error" id="renameProjectError" />
           <div className="account-btns">
@@ -196,7 +196,7 @@ export function AccountModals() {
 
           <div className="account-row">
             <label htmlFor="settingsName">Name</label>
-            <input type="text" id="settingsName" maxLength={120} />
+            <input type="text" id="settingsName" maxLength={120} autoComplete="one-time-code" />
           </div>
           <div className="account-row">
             <label htmlFor="settingsProfession">Profession <span className="account-optional">(optional)</span></label>
@@ -250,25 +250,25 @@ export function AccountModals() {
           <div className="account-row">
             <label>STRIP 1</label>
             <div style={{display:'flex',alignItems:'center',gap:'10px'}}>
-              <input type="text" id="customStrip1" maxLength={6} style={{textTransform:'uppercase',letterSpacing:'.05em',width:'85px',flexShrink:0}} />
+              <input type="text" id="customStrip1" maxLength={6} autoComplete="one-time-code" style={{textTransform:'uppercase',letterSpacing:'.05em',width:'85px',flexShrink:0}} />
               <span style={{color:'#666',fontSize:'12px',flexShrink:0}}>label</span>
-              <input type="text" id="customFrameLabel1" maxLength={6} style={{width:'70px',fontSize:'13px',padding:'5px 8px'}} />
+              <input type="text" id="customFrameLabel1" maxLength={6} autoComplete="one-time-code" style={{width:'70px',fontSize:'13px',padding:'5px 8px'}} />
             </div>
           </div>
           <div className="account-row">
             <label>STRIP 2</label>
             <div style={{display:'flex',alignItems:'center',gap:'10px'}}>
-              <input type="text" id="customStrip2" maxLength={6} style={{textTransform:'uppercase',letterSpacing:'.05em',width:'85px',flexShrink:0}} />
+              <input type="text" id="customStrip2" maxLength={6} autoComplete="one-time-code" style={{textTransform:'uppercase',letterSpacing:'.05em',width:'85px',flexShrink:0}} />
               <span style={{color:'#666',fontSize:'12px',flexShrink:0}}>label</span>
-              <input type="text" id="customFrameLabel2" maxLength={6} style={{width:'70px',fontSize:'13px',padding:'5px 8px'}} />
+              <input type="text" id="customFrameLabel2" maxLength={6} autoComplete="one-time-code" style={{width:'70px',fontSize:'13px',padding:'5px 8px'}} />
             </div>
           </div>
           <div className="account-row">
             <label>STRIP 3</label>
             <div style={{display:'flex',alignItems:'center',gap:'10px'}}>
-              <input type="text" id="customStrip3" maxLength={6} style={{textTransform:'uppercase',letterSpacing:'.05em',width:'85px',flexShrink:0}} />
+              <input type="text" id="customStrip3" maxLength={6} autoComplete="one-time-code" style={{textTransform:'uppercase',letterSpacing:'.05em',width:'85px',flexShrink:0}} />
               <span style={{color:'#666',fontSize:'12px',flexShrink:0}}>label</span>
-              <input type="text" id="customFrameLabel3" maxLength={6} style={{width:'70px',fontSize:'13px',padding:'5px 8px'}} />
+              <input type="text" id="customFrameLabel3" maxLength={6} autoComplete="one-time-code" style={{width:'70px',fontSize:'13px',padding:'5px 8px'}} />
             </div>
           </div>
           <div className="account-btns">

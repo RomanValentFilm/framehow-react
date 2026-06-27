@@ -10,7 +10,7 @@ import type { TestFrame, ExtractedFrame, TextItem } from './pdf';
 // @ts-ignore
 import { createWorker } from 'tesseract.js';
 import { COLORS, state, useStore, resetStoryboardState } from '../store/state';
-import { getCurrentProject } from './currentProject';
+import { getCurrentProject, flushSyncNow } from './currentProject';
 import { updateFrameBadge } from './helpers';
 
 // ---------------------------------------------------------------------------
@@ -2041,6 +2041,8 @@ async function onApply(): Promise<void> {
     updateFrameBadge();
     showToast(`${framesToLoad.length} frames loaded from adjusted positions`);
     requestAnimationFrame(() => { (window as any).__fh_renderAll?.(); });
+    // IMP-5: PDF adjust complete → 5s delay lets images settle
+    setTimeout(() => void flushSyncNow(), 5000);
   } catch (err) {
     console.error('[pdfAdjust] Apply failed:', err);
     showToast('Error applying adjustments');

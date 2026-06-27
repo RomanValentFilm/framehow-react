@@ -5,6 +5,7 @@ import { state, useStore } from '../store/state';
 import type { Frame, FrameGroup } from '../store/state';
 import { rasterizeMain } from './rasterize';
 import { escH } from './helpers';
+import { flushSyncNow } from './currentProject';
 
 let _sidebarEl: HTMLElement | null = null;
 let _overlayEl: HTMLElement | null = null;
@@ -54,6 +55,7 @@ export function hideFrameInGroup(fid: number, groupId?: number): void {
     return { ...g, hiddenFrameIds: [...hidden, fid] };
   });
   useStore.setState({ groups: newGroups });
+  void flushSyncNow(); // GRP-6: hide frame in group
 }
 
 // ── Remove a frame from a specific group (not from the project) ──
@@ -310,7 +312,7 @@ function openGroupEditor(existing: FrameGroup | null): void {
         ${existing ? 'Edit Group' : 'New Group'}
       </div>
       <input type="text" class="group-name-input" value="${existing ? escH(existing.name) : ''}"
-        placeholder="Group name (e.g. Kitchen, Scene 2)"
+        placeholder="Group name (e.g. Kitchen, Scene 2)" autocomplete="one-time-code"
         style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid #555;
         background:#2a2a2a;color:#fff;font-size:14px;outline:none;
         font-family:-apple-system,BlinkMacSystemFont,sans-serif;">
@@ -406,6 +408,7 @@ function openGroupEditor(existing: FrameGroup | null): void {
       closeEditor();
       refreshSidebar();
       triggerRerender();
+      void flushSyncNow(); // GRP-3: delete group → confirm
     }
   });
 
@@ -445,6 +448,7 @@ function openGroupEditor(existing: FrameGroup | null): void {
     closeEditor();
     refreshSidebar();
     triggerRerender();
+    void flushSyncNow(); // GRP-1/GRP-2: create or edit group → Save
   });
 }
 

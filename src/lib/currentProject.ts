@@ -195,17 +195,18 @@ export function clearDirtyState(): void {
 
 
 // ---------------------------------------------------------------------------
-// Debounced push: 5 seconds after last user change.
-// Also pushes immediately on blur (tab loses focus).
+// Action-complete sync: pushes happen at end-of-action via flushSyncNow().
+// The debounce below is a SAFETY NET only — catches any state change that
+// somehow didn't get an explicit end-of-action sync point.  30 seconds is
+// long enough to never interfere with normal operation, short enough to
+// catch a missed sync within a reasonable window.
 // ---------------------------------------------------------------------------
 
-const SYNC_DEBOUNCE_MS = 5_000;  // Wait 5s after last change before pushing
-const SYNC_MAX_INTERVAL_MS = 5_000;  // During continuous work, push at least every 5s (delta payloads are small)
+const SYNC_SAFETY_NET_MS = 30_000;  // 30s safety-net fallback (almost never fires)
 let _syncDebounceTimer: number | null = null;
-let _lastPushAt = 0;  // Timestamp of last successful push
 
-/** Cancel any pending debounce push timer. Called when the device gains focus
- *  so we don't push stale data before pulling from the server. */
+/** Cancel any pending safety-net push timer. Called when the device gains
+ *  focus so we don't push stale data before pulling from the server. */
 export function cancelPendingPush(): void {
   if (_syncDebounceTimer !== null) {
     clearTimeout(_syncDebounceTimer);
@@ -213,28 +214,17 @@ export function cancelPendingPush(): void {
   }
 }
 
-function scheduleSyncPush(): void {
-  // Don't schedule pushes while a pull is in progress — we must not
-  // push stale data before we've seen the latest cloud state.
+/** Safety-net fallback: schedule a push 30s from now.
+ *  In normal operation, flushSyncNow() fires at every end-of-action and
+ *  cancels this timer — so it almost never reaches zero.  If it does fire,
+ *  it means a state change slipped through without an explicit sync point. */
+function scheduleSyncSafetyNet(): void {
   if (_pullInFlight) return;
-
-  // Debounce: reset the 5-second timer on every change
   if (_syncDebounceTimer !== null) clearTimeout(_syncDebounceTimer);
-
-  // If it's been more than 5 seconds since the last push, push NOW
-  // instead of waiting for the user to stop making changes.
-  // This ensures data reaches the cloud during continuous work sessions.
-  const sinceLast = Date.now() - _lastPushAt;
-  if (_lastPushAt > 0 && sinceLast >= SYNC_MAX_INTERVAL_MS) {
-    _syncDebounceTimer = null;
-    void runCloudSync();
-    return;
-  }
-
   _syncDebounceTimer = window.setTimeout(() => {
     _syncDebounceTimer = null;
     void runCloudSync();
-  }, SYNC_DEBOUNCE_MS);
+  }, SYNC_SAFETY_NET_MS);
 }
 
 /** Immediately push if dirty (used on blur and before project switch). */
@@ -253,7 +243,7 @@ export async function flushSyncNow(): Promise<void> {
   cloudSyncInFlight = true;
   try {
     await _syncFn(pid);
-    _lastPushAt = Date.now();
+
     clearDirtyState();
     cp = { ...cp, lastSavedAt: Date.now(), dirty: false };
     _pendingSyncIds.delete(pid);
@@ -270,9 +260,9 @@ export async function flushSyncNow(): Promise<void> {
         await _pullFn();
         // tryPullFromCloud calls clearDirtyState() after merge, but our
         // kept-local frames still need to be pushed. Re-mark dirty and
-        // schedule a push — base_updated_at is now up-to-date.
+        // retry push quickly — base_updated_at is now up-to-date.
         _dirty = true;
-        scheduleSyncPush();
+        setTimeout(() => void flushSyncNow(), 500);
       } catch {
         _pendingSyncIds.add(pid);
       }
@@ -372,7 +362,7 @@ async function runCloudSync(): Promise<void> {
   cloudSyncInFlight = true;
   try {
     await _syncFn(cp.projectId);
-    _lastPushAt = Date.now();
+
     clearDirtyState();
     cp = { ...cp, lastSavedAt: Date.now(), dirty: false };
     hideOfflineBanner();
@@ -437,8 +427,9 @@ function hideOfflineBanner(): void {
  * Start the autosave and cloud-sync systems. Call once at app boot.
  *
  * IDB autosave: triggered by zustand subscriber.
- * Cloud sync: event-driven — pushes on user action (debounced) and on blur.
- * No interval. System actions are wrapped to prevent false positives.
+ * Cloud sync: action-complete — pushes at the end of each discrete user action
+ * via flushSyncNow(). A 30s safety-net timer catches anything missed.
+ * System actions are wrapped to prevent false positives.
  */
 export function startAutosave(): void {
   // Zustand subscriber: schedule IDB autosave + detect user changes.
@@ -452,8 +443,8 @@ export function startAutosave(): void {
     // Only mark dirty when a USER (not system) action changes the store
     if (!_isSystemAction) {
       _dirty = true;
-      // Track which frames changed — wrapped in try/catch so scheduleSyncPush
-      // is ALWAYS reached even if the tracking logic has an edge-case error.
+      // Track which frames changed — wrapped in try/catch so the safety-net
+      // timer is ALWAYS reached even if the tracking logic has an edge-case error.
       try {
         for (const f of s.frames) {
           if (!f.serverFrameId) continue;
@@ -466,7 +457,7 @@ export function startAutosave(): void {
           }
         }
       } catch { /* tracking is best-effort — sync must never break */ }
-      scheduleSyncPush();
+      scheduleSyncSafetyNet();
     }
     // ALWAYS update refs — including after system actions (pulls, loads) —
     // so the next user action only marks actually-changed frames as dirty.

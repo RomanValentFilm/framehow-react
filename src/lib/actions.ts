@@ -37,6 +37,7 @@ import { drawFit } from './drawing';
 import { openCamera, getCameraTarget, clearCameraTarget, setOnCapturedImage } from './camera';
 import { recordTombstone } from './accountFlow';
 import { openFullscreen } from './fullscreen';
+import { flushSyncNow } from './currentProject';
 
 export function handleMainAction(action: string, fid: number, div: HTMLElement): void {
   const s = state();
@@ -58,6 +59,7 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
   }
   if (action === 'reorderdone') {
     clearReorder();
+    void flushSyncNow(); // ORD-4 / GRP-7: exit reorder mode → DONE
     return;
   }
   if (action === 'moveup' || action === 'movedown') {
@@ -93,6 +95,7 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
     if (md) renderMainFrame(md, fid);
     const vd = document.querySelector(`#versionsScroll .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
     if (vd) renderVersionFrame(vd, fid);
+    void flushSyncNow(); // FRM-10: undo on main
     return;
   }
   if (action === 'pictxt') {
@@ -110,6 +113,7 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
     else if (cur === 'text') s.showText[fid] = 'table';
     else s.showText[fid] = null;
     renderMainFrame(div, fid);
+    void flushSyncNow(); // FRM-11: toggle Pic/Text/Table
     return;
   }
 
@@ -152,6 +156,7 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
       addFrameToActiveGroup(nid, fid);
       updateFrameBadge();
       renderAll();
+      void flushSyncNow(); // FRM-1: create new frame (portrait)
       return;
     }
     // --- Auto-label logic ---
@@ -201,6 +206,7 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
       addFrameToActiveGroup(nid, fid);
       updateFrameBadge();
       renderAll();
+      void flushSyncNow(); // FRM-1: create new frame
     }
   } else if (action === 'duplicate') {
     const nid = s.nextId;
@@ -225,6 +231,7 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
     addFrameToActiveGroup(nid, fid);
     updateFrameBadge();
     renderAll();
+    void flushSyncNow(); // duplicate frame
   } else if (action === 'draw') {
     fhTrack('draw_used', { strip: 'main' });
     openFullscreen(fid, 0, 'main');
@@ -263,6 +270,7 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
         if (vdiv2) renderVersionFrame(vdiv2, fid);
         scrollFrameIntoView(fid, 'main');
       }
+      void flushSyncNow(); // FRM-15: write text stroke → OK
     });
   } else if (action === 'upload') {
     if (s.currentViewMode === 'overview' || s.currentViewMode === 'grid4' || s.currentViewMode === 'grid3x2') {
@@ -311,6 +319,7 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
           if (ovRow) { s.currentViewMode === 'grid4' ? renderGrid4Row(ovRow, fid) : renderOverviewRow(ovRow, fid); }
         }
       }
+      void flushSyncNow(); // FRM-8: paste to main
     };
     if (f.src || (f.strokes && f.strokes.length > 0)) {
       showConfirm('Are you sure you want to override the original frame?').then((ok) => {
@@ -341,6 +350,7 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
           f.hidden = true;
           updateFrameBadge();
           renderAll();
+          void flushSyncNow(); // FRM-4: hide frame
         } else {
           // Record tombstones BEFORE removing from state
           recordTombstone('frame', f.serverFrameId);
@@ -356,6 +366,7 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
           delete s.drawColor[fid];
           updateFrameBadge();
           renderAll();
+          void flushSyncNow(); // FRM-3: delete frame (tombstone recorded)
         }
       });
     }
@@ -386,6 +397,7 @@ export function handleAction(action: string, fid: number, div: HTMLElement, from
   if (action === 'undo') {
     restoreFrame(fid, strip);
     rerender();
+    void flushSyncNow(); // VER-13: undo on version
     return;
   }
   if (s.showText[fid]) {
@@ -444,6 +456,7 @@ export function handleAction(action: string, fid: number, div: HTMLElement, from
       } else {
         scrollFrameIntoView(fid, strip);
       }
+      void flushSyncNow(); // VER-6: write text on version → OK
     });
   } else if (action === 'copy') {
     const f = state().frames.find((fr) => fr.id === fid) || ({ cropW: undefined, cropH: undefined } as any);
@@ -489,6 +502,7 @@ export function handleAction(action: string, fid: number, div: HTMLElement, from
       if (fromCompare) setStripCrossCompare(fid, strip, getStripActiveTab(fid, strip));
       rerender();
     }
+    void flushSyncNow(); // VER-8: paste to version
   } else if (action === 'clear') {
     showVersionChoice().then((choice) => {
       if (!choice) return;
@@ -521,6 +535,7 @@ export function handleAction(action: string, fid: number, div: HTMLElement, from
           const row = document.querySelector(`#overviewScroll .overview-row[data-ofid="${fid}"]`) as HTMLElement | null;
           if (row) { s.currentViewMode === 'grid4' ? renderGrid4Row(row, fid) : renderOverviewRow(row, fid); }
         }
+        void flushSyncNow(); // VER-9: hide version
       } else {
         // Record tombstone BEFORE removing from state
         recordTombstone('version', ver.serverVersionId);
@@ -536,6 +551,7 @@ export function handleAction(action: string, fid: number, div: HTMLElement, from
           const row = document.querySelector(`#overviewScroll .overview-row[data-ofid="${fid}"]`) as HTMLElement | null;
           if (row) { s.currentViewMode === 'grid4' ? renderGrid4Row(row, fid) : renderOverviewRow(row, fid); }
         }
+        void flushSyncNow(); // VER-10: delete version (tombstone recorded)
       }
     });
     return;
@@ -611,6 +627,7 @@ export function applyCapturedImage(dataURL: string, target: any): void {
   useStore.setState({ overviewAction: false });
   clearCameraTarget();
   scrollFrameIntoView(fid, fromMain ? 'main' : strip);
+  void flushSyncNow(); // FRM-17/VER-14: camera capture → snap
 }
 
 // Wire up the camera capture pipeline → applyCapturedImage

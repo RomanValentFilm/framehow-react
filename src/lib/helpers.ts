@@ -135,18 +135,28 @@ export function openNoteModal(fid: number, vi: number, origin: 'main' | 'ver' | 
   }
 
   document.getElementById('fsNoteOk')!.addEventListener('click', () => {
-    noteHolder!.note = area.value;
+    // Re-read state at click time — a sync pull while the modal was open
+    // may have replaced the frame/version objects, making the captured
+    // noteHolder reference stale (detached from the store).
+    const fresh = state();
+    let target: { note?: string } | undefined;
+    if (origin === 'main') {
+      target = fresh.frames.find((x) => x.id === fid);
+    } else {
+      target = fresh.stripVersions[origin]?.[fid]?.[vi];
+    }
+    if (!target) return;
+    target.note = area.value;
     bumpRenderTick(); // trigger Zustand subscriber → marks dirty + re-renders all icons
     cleanup();
     updateIcon();
     // In-place mutation doesn't change the object reference, so the
     // ref-based _dirtyFrameIds tracker won't catch it. Explicitly mark
     // the frame dirty so a pull merge won't overwrite the note.
-    const frame = s.frames.find((f) => f.id === fid);
+    const frame = fresh.frames.find((f) => f.id === fid);
     if (frame?.serverFrameId) markFrameDirty(frame.serverFrameId);
-    // Flush immediately — don't wait for the 5-second debounce.
-    // The other device may pull as soon as the heartbeat goes stale (~10s),
-    // so the note MUST be on the server well before that.
+    // Flush immediately so the note reaches the server before the
+    // heartbeat goes stale (~10s) and another device pulls.
     void flushSyncNow();
   });
   document.getElementById('fsNoteCancel')!.addEventListener('click', cleanup);
@@ -308,6 +318,7 @@ export function toggleStar(fid: number, vi: number, strip: StripType = 'ver'): v
   const newIdx = vers.indexOf(ver);
   setStripActiveTab(fid, strip, newIdx);
   relabelStripVersions(fid, strip);
+  void flushSyncNow(); // VER-12: star/unstar version → click star icon
 }
 
 export function unhideVersion(ver: Version, fid: number, strip: StripType = 'ver'): void {
@@ -344,6 +355,7 @@ export function unhideVersion(ver: Version, fid: number, strip: StripType = 'ver
     }
   }
   relabelStripVersions(fid, strip);
+  void flushSyncNow(); // VER-11: un-hide version → click Un-Hide
 }
 
 export function isMainEmpty(f: Frame | undefined): boolean {

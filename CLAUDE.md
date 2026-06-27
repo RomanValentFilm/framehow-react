@@ -108,11 +108,18 @@ cd ~/Desktop/Framehow\ Files/framehow-react && rm -rf dist tsconfig.tsbuildinfo 
 
 ## Versions
 
-### v4.7.012 — 2026-06-26 (dev — working copy)
-Next version, continues from v4.7.011.
+### v4.8.001 — 2026-06-27 (dev — working copy)
+Next version, continues from v4.7.017.
 
-### v4.7.017 — 2026-06-26 (dev — working copy)
-Next version, continues from v4.7.016.
+### v4.7.017 — 2026-06-27 (dev — deployed)
+**Note sync fixes: remove keepAlive, flush on OK, markFrameDirty, 409 conflict pull+retry**
+
+Changes:
+- `src/lib/helpers.ts` — Removed keepAlive interval from note modal (typing naturally keeps heartbeat alive via capture-phase keydown listener). Added `flushSyncNow()` on OK for immediate push. Added `markFrameDirty()` to protect in-place note mutations during pull merges.
+- `src/lib/currentProject.ts` — New `markFrameDirty(serverFrameId)` export for explicit dirty tracking of in-place mutations. `flushSyncNow()` now handles 409 conflicts: pulls to merge (with dirty frame protection), updates `lastKnownUpdatedAt`, schedules retry push.
+
+### v4.7.012 — 2026-06-26 (dev — deployed)
+Continues from v4.7.011.
 
 ### v4.7.016 — 2026-06-26 (dev — deployed)
 **DRAW button opens fullscreen canvas everywhere, global color/thickness memory**

@@ -6,6 +6,7 @@ import type { StripType } from '../store/state';
 import { drawToolbarHTML, starHTML, getStripVersions } from './helpers';
 import { restoreCanvas, restoreMainCanvas, setupDrawing, setupMainDrawing } from './drawing';
 import { resetToolbarState } from './view';
+import { flushSyncNow } from './currentProject';
 
 // Default draw settings: blue, middle thickness, no eraser
 const DEFAULT_DRAW_COLOR = COLORS[4]; // #3080e0 blue
@@ -182,4 +183,5 @@ export function closeFullscreen(): void {
   resetToolbarState();
   const renderAll = (window as any).__fh_renderAll;
   if (renderAll) renderAll();
+  void flushSyncNow(); // DRW-5: close fullscreen canvas → end of drawing session
 }

@@ -6,6 +6,7 @@ import { state, useStore, SETUP_COLORS, bumpRenderTick } from '../store/state';
 import type { Setup, StripType } from '../store/state';
 import { getStripVersions, ensureStripVersions, stripTabPrefix, relabelStripVersions, reorderByStars, getStripActiveTab, setStripActiveTab } from './helpers';
 import { showToast, showConfirm } from './modals';
+import { flushSyncNow } from './currentProject';
 
 // ─── Setup bar rendering ───────────────────────────────────────────────
 
@@ -191,7 +192,7 @@ function renderSetupEditForm(bar: HTMLElement, setupId: string): void {
 
   bar.innerHTML = `
     <div class="setup-bar-inner setup-edit-form">
-      <input class="setup-name-input" id="setupEditNameInput" type="text" maxlength="7" value="${su.name}" autocomplete="off" />
+      <input class="setup-name-input" id="setupEditNameInput" type="text" maxlength="7" value="${su.name}" autocomplete="one-time-code" />
       <div class="setup-color-picker">${colorsHTML}</div>
       <button class="setup-create-btn" id="setupEditSaveBtn">SAVE</button>
       <button class="setup-delete-btn" id="setupEditDeleteBtn">DELETE</button>
@@ -224,6 +225,7 @@ function renderSetupEditForm(bar: HTMLElement, setupId: string): void {
     su.colorIndex = selectedCI;
     bumpRenderTick();
     renderSetupBarEdit(bar);
+    void flushSyncNow(); // STP-2: edit setup → SAVE
   });
 
   // Wire DELETE
@@ -257,7 +259,7 @@ function renderSetupCreateForm(bar: HTMLElement): void {
 
   bar.innerHTML = `
     <div class="setup-bar-inner setup-create-form">
-      <input class="setup-name-input" id="setupNameInput" type="text" maxlength="7" placeholder="NAME" autocomplete="off" />
+      <input class="setup-name-input" id="setupNameInput" type="text" maxlength="7" placeholder="NAME" autocomplete="one-time-code" />
       <div class="setup-color-picker">${colorsHTML}</div>
       <button class="setup-create-btn" id="setupCreateBtn">CREATE</button>
       <button class="setup-cancel-btn" id="setupCancelBtn">CANCEL</button>
@@ -301,6 +303,7 @@ function renderSetupCreateForm(bar: HTMLElement): void {
 
     // Go straight into edit/assign mode
     renderSetupBarEdit(bar);
+    void flushSyncNow(); // STP-1: create setup → CREATE
   });
 
   // Wire CANCEL — back to edit state if setups exist, otherwise exit setup mode
@@ -349,6 +352,7 @@ async function _deleteSetup(bar: HTMLElement, setupId: string): Promise<void> {
     setupEditing: false,
   });
   bumpRenderTick();
+  void flushSyncNow(); // STP-3: delete setup → confirm
 
   if (remaining.length > 0) {
     renderSetupBarEdit(bar);
@@ -394,6 +398,7 @@ export function handleSetupFrameClick(fid: number): void {
   // Re-render to update toggle buttons + tags
   const renderAll = (window as any).__fh_renderAll;
   if (renderAll) renderAll();
+  void flushSyncNow(); // STP-4: assign frame to setup
 }
 
 /** Remove whatever setup is assigned to this frame (regardless of active setup). */
@@ -411,6 +416,7 @@ export function handleSetupRemoveClick(fid: number): void {
   bumpRenderTick();
   const renderAll = (window as any).__fh_renderAll;
   if (renderAll) renderAll();
+  void flushSyncNow(); // STP-5: remove setup from frame
 }
 
 // ─── Colour tag HTML ───────────────────────────────────────────────────
@@ -675,6 +681,8 @@ function executeUntag(fid: number, strip: StripType, ver: import('../store/state
   bumpRenderTick();
   const renderAll = (window as any).__fh_renderAll;
   if (renderAll) renderAll();
+  // TAG-2: untag a version → 1s delay lets cascade removal complete
+  setTimeout(() => void flushSyncNow(), 1000);
 }
 
 /** Show the confirmation overlay before untagging. */
@@ -741,6 +749,8 @@ function applyStripTag(fid: number, vi: number, strip: StripType): void {
   bumpRenderTick();
   const renderAll = (window as any).__fh_renderAll;
   if (renderAll) renderAll();
+  // TAG-1: tag a version → 1s delay lets cascade propagation complete
+  setTimeout(() => void flushSyncNow(), 1000);
 }
 
 /**
@@ -774,9 +784,11 @@ function reapplyStripTags(fid: number, strip: StripType): void {
 
     // Own origins on this frame (keep the actual objects)
     const ownOrigins = targetVers.filter((v) => v.setupTagged === 'origin');
-    // User's untagged content that actually has something — empty versions
-    // are just placeholders and should be filled by copies, not preserved
-    const userContent = targetVers.filter((v) => !v.setupTagged && v.type !== 'empty');
+    // User's untagged content that actually has something — truly empty
+    // versions are just placeholders and should be filled by copies, not
+    // preserved.  Guard: also keep versions whose type is 'empty' but that
+    // have actual content (strokes or images), e.g. after freehand drawing.
+    const userContent = targetVers.filter((v) => !v.setupTagged && (v.type !== 'empty' || (v.strokes && v.strokes.length > 0) || v.bgImage));
 
     // Build the tagged-front section in storyboard order:
     // for each frame that has origins, if it's THIS frame → keep own origins,

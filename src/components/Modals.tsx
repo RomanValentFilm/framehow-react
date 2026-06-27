@@ -80,7 +80,7 @@ export function Modals() {
       <div className="label-modal hidden" id="labelModal">
         <div className="label-modal-box">
           <p>You are changing the frame number.</p>
-          <input type="text" id="labelModalInput" maxLength={20} placeholder="e.g. 1A, Scene 3..." />
+          <input type="text" id="labelModalInput" maxLength={20} placeholder="e.g. 1A, Scene 3..." autoComplete="one-time-code" />
           <div className="label-modal-btns">
             <button className="btn" id="labelCancel">Cancel</button>
             <button
@@ -117,6 +117,7 @@ export function Modals() {
               id="verLabelInput"
               maxLength={6}
               placeholder="version"
+              autoComplete="one-time-code"
               style={{
                 borderRadius: '0 var(--radius-sm) var(--radius-sm) 0',
                 textAlign: 'left',
@@ -213,7 +214,7 @@ export function Modals() {
           <div className="exp-title">Export as PDF</div>
           <div className="exp-field">
             <label>Project name</label>
-            <input type="text" id="exportProjectName" placeholder="Storyboard" />
+            <input type="text" id="exportProjectName" placeholder="Storyboard" autoComplete="one-time-code" />
           </div>
           <div className="exp-field" id="exportGroupPickerWrap" style={{ display: 'none' }}>
             <label>Select group to export</label>
@@ -334,7 +335,7 @@ export function Modals() {
           <div className="exp-title">Export as Keynote / PowerPoint</div>
           <div className="exp-field">
             <label>Project name</label>
-            <input type="text" id="pptxProjectName" placeholder="Storyboard" />
+            <input type="text" id="pptxProjectName" placeholder="Storyboard" autoComplete="one-time-code" />
           </div>
           <div className="exp-field" id="pptxGroupPickerWrap" style={{ display: 'none' }}>
             <label>Select group to export</label>
@@ -451,7 +452,7 @@ export function Modals() {
           <div className="exp-title">Export as Images</div>
           <div className="exp-field">
             <label>Project name</label>
-            <input type="text" id="imageExportProjectName" placeholder="Storyboard" />
+            <input type="text" id="imageExportProjectName" placeholder="Storyboard" autoComplete="one-time-code" />
           </div>
           <div className="exp-field" id="imageGroupPickerWrap" style={{ display: 'none' }}>
             <label>Select group to export</label>
@@ -557,7 +558,7 @@ export function Modals() {
           <div className="exp-title" id="portraitExportTitle">Export 9:16 as PDF</div>
           <div className="exp-field">
             <label>Project name</label>
-            <input type="text" id="portraitExportName" placeholder="Storyboard" />
+            <input type="text" id="portraitExportName" placeholder="Storyboard" autoComplete="one-time-code" />
           </div>
           <div className="exp-field" id="portraitGroupPickerWrap" style={{ display: 'none' }}>
             <label>Select group to export</label>
@@ -657,7 +658,7 @@ export function Modals() {
           <div className="exp-title">Export 9:16 as Images</div>
           <div className="exp-field">
             <label>Project name</label>
-            <input type="text" id="portraitImageExportName" placeholder="Storyboard" />
+            <input type="text" id="portraitImageExportName" placeholder="Storyboard" autoComplete="one-time-code" />
           </div>
           <div className="exp-field" id="portraitImageGroupPickerWrap" style={{ display: 'none' }}>
             <label>Select group to export</label>

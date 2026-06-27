@@ -130,15 +130,38 @@ export function initFramehow(): void {
   });
 
   // Live-save text edits + table edits
+  // FRM-12/FRM-13: 5-second text inactivity timer — pushes text to server
+  // before the heartbeat goes stale (10s), so the other device gets the latest.
+  let _textFlushTimer: ReturnType<typeof setTimeout> | null = null;
+  function _resetTextFlushTimer(): void {
+    if (_textFlushTimer) clearTimeout(_textFlushTimer);
+    _textFlushTimer = setTimeout(() => {
+      _textFlushTimer = null;
+      void flushSyncNow(); // FRM-12/FRM-13: 5s text inactivity → flush
+    }, 5000);
+  }
   document.addEventListener('input', (e: Event) => {
     const target = e.target as HTMLElement;
     if (target.matches('textarea.frame-text-edit[data-textfid]')) {
       const fid = parseInt(target.dataset.textfid!);
       const f = state().frames.find((fr) => fr.id === fid);
       if (f) f.textContent = (target as HTMLTextAreaElement).value;
+      _resetTextFlushTimer();
     }
     const tbl = target.closest('.frame-table[data-tblfid]') as HTMLElement | null;
-    if (tbl) saveTableFromDOM(tbl);
+    if (tbl) {
+      saveTableFromDOM(tbl);
+      _resetTextFlushTimer();
+    }
+  });
+  // FRM-12/FRM-13: blur = end of action → flush immediately
+  document.addEventListener('focusout', (e: FocusEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.matches('textarea.frame-text-edit[data-textfid]') ||
+        target.closest('.frame-table[data-tblfid]')) {
+      if (_textFlushTimer) { clearTimeout(_textFlushTimer); _textFlushTimer = null; }
+      void flushSyncNow(); // FRM-12/FRM-13: blur → end of text/table editing
+    }
   });
 
   // Add row to table
@@ -156,6 +179,7 @@ export function initFramehow(): void {
     if (wrap) {
       wrap.innerHTML = tableHTML(fid, f.tableData);
     }
+    void flushSyncNow(); // FRM-14: add table row
   });
 
   // Star button delegated handler
@@ -448,6 +472,7 @@ export function initFramehow(): void {
     }
     document.getElementById('customiseModal')!.classList.add('hidden');
     renderAll();
+    void flushSyncNow(); // CUS-1: customise strip labels → Save
   });
   // Close customise on backdrop click
   document.getElementById('customiseModal')!.addEventListener('click', (e) => {
@@ -781,6 +806,7 @@ export function initFramehow(): void {
         const ovRow = document.querySelector(`#overviewScroll .overview-row[data-ofid="${fid}"]`) as HTMLElement | null;
         if (ovRow) renderOverviewRow(ovRow, fid);
       }
+      void flushSyncNow(); // FRM-7: upload image to main → file selected
     };
     reader.readAsDataURL(file);
     (e.target as HTMLInputElement).value = '';
@@ -835,6 +861,7 @@ export function initFramehow(): void {
             if (ovRow) { state().currentViewMode === 'grid4' ? renderGrid4Row(ovRow, fid) : renderOverviewRow(ovRow, fid); }
           }
           useStore.setState({ overviewAction: false });
+          void flushSyncNow(); // VER-3/VER-4: upload to version → file(s) loaded
         }
       };
       reader.readAsDataURL(files[i]);

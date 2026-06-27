@@ -6,6 +6,7 @@ import { fhTrack } from './tracking';
 import { renderAll } from './render';
 import { autoPhoneMainView } from './view';
 import { updateFrameBadge } from './helpers';
+import { flushSyncNow } from './currentProject';
 
 export function handleFolderImages(e: Event): void {
   fhTrack('images_loaded');
@@ -94,6 +95,8 @@ export function handleFolderImages(e: Event): void {
               setTimeout(() => document.getElementById('progressOverlay')!.classList.add('hidden'), 300);
               renderAll();
               autoPhoneMainView();
+              // IMP-2: folder import complete → 5s delay lets images settle
+              setTimeout(() => void flushSyncNow(), 5000);
               // toast removed
             }
           };

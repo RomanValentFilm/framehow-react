@@ -39,6 +39,7 @@ import { addCrossSwipe, addNavArrows, scheduleSyncHeights } from './view';
 import { showLabelEdit, showVerLabelEdit } from './modals';
 import { getVisibleFrames, updateGroupButtonState } from './groups';
 import { setupTagHTML, wireSetupClicks, stripTagHTML } from './setups';
+import { flushSyncNow } from './currentProject';
 
 /** iPhone + 9:16 project → strip cards skip the repeated main-frame name. */
 function _phonePortraitProject(): boolean {
@@ -214,6 +215,7 @@ export function renderMainFrame(div: HTMLElement, fid: number): void {
       div.style.borderColor = '';
       updateFrameBadge();
       renderAll();
+      void flushSyncNow(); // FRM-5: un-hide frame (main strip)
     });
     scheduleSyncHeights();
     return;
@@ -316,6 +318,7 @@ export function renderMainFrame(div: HTMLElement, fid: number): void {
         const scrollId = stripScrollId(ccS);
         const vd = document.querySelector(`#${scrollId} .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
         if (vd) renderVersionFrame(vd, fid, ccS);
+        void flushSyncNow(); // VER-2: add new version (cross-compare)
       });
     const cUnhideBtn = div.querySelector(`[data-cvunhide="${fid}"]`) as HTMLElement | null;
     if (cUnhideBtn)
@@ -358,6 +361,7 @@ export function renderMainFrame(div: HTMLElement, fid: number): void {
           if (parseInt(el.dataset.vfid!) !== fid)
             renderVersionFrame(el, parseInt(el.dataset.vfid!), (el.dataset.strip || 'ver') as StripType);
         });
+        void flushSyncNow(); // VER-19: exit version reorder (cross-compare) → DONE
       });
     div.querySelectorAll('[data-cvmove]').forEach((b) =>
       b.addEventListener('click', () => {
@@ -531,6 +535,7 @@ export function renderMainFrame(div: HTMLElement, fid: number): void {
       currentF.label = result;
       bumpRenderTick();
       renderAll();
+      void flushSyncNow(); // FRM-6: rename frame label → OK/Enter
     })
   );
   if (f.drawMode) {
@@ -587,6 +592,7 @@ export function renderVersionFrame(div: HTMLElement, fid: number, strip: StripTy
       div.style.borderColor = '';
       updateFrameBadge();
       renderAll();
+      void flushSyncNow(); // FRM-5: un-hide frame (version strip)
     });
     scheduleSyncHeights();
     return;
@@ -697,6 +703,7 @@ export function renderVersionFrame(div: HTMLElement, fid: number, strip: StripTy
         currentF.label = result;
         bumpRenderTick();
         renderAll();
+        void flushSyncNow(); // FRM-6: rename frame label (inline-main) → OK/Enter
       })
     );
     if (f.drawMode) {
@@ -800,6 +807,7 @@ export function renderVersionFrame(div: HTMLElement, fid: number, strip: StripTy
     const n = getStripVersions(fid, strip).length + 1;
     addNewStripVersion(fid, strip, { id: n, label: `${tabPrefix}${n}`, type: 'empty', strokes: [], bgImage: null });
     renderVersionFrame(div, fid, strip);
+    void flushSyncNow(); // VER-2: add new version (+)
   });
   const vUnhideBtn = div.querySelector(`[data-vunhide="${fid}"]`) as HTMLElement | null;
   if (vUnhideBtn)
@@ -829,6 +837,7 @@ export function renderVersionFrame(div: HTMLElement, fid: number, strip: StripTy
         const vfid = (el as HTMLElement).dataset.vfid;
         if (vfid) renderVersionFrame(el as HTMLElement, +vfid, strip);
       });
+      void flushSyncNow(); // VER-16: rename strip label → OK
     })
   );
   const startBtn = div.querySelector('[data-vreorderstart]') as HTMLElement | null;
@@ -851,6 +860,7 @@ export function renderVersionFrame(div: HTMLElement, fid: number, strip: StripTy
       document.querySelectorAll('.frame-card[data-mfid]').forEach((c) =>
         renderMainFrame(c as HTMLElement, parseInt((c as HTMLElement).dataset.mfid!))
       );
+      void flushSyncNow(); // VER-19: exit version reorder → DONE
     });
   div.querySelectorAll('[data-vmove]').forEach((b) =>
     b.addEventListener('click', () => {

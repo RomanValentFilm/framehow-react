@@ -334,6 +334,7 @@ export function setupDrawing(cvs: HTMLCanvasElement, fid: number, ai: number, st
       snapshotFrame(fid, strip);
       ver.strokes = ver.strokes || [];
       ver.strokes.push(cur);
+      if (ver.type === 'empty') ver.type = 'drawing'; // clear "choose an action below" hint
       updateUndoButtons(fid);
     }
     if (isDrawing || isErasing) {

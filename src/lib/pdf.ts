@@ -11,6 +11,7 @@ import { COLORS, state, useStore, resetStoryboardState } from '../store/state';
 import { setProgress, showToast } from './modals';
 import { fhTrack } from './tracking';
 import { updateFrameBadge } from './helpers';
+import { flushSyncNow } from './currentProject';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
@@ -1348,6 +1349,8 @@ export async function handlePDF(file: File): Promise<void> {
       updateFrameBadge();
       showToast(`${allFrames.length} frames loaded`);
       requestAnimationFrame(() => { (window as any).__fh_renderAll?.(); });
+      // IMP-1: PDF import complete → 5s delay lets images settle
+      setTimeout(() => void flushSyncNow(), 5000);
       // Show the "use iPad or desktop" message after a short delay
       setTimeout(() => {
         import('./pdfAdjust').then(m => m.showPhoneAdjustMessage());

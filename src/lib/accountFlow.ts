@@ -2178,8 +2178,18 @@ async function performRestore(projectId: string, snapshotId: string): Promise<vo
 }
 
 export async function flowAccountOrSignIn(): Promise<void> {
-  if (isLoggedIn()) await openAccountSettings();
-  else await openAccountModal('login');
+  if (isLoggedIn()) {
+    await openAccountSettings();
+  } else {
+    await openAccountModal('login');
+    // After login, if there's an unsaved project with frames, save it now.
+    if (isLoggedIn()) {
+      const cp = getCurrentProject();
+      if (!cp.projectId && state().frames.length > 0) {
+        await saveNow();
+      }
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
