@@ -278,7 +278,7 @@ export function renderMainFrame(div: HTMLElement, fid: number): void {
         f.cropW || 960
       }" height="${f.cropH || 540}"${cVerHidden ? ' style="pointer-events:none;"' : ''}></canvas>${
           !cVerHidden && ver.type === 'empty' ? '<div class="canvas-hint"><span>choose an action below</span></div>' : ''
-        }${!cVerHidden ? starHTML(fid, ai, ccStrip) : ''}${!cVerHidden ? fsButtonHTML(fid, ai, ccStrip) : ''}</div></div>
+        }${!cVerHidden ? starHTML(fid, ai, ccStrip) : ''}${!cVerHidden ? fsButtonHTML(fid, ai, ccStrip) : ''}${!cVerHidden ? stripTagHTML(fid, ai, ccStrip) : ''}</div></div>
       </div>
       ${!cVerHidden && s.drawActive[fid] === ccStrip ? `<div class="color-row">${colorDots}</div>` : ''}
       <div class="version-actions"${cVerHidden ? ' style="pointer-events:none;opacity:0.3;"' : ''}>

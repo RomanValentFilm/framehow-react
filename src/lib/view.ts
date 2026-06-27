@@ -519,7 +519,6 @@ export function navigateStrip(fid: number, fromStrip: StripType, dir: 'left' | '
 }
 
 export function addNavArrows(wrapEl: HTMLElement, fid: number, fromStrip: StripType): void {
-  if (isTouch) return;
   const s = state();
   if (s.activeStrips.length > 1 && fromStrip === 'main') return;
   const ccStrip = s.crossCompareStrip[fid] || 'ver';
