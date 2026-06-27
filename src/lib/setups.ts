@@ -475,20 +475,15 @@ export function handleSetupFrameClick(fid: number): void {
   if (!f) return;
 
   if (f.setupId === s.activeSetupId) {
-    // Unassign — clear any copy-tagged strip content first
-    const oldSetupId = f.setupId;
+    // Unassign — clear this frame's own copies, leave other frames' copies alone
     clearCopyTaggedVersions(f.id);
     f.setupId = null;
-    // Re-propagate remaining origins in the old setup (cleans up copies this frame produced)
-    if (oldSetupId) propagateAllSetupTags(oldSetupId);
   } else {
     // Reassigning from different setup — clear old copies before switching
     const oldSetupId = f.setupId;
     if (oldSetupId) clearCopyTaggedVersions(f.id);
     // Assign (or reassign from different setup)
     f.setupId = s.activeSetupId;
-    // Re-propagate old setup (remove copies this frame produced)
-    if (oldSetupId) propagateAllSetupTags(oldSetupId);
     // Propagate existing tags from new setup to include this frame
     if (s.activeSetupId) propagateAllSetupTags(s.activeSetupId);
   }
@@ -508,11 +503,8 @@ export function handleSetupRemoveClick(fid: number): void {
   const f = s.frames.find((fr) => fr.id === fid);
   if (!f || !f.setupId) return;
 
-  const oldSetupId = f.setupId;
   clearCopyTaggedVersions(f.id);
   f.setupId = null;
-  // Re-propagate remaining origins so copies from this frame's origins get cleaned up
-  propagateAllSetupTags(oldSetupId);
 
   bumpRenderTick();
   const renderAll = (window as any).__fh_renderAll;
@@ -914,9 +906,19 @@ function reapplyStripTags(fid: number, strip: StripType): void {
       }
     }
 
-    // Rebuild: tagged front, then user content
+    // Orphaned copies — copies whose origin frame left the setup.
+    // Keep them so the image survives; they'll be cleaned up when
+    // this frame itself leaves the setup.
+    const orphanedCopies = targetVers.filter(
+      (v) =>
+        v.setupTagged === 'copy' &&
+        !taggedFront.some((tf) => tf.bgImage === v.bgImage)
+    );
+
+    // Rebuild: tagged front, then orphaned copies, then user content
     targetVers.length = 0;
     for (const tv of taggedFront) targetVers.push(tv);
+    for (const oc of orphanedCopies) targetVers.push(oc);
     for (const uv of userContent) targetVers.push(uv);
 
     // Ensure at least one version exists (don't leave a strip empty)
