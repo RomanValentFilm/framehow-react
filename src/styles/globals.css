@@ -882,10 +882,11 @@
   .needs-memo-input:focus{border-color:var(--accent);}
   .needs-memo-input::placeholder{color:#555;}
 
-  /* Action row — matches .version-actions position; border-top aligns with canvas bottom */
+  /* Action row — matches .version-actions position; border-top aligns with canvas bottom.
+     flex:1 fills remaining card space; align-content:center vertically centres buttons. */
   .needs-action-row{
-    display:flex;gap:5px;flex-wrap:wrap;padding:3px 8px;align-content:flex-start;justify-content:center;
-    border-top:1px solid var(--border);flex-shrink:0;
+    display:flex;gap:5px;flex-wrap:wrap;padding:3px 8px;align-content:center;justify-content:center;
+    border-top:1px solid var(--border);flex:1;
   }
   /* Match button height with MAIN/VER cards (their DRAW/CAM/WRITE have 3px border = taller) */
   .needs-action-row .act-btn{padding:3px 7px;}
