@@ -128,7 +128,7 @@ export function renderOverviewRow(row: HTMLElement, fid: number): void {
       <button class="act-btn" data-mact="write" data-mfid="${fid}">WRITE</button>
       <button class="act-btn" data-mact="copy" data-mfid="${fid}">Copy</button>
       <button class="act-btn" data-mact="paste" data-mfid="${fid}">Paste</button>
-      <button class="act-btn" data-mact="delete" data-mfid="${fid}">Hide/Del</button>
+      <button class="act-btn" data-mact="delete" data-mfid="${fid}">HIDE</button>
       <button class="act-btn${s.prevFrameState[fid] && s.prevFrameState[fid]!.origin === 'main' ? '' : ' disabled'}" data-mact="undo" data-mfid="${fid}"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M7 19v-2h7.1c1.15 0 2.13-.4 2.93-1.2.8-.8 1.2-1.78 1.2-2.93s-.4-2.13-1.2-2.93c-.8-.8-1.78-1.2-2.93-1.2H7.83l2.59 2.59L9 12.74 4 7.74l5-5 1.41 1.41L7.83 6.74H14.1c1.71 0 3.16.6 4.36 1.8s1.8 2.65 1.8 4.36-.6 3.16-1.8 4.36-2.65 1.8-4.36 1.8H7Z"/></svg></button>
     </div>
   </div>`;
@@ -239,7 +239,7 @@ export function renderOverviewRow(row: HTMLElement, fid: number): void {
         <button class="act-btn" data-action="text" data-fid="${fid}">WRITE</button>
         <button class="act-btn" data-action="copy" data-fid="${fid}">Copy</button>
         <button class="act-btn" data-action="paste" data-fid="${fid}">Paste</button>
-        <button class="act-btn" data-action="clear" data-fid="${fid}">Hide/Del</button>
+        <button class="act-btn" data-action="clear" data-fid="${fid}">HIDE</button>
         <button class="act-btn${getStripPrevFrameState(fid, companionStrip) ? '' : ' disabled'}" data-action="undo" data-fid="${fid}"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M7 19v-2h7.1c1.15 0 2.13-.4 2.93-1.2.8-.8 1.2-1.78 1.2-2.93s-.4-2.13-1.2-2.93c-.8-.8-1.78-1.2-2.93-1.2H7.83l2.59 2.59L9 12.74 4 7.74l5-5 1.41 1.41L7.83 6.74H14.1c1.71 0 3.16.6 4.36 1.8s1.8 2.65 1.8 4.36-.6 3.16-1.8 4.36-2.65 1.8-4.36 1.8H7Z"/></svg></button>
       </div>
     </div>`;
@@ -507,7 +507,7 @@ export function renderGrid4Row(row: HTMLElement, fid: number): void {
       <button class="act-btn" data-mact="write" data-mfid="${fid}">WRITE</button>
       <button class="act-btn" data-mact="copy" data-mfid="${fid}">Copy</button>
       <button class="act-btn" data-mact="paste" data-mfid="${fid}">Paste</button>
-      <button class="act-btn" data-mact="delete" data-mfid="${fid}">Hide/Del</button>
+      <button class="act-btn" data-mact="delete" data-mfid="${fid}">HIDE</button>
       <button class="act-btn${s.prevFrameState[fid] && s.prevFrameState[fid]!.origin === 'main' ? '' : ' disabled'}" data-mact="undo" data-mfid="${fid}"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M7 19v-2h7.1c1.15 0 2.13-.4 2.93-1.2.8-.8 1.2-1.78 1.2-2.93s-.4-2.13-1.2-2.93c-.8-.8-1.78-1.2-2.93-1.2H7.83l2.59 2.59L9 12.74 4 7.74l5-5 1.41 1.41L7.83 6.74H14.1c1.71 0 3.16.6 4.36 1.8s1.8 2.65 1.8 4.36-.6 3.16-1.8 4.36-2.65 1.8-4.36 1.8H7Z"/></svg></button>
     </div>
   </div>`;
@@ -620,7 +620,7 @@ export function renderGrid4Row(row: HTMLElement, fid: number): void {
         <button class="act-btn" data-action="text" data-fid="${fid}">WRITE</button>
         <button class="act-btn" data-action="copy" data-fid="${fid}">Copy</button>
         <button class="act-btn" data-action="paste" data-fid="${fid}">Paste</button>
-        <button class="act-btn" data-action="clear" data-fid="${fid}">Hide/Del</button>
+        <button class="act-btn" data-action="clear" data-fid="${fid}">HIDE</button>
         <button class="act-btn${getStripPrevFrameState(fid, companionStrip) ? '' : ' disabled'}" data-action="undo" data-fid="${fid}"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M7 19v-2h7.1c1.15 0 2.13-.4 2.93-1.2.8-.8 1.2-1.78 1.2-2.93s-.4-2.13-1.2-2.93c-.8-.8-1.78-1.2-2.93-1.2H7.83l2.59 2.59L9 12.74 4 7.74l5-5 1.41 1.41L7.83 6.74H14.1c1.71 0 3.16.6 4.36 1.8s1.8 2.65 1.8 4.36-.6 3.16-1.8 4.36-2.65 1.8-4.36 1.8H7Z"/></svg></button>
       </div>
     </div>`;
@@ -1014,7 +1014,7 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
     card.querySelectorAll('[data-mact]').forEach((b) =>
       b.addEventListener('click', (e) => {
         const act = (b as HTMLElement).dataset.mact!;
-        // Hide/Del in 3×2 — show same confirmation modal as other views
+        // HIDE in 3×2 — show same confirmation modal as other views
         if (act === 'delete') {
           e.stopPropagation();
           const s2 = state();

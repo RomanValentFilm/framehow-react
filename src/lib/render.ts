@@ -324,7 +324,7 @@ export function renderMainFrame(div: HTMLElement, fid: number): void {
         <button class="act-btn${cVerHidden ? ' disabled' : ''}" data-cact="text" data-cfid="${fid}">WRITE</button>
         <button class="act-btn${cVerHidden ? ' disabled' : ''}" data-cact="copy" data-cfid="${fid}">Copy</button>
         <button class="act-btn${cVerHidden ? ' disabled' : ''}" data-cact="paste" data-cfid="${fid}">Paste</button>
-        <button class="act-btn" data-cact="clear" data-cfid="${fid}">Hide/Del</button>
+        <button class="act-btn" data-cact="clear" data-cfid="${fid}">HIDE</button>
         <button class="act-btn${cVerHidden ? ' disabled' : getStripPrevFrameState(fid, ccStrip) ? '' : ' disabled'}" data-cact="undo" data-cfid="${fid}"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M7 19v-2h7.1c1.15 0 2.13-.4 2.93-1.2.8-.8 1.2-1.78 1.2-2.93s-.4-2.13-1.2-2.93c-.8-.8-1.78-1.2-2.93-1.2H7.83l2.59 2.59L9 12.74 4 7.74l5-5 1.41 1.41L7.83 6.74H14.1c1.71 0 3.16.6 4.36 1.8s1.8 2.65 1.8 4.36-.6 3.16-1.8 4.36-2.65 1.8-4.36 1.8H7Z"/></svg></button>
       </div>`;
 
@@ -529,7 +529,7 @@ export function renderMainFrame(div: HTMLElement, fid: number): void {
       <button class="act-btn" data-mact="write" data-mfid="${fid}">WRITE</button>
       <button class="act-btn" data-mact="copy" data-mfid="${fid}">Copy</button>
       <button class="act-btn" data-mact="paste" data-mfid="${fid}">Paste</button>
-      <button class="act-btn" data-mact="delete" data-mfid="${fid}">Hide/Del</button>
+      <button class="act-btn" data-mact="delete" data-mfid="${fid}">HIDE</button>
       <button class="act-btn${s.prevFrameState[fid] && s.prevFrameState[fid]!.origin === 'main' ? '' : ' disabled'}" data-mact="undo" data-mfid="${fid}"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M7 19v-2h7.1c1.15 0 2.13-.4 2.93-1.2.8-.8 1.2-1.78 1.2-2.93s-.4-2.13-1.2-2.93c-.8-.8-1.78-1.2-2.93-1.2H7.83l2.59 2.59L9 12.74 4 7.74l5-5 1.41 1.41L7.83 6.74H14.1c1.71 0 3.16.6 4.36 1.8s1.8 2.65 1.8 4.36-.6 3.16-1.8 4.36-2.65 1.8-4.36 1.8H7Z"/></svg></button>
     </div>`;
 
@@ -695,7 +695,7 @@ export function renderVersionFrame(div: HTMLElement, fid: number, strip: StripTy
         <button class="act-btn" data-mact="write" data-mfid="${fid}">WRITE</button>
         <button class="act-btn" data-mact="copy" data-mfid="${fid}">Copy</button>
         <button class="act-btn" data-mact="paste" data-mfid="${fid}">Paste</button>
-        <button class="act-btn" data-mact="delete" data-mfid="${fid}">Hide/Del</button>
+        <button class="act-btn" data-mact="delete" data-mfid="${fid}">HIDE</button>
         <button class="act-btn${s.prevFrameState[fid] && s.prevFrameState[fid]!.origin === 'main' ? '' : ' disabled'}" data-mact="undo" data-mfid="${fid}"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M7 19v-2h7.1c1.15 0 2.13-.4 2.93-1.2.8-.8 1.2-1.78 1.2-2.93s-.4-2.13-1.2-2.93c-.8-.8-1.78-1.2-2.93-1.2H7.83l2.59 2.59L9 12.74 4 7.74l5-5 1.41 1.41L7.83 6.74H14.1c1.71 0 3.16.6 4.36 1.8s1.8 2.65 1.8 4.36-.6 3.16-1.8 4.36-2.65 1.8-4.36 1.8H7Z"/></svg></button>
       </div>`;
     div.querySelectorAll('.color-dot[data-mfid]').forEach((d) =>
@@ -823,7 +823,7 @@ export function renderVersionFrame(div: HTMLElement, fid: number, strip: StripTy
         <button class="act-btn${_verHidden ? ' disabled' : ''}" ${_verHidden ? '' : 'data-action="text" data-fid="' + fid + '"'}>WRITE</button>
         <button class="act-btn${_verHidden ? ' disabled' : ''}" ${_verHidden ? '' : 'data-action="copy" data-fid="' + fid + '"'}>Copy</button>
         <button class="act-btn${_verHidden ? ' disabled' : ''}" ${_verHidden ? '' : 'data-action="paste" data-fid="' + fid + '"'}>Paste</button>
-        <button class="act-btn${_verHidden ? ' disabled' : ''}" ${_verHidden ? '' : 'data-action="clear" data-fid="' + fid + '"'}>Hide/Del</button>
+        <button class="act-btn${_verHidden ? ' disabled' : ''}" ${_verHidden ? '' : 'data-action="clear" data-fid="' + fid + '"'}>HIDE</button>
         <button class="act-btn${_verHidden ? ' disabled' : getStripPrevFrameState(fid, strip) && getStripPrevFrameState(fid, strip)!.origin === strip ? '' : ' disabled'}" ${_verHidden ? '' : 'data-action="undo" data-fid="' + fid + '"'}><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M7 19v-2h7.1c1.15 0 2.13-.4 2.93-1.2.8-.8 1.2-1.78 1.2-2.93s-.4-2.13-1.2-2.93c-.8-.8-1.78-1.2-2.93-1.2H7.83l2.59 2.59L9 12.74 4 7.74l5-5 1.41 1.41L7.83 6.74H14.1c1.71 0 3.16.6 4.36 1.8s1.8 2.65 1.8 4.36-.6 3.16-1.8 4.36-2.65 1.8-4.36 1.8H7Z"/></svg></button>
       </div>
     </div>`;

@@ -236,7 +236,7 @@
   @media (max-width:430px) and (orientation:portrait){.view-btn[data-view="overview"],.view-btn[data-view="grid4"],.view-btn[data-view="needs"]{display:none;}}
   /* iPhone portrait + landscape project: hide frame count badge */
   @media (max-width:430px) and (orientation:portrait){body:not(.portrait-mode) .frame-badge{display:none;}}
-  .strip-scroll{padding:12px;display:flex;flex-direction:column;gap:12px;}
+  .strip-scroll{padding:10px;display:flex;flex-direction:column;gap:12px;}
   .strip-scroll::-webkit-scrollbar{width:4px;}
   .strip-scroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.15);border-radius:2px;}
   .empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:16px;text-align:center;padding:32px;}
@@ -356,9 +356,9 @@
   .pictxt-btn,.pictxt-btn.active{font-weight:400!important;font-family:var(--font)!important;}
   .pictxt-btn .ptt-bold{font-weight:700!important;color:var(--accent)!important;}
   .pictxt-btn.active{color:#b3b3b3;border-color:#fff;}
-  .version-actions{display:flex;gap:6px;flex-wrap:wrap;padding:3px 10px;align-content:flex-start;justify-content:center;}
-  .act-btn{font-family:var(--font);font-size:11px;font-weight:500;padding:2px 8px;border-radius:var(--radius-sm);border:2px solid var(--border);background:var(--surface2);color:#b8b8b8;cursor:pointer;display:flex;align-items:center;gap:5px;transition:background .3s,color .3s,border-color .3s;-webkit-tap-highlight-color:transparent;}
-  .act-btn[data-mact="undo"],.act-btn[data-action="undo"],.act-btn[data-cact="undo"]{padding:2px 6px;}
+  .version-actions{display:flex;gap:5px;flex-wrap:wrap;padding:3px 8px;align-content:flex-start;justify-content:center;}
+  .act-btn{font-family:var(--font);font-size:11px;font-weight:500;padding:2px 7px;border-radius:var(--radius-sm);border:2px solid var(--border);background:var(--surface2);color:#b8b8b8;cursor:pointer;display:flex;align-items:center;gap:5px;transition:background .3s,color .3s,border-color .3s;-webkit-tap-highlight-color:transparent;}
+  .act-btn[data-mact="undo"],.act-btn[data-action="undo"],.act-btn[data-cact="undo"]{padding:2px 1px;}
   /* Hover styling only on real hover devices — iOS otherwise requires 2 taps (first = hover, second = click) */
   @media (hover:hover){.act-btn:hover{border-color:var(--border-strong);color:#e6e6e6;background:#262626;}}
   .act-btn:active{background:#111;color:#fff;border-color:#888;transition:none;}
@@ -884,5 +884,5 @@
 
   /* Action row — matches frame card action buttons */
   .needs-action-row{
-    display:flex;gap:6px;padding:3px 10px;border-top:1px solid var(--border);flex-shrink:0;
+    display:flex;gap:5px;padding:3px 8px;border-top:1px solid var(--border);flex-shrink:0;
   }

@@ -4,10 +4,21 @@
 
 Git branch is `v4.4`. Cloudflare Pages production branch is `main`.
 
-### DEPLOY WORKFLOW — ALWAYS follow this order:
-1. Claude bumps `APP_VERSION` in `src/store/state.ts` (e.g. `v4.6.010` → `v4.6.011`)
-2. Claude gives user a single Terminal command that: commits → builds → deploys
-3. User runs the command on their Mac
+### 4 STEPS SAVE — when user says "4 steps save", ALWAYS do exactly this:
+
+**Step 1.** Claude checks the CURRENT version in `src/store/state.ts` is the one being saved (NOT bumped yet). Claude tells the user the CURRENT VERSION number.
+
+**Step 2.** Claude gives the user ONE terminal command that does all of this in order:
+  - `git add -A && git commit -m "..." && git push` (pushes current version to GitHub)
+  - `rsync -a --exclude=node_modules --exclude=dist --exclude=.git . ~/Desktop/Framehow\ Files/framehow-react-versions/v{CURRENT_VERSION}/` (copies source to versions folder, MUST be under 5MB — no node_modules, no dist, no .git)
+  - `npm run build` (compiles TypeScript + bundles with Vite into dist/)
+  - `npx wrangler pages deploy dist --project-name=framehow-react --branch=dev --commit-dirty=true` (deploys to dev)
+
+**Step 3.** User pastes the terminal output. Claude confirms it worked.
+
+**Step 4.** Claude bumps APP_VERSION in `src/store/state.ts` and `CLAUDE.md`. Claude shows the user the new version number.
+
+CRITICAL: This procedure is ALWAYS exactly the same. Only the commit message and version number change.
 
 ### Dev / preview (commit + build + deploy)
 ```
@@ -27,7 +38,7 @@ cd ~/Desktop/Framehow\ Files/framehow-react && git add -A && git commit -m "v4.6
 ### Version numbering
 - `APP_VERSION` constant in `src/store/state.ts` — displayed in toolbar next to logo
 - Format: `v4.6.0XX` where XX increments with each deploy
-- Current: `v4.9.002`
+- Current: `v4.9.003`
 - Production: `v4.9.001`
 
 ### Clean rebuild (if changes don't appear)
