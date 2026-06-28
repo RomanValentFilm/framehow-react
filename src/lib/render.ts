@@ -39,6 +39,7 @@ import { addCrossSwipe, addNavArrows, scheduleSyncHeights } from './view';
 import { showLabelEdit, showVerLabelEdit } from './modals';
 import { getVisibleFrames, updateGroupButtonState } from './groups';
 import { setupTagHTML, wireSetupClicks, stripTagHTML } from './setups';
+import { buildNeedsCard } from './needs';
 import { flushSyncNow } from './currentProject';
 
 /** iPhone + 9:16 project → strip cards skip the repeated main-frame name. */
@@ -74,6 +75,7 @@ export function renderAll(): void {
   const overviewScroll = document.getElementById('overviewScroll')!;
   const floorScroll = document.getElementById('floorScroll')!;
   const refsScroll = document.getElementById('refsScroll')!;
+  const needsScroll = document.getElementById('needsScroll');
   // NOTE: Don't clear innerHTML here — build new content into fragments
   // first, then swap with replaceChildren() to avoid the blank-flash.
   const s = state();
@@ -82,23 +84,32 @@ export function renderAll(): void {
   // Sync column layout classes with current state
   const columnsEl = document.querySelector('.columns');
   if (columnsEl) {
-    columnsEl.classList.remove('view-overview', 'view-grid4', 'view-grid3x2', 'strips-1', 'strips-2', 'strips-3', 'strips-4');
+    columnsEl.classList.remove('view-overview', 'view-grid4', 'view-grid3x2', 'strips-1', 'strips-2', 'strips-3', 'strips-4', 'strips-5');
     if (s.currentViewMode === 'overview') columnsEl.classList.add('view-overview');
     else if (s.currentViewMode === 'grid4') columnsEl.classList.add('view-grid4');
     else if (s.currentViewMode === 'grid3x2') columnsEl.classList.add('view-grid3x2');
-    else columnsEl.classList.add(`strips-${s.activeStrips.length}`);
+    else {
+      const totalCols = s.activeStrips.length + (s.needsStripVisible ? 1 : 0);
+      columnsEl.classList.add(`strips-${totalCols}`);
+    }
   }
   const mainCol = document.getElementById('mainCol') as HTMLElement;
   const verCol = document.getElementById('verCol') as HTMLElement;
   const floorCol = document.getElementById('floorCol') as HTMLElement;
   const refsCol = document.getElementById('refsCol') as HTMLElement;
+  const needsCol = document.getElementById('needsCol') as HTMLElement;
   if (mainCol) mainCol.style.display = s.activeStrips.includes('main') ? '' : 'none';
   if (verCol) verCol.style.display = s.activeStrips.includes('ver') ? '' : 'none';
   if (floorCol) floorCol.style.display = s.activeStrips.includes('floor') ? '' : 'none';
   if (refsCol) refsCol.style.display = s.activeStrips.includes('refs') ? '' : 'none';
+  if (needsCol) needsCol.style.display = s.needsStripVisible ? '' : 'none';
   document.querySelectorAll('.view-btn:not(.strip-toggle)').forEach((b) => {
     const bv = (b as HTMLElement).dataset.view;
-    b.classList.toggle('active', bv === s.currentViewMode || (bv === '3x2' && s.currentViewMode === 'grid3x2'));
+    if (bv === 'needs') {
+      b.classList.toggle('active', s.needsStripVisible);
+    } else {
+      b.classList.toggle('active', bv === s.currentViewMode || (bv === '3x2' && s.currentViewMode === 'grid3x2'));
+    }
   });
   document.querySelectorAll('.strip-toggle').forEach((b) => {
     const strip = (b as HTMLElement).dataset.strip as StripType;
@@ -131,6 +142,7 @@ export function renderAll(): void {
     versionsScroll.replaceChildren();
     if (floorScroll) floorScroll.replaceChildren();
     if (refsScroll) refsScroll.replaceChildren();
+    if (needsScroll) needsScroll.replaceChildren();
     overviewScroll.replaceChildren();
     return;
   }
@@ -141,8 +153,12 @@ export function renderAll(): void {
   const verFrag = document.createDocumentFragment();
   const floorFrag = document.createDocumentFragment();
   const refsFrag = document.createDocumentFragment();
+  const needsFrag = document.createDocumentFragment();
   visibleFrames.forEach((f) => {
     mainFrag.appendChild(buildMainFrame(f));
+    if (s.needsStripVisible) {
+      needsFrag.appendChild(buildNeedsCard(f.id));
+    }
     verFrag.appendChild(buildVersionFrame(f.id));
     if (s.activeStrips.includes('floor')) {
       floorFrag.appendChild(buildVersionFrame(f.id, 'floor'));
@@ -157,6 +173,7 @@ export function renderAll(): void {
   overviewScroll.replaceChildren();
   if (floorScroll) floorScroll.replaceChildren(floorFrag);
   if (refsScroll) refsScroll.replaceChildren(refsFrag);
+  if (needsScroll) needsScroll.replaceChildren(s.needsStripVisible ? needsFrag : document.createDocumentFragment());
   if (s.currentViewMode === 'overview') {
     const fn = (window as any).__fh_renderOverview;
     if (fn) fn();

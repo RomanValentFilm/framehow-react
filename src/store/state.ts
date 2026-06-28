@@ -58,7 +58,7 @@ export interface Setup {
 
 /** 12-colour palette for setups. */
 /** App version — bump before every deploy. */
-export const APP_VERSION = 'v4.9.001';
+export const APP_VERSION = 'v4.9.002';
 
 export const SETUP_COLORS: { name: string; hex: string }[] = [
   { name: 'DAYLIGHT',      hex: '#CFE2F6' },
@@ -93,6 +93,149 @@ export interface Version {
   r2Key?: string;
   /** Free-text note attached to this version (shown via notepad icon). */
   note?: string;
+}
+
+// ─── Tags Strip Types ─────────────────────────────────────────────────
+
+/** A single row item inside a tag table (e.g. "ACTOR 1", "DOLLY"). */
+export interface NeedItem {
+  id: string;
+  name: string;
+}
+
+/** A column/table inside a tag tab (e.g. "TALENT", "EXTRAS"). */
+export interface NeedTable {
+  id: string;
+  name: string;
+  type: 'toggle' | 'counter';  // circle dot or number input
+  items: NeedItem[];
+}
+
+/** A tab inside the tags card (e.g. "TALENTS", "GEAR", "ART"). */
+export interface NeedTab {
+  id: string;
+  name: string;
+  tables: NeedTable[];
+}
+
+/** Project-wide need definitions — same in every frame. */
+export interface NeedDefinitions {
+  tabs: NeedTab[];
+  locations: NeedItem[];
+}
+
+/** Per-frame need state — toggles, counters, memos for each frame. */
+export interface FrameNeedState {
+  label: string;                              // editable, default "tags"
+  activeTabId: string;                        // which tab is visible
+  toggles: Record<string, boolean>;           // itemId → on/off
+  counters: Record<string, number>;           // itemId → count (for counter-type items)
+  locationToggles: Record<string, boolean>;   // locationId → on/off
+  memos: Record<string, string>;              // tabId → memo text
+}
+
+/** Default need definitions for new projects. */
+export const DEFAULT_NEED_DEFINITIONS: NeedDefinitions = {
+  tabs: [
+    {
+      id: 'tab_shoot', name: 'SHOOT',
+      tables: [
+        { id: 'tbl_shootday', name: 'SHOOT DAY', type: 'toggle', items: [
+          { id: 'ti_day1', name: 'DAY 1' },
+          { id: 'ti_day2', name: 'DAY 2' },
+          { id: 'ti_day3', name: 'DAY 3' },
+        ]},
+        { id: 'tbl_location', name: 'LOCATION', type: 'toggle', items: [
+          { id: 'ti_loc1', name: 'LOCATION 1' },
+          { id: 'ti_loc2', name: 'LOCATION 2' },
+        ]},
+        { id: 'tbl_extint', name: 'EXT / INT', type: 'toggle', items: [
+          { id: 'ti_ext', name: 'EXT' },
+          { id: 'ti_int', name: 'INT' },
+        ]},
+        { id: 'tbl_daytime', name: 'DAYTIME', type: 'toggle', items: [
+          { id: 'ti_sunrise', name: 'SUNRISE' },
+          { id: 'ti_day', name: 'DAY' },
+          { id: 'ti_sunset', name: 'SUNSET' },
+          { id: 'ti_night', name: 'NIGHT' },
+        ]},
+      ],
+    },
+    {
+      id: 'tab_gear', name: 'GEAR',
+      tables: [
+        { id: 'tbl_cam', name: 'CAM', type: 'toggle', items: [
+          { id: 'ti_alexa', name: 'ALEXA' },
+          { id: 'ti_bcam', name: 'B CAM' },
+          { id: 'ti_zoom', name: 'ZOOM' },
+        ]},
+        { id: 'tbl_grip', name: 'GRIP', type: 'toggle', items: [
+          { id: 'ti_dolly', name: 'DOLLY' },
+          { id: 'ti_steadicam', name: 'STEADICAM' },
+          { id: 'ti_crane', name: 'CRANE' },
+          { id: 'ti_drone', name: 'DRONE' },
+        ]},
+        { id: 'tbl_sfx', name: 'SFX', type: 'toggle', items: [
+          { id: 'ti_haze', name: 'HAZE' },
+          { id: 'ti_wetdown', name: 'WETDOWN' },
+          { id: 'ti_snow', name: 'SNOW' },
+          { id: 'ti_fire', name: 'FIRE' },
+        ]},
+      ],
+    },
+    {
+      id: 'tab_talents', name: 'TALENTS',
+      tables: [
+        { id: 'tbl_talent', name: 'TALENT', type: 'toggle', items: [
+          { id: 'ti_actor1', name: 'ACTOR 1' },
+          { id: 'ti_actor2', name: 'ACTOR 2' },
+          { id: 'ti_actor3', name: 'ACTOR 3' },
+        ]},
+        { id: 'tbl_ward', name: 'WARD / M&H', type: 'toggle', items: [
+          { id: 'ti_fit1', name: 'FIT 1' },
+          { id: 'ti_fit2', name: 'FIT 2' },
+          { id: 'ti_fit3', name: 'FIT 3' },
+        ]},
+        { id: 'tbl_extras', name: 'EXTRAS', type: 'counter', items: [
+          { id: 'ti_crowd1', name: 'CROWD 1' },
+          { id: 'ti_crowd2', name: 'CROWD 2' },
+        ]},
+      ],
+    },
+    {
+      id: 'tab_art', name: 'ART',
+      tables: [
+        { id: 'tbl_set', name: 'SET', type: 'toggle', items: [
+          { id: 'ti_set1', name: 'SET 1' },
+          { id: 'ti_set2', name: 'SET 2' },
+          { id: 'ti_set3', name: 'SET 3' },
+        ]},
+        { id: 'tbl_props', name: 'PROPS', type: 'toggle', items: [
+          { id: 'ti_prop1', name: 'PROP 1' },
+          { id: 'ti_prop2', name: 'PROP 2' },
+          { id: 'ti_prop3', name: 'PROP 3' },
+        ]},
+        { id: 'tbl_build', name: 'BUILD', type: 'toggle', items: [
+          { id: 'ti_build1', name: 'BUILD 1' },
+          { id: 'ti_build2', name: 'BUILD 2' },
+          { id: 'ti_build3', name: 'BUILD 3' },
+        ]},
+      ],
+    },
+  ],
+  locations: [],
+};
+
+/** Create default per-frame need state (all toggles off, no memos). */
+export function createDefaultFrameNeedState(): FrameNeedState {
+  return {
+    label: 'needs',
+    activeTabId: DEFAULT_NEED_DEFINITIONS.tabs[0]?.id ?? '',
+    toggles: {},
+    counters: {},
+    locationToggles: {},
+    memos: {},
+  };
 }
 
 export type StripType = 'main' | 'ver' | 'floor' | 'refs';
@@ -220,6 +363,12 @@ export interface FrameHowState {
   stripTagInfoDismissed: boolean;
   /** Per-project: user dismissed the strip-untag info overlay */
   stripUntagInfoDismissed: boolean;
+  /** Needs strip — project-wide item/table/tab definitions */
+  needDefinitions: NeedDefinitions;
+  /** Needs strip — per-frame toggle/counter/memo state */
+  frameNeeds: Record<number, FrameNeedState>;
+  /** Needs strip — visible in view bar */
+  needsStripVisible: boolean;
   // bumped manually by the imperative core to wake any React subscribers
   // that need to react to mutable state changes (e.g., frame badge count).
   renderTick: number;
@@ -303,6 +452,9 @@ const initial: FrameHowState = {
   nextSetupId: 1,
   stripTagInfoDismissed: false,
   stripUntagInfoDismissed: false,
+  needDefinitions: DEFAULT_NEED_DEFINITIONS,
+  frameNeeds: {},
+  needsStripVisible: false,
   renderTick: 0,
 };
 

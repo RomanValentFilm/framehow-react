@@ -634,6 +634,15 @@ export function initFramehow(): void {
         return;
       }
 
+      if (view === 'needs') {
+        const cur = state().needsStripVisible;
+        useStore.setState({ needsStripVisible: !cur });
+        const btn = document.getElementById('needsStripBtn');
+        if (btn) btn.classList.toggle('active', !cur);
+        renderAll();
+        return;
+      }
+
       // OFF button — exit 1+2V/GRID4 back to normal columns with same strip pair
       if (view === 'off') {
         const s = state();

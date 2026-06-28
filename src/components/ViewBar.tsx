@@ -29,6 +29,8 @@ export function ViewBar() {
               {def.buttonLabel}
             </button>
           ))}
+          <div className="vb-sep" />
+          <button className="view-btn" id="needsStripBtn" data-view="needs" title="Needs">NEEDS</button>
         </div>
 
         {/* Flexible spacer */}

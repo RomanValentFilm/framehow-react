@@ -39,6 +39,10 @@ export function StripColumns() {
           </div>
         );
       })}
+      {/* Needs strip column — toggled via NEEDS button */}
+      <div className="strip-col" id="needsCol" data-strip="needs" style={{display:'none'}}>
+        <div className="strip-scroll" id="needsScroll"></div>
+      </div>
       {/* Overview column */}
       <div className="overview-col">
         <div className="overview-scroll" id="overviewScroll"></div>

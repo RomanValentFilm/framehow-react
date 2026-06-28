@@ -69,6 +69,14 @@ export function syncCardHeights(): void {
     const cards = el.querySelectorAll('.frame-card');
     activeCardArrays.push(cards);
   }
+  // Tags column participates in height sync when visible
+  if (s.needsStripVisible) {
+    const tagsEl = document.getElementById('needsScroll');
+    if (tagsEl) {
+      const tagsCards = tagsEl.querySelectorAll('.needs-card');
+      if (tagsCards.length) activeCardArrays.push(tagsCards);
+    }
+  }
   // Aliases for backward compat in STEP 2 canvas capping
   const mainCards = document.getElementById('mainScroll')?.querySelectorAll('.frame-card') || document.querySelectorAll('#mainScroll .frame-card');
   const verCards = document.getElementById('versionsScroll')?.querySelectorAll('.frame-card') || document.querySelectorAll('#versionsScroll .frame-card');
@@ -293,14 +301,21 @@ export function setViewMode(mode: ViewMode, keepCompare?: boolean, forceAnchorFi
     });
   }
   const columnsEl = document.querySelector('.columns')!;
-  columnsEl.classList.remove('view-overview', 'view-grid4', 'view-grid3x2', 'strips-1', 'strips-2', 'strips-3', 'strips-4');
+  columnsEl.classList.remove('view-overview', 'view-grid4', 'view-grid3x2', 'strips-1', 'strips-2', 'strips-3', 'strips-4', 'strips-5');
   if (mode === 'overview') columnsEl.classList.add('view-overview');
   else if (mode === 'grid4') columnsEl.classList.add('view-grid4');
   else if (mode === 'grid3x2') columnsEl.classList.add('view-grid3x2');
-  else columnsEl.classList.add(`strips-${state().activeStrips.length}`);
+  else {
+    const totalCols = state().activeStrips.length + (state().needsStripVisible ? 1 : 0);
+    columnsEl.classList.add(`strips-${totalCols}`);
+  }
   document.querySelectorAll('.view-btn:not(.strip-toggle)').forEach((b) => {
     const bv = (b as HTMLElement).dataset.view;
-    b.classList.toggle('active', bv === mode || (bv === '3x2' && mode === 'grid3x2'));
+    if (bv === 'needs') {
+      b.classList.toggle('active', state().needsStripVisible);
+    } else {
+      b.classList.toggle('active', bv === mode || (bv === '3x2' && mode === 'grid3x2'));
+    }
   });
   document.querySelectorAll('.strip-toggle').forEach((b) => {
     const strip = (b as HTMLElement).dataset.strip as string;
@@ -319,6 +334,8 @@ export function setViewMode(mode: ViewMode, keepCompare?: boolean, forceAnchorFi
     if (vc) vc.style.display = strips.includes('ver' as any) ? '' : 'none';
     if (fc) fc.style.display = strips.includes('floor' as any) ? '' : 'none';
     if (rc) rc.style.display = strips.includes('refs' as any) ? '' : 'none';
+    const tc = document.getElementById('needsCol');
+    if (tc) tc.style.display = state().needsStripVisible ? '' : 'none';
   }
 
   if (mode === 'overview' || mode === 'grid4' || mode === 'grid3x2') {

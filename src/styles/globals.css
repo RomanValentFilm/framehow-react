@@ -705,3 +705,124 @@
   @media (max-width:430px) and (orientation:landscape){
     .group-active-label{font-size:9px;}
   }
+
+  /* ─── Tags Strip ───────────────────────────────────────────────── */
+  /* ── Needs card — mirrors .frame-card grid exactly ── */
+  .needs-card{
+    background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+    overflow:visible;transition:border .15s;font-family:var(--mono);
+    box-sizing:border-box;display:flex;flex-direction:column;
+  }
+  /* Header — matches .frame-num: padding:0 10px, height:24px */
+  .needs-header{
+    display:flex;align-items:center;gap:4px;padding:0 10px;height:24px;
+  }
+  .needs-frame-label{
+    font-family:var(--mono);font-size:13px;font-weight:500;color:var(--accent);
+    border:1px solid var(--border);border-radius:3px;padding:0 4px 0 5px;line-height:1.1;
+  }
+  .needs-label{
+    font-family:var(--mono);font-size:12px;font-weight:500;color:var(--text-faint);
+    letter-spacing:.05em;outline:none;cursor:text;
+    border-bottom:1px solid transparent;padding:0 2px;
+  }
+  .needs-label:focus{border-bottom-color:var(--border-strong);}
+
+  /* Tab bar — padding matches .version-body (0 10px) */
+  .needs-tabs{
+    display:flex;gap:2px;margin-bottom:0;border-bottom:1px solid var(--border);
+    padding:0 10px 4px;overflow-x:auto;-webkit-overflow-scrolling:touch;
+  }
+  .needs-tab{
+    font-family:var(--mono);font-size:13px;font-weight:700;letter-spacing:.04em;
+    padding:3px 8px;border:none;border-radius:3px 3px 0 0;
+    background:transparent;color:#808080;cursor:pointer;white-space:nowrap;
+  }
+  @media (hover:hover){.needs-tab:hover{color:#ccc;}}
+  .needs-tab-active{color:var(--accent) !important;}
+
+  /* Body — grows to fill, matches .version-body padding (0 10px 3px) */
+  .needs-body{
+    flex:1;display:flex;flex-direction:column;min-height:0;
+    padding:6px 10px 3px;overflow-y:auto;-webkit-overflow-scrolling:touch;
+  }
+  /* Tables grid */
+  .needs-tables{
+    display:flex;gap:12px;overflow-x:auto;-webkit-overflow-scrolling:touch;
+    flex:1;
+  }
+  .needs-table{min-width:90px;flex:1;}
+  .needs-table-header{
+    font-size:12px;font-weight:700;color:#fff;letter-spacing:.06em;
+    margin-bottom:4px;text-transform:uppercase;
+  }
+  .needs-table-rows{
+    display:flex;flex-direction:column;gap:2px;
+    overflow-y:auto;-webkit-overflow-scrolling:touch;
+  }
+
+  /* Toggle / counter rows */
+  .needs-row{
+    display:flex;align-items:center;gap:6px;padding:2px 0;opacity:.5;
+    transition:opacity .15s;
+  }
+  .needs-row-on{opacity:1;}
+  .needs-dot{
+    width:14px;height:14px;border-radius:50%;border:2px solid #808080;
+    background:transparent;cursor:pointer;flex-shrink:0;padding:0;
+    transition:background .15s,border-color .15s;
+  }
+  @media (hover:hover){.needs-dot:hover{border-color:#ccc;}}
+  .needs-dot-on{background:var(--accent);border-color:var(--accent);}
+  .needs-item-name{
+    font-size:13px;font-weight:600;color:#ccc;letter-spacing:.03em;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .needs-counter-input{
+    width:36px;font-family:var(--mono);font-size:13px;font-weight:600;
+    background:var(--surface2);border:1px solid var(--border);border-radius:3px;
+    color:#ccc;text-align:center;padding:2px;outline:none;
+    -moz-appearance:textfield;
+  }
+  .needs-counter-input::-webkit-inner-spin-button,
+  .needs-counter-input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0;}
+  .needs-counter-input:focus{border-color:var(--accent);}
+  /* Add button — square, solid outline, size of toggle dot */
+  .needs-add-btn{
+    display:flex;align-items:center;justify-content:center;
+    width:14px;height:14px;margin-top:4px;padding:0;
+    font-family:var(--mono);font-size:11px;font-weight:700;color:#808080;
+    background:transparent;border:1px solid var(--border);border-radius:2px;
+    cursor:pointer;line-height:1;flex-shrink:0;
+  }
+  @media (hover:hover){.needs-add-btn:hover{color:#ccc;border-color:var(--border-strong);}}
+
+  /* Bottom — pinned to card bottom, padding matches .version-actions (3px 10px) */
+  .needs-bottom{
+    display:flex;gap:12px;margin-top:auto;border-top:1px solid var(--border);
+    padding:3px 10px;flex-shrink:0;
+  }
+  .needs-bottom-left{
+    flex:1;display:flex;flex-direction:column;gap:4px;min-width:0;
+    justify-content:flex-end;
+  }
+  .needs-bottom-right{
+    flex:1;min-width:0;display:flex;flex-direction:column;
+  }
+  .needs-location{min-width:0;}
+  /* Setup pill — matches .setup-tag from main frame exactly */
+  .needs-setup-pill{
+    font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.05em;
+    padding:0 8px;border-radius:4px;line-height:1.2;
+    display:inline-flex;align-items:center;color:#fff;
+    min-height:18px;max-height:36px;align-self:flex-start;
+  }
+  .needs-memo{flex:1;display:flex;flex-direction:column;}
+  .needs-memo-input{
+    width:100%;flex:1;min-height:40px;resize:vertical;
+    font-family:var(--font);font-size:13px;color:#ccc;
+    background:var(--surface2);border:1px solid var(--border);border-radius:3px;
+    padding:4px 6px;outline:none;box-sizing:border-box;
+  }
+  .needs-memo-input:focus{border-color:var(--accent);}
+  .needs-memo-input::placeholder{color:#555;}
