@@ -160,27 +160,9 @@ export function syncCardHeights(): void {
     });
   }
 
-  // STEP 3: Force layout, then sync card heights across all active strip columns
-  void document.body.offsetHeight;
-  if (activeCardArrays.length > 1) {
-    const rowCount = Math.max(...activeCardArrays.map((a) => a.length));
-    for (let i = 0; i < rowCount; i++) {
-      let max = 0;
-      for (const cards of activeCardArrays) {
-        if (i < cards.length) {
-          max = Math.max(max, Math.ceil(cards[i].getBoundingClientRect().height));
-        }
-      }
-      for (const cards of activeCardArrays) {
-        if (i < cards.length) {
-          (cards[i] as HTMLElement).style.height = max + 'px';
-          (cards[i] as HTMLElement).style.minHeight = max + 'px';
-        }
-      }
-    }
-  }
-
-  // STEP 4: Align needs-action-row border-top with canvas bottom in adjacent frame cards
+  // STEP 2b: Pre-cap needs-body height to match canvas bottom BEFORE height sync.
+  // Without this, unconstrained needs content drives the max row height.
+  void document.body.offsetHeight; // force layout after canvas cap
   if (s.needsStripVisible) {
     const needsEl = document.getElementById('needsScroll');
     if (needsEl) {
@@ -198,7 +180,6 @@ export function syncCardHeights(): void {
         }
       }
       if (refCards) {
-        void document.body.offsetHeight; // force layout
         const count = Math.min(needsCards.length, refCards.length);
         for (let i = 0; i < count; i++) {
           const refCard = refCards[i] as HTMLElement;
@@ -221,6 +202,26 @@ export function syncCardHeights(): void {
           const targetHeight = Math.max(50, canvasBottomFromCardTop - topOverhead);
           needsBody.style.flex = 'none';
           needsBody.style.height = targetHeight + 'px';
+        }
+      }
+    }
+  }
+
+  // STEP 3: Force layout, then sync card heights across all active strip columns
+  void document.body.offsetHeight;
+  if (activeCardArrays.length > 1) {
+    const rowCount = Math.max(...activeCardArrays.map((a) => a.length));
+    for (let i = 0; i < rowCount; i++) {
+      let max = 0;
+      for (const cards of activeCardArrays) {
+        if (i < cards.length) {
+          max = Math.max(max, Math.ceil(cards[i].getBoundingClientRect().height));
+        }
+      }
+      for (const cards of activeCardArrays) {
+        if (i < cards.length) {
+          (cards[i] as HTMLElement).style.height = max + 'px';
+          (cards[i] as HTMLElement).style.minHeight = max + 'px';
         }
       }
     }
