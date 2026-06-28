@@ -693,14 +693,22 @@ export function handleOrientationFlip(): void {
   const isPhonePortrait = isPhone && newH > newW;
   if (isPhonePortrait) {
     // iPhone portrait: always MAIN single strip (including 3x2 exit)
-    useStore.setState({ activeStrips: ['main'], currentViewMode: 'main', crossCompare: {} });
+    useStore.setState({ activeStrips: ['main'], currentViewMode: 'main', crossCompare: {}, needsStripVisible: false });
+    // Also update the NEEDS button visual
+    const needsBtn = document.getElementById('needsStripBtn');
+    if (needsBtn) needsBtn.classList.remove('active');
     const renderAll = (window as any).__fh_renderAll;
     if (renderAll) renderAll();
   } else if (isPhone && newW > newH) {
-    // iPhone landscape: enforce max 2 strips
+    // iPhone landscape: enforce max 2 total columns (activeStrips + NEEDS)
     const s = state();
-    if (s.activeStrips.length > 2) {
-      useStore.setState({ activeStrips: s.activeStrips.slice(0, 2) });
+    const totalVisible = s.activeStrips.length + (s.needsStripVisible ? 1 : 0);
+    if (totalVisible > 2) {
+      if (s.needsStripVisible) {
+        useStore.setState({ activeStrips: s.activeStrips.slice(0, 1) });
+      } else {
+        useStore.setState({ activeStrips: s.activeStrips.slice(0, 2) });
+      }
     }
   } else if (!isPhone && newH > newW && state().currentViewMode === 'grid3x2') {
     // iPad/tablet rotated to portrait while in 3x2: exit to MAIN+VERSN double strip

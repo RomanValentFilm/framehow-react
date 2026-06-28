@@ -5,6 +5,7 @@
 
 import { state, useStore, createDefaultFrameNeedState } from '../store/state';
 import type { FrameNeedState, NeedTable } from '../store/state';
+import { showVerLabelEdit } from './modals';
 
 // ─── Helpers ──────────────────────────────────────────────────────────
 
@@ -86,8 +87,7 @@ export function renderNeedsCard(div: HTMLElement, fid: number): void {
 
   div.innerHTML = `
     <div class="needs-header">
-      <span class="needs-frame-label">${escapeHtml(frameLabel)}</span>
-      <span class="needs-label" contenteditable="true" data-needs-labelinput="${fid}" spellcheck="false" autocomplete="one-time-code">${escapeHtml(ft.label)}</span>
+      <span class="frame-label-tag needs-label-combo" data-needs-editlabel="${fid}">${escapeHtml(frameLabel)}&thinsp;<span class="needs-label-part">${escapeHtml(ft.label)}</span></span>
     </div>
     <div class="needs-tabs">${tabsHTML}</div>
     <div class="needs-body">
@@ -120,29 +120,48 @@ function renderTable(fid: number, ft: FrameNeedState, table: NeedTable): string 
     return 0;
   });
 
+  let dividerInserted = false;
   const rowsHTML = sortedItems.map((item) => {
+    const isOn = table.type === 'counter'
+      ? (ft.counters[item.id] || 0) > 0
+      : (ft.toggles[item.id] || false);
+
+    // Insert divider between last ON and first OFF item
+    let divider = '';
+    if (!isOn && !dividerInserted) {
+      // Only show divider if at least one item before this was ON
+      const hasAnyOn = sortedItems.some((i) =>
+        table.type === 'counter' ? (ft.counters[i.id] || 0) > 0 : (ft.toggles[i.id] || false)
+      );
+      if (hasAnyOn) divider = '<div class="needs-divider"></div>';
+      dividerInserted = true;
+    }
+
     if (table.type === 'counter') {
       const count = ft.counters[item.id] || 0;
-      const isOn = count > 0;
-      return `
+      return `${divider}
         <div class="needs-row${isOn ? ' needs-row-on' : ''}">
+          <button class="needs-delete-x" data-needs-deleteitem="${item.id}" data-needs-deletetable="${table.id}">&times;</button>
           <input type="number" class="needs-counter-input" data-needs-counter="${item.id}" data-needs-fid="${fid}" value="${count}" min="0" max="999" autocomplete="one-time-code">
-          <span class="needs-item-name">${escapeHtml(item.name)}</span>
+          <span class="needs-item-name" data-needs-itemid="${item.id}" data-needs-tableid="${table.id}">${escapeHtml(item.name)}</span>
         </div>`;
     }
-    const isOn = ft.toggles[item.id] || false;
-    return `
+    return `${divider}
       <div class="needs-row${isOn ? ' needs-row-on' : ''}">
+        <button class="needs-delete-x" data-needs-deleteitem="${item.id}" data-needs-deletetable="${table.id}">&times;</button>
         <button class="needs-dot${isOn ? ' needs-dot-on' : ''}" data-needs-toggle="${item.id}" data-needs-fid="${fid}"></button>
-        <span class="needs-item-name">${escapeHtml(item.name)}</span>
+        <span class="needs-item-name" data-needs-itemid="${item.id}" data-needs-tableid="${table.id}">${escapeHtml(item.name)}</span>
       </div>`;
   }).join('');
 
   return `
     <div class="needs-table" data-needs-table="${table.id}">
-      <div class="needs-table-header">${escapeHtml(table.name)}</div>
+      <div class="needs-table-header" data-needs-tableid="${table.id}">${escapeHtml(table.name)}</div>
       <div class="needs-table-rows">${rowsHTML}</div>
-      <button class="needs-add-btn" data-needs-additem="${table.id}">+</button>
+      <div class="needs-table-actions">
+        <button class="needs-add-btn" data-needs-additem="${table.id}"></button>
+        <button class="needs-remove-btn" data-needs-toggledelete="${table.id}"></button>
+      </div>
     </div>`;
 }
 
@@ -245,7 +264,15 @@ function wireNeedsCard(container: HTMLElement, fid: number): void {
         const table = tab.tables.find((t) => t.id === tableId);
         if (table) {
           const newId = 'ti_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
-          const defaultName = `${table.name} ${table.items.length + 1}`;
+          // Smart default: detect pattern from last item (e.g. "DAY 3" → "DAY 4")
+          const lastItem = table.items[table.items.length - 1];
+          let defaultName = `${table.name} ${table.items.length + 1}`;
+          if (lastItem) {
+            const m = lastItem.name.match(/^(.+?)[\s ]+(\d+)$/);
+            if (m) {
+              defaultName = `${m[1]} ${parseInt(m[2]) + 1}`;
+            }
+          }
           table.items.push({ id: newId, name: defaultName });
           // Re-render ALL visible needs cards (item is project-wide)
           rerenderAllNeedsCards();
@@ -256,20 +283,178 @@ function wireNeedsCard(container: HTMLElement, fid: number): void {
     });
   });
 
-  // Frame label editing
-  container.querySelectorAll('[data-needs-labelinput]').forEach((el) => {
-    el.addEventListener('input', () => {
-      const ft = ensureFrameNeeds(fid);
-      ft.label = (el as HTMLElement).textContent?.trim() || 'needs';
-      debouncedSync();
+  // Toggle delete mode — "-" button shows/hides × on rows
+  container.querySelectorAll('[data-needs-toggledelete]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const tableId = (btn as HTMLElement).dataset.needsToggledelete!;
+      const tableEl = container.querySelector(`.needs-table[data-needs-table="${tableId}"]`);
+      if (tableEl) tableEl.classList.toggle('needs-delete-mode');
     });
-    el.addEventListener('blur', () => flushDebouncedSync());
-    el.addEventListener('keydown', (e) => {
-      if ((e as KeyboardEvent).key === 'Enter') {
-        e.preventDefault();
-        (el as HTMLElement).blur();
-        flushDebouncedSync();
+  });
+
+  // Delete item — × button removes item from needDefinitions (project-wide)
+  container.querySelectorAll('[data-needs-deleteitem]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const itemId = (btn as HTMLElement).dataset.needsDeleteitem!;
+      const tableId = (btn as HTMLElement).dataset.needsDeletetable!;
+      const defs = state().needDefinitions;
+      for (const tab of defs.tabs) {
+        const table = tab.tables.find((t) => t.id === tableId);
+        if (table) {
+          table.items = table.items.filter((i) => i.id !== itemId);
+          break;
+        }
       }
+      rerenderAllNeedsCards();
+      flushDebouncedSync();
+    });
+  });
+
+  // Needs label editing via modal (matches version card behaviour)
+  container.querySelectorAll('[data-needs-editlabel]').forEach((el) => {
+    el.addEventListener('click', async () => {
+      const s = state();
+      const f = s.frames.find((fr) => fr.id === fid);
+      if (!f) return;
+      const ft = ensureFrameNeeds(fid);
+      const result = await showVerLabelEdit(f.label || String(fid), ft.label);
+      if (result === null) return;
+      // Update label on ALL frames' needs (project-wide rename)
+      const allNeeds = s.frameNeeds;
+      for (const key of Object.keys(allNeeds)) {
+        allNeeds[+key].label = result;
+      }
+      bumpRenderTick();
+      rerenderAllNeedsCards();
+      flushDebouncedSync();
+    });
+  });
+
+  // Inline item name editing — click name span → input → save project-wide
+  // Taps in the first 12px from the left edge are ignored (dead zone near toggle)
+  container.querySelectorAll('.needs-item-name[data-needs-itemid]').forEach((span) => {
+    span.addEventListener('click', (e) => {
+      const el = span as HTMLElement;
+      const rect = el.getBoundingClientRect();
+      if ((e as MouseEvent).clientX - rect.left < 12) return; // too close to toggle
+      if (el.querySelector('input')) return; // already editing
+      const itemId = el.dataset.needsItemid!;
+      const tableId = el.dataset.needsTableid!;
+      const currentName = el.textContent || '';
+
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'needs-inline-edit';
+      input.value = currentName;
+      input.autocomplete = 'one-time-code';
+      input.spellcheck = false;
+
+      el.textContent = '';
+      el.appendChild(input);
+      input.focus();
+      input.select();
+
+      const commit = () => {
+        const newName = (input.value.trim() || currentName).toUpperCase();
+        // Find item in needDefinitions and rename (project-wide)
+        const defs = state().needDefinitions;
+        for (const tab of defs.tabs) {
+          const table = tab.tables.find((t) => t.id === tableId);
+          if (table) {
+            const item = table.items.find((i) => i.id === itemId);
+            if (item) item.name = newName;
+            break;
+          }
+        }
+        rerenderAllNeedsCards();
+        flushDebouncedSync();
+      };
+
+      let committed = false;
+      input.addEventListener('blur', () => { if (!committed) { committed = true; commit(); } });
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { committed = true; commit(); }
+        if (e.key === 'Escape') { committed = true; el.textContent = currentName; }
+      });
+    });
+  });
+
+  // Inline table header editing — click header → input → save project-wide
+  container.querySelectorAll('.needs-table-header[data-needs-tableid]').forEach((hdr) => {
+    hdr.addEventListener('click', () => {
+      const el = hdr as HTMLElement;
+      if (el.querySelector('input')) return;
+      const tableId = el.dataset.needsTableid!;
+      const currentName = el.textContent || '';
+
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'needs-inline-edit needs-inline-edit-header';
+      input.value = currentName;
+      input.autocomplete = 'one-time-code';
+      input.spellcheck = false;
+
+      el.textContent = '';
+      el.appendChild(input);
+      input.focus();
+      input.select();
+
+      const commit = () => {
+        const newName = (input.value.trim() || currentName).toUpperCase();
+        const defs = state().needDefinitions;
+        for (const tab of defs.tabs) {
+          const table = tab.tables.find((t) => t.id === tableId);
+          if (table) { table.name = newName; break; }
+        }
+        rerenderAllNeedsCards();
+        flushDebouncedSync();
+      };
+
+      let committed = false;
+      input.addEventListener('blur', () => { if (!committed) { committed = true; commit(); } });
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { committed = true; commit(); }
+        if (e.key === 'Escape') { committed = true; el.textContent = currentName; }
+      });
+    });
+  });
+
+  // Inline tab name editing — double-click tab button → input → save project-wide
+  container.querySelectorAll('[data-needs-tab]').forEach((btn) => {
+    btn.addEventListener('dblclick', (e) => {
+      e.stopPropagation();
+      const el = btn as HTMLElement;
+      if (el.querySelector('input')) return;
+      const tabId = el.dataset.needsTab!;
+      const currentName = el.textContent || '';
+
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'needs-inline-edit needs-inline-edit-tab';
+      input.value = currentName;
+      input.autocomplete = 'one-time-code';
+      input.spellcheck = false;
+
+      el.textContent = '';
+      el.appendChild(input);
+      input.focus();
+      input.select();
+
+      const commit = () => {
+        const newName = (input.value.trim() || currentName).toUpperCase();
+        const defs = state().needDefinitions;
+        const tab = defs.tabs.find((t) => t.id === tabId);
+        if (tab) tab.name = newName;
+        rerenderAllNeedsCards();
+        flushDebouncedSync();
+      };
+
+      let committed = false;
+      input.addEventListener('blur', () => { if (!committed) { committed = true; commit(); } });
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { committed = true; commit(); }
+        if (e.key === 'Escape') { committed = true; el.textContent = currentName; }
+      });
     });
   });
 }

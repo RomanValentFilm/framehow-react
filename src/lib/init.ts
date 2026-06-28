@@ -636,6 +636,19 @@ export function initFramehow(): void {
 
       if (view === 'needs') {
         const cur = state().needsStripVisible;
+        // iPhone landscape: NEEDS counts toward the 2-strip max
+        const w = window.innerWidth, h = window.innerHeight;
+        const isPhone = Math.min(w, h) <= 430;
+        const isPhoneLandscape = isPhone && w > h;
+        if (isPhoneLandscape && !cur && state().activeStrips.length >= 2) {
+          // Already at max — show overlay
+          const om = document.getElementById('maxStripsMsg')!;
+          om.classList.add('show');
+          const dismiss = (e?: Event) => { if (e) { e.stopPropagation(); e.preventDefault(); } om.classList.remove('show'); };
+          om.addEventListener('click', dismiss, { once: true });
+          setTimeout(() => om.classList.remove('show'), 3000);
+          return;
+        }
         useStore.setState({ needsStripVisible: !cur });
         const btn = document.getElementById('needsStripBtn');
         if (btn) btn.classList.toggle('active', !cur);
@@ -737,8 +750,9 @@ export function initFramehow(): void {
           if (current.length <= 1) return;
           current.splice(idx, 1);
         } else {
-          // Toggling on — enforce max 2 strips
-          if (current.length >= 2) {
+          // Toggling on — enforce max 2 strips (NEEDS counts as one)
+          const totalVisible = current.length + (s.needsStripVisible ? 1 : 0);
+          if (totalVisible >= 2) {
             const om = document.getElementById('maxStripsMsg')!;
             om.classList.add('show');
             const dismiss = (e?: Event) => { if (e) { e.stopPropagation(); e.preventDefault(); } om.classList.remove('show'); };

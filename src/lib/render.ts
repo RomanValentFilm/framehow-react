@@ -62,11 +62,22 @@ export function renderAll(): void {
   if (_isPhone) {
     const s0 = state();
     if (_h > _w && s0.activeStrips.length > 1) {
-      // Portrait: max 1 strip
-      useStore.setState({ activeStrips: [s0.activeStrips[0]], currentViewMode: s0.activeStrips[0] === 'main' ? 'main' : 'ver' });
-    } else if (_w > _h && s0.activeStrips.length > 2) {
-      // Landscape: max 2 strips
-      useStore.setState({ activeStrips: s0.activeStrips.slice(0, 2) });
+      // Portrait: max 1 strip, hide NEEDS
+      useStore.setState({ activeStrips: [s0.activeStrips[0]], currentViewMode: s0.activeStrips[0] === 'main' ? 'main' : 'ver', needsStripVisible: false });
+      const needsBtn = document.getElementById('needsStripBtn');
+      if (needsBtn) needsBtn.classList.remove('active');
+    } else if (_w > _h) {
+      // Landscape: max 2 total columns (activeStrips + NEEDS)
+      const totalVisible = s0.activeStrips.length + (s0.needsStripVisible ? 1 : 0);
+      if (totalVisible > 2) {
+        // Trim: keep NEEDS if it was on, reduce activeStrips
+        if (s0.needsStripVisible) {
+          const trimmed = s0.activeStrips.slice(0, 1);
+          useStore.setState({ activeStrips: trimmed });
+        } else {
+          useStore.setState({ activeStrips: s0.activeStrips.slice(0, 2) });
+        }
+      }
     }
   }
 
