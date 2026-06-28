@@ -86,9 +86,10 @@ export function syncCardHeights(): void {
   allCards.forEach((c) => {
     (c as HTMLElement).style.height = 'auto';
     (c as HTMLElement).style.minHeight = 'auto';
-    // Reset needs-body flex override from STEP 4
+    // Reset needs-body flex override from STEP 2b
     const nb = c.querySelector('.needs-body') as HTMLElement | null;
     if (nb) { nb.style.flex = ''; nb.style.height = ''; }
+    delete (c as HTMLElement).dataset.needsBodyH;
   });
 
   // STEP 2: Measure non-canvas overhead per card and cap the canvas so the
@@ -198,10 +199,12 @@ export function syncCardHeights(): void {
           const needsBodyRect = needsBody.getBoundingClientRect();
           const topOverhead = needsBodyRect.top - needsCardRect.top;
 
-          // Set needs-body height so its bottom edge aligns with canvas bottom
+          // Set needs-body height so its bottom edge aligns with canvas bottom.
+          // Store on card so renderNeedsCard can re-apply after re-render.
           const targetHeight = Math.max(50, canvasBottomFromCardTop - topOverhead);
           needsBody.style.flex = 'none';
           needsBody.style.height = targetHeight + 'px';
+          needsCard.dataset.needsBodyH = String(Math.round(targetHeight));
         }
       }
     }

@@ -114,6 +114,13 @@ export function renderNeedsCard(div: HTMLElement, fid: number): void {
     </div>
   `;
 
+  // Re-apply needs-body height cap stored by syncCardHeights (STEP 2b)
+  const storedH = div.dataset.needsBodyH;
+  if (storedH) {
+    const nb = div.querySelector('.needs-body') as HTMLElement | null;
+    if (nb) { nb.style.flex = 'none'; nb.style.height = storedH + 'px'; }
+  }
+
   wireNeedsCard(div, fid);
 }
 
