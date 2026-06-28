@@ -888,5 +888,6 @@
     display:flex;gap:5px;flex-wrap:wrap;padding:3px 8px;align-content:center;justify-content:center;
     border-top:1px solid var(--border);flex:1;
   }
-  /* Match button height with MAIN/VER cards (their DRAW/CAM/WRITE have 3px border = taller) */
-  .needs-action-row .act-btn{padding:3px 7px;}
+  /* Match DRAW/CAM/WRITE design: bright outline, tinted bg, bold white text */
+  .needs-action-row .act-btn{border-width:3px;border-color:rgba(255,255,255,0.5);background:rgba(255,255,255,0.15);color:rgba(255,255,255,0.8);}
+  @media (hover:hover){.needs-action-row .act-btn:hover{border-color:var(--border-strong);color:#e6e6e6;background:#262626;}}
