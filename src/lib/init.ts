@@ -649,13 +649,22 @@ export function initFramehow(): void {
       }
 
       if (view === 'needs') {
-        const cur = state().needsStripVisible;
+        const s = state();
+        const cur = s.needsStripVisible;
+        // If in 3×2 view, exit to MAIN+NEEDS
+        if (s.currentViewMode === 'grid3x2') {
+          useStore.setState({ activeStrips: ['main'] as any, needsStripVisible: true });
+          const btn = document.getElementById('needsStripBtn');
+          if (btn) btn.classList.add('active');
+          setViewMode('main');
+          return;
+        }
         if (!cur) {
           // Toggling NEEDS on — check strip limits
           const w = window.innerWidth, h = window.innerHeight;
           const isPhone = Math.min(w, h) <= 430;
           const isTablet = navigator.maxTouchPoints > 1 && !isPhone && Math.min(w, h) <= 830; // excludes iPad Pro
-          const totalVisible = state().activeStrips.length + 1; // +1 for NEEDS about to be added
+          const totalVisible = s.activeStrips.length + 1; // +1 for NEEDS about to be added
           if (isPhone && w > h && totalVisible > 2) { showMaxStripsOverlay(2); return; }
           if (isTablet && h > w && totalVisible > 3) { showMaxStripsOverlay(3); return; }
           if (isTablet && w > h && totalVisible > 4) { showMaxStripsOverlay(4); return; }
