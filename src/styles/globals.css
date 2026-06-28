@@ -754,6 +754,7 @@
   .needs-table{min-width:0;flex:1 1 0%;}
   .needs-table[data-needs-table="tbl_shootday"],
   .needs-table[data-needs-table="tbl_extint"]{flex:0.7 1 0%;}
+  .needs-table[data-needs-table="tbl_daytime"]{flex:0.85 1 0%;}
   .needs-table-header{
     font-size:12px;font-weight:700;color:#fff;letter-spacing:.06em;
     margin-bottom:4px;text-transform:uppercase;white-space:nowrap;
