@@ -651,12 +651,12 @@ export function initFramehow(): void {
       if (view === 'needs') {
         const s = state();
         const cur = s.needsStripVisible;
-        // If in 3×2 view, exit to MAIN+NEEDS
+        // If in 3×2 view, exit to MAIN+NEEDS (same pattern as other strip exits)
         if (s.currentViewMode === 'grid3x2') {
-          useStore.setState({ activeStrips: ['main'] as any, needsStripVisible: true });
+          useStore.setState({ activeStrips: ['main'] as any, needsStripVisible: true, crossCompare: {}, currentViewMode: 'both' });
           const btn = document.getElementById('needsStripBtn');
           if (btn) btn.classList.add('active');
-          setViewMode('main');
+          renderAll();
           return;
         }
         if (!cur) {
