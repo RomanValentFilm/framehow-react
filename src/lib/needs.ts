@@ -18,6 +18,9 @@ export function ensureFrameNeeds(fid: number): FrameNeedState {
   return s.frameNeeds[fid];
 }
 
+/** Clipboard for copy/paste of per-frame needs state. */
+let _copiedNeedsState: { toggles: Record<string, boolean>; counters: Record<string, number>; locationToggles: Record<string, boolean>; memos: Record<string, string> } | null = null;
+
 /** Debounced sync helper — calls flushSyncNow after 5 s inactivity. */
 let _debounceSyncTimer: ReturnType<typeof setTimeout> | null = null;
 export function debouncedSync() {
@@ -103,6 +106,11 @@ export function renderNeedsCard(div: HTMLElement, fid: number): void {
           <textarea class="needs-memo-input" data-needs-memo="${fid}" data-needs-memo-tab="${activeTab.id}" placeholder="memo" spellcheck="false" autocomplete="one-time-code">${escapeHtml(memoText)}</textarea>
         </div>
       </div>
+    </div>
+    <div class="needs-action-row">
+      <button class="act-btn" data-needs-act="copy" data-needs-actfid="${fid}">Copy</button>
+      <button class="act-btn${_copiedNeedsState ? '' : ' disabled'}" data-needs-act="paste" data-needs-actfid="${fid}">Paste</button>
+      <button class="act-btn" data-needs-act="reset" data-needs-actfid="${fid}">Reset</button>
     </div>
   `;
 
@@ -416,6 +424,49 @@ function wireNeedsCard(container: HTMLElement, fid: number): void {
         if (e.key === 'Enter') { committed = true; commit(); }
         if (e.key === 'Escape') { committed = true; el.textContent = currentName; }
       });
+    });
+  });
+
+  // Copy / Paste / Reset action buttons
+  container.querySelectorAll('[data-needs-act]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const action = (btn as HTMLElement).dataset.needsAct!;
+      const ft = ensureFrameNeeds(fid);
+
+      if (action === 'copy') {
+        // Deep-copy toggles, counters, locationToggles, memos (NOT label, NOT activeTabId)
+        _copiedNeedsState = {
+          toggles: { ...ft.toggles },
+          counters: { ...ft.counters },
+          locationToggles: { ...ft.locationToggles },
+          memos: { ...ft.memos },
+        };
+        // Enable all Paste buttons across visible cards
+        rerenderAllNeedsCards();
+        return;
+      }
+
+      if (action === 'paste' && _copiedNeedsState) {
+        // Apply copied state — overwrite toggles/counters/locationToggles/memos
+        ft.toggles = { ..._copiedNeedsState.toggles };
+        ft.counters = { ..._copiedNeedsState.counters };
+        ft.locationToggles = { ..._copiedNeedsState.locationToggles };
+        ft.memos = { ..._copiedNeedsState.memos };
+        bumpAndRerender(container, fid);
+        flushDebouncedSync();
+        return;
+      }
+
+      if (action === 'reset') {
+        // Clear all toggles, counters, locationToggles, memos — keep label & activeTabId
+        ft.toggles = {};
+        ft.counters = {};
+        ft.locationToggles = {};
+        ft.memos = {};
+        bumpAndRerender(container, fid);
+        flushDebouncedSync();
+        return;
+      }
     });
   });
 

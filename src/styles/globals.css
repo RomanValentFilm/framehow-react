@@ -881,3 +881,8 @@
   }
   .needs-memo-input:focus{border-color:var(--accent);}
   .needs-memo-input::placeholder{color:#555;}
+
+  /* Action row — matches frame card action buttons */
+  .needs-action-row{
+    display:flex;gap:6px;padding:3px 10px;border-top:1px solid var(--border);flex-shrink:0;
+  }
