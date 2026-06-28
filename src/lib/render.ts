@@ -246,7 +246,11 @@ export function renderMainFrame(div: HTMLElement, fid: number): void {
         <button class="btn" data-unhide="${fid}" style="margin-left:auto;font-size:10px;padding:2px 10px;">Un-Hide</button>
       </div>`;
     div.querySelector(`[data-unhide="${fid}"]`)!.addEventListener('click', () => {
-      f.hidden = false;
+      // Look up frame from CURRENT state — the closure's `f` may be stale
+      // if a sync cycle replaced frame objects via useStore.setState.
+      const currentF = state().frames.find((fr) => fr.id === fid);
+      if (currentF) currentF.hidden = false;
+      bumpRenderTick(); // Ensure Zustand subscriber fires → IDB save + dirty flag
       div.style.background = '';
       div.style.borderColor = '';
       updateFrameBadge();
@@ -623,7 +627,11 @@ export function renderVersionFrame(div: HTMLElement, fid: number, strip: StripTy
         <button class="btn" data-unhide="${fid}" style="margin-left:auto;font-size:10px;padding:2px 10px;">Un-Hide</button>
       </div>`;
     div.querySelector(`[data-unhide="${fid}"]`)!.addEventListener('click', () => {
-      f.hidden = false;
+      // Look up frame from CURRENT state — the closure's `f` may be stale
+      // if a sync cycle replaced frame objects via useStore.setState.
+      const currentF = state().frames.find((fr) => fr.id === fid);
+      if (currentF) currentF.hidden = false;
+      bumpRenderTick(); // Ensure Zustand subscriber fires → IDB save + dirty flag
       div.style.background = '';
       div.style.borderColor = '';
       updateFrameBadge();

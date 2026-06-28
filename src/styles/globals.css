@@ -735,6 +735,7 @@
 
   /* Body — grows to fill, matches .version-body padding (0 10px 3px) */
   .needs-body{
+    position:relative;
     flex:1;display:flex;flex-direction:column;min-height:0;
     padding:6px 5px 3px 10px;overflow-y:auto;-webkit-overflow-scrolling:touch;
   }
@@ -865,12 +866,16 @@
     flex:1;min-width:0;display:flex;flex-direction:column;
   }
   .needs-location{min-width:0;}
-  /* Setup pill — matches .setup-tag from main frame exactly */
+  /* Setup pill — matches .setup-tag / .strip-tag exactly, but bottom-LEFT.
+     Lives inside needs-body (whose bottom = canvas bottom line).
+     height:10% of needs-body ≈ 10% of canvas-wrap. */
   .needs-setup-pill{
+    position:absolute;bottom:4px;left:10px;
     font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.05em;
     padding:0 8px;border-radius:4px;line-height:1.2;
-    display:inline-flex;align-items:center;color:#fff;
-    min-height:18px;max-height:36px;align-self:flex-start;
+    display:flex;align-items:center;
+    pointer-events:none;z-index:3;
+    border:none;outline:none;box-shadow:none;margin:0;box-sizing:border-box;
   }
   .needs-memo{flex:1;display:flex;flex-direction:column;}
   .needs-memo-input{

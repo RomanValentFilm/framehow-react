@@ -3,7 +3,7 @@
  * Handles toggles, counters, tab switching, memos, location, setup pill.
  */
 
-import { state, useStore, createDefaultFrameNeedState } from '../store/state';
+import { state, useStore, createDefaultFrameNeedState, SETUP_COLORS } from '../store/state';
 import type { FrameNeedState, NeedTable } from '../store/state';
 import { showVerLabelEdit } from './modals';
 
@@ -59,6 +59,32 @@ export function renderNeedsCard(div: HTMLElement, fid: number): void {
   const f = s.frames.find((fr) => fr.id === fid);
   if (!f) return;
 
+  // Hidden state — matches version strip: label + Un-Hide, dimmed background
+  if (f.hidden && s.activeGroupId === null) {
+    div.style.background = 'rgba(51,51,51,0.4)';
+    div.style.borderColor = 'rgba(255,255,255,0.12)';
+    const frameLabel = f.label || String(fid);
+    div.innerHTML = `
+      <div class="needs-header">
+        <span class="frame-label-tag needs-label-combo">${escapeHtml(frameLabel)}</span>
+        <button class="btn" data-needs-unhide="${fid}" style="margin-left:auto;font-size:10px;padding:2px 10px;">Un-Hide</button>
+      </div>`;
+    div.querySelector(`[data-needs-unhide="${fid}"]`)?.addEventListener('click', () => {
+      // Look up frame from CURRENT state — the closure's `f` may be stale
+      // if a sync cycle replaced frame objects via useStore.setState.
+      const currentF = state().frames.find((fr: any) => fr.id === fid);
+      if (currentF) currentF.hidden = false;
+      bumpRenderTick(); // Ensure Zustand subscriber fires → IDB save + dirty flag
+      div.style.background = '';
+      div.style.borderColor = '';
+      (window as any).__fh_renderAll?.();
+      flushDebouncedSync();
+    });
+    return;
+  }
+  div.style.background = '';
+  div.style.borderColor = '';
+
   const ft = ensureFrameNeeds(fid);
   const defs = s.needDefinitions;
   const activeTab = defs.tabs.find((t) => t.id === ft.activeTabId) || defs.tabs[0];
@@ -98,7 +124,6 @@ export function renderNeedsCard(div: HTMLElement, fid: number): void {
       <div class="needs-bottom">
         <div class="needs-bottom-left">
           ${locationHTML}
-          ${setupHTML}
         </div>
         <div class="needs-bottom-right">
           <div class="needs-memo">
@@ -106,6 +131,7 @@ export function renderNeedsCard(div: HTMLElement, fid: number): void {
           </div>
         </div>
       </div>
+      ${setupHTML}
     </div>
     <div class="needs-action-row">
       <button class="act-btn" data-needs-act="copy" data-needs-actfid="${fid}">Copy Settings</button>
@@ -119,6 +145,12 @@ export function renderNeedsCard(div: HTMLElement, fid: number): void {
   if (storedH) {
     const nb = div.querySelector('.needs-body') as HTMLElement | null;
     if (nb) { nb.style.flex = 'none'; nb.style.height = storedH + 'px'; }
+  }
+  // Re-apply pill height measured from main card's setup-tag
+  const storedPillH = div.dataset.needsPillH;
+  if (storedPillH) {
+    const pill = div.querySelector('.needs-setup-pill') as HTMLElement | null;
+    if (pill) pill.style.height = storedPillH + 'px';
   }
 
   wireNeedsCard(div, fid);
@@ -195,13 +227,24 @@ function renderLocationSection(fid: number, ft: FrameNeedState, defs: { location
   </div>`;
 }
 
-/** Render setup pill (shows which setup this frame belongs to). */
+/** Render setup pill (shows which setup this frame belongs to).
+ *  Matches .setup-tag from main frame: absolute bottom-left, scales with card. */
 function renderSetupPill(fid: number, f: any, s: any): string {
   if (!f.setupId) return '';
   const setup = s.setups.find((su: any) => su.id === f.setupId);
   if (!setup) return '';
-  const col = setup.color || { hex: '#666' };
-  return `<div class="needs-setup-pill" style="background:${col.hex}">${escapeHtml(setup.name)}</div>`;
+  const col = SETUP_COLORS[setup.colorIndex] || SETUP_COLORS[0];
+  const textCol = needsDarkText(col.hex) ? '#000' : '#fff';
+  return `<button class="needs-setup-pill" style="background:${col.hex};color:${textCol}" tabindex="-1">${escapeHtml(setup.name)}</button>`;
+}
+
+/** True when the background is light enough to need dark text. */
+function needsDarkText(hex: string): boolean {
+  const c = hex.replace('#', '');
+  const r = parseInt(c.substring(0, 2), 16);
+  const g = parseInt(c.substring(2, 4), 16);
+  const b = parseInt(c.substring(4, 6), 16);
+  return (r * 299 + g * 587 + b * 114) / 1000 > 150;
 }
 
 // ─── Event Wiring ─────────────────────────────────────────────────────

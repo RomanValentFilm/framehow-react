@@ -90,6 +90,7 @@ export function syncCardHeights(): void {
     const nb = c.querySelector('.needs-body') as HTMLElement | null;
     if (nb) { nb.style.flex = ''; nb.style.height = ''; }
     delete (c as HTMLElement).dataset.needsBodyH;
+    delete (c as HTMLElement).dataset.needsPillH;
   });
 
   // STEP 2: Measure non-canvas overhead per card and cap the canvas so the
@@ -205,6 +206,19 @@ export function syncCardHeights(): void {
           needsBody.style.flex = 'none';
           needsBody.style.height = targetHeight + 'px';
           needsCard.dataset.needsBodyH = String(Math.round(targetHeight));
+
+          // Match needs-setup-pill height to the MAIN strip's setup-tag pill.
+          const needsPill = needsCard.querySelector('.needs-setup-pill') as HTMLElement | null;
+          if (needsPill) {
+            const mainScroll = document.getElementById('mainScroll');
+            const mainCard = mainScroll?.querySelectorAll('.frame-card')[i] as HTMLElement | undefined;
+            const mainPill = mainCard?.querySelector('.setup-tag') as HTMLElement | null;
+            if (mainPill) {
+              const pillH = mainPill.getBoundingClientRect().height;
+              needsPill.style.height = pillH + 'px';
+              needsCard.dataset.needsPillH = String(pillH);
+            }
+          }
         }
       }
     }
