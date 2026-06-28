@@ -79,6 +79,7 @@ export function initFramehow(): void {
   (window as any).__fh_clearAllDrawActive = clearAllDrawActive;
   (window as any).__fh_setupDrawing = setupDrawing;
   (window as any).__fh_scrollAnchorTo = scrollAnchorTo;
+  (window as any).__fh_flushSyncNow = flushSyncNow;
 
   // Drawing-suppress click cleanup (mouseup/touchend at document level)
   document.addEventListener('mouseup', () => {
