@@ -71,11 +71,10 @@ export function renderAll(): void {
       // iPhone landscape: max 2 total columns
       const totalVisible = s0.activeStrips.length + (s0.needsStripVisible ? 1 : 0);
       if (totalVisible > 2) {
-        if (s0.needsStripVisible) {
-          useStore.setState({ activeStrips: s0.activeStrips.slice(0, 1) });
-        } else {
-          useStore.setState({ activeStrips: s0.activeStrips.slice(0, 2) });
-        }
+        const visualOrder: Record<string, number> = { main: 0, ver: 1, floor: 2, refs: 3 };
+        const sorted = [...s0.activeStrips].sort((a, b) => (visualOrder[a] ?? 9) - (visualOrder[b] ?? 9));
+        const stripMax = s0.needsStripVisible ? 1 : 2;
+        useStore.setState({ activeStrips: sorted.slice(0, stripMax) });
       }
     }
   } else if (_isTablet) {
@@ -84,7 +83,9 @@ export function renderAll(): void {
     const totalVisible = s0.activeStrips.length + (s0.needsStripVisible ? 1 : 0);
     if (totalVisible > maxStrips) {
       const stripMax = maxStrips - (s0.needsStripVisible ? 1 : 0);
-      useStore.setState({ activeStrips: s0.activeStrips.slice(0, Math.max(1, stripMax)) });
+      const visualOrder: Record<string, number> = { main: 0, ver: 1, floor: 2, refs: 3 };
+      const sorted = [...s0.activeStrips].sort((a, b) => (visualOrder[a] ?? 9) - (visualOrder[b] ?? 9));
+      useStore.setState({ activeStrips: sorted.slice(0, Math.max(1, stripMax)) });
     }
   }
 

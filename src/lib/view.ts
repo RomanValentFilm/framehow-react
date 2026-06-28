@@ -704,11 +704,10 @@ export function handleOrientationFlip(): void {
     const s = state();
     const totalVisible = s.activeStrips.length + (s.needsStripVisible ? 1 : 0);
     if (totalVisible > 2) {
-      if (s.needsStripVisible) {
-        useStore.setState({ activeStrips: s.activeStrips.slice(0, 1) });
-      } else {
-        useStore.setState({ activeStrips: s.activeStrips.slice(0, 2) });
-      }
+      const visualOrder: Record<string, number> = { main: 0, ver: 1, floor: 2, refs: 3 };
+      const sorted = [...s.activeStrips].sort((a, b) => (visualOrder[a] ?? 9) - (visualOrder[b] ?? 9));
+      const stripMax = s.needsStripVisible ? 1 : 2;
+      useStore.setState({ activeStrips: sorted.slice(0, stripMax) });
     }
   } else if (!isPhone && newH > newW && state().currentViewMode === 'grid3x2') {
     // iPad/tablet rotated to portrait while in 3x2: exit to MAIN+VERSN double strip
@@ -724,7 +723,10 @@ export function handleOrientationFlip(): void {
     const totalVisible = s.activeStrips.length + (s.needsStripVisible ? 1 : 0);
     if (totalVisible > maxStrips) {
       const stripMax = maxStrips - (s.needsStripVisible ? 1 : 0);
-      useStore.setState({ activeStrips: s.activeStrips.slice(0, Math.max(1, stripMax)) });
+      // Sort by visual position (MAIN→VER→FLOOR→REFS) before trimming rightmost
+      const visualOrder: Record<string, number> = { main: 0, ver: 1, floor: 2, refs: 3 };
+      const sorted = [...s.activeStrips].sort((a, b) => (visualOrder[a] ?? 9) - (visualOrder[b] ?? 9));
+      useStore.setState({ activeStrips: sorted.slice(0, Math.max(1, stripMax)) });
       const renderAll = (window as any).__fh_renderAll;
       if (renderAll) renderAll();
     }
