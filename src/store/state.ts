@@ -58,7 +58,7 @@ export interface Setup {
 
 /** 12-colour palette for setups. */
 /** App version — bump before every deploy. */
-export const APP_VERSION = 'v4.9.006';
+export const APP_VERSION = 'v4.9.008';
 
 export const SETUP_COLORS: { name: string; hex: string }[] = [
   { name: 'DAYLIGHT',      hex: '#CFE2F6' },
@@ -500,6 +500,9 @@ export function resetStoryboardState(): void {
     nextSetupId: 1,
     stripTagInfoDismissed: false,
     stripUntagInfoDismissed: false,
+    needDefinitions: DEFAULT_NEED_DEFINITIONS,
+    frameNeeds: {},
+    needsStripVisible: false,
     renderTick: state().renderTick + 1,
   });
 }

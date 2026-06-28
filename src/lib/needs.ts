@@ -108,7 +108,7 @@ export function renderNeedsCard(div: HTMLElement, fid: number): void {
       </div>
     </div>
     <div class="needs-action-row">
-      <button class="act-btn" data-needs-act="copy" data-needs-actfid="${fid}">Copy</button>
+      <button class="act-btn" data-needs-act="copy" data-needs-actfid="${fid}">Copy Settings</button>
       <button class="act-btn${_copiedNeedsState ? '' : ' disabled'}" data-needs-act="paste" data-needs-actfid="${fid}">Paste</button>
       <button class="act-btn" data-needs-act="reset" data-needs-actfid="${fid}">Reset</button>
     </div>

@@ -47,8 +47,8 @@ import { applySnapshotToStore, loadSnapshot, snapshotFromStore } from './persist
 import { showConfirm, showToast, showFrameConflictPicker } from './modals';
 import type { FrameConflict } from './modals';
 import { saveOpenTextEdits, saveOpenTableEdits } from './helpers';
-import { resetStoryboardState, state, useStore } from '../store/state';
-import type { Frame, Stroke, Version } from '../store/state';
+import { resetStoryboardState, state, useStore, DEFAULT_NEED_DEFINITIONS } from '../store/state';
+import type { Frame, Stroke, Version, FrameNeedState } from '../store/state';
 import { clearRectsForProject } from './pdfAdjust';
 
 // ---------------------------------------------------------------------------
@@ -1350,6 +1350,14 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
     if (f.setupId && serverFid) frameSetups[serverFid] = f.setupId;
   }
 
+  // Build per-frame needs state for sync (keyed by server frame UUID)
+  const syncFrameNeeds: Record<string, FrameNeedState> = {};
+  for (const f of s.frames) {
+    const serverFid = localToServerFrame.get(f.id);
+    const fn = s.frameNeeds[f.id];
+    if (serverFid && fn) syncFrameNeeds[serverFid] = fn;
+  }
+
   const metadata = JSON.stringify({
     stripDefs: s.stripDefs,
     groups: metaGroups,
@@ -1362,6 +1370,8 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
     frameSetups: Object.keys(frameSetups).length > 0 ? frameSetups : undefined,
     versionTags: Object.keys(versionTags).length > 0 ? versionTags : undefined,
     stripTagInfoDismissed: s.stripTagInfoDismissed || undefined,
+    needDefinitions: s.needDefinitions,
+    frameNeeds: Object.keys(syncFrameNeeds).length > 0 ? syncFrameNeeds : undefined,
   });
 
   // Upload NEW images to R2 in parallel (images with existing r2Key were already added above)
@@ -1720,6 +1730,8 @@ async function applyCloudTreeToStore(tree: CloudProjectTree, keepLocalFrameIds?:
   let restoredNextSetupId = 1;
   let restoredFrameSetups: Record<string | number, string> = {};
   let restoredStripTagInfoDismissed = false;
+  let restoredNeedDefinitions: any = null;
+  let restoredFrameNeeds: Record<string, FrameNeedState> = {};
   let isPortrait = newFrames.length > 0 && newFrames[0].cropH > newFrames[0].cropW;
 
   if (tree.project.metadata) {
@@ -1780,6 +1792,13 @@ async function applyCloudTreeToStore(tree: CloudProjectTree, keepLocalFrameIds?:
       if (meta.stripTagInfoDismissed) {
         restoredStripTagInfoDismissed = true;
       }
+      // Restore NEEDS definitions and per-frame state
+      if (meta.needDefinitions) {
+        restoredNeedDefinitions = meta.needDefinitions;
+      }
+      if (meta.frameNeeds && typeof meta.frameNeeds === 'object') {
+        restoredFrameNeeds = meta.frameNeeds;
+      }
     } catch {
       // Ignore malformed metadata — use defaults
     }
@@ -1792,6 +1811,15 @@ async function applyCloudTreeToStore(tree: CloudProjectTree, keepLocalFrameIds?:
       const sid = (f.serverFrameId && restoredFrameSetups[f.serverFrameId])
         || restoredFrameSetups[f.id];
       if (sid) f.setupId = sid;
+    }
+  }
+
+  // Remap per-frame needs from server UUIDs back to local IDs
+  const localFrameNeeds: Record<number, FrameNeedState> = {};
+  if (Object.keys(restoredFrameNeeds).length > 0) {
+    for (const [uuid, needState] of Object.entries(restoredFrameNeeds)) {
+      const localId = serverToLocalFrame.get(uuid);
+      if (localId != null) localFrameNeeds[localId] = needState;
     }
   }
 
@@ -1855,6 +1883,8 @@ async function applyCloudTreeToStore(tree: CloudProjectTree, keepLocalFrameIds?:
     currentViewMode: 'both',
     portraitMode: isPortrait,
     stripTagInfoDismissed: restoredStripTagInfoDismissed,
+    needDefinitions: restoredNeedDefinitions ?? DEFAULT_NEED_DEFINITIONS,
+    frameNeeds: localFrameNeeds,
     renderTick: prev.renderTick + 1,
   }));
   (window as any).__fh_renderAll?.();
@@ -2451,7 +2481,7 @@ export function clearPushedFingerprints(): void {
  * (fingerprint same but data changed) is extremely unlikely. A false negative
  * (fingerprint changed but data identical) just means we send an extra frame.
  */
-function frameFingerprint(f: Frame, sortOrder: number, s: { stripVersions: Record<string, Record<number, Version[]>> }): string {
+function frameFingerprint(f: Frame, sortOrder: number, s: { stripVersions: Record<string, Record<number, Version[]>>; frameNeeds: Record<number, FrameNeedState> }): string {
   const parts: string[] = [
     f.label,
     String(sortOrder),
@@ -2477,6 +2507,9 @@ function frameFingerprint(f: Frame, sortOrder: number, s: { stripVersions: Recor
       }
     }
   }
+  // Include per-frame needs state
+  const fn = s.frameNeeds[f.id];
+  if (fn) parts.push('needs:' + JSON.stringify(fn));
   return parts.join('\x00');
 }
 

@@ -6,8 +6,8 @@
 // active tab) — UI-only state (drawActive, hover, etc.) is omitted. On
 // restore we merge the payload back into the live store.
 
-import type { Frame, Version, FrameGroup, StripDef, Setup } from '../store/state';
-import { useStore, DEFAULT_STRIP_DEFS } from '../store/state';
+import type { Frame, Version, FrameGroup, StripDef, Setup, NeedDefinitions, FrameNeedState } from '../store/state';
+import { useStore, DEFAULT_STRIP_DEFS, DEFAULT_NEED_DEFINITIONS } from '../store/state';
 
 const DB_NAME = 'framehow';
 const DB_VERSION = 1;
@@ -46,6 +46,10 @@ export interface CurrentProjectSnapshot {
   stripTagInfoDismissed?: boolean;
   /** Whether the strip-untag confirmation overlay has been dismissed */
   stripUntagInfoDismissed?: boolean;
+  /** NEEDS strip — project-wide definitions (v4.9+) */
+  needDefinitions?: NeedDefinitions;
+  /** NEEDS strip — per-frame state keyed by local frame id (v4.9+) */
+  frameNeeds?: Record<number, FrameNeedState>;
 }
 
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -124,6 +128,8 @@ export function snapshotFromStore(projectId: string | null, name: string | null)
     nextSetupId: s.nextSetupId,
     stripTagInfoDismissed: s.stripTagInfoDismissed || undefined,
     stripUntagInfoDismissed: s.stripUntagInfoDismissed || undefined,
+    needDefinitions: s.needDefinitions,
+    frameNeeds: s.frameNeeds,
   };
 }
 
@@ -187,6 +193,8 @@ export function applySnapshotToStore(snap: CurrentProjectSnapshot): void {
     nextSetupId: snap.nextSetupId ?? 1,
     stripTagInfoDismissed: snap.stripTagInfoDismissed ?? false,
     stripUntagInfoDismissed: snap.stripUntagInfoDismissed ?? false,
+    needDefinitions: snap.needDefinitions ?? DEFAULT_NEED_DEFINITIONS,
+    frameNeeds: snap.frameNeeds ?? {},
     renderTick: prev.renderTick + 1,
   }));
 }
