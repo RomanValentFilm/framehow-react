@@ -651,7 +651,7 @@ export function initFramehow(): void {
           // Toggling NEEDS on — check strip limits
           const w = window.innerWidth, h = window.innerHeight;
           const isPhone = Math.min(w, h) <= 430;
-          const isTablet = isTouch && !isPhone;
+          const isTablet = isTouch && !isPhone && Math.min(w, h) <= 830; // excludes iPad Pro
           const totalVisible = state().activeStrips.length + 1; // +1 for NEEDS about to be added
           if (isPhone && w > h && totalVisible > 2) { showMaxStripsOverlay(2); return; }
           if (isTablet && h > w && totalVisible > 3) { showMaxStripsOverlay(3); return; }
@@ -774,8 +774,7 @@ export function initFramehow(): void {
       }
 
       // ── iPad / Desktop: normal toggle ──
-      const w = window.innerWidth, h = window.innerHeight;
-      const isTablet = isTouch && !isPhone;
+      const isTablet = isTouch && !isPhone && Math.min(w, h) <= 830; // excludes iPad Pro
       const current = [...s.activeStrips];
       const idx = current.indexOf(strip);
 

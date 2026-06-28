@@ -716,8 +716,8 @@ export function handleOrientationFlip(): void {
     const renderAll = (window as any).__fh_renderAll;
     if (renderAll) renderAll();
   }
-  // iPad: enforce strip limits on orientation change
-  if (!isPhone && isTouch) {
+  // iPad (non-Pro): enforce strip limits on orientation change
+  if (!isPhone && isTouch && Math.min(newW, newH) <= 830) {
     const s = state();
     const maxStrips = newH > newW ? 3 : 4;
     const totalVisible = s.activeStrips.length + (s.needsStripVisible ? 1 : 0);
