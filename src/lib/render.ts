@@ -1,7 +1,7 @@
 // Main + version strip card rendering. Ported from the original `renderMainFrame`,
 // `renderVersionFrame`, `buildMainFrame`, `buildVersionFrame`, `renderAll`.
 
-import { state, useStore, bumpRenderTick } from '../store/state';
+import { state, useStore, bumpRenderTick, isTouch } from '../store/state';
 import type { StripType } from '../store/state';
 import {
   drawToolbarHTML,
@@ -56,28 +56,35 @@ export function renderAll(): void {
   saveOpenTextEdits();
   saveOpenTableEdits();
 
-  // ── iPhone strip constraints ──
+  // ── Strip constraints by device ──
   const _w = window.innerWidth, _h = window.innerHeight;
   const _isPhone = Math.min(_w, _h) <= 430;
+  const _isTablet = isTouch && !_isPhone;
+  const s0 = state();
   if (_isPhone) {
-    const s0 = state();
     if (_h > _w && s0.activeStrips.length > 1) {
-      // Portrait: max 1 strip, hide NEEDS
+      // iPhone portrait: max 1 strip, hide NEEDS
       useStore.setState({ activeStrips: [s0.activeStrips[0]], currentViewMode: s0.activeStrips[0] === 'main' ? 'main' : 'ver', needsStripVisible: false });
       const needsBtn = document.getElementById('needsStripBtn');
       if (needsBtn) needsBtn.classList.remove('active');
     } else if (_w > _h) {
-      // Landscape: max 2 total columns (activeStrips + NEEDS)
+      // iPhone landscape: max 2 total columns
       const totalVisible = s0.activeStrips.length + (s0.needsStripVisible ? 1 : 0);
       if (totalVisible > 2) {
-        // Trim: keep NEEDS if it was on, reduce activeStrips
         if (s0.needsStripVisible) {
-          const trimmed = s0.activeStrips.slice(0, 1);
-          useStore.setState({ activeStrips: trimmed });
+          useStore.setState({ activeStrips: s0.activeStrips.slice(0, 1) });
         } else {
           useStore.setState({ activeStrips: s0.activeStrips.slice(0, 2) });
         }
       }
+    }
+  } else if (_isTablet) {
+    // iPad portrait: max 3 / iPad landscape: max 4
+    const maxStrips = _h > _w ? 3 : 4;
+    const totalVisible = s0.activeStrips.length + (s0.needsStripVisible ? 1 : 0);
+    if (totalVisible > maxStrips) {
+      const stripMax = maxStrips - (s0.needsStripVisible ? 1 : 0);
+      useStore.setState({ activeStrips: s0.activeStrips.slice(0, Math.max(1, stripMax)) });
     }
   }
 

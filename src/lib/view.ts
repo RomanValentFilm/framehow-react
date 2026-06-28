@@ -716,6 +716,16 @@ export function handleOrientationFlip(): void {
     const renderAll = (window as any).__fh_renderAll;
     if (renderAll) renderAll();
   }
+  // iPad: enforce strip limits on orientation change
+  if (!isPhone && isTouch) {
+    const s = state();
+    const maxStrips = newH > newW ? 3 : 4;
+    const totalVisible = s.activeStrips.length + (s.needsStripVisible ? 1 : 0);
+    if (totalVisible > maxStrips) {
+      const stripMax = maxStrips - (s.needsStripVisible ? 1 : 0);
+      useStore.setState({ activeStrips: s.activeStrips.slice(0, Math.max(1, stripMax)) });
+    }
+  }
   syncCardHeights();
   if (!fid) return;
   // Cancel any previous orientation-anchor timers

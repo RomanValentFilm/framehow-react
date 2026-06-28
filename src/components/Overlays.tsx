@@ -27,7 +27,7 @@ export function Overlays() {
         </span>
       </div>
       <div className="rotate-msg" id="maxStripsMsg">
-        <span>
+        <span id="maxStripsMsgText">
           You can fit maximum 2 STRIPS VIEW<br />
           on this device's screen.<br />
           <br />

@@ -575,6 +575,17 @@ export function initFramehow(): void {
   );
   document.getElementById('portraitExportGo')!.addEventListener('click', runPortraitExport);
 
+  // Helper: show "max N strips" overlay with the right number
+  function showMaxStripsOverlay(maxN: number) {
+    const om = document.getElementById('maxStripsMsg')!;
+    const txt = document.getElementById('maxStripsMsgText');
+    if (txt) txt.innerHTML = `You can fit maximum ${maxN} STRIPS VIEW<br>on this device's screen.<br><br>Please toggle-off a strip's button<br>to select another one.`;
+    om.classList.add('show');
+    const dismiss = (e?: Event) => { if (e) { e.stopPropagation(); e.preventDefault(); } om.classList.remove('show'); };
+    om.addEventListener('click', dismiss, { once: true });
+    setTimeout(() => om.classList.remove('show'), 3000);
+  }
+
   // View mode buttons (excludes strip toggles — they have their own handler)
   document.querySelectorAll('.view-btn:not(.strip-toggle)').forEach((b) =>
     b.addEventListener('click', () => {
@@ -636,18 +647,15 @@ export function initFramehow(): void {
 
       if (view === 'needs') {
         const cur = state().needsStripVisible;
-        // iPhone landscape: NEEDS counts toward the 2-strip max
-        const w = window.innerWidth, h = window.innerHeight;
-        const isPhone = Math.min(w, h) <= 430;
-        const isPhoneLandscape = isPhone && w > h;
-        if (isPhoneLandscape && !cur && state().activeStrips.length >= 2) {
-          // Already at max — show overlay
-          const om = document.getElementById('maxStripsMsg')!;
-          om.classList.add('show');
-          const dismiss = (e?: Event) => { if (e) { e.stopPropagation(); e.preventDefault(); } om.classList.remove('show'); };
-          om.addEventListener('click', dismiss, { once: true });
-          setTimeout(() => om.classList.remove('show'), 3000);
-          return;
+        if (!cur) {
+          // Toggling NEEDS on — check strip limits
+          const w = window.innerWidth, h = window.innerHeight;
+          const isPhone = Math.min(w, h) <= 430;
+          const isTablet = isTouch && !isPhone;
+          const totalVisible = state().activeStrips.length + 1; // +1 for NEEDS about to be added
+          if (isPhone && w > h && totalVisible > 2) { showMaxStripsOverlay(2); return; }
+          if (isTablet && h > w && totalVisible > 3) { showMaxStripsOverlay(3); return; }
+          if (isTablet && w > h && totalVisible > 4) { showMaxStripsOverlay(4); return; }
         }
         useStore.setState({ needsStripVisible: !cur });
         const btn = document.getElementById('needsStripBtn');
@@ -751,15 +759,8 @@ export function initFramehow(): void {
           current.splice(idx, 1);
         } else {
           // Toggling on — enforce max 2 strips (NEEDS counts as one)
-          const totalVisible = current.length + (s.needsStripVisible ? 1 : 0);
-          if (totalVisible >= 2) {
-            const om = document.getElementById('maxStripsMsg')!;
-            om.classList.add('show');
-            const dismiss = (e?: Event) => { if (e) { e.stopPropagation(); e.preventDefault(); } om.classList.remove('show'); };
-            om.addEventListener('click', dismiss, { once: true });
-            setTimeout(() => om.classList.remove('show'), 3000);
-            return;
-          }
+          const totalVisible = current.length + (s.needsStripVisible ? 1 : 0) + 1; // +1 for strip being added
+          if (totalVisible > 2) { showMaxStripsOverlay(2); return; }
           current.push(strip);
         }
         let viewMode: 'main' | 'ver' | 'both' = 'both';
@@ -773,6 +774,8 @@ export function initFramehow(): void {
       }
 
       // ── iPad / Desktop: normal toggle ──
+      const w = window.innerWidth, h = window.innerHeight;
+      const isTablet = isTouch && !isPhone;
       const current = [...s.activeStrips];
       const idx = current.indexOf(strip);
 
@@ -781,6 +784,12 @@ export function initFramehow(): void {
         if (current.length <= 1) return;
         current.splice(idx, 1);
       } else {
+        // iPad: enforce max 3 portrait / 4 landscape (NEEDS counts as one)
+        if (isTablet) {
+          const totalVisible = current.length + (s.needsStripVisible ? 1 : 0) + 1; // +1 for strip being added
+          const maxStrips = h > w ? 3 : 4;
+          if (totalVisible > maxStrips) { showMaxStripsOverlay(maxStrips); return; }
+        }
         current.push(strip);
       }
 
