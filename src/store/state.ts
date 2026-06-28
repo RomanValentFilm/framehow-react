@@ -140,18 +140,18 @@ export const DEFAULT_NEED_DEFINITIONS: NeedDefinitions = {
     {
       id: 'tab_shoot', name: 'SHOOT',
       tables: [
-        { id: 'tbl_shootday', name: 'SHOOT DAY', type: 'toggle', items: [
-          { id: 'ti_day1', name: 'DAY 1' },
-          { id: 'ti_day2', name: 'DAY 2' },
-          { id: 'ti_day3', name: 'DAY 3' },
+        { id: 'tbl_shootday', name: 'SHOOT DAY', type: 'toggle', items: [
+          { id: 'ti_day1', name: 'DAY 1' },
+          { id: 'ti_day2', name: 'DAY 2' },
+          { id: 'ti_day3', name: 'DAY 3' },
         ]},
         { id: 'tbl_location', name: 'LOCATION', type: 'toggle', items: [
           { id: 'ti_loc1', name: 'LOCATION 1' },
           { id: 'ti_loc2', name: 'LOCATION 2' },
         ]},
-        { id: 'tbl_extint', name: 'EXT / INT', type: 'toggle', items: [
-          { id: 'ti_ext', name: 'EXT' },
+        { id: 'tbl_extint', name: 'INT/EXT', type: 'toggle', items: [
           { id: 'ti_int', name: 'INT' },
+          { id: 'ti_ext', name: 'EXT' },
         ]},
         { id: 'tbl_daytime', name: 'DAYTIME', type: 'toggle', items: [
           { id: 'ti_sunrise', name: 'SUNRISE' },
