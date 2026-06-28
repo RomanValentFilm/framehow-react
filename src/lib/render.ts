@@ -59,7 +59,7 @@ export function renderAll(): void {
   // ── Strip constraints by device ──
   const _w = window.innerWidth, _h = window.innerHeight;
   const _isPhone = Math.min(_w, _h) <= 430;
-  const _isTablet = isTouch && !_isPhone && Math.min(_w, _h) <= 830; // excludes iPad Pro
+  const _isTablet = navigator.maxTouchPoints > 1 && !_isPhone && Math.min(_w, _h) <= 830; // excludes iPad Pro
   const s0 = state();
   if (_isPhone) {
     if (_h > _w && s0.activeStrips.length > 1) {

@@ -717,13 +717,16 @@ export function handleOrientationFlip(): void {
     if (renderAll) renderAll();
   }
   // iPad (non-Pro): enforce strip limits on orientation change
-  if (!isPhone && isTouch && Math.min(newW, newH) <= 830) {
+  // Use maxTouchPoints instead of isTouch — works even with Magic Keyboard attached
+  if (!isPhone && navigator.maxTouchPoints > 1 && Math.min(newW, newH) <= 830) {
     const s = state();
     const maxStrips = newH > newW ? 3 : 4;
     const totalVisible = s.activeStrips.length + (s.needsStripVisible ? 1 : 0);
     if (totalVisible > maxStrips) {
       const stripMax = maxStrips - (s.needsStripVisible ? 1 : 0);
       useStore.setState({ activeStrips: s.activeStrips.slice(0, Math.max(1, stripMax)) });
+      const renderAll = (window as any).__fh_renderAll;
+      if (renderAll) renderAll();
     }
   }
   syncCardHeights();
