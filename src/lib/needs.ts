@@ -228,21 +228,33 @@ function wireNeedsCard(container: HTMLElement, fid: number): void {
     });
   });
 
-  // Counter inputs
+  // Counter inputs — clear "0" on focus, restore on empty blur
   container.querySelectorAll('[data-needs-counter]').forEach((inp) => {
+    const el = inp as HTMLInputElement;
+    inp.addEventListener('focus', () => {
+      if (el.value === '0') el.value = '';
+    });
     inp.addEventListener('input', () => {
-      const itemId = (inp as HTMLInputElement).dataset.needsCounter!;
-      const val = Math.max(0, Math.min(999, parseInt((inp as HTMLInputElement).value) || 0));
+      const itemId = el.dataset.needsCounter!;
+      const val = Math.max(0, Math.min(999, parseInt(el.value) || 0));
       const ft = ensureFrameNeeds(fid);
       ft.counters[itemId] = val;
       bumpRenderTick();
       debouncedSync();
     });
-    inp.addEventListener('blur', () => flushDebouncedSync());
+    inp.addEventListener('blur', () => {
+      if (el.value === '') {
+        el.value = '0';
+        const itemId = el.dataset.needsCounter!;
+        const ft = ensureFrameNeeds(fid);
+        ft.counters[itemId] = 0;
+        bumpRenderTick();
+      }
+      flushDebouncedSync();
+    });
     inp.addEventListener('keydown', (e) => {
       if ((e as KeyboardEvent).key === 'Enter') {
-        (inp as HTMLInputElement).blur();
-        flushDebouncedSync();
+        el.blur();
       }
     });
   });

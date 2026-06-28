@@ -635,7 +635,10 @@ export function initFramehow(): void {
         }
         // Pick companion strip (for cross-swipe to version)
         const companion = s.activeStrips.find((st: string) => st !== 'main') || 'ver';
-        useStore.setState({ activeStrips: ['main', companion] as any });
+        // Deactivate NEEDS strip when entering 3×2
+        useStore.setState({ activeStrips: ['main', companion] as any, needsStripVisible: false });
+        const needsBtn = document.getElementById('needsStripBtn');
+        if (needsBtn) needsBtn.classList.remove('active');
         setViewMode('grid3x2' as any);
         return;
       }
