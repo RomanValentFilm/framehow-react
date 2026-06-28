@@ -86,6 +86,9 @@ export function syncCardHeights(): void {
   allCards.forEach((c) => {
     (c as HTMLElement).style.height = 'auto';
     (c as HTMLElement).style.minHeight = 'auto';
+    // Reset needs-body flex override from STEP 4
+    const nb = c.querySelector('.needs-body') as HTMLElement | null;
+    if (nb) { nb.style.flex = ''; nb.style.height = ''; }
   });
 
   // STEP 2: Measure non-canvas overhead per card and cap the canvas so the
@@ -172,6 +175,52 @@ export function syncCardHeights(): void {
         if (i < cards.length) {
           (cards[i] as HTMLElement).style.height = max + 'px';
           (cards[i] as HTMLElement).style.minHeight = max + 'px';
+        }
+      }
+    }
+  }
+
+  // STEP 4: Align needs-action-row border-top with canvas bottom in adjacent frame cards
+  if (s.needsStripVisible) {
+    const needsEl = document.getElementById('needsScroll');
+    if (needsEl) {
+      const needsCards = needsEl.querySelectorAll('.needs-card');
+      // Find a reference strip that has canvas-wraps
+      let refCards: NodeListOf<Element> | null = null;
+      for (const { strip, scrollId } of stripScrollIds) {
+        if (!s.activeStrips.includes(strip as any)) continue;
+        const el = document.getElementById(scrollId);
+        if (!el) continue;
+        const cards = el.querySelectorAll('.frame-card');
+        if (cards.length && cards[0].querySelector('.canvas-wrap')) {
+          refCards = cards;
+          break;
+        }
+      }
+      if (refCards) {
+        void document.body.offsetHeight; // force layout
+        const count = Math.min(needsCards.length, refCards.length);
+        for (let i = 0; i < count; i++) {
+          const refCard = refCards[i] as HTMLElement;
+          const needsCard = needsCards[i] as HTMLElement;
+          const wrap = refCard.querySelector('.canvas-wrap') as HTMLElement;
+          const needsBody = needsCard.querySelector('.needs-body') as HTMLElement;
+          if (!wrap || !needsBody) continue;
+
+          // Canvas bottom offset from card top
+          const cardRect = refCard.getBoundingClientRect();
+          const wrapRect = wrap.getBoundingClientRect();
+          const canvasBottomFromCardTop = wrapRect.bottom - cardRect.top;
+
+          // Needs card top overhead (header + tabs)
+          const needsCardRect = needsCard.getBoundingClientRect();
+          const needsBodyRect = needsBody.getBoundingClientRect();
+          const topOverhead = needsBodyRect.top - needsCardRect.top;
+
+          // Set needs-body height so its bottom edge aligns with canvas bottom
+          const targetHeight = Math.max(50, canvasBottomFromCardTop - topOverhead);
+          needsBody.style.flex = 'none';
+          needsBody.style.height = targetHeight + 'px';
         }
       }
     }

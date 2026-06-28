@@ -95,15 +95,15 @@ export function renderNeedsCard(div: HTMLElement, fid: number): void {
     <div class="needs-tabs">${tabsHTML}</div>
     <div class="needs-body">
       <div class="needs-tables">${tablesHTML}</div>
-    </div>
-    <div class="needs-bottom">
-      <div class="needs-bottom-left">
-        ${locationHTML}
-        ${setupHTML}
-      </div>
-      <div class="needs-bottom-right">
-        <div class="needs-memo">
-          <textarea class="needs-memo-input" data-needs-memo="${fid}" data-needs-memo-tab="${activeTab.id}" placeholder="memo" spellcheck="false" autocomplete="one-time-code">${escapeHtml(memoText)}</textarea>
+      <div class="needs-bottom">
+        <div class="needs-bottom-left">
+          ${locationHTML}
+          ${setupHTML}
+        </div>
+        <div class="needs-bottom-right">
+          <div class="needs-memo">
+            <textarea class="needs-memo-input" data-needs-memo="${fid}" data-needs-memo-tab="${activeTab.id}" placeholder="memo" spellcheck="false" autocomplete="one-time-code">${escapeHtml(memoText)}</textarea>
+          </div>
         </div>
       </div>
     </div>
