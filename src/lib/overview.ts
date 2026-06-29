@@ -22,6 +22,7 @@ import {
   stripScrollId,
   getFrameStripLabel,
   setFrameStripLabel,
+  ensureStripVersions,
 } from './helpers';
 import { restoreCanvas, restoreMainCanvas, setupMainDrawing } from './drawing';
 import { renderVersionFrame } from './render';
@@ -29,6 +30,8 @@ import { showLabelEdit, showVerLabelEdit, showDeleteChoice, showConfirm } from '
 import { getVisibleFrames, removeFrameFromGroup } from './groups';
 import { setupTagHTML, stripTagHTML } from './setups';
 import { recordTombstone } from './accountFlow';
+import { openFullscreen } from './fullscreen';
+import { buildNeedsCard, ensureFrameNeeds } from './needs';
 
 export function renderOverview(): void {
   const overviewScroll = document.getElementById('overviewScroll')!;
@@ -789,18 +792,18 @@ export function renderGrid3x2(): void {
 export function recalcGrid3x2Margins(): void {
   const container = document.querySelector('.grid3x2-container') as HTMLElement | null;
   if (!container) return;
-  const vw3 = Math.round(window.innerWidth * 0.03);
+  const vw2 = Math.round(window.innerWidth * 0.02);
   container.style.rowGap = '0';
-  // All card-wraps: uniform bottom margin = 3vw
+  // All card-wraps: uniform bottom margin = 2vw
   container.querySelectorAll('.grid3x2-card-wrap').forEach((cw: Element) => {
-    (cw as HTMLElement).style.marginBottom = vw3 + 'px';
+    (cw as HTMLElement).style.marginBottom = vw2 + 'px';
   });
-  // Separator: same gap above and below (3vw).
-  // Cards before separator keep their marginBottom (= vw3), so marginTop = 0.
+  // Separator: same gap above and below (2vw).
+  // Cards before separator keep their marginBottom (= vw2), so marginTop = 0.
   container.querySelectorAll('.grid3x2-page-sep').forEach((sep: Element) => {
     const el = sep as HTMLElement;
     el.style.marginTop = '0';
-    el.style.marginBottom = vw3 + 'px';
+    el.style.marginBottom = vw2 + 'px';
   });
 }
 
@@ -948,7 +951,9 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
       : '<span class="ptt-bold">Pic</span>/Txt/Tbl';
 
     const g3Reorder = s.reorderFid === fid;
-    wrap.innerHTML = `<div class="frame-card${g3Reorder ? ' g3-reorder-active' : ''}" data-g3fid="${fid}">
+    // SKETCH / NEEDS quick-access buttons above card
+    const quickBtnsHTML = `<div class="g3-quick-btns"><button class="g3-quick-btn" data-g3sketch="${fid}">SKETCH</button><button class="g3-quick-btn" data-g3needs="${fid}">NEEDS</button></div>`;
+    wrap.innerHTML = `${quickBtnsHTML}<div class="frame-card${g3Reorder ? ' g3-reorder-active' : ''}" data-g3fid="${fid}">
       <div class="frame-num"><span class="frame-label-tag" data-editlabel="${fid}">${f.label || '#'}</span><button class="vtab pictxt-btn${
       viewMode ? ' active' : ''
     }" data-mact="pictxt" data-mfid="${fid}">${btnLabel}</button><div class="reorder-group${
@@ -988,6 +993,18 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
         textBlock.scrollTop = 0;
       });
     }
+
+    // SKETCH button — open fullscreen draw on s1 of floor/sketch strip
+    const sketchBtn = wrap.querySelector(`[data-g3sketch="${fid}"]`) as HTMLElement | null;
+    if (sketchBtn) sketchBtn.addEventListener('click', () => {
+      ensureStripVersions(fid, 'floor');
+      openFullscreen(fid, 0, 'floor');
+    });
+    // NEEDS button — open modal overlay with NEEDS card
+    const needsBtn = wrap.querySelector(`[data-g3needs="${fid}"]`) as HTMLElement | null;
+    if (needsBtn) needsBtn.addEventListener('click', () => {
+      _openNeedsModal(fid);
+    });
 
     // Color toolbar wiring
     card.querySelectorAll('.color-dot[data-g3mfid]').forEach((d) =>
@@ -1212,4 +1229,42 @@ function _addGrid3x2Nav(wrap: HTMLElement, fid: number, isVersion: boolean): voi
       renderGrid3x2Card(wrap, fid);
     })
   );
+}
+
+/** Open NEEDS card for a frame as a modal overlay (75% screen height). */
+function _openNeedsModal(fid: number): void {
+  if (document.querySelector('.g3-needs-overlay')) return; // already open
+
+  ensureFrameNeeds(fid);
+
+  // Block scroll/touch behind modal
+  document.body.style.overflow = 'hidden';
+
+  const overlay = document.createElement('div');
+  overlay.className = 'g3-needs-overlay';
+
+  // Block scroll on the backdrop only — let the modal content scroll
+  const stopBg = (e: Event) => {
+    if (e.target === overlay) { e.preventDefault(); e.stopPropagation(); }
+  };
+  overlay.addEventListener('wheel', stopBg, { passive: false });
+  overlay.addEventListener('touchmove', stopBg, { passive: false });
+
+  // Build needs card inside a container
+  const container = document.createElement('div');
+  container.className = 'g3-needs-modal';
+
+  const needsCard = buildNeedsCard(fid);
+  container.appendChild(needsCard);
+
+  overlay.appendChild(container);
+  document.body.appendChild(overlay);
+
+  // Tap outside the modal container → close
+  overlay.addEventListener('pointerdown', (e) => {
+    if (e.target === overlay) {
+      overlay.remove();
+      document.body.style.overflow = '';
+    }
+  });
 }
