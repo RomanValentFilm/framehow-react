@@ -448,6 +448,9 @@ export function autoPhoneMainView(): void {
     // iPhone portrait: single strip MAIN view
     useStore.setState({ activeStrips: ['main'], currentViewMode: 'main' });
     setViewMode('main');
+  } else if (!state().portraitMode) {
+    // Landscape project: default to 3x2 grid view
+    setViewMode('grid3x2');
   }
 }
 

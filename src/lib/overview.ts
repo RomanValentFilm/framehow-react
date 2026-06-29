@@ -836,7 +836,8 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
     ).join('') + `<button class="vtab-add" data-g3vadd="${fid}">+</button>`;
 
     const mainReorder = s.reorderFid === fid;
-    wrap.innerHTML = `<div class="frame-card${mainReorder ? ' g3-reorder-active' : ''}" data-g3fid="${fid}">
+    const quickBtnsVer = `<div class="g3-quick-btns"><button class="g3-quick-btn" data-g3sketch="${fid}">SKETCH</button><button class="g3-quick-btn" data-g3needs="${fid}">NEEDS</button></div>`;
+    wrap.innerHTML = `${quickBtnsVer}<div class="frame-card${mainReorder ? ' g3-reorder-active' : ''}" data-g3fid="${fid}">
       <div class="frame-num ver-frame-num">
         <span class="frame-label-tag">${f.label || '#'} ${getFrameStripLabel(f, companionStrip)}</span>
         <div class="version-tabs">${tabsHTML}</div>
@@ -855,6 +856,17 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
         <button class="act-btn" data-action="clear" data-fid="${fid}">HIDE</button>
       </div>
     </div>`;
+
+    // SKETCH / NEEDS buttons (same as main content branch)
+    const sketchBtnV = wrap.querySelector(`[data-g3sketch="${fid}"]`) as HTMLElement | null;
+    if (sketchBtnV) sketchBtnV.addEventListener('click', () => {
+      ensureStripVersions(fid, 'floor');
+      openFullscreen(fid, 0, 'floor');
+    });
+    const needsBtnV = wrap.querySelector(`[data-g3needs="${fid}"]`) as HTMLElement | null;
+    if (needsBtnV) needsBtnV.addEventListener('click', () => {
+      _openNeedsModal(fid);
+    });
 
     // Wire version tab clicks
     wrap.querySelectorAll('[data-g3tab]').forEach((t) =>
@@ -1243,16 +1255,31 @@ function _openNeedsModal(fid: number): void {
   const overlay = document.createElement('div');
   overlay.className = 'g3-needs-overlay';
 
-  // Block scroll on the backdrop only — let the modal content scroll
-  const stopBg = (e: Event) => {
-    if (e.target === overlay) { e.preventDefault(); e.stopPropagation(); }
+  // Block all events on the overlay backdrop — modal content stays interactive
+  const blockBg = (e: Event) => {
+    if (!(e.target as HTMLElement).closest('.g3-needs-modal')) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
   };
-  overlay.addEventListener('wheel', stopBg, { passive: false });
-  overlay.addEventListener('touchmove', stopBg, { passive: false });
+  overlay.addEventListener('click', blockBg, true);
+  overlay.addEventListener('touchstart', blockBg, { capture: true, passive: false } as any);
+  overlay.addEventListener('touchend', blockBg, { capture: true, passive: false } as any);
+  overlay.addEventListener('wheel', blockBg, { capture: true, passive: false });
+  overlay.addEventListener('touchmove', blockBg, { capture: true, passive: false });
 
-  // Build needs card inside a container
+  // Size = 2× the frame-card from the grid (same ratio, doubled).
+  const refFrameCard = document.querySelector('.grid3x2-card-wrap .frame-card') as HTMLElement | null;
+
   const container = document.createElement('div');
   container.className = 'g3-needs-modal';
+  if (refFrameCard) {
+    const rc = refFrameCard.getBoundingClientRect();
+    if (rc.width > 0 && rc.height > 0) {
+      container.style.width = (rc.width * 1.8) + 'px';
+      container.style.height = (rc.height * 1.8) + 'px';
+    }
+  }
 
   const needsCard = buildNeedsCard(fid);
   container.appendChild(needsCard);
@@ -1260,9 +1287,21 @@ function _openNeedsModal(fid: number): void {
   overlay.appendChild(container);
   document.body.appendChild(overlay);
 
-  // Tap outside the modal container → close
-  overlay.addEventListener('pointerdown', (e) => {
-    if (e.target === overlay) {
+  // Move action row inside the scrollable needs-body so there's no gap.
+  // This only affects the modal — strip view is untouched.
+  requestAnimationFrame(() => {
+    const needsBody = container.querySelector('.needs-body') as HTMLElement | null;
+    const actionRow = container.querySelector('.needs-action-row') as HTMLElement | null;
+    if (needsBody && actionRow) {
+      needsBody.appendChild(actionRow);
+    }
+  });
+
+  // Tap outside the modal container → close (uses pointerup to avoid pass-through)
+  overlay.addEventListener('pointerup', (e) => {
+    if (!(e.target as HTMLElement).closest('.g3-needs-modal')) {
+      e.preventDefault();
+      e.stopPropagation();
       overlay.remove();
       document.body.style.overflow = '';
     }

@@ -1888,6 +1888,7 @@ async function applyCloudTreeToStore(tree: CloudProjectTree, keepLocalFrameIds?:
     renderTick: prev.renderTick + 1,
   }));
   (window as any).__fh_renderAll?.();
+  autoPhoneMainView();
 
   // Now fetch images from R2 in parallel and patch them into the store.
   const token = getToken();
@@ -2196,6 +2197,7 @@ async function performRestore(projectId: string, snapshotId: string): Promise<vo
     if (progressBar) progressBar.style.width = '100%';
     clearDirtyState();
     (window as any).__fh_renderAll?.();
+    autoPhoneMainView();
     showToast('Project restored successfully.');
     setTimeout(() => {
       if (progressEl) progressEl.classList.add('hidden');

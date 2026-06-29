@@ -167,6 +167,14 @@ Changes:
 Changes:
 - `src/lib/accountFlow.ts` — Added fullscreen overlay ("Couldn't load all content — check your connection") with Retry/Dismiss buttons when R2 image fetches fail; overlay shows after progress bar hides (no overlap); Retry triggers fresh pull; Dismiss lets user browse but _pullIncomplete stays true (no push/save of half-loaded state).
 
+### v4.9.010 — 2026-06-29 (dev — deployed)
+**SKETCH/NEEDS quick buttons in 3x2 view, floor prefix f→s, layout tightening**
+
+Changes:
+- `src/store/state.ts` — APP_VERSION v4.9.011; floor strip prefix changed from 'f' to 's' (s1, s2, etc.)
+- `src/lib/overview.ts` — Added SKETCH/NEEDS quick-access buttons above each frame card in 3x2 view; SKETCH opens fullscreen draw on s1 of floor/sketch strip; NEEDS opens modal overlay at 75vh with needs card; vertical margins changed from 3vw to 2vw; imported openFullscreen, buildNeedsCard, ensureFrameNeeds, ensureStripVersions
+- `src/styles/globals.css` — Added .g3-quick-btns/.g3-quick-btn styles (semitransparent, hover reveal on desktop, always visible on touch); added .g3-needs-overlay/.g3-needs-modal styles (bottom-sheet modal); text block reduced from 5 to 3 lines; grid container top padding 2vw
+
 ### v4.7.011 — 2026-06-26 (dev — deployed)
 **Cross-device sync fixes (idle-wake, focus/blur ordering, delta push, frame guard)**
 
