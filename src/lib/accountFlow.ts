@@ -2928,11 +2928,23 @@ export async function bootstrapAccountSystem(): Promise<void> {
       clearDirtyState(); // IDB restore is not a user change
 
       // Kick off a cloud pull now that projectId is set.
-      // The focus/visibility events fired before bootstrap set the projectId,
-      // so the initial pull attempt bailed. Delay slightly so the UI settles
-      // before we start network requests + image loading.
+      // Show syncing overlay so user sees loading bar (not old project flash)
+      // until the final state is ready.
       if (snap.projectId && isLoggedIn()) {
-        setTimeout(() => void tryPullFromCloud(), 1_500);
+        const syncProgressEl = document.getElementById('progressOverlay');
+        const syncProgressBar = document.getElementById('progressBar') as HTMLElement | null;
+        const syncProgressLabel = document.getElementById('progressLabel') as HTMLElement | null;
+        if (syncProgressEl) syncProgressEl.classList.remove('hidden');
+        if (syncProgressBar) syncProgressBar.style.width = '30%';
+        if (syncProgressLabel) syncProgressLabel.textContent = 'Syncing…';
+        try {
+          await tryPullFromCloud();
+        } catch { /* tryPullFromCloud handles its own errors */ }
+        // Hide overlay if tryPullFromCloud didn't already (e.g. no changes found)
+        if (syncProgressEl && !syncProgressEl.classList.contains('hidden')) {
+          if (syncProgressBar) syncProgressBar.style.width = '100%';
+          setTimeout(() => syncProgressEl.classList.add('hidden'), 200);
+        }
       }
     }
   } catch (e) {
