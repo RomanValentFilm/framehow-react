@@ -919,13 +919,9 @@ export function initFramehow(): void {
   // Scroll/orientation
   wireScrollHandlers();
 
-  // Set initial view mode — landscape project with frames → 3x2 grid,
-  // otherwise 'both' (autoPhoneMainView may override to 'main' on iPhone portrait)
-  if (!state().portraitMode && state().frames.length > 0) {
-    setViewMode('grid3x2');
-  } else {
-    setViewMode('both');
-  }
+  // Set initial view mode (no project loaded yet — autoPhoneMainView will
+  // switch to grid3x2 or main once a project loads)
+  setViewMode('both');
 
   // Telemetry
   startHeartbeat();

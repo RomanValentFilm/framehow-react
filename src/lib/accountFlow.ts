@@ -1880,7 +1880,7 @@ async function applyCloudTreeToStore(tree: CloudProjectTree, keepLocalFrameIds?:
     drawSuppressClick: false,
     overviewAction: false,
     fsOverlayActive: null,
-    currentViewMode: 'both',
+    currentViewMode: isPortrait ? 'both' : 'grid3x2',
     portraitMode: isPortrait,
     stripTagInfoDismissed: restoredStripTagInfoDismissed,
     needDefinitions: restoredNeedDefinitions ?? DEFAULT_NEED_DEFINITIONS,
@@ -2910,6 +2910,9 @@ export async function bootstrapAccountSystem(): Promise<void> {
       beginSystemAction();
       try {
         applySnapshotToStore(snap);
+        // Set correct view mode before first render to avoid double-load flash
+        const snapPortrait = snap.portraitMode ?? false;
+        useStore.setState({ currentViewMode: snapPortrait ? 'both' : 'grid3x2' });
         // renderAll + autoPhoneMainView call setState — keep them inside
         // the system action so their setState calls don't mark dirty.
         (window as any).__fh_renderAll?.();

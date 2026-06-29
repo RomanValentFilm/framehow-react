@@ -441,16 +441,19 @@ export function setViewMode(mode: ViewMode, keepCompare?: boolean, forceAnchorFi
 }
 
 export function autoPhoneMainView(): void {
+  const s = state();
   const w = window.innerWidth,
     h = window.innerHeight;
   const isPhone = Math.min(w, h) <= 430;
   if (isPhone && h > w) {
     // iPhone portrait: single strip MAIN view
-    useStore.setState({ activeStrips: ['main'], currentViewMode: 'main' });
-    setViewMode('main');
-  } else if (!state().portraitMode) {
+    if (s.currentViewMode !== 'main') {
+      useStore.setState({ activeStrips: ['main'], currentViewMode: 'main' });
+      setViewMode('main');
+    }
+  } else if (!s.portraitMode) {
     // Landscape project: default to 3x2 grid view
-    setViewMode('grid3x2');
+    if (s.currentViewMode !== 'grid3x2') setViewMode('grid3x2');
   }
 }
 
