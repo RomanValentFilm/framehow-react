@@ -12,6 +12,7 @@ import { createWorker } from 'tesseract.js';
 import { COLORS, state, useStore, resetStoryboardState } from '../store/state';
 import { getCurrentProject, flushSyncNow } from './currentProject';
 import { updateFrameBadge } from './helpers';
+import { autoPhoneMainView } from './view';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -2040,7 +2041,7 @@ async function onApply(): Promise<void> {
     useStore.setState({ nextId });
     updateFrameBadge();
     showToast(`${framesToLoad.length} frames loaded from adjusted positions`);
-    requestAnimationFrame(() => { (window as any).__fh_renderAll?.(); });
+    requestAnimationFrame(() => { (window as any).__fh_renderAll?.(); autoPhoneMainView(); });
     // IMP-5: PDF adjust complete → 5s delay lets images settle
     setTimeout(() => void flushSyncNow(), 5000);
   } catch (err) {

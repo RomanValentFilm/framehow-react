@@ -99,7 +99,7 @@ export function renderOverviewRow(row: HTMLElement, fid: number): void {
     mainBody = `<div class="canvas-wrap text-view" style="aspect-ratio:${f.cropW || 16}/${f.cropH || 9}">${tableHTML(fid, f.tableData)}</div>`;
   } else {
     mainBody = `<div class="canvas-wrap${s.drawActive[fid] === 'main' ? ' draw-active' : ''}" style="aspect-ratio:${f.cropW || 16}/${f.cropH || 9}">${
-      f.drawMode
+      (f.drawMode || !f.src)
         ? `<canvas id="${mcid}" width="${f.cropW || 960}" height="${f.cropH || 540}"></canvas>`
         : `<img src="${f.src}" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;">`
     }${fsButtonHTML(fid, 0, 'main')}${setupTagHTML(fid)}</div>`;
@@ -480,7 +480,7 @@ export function renderGrid4Row(row: HTMLElement, fid: number): void {
     mainBody = `<div class="canvas-wrap text-view" style="aspect-ratio:${ar}">${tableHTML(fid, f.tableData)}</div>`;
   } else {
     mainBody = `<div class="canvas-wrap${s.drawActive[fid] === 'main' ? ' draw-active' : ''}" style="aspect-ratio:${ar}">${
-      f.drawMode
+      (f.drawMode || !f.src)
         ? `<canvas id="${mcid}" width="${f.cropW || 960}" height="${f.cropH || 540}"></canvas>`
         : `<img src="${f.src}" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;">`
     }${fsButtonHTML(fid, 0, 'main')}${setupTagHTML(fid)}</div>`;

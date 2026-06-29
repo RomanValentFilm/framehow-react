@@ -502,7 +502,7 @@ export function renderMainFrame(div: HTMLElement, fid: number): void {
     bodyHTML = `<div class="canvas-wrap${
       s.drawActive[fid] === 'main' ? ' draw-active' : ''
     }" style="aspect-ratio:${f.cropW || 16}/${f.cropH || 9}">${
-      f.drawMode
+      (f.drawMode || !f.src)
         ? `<canvas id="${mcid}" width="${f.cropW || 960}" height="${f.cropH || 540}"></canvas>`
         : `<img src="${f.src}" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;">`
     }${fsButtonHTML(fid, 0, 'main')}${setupTagHTML(fid)}</div>`;
