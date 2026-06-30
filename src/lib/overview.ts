@@ -1380,14 +1380,14 @@ export function wireGrid3x2PinchZoom(): void {
 
     } else if (e.touches.length === 1 && _zoomScale > 1) {
       // Start one-finger pan when zoomed in
+      // Don't preventDefault here — that kills tap/click on buttons.
+      // We'll preventDefault in touchmove once we know user is dragging.
       _panActive = true;
       _pinchActive = false;
       _panStartX = e.touches[0].clientX;
       _panStartY = e.touches[0].clientY;
       _panStartTx = _zoomTx;
       _panStartTy = _zoomTy;
-      // Prevent normal scroll when panning zoomed view
-      e.preventDefault();
     }
   }, { passive: false });
 
