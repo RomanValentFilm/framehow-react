@@ -1457,7 +1457,8 @@ export function wireGrid3x2PinchZoom(): void {
 function _openNeedsModal(fid: number): void {
   if (document.querySelector('.g3-needs-overlay')) return; // already open
 
-  // Reset zoom before opening modal — keeps modal clean and dismissible
+  // Capture zoom level before resetting — used to enlarge the modal
+  const wasZoomed = _zoomScale > 1.1;
   resetGrid3x2Zoom();
 
   ensureFrameNeeds(fid);
@@ -1481,7 +1482,7 @@ function _openNeedsModal(fid: number): void {
   overlay.addEventListener('wheel', blockBg, { capture: true, passive: false });
   overlay.addEventListener('touchmove', blockBg, { capture: true, passive: false });
 
-  // Size = 2× the frame-card from the grid (same ratio, doubled).
+  // Size = 2× the frame-card from the grid.
   const refFrameCard = document.querySelector('.grid3x2-card-wrap .frame-card') as HTMLElement | null;
 
   const container = document.createElement('div');
@@ -1492,6 +1493,10 @@ function _openNeedsModal(fid: number): void {
       container.style.width = (rc.width * 1.8) + 'px';
       container.style.height = (rc.height * 1.8) + 'px';
     }
+  }
+  // Zoom the entire modal (text, buttons, everything) when view was zoomed
+  if (wasZoomed) {
+    (container.style as any).zoom = '1.3';
   }
 
   const needsCard = buildNeedsCard(fid);
