@@ -785,6 +785,9 @@ export function renderGrid3x2(): void {
 
   // Set per-element margins: inter-row gap accounts for text area height
   requestAnimationFrame(() => recalcGrid3x2Margins());
+
+  // Wire pinch-to-zoom (idempotent — only attaches listeners once)
+  wireGrid3x2PinchZoom();
 }
 
 /** Recalculate grid3x2 per-element margins (call on render AND on resize).
@@ -1241,6 +1244,213 @@ function _addGrid3x2Nav(wrap: HTMLElement, fid: number, isVersion: boolean): voi
       renderGrid3x2Card(wrap, fid);
     })
   );
+}
+
+// ---------------------------------------------------------------------------
+// Pinch-to-zoom for 3×2 grid view (touch devices only)
+// ---------------------------------------------------------------------------
+const MIN_SCALE = 1;
+const MAX_SCALE = 3;
+
+let _zoomScale = 1;
+let _zoomTx = 0;
+let _zoomTy = 0;
+
+// Pinch tracking
+let _pinchActive = false;
+let _pinchStartDist = 0;
+let _pinchStartScale = 1;
+let _pinchCenterX = 0;
+let _pinchCenterY = 0;
+let _pinchStartTx = 0;
+let _pinchStartTy = 0;
+
+// One-finger pan tracking (when zoomed in)
+let _panActive = false;
+let _panStartX = 0;
+let _panStartY = 0;
+let _panStartTx = 0;
+let _panStartTy = 0;
+
+
+let _zoomWired = false;
+
+function _getContainer(): HTMLElement | null {
+  return document.querySelector('.grid3x2-container') as HTMLElement | null;
+}
+
+function _getScrollParent(): HTMLElement | null {
+  return document.getElementById('overviewScroll');
+}
+
+function _applyTransform(container: HTMLElement): void {
+  if (_zoomScale <= 1) {
+    container.style.transform = '';
+    container.style.transformOrigin = '';
+  } else {
+    container.style.transformOrigin = '0 0';
+    container.style.transform = `translate(${_zoomTx}px, ${_zoomTy}px) scale(${_zoomScale})`;
+  }
+}
+
+function _clampTranslation(): void {
+  const container = _getContainer();
+  const scrollParent = _getScrollParent();
+  if (!container || !scrollParent) return;
+
+  if (_zoomScale <= 1) {
+    _zoomTx = 0;
+    _zoomTy = 0;
+    return;
+  }
+
+  const sp = scrollParent.getBoundingClientRect();
+  const scaledW = container.offsetWidth * _zoomScale;
+  const scaledH = container.offsetHeight * _zoomScale;
+
+  // Horizontal: content wider than viewport → clamp, otherwise center
+  if (scaledW > sp.width) {
+    const minTx = sp.width - scaledW;
+    _zoomTx = Math.max(minTx, Math.min(0, _zoomTx));
+  } else {
+    _zoomTx = (sp.width - scaledW) / 2;
+  }
+
+  // Vertical: allow scrolling down into zoomed content, clamp top
+  if (scaledH > sp.height) {
+    const minTy = sp.height - scaledH;
+    _zoomTy = Math.max(minTy, Math.min(0, _zoomTy));
+  } else {
+    _zoomTy = 0;
+  }
+}
+
+function _touchDist(t1: Touch, t2: Touch): number {
+  const dx = t1.clientX - t2.clientX;
+  const dy = t1.clientY - t2.clientY;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+/** Reset zoom to 1x (called on view change, draw mode, etc.) */
+export function resetGrid3x2Zoom(): void {
+  _zoomScale = 1;
+  _zoomTx = 0;
+  _zoomTy = 0;
+  _pinchActive = false;
+  _panActive = false;
+  const container = _getContainer();
+  if (container) {
+    container.style.transform = '';
+    container.style.transformOrigin = '';
+  }
+  const scrollParent = _getScrollParent();
+  if (scrollParent) {
+    scrollParent.style.overflow = '';
+  }
+}
+
+export function wireGrid3x2PinchZoom(): void {
+  if (_zoomWired) return;
+  const scrollParent = _getScrollParent();
+  if (!scrollParent) return;
+
+  // Check touch support
+  if (!('ontouchstart' in window) && navigator.maxTouchPoints < 1) return;
+
+  _zoomWired = true;
+
+  scrollParent.addEventListener('touchstart', (e: TouchEvent) => {
+    const container = _getContainer();
+    if (!container) return;
+
+    if (e.touches.length === 2) {
+      // Start pinch
+      e.preventDefault();
+      _pinchActive = true;
+      _panActive = false;
+      _pinchStartDist = _touchDist(e.touches[0], e.touches[1]);
+      _pinchStartScale = _zoomScale;
+      _pinchStartTx = _zoomTx;
+      _pinchStartTy = _zoomTy;
+
+      // Pinch center relative to scroll parent
+      const sp = scrollParent.getBoundingClientRect();
+      _pinchCenterX = (e.touches[0].clientX + e.touches[1].clientX) / 2 - sp.left;
+      _pinchCenterY = (e.touches[0].clientY + e.touches[1].clientY) / 2 - sp.top + scrollParent.scrollTop;
+
+    } else if (e.touches.length === 1 && _zoomScale > 1) {
+      // Start one-finger pan when zoomed in
+      _panActive = true;
+      _pinchActive = false;
+      _panStartX = e.touches[0].clientX;
+      _panStartY = e.touches[0].clientY;
+      _panStartTx = _zoomTx;
+      _panStartTy = _zoomTy;
+      // Prevent normal scroll when panning zoomed view
+      e.preventDefault();
+    }
+  }, { passive: false });
+
+  scrollParent.addEventListener('touchmove', (e: TouchEvent) => {
+    const container = _getContainer();
+    if (!container) return;
+
+    if (_pinchActive && e.touches.length >= 2) {
+      e.preventDefault();
+      const dist = _touchDist(e.touches[0], e.touches[1]);
+      const ratio = dist / _pinchStartDist;
+      let newScale = _pinchStartScale * ratio;
+      newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, newScale));
+
+      // Zoom toward pinch center
+      const sp = scrollParent.getBoundingClientRect();
+      const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2 - sp.left;
+      const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2 - sp.top + scrollParent.scrollTop;
+
+      // New translation: keep pinch center fixed
+      _zoomTx = cx - (cx - _pinchStartTx) * (newScale / _pinchStartScale);
+      _zoomTy = cy - (cy - _pinchStartTy) * (newScale / _pinchStartScale);
+      _zoomScale = newScale;
+
+      _clampTranslation();
+      _applyTransform(container);
+
+      // Disable native scroll when zoomed
+      if (_zoomScale > 1) {
+        scrollParent.style.overflow = 'hidden';
+      }
+
+    } else if (_panActive && e.touches.length === 1 && _zoomScale > 1) {
+      e.preventDefault();
+      const dx = e.touches[0].clientX - _panStartX;
+      const dy = e.touches[0].clientY - _panStartY;
+      _zoomTx = _panStartTx + dx;
+      _zoomTy = _panStartTy + dy;
+      _clampTranslation();
+      _applyTransform(container);
+    }
+  }, { passive: false });
+
+  const endTouch = () => {
+    const container = _getContainer();
+    _pinchActive = false;
+    _panActive = false;
+
+    // Snap back to 1x if near
+    if (_zoomScale < 1.05) {
+      _zoomScale = 1;
+      _zoomTx = 0;
+      _zoomTy = 0;
+      if (container) {
+        container.style.transform = '';
+        container.style.transformOrigin = '';
+      }
+      const sp = _getScrollParent();
+      if (sp) sp.style.overflow = '';
+    }
+  };
+  scrollParent.addEventListener('touchend', endTouch);
+  scrollParent.addEventListener('touchcancel', endTouch);
 }
 
 /** Open NEEDS card for a frame as a modal overlay (75% screen height). */

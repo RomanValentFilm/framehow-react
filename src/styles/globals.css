@@ -184,7 +184,7 @@
   .columns.view-grid3x2 .strip-col{display:none;}
   .columns.view-grid3x2 .overview-col{display:flex;}
   .columns.view-grid3x2 .overview-scroll{padding:0;}
-  .grid3x2-container{display:grid;grid-template-columns:repeat(3,1fr);column-gap:3vw;row-gap:0;padding:2vw 3vw 3vw 3vw;background:#d9d9d9;min-height:100%;}
+  .grid3x2-container{display:grid;grid-template-columns:repeat(3,1fr);column-gap:3vw;row-gap:0;padding:2vw 3vw 3vw 3vw;background:#d9d9d9;min-height:100%;touch-action:pan-y;}
   .grid3x2-card-wrap{min-width:0;}
   .grid3x2-card-wrap .frame-card{border:1px solid var(--border);border-radius:var(--radius-sm);}
   .grid3x2-card-wrap .version-actions{display:flex!important;}

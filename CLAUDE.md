@@ -167,11 +167,22 @@ Changes:
 Changes:
 - `src/lib/accountFlow.ts` — Added fullscreen overlay ("Couldn't load all content — check your connection") with Retry/Dismiss buttons when R2 image fetches fail; overlay shows after progress bar hides (no overlap); Retry triggers fresh pull; Dismiss lets user browse but _pullIncomplete stays true (no push/save of half-loaded state).
 
+### v4.9.011 — 2026-06-29 (dev — deployed)
+**3x2VIEW default for landscape, broken img fix, syncing overlay on reload**
+
+Changes:
+- `src/store/state.ts` — APP_VERSION v4.9.012
+- `src/lib/view.ts` — autoPhoneMainView() now defaults landscape projects to grid3x2 view; added guard to skip setViewMode when mode is already correct (prevents redundant renders)
+- `src/lib/accountFlow.ts` — applyCloudTreeToStore sets currentViewMode to 'grid3x2' for landscape projects (was hardcoded 'both'); added autoPhoneMainView() after applyCloudTreeToStore and project restore; bootstrapAccountSystem shows "Syncing…" overlay during cloud pull on reload (blocks interaction until final state ready, removed 1.5s delay)
+- `src/lib/overview.ts` — renderGrid3x2Card MAIN branch: show canvas instead of broken <img> when f.src is empty; all 3 overview render locations fixed
+- `src/lib/render.ts` — Both main frame render locations: show canvas instead of broken <img> when f.src is empty
+- `src/lib/pdfAdjust.ts` — Added autoPhoneMainView() call after PDF adjustment apply (switches to grid3x2 for landscape projects)
+
 ### v4.9.010 — 2026-06-29 (dev — deployed)
 **SKETCH/NEEDS quick buttons in 3x2 view, floor prefix f→s, layout tightening**
 
 Changes:
-- `src/store/state.ts` — APP_VERSION v4.9.011; floor strip prefix changed from 'f' to 's' (s1, s2, etc.)
+- `src/store/state.ts` — APP_VERSION v4.9.010; floor strip prefix changed from 'f' to 's' (s1, s2, etc.)
 - `src/lib/overview.ts` — Added SKETCH/NEEDS quick-access buttons above each frame card in 3x2 view; SKETCH opens fullscreen draw on s1 of floor/sketch strip; NEEDS opens modal overlay at 75vh with needs card; vertical margins changed from 3vw to 2vw; imported openFullscreen, buildNeedsCard, ensureFrameNeeds, ensureStripVersions
 - `src/styles/globals.css` — Added .g3-quick-btns/.g3-quick-btn styles (semitransparent, hover reveal on desktop, always visible on touch); added .g3-needs-overlay/.g3-needs-modal styles (bottom-sheet modal); text block reduced from 5 to 3 lines; grid container top padding 2vw
 

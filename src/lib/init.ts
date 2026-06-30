@@ -5,7 +5,7 @@
 
 import { state, useStore, isTouch, resetStoryboardState } from '../store/state';
 import { renderAll, renderMainFrame, renderVersionFrame } from './render';
-import { renderOverview, renderOverviewRow, renderGrid4, renderGrid4Row, renderGrid3x2, renderGrid3x2Card, recalcGrid3x2Margins } from './overview';
+import { renderOverview, renderOverviewRow, renderGrid4, renderGrid4Row, renderGrid3x2, renderGrid3x2Card, recalcGrid3x2Margins, resetGrid3x2Zoom } from './overview';
 import { handleAction, handleMainAction } from './actions';
 import { setViewMode, autoPhoneMainView, wireScrollHandlers, scrollAnchorTo } from './view';
 import {
@@ -73,6 +73,7 @@ export function initFramehow(): void {
   (window as any).__fh_renderGrid3x2 = renderGrid3x2;
   (window as any).__fh_renderGrid3x2Card = renderGrid3x2Card;
   (window as any).__fh_recalcGrid3x2Margins = recalcGrid3x2Margins;
+  (window as any).__fh_resetGrid3x2Zoom = resetGrid3x2Zoom;
   (window as any).__fh_setViewMode = setViewMode;
   (window as any).__fh_handleMainAction = handleMainAction;
   (window as any).__fh_handleAction = handleAction;
