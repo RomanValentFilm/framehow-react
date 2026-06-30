@@ -1465,8 +1465,7 @@ function _openNeedsModal(fid: number): void {
   const overlay = document.createElement('div');
   overlay.className = 'g3-needs-overlay';
 
-  // Block scroll/wheel on the overlay backdrop — modal content stays interactive.
-  // Allow single-finger touch through so pointerup dismiss works (even when zoomed).
+  // Block click/wheel on backdrop — modal content stays interactive.
   const blockBg = (e: Event) => {
     if (!(e.target as HTMLElement).closest('.g3-needs-modal')) {
       e.preventDefault();
@@ -1475,7 +1474,6 @@ function _openNeedsModal(fid: number): void {
   };
   overlay.addEventListener('click', blockBg, true);
   overlay.addEventListener('wheel', blockBg, { capture: true, passive: false });
-  overlay.addEventListener('touchmove', blockBg, { capture: true, passive: false });
 
   // Size = 2× the frame-card from the grid (same ratio, doubled).
   const refFrameCard = document.querySelector('.grid3x2-card-wrap .frame-card') as HTMLElement | null;
@@ -1488,6 +1486,13 @@ function _openNeedsModal(fid: number): void {
       container.style.width = (rc.width * 1.8) + 'px';
       container.style.height = (rc.height * 1.8) + 'px';
     }
+  }
+
+  // Apply current grid zoom to modal so it appears bigger when zoomed in
+  let modalScale = _zoomScale;
+  if (modalScale > 1) {
+    container.style.transform = `scale(${modalScale})`;
+    container.style.transformOrigin = 'center center';
   }
 
   const needsCard = buildNeedsCard(fid);
@@ -1505,6 +1510,47 @@ function _openNeedsModal(fid: number): void {
       needsBody.appendChild(actionRow);
     }
   });
+
+  // --- Pinch-zoom on the modal ---
+  let _mPinchActive = false;
+  let _mPinchStartDist = 0;
+  let _mPinchStartScale = modalScale;
+
+  overlay.addEventListener('touchstart', (e: TouchEvent) => {
+    if (e.touches.length === 2) {
+      _mPinchActive = true;
+      _mPinchStartDist = _touchDist(e.touches[0], e.touches[1]);
+      _mPinchStartScale = modalScale;
+      e.preventDefault();
+    }
+  }, { passive: false });
+
+  overlay.addEventListener('touchmove', (e: TouchEvent) => {
+    if (_mPinchActive && e.touches.length >= 2) {
+      e.preventDefault();
+      const dist = _touchDist(e.touches[0], e.touches[1]);
+      const ratio = dist / _mPinchStartDist;
+      let newScale = _mPinchStartScale * ratio;
+      newScale = Math.max(0.5, Math.min(MAX_SCALE, newScale));
+      modalScale = newScale;
+      container.style.transform = `scale(${newScale})`;
+      container.style.transformOrigin = 'center center';
+    } else if (!(e.target as HTMLElement).closest('.g3-needs-modal')) {
+      // Block scroll on backdrop
+      e.preventDefault();
+    }
+  }, { passive: false });
+
+  const endModalPinch = () => {
+    _mPinchActive = false;
+    // Snap to 1x if near
+    if (modalScale < 1.05) {
+      modalScale = 1;
+      container.style.transform = '';
+    }
+  };
+  overlay.addEventListener('touchend', endModalPinch);
+  overlay.addEventListener('touchcancel', endModalPinch);
 
   // Tap outside the modal container → close (uses pointerup to avoid pass-through)
   overlay.addEventListener('pointerup', (e) => {
