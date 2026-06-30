@@ -1465,7 +1465,8 @@ function _openNeedsModal(fid: number): void {
   const overlay = document.createElement('div');
   overlay.className = 'g3-needs-overlay';
 
-  // Block all events on the overlay backdrop — modal content stays interactive
+  // Block scroll/wheel on the overlay backdrop — modal content stays interactive.
+  // Allow single-finger touch through so pointerup dismiss works (even when zoomed).
   const blockBg = (e: Event) => {
     if (!(e.target as HTMLElement).closest('.g3-needs-modal')) {
       e.preventDefault();
@@ -1473,8 +1474,6 @@ function _openNeedsModal(fid: number): void {
     }
   };
   overlay.addEventListener('click', blockBg, true);
-  overlay.addEventListener('touchstart', blockBg, { capture: true, passive: false } as any);
-  overlay.addEventListener('touchend', blockBg, { capture: true, passive: false } as any);
   overlay.addEventListener('wheel', blockBg, { capture: true, passive: false });
   overlay.addEventListener('touchmove', blockBg, { capture: true, passive: false });
 
