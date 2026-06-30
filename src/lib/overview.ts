@@ -1250,7 +1250,7 @@ function _addGrid3x2Nav(wrap: HTMLElement, fid: number, isVersion: boolean): voi
 // Pinch-to-zoom for 3×2 grid view (touch devices only)
 // ---------------------------------------------------------------------------
 const MIN_SCALE = 1;
-const MAX_SCALE = 3;
+const MAX_SCALE = 2.5;
 
 let _zoomScale = 1;
 let _zoomTx = 0;
@@ -1510,49 +1510,86 @@ function _openNeedsModal(fid: number): void {
     }
   });
 
-  // --- Unified pinch-zoom: same _zoomScale drives grid + modal ---
+  // --- Unified pinch-zoom + one-finger pan on modal ---
   let _mPinchActive = false;
   let _mPinchStartDist = 0;
   let _mPinchStartScale = _zoomScale;
+  let _mPanActive = false;
+  let _mPanStartX = 0;
+  let _mPanStartY = 0;
+  let _mTx = 0;       // modal translate X
+  let _mTy = 0;       // modal translate Y
+  let _mPanStartTx = 0;
+  let _mPanStartTy = 0;
+  let _mDidMove = false;  // track if finger moved (pan vs tap)
   let _wasPinching = false;
+
+  const _applyModalTransform = () => {
+    if (_zoomScale > 1.01 || _mTx !== 0 || _mTy !== 0) {
+      container.style.transform = `translate(${_mTx}px, ${_mTy}px) scale(${_zoomScale})`;
+      container.style.transformOrigin = 'center center';
+    } else {
+      container.style.transform = '';
+    }
+  };
 
   overlay.addEventListener('touchstart', (e: TouchEvent) => {
     if (e.touches.length === 2) {
+      // Pinch start — always works, even on top of modal content
       _mPinchActive = true;
+      _mPanActive = false;
       _wasPinching = true;
       _mPinchStartDist = _touchDist(e.touches[0], e.touches[1]);
       _mPinchStartScale = _zoomScale;
       e.preventDefault();
+    } else if (e.touches.length === 1 && _zoomScale > 1) {
+      // One-finger pan when zoomed — move the modal around
+      _mPanActive = true;
+      _mDidMove = false;
+      _mPanStartX = e.touches[0].clientX;
+      _mPanStartY = e.touches[0].clientY;
+      _mPanStartTx = _mTx;
+      _mPanStartTy = _mTy;
+      // Don't preventDefault here — preserve taps on buttons
     }
   }, { passive: false });
 
   overlay.addEventListener('touchmove', (e: TouchEvent) => {
     if (_mPinchActive && e.touches.length >= 2) {
       e.preventDefault();
+      e.stopPropagation(); // stop needs-body scroll from interfering
       const dist = _touchDist(e.touches[0], e.touches[1]);
       const ratio = dist / _mPinchStartDist;
       let newScale = _mPinchStartScale * ratio;
       newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, newScale));
-      // Update shared zoom state — one zoom for everything
       _zoomScale = newScale;
-      // Update modal
-      container.style.transform = newScale > 1.01 ? `scale(${newScale})` : '';
-      container.style.transformOrigin = 'center center';
+      _applyModalTransform();
       // Update grid behind overlay in sync
       const gridContainer = _getContainer();
       if (gridContainer) _applyTransform(gridContainer);
-    } else if (!(e.target as HTMLElement).closest('.g3-needs-modal')) {
-      e.preventDefault(); // block scroll on backdrop
+    } else if (_mPanActive && e.touches.length === 1 && _zoomScale > 1) {
+      const dx = e.touches[0].clientX - _mPanStartX;
+      const dy = e.touches[0].clientY - _mPanStartY;
+      if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
+        _mDidMove = true;
+        e.preventDefault();  // prevent scroll once we know it's a pan
+        _mTx = _mPanStartTx + dx;
+        _mTy = _mPanStartTy + dy;
+        _applyModalTransform();
+      }
     }
-  }, { passive: false });
+  }, { passive: false, capture: true });
 
-  const endModalPinch = () => {
+  const endModalTouch = () => {
     _mPinchActive = false;
+    _mPanActive = false;
     // Snap everything to 1x if near
     if (_zoomScale < 1.05) {
       _zoomScale = 1;
       _zoomTx = 0;
       _zoomTy = 0;
+      _mTx = 0;
+      _mTy = 0;
       container.style.transform = '';
       const gridContainer = _getContainer();
       if (gridContainer) {
@@ -1565,12 +1602,12 @@ function _openNeedsModal(fid: number): void {
     // Clear pinch flag after short delay so pointerup doesn't dismiss
     setTimeout(() => { _wasPinching = false; }, 200);
   };
-  overlay.addEventListener('touchend', endModalPinch);
-  overlay.addEventListener('touchcancel', endModalPinch);
+  overlay.addEventListener('touchend', endModalTouch);
+  overlay.addEventListener('touchcancel', endModalTouch);
 
-  // Dismiss on tap outside modal — skip if we just finished a pinch gesture
+  // Dismiss on tap outside modal — skip if pinching or panning
   overlay.addEventListener('pointerup', (e) => {
-    if (_wasPinching) return;
+    if (_wasPinching || _mDidMove) { _mDidMove = false; return; }
     if (!(e.target as HTMLElement).closest('.g3-needs-modal')) {
       e.preventDefault();
       e.stopPropagation();
