@@ -1,6 +1,6 @@
 // Action handlers for Main strip and Version/Floor/Refs strip cards.
 
-import { COLORS, state, useStore } from '../store/state';
+import { COLORS, state, useStore, bumpRenderTick } from '../store/state';
 import type { StripType } from '../store/state';
 import { reorderFrameInGroup, addFrameToActiveGroup, removeFrameFromGroup, hideFrameInGroup } from './groups';
 import {
@@ -256,6 +256,7 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
           f.strokes.push({ type: 'text', text, color, x: 20, y: 50 });
         }
         if ((f.strokes || []).length > 0) f.drawMode = true;
+        bumpRenderTick(); // Ensure Zustand subscriber fires → IDB save + dirty flag
       }
       const cs = state();
       if (cs.currentViewMode === 'grid3x2') {
@@ -442,6 +443,7 @@ export function handleAction(action: string, fid: number, div: HTMLElement, from
           ver.strokes.push({ type: 'text', text, color, x: 20, y: 50 });
         }
         if (ver.type === 'empty' && ver.strokes.length > 0) ver.type = 'drawing';
+        bumpRenderTick(); // Ensure Zustand subscriber fires → IDB save + dirty flag
       }
       rerender();
       if (wasOverview) {

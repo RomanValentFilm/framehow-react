@@ -1880,7 +1880,7 @@ async function applyCloudTreeToStore(tree: CloudProjectTree, keepLocalFrameIds?:
     drawSuppressClick: false,
     overviewAction: false,
     fsOverlayActive: null,
-    currentViewMode: isPortrait ? 'both' : 'grid3x2',
+    currentViewMode: 'both',
     portraitMode: isPortrait,
     stripTagInfoDismissed: restoredStripTagInfoDismissed,
     needDefinitions: restoredNeedDefinitions ?? DEFAULT_NEED_DEFINITIONS,
@@ -1888,7 +1888,6 @@ async function applyCloudTreeToStore(tree: CloudProjectTree, keepLocalFrameIds?:
     renderTick: prev.renderTick + 1,
   }));
   (window as any).__fh_renderAll?.();
-  autoPhoneMainView();
 
   // Now fetch images from R2 in parallel and patch them into the store.
   const token = getToken();
@@ -2197,7 +2196,6 @@ async function performRestore(projectId: string, snapshotId: string): Promise<vo
     if (progressBar) progressBar.style.width = '100%';
     clearDirtyState();
     (window as any).__fh_renderAll?.();
-    autoPhoneMainView();
     showToast('Project restored successfully.');
     setTimeout(() => {
       if (progressEl) progressEl.classList.add('hidden');
@@ -2560,13 +2558,6 @@ function startPullOnFocus(): void {
     cancelPendingPush();
     setPullInFlight(true);
 
-    // Reset stale pull state — if a previous pull was interrupted (e.g. user
-    // closed the app mid-sync), pullInFlight is stuck true and no pull can
-    // ever run again until full page reload. Clearing it here is safe because
-    // safePull is the authoritative pull trigger on app resume.
-    pullInFlight = false;
-    lastPullAt = 0;
-
     // Check heartbeat — if another device is active, show overlay & wait.
     // Start pull in parallel so data is ready the instant the lock clears.
     const pullP = tryPullFromCloud().catch(() => {});
@@ -2917,9 +2908,6 @@ export async function bootstrapAccountSystem(): Promise<void> {
       beginSystemAction();
       try {
         applySnapshotToStore(snap);
-        // Set correct view mode before first render to avoid double-load flash
-        const snapPortrait = snap.portraitMode ?? false;
-        useStore.setState({ currentViewMode: snapPortrait ? 'both' : 'grid3x2' });
         // renderAll + autoPhoneMainView call setState — keep them inside
         // the system action so their setState calls don't mark dirty.
         (window as any).__fh_renderAll?.();
@@ -2935,23 +2923,11 @@ export async function bootstrapAccountSystem(): Promise<void> {
       clearDirtyState(); // IDB restore is not a user change
 
       // Kick off a cloud pull now that projectId is set.
-      // Show syncing overlay so user sees loading bar (not old project flash)
-      // until the final state is ready.
+      // The focus/visibility events fired before bootstrap set the projectId,
+      // so the initial pull attempt bailed. Delay slightly so the UI settles
+      // before we start network requests + image loading.
       if (snap.projectId && isLoggedIn()) {
-        const syncProgressEl = document.getElementById('progressOverlay');
-        const syncProgressBar = document.getElementById('progressBar') as HTMLElement | null;
-        const syncProgressLabel = document.getElementById('progressLabel') as HTMLElement | null;
-        if (syncProgressEl) syncProgressEl.classList.remove('hidden');
-        if (syncProgressBar) syncProgressBar.style.width = '30%';
-        if (syncProgressLabel) syncProgressLabel.textContent = 'Syncing…';
-        try {
-          await tryPullFromCloud();
-        } catch { /* tryPullFromCloud handles its own errors */ }
-        // Hide overlay if tryPullFromCloud didn't already (e.g. no changes found)
-        if (syncProgressEl && !syncProgressEl.classList.contains('hidden')) {
-          if (syncProgressBar) syncProgressBar.style.width = '100%';
-          setTimeout(() => syncProgressEl.classList.add('hidden'), 200);
-        }
+        setTimeout(() => void tryPullFromCloud(), 1_500);
       }
     }
   } catch (e) {
