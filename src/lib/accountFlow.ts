@@ -2560,6 +2560,13 @@ function startPullOnFocus(): void {
     cancelPendingPush();
     setPullInFlight(true);
 
+    // Reset stale pull state — if a previous pull was interrupted (e.g. user
+    // closed the app mid-sync), pullInFlight is stuck true and no pull can
+    // ever run again until full page reload. Clearing it here is safe because
+    // safePull is the authoritative pull trigger on app resume.
+    pullInFlight = false;
+    lastPullAt = 0;
+
     // Check heartbeat — if another device is active, show overlay & wait.
     // Start pull in parallel so data is ready the instant the lock clears.
     const pullP = tryPullFromCloud().catch(() => {});
