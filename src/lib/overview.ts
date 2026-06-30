@@ -1488,10 +1488,9 @@ function _openNeedsModal(fid: number): void {
     }
   }
 
-  // Apply current grid zoom to modal so it appears bigger when zoomed in
-  let modalScale = _zoomScale;
-  if (modalScale > 1) {
-    container.style.transform = `scale(${modalScale})`;
+  // Apply current zoom — one unified zoom for grid + modal
+  if (_zoomScale > 1) {
+    container.style.transform = `scale(${_zoomScale})`;
     container.style.transformOrigin = 'center center';
   }
 
@@ -1511,16 +1510,18 @@ function _openNeedsModal(fid: number): void {
     }
   });
 
-  // --- Pinch-zoom on the modal ---
+  // --- Unified pinch-zoom: same _zoomScale drives grid + modal ---
   let _mPinchActive = false;
   let _mPinchStartDist = 0;
-  let _mPinchStartScale = modalScale;
+  let _mPinchStartScale = _zoomScale;
+  let _wasPinching = false;
 
   overlay.addEventListener('touchstart', (e: TouchEvent) => {
     if (e.touches.length === 2) {
       _mPinchActive = true;
+      _wasPinching = true;
       _mPinchStartDist = _touchDist(e.touches[0], e.touches[1]);
-      _mPinchStartScale = modalScale;
+      _mPinchStartScale = _zoomScale;
       e.preventDefault();
     }
   }, { passive: false });
@@ -1531,29 +1532,45 @@ function _openNeedsModal(fid: number): void {
       const dist = _touchDist(e.touches[0], e.touches[1]);
       const ratio = dist / _mPinchStartDist;
       let newScale = _mPinchStartScale * ratio;
-      newScale = Math.max(0.5, Math.min(MAX_SCALE, newScale));
-      modalScale = newScale;
-      container.style.transform = `scale(${newScale})`;
+      newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, newScale));
+      // Update shared zoom state — one zoom for everything
+      _zoomScale = newScale;
+      // Update modal
+      container.style.transform = newScale > 1.01 ? `scale(${newScale})` : '';
       container.style.transformOrigin = 'center center';
+      // Update grid behind overlay in sync
+      const gridContainer = _getContainer();
+      if (gridContainer) _applyTransform(gridContainer);
     } else if (!(e.target as HTMLElement).closest('.g3-needs-modal')) {
-      // Block scroll on backdrop
-      e.preventDefault();
+      e.preventDefault(); // block scroll on backdrop
     }
   }, { passive: false });
 
   const endModalPinch = () => {
     _mPinchActive = false;
-    // Snap to 1x if near
-    if (modalScale < 1.05) {
-      modalScale = 1;
+    // Snap everything to 1x if near
+    if (_zoomScale < 1.05) {
+      _zoomScale = 1;
+      _zoomTx = 0;
+      _zoomTy = 0;
       container.style.transform = '';
+      const gridContainer = _getContainer();
+      if (gridContainer) {
+        gridContainer.style.transform = '';
+        gridContainer.style.transformOrigin = '';
+      }
+      const sp = _getScrollParent();
+      if (sp) sp.style.overflow = '';
     }
+    // Clear pinch flag after short delay so pointerup doesn't dismiss
+    setTimeout(() => { _wasPinching = false; }, 200);
   };
   overlay.addEventListener('touchend', endModalPinch);
   overlay.addEventListener('touchcancel', endModalPinch);
 
-  // Tap outside the modal container → close (uses pointerup to avoid pass-through)
+  // Dismiss on tap outside modal — skip if we just finished a pinch gesture
   overlay.addEventListener('pointerup', (e) => {
+    if (_wasPinching) return;
     if (!(e.target as HTMLElement).closest('.g3-needs-modal')) {
       e.preventDefault();
       e.stopPropagation();
