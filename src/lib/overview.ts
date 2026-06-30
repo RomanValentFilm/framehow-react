@@ -1457,6 +1457,9 @@ export function wireGrid3x2PinchZoom(): void {
 function _openNeedsModal(fid: number): void {
   if (document.querySelector('.g3-needs-overlay')) return; // already open
 
+  // Reset zoom before opening modal — keeps modal clean and dismissible
+  resetGrid3x2Zoom();
+
   ensureFrameNeeds(fid);
 
   // Block scroll/touch behind modal
@@ -1465,7 +1468,7 @@ function _openNeedsModal(fid: number): void {
   const overlay = document.createElement('div');
   overlay.className = 'g3-needs-overlay';
 
-  // Block click/wheel on backdrop — modal content stays interactive.
+  // Block all events on the overlay backdrop — modal content stays interactive
   const blockBg = (e: Event) => {
     if (!(e.target as HTMLElement).closest('.g3-needs-modal')) {
       e.preventDefault();
@@ -1473,7 +1476,10 @@ function _openNeedsModal(fid: number): void {
     }
   };
   overlay.addEventListener('click', blockBg, true);
+  overlay.addEventListener('touchstart', blockBg, { capture: true, passive: false } as any);
+  overlay.addEventListener('touchend', blockBg, { capture: true, passive: false } as any);
   overlay.addEventListener('wheel', blockBg, { capture: true, passive: false });
+  overlay.addEventListener('touchmove', blockBg, { capture: true, passive: false });
 
   // Size = 2× the frame-card from the grid (same ratio, doubled).
   const refFrameCard = document.querySelector('.grid3x2-card-wrap .frame-card') as HTMLElement | null;
@@ -1486,12 +1492,6 @@ function _openNeedsModal(fid: number): void {
       container.style.width = (rc.width * 1.8) + 'px';
       container.style.height = (rc.height * 1.8) + 'px';
     }
-  }
-
-  // Apply current zoom — one unified zoom for grid + modal
-  if (_zoomScale > 1) {
-    container.style.transform = `scale(${_zoomScale})`;
-    container.style.transformOrigin = 'center center';
   }
 
   const needsCard = buildNeedsCard(fid);
@@ -1510,104 +1510,8 @@ function _openNeedsModal(fid: number): void {
     }
   });
 
-  // --- Unified pinch-zoom + one-finger pan on modal ---
-  let _mPinchActive = false;
-  let _mPinchStartDist = 0;
-  let _mPinchStartScale = _zoomScale;
-  let _mPanActive = false;
-  let _mPanStartX = 0;
-  let _mPanStartY = 0;
-  let _mTx = 0;       // modal translate X
-  let _mTy = 0;       // modal translate Y
-  let _mPanStartTx = 0;
-  let _mPanStartTy = 0;
-  let _mDidMove = false;  // track if finger moved (pan vs tap)
-  let _wasPinching = false;
-
-  const _applyModalTransform = () => {
-    if (_zoomScale > 1.01 || _mTx !== 0 || _mTy !== 0) {
-      container.style.transform = `translate(${_mTx}px, ${_mTy}px) scale(${_zoomScale})`;
-      container.style.transformOrigin = 'center center';
-    } else {
-      container.style.transform = '';
-    }
-  };
-
-  overlay.addEventListener('touchstart', (e: TouchEvent) => {
-    if (e.touches.length === 2) {
-      // Pinch start — always works, even on top of modal content
-      _mPinchActive = true;
-      _mPanActive = false;
-      _wasPinching = true;
-      _mPinchStartDist = _touchDist(e.touches[0], e.touches[1]);
-      _mPinchStartScale = _zoomScale;
-      e.preventDefault();
-    } else if (e.touches.length === 1 && _zoomScale > 1) {
-      // One-finger pan when zoomed — move the modal around
-      _mPanActive = true;
-      _mDidMove = false;
-      _mPanStartX = e.touches[0].clientX;
-      _mPanStartY = e.touches[0].clientY;
-      _mPanStartTx = _mTx;
-      _mPanStartTy = _mTy;
-      // Don't preventDefault here — preserve taps on buttons
-    }
-  }, { passive: false });
-
-  overlay.addEventListener('touchmove', (e: TouchEvent) => {
-    if (_mPinchActive && e.touches.length >= 2) {
-      e.preventDefault();
-      e.stopPropagation(); // stop needs-body scroll from interfering
-      const dist = _touchDist(e.touches[0], e.touches[1]);
-      const ratio = dist / _mPinchStartDist;
-      let newScale = _mPinchStartScale * ratio;
-      newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, newScale));
-      _zoomScale = newScale;
-      _applyModalTransform();
-      // Update grid behind overlay in sync
-      const gridContainer = _getContainer();
-      if (gridContainer) _applyTransform(gridContainer);
-    } else if (_mPanActive && e.touches.length === 1 && _zoomScale > 1) {
-      const dx = e.touches[0].clientX - _mPanStartX;
-      const dy = e.touches[0].clientY - _mPanStartY;
-      if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
-        _mDidMove = true;
-        e.preventDefault();  // prevent scroll once we know it's a pan
-        _mTx = _mPanStartTx + dx;
-        _mTy = _mPanStartTy + dy;
-        _applyModalTransform();
-      }
-    }
-  }, { passive: false, capture: true });
-
-  const endModalTouch = () => {
-    _mPinchActive = false;
-    _mPanActive = false;
-    // Snap everything to 1x if near
-    if (_zoomScale < 1.05) {
-      _zoomScale = 1;
-      _zoomTx = 0;
-      _zoomTy = 0;
-      _mTx = 0;
-      _mTy = 0;
-      container.style.transform = '';
-      const gridContainer = _getContainer();
-      if (gridContainer) {
-        gridContainer.style.transform = '';
-        gridContainer.style.transformOrigin = '';
-      }
-      const sp = _getScrollParent();
-      if (sp) sp.style.overflow = '';
-    }
-    // Clear pinch flag after short delay so pointerup doesn't dismiss
-    setTimeout(() => { _wasPinching = false; }, 200);
-  };
-  overlay.addEventListener('touchend', endModalTouch);
-  overlay.addEventListener('touchcancel', endModalTouch);
-
-  // Dismiss on tap outside modal — skip if pinching or panning
+  // Tap outside the modal container → close (uses pointerup to avoid pass-through)
   overlay.addEventListener('pointerup', (e) => {
-    if (_wasPinching || _mDidMove) { _mDidMove = false; return; }
     if (!(e.target as HTMLElement).closest('.g3-needs-modal')) {
       e.preventDefault();
       e.stopPropagation();
