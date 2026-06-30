@@ -23,6 +23,7 @@ import {
   getFrameStripLabel,
   setFrameStripLabel,
   ensureStripVersions,
+  clearReorder,
 } from './helpers';
 import { restoreCanvas, restoreMainCanvas, setupMainDrawing } from './drawing';
 import { renderVersionFrame } from './render';
@@ -788,6 +789,17 @@ export function renderGrid3x2(): void {
 
   // Wire pinch-to-zoom (idempotent — only attaches listeners once)
   wireGrid3x2PinchZoom();
+
+  // Tap outside reorder controls → cancel reorder (same as other views)
+  overviewScroll.addEventListener('click', (e) => {
+    const s2 = state();
+    if (s2.reorderFid === null) return;
+    // Don't cancel if tap was on a reorder button or move arrow
+    if ((e.target as HTMLElement).closest('.reorder-group')) return;
+    clearReorder();
+    const renderFn = (window as any).__fh_renderGrid3x2;
+    if (renderFn) renderFn();
+  });
 }
 
 /** Recalculate grid3x2 per-element margins (call on render AND on resize).
@@ -1496,7 +1508,8 @@ function _openNeedsModal(fid: number): void {
   }
   // Zoom the entire modal (text, buttons, everything) when view was zoomed
   if (wasZoomed) {
-    (container.style as any).zoom = '1.3';
+    const isPhone = Math.min(window.innerWidth, window.innerHeight) <= 430;
+    (container.style as any).zoom = isPhone ? '1.2' : '1.4';
   }
 
   const needsCard = buildNeedsCard(fid);
