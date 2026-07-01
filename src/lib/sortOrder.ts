@@ -37,19 +37,16 @@ export function toggleSortDropdown(): void {
   const dropdown = document.getElementById('sortDropdown');
   if (!dropdown) return;
 
-  // If dropdown is visible, close everything
-  if (s.sortMode && !s.sortEditingId) {
-    closeSortMode();
+  // If dropdown is already visible, just hide it
+  if (dropdown.style.display !== 'none') {
+    dropdown.style.display = 'none';
+    dropdown.innerHTML = '';
+    if (!s.sortEditingId) {
+      // No frame-set view open — fully exit sort mode
+      useStore.setState({ sortMode: false });
+      document.getElementById('sortByBtn')?.classList.remove('active');
+    }
     return;
-  }
-
-  // If frame-set view is open, close it and show dropdown instead
-  if (s.sortEditingId) {
-    const editView = document.getElementById('sortEditView');
-    if (editView) { editView.style.display = 'none'; editView.innerHTML = ''; }
-    const columns = document.querySelector('.columns') as HTMLElement | null;
-    if (columns) columns.style.display = '';
-    useStore.setState({ sortEditingId: null });
   }
 
   // Close setup mode if open

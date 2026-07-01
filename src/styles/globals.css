@@ -945,21 +945,21 @@
   .sort-card-active{border:3px solid #E24B4A;cursor:grab;}
   .sort-card-dragging{opacity:.3;}
   .sort-card-drag-clone{border:2px solid #E24B4A;border-radius:4px;background:#fff;box-shadow:0 4px 16px rgba(0,0,0,.15);}
-  .sort-card-grid{display:grid;grid-template-columns:40px 1fr 68px 4fr 32px;gap:6px;}
+  .sort-card-grid{display:grid;grid-template-columns:40px 17% 8% 1fr 32px;gap:6px;}
   /* Col 1: number + pill */
   .sort-card-col-num{display:flex;flex-direction:column;justify-content:space-between;align-items:center;overflow:hidden;}
   .sort-card-num{font-size:13px;font-weight:500;color:#333;line-height:1;}
   .sort-card-extra{font-size:8px;color:#999;margin-top:1px;}
   .sort-card-pill{display:block;max-width:100%;font-size:8px;color:#fff;padding:2px 4px;border-radius:10px;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   /* Col 2: main image + description */
-  .sort-card-col-main{display:flex;flex-direction:column;gap:4px;align-self:stretch;}
-  .sort-card-main-img{flex:1;background:#e8e8e8;border-radius:3px;overflow:hidden;min-height:60px;display:flex;align-items:center;justify-content:center;}
-  .sort-card-main-img img{width:100%;height:100%;object-fit:cover;display:block;}
+  .sort-card-col-main{display:flex;flex-direction:column;gap:4px;}
+  .sort-card-main-img{background:#e8e8e8;border-radius:3px;overflow:hidden;display:flex;align-items:center;justify-content:center;}
+  .sort-card-main-img img{width:100%;height:auto;display:block;}
   .sort-card-desc{font-size:9px;color:#888;line-height:1.3;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;}
   /* Col 3: VERSN + SKETCH stacked */
-  .sort-card-col-strips{display:flex;flex-direction:column;gap:4px;align-self:stretch;}
-  .sort-card-strip-img{flex:1;background:#e8e8e8;border-radius:3px;overflow:hidden;display:flex;align-items:center;justify-content:center;}
-  .sort-card-strip-img img{width:100%;height:100%;object-fit:cover;display:block;}
+  .sort-card-col-strips{display:flex;flex-direction:column;gap:4px;}
+  .sort-card-strip-img{background:#e8e8e8;border-radius:3px;overflow:hidden;display:flex;align-items:center;justify-content:center;}
+  .sort-card-strip-img img{width:100%;height:auto;display:block;}
   .sort-card-empty{font-size:9px;color:#999;}
   /* Col 4: needs */
   .sort-card-col-needs{align-self:stretch;padding-left:4px;}
