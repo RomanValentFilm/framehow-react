@@ -424,10 +424,10 @@ function renderNeedsInfo(fid: number): string {
   const defs = s.needDefinitions;
   let html = `<div class="sort-needs-grid">`;
 
-  // Show up to 4 tabs in 2x2 grid
-  const tabs = (defs.tabs || []).slice(0, 4);
+  // Show all tabs — one per sub-column in the 4-column needs grid
+  const tabs = defs.tabs || [];
   for (const tab of tabs) {
-    // Collect toggled-on items across all tables in this tab
+    // Collect all toggled-on items across all tables in this tab
     const onItems: string[] = [];
     for (const table of tab.tables) {
       for (const item of table.items) {
@@ -441,8 +441,7 @@ function renderNeedsInfo(fid: number): string {
     html += `
       <div class="sort-needs-cat">
         <div class="sort-needs-label">${tab.name}</div>
-        ${onItems.slice(0, 3).map((it) => `<div class="sort-needs-item">${it}</div>`).join('')}
-        ${onItems.length > 3 ? `<div class="sort-needs-item" style="color:#bbb">+${onItems.length - 3}</div>` : ''}
+        ${onItems.map((it) => `<div class="sort-needs-item">${it}</div>`).join('')}
       </div>`;
   }
 
