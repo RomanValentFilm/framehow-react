@@ -8,6 +8,7 @@ export function ViewBar() {
         <div className="view-btns vb-left">
           <button className="view-btn vb-desktop-only" data-view="group" title="Group">GROUP</button>
           <button className="view-btn vb-desktop-only" data-view="setups" id="setupsBtn" title="Setups">SETUPS</button>
+          <button className="view-btn vb-desktop-only" data-view="sortby" id="sortByBtn" title="Sort By">SORT BY</button>
         </div>
 
         {/* Flexible spacer */}
@@ -45,6 +46,10 @@ export function ViewBar() {
       </div>
       {/* Setup bar — hidden by default, shown when SETUPS mode is active */}
       <div className="setup-bar" id="setupBar" style={{display:'none'}}></div>
+      {/* Sort order dropdown — hidden by default */}
+      <div className="sort-dropdown" id="sortDropdown" style={{display:'none'}}></div>
+      {/* Sort order frame-set edit view — hidden by default */}
+      <div className="sort-edit-view" id="sortEditView" style={{display:'none'}}></div>
     </>
   );
 }

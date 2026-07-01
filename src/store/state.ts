@@ -58,7 +58,7 @@ export interface Setup {
 
 /** 12-colour palette for setups. */
 /** App version — bump before every deploy. */
-export const APP_VERSION = 'v4.9.012';
+export const APP_VERSION = 'v4.9.013';
 
 export const SETUP_COLORS: { name: string; hex: string }[] = [
   { name: 'DAYLIGHT',      hex: '#CFE2F6' },
@@ -284,6 +284,24 @@ export const DEFAULT_STRIP_DEFS: StripDef[] = [
   { id: 'refs',  buttonLabel: 'REFS',  defaultFrameLabel: 'refs',  prefix: 'r' },
 ];
 
+/** A break/spacer inserted between frames in a custom sort order. */
+export interface SortBreak {
+  id: string;
+  text: string;       // e.g. "LUNCH BREAK — 60 min"
+  position: number;   // index in the order array where this break sits
+}
+
+/** A named custom frame ordering (e.g. "Shooting order", "VFX priority"). */
+export interface SortOrder {
+  id: string;
+  name: string;
+  description: string;
+  /** Frame ids in user-defined order. */
+  frameOrder: number[];
+  /** Breaks inserted between frames. */
+  breaks: SortBreak[];
+}
+
 export interface StripClipboard {
   bgImage: string | null;
   strokes: Stroke[];
@@ -369,6 +387,15 @@ export interface FrameHowState {
   frameNeeds: Record<number, FrameNeedState>;
   /** Needs strip — visible in view bar */
   needsStripVisible: boolean;
+  /** Custom frame orderings (e.g. "Shooting order") */
+  sortOrders: SortOrder[];
+  /** Which sort order is active; null = Story flow (default frame order) */
+  activeSortOrderId: string | null;
+  /** True while the sort-order dropdown or edit view is active */
+  sortMode: boolean;
+  /** ID of sort order currently being edited in frame-set view; null = not editing */
+  sortEditingId: string | null;
+  nextSortOrderId: number;
   // bumped manually by the imperative core to wake any React subscribers
   // that need to react to mutable state changes (e.g., frame badge count).
   renderTick: number;
@@ -455,6 +482,11 @@ const initial: FrameHowState = {
   needDefinitions: DEFAULT_NEED_DEFINITIONS,
   frameNeeds: {},
   needsStripVisible: false,
+  sortOrders: [],
+  activeSortOrderId: null,
+  sortMode: false,
+  sortEditingId: null,
+  nextSortOrderId: 1,
   renderTick: 0,
 };
 

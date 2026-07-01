@@ -42,6 +42,7 @@ import { wireCameraEvents } from './camera';
 // openFullscreen is now triggered by DRAW button (actions.ts), not the fs-btn
 import { toggleGroupSidebar } from './groups';
 import { toggleSetupMode, handleSetupFrameClick, handleSetupRemoveClick, handleStripTagClick, showSetupPillHint } from './setups';
+import { toggleSortDropdown } from './sortOrder';
 import { startHeartbeat, fhTrack } from './tracking';
 import {
   bootstrapAccountSystem,
@@ -647,6 +648,11 @@ export function initFramehow(): void {
 
       if (view === 'setups') {
         toggleSetupMode();
+        return;
+      }
+
+      if (view === 'sortby') {
+        toggleSortDropdown();
         return;
       }
 

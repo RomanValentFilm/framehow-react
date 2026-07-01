@@ -167,6 +167,16 @@ Changes:
 Changes:
 - `src/lib/accountFlow.ts` — Added fullscreen overlay ("Couldn't load all content — check your connection") with Retry/Dismiss buttons when R2 image fetches fail; overlay shows after progress bar hides (no overlap); Retry triggers fresh pull; Dismiss lets user browse but _pullIncomplete stays true (no push/save of half-loaded state).
 
+### v4.9.012 — 2026-06-30 (dev — deployed)
+**Revert sync to v4.9.010 baseline + fix Write modal sync**
+
+Changes:
+- `src/store/state.ts` — APP_VERSION v4.9.012
+- `src/lib/accountFlow.ts` — reverted to v4.9.010 sync logic (removed pullNeeded blocking, subscriber rewrite, renderTick tracking, post-pull setTimeout hack from v4.9.011/012 experiments)
+- `src/lib/currentProject.ts` — reverted to v4.9.010 sync logic
+- `src/lib/actions.ts` — added missing `bumpRenderTick()` after Write modal text save in both main-strip and version-strip (ver/floor/refs) paths; text changes now properly trigger Zustand subscriber → IDB save + dirty flag + cloud sync
+- `src/lib/syncLog.ts` — temporary sync debug panel (added but unused — no imports)
+
 ### v4.9.011 — 2026-06-29 (dev — deployed)
 **3x2VIEW default for landscape, broken img fix, syncing overlay on reload**
 
