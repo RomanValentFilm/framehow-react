@@ -8,7 +8,8 @@ export function ViewBar() {
         <div className="view-btns vb-left">
           <button className="view-btn vb-desktop-only" data-view="group" title="Group">GROUP</button>
           <button className="view-btn vb-desktop-only" data-view="setups" id="setupsBtn" title="Setups">SETUPS</button>
-          <button className="view-btn vb-desktop-only" data-view="sortby" id="sortByBtn" title="Sort By">SORT BY<svg width="8" height="5" viewBox="0 0 8 5" style={{marginLeft:3,flexShrink:0}}><path d="M0 0l4 5 4-5z" fill="currentColor"/></svg></button>
+          <div className="vb-sep-hair" />
+          <button className="view-btn vb-desktop-only" data-view="sortby" id="sortByBtn" title="Sort By">SORT BY</button>
         </div>
 
         {/* Flexible spacer */}

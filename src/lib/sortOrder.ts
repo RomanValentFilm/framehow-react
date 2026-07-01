@@ -87,22 +87,39 @@ function renderDropdown(el: HTMLElement): void {
   const s = state();
   const activeId = s.activeSortOrderId;
 
+  // Find existing shooting order (if user already created one)
+  const shootingOrder = s.sortOrders.find((o) => o.name === 'SHOOTING ORDER');
+  const shootingId = shootingOrder ? shootingOrder.id : '__shooting_new__';
+
   let html = `<div class="sort-dd-inner">`;
 
-  // Story flow (always first, non-editable)
+  // Story flow (always first)
   html += `
-    <div class="sort-dd-item${activeId === null ? ' sort-dd-active' : ''}" data-sort-id="__storyflow__">
-      <div>
+    <div class="sort-dd-item" data-sort-id="__storyflow__">
+      <div class="sort-dd-item-left">
         <div class="sort-dd-title">STORY FLOW</div>
         <div class="sort-dd-hint">Your narrative sequence, as edited</div>
       </div>
       ${activeId === null ? '<span class="sort-dd-check">&#10003;</span>' : ''}
     </div>`;
 
-  // Custom orders
-  for (const order of s.sortOrders) {
+  // Shooting order (always visible)
+  html += `
+    <div class="sort-dd-item" data-sort-id="${shootingId}">
+      <div class="sort-dd-item-left">
+        <div class="sort-dd-title-row">
+          <span class="sort-dd-title">SHOOTING ORDER</span>
+          <span class="sort-dd-edit" data-sort-edit="${shootingId}">EDIT</span>
+        </div>
+        <div class="sort-dd-hint">Frame order as set in EDIT</div>
+      </div>
+      ${activeId === shootingId ? '<span class="sort-dd-check">&#10003;</span>' : ''}
+    </div>`;
+
+  // Other custom orders (exclude the default shooting order)
+  for (const order of s.sortOrders.filter((o) => o.name !== 'SHOOTING ORDER')) {
     html += `
-      <div class="sort-dd-item${activeId === order.id ? ' sort-dd-active' : ''}" data-sort-id="${order.id}">
+      <div class="sort-dd-item" data-sort-id="${order.id}">
         <div class="sort-dd-item-left">
           <div class="sort-dd-title-row">
             <span class="sort-dd-title">${order.name}</span>
@@ -124,24 +141,13 @@ function renderDropdown(el: HTMLElement): void {
   html += `</div>`;
   el.innerHTML = html;
 
-  // Wire events
+  // Wire events — clicking any order opens its frame-set view
   el.querySelectorAll('.sort-dd-item[data-sort-id]').forEach((item) => {
     item.addEventListener('click', (e) => {
       const target = e.target as HTMLElement;
-      // Skip if clicking EDIT
       if (target.classList.contains('sort-dd-edit') || target.closest('.sort-dd-edit')) return;
       const id = (item as HTMLElement).dataset.sortId!;
-      if (id === '__storyflow__') {
-        useStore.setState({ activeSortOrderId: null });
-      } else {
-        useStore.setState({ activeSortOrderId: id });
-      }
-      bumpRenderTick();
-      void flushSyncNow();
-      closeSortMode();
-      // Re-render the current view to show the new order
-      const renderAll = (window as any).__fh_renderAll;
-      if (renderAll) renderAll();
+      openOrderView(id);
     });
   });
 
@@ -149,13 +155,48 @@ function renderDropdown(el: HTMLElement): void {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const orderId = (btn as HTMLElement).dataset.sortEdit!;
-      openSortEditView(orderId);
+      openOrderView(orderId);
     });
   });
 
   el.querySelector('.sort-dd-add')?.addEventListener('click', () => {
     addNewOrder();
   });
+}
+
+/** Open frame-set view for any order — handles story flow + auto-creates shooting order */
+function openOrderView(orderId: string): void {
+  if (orderId === '__shooting_new__') {
+    // Auto-create shooting order on first click
+    const s = state();
+    const id = genId('sort', s.nextSortOrderId);
+    const frameOrder = getVisibleFrames().map((f) => f.id);
+    const newOrder: SortOrder = {
+      id,
+      name: 'SHOOTING ORDER',
+      description: 'Frame order as set in EDIT',
+      frameOrder,
+      breaks: [],
+    };
+    useStore.setState({
+      sortOrders: [...s.sortOrders, newOrder],
+      activeSortOrderId: id,
+      nextSortOrderId: s.nextSortOrderId + 1,
+    });
+    bumpRenderTick();
+    void flushSyncNow();
+    openSortEditView(id);
+    return;
+  }
+
+  if (orderId === '__storyflow__') {
+    useStore.setState({ activeSortOrderId: null });
+  } else {
+    useStore.setState({ activeSortOrderId: orderId });
+  }
+  bumpRenderTick();
+  void flushSyncNow();
+  openSortEditView(orderId);
 }
 
 // ─── Add new order ────────────────────────────────────────────────────
@@ -199,10 +240,21 @@ function openSortEditView(orderId: string): void {
 
 function renderSortEditView(el: HTMLElement, orderId: string): void {
   const s = state();
-  const order = s.sortOrders.find((o) => o.id === orderId);
-  if (!order) { closeSortMode(); return; }
 
-  const frames = getOrderedFrames(order);
+  let frames: Frame[];
+  let order: SortOrder | null = null;
+  let orderName: string;
+
+  if (orderId === '__storyflow__') {
+    frames = getVisibleFrames();
+    orderName = 'STORY FLOW';
+  } else {
+    order = s.sortOrders.find((o) => o.id === orderId) || null;
+    if (!order) { closeSortMode(); return; }
+    frames = getOrderedFrames(order);
+    orderName = order.name;
+  }
+
   const activeReorderFid = (el as any).__activeReorderFid as number | null ?? null;
 
   let html = `<div class="sort-edit-inner">`;
@@ -213,7 +265,10 @@ function renderSortEditView(el: HTMLElement, orderId: string): void {
       <div class="sort-edit-header-left">
         <span class="sort-edit-label">SORT BY</span>
         <span class="sort-edit-sep">&rsaquo;</span>
-        <input class="sort-edit-name" value="${order.name}" data-sort-rename="${orderId}" />
+        ${orderId === '__storyflow__'
+          ? `<span class="sort-edit-name-static">${orderName}</span>`
+          : `<input class="sort-edit-name" value="${orderName}" data-sort-rename="${orderId}" />`
+        }
       </div>
       <button class="sort-edit-done-btn" data-sort-close>DONE</button>
     </div>`;
@@ -221,26 +276,33 @@ function renderSortEditView(el: HTMLElement, orderId: string): void {
   // Frame sets
   let orderIdx = 0;
   for (const f of frames) {
-    // Check for breaks before this position
-    const breaksHere = order.breaks.filter((b) => b.position === orderIdx);
-    for (const brk of breaksHere) {
-      html += renderBreakCard(brk, activeReorderFid);
+    // Check for breaks before this position (custom orders only)
+    if (order) {
+      const breaksHere = order.breaks.filter((b) => b.position === orderIdx);
+      for (const brk of breaksHere) {
+        html += renderBreakCard(brk, activeReorderFid);
+      }
     }
 
-    html += renderFrameSetCard(f, orderIdx, order, activeReorderFid);
+    html += renderFrameSetCard(f, orderIdx, activeReorderFid);
     orderIdx++;
   }
-  // Breaks at the end
-  const trailingBreaks = order.breaks.filter((b) => b.position >= orderIdx);
-  for (const brk of trailingBreaks) {
-    html += renderBreakCard(brk, activeReorderFid);
+
+  // Trailing breaks (custom orders only)
+  if (order) {
+    const trailingBreaks = order.breaks.filter((b) => b.position >= orderIdx);
+    for (const brk of trailingBreaks) {
+      html += renderBreakCard(brk, activeReorderFid);
+    }
   }
 
-  // Add break button
-  html += `
-    <div class="sort-edit-footer">
-      <button class="sort-edit-add-break" data-sort-action="addbreak">+ Add break</button>
-    </div>`;
+  // Add break button (custom orders only)
+  if (order) {
+    html += `
+      <div class="sort-edit-footer">
+        <button class="sort-edit-add-break" data-sort-action="addbreak">+ Add break</button>
+      </div>`;
+  }
 
   html += `</div>`;
   el.innerHTML = html;
@@ -249,7 +311,7 @@ function renderSortEditView(el: HTMLElement, orderId: string): void {
   wireEditViewEvents(el, orderId);
 }
 
-function renderFrameSetCard(f: Frame, idx: number, order: SortOrder, activeReorderFid: number | null): string {
+function renderFrameSetCard(f: Frame, idx: number, activeReorderFid: number | null): string {
   const s = state();
   const isActive = activeReorderFid === f.id;
   const setup = f.setupId ? s.setups.find((su) => su.id === f.setupId) : null;
@@ -452,6 +514,19 @@ function wireEditViewEvents(el: HTMLElement, orderId: string): void {
 
 function moveFrame(orderId: string, fid: number, dir: 'up' | 'down'): void {
   const s = state();
+  if (orderId === '__storyflow__') {
+    // Move in actual frames array
+    const frames = [...s.frames];
+    const idx = frames.findIndex((f) => f.id === fid);
+    if (idx < 0) return;
+    const newIdx = dir === 'up' ? idx - 1 : idx + 1;
+    if (newIdx < 0 || newIdx >= frames.length) return;
+    [frames[idx], frames[newIdx]] = [frames[newIdx], frames[idx]];
+    useStore.setState({ frames });
+    bumpRenderTick();
+    void flushSyncNow();
+    return;
+  }
   const orders = s.sortOrders.map((o) => {
     if (o.id !== orderId) return o;
     const arr = [...o.frameOrder];
@@ -459,7 +534,6 @@ function moveFrame(orderId: string, fid: number, dir: 'up' | 'down'): void {
     if (idx < 0) return o;
     const newIdx = dir === 'up' ? idx - 1 : idx + 1;
     if (newIdx < 0 || newIdx >= arr.length) return o;
-    // Swap
     [arr[idx], arr[newIdx]] = [arr[newIdx], arr[idx]];
     return { ...o, frameOrder: arr };
   });
@@ -555,16 +629,26 @@ function setupDragAndDrop(el: HTMLElement, orderId: string): void {
 
           // Reorder
           const s = state();
-          const orders = s.sortOrders.map((o) => {
-            if (o.id !== orderId) return o;
-            const arr = [...o.frameOrder];
-            const fromIdx = arr.indexOf(fid);
-            if (fromIdx < 0) return o;
-            arr.splice(fromIdx, 1);
-            arr.splice(targetIdx, 0, fid);
-            return { ...o, frameOrder: arr };
-          });
-          useStore.setState({ sortOrders: orders });
+          if (orderId === '__storyflow__') {
+            const frames = [...s.frames];
+            const fromIdx = frames.findIndex((fr) => fr.id === fid);
+            if (fromIdx >= 0) {
+              const [moved] = frames.splice(fromIdx, 1);
+              frames.splice(targetIdx, 0, moved);
+              useStore.setState({ frames });
+            }
+          } else {
+            const orders = s.sortOrders.map((o) => {
+              if (o.id !== orderId) return o;
+              const arr = [...o.frameOrder];
+              const fromIdx = arr.indexOf(fid);
+              if (fromIdx < 0) return o;
+              arr.splice(fromIdx, 1);
+              arr.splice(targetIdx, 0, fid);
+              return { ...o, frameOrder: arr };
+            });
+            useStore.setState({ sortOrders: orders });
+          }
           bumpRenderTick();
           void flushSyncNow();
           renderSortEditView(el, orderId);

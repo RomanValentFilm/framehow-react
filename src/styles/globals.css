@@ -32,6 +32,7 @@
   .vb-right{justify-content:flex-end;}
   .vb-spacer{display:none;}
   .vb-sep{width:1px;height:16px;background:var(--border);margin:0 6px;flex-shrink:0;}
+  .vb-sep-hair{width:1px;height:14px;background:var(--border);margin:0 1px;flex-shrink:0;opacity:.4;}
   .view-btn{font-family:var(--mono);font-size:13px;font-weight:700;letter-spacing:.04em;padding:3px 5px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--border);border-radius:3px;background:transparent;color:#808080;cursor:pointer;line-height:1;text-align:center;white-space:nowrap;outline:none;}
   @media (hover:hover){.view-btn:hover{color:#e6e6e6;border-color:var(--border-strong);}}
   .view-btn.active{color:var(--accent);border-color:#fff;font-weight:700;}
@@ -912,6 +913,7 @@
 
   /* ─── SORT ORDER dropdown ─── */
   .sort-dropdown{position:sticky;top:calc(52px + env(safe-area-inset-top)*0.5 + 28px);z-index:20;}
+  #sortByBtn{word-spacing:-2px;}
   .sort-dd-inner{background:#333;border-radius:0 0 4px 4px;width:260px;margin-left:10px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;}
   .sort-dd-item{padding:10px 12px;border-bottom:1px solid #444;cursor:pointer;display:flex;align-items:center;justify-content:space-between;}
   .sort-dd-item:last-child{border-bottom:none;}
@@ -936,6 +938,7 @@
   .sort-edit-sep{font-size:13px;color:#999;}
   .sort-edit-name{font-size:13px;font-weight:500;color:#333;border:none;background:transparent;padding:2px 4px;border-bottom:1px dashed #ccc;outline:none;font-family:inherit;}
   .sort-edit-name:focus{border-bottom-color:#333;}
+  .sort-edit-name-static{font-size:13px;font-weight:500;color:#333;padding:2px 4px;}
   .sort-edit-done-btn{font-size:12px;font-weight:500;color:#fff;background:#333;border:none;padding:5px 14px;border-radius:4px;cursor:pointer;}
   @media(hover:hover){.sort-edit-done-btn:hover{background:#555;}}
 
