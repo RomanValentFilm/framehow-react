@@ -445,6 +445,8 @@ export function setViewMode(mode: ViewMode, keepCompare?: boolean, forceAnchorFi
 
 export function autoPhoneMainView(): void {
   const s = state();
+  // Never override view while the user is in SORT BY mode
+  if (s.sortMode) return;
   const w = window.innerWidth,
     h = window.innerHeight;
   const isPhone = Math.min(w, h) <= 430;

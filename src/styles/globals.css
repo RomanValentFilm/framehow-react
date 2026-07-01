@@ -913,7 +913,7 @@
 
   /* ─── SORT ORDER dropdown ─── */
   #sortByBtn{word-spacing:-3px;}
-  .sort-dropdown{position:absolute;z-index:1000;}
+  .sort-dropdown{position:fixed;z-index:1000;}
   .sort-dd-inner{background:#333;border-radius:0 0 4px 4px;width:260px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;}
   .sort-dd-item{padding:10px 12px;border-bottom:1px solid #444;cursor:pointer;display:flex;align-items:center;justify-content:space-between;}
   .sort-dd-item:last-child{border-bottom:none;}
@@ -942,12 +942,12 @@
 
   /* Frame set cards */
   .sort-card{background:#d9d9d9;border-radius:4px;padding:8px 10px;margin-bottom:6px;border:1px solid #aaa;cursor:grab;transition:border-color .15s;}
-  .sort-card-active{border:3px solid #E24B4A;cursor:grab;}
+  .sort-card-active{border:3px solid var(--accent);cursor:grab;}
   .sort-card-dragging{opacity:.3;}
-  .sort-card-drag-clone{border:2px solid #E24B4A;border-radius:4px;background:#fff;box-shadow:0 4px 16px rgba(0,0,0,.15);}
-  .sort-card-grid{display:grid;grid-template-columns:40px 20% 15% 1fr 44px;gap:6px;align-items:start;}
-  /* Col 1: number + pill */
-  .sort-card-col-num{display:flex;flex-direction:column;align-items:center;gap:4px;overflow:hidden;}
+  .sort-card-drag-clone{border:2px solid var(--accent);border-radius:4px;background:#fff;box-shadow:0 4px 16px rgba(0,0,0,.15);}
+  .sort-card-grid{display:grid;grid-template-columns:42px 25% 17% 1fr 30px;gap:6px;align-items:start;}
+  /* Col 1: number + pill (pill pinned to bottom) */
+  .sort-card-col-num{display:flex;flex-direction:column;align-items:center;overflow:hidden;align-self:stretch;justify-content:space-between;}
   .sort-card-num{font-size:13px;font-weight:500;color:#333;line-height:1;}
   .sort-card-extra{font-size:8px;color:#999;margin-top:1px;}
   .sort-card-pill{display:block;max-width:100%;font-size:8px;color:#fff;padding:2px 4px;border-radius:10px;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
@@ -961,18 +961,24 @@
   .sort-card-strip-img{background:#e8e8e8;border-radius:3px;overflow:hidden;display:flex;align-items:center;justify-content:center;}
   .sort-card-strip-img img{width:100%;height:auto;display:block;}
   .sort-card-empty{font-size:9px;color:#999;}
-  /* Col 4: needs */
+  /* Col 4: needs — 2 sub-columns with category:value lines */
   .sort-card-col-needs{align-self:stretch;padding-left:4px;}
-  .sort-needs-grid{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:4px 10px;font-size:10px;color:#555;line-height:1.45;}
-  .sort-needs-cat{}
-  .sort-needs-label{color:#999;font-size:9px;font-weight:600;letter-spacing:.4px;margin-bottom:2px;text-transform:uppercase;}
-  .sort-needs-item{font-size:10px;}
-  /* Col 5: arrows */
-  .sort-card-col-arrows{display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:16px;padding-top:8px;}
-  .sort-arrow{cursor:pointer;color:#bbb;font-size:14px;line-height:1;padding:10px 8px;-webkit-user-select:none;user-select:none;border-radius:4px;}
-  @media(hover:hover){.sort-arrow:hover{color:#fff;background:#555;}}
-  .sort-arrow-active{color:#E24B4A!important;}
-  .sort-done-btn{font-size:8px;font-weight:500;color:#fff;background:#E24B4A;border:none;border-radius:3px;padding:2px 4px;cursor:pointer;line-height:1;}
+  .sort-needs-cols{display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;}
+  .sort-needs-line{font-size:10px;color:#555;font-weight:400;line-height:1.6;}
+  .sort-needs-cat-name{font-weight:600;color:#222;text-transform:uppercase;font-size:9px;letter-spacing:.3px;}
+  .sort-needs-cat-name::after{content:': ';}
+  /* Col 5: arrows (centered vertically + horizontally) */
+  .sort-card-col-arrows{display:flex;flex-direction:column;align-items:center;justify-content:center;align-self:stretch;}
+  /* Combined arrows button (inactive — single touch target) */
+  .sort-arrows-combined{display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;padding:14px 6px;border-radius:4px;border:none;background:transparent;color:#bbb;-webkit-user-select:none;user-select:none;}
+  .sort-arrows-combined span{font-size:11px;line-height:1;}
+  @media(hover:hover){.sort-arrows-combined:hover{color:#fff;background:#555;}}
+  /* Active arrows — wide touch targets, spaced apart */
+  .sort-card-col-arrows.sort-col-active{gap:12px;}
+  .sort-arrow{cursor:pointer;color:var(--accent);font-size:14px;line-height:1;padding:14px 10px;-webkit-user-select:none;user-select:none;border-radius:4px;min-width:30px;text-align:center;}
+  @media(hover:hover){.sort-arrow:hover{background:rgba(226,75,74,.15);}}
+  .sort-done-btn{font-size:11px;font-weight:600;color:#fff;background:var(--accent);border:none;border-radius:4px;padding:8px 6px;cursor:pointer;line-height:1;min-width:30px;text-align:center;}
+  @media(hover:hover){.sort-done-btn:hover{opacity:.85;}}
 
   /* Break cards */
   .sort-break-card{background:#444;border-radius:4px;padding:8px 12px;margin-bottom:6px;border:1px solid #555;display:flex;align-items:center;justify-content:space-between;}
@@ -986,3 +992,13 @@
   .sort-edit-footer{margin-top:12px;display:flex;justify-content:flex-end;}
   .sort-edit-add-break{font-size:11px;padding:5px 12px;border-radius:3px;border:1px solid #666;background:transparent;cursor:pointer;color:#ccc;font-family:inherit;}
   @media(hover:hover){.sort-edit-add-break:hover{background:#444;color:#fff;}}
+
+  /* iPad: sort-edit-view needs padding to clear fixed toolbar + view-bar (same as .columns) */
+  @media (hover:none) and (pointer:coarse){
+    .sort-edit-view{padding-top:calc(82px + env(safe-area-inset-top) * 0.5);overflow:visible;}
+  }
+  /* iPhone: toolbar scrolls naturally, no extra padding needed (same as .columns) */
+  @media (hover:none) and (pointer:coarse) and (max-width:430px),
+         (hover:none) and (pointer:coarse) and (max-height:430px){
+    .sort-edit-view{padding-top:0;overflow:visible;}
+  }

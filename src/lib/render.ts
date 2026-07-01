@@ -122,6 +122,8 @@ export function renderAll(): void {
   if (floorCol) floorCol.style.display = s.activeStrips.includes('floor') ? '' : 'none';
   if (refsCol) refsCol.style.display = s.activeStrips.includes('refs') ? '' : 'none';
   if (needsCol) needsCol.style.display = s.needsStripVisible ? '' : 'none';
+  // Skip button state sync when in sort mode — sort mode manages its own button states
+  if (!s.sortMode) {
   document.querySelectorAll('.view-btn:not(.strip-toggle)').forEach((b) => {
     const bv = (b as HTMLElement).dataset.view;
     if (bv === 'needs') {
@@ -139,6 +141,7 @@ export function renderAll(): void {
     const def = s.stripDefs.find((d) => d.id === strip);
     if (def) b.textContent = def.buttonLabel;
   });
+  } // end if (!s.sortMode)
   // Show/hide OFF button when in 1+2V or GRID4 mode
   const offBtn = document.getElementById('vbOffBtn') as HTMLElement | null;
   if (offBtn) offBtn.style.display = (s.currentViewMode === 'overview' || s.currentViewMode === 'grid4') ? '' : 'none';

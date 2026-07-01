@@ -6,6 +6,7 @@ import type { SortOrder, SortBreak, Frame } from '../store/state';
 import { flushSyncNow } from './currentProject';
 import { getStripVersions } from './helpers';
 import { getVisibleFrames } from './groups';
+import { rasterizeVersion, versionHasContent } from './rasterize';
 
 // ─── Helpers ──────────────────────────────────────────────────────────
 
@@ -269,6 +270,7 @@ function openSortEditView(orderId: string): void {
 
   useStore.setState({ sortEditingId: orderId });
   editView.style.display = '';
+  window.scrollTo(0, 0); // Start at top so toolbar is visible
   renderSortEditView(editView, orderId);
 }
 
@@ -293,7 +295,7 @@ function renderSortEditView(el: HTMLElement, orderId: string): void {
 
   let html = `<div class="sort-edit-inner">`;
 
-  // Header
+  // Header — breadcrumb only, no DONE button (exit via SORT BY or other view buttons)
   html += `
     <div class="sort-edit-header">
       <div class="sort-edit-header-left">
@@ -304,7 +306,6 @@ function renderSortEditView(el: HTMLElement, orderId: string): void {
           : `<input class="sort-edit-name" value="${orderName}" data-sort-rename="${orderId}" />`
         }
       </div>
-      <button class="sort-edit-done-btn" data-sort-close>DONE</button>
     </div>`;
 
   // Frame sets
@@ -343,6 +344,9 @@ function renderSortEditView(el: HTMLElement, orderId: string): void {
 
   // Wire events
   wireEditViewEvents(el, orderId);
+
+  // Fill in sketch images that need rasterization (async, non-blocking)
+  void fillSketchImages(el);
 }
 
 function renderFrameSetCard(f: Frame, idx: number, activeReorderFid: number | null): string {
@@ -356,7 +360,9 @@ function renderFrameSetCard(f: Frame, idx: number, activeReorderFid: number | nu
   const verVersions = getStripVersions(f.id, 'ver');
   const sketchVersions = getStripVersions(f.id, 'floor');
   const verImg = verVersions?.[0]?.bgImage || '';
-  const sketchImg = sketchVersions?.[0]?.bgImage || '';
+  const sketchVer = sketchVersions?.[0];
+  const sketchImg = sketchVer?.bgImage || '';
+  const sketchHasStrokes = !sketchImg && versionHasContent(sketchVer);
 
   // Get frame text content (from strokes text type)
   const textStroke = (f.strokes || []).find((st: any) => st.type === 'text');
@@ -388,15 +394,20 @@ function renderFrameSetCard(f: Frame, idx: number, activeReorderFid: number | nu
           <div class="sort-card-strip-img">
             ${verImg ? `<img src="${verImg}" />` : `<div class="sort-card-empty">VERSN</div>`}
           </div>
-          <div class="sort-card-strip-img">
-            ${sketchImg ? `<img src="${sketchImg}" />` : `<div class="sort-card-empty">SKETCH</div>`}
+          <div class="sort-card-strip-img" ${sketchHasStrokes ? `data-sketch-fid="${f.id}"` : ''}>
+            ${sketchImg ? `<img src="${sketchImg}" />` : sketchHasStrokes ? `<div class="sort-card-empty sort-sketch-placeholder">SKETCH</div>` : `<div class="sort-card-empty">SKETCH</div>`}
           </div>
         </div>
         <div class="sort-card-col-needs">${needsHtml}</div>
-        <div class="sort-card-col-arrows">
-          <span class="sort-arrow sort-arrow-up${isActive ? ' sort-arrow-active' : ''}" data-sort-move="up" data-sort-fid="${f.id}">&#9650;</span>
-          ${isActive ? `<span class="sort-done-btn" data-sort-deactivate="${f.id}">DONE</span>` : ''}
-          <span class="sort-arrow sort-arrow-down${isActive ? ' sort-arrow-active' : ''}" data-sort-move="down" data-sort-fid="${f.id}">&#9660;</span>
+        <div class="sort-card-col-arrows${isActive ? ' sort-col-active' : ''}">
+          ${isActive
+            ? `<span class="sort-arrow" data-sort-move="up" data-sort-fid="${f.id}">&#9650;</span>
+               <span class="sort-done-btn" data-sort-deactivate="${f.id}">DONE</span>
+               <span class="sort-arrow" data-sort-move="down" data-sort-fid="${f.id}">&#9660;</span>`
+            : `<button class="sort-arrows-combined" data-sort-activate="${f.id}">
+                 <span>&#9650;</span><span>&#9660;</span>
+               </button>`
+          }
         </div>
       </div>
     </div>`;
@@ -422,43 +433,89 @@ function renderNeedsInfo(fid: number): string {
   if (!frameNeeds) return '';
 
   const defs = s.needDefinitions;
-  let html = `<div class="sort-needs-grid">`;
-
-  // Show all tabs — one per sub-column in the 4-column needs grid
   const tabs = defs.tabs || [];
-  for (const tab of tabs) {
-    // Collect all toggled-on items across all tables in this tab
-    const onItems: string[] = [];
-    for (const table of tab.tables) {
-      for (const item of table.items) {
-        if (frameNeeds.toggles[item.id]) {
-          onItems.push(item.name);
+  if (tabs.length === 0) return '';
+
+  // Split tabs into two sub-columns
+  const midpoint = Math.ceil(tabs.length / 2);
+  const col1Tabs = tabs.slice(0, midpoint);
+  const col2Tabs = tabs.slice(midpoint);
+
+  const renderColumn = (columnTabs: typeof tabs): string => {
+    let lines = '';
+    for (const tab of columnTabs) {
+      for (const table of tab.tables) {
+        if (table.type === 'counter') {
+          // Counter type — show total and breakdown
+          const items: { name: string; count: number }[] = [];
+          let total = 0;
+          for (const item of table.items) {
+            const count = frameNeeds.counters?.[item.id] || 0;
+            if (count > 0) {
+              items.push({ name: item.name, count });
+              total += count;
+            }
+          }
+          if (items.length > 0) {
+            const breakdown = items.map((i) => `${i.count} ${i.name}`).join(' + ');
+            lines += `<div class="sort-needs-line"><span class="sort-needs-cat-name">${table.name}</span>${total} (${breakdown})</div>`;
+          }
+        } else {
+          // Toggle type — show comma-separated active items
+          const onItems: string[] = [];
+          for (const item of table.items) {
+            if (frameNeeds.toggles?.[item.id]) {
+              onItems.push(item.name);
+            }
+          }
+          if (onItems.length > 0) {
+            lines += `<div class="sort-needs-line"><span class="sort-needs-cat-name">${table.name}</span>${onItems.join(', ')}</div>`;
+          }
         }
       }
     }
-    if (onItems.length === 0) continue;
+    return lines;
+  };
 
-    html += `
-      <div class="sort-needs-cat">
-        <div class="sort-needs-label">${tab.name}</div>
-        ${onItems.map((it) => `<div class="sort-needs-item">${it}</div>`).join('')}
-      </div>`;
+  const col1Html = renderColumn(col1Tabs);
+  const col2Html = renderColumn(col2Tabs);
+  if (!col1Html && !col2Html) return '';
+
+  let html = `<div class="sort-needs-cols">`;
+  html += `<div class="sort-needs-col">${col1Html}</div>`;
+  if (col2Html) {
+    html += `<div class="sort-needs-col">${col2Html}</div>`;
   }
-
   html += `</div>`;
   return html;
+}
+
+/** Async: rasterize sketch strokes for cards that need it */
+async function fillSketchImages(el: HTMLElement): Promise<void> {
+  const containers = el.querySelectorAll('[data-sketch-fid]');
+  for (const container of Array.from(containers)) {
+    const fid = parseInt((container as HTMLElement).dataset.sketchFid!, 10);
+    const f = state().frames.find((fr) => fr.id === fid);
+    if (!f) continue;
+    const vers = getStripVersions(fid, 'floor');
+    const ver = vers?.[0];
+    if (!ver) continue;
+    try {
+      const canvas = await rasterizeVersion(ver, f.cropW || 960, f.cropH || 540, 1);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+      // Replace placeholder with rasterized image
+      const placeholder = container.querySelector('.sort-sketch-placeholder');
+      if (placeholder) placeholder.remove();
+      const img = document.createElement('img');
+      img.src = dataUrl;
+      container.appendChild(img);
+    } catch { /* skip if rasterization fails */ }
+  }
 }
 
 // ─── Edit view event wiring ───────────────────────────────────────────
 
 function wireEditViewEvents(el: HTMLElement, orderId: string): void {
-  // Close button
-  el.querySelector('[data-sort-close]')?.addEventListener('click', () => {
-    closeSortMode();
-    const renderAll = (window as any).__fh_renderAll;
-    if (renderAll) renderAll();
-  });
-
   // Rename order
   const nameInput = el.querySelector('.sort-edit-name') as HTMLInputElement | null;
   if (nameInput) {
@@ -473,21 +530,22 @@ function wireEditViewEvents(el: HTMLElement, orderId: string): void {
     });
   }
 
-  // Arrow clicks — move frame up/down
+  // Combined button — activate card for reordering
+  el.querySelectorAll('[data-sort-activate]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const fid = parseInt((btn as HTMLElement).dataset.sortActivate!, 10);
+      (el as any).__activeReorderFid = fid;
+      renderSortEditView(el, orderId);
+    });
+  });
+
+  // Arrow clicks — move frame up/down (only shown when active)
   el.querySelectorAll('.sort-arrow[data-sort-move]').forEach((arrow) => {
     arrow.addEventListener('click', (e) => {
       e.stopPropagation();
       const dir = (arrow as HTMLElement).dataset.sortMove!;
       const fid = parseInt((arrow as HTMLElement).dataset.sortFid!, 10);
-
-      // Activate card on first click
-      if ((el as any).__activeReorderFid !== fid) {
-        (el as any).__activeReorderFid = fid;
-        renderSortEditView(el, orderId);
-        return;
-      }
-
-      // Move frame
       moveFrame(orderId, fid, dir as 'up' | 'down');
       renderSortEditView(el, orderId);
     });
