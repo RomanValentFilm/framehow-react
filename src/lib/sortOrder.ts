@@ -49,8 +49,17 @@ export function toggleSortDropdown(): void {
   }
 
   useStore.setState({ sortMode: true });
-  document.getElementById('sortByBtn')?.classList.add('active');
+  const sortBtn = document.getElementById('sortByBtn');
+  sortBtn?.classList.add('active');
   dropdown.style.display = '';
+
+  // Position dropdown below the SORT BY button
+  if (sortBtn) {
+    const rect = sortBtn.getBoundingClientRect();
+    dropdown.style.left = `${rect.left}px`;
+    dropdown.style.top = `${rect.bottom}px`;
+  }
+
   renderDropdown(dropdown);
 
   // Close on outside click
@@ -79,6 +88,10 @@ function closeSortMode(): void {
   const editView = document.getElementById('sortEditView');
   if (editView) { editView.style.display = 'none'; editView.innerHTML = ''; }
   document.getElementById('sortByBtn')?.classList.remove('active');
+
+  // Restore normal content
+  const columns = document.querySelector('.columns') as HTMLElement | null;
+  if (columns) columns.style.display = '';
 }
 
 // ─── Dropdown rendering ───────────────────────────────────────────────
@@ -95,17 +108,16 @@ function renderDropdown(el: HTMLElement): void {
 
   // Story flow (always first)
   html += `
-    <div class="sort-dd-item" data-sort-id="__storyflow__">
+    <div class="sort-dd-item${activeId === null ? ' sort-dd-selected' : ''}" data-sort-id="__storyflow__">
       <div class="sort-dd-item-left">
         <div class="sort-dd-title">STORY FLOW</div>
         <div class="sort-dd-hint">Your narrative sequence, as edited</div>
       </div>
-      ${activeId === null ? '<span class="sort-dd-check">&#10003;</span>' : ''}
     </div>`;
 
   // Shooting order (always visible)
   html += `
-    <div class="sort-dd-item" data-sort-id="${shootingId}">
+    <div class="sort-dd-item${activeId === shootingId ? ' sort-dd-selected' : ''}" data-sort-id="${shootingId}">
       <div class="sort-dd-item-left">
         <div class="sort-dd-title-row">
           <span class="sort-dd-title">SHOOTING ORDER</span>
@@ -113,13 +125,12 @@ function renderDropdown(el: HTMLElement): void {
         </div>
         <div class="sort-dd-hint">Frame order as set in EDIT</div>
       </div>
-      ${activeId === shootingId ? '<span class="sort-dd-check">&#10003;</span>' : ''}
     </div>`;
 
   // Other custom orders (exclude the default shooting order)
   for (const order of s.sortOrders.filter((o) => o.name !== 'SHOOTING ORDER')) {
     html += `
-      <div class="sort-dd-item" data-sort-id="${order.id}">
+      <div class="sort-dd-item${activeId === order.id ? ' sort-dd-selected' : ''}" data-sort-id="${order.id}">
         <div class="sort-dd-item-left">
           <div class="sort-dd-title-row">
             <span class="sort-dd-title">${order.name}</span>
@@ -127,15 +138,13 @@ function renderDropdown(el: HTMLElement): void {
           </div>
           <div class="sort-dd-hint">Frame order as set in EDIT</div>
         </div>
-        ${activeId === order.id ? '<span class="sort-dd-check">&#10003;</span>' : ''}
       </div>`;
   }
 
   // Add order
   html += `
     <div class="sort-dd-item sort-dd-add" data-sort-action="add">
-      <span class="sort-dd-plus">+</span>
-      <span>Add order</span>
+      <span>+ ADD ORDER</span>
     </div>`;
 
   html += `</div>`;
@@ -232,6 +241,10 @@ function openSortEditView(orderId: string): void {
 
   const editView = document.getElementById('sortEditView');
   if (!editView) return;
+
+  // Hide normal content (columns area)
+  const columns = document.querySelector('.columns') as HTMLElement | null;
+  if (columns) columns.style.display = 'none';
 
   useStore.setState({ sortEditingId: orderId });
   editView.style.display = '';
