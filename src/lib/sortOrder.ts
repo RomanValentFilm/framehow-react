@@ -5,6 +5,7 @@ import { state, useStore, bumpRenderTick, SETUP_COLORS } from '../store/state';
 import type { SortOrder, SortBreak, Frame } from '../store/state';
 import { flushSyncNow } from './currentProject';
 import { getStripVersions } from './helpers';
+import { getVisibleFrames } from './groups';
 
 // ─── Helpers ──────────────────────────────────────────────────────────
 
@@ -12,20 +13,15 @@ function genId(prefix: string, n: number): string {
   return `${prefix}_${n}`;
 }
 
-/** Get frames in their current "story flow" order (respecting groups/visibility). */
-function getVisibleFrames(): Frame[] {
-  const s = state();
-  return s.frames.filter((f) => !f.hidden);
-}
-
-/** Get frames in a sort order's sequence. */
+/** Get frames in a sort order's sequence, filtered by active group. */
 function getOrderedFrames(order: SortOrder): Frame[] {
   const s = state();
+  const visible = new Set(getVisibleFrames().map((f) => f.id));
   const frameMap = new Map(s.frames.map((f) => [f.id, f]));
   const result: Frame[] = [];
   for (const fid of order.frameOrder) {
     const f = frameMap.get(fid);
-    if (f && !f.hidden) result.push(f);
+    if (f && visible.has(f.id)) result.push(f);
   }
   return result;
 }
