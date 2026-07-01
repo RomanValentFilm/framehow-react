@@ -6,6 +6,7 @@ import type { Frame, FrameGroup } from '../store/state';
 import { rasterizeMain } from './rasterize';
 import { escH } from './helpers';
 import { flushSyncNow } from './currentProject';
+import { closeSortMode } from './sortOrder';
 
 let _sidebarEl: HTMLElement | null = null;
 let _overlayEl: HTMLElement | null = null;
@@ -223,6 +224,8 @@ function wireSidebarEvents(sidebar: HTMLElement): void {
     el.addEventListener('click', (e) => {
       // Don't trigger on edit button click
       if ((e.target as HTMLElement).closest('.group-edit-btn')) return;
+      // Close sort mode if active (group selection exits the frame-set view)
+      if (state().sortMode) closeSortMode();
       const gid = (el as HTMLElement).dataset.gid;
       if (gid === 'all') {
         useStore.setState({ activeGroupId: null });

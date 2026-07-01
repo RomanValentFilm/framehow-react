@@ -601,8 +601,8 @@ export function initFramehow(): void {
       // Block everything except SETUPS button while setup mode is open
       if (state().setupMode && view !== 'setups') return;
 
-      // Close sort mode when pressing any non-sort view button
-      if (view !== 'sortby' && state().sortMode) {
+      // Close sort mode when pressing any non-sort view button (except GROUP — it opens as overlay first)
+      if (view !== 'sortby' && view !== 'group' && state().sortMode) {
         closeSortMode();
       }
 
