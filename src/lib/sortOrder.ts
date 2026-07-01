@@ -56,6 +56,12 @@ export function toggleSortDropdown(): void {
   }
 
   useStore.setState({ sortMode: true });
+
+  // Deactivate all other buttons — only SORT BY should be active
+  document.querySelectorAll('.view-btn.active, .strip-toggle.active').forEach((b) => {
+    if ((b as HTMLElement).id !== 'sortByBtn') b.classList.remove('active');
+  });
+
   const sortBtn = document.getElementById('sortByBtn');
   sortBtn?.classList.add('active');
   dropdown.style.display = '';
@@ -99,6 +105,18 @@ export function closeSortMode(): void {
   // Restore normal content
   const columns = document.querySelector('.columns') as HTMLElement | null;
   if (columns) columns.style.display = '';
+
+  // Restore strip button active states
+  const s = state();
+  document.querySelectorAll('.strip-toggle').forEach((b) => {
+    const strip = (b as HTMLElement).dataset.strip;
+    if (strip && (s.activeStrips as string[]).includes(strip)) {
+      b.classList.add('active');
+    }
+  });
+  if (s.needsStripVisible) {
+    document.getElementById('needsStripBtn')?.classList.add('active');
+  }
 }
 
 // ─── Dropdown rendering ───────────────────────────────────────────────
