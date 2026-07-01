@@ -57,6 +57,12 @@ export function toggleSortDropdown(): void {
   setTimeout(() => {
     const handler = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
+      // If edit view is now open, remove this handler — edit view has its own close logic
+      const editView = document.getElementById('sortEditView');
+      if (editView && editView.style.display !== 'none') {
+        document.removeEventListener('click', handler);
+        return;
+      }
       if (!dropdown.contains(target) && target.id !== 'sortByBtn' && !target.closest('#sortByBtn')) {
         closeSortMode();
         document.removeEventListener('click', handler);
@@ -87,7 +93,7 @@ function renderDropdown(el: HTMLElement): void {
   html += `
     <div class="sort-dd-item${activeId === null ? ' sort-dd-active' : ''}" data-sort-id="__storyflow__">
       <div>
-        <div class="sort-dd-title">Story flow</div>
+        <div class="sort-dd-title">STORY FLOW</div>
         <div class="sort-dd-hint">Your narrative sequence, as edited</div>
       </div>
       ${activeId === null ? '<span class="sort-dd-check">&#10003;</span>' : ''}
@@ -160,7 +166,7 @@ function addNewOrder(): void {
   const frameOrder = getVisibleFrames().map((f) => f.id);
   const newOrder: SortOrder = {
     id,
-    name: 'Shooting order',
+    name: 'SHOOTING ORDER',
     description: 'Frame order as set in EDIT',
     frameOrder,
     breaks: [],

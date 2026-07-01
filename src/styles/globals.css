@@ -32,7 +32,7 @@
   .vb-right{justify-content:flex-end;}
   .vb-spacer{display:none;}
   .vb-sep{width:1px;height:16px;background:var(--border);margin:0 6px;flex-shrink:0;}
-  .view-btn{font-family:var(--mono);font-size:13px;font-weight:700;letter-spacing:.04em;padding:3px 5px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--border);border-radius:3px;background:transparent;color:#808080;cursor:pointer;line-height:1;text-align:center;white-space:nowrap;}
+  .view-btn{font-family:var(--mono);font-size:13px;font-weight:700;letter-spacing:.04em;padding:3px 5px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--border);border-radius:3px;background:transparent;color:#808080;cursor:pointer;line-height:1;text-align:center;white-space:nowrap;outline:none;}
   @media (hover:hover){.view-btn:hover{color:#e6e6e6;border-color:var(--border-strong);}}
   .view-btn.active{color:var(--accent);border-color:#fff;font-weight:700;}
   @media (pointer:coarse){.view-btn{padding:4px 5px 2px;}}
@@ -912,20 +912,20 @@
 
   /* ─── SORT ORDER dropdown ─── */
   .sort-dropdown{position:sticky;top:calc(52px + env(safe-area-inset-top)*0.5 + 28px);z-index:20;}
-  .sort-dd-inner{background:#333;border-radius:0 0 4px 4px;width:260px;margin-left:10px;font-family:var(--mono);}
+  .sort-dd-inner{background:#333;border-radius:0 0 4px 4px;width:260px;margin-left:10px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;}
   .sort-dd-item{padding:10px 12px;border-bottom:1px solid #444;cursor:pointer;display:flex;align-items:center;justify-content:space-between;}
   .sort-dd-item:last-child{border-bottom:none;}
   @media(hover:hover){.sort-dd-item:hover{background:#3a3a3a;}}
   .sort-dd-item-left{flex:1;min-width:0;}
   .sort-dd-title-row{display:flex;align-items:center;gap:6px;}
-  .sort-dd-title{font-size:12px;font-weight:500;color:#fff;}
-  .sort-dd-hint{font-size:9px;color:#999;margin-top:2px;}
-  .sort-dd-edit{font-size:9px;color:#777;cursor:pointer;letter-spacing:.3px;}
+  .sort-dd-title{font-size:13px;font-weight:500;color:#fff;letter-spacing:.03em;}
+  .sort-dd-hint{font-size:11px;color:#666;margin-top:2px;}
+  .sort-dd-edit{font-size:11px;color:#666;cursor:pointer;letter-spacing:.3px;}
   @media(hover:hover){.sort-dd-edit:hover{color:#aaa;}}
   .sort-dd-check{color:#4CAF50;font-size:14px;}
   .sort-dd-add{display:flex;align-items:center;gap:6px;}
-  .sort-dd-plus{font-size:14px;color:#777;}
-  .sort-dd-add span{font-size:12px;color:#777;}
+  .sort-dd-plus{font-size:16px;color:#666;}
+  .sort-dd-add span{font-size:13px;color:#666;font-weight:500;}
 
   /* ─── SORT EDIT VIEW (frame sets) ─── */
   .sort-edit-view{position:fixed;top:0;left:0;right:0;bottom:0;z-index:50;background:#fff;overflow-y:auto;-webkit-overflow-scrolling:touch;}
