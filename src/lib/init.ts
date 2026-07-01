@@ -722,7 +722,10 @@ export function initFramehow(): void {
         }
         // Pick companion: first non-main strip in activeStrips, or default to 'ver'
         const companion = s.activeStrips.find((st: string) => st !== 'main') || 'ver';
-        useStore.setState({ activeStrips: ['main', companion] as any });
+        // Deactivate NEEDS strip in these views
+        useStore.setState({ activeStrips: ['main', companion] as any, needsStripVisible: false });
+        const needsBtn = document.getElementById('needsStripBtn');
+        if (needsBtn) needsBtn.classList.remove('active');
         setViewMode(view as any);
         return;
       }
