@@ -664,8 +664,8 @@ export function initFramehow(): void {
       if (view === 'needs') {
         const s = state();
         const cur = s.needsStripVisible;
-        // If in 3×2 view, exit to MAIN+NEEDS (same pattern as other strip exits)
-        if (s.currentViewMode === 'grid3x2') {
+        // If in 3×2, M+2, or M+3 view, exit to MAIN+NEEDS
+        if (s.currentViewMode === 'grid3x2' || s.currentViewMode === 'overview' || s.currentViewMode === 'grid4') {
           useStore.setState({ activeStrips: ['main'] as any, needsStripVisible: true, crossCompare: {}, currentViewMode: 'both' });
           const btn = document.getElementById('needsStripBtn');
           if (btn) btn.classList.add('active');
