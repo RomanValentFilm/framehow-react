@@ -735,6 +735,8 @@ export function initFramehow(): void {
   document.querySelectorAll('.strip-toggle').forEach((b) =>
     b.addEventListener('click', () => {
       if (state().setupMode) return; // locked while setup bar is open
+      // Close sort mode if active
+      if (state().sortMode) closeSortMode();
       const strip = (b as HTMLElement).dataset.strip as 'main' | 'ver' | 'floor' | 'refs';
       const s = state();
       const w = window.innerWidth, h = window.innerHeight;
