@@ -37,9 +37,19 @@ export function toggleSortDropdown(): void {
   const dropdown = document.getElementById('sortDropdown');
   if (!dropdown) return;
 
-  if (s.sortMode) {
+  // If dropdown is visible, close everything
+  if (s.sortMode && !s.sortEditingId) {
     closeSortMode();
     return;
+  }
+
+  // If frame-set view is open, close it and show dropdown instead
+  if (s.sortEditingId) {
+    const editView = document.getElementById('sortEditView');
+    if (editView) { editView.style.display = 'none'; editView.innerHTML = ''; }
+    const columns = document.querySelector('.columns') as HTMLElement | null;
+    if (columns) columns.style.display = '';
+    useStore.setState({ sortEditingId: null });
   }
 
   // Close setup mode if open
@@ -81,7 +91,7 @@ export function toggleSortDropdown(): void {
   }, 10);
 }
 
-function closeSortMode(): void {
+export function closeSortMode(): void {
   useStore.setState({ sortMode: false, sortEditingId: null });
   const dropdown = document.getElementById('sortDropdown');
   if (dropdown) { dropdown.style.display = 'none'; dropdown.innerHTML = ''; }

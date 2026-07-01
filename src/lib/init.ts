@@ -42,7 +42,7 @@ import { wireCameraEvents } from './camera';
 // openFullscreen is now triggered by DRAW button (actions.ts), not the fs-btn
 import { toggleGroupSidebar } from './groups';
 import { toggleSetupMode, handleSetupFrameClick, handleSetupRemoveClick, handleStripTagClick, showSetupPillHint } from './setups';
-import { toggleSortDropdown } from './sortOrder';
+import { toggleSortDropdown, closeSortMode } from './sortOrder';
 import { startHeartbeat, fhTrack } from './tracking';
 import {
   bootstrapAccountSystem,
@@ -600,6 +600,11 @@ export function initFramehow(): void {
 
       // Block everything except SETUPS button while setup mode is open
       if (state().setupMode && view !== 'setups') return;
+
+      // Close sort mode when pressing any non-sort view button
+      if (view !== 'sortby' && state().sortMode) {
+        closeSortMode();
+      }
 
       // Left-side buttons: iPad/Desktop only
       if (view === 'group') {
