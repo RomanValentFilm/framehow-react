@@ -414,10 +414,11 @@ function renderBreakCard(brk: SortBreak, activeBreakId: string | null): string {
       <input class="sort-break-text" value="${brk.text}" data-break-rename="${brk.id}" placeholder="BREAK" />
       <div class="sort-break-arrows${isActive ? ' sort-col-active' : ''}">
         ${isActive
-          ? `<span class="sort-arrow" data-break-move="up" data-break-id="${brk.id}">&#9650;</span>
-             <span class="sort-done-btn" data-break-deactivate="${brk.id}">DONE</span>
-             <span class="sort-arrow" data-break-move="down" data-break-id="${brk.id}">&#9660;</span>`
-          : `<button class="sort-arrows-combined" data-break-activate="${brk.id}">
+          ? `<span class="sort-arrow sort-break-arrow" data-break-move="up" data-break-id="${brk.id}">&#9650;</span>
+             <span class="sort-done-btn sort-break-done" data-break-deactivate="${brk.id}">DONE</span>
+             <span class="sort-arrow sort-break-arrow" data-break-move="down" data-break-id="${brk.id}">&#9660;</span>
+             <span class="sort-break-delete-btn" data-break-delete="${brk.id}">DEL</span>`
+          : `<button class="sort-arrows-combined sort-break-combined" data-break-activate="${brk.id}">
                <span>&#9650;</span><span>&#9660;</span>
              </button>`
         }
@@ -606,6 +607,17 @@ function wireEditViewEvents(el: HTMLElement, orderId: string): void {
     });
   });
 
+  // Break delete button
+  el.querySelectorAll('[data-break-delete]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const brkId = (btn as HTMLElement).dataset.breakDelete!;
+      deleteBreak(orderId, brkId);
+      (el as any).__activeBreakId = null;
+      renderSortEditView(el, orderId);
+    });
+  });
+
   // Break rename
   el.querySelectorAll('.sort-break-text').forEach((input) => {
     (input as HTMLInputElement).addEventListener('change', () => {
@@ -689,19 +701,47 @@ function addBreak(orderId: string, editView: HTMLElement): void {
   (editView as any).__activeBreakId = breakId;
   (editView as any).__activeReorderFid = null;
 
+  // Find the card closest to the viewport center — insert break there
+  const viewMidY = window.innerHeight / 2;
+  const cards = Array.from(editView.querySelectorAll('.sort-card')) as HTMLElement[];
+  let position = Math.floor(cards.length / 2); // fallback
+  let bestDist = Infinity;
+  for (const card of cards) {
+    const rect = card.getBoundingClientRect();
+    const cardMid = rect.top + rect.height / 2;
+    const dist = Math.abs(cardMid - viewMidY);
+    if (dist < bestDist) {
+      bestDist = dist;
+      position = parseInt(card.dataset.sortIdx || '0', 10);
+    }
+  }
+
+  const newBreak: SortBreak = { id: breakId, text: 'BREAK', position };
+
   if (orderId === '__storyflow__') {
-    const frameCount = getVisibleFrames().length;
-    const position = Math.floor(frameCount / 2);
-    const newBreak: SortBreak = { id: breakId, text: 'BREAK', position };
     useStore.setState({ storyFlowBreaks: [...(s.storyFlowBreaks || []), newBreak] });
   } else {
     const order = s.sortOrders.find((o) => o.id === orderId);
     if (!order) return;
-    const position = Math.floor(order.frameOrder.length / 2);
-    const newBreak: SortBreak = { id: breakId, text: 'BREAK', position };
     const orders = s.sortOrders.map((o) =>
       o.id === orderId ? { ...o, breaks: [...o.breaks, newBreak] } : o
     );
+    useStore.setState({ sortOrders: orders });
+  }
+  bumpRenderTick();
+  void flushSyncNow();
+}
+
+function deleteBreak(orderId: string, breakId: string): void {
+  const s = state();
+  if (orderId === '__storyflow__') {
+    const breaks = (s.storyFlowBreaks || []).filter((b) => b.id !== breakId);
+    useStore.setState({ storyFlowBreaks: breaks });
+  } else {
+    const orders = s.sortOrders.map((o) => {
+      if (o.id !== orderId) return o;
+      return { ...o, breaks: o.breaks.filter((b) => b.id !== breakId) };
+    });
     useStore.setState({ sortOrders: orders });
   }
   bumpRenderTick();
@@ -736,71 +776,73 @@ function moveBreak(orderId: string, breakId: string, dir: 'up' | 'down'): void {
   void flushSyncNow();
 }
 
-// ─── Drag & drop (active card only, with auto-scroll) ─────────────────
+// ─── Drag & drop (active card or break, with auto-scroll) ─────────────
 
 function setupDragAndDrop(el: HTMLElement, orderId: string): void {
-  // Only the ACTIVE (reorder-selected) card can be dragged.
-  // All other cards remain inert — touch scrolling works normally.
-  const activeCard = el.querySelector('.sort-card-active') as HTMLElement | null;
+  // Find the active element — either a frame card or a break card
+  const activeFrame = el.querySelector('.sort-card-active') as HTMLElement | null;
+  const activeBreak = el.querySelector('.sort-break-active') as HTMLElement | null;
+  const activeCard = activeFrame || activeBreak;
   if (!activeCard) return;
 
-  const allCards = Array.from(el.querySelectorAll('.sort-card')) as HTMLElement[];
-  const activeIdx = allCards.indexOf(activeCard);
-  if (activeIdx < 0) return;
+  const isBreakDrag = !!activeBreak;
+
+  // All visual items (frame cards + break cards) in DOM order
+  const allItems = Array.from(el.querySelectorAll('.sort-card, .sort-break-card')) as HTMLElement[];
+  const activeItemIdx = allItems.indexOf(activeCard);
+  if (activeItemIdx < 0) return;
 
   let startY = 0;
   let dragging = false;
   let dragClone: HTMLElement | null = null;
-  let currentDropIdx = activeIdx;
+  let currentDropIdx = activeItemIdx;
   let lastMoveY = 0;
   let scrollRAF = 0;
-  const cardDocMids: number[] = []; // document-relative midpoints (stable across scroll)
+  const itemDocMids: number[] = [];
 
-  const EDGE_ZONE = 90;  // px from top/bottom of viewport to trigger auto-scroll
-  const SCROLL_SPEED = 8; // max px per frame
+  const EDGE_ZONE = 90;
+  const SCROLL_SPEED = 8;
 
   const onStart = (clientY: number) => {
     startY = clientY;
     dragging = false;
-    currentDropIdx = activeIdx;
+    currentDropIdx = activeItemIdx;
     lastMoveY = clientY;
 
-    // Snapshot document-relative midpoints (viewport Y + scrollY — won't shift with scroll)
-    cardDocMids.length = 0;
+    itemDocMids.length = 0;
     const sy = window.scrollY;
-    for (const c of allCards) {
+    for (const c of allItems) {
       const r = c.getBoundingClientRect();
-      cardDocMids.push(r.top + sy + r.height / 2);
+      itemDocMids.push(r.top + sy + r.height / 2);
     }
 
     const draggedH = activeCard.getBoundingClientRect().height + 6;
 
-    const shiftCards = (dropIdx: number) => {
-      for (let i = 0; i < allCards.length; i++) {
-        if (i === activeIdx) continue;
+    const shiftItems = (dropIdx: number) => {
+      for (let i = 0; i < allItems.length; i++) {
+        if (i === activeItemIdx) continue;
         let shift = 0;
-        if (activeIdx < dropIdx) {
-          if (i > activeIdx && i <= dropIdx) shift = -draggedH;
-        } else if (activeIdx > dropIdx) {
-          if (i >= dropIdx && i < activeIdx) shift = draggedH;
+        if (activeItemIdx < dropIdx) {
+          if (i > activeItemIdx && i <= dropIdx) shift = -draggedH;
+        } else if (activeItemIdx > dropIdx) {
+          if (i >= dropIdx && i < activeItemIdx) shift = draggedH;
         }
-        allCards[i].style.transform = shift ? `translateY(${shift}px)` : '';
+        allItems[i].style.transform = shift ? `translateY(${shift}px)` : '';
       }
     };
 
     const updateDropIndex = () => {
       const touchDocY = lastMoveY + window.scrollY;
-      let newDropIdx = allCards.length - 1;
-      for (let i = 0; i < allCards.length; i++) {
-        if (touchDocY < cardDocMids[i]) { newDropIdx = i; break; }
+      let newDropIdx = allItems.length - 1;
+      for (let i = 0; i < allItems.length; i++) {
+        if (touchDocY < itemDocMids[i]) { newDropIdx = i; break; }
       }
       if (newDropIdx !== currentDropIdx) {
         currentDropIdx = newDropIdx;
-        shiftCards(currentDropIdx);
+        shiftItems(currentDropIdx);
       }
     };
 
-    // Auto-scroll: runs every frame while dragging, scrolls when finger is near edges
     const autoScroll = () => {
       if (!dragging) return;
       const viewH = window.innerHeight;
@@ -846,35 +888,65 @@ function setupDragAndDrop(el: HTMLElement, orderId: string): void {
     };
 
     const onEnd = () => {
-      for (const c of allCards) c.style.transform = '';
+      for (const c of allItems) c.style.transform = '';
       cleanup();
 
       if (dragging) {
         activeCard.classList.remove('sort-card-dragging');
         if (dragClone) { dragClone.remove(); dragClone = null; }
 
-        if (currentDropIdx !== activeIdx) {
-          const fid = parseInt(activeCard.dataset.sortFid!, 10);
-          const s = state();
-          if (orderId === '__storyflow__') {
-            const frames = [...s.frames];
-            const fromIdx = frames.findIndex((fr) => fr.id === fid);
-            if (fromIdx >= 0) {
-              const [moved] = frames.splice(fromIdx, 1);
-              frames.splice(currentDropIdx, 0, moved);
-              useStore.setState({ frames });
+        if (currentDropIdx !== activeItemIdx) {
+          // Build reordered list: remove from old position, insert at new
+          const reordered = allItems.filter((_, i) => i !== activeItemIdx);
+          const insertAt = currentDropIdx > activeItemIdx ? currentDropIdx - 1 : currentDropIdx;
+          reordered.splice(insertAt, 0, activeCard);
+          // Count frame cards before the dragged item in the new order
+          let newFrameIdx = 0;
+          for (const item of reordered) {
+            if (item === activeCard) break;
+            if (item.classList.contains('sort-card')) newFrameIdx++;
+          }
+
+          if (isBreakDrag) {
+            // Break drag — newFrameIdx = the break's new position field
+            const brkId = activeCard.dataset.breakId!;
+            const s = state();
+            if (orderId === '__storyflow__') {
+              const breaks = (s.storyFlowBreaks || []).map((b) =>
+                b.id === brkId ? { ...b, position: newFrameIdx } : b
+              );
+              useStore.setState({ storyFlowBreaks: breaks });
+            } else {
+              const orders = s.sortOrders.map((o) => {
+                if (o.id !== orderId) return o;
+                return { ...o, breaks: o.breaks.map((b) => b.id === brkId ? { ...b, position: newFrameIdx } : b) };
+              });
+              useStore.setState({ sortOrders: orders });
             }
           } else {
-            const orders = s.sortOrders.map((o) => {
-              if (o.id !== orderId) return o;
-              const arr = [...o.frameOrder];
-              const fromIdx = arr.indexOf(fid);
-              if (fromIdx < 0) return o;
-              arr.splice(fromIdx, 1);
-              arr.splice(currentDropIdx, 0, fid);
-              return { ...o, frameOrder: arr };
-            });
-            useStore.setState({ sortOrders: orders });
+            // Frame card drag — newFrameIdx = insert index in frame-only array
+            const fid = parseInt(activeCard.dataset.sortFid!, 10);
+            const s = state();
+            if (orderId === '__storyflow__') {
+              const frames = [...s.frames];
+              const fromIdx = frames.findIndex((fr) => fr.id === fid);
+              if (fromIdx >= 0) {
+                const [moved] = frames.splice(fromIdx, 1);
+                frames.splice(newFrameIdx, 0, moved);
+                useStore.setState({ frames });
+              }
+            } else {
+              const orders = s.sortOrders.map((o) => {
+                if (o.id !== orderId) return o;
+                const arr = [...o.frameOrder];
+                const fromIdx = arr.indexOf(fid);
+                if (fromIdx < 0) return o;
+                arr.splice(fromIdx, 1);
+                arr.splice(newFrameIdx, 0, fid);
+                return { ...o, frameOrder: arr };
+              });
+              useStore.setState({ sortOrders: orders });
+            }
           }
           bumpRenderTick();
           void flushSyncNow();
@@ -895,11 +967,11 @@ function setupDragAndDrop(el: HTMLElement, orderId: string): void {
   };
 
   activeCard.addEventListener('mousedown', (e) => {
-    if ((e.target as HTMLElement).closest('.sort-arrow, .sort-done-btn, input')) return;
+    if ((e.target as HTMLElement).closest('.sort-arrow, .sort-done-btn, .sort-break-delete-btn, input')) return;
     onStart(e.clientY);
   });
   activeCard.addEventListener('touchstart', (e) => {
-    if ((e.target as HTMLElement).closest('.sort-arrow, .sort-done-btn, input')) return;
+    if ((e.target as HTMLElement).closest('.sort-arrow, .sort-done-btn, .sort-break-delete-btn, input')) return;
     onStart(e.touches[0].clientY);
   }, { passive: true });
 }

@@ -981,12 +981,18 @@
   @media(hover:hover){.sort-done-btn:hover{opacity:.85;}}
 
   /* Break cards */
-  .sort-break-card{background:#808080;border-radius:4px;padding:8px 9px 8px 10px;margin-bottom:6px;border:1px solid #666;display:flex;align-items:center;justify-content:space-between;}
-  .sort-break-active{border:3px solid var(--accent);}
-  .sort-break-text{font-size:12px;font-weight:600;color:#fff;border:none;background:transparent;padding:2px 4px;outline:none;font-family:inherit;border-bottom:1px dashed transparent;flex:1;min-width:0;}
+  .sort-break-card{background:#808080;border-radius:4px;padding:4px 9px 4px 10px;margin-bottom:6px;border:1px solid #666;display:flex;align-items:center;justify-content:space-between;}
+  .sort-break-active{border:3px solid var(--accent);cursor:grab;touch-action:none;}
+  .sort-break-text{font-size:14px;font-weight:600;color:#fff;border:none;background:transparent;padding:2px 4px;outline:none;font-family:inherit;border-bottom:1px dashed transparent;flex:1;min-width:0;}
   .sort-break-text:focus{border-bottom-color:#ccc;color:#fff;}
-  .sort-break-arrows{display:flex;flex-direction:column;align-items:center;justify-content:center;}
-  .sort-break-arrows.sort-col-active{gap:12px;}
+  .sort-break-arrows{display:flex;align-items:center;justify-content:center;}
+  .sort-break-arrows.sort-col-active{gap:6px;}
+  .sort-break-combined{flex-direction:row;gap:2px;padding:6px 4px;}
+  .sort-break-combined span{font-size:10px;}
+  .sort-break-arrow{padding:6px 8px;font-size:12px;min-width:auto;}
+  .sort-break-done{padding:4px 8px;font-size:10px;min-width:auto;}
+  .sort-break-delete-btn{font-size:9px;font-weight:600;color:#fff;background:#555;border:none;border-radius:3px;padding:4px 6px;cursor:pointer;line-height:1;text-align:center;}
+  @media(hover:hover){.sort-break-delete-btn:hover{background:var(--accent);}}
 
   /* ADD BREAK header button */
   .sort-edit-add-break-btn{font-size:11px;font-weight:600;letter-spacing:.3px;color:#ccc;background:#555;border:1px solid #777;padding:5px 12px;border-radius:4px;cursor:pointer;font-family:inherit;}

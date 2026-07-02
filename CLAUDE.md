@@ -167,6 +167,14 @@ Changes:
 Changes:
 - `src/lib/accountFlow.ts` — Added fullscreen overlay ("Couldn't load all content — check your connection") with Retry/Dismiss buttons when R2 image fetches fail; overlay shows after progress bar hides (no overlap); Retry triggers fresh pull; Dismiss lets user browse but _pullIncomplete stays true (no push/save of half-loaded state).
 
+### v4.9.015 — 2026-07-02 (dev — deployed)
+**Break cards, auto-deactivate, iPhone portrait layout, column/padding tweaks**
+
+Changes:
+- `src/store/state.ts` — APP_VERSION v4.9.015, added `storyFlowBreaks: SortBreak[]` field for story flow breaks
+- `src/lib/sortOrder.ts` — Break cards redesigned: 50% grey (#808080) with white text, combined/active arrow pattern (matching frame cards), auto-activated on insert at middle of list. ADD BREAK button moved to header (right side of breadcrumb), works for both custom orders and story flow. Auto-deactivate on outside tap for both frame cards and break cards. Break rename/move/add all handle story flow via `storyFlowBreaks` state with `|| []` fallback for existing data.
+- `src/styles/globals.css` — iPhone portrait: reduced 3-column sort card layout (38px|1fr|30px), hides VERSN/SKETCH/NEEDS/description. Card padding: 3px left, 9px right. Main frame image: 2px black outline, no border-radius. VERSN/SKETCH: no border-radius. Column 1 widened to 44px (38px iPhone). Break card: #808080 bg, white text, red outline when active. ADD BREAK header button styled.
+
 ### v4.9.014 — 2026-07-02 (dev — deployed)
 **Drag-only on active card, auto-scroll edges, card shift animation**
 
