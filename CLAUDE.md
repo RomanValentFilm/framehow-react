@@ -167,6 +167,13 @@ Changes:
 Changes:
 - `src/lib/accountFlow.ts` — Added fullscreen overlay ("Couldn't load all content — check your connection") with Retry/Dismiss buttons when R2 image fetches fail; overlay shows after progress bar hides (no overlap); Retry triggers fresh pull; Dismiss lets user browse but _pullIncomplete stays true (no push/save of half-loaded state).
 
+### v4.9.013 — 2026-07-01 (dev — deployed)
+**Fix iPad sort-edit-view hidden under bars + dropdown not working when scrolled**
+
+Changes:
+- `src/store/state.ts` — APP_VERSION v4.9.013
+- `src/styles/globals.css` — Fixed CSS cascade bug: iPad/iPhone `.sort-edit-view` overrides (padding-top) were at line 544 but base `padding:0` was at line 933, overriding them. Moved sort-edit-view device overrides AFTER the base sort CSS. Changed `.sort-dropdown` from `position:absolute` to `position:fixed` so viewport coords from getBoundingClientRect work correctly when page is scrolled (fixes dropdown not appearing when toolbar is hidden on iPad).
+
 ### v4.9.012 — 2026-06-30 (dev — deployed)
 **Revert sync to v4.9.010 baseline + fix Write modal sync**
 

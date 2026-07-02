@@ -941,10 +941,10 @@
   @media(hover:hover){.sort-edit-done-btn:hover{background:#666;}}
 
   /* Frame set cards */
-  .sort-card{background:#d9d9d9;border-radius:4px;padding:8px 10px;margin-bottom:6px;border:1px solid #aaa;cursor:grab;transition:border-color .15s;}
-  .sort-card-active{border:3px solid var(--accent);cursor:grab;}
-  .sort-card-dragging{opacity:.3;}
-  .sort-card-drag-clone{border:2px solid var(--accent);border-radius:4px;background:#fff;box-shadow:0 4px 16px rgba(0,0,0,.15);}
+  .sort-card{background:#d9d9d9;border-radius:4px;padding:8px 10px;margin-bottom:6px;border:1px solid #aaa;transition:border-color .15s,transform .18s ease;}
+  .sort-card-active{border:3px solid var(--accent);cursor:grab;touch-action:none;}
+  .sort-card-dragging{visibility:hidden;transition:none;}
+  .sort-card-drag-clone{visibility:visible;border:2px solid var(--accent);border-radius:4px;background:#fff;box-shadow:0 8px 24px rgba(0,0,0,.25);}
   .sort-card-grid{display:grid;grid-template-columns:42px 25% 17% 1fr 30px;gap:6px;align-items:start;}
   /* Col 1: number + pill (pill pinned to bottom) */
   .sort-card-col-num{display:flex;flex-direction:column;align-items:center;overflow:hidden;align-self:stretch;justify-content:space-between;}

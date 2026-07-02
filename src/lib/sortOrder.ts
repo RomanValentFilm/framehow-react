@@ -666,66 +666,132 @@ function moveBreak(orderId: string, breakId: string, dir: 'up' | 'down'): void {
   void flushSyncNow();
 }
 
-// ─── Drag & drop ──────────────────────────────────────────────────────
+// ─── Drag & drop (active card only, with auto-scroll) ─────────────────
 
 function setupDragAndDrop(el: HTMLElement, orderId: string): void {
-  const cards = el.querySelectorAll('.sort-card');
-  cards.forEach((card) => {
-    const cardEl = card as HTMLElement;
-    let startY = 0;
-    let dragging = false;
-    let dragClone: HTMLElement | null = null;
+  // Only the ACTIVE (reorder-selected) card can be dragged.
+  // All other cards remain inert — touch scrolling works normally.
+  const activeCard = el.querySelector('.sort-card-active') as HTMLElement | null;
+  if (!activeCard) return;
 
-    const onStart = (clientY: number) => {
-      startY = clientY;
-      dragging = false;
+  const allCards = Array.from(el.querySelectorAll('.sort-card')) as HTMLElement[];
+  const activeIdx = allCards.indexOf(activeCard);
+  if (activeIdx < 0) return;
 
-      const onMove = (moveY: number) => {
-        if (!dragging && Math.abs(moveY - startY) > 8) {
-          dragging = true;
-          cardEl.classList.add('sort-card-dragging');
-          // Create visual clone for drag feedback
-          dragClone = cardEl.cloneNode(true) as HTMLElement;
-          dragClone.classList.add('sort-card-drag-clone');
-          dragClone.style.position = 'fixed';
-          dragClone.style.width = `${cardEl.offsetWidth}px`;
-          dragClone.style.pointerEvents = 'none';
-          dragClone.style.zIndex = '9999';
-          dragClone.style.opacity = '0.85';
-          document.body.appendChild(dragClone);
+  let startY = 0;
+  let dragging = false;
+  let dragClone: HTMLElement | null = null;
+  let currentDropIdx = activeIdx;
+  let lastMoveY = 0;
+  let scrollRAF = 0;
+  const cardDocMids: number[] = []; // document-relative midpoints (stable across scroll)
+
+  const EDGE_ZONE = 90;  // px from top/bottom of viewport to trigger auto-scroll
+  const SCROLL_SPEED = 8; // max px per frame
+
+  const onStart = (clientY: number) => {
+    startY = clientY;
+    dragging = false;
+    currentDropIdx = activeIdx;
+    lastMoveY = clientY;
+
+    // Snapshot document-relative midpoints (viewport Y + scrollY — won't shift with scroll)
+    cardDocMids.length = 0;
+    const sy = window.scrollY;
+    for (const c of allCards) {
+      const r = c.getBoundingClientRect();
+      cardDocMids.push(r.top + sy + r.height / 2);
+    }
+
+    const draggedH = activeCard.getBoundingClientRect().height + 6;
+
+    const shiftCards = (dropIdx: number) => {
+      for (let i = 0; i < allCards.length; i++) {
+        if (i === activeIdx) continue;
+        let shift = 0;
+        if (activeIdx < dropIdx) {
+          if (i > activeIdx && i <= dropIdx) shift = -draggedH;
+        } else if (activeIdx > dropIdx) {
+          if (i >= dropIdx && i < activeIdx) shift = draggedH;
         }
-        if (dragging && dragClone) {
-          dragClone.style.top = `${moveY - 30}px`;
-          dragClone.style.left = `${cardEl.getBoundingClientRect().left}px`;
-        }
-      };
+        allCards[i].style.transform = shift ? `translateY(${shift}px)` : '';
+      }
+    };
 
-      const onEnd = (endY: number) => {
-        if (dragging) {
-          cardEl.classList.remove('sort-card-dragging');
-          if (dragClone) { dragClone.remove(); dragClone = null; }
+    const updateDropIndex = () => {
+      const touchDocY = lastMoveY + window.scrollY;
+      let newDropIdx = allCards.length - 1;
+      for (let i = 0; i < allCards.length; i++) {
+        if (touchDocY < cardDocMids[i]) { newDropIdx = i; break; }
+      }
+      if (newDropIdx !== currentDropIdx) {
+        currentDropIdx = newDropIdx;
+        shiftCards(currentDropIdx);
+      }
+    };
 
-          // Find drop target by Y position
-          const fid = parseInt(cardEl.dataset.sortFid!, 10);
-          const allCards = Array.from(el.querySelectorAll('.sort-card'));
-          let targetIdx = -1;
-          for (let i = 0; i < allCards.length; i++) {
-            const rect = allCards[i].getBoundingClientRect();
-            if (endY < rect.top + rect.height / 2) {
-              targetIdx = i;
-              break;
-            }
-          }
-          if (targetIdx < 0) targetIdx = allCards.length - 1;
+    // Auto-scroll: runs every frame while dragging, scrolls when finger is near edges
+    const autoScroll = () => {
+      if (!dragging) return;
+      const viewH = window.innerHeight;
+      if (lastMoveY > viewH - EDGE_ZONE) {
+        const intensity = Math.min((lastMoveY - (viewH - EDGE_ZONE)) / EDGE_ZONE, 1);
+        window.scrollBy(0, Math.round(SCROLL_SPEED * intensity + 1));
+        updateDropIndex();
+      } else if (lastMoveY < EDGE_ZONE) {
+        const intensity = Math.min((EDGE_ZONE - lastMoveY) / EDGE_ZONE, 1);
+        window.scrollBy(0, -Math.round(SCROLL_SPEED * intensity + 1));
+        updateDropIndex();
+      }
+      scrollRAF = requestAnimationFrame(autoScroll);
+    };
 
-          // Reorder
+    const onMove = (moveY: number) => {
+      lastMoveY = moveY;
+      if (!dragging && Math.abs(moveY - startY) > 10) {
+        dragging = true;
+        activeCard.classList.add('sort-card-dragging');
+        dragClone = activeCard.cloneNode(true) as HTMLElement;
+        dragClone.classList.add('sort-card-drag-clone');
+        dragClone.style.position = 'fixed';
+        dragClone.style.width = `${activeCard.offsetWidth}px`;
+        dragClone.style.pointerEvents = 'none';
+        dragClone.style.zIndex = '9999';
+        document.body.appendChild(dragClone);
+        scrollRAF = requestAnimationFrame(autoScroll);
+      }
+      if (dragging && dragClone) {
+        dragClone.style.top = `${moveY - 30}px`;
+        dragClone.style.left = `${activeCard.getBoundingClientRect().left}px`;
+        updateDropIndex();
+      }
+    };
+
+    const cleanup = () => {
+      if (scrollRAF) { cancelAnimationFrame(scrollRAF); scrollRAF = 0; }
+      document.removeEventListener('mousemove', mouseMove);
+      document.removeEventListener('mouseup', mouseUp);
+      document.removeEventListener('touchmove', touchMove);
+      document.removeEventListener('touchend', touchEnd);
+    };
+
+    const onEnd = () => {
+      for (const c of allCards) c.style.transform = '';
+      cleanup();
+
+      if (dragging) {
+        activeCard.classList.remove('sort-card-dragging');
+        if (dragClone) { dragClone.remove(); dragClone = null; }
+
+        if (currentDropIdx !== activeIdx) {
+          const fid = parseInt(activeCard.dataset.sortFid!, 10);
           const s = state();
           if (orderId === '__storyflow__') {
             const frames = [...s.frames];
             const fromIdx = frames.findIndex((fr) => fr.id === fid);
             if (fromIdx >= 0) {
               const [moved] = frames.splice(fromIdx, 1);
-              frames.splice(targetIdx, 0, moved);
+              frames.splice(currentDropIdx, 0, moved);
               useStore.setState({ frames });
             }
           } else {
@@ -735,39 +801,35 @@ function setupDragAndDrop(el: HTMLElement, orderId: string): void {
               const fromIdx = arr.indexOf(fid);
               if (fromIdx < 0) return o;
               arr.splice(fromIdx, 1);
-              arr.splice(targetIdx, 0, fid);
+              arr.splice(currentDropIdx, 0, fid);
               return { ...o, frameOrder: arr };
             });
             useStore.setState({ sortOrders: orders });
           }
           bumpRenderTick();
           void flushSyncNow();
-          renderSortEditView(el, orderId);
         }
-        document.removeEventListener('mousemove', mouseMove);
-        document.removeEventListener('mouseup', mouseUp);
-        document.removeEventListener('touchmove', touchMove);
-        document.removeEventListener('touchend', touchEnd);
-      };
-
-      const mouseMove = (e: MouseEvent) => onMove(e.clientY);
-      const mouseUp = (e: MouseEvent) => onEnd(e.clientY);
-      const touchMove = (e: TouchEvent) => { e.preventDefault(); onMove(e.touches[0].clientY); };
-      const touchEnd = (e: TouchEvent) => onEnd(e.changedTouches[0].clientY);
-
-      document.addEventListener('mousemove', mouseMove);
-      document.addEventListener('mouseup', mouseUp);
-      document.addEventListener('touchmove', touchMove, { passive: false });
-      document.addEventListener('touchend', touchEnd);
+        renderSortEditView(el, orderId);
+      }
     };
 
-    cardEl.addEventListener('mousedown', (e) => {
-      if ((e.target as HTMLElement).closest('.sort-arrow, .sort-done-btn, input')) return;
-      onStart(e.clientY);
-    });
-    cardEl.addEventListener('touchstart', (e) => {
-      if ((e.target as HTMLElement).closest('.sort-arrow, .sort-done-btn, input')) return;
-      onStart(e.touches[0].clientY);
-    }, { passive: true });
+    const mouseMove = (e: MouseEvent) => onMove(e.clientY);
+    const mouseUp = () => onEnd();
+    const touchMove = (e: TouchEvent) => { e.preventDefault(); onMove(e.touches[0].clientY); };
+    const touchEnd = () => onEnd();
+
+    document.addEventListener('mousemove', mouseMove);
+    document.addEventListener('mouseup', mouseUp);
+    document.addEventListener('touchmove', touchMove, { passive: false });
+    document.addEventListener('touchend', touchEnd);
+  };
+
+  activeCard.addEventListener('mousedown', (e) => {
+    if ((e.target as HTMLElement).closest('.sort-arrow, .sort-done-btn, input')) return;
+    onStart(e.clientY);
   });
+  activeCard.addEventListener('touchstart', (e) => {
+    if ((e.target as HTMLElement).closest('.sort-arrow, .sort-done-btn, input')) return;
+    onStart(e.touches[0].clientY);
+  }, { passive: true });
 }
