@@ -292,10 +292,11 @@ function renderSortEditView(el: HTMLElement, orderId: string): void {
   }
 
   const activeReorderFid = (el as any).__activeReorderFid as number | null ?? null;
+  const activeBreakId = (el as any).__activeBreakId as string | null ?? null;
 
   let html = `<div class="sort-edit-inner">`;
 
-  // Header — breadcrumb only, no DONE button (exit via SORT BY or other view buttons)
+  // Header — breadcrumb + ADD BREAK button for custom orders
   html += `
     <div class="sort-edit-header">
       <div class="sort-edit-header-left">
@@ -306,37 +307,30 @@ function renderSortEditView(el: HTMLElement, orderId: string): void {
           : `<input class="sort-edit-name" value="${orderName}" data-sort-rename="${orderId}" />`
         }
       </div>
+      <button class="sort-edit-add-break-btn" data-sort-action="addbreak">ADD BREAK</button>
     </div>`;
 
   // Frame sets
   let orderIdx = 0;
   for (const f of frames) {
-    // Check for breaks before this position (custom orders only)
-    if (order) {
-      const breaksHere = order.breaks.filter((b) => b.position === orderIdx);
-      for (const brk of breaksHere) {
-        html += renderBreakCard(brk, activeReorderFid);
-      }
+    // Check for breaks before this position
+    const breaks = order ? order.breaks : (s.storyFlowBreaks || []);
+    const breaksHere = breaks.filter((b) => b.position === orderIdx);
+    for (const brk of breaksHere) {
+      html += renderBreakCard(brk, activeBreakId);
     }
 
     html += renderFrameSetCard(f, orderIdx, activeReorderFid);
     orderIdx++;
   }
 
-  // Trailing breaks (custom orders only)
-  if (order) {
-    const trailingBreaks = order.breaks.filter((b) => b.position >= orderIdx);
+  // Trailing breaks
+  {
+    const breaks = order ? order.breaks : (s.storyFlowBreaks || []);
+    const trailingBreaks = breaks.filter((b) => b.position >= orderIdx);
     for (const brk of trailingBreaks) {
-      html += renderBreakCard(brk, activeReorderFid);
+      html += renderBreakCard(brk, activeBreakId);
     }
-  }
-
-  // Add break button (custom orders only)
-  if (order) {
-    html += `
-      <div class="sort-edit-footer">
-        <button class="sort-edit-add-break" data-sort-action="addbreak">+ Add break</button>
-      </div>`;
   }
 
   html += `</div>`;
@@ -413,16 +407,20 @@ function renderFrameSetCard(f: Frame, idx: number, activeReorderFid: number | nu
     </div>`;
 }
 
-function renderBreakCard(brk: SortBreak, activeReorderFid: number | null): string {
+function renderBreakCard(brk: SortBreak, activeBreakId: string | null): string {
+  const isActive = activeBreakId === brk.id;
   return `
-    <div class="sort-break-card" data-break-id="${brk.id}">
-      <div class="sort-break-left">
-        <span class="sort-break-icon">&#9749;</span>
-        <input class="sort-break-text" value="${brk.text}" data-break-rename="${brk.id}" />
-      </div>
-      <div class="sort-break-arrows">
-        <span class="sort-arrow" data-break-move="up" data-break-id="${brk.id}">&#9650;</span>
-        <span class="sort-arrow" data-break-move="down" data-break-id="${brk.id}">&#9660;</span>
+    <div class="sort-break-card${isActive ? ' sort-break-active' : ''}" data-break-id="${brk.id}">
+      <input class="sort-break-text" value="${brk.text}" data-break-rename="${brk.id}" placeholder="BREAK" />
+      <div class="sort-break-arrows${isActive ? ' sort-col-active' : ''}">
+        ${isActive
+          ? `<span class="sort-arrow" data-break-move="up" data-break-id="${brk.id}">&#9650;</span>
+             <span class="sort-done-btn" data-break-deactivate="${brk.id}">DONE</span>
+             <span class="sort-arrow" data-break-move="down" data-break-id="${brk.id}">&#9660;</span>`
+          : `<button class="sort-arrows-combined" data-break-activate="${brk.id}">
+               <span>&#9650;</span><span>&#9660;</span>
+             </button>`
+        }
       </div>
     </div>`;
 }
@@ -530,12 +528,31 @@ function wireEditViewEvents(el: HTMLElement, orderId: string): void {
     });
   }
 
-  // Combined button — activate card for reordering
+  // Auto-deactivate active frame or break when tapping anywhere outside it
+  const hasActiveFrame = (el as any).__activeReorderFid != null;
+  const hasActiveBreak = (el as any).__activeBreakId != null;
+  if (hasActiveFrame || hasActiveBreak) {
+    el.addEventListener('click', (e) => {
+      const target = e.target as HTMLElement;
+      if (target.closest('[data-sort-action="addbreak"]')) return; // don't deactivate on ADD BREAK
+      const activeEl = hasActiveFrame
+        ? el.querySelector('.sort-card-active')
+        : el.querySelector('.sort-break-active');
+      if (activeEl && !activeEl.contains(target)) {
+        (el as any).__activeReorderFid = null;
+        (el as any).__activeBreakId = null;
+        renderSortEditView(el, orderId);
+      }
+    });
+  }
+
+  // Combined button — activate frame card for reordering (clears any active break)
   el.querySelectorAll('[data-sort-activate]').forEach((btn) => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const fid = parseInt((btn as HTMLElement).dataset.sortActivate!, 10);
       (el as any).__activeReorderFid = fid;
+      (el as any).__activeBreakId = null;
       renderSortEditView(el, orderId);
     });
   });
@@ -551,7 +568,7 @@ function wireEditViewEvents(el: HTMLElement, orderId: string): void {
     });
   });
 
-  // Done button on active card
+  // Done button on active frame card
   el.querySelectorAll('[data-sort-deactivate]').forEach((btn) => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -560,33 +577,64 @@ function wireEditViewEvents(el: HTMLElement, orderId: string): void {
     });
   });
 
-  // Add break
-  el.querySelector('[data-sort-action="addbreak"]')?.addEventListener('click', () => {
-    addBreak(orderId);
+  // ─── Break events ───
+
+  // ADD BREAK button in header
+  el.querySelector('[data-sort-action="addbreak"]')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    addBreak(orderId, el);
     renderSortEditView(el, orderId);
+  });
+
+  // Break activate (combined arrows button)
+  el.querySelectorAll('[data-break-activate]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const brkId = (btn as HTMLElement).dataset.breakActivate!;
+      (el as any).__activeBreakId = brkId;
+      (el as any).__activeReorderFid = null;
+      renderSortEditView(el, orderId);
+    });
+  });
+
+  // Break done button
+  el.querySelectorAll('[data-break-deactivate]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      (el as any).__activeBreakId = null;
+      renderSortEditView(el, orderId);
+    });
   });
 
   // Break rename
   el.querySelectorAll('.sort-break-text').forEach((input) => {
     (input as HTMLInputElement).addEventListener('change', () => {
       const brkId = (input as HTMLElement).dataset.breakRename!;
+      const newText = (input as HTMLInputElement).value;
       const s = state();
-      const orders = s.sortOrders.map((o) => {
-        if (o.id !== orderId) return o;
-        return {
-          ...o,
-          breaks: o.breaks.map((b) =>
-            b.id === brkId ? { ...b, text: (input as HTMLInputElement).value } : b
-          ),
-        };
-      });
-      useStore.setState({ sortOrders: orders });
+      if (orderId === '__storyflow__') {
+        const breaks = (s.storyFlowBreaks || []).map((b) =>
+          b.id === brkId ? { ...b, text: newText } : b
+        );
+        useStore.setState({ storyFlowBreaks: breaks });
+      } else {
+        const orders = s.sortOrders.map((o) => {
+          if (o.id !== orderId) return o;
+          return {
+            ...o,
+            breaks: o.breaks.map((b) =>
+              b.id === brkId ? { ...b, text: newText } : b
+            ),
+          };
+        });
+        useStore.setState({ sortOrders: orders });
+      }
       bumpRenderTick();
       void flushSyncNow();
     });
   });
 
-  // Break move
+  // Break move arrows
   el.querySelectorAll('.sort-arrow[data-break-move]').forEach((arrow) => {
     arrow.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -633,35 +681,57 @@ function moveFrame(orderId: string, fid: number, dir: 'up' | 'down'): void {
   void flushSyncNow();
 }
 
-function addBreak(orderId: string): void {
+function addBreak(orderId: string, editView: HTMLElement): void {
   const s = state();
-  const order = s.sortOrders.find((o) => o.id === orderId);
-  if (!order) return;
   const breakId = `brk_${Date.now()}`;
-  const position = order.frameOrder.length; // add at end
-  const newBreak: SortBreak = { id: breakId, text: 'BREAK', position };
-  const orders = s.sortOrders.map((o) =>
-    o.id === orderId ? { ...o, breaks: [...o.breaks, newBreak] } : o
-  );
-  useStore.setState({ sortOrders: orders });
+
+  // Activate the new break for reordering
+  (editView as any).__activeBreakId = breakId;
+  (editView as any).__activeReorderFid = null;
+
+  if (orderId === '__storyflow__') {
+    const frameCount = getVisibleFrames().length;
+    const position = Math.floor(frameCount / 2);
+    const newBreak: SortBreak = { id: breakId, text: 'BREAK', position };
+    useStore.setState({ storyFlowBreaks: [...(s.storyFlowBreaks || []), newBreak] });
+  } else {
+    const order = s.sortOrders.find((o) => o.id === orderId);
+    if (!order) return;
+    const position = Math.floor(order.frameOrder.length / 2);
+    const newBreak: SortBreak = { id: breakId, text: 'BREAK', position };
+    const orders = s.sortOrders.map((o) =>
+      o.id === orderId ? { ...o, breaks: [...o.breaks, newBreak] } : o
+    );
+    useStore.setState({ sortOrders: orders });
+  }
   bumpRenderTick();
   void flushSyncNow();
 }
 
 function moveBreak(orderId: string, breakId: string, dir: 'up' | 'down'): void {
   const s = state();
-  const orders = s.sortOrders.map((o) => {
-    if (o.id !== orderId) return o;
-    return {
-      ...o,
-      breaks: o.breaks.map((b) => {
-        if (b.id !== breakId) return b;
-        const newPos = dir === 'up' ? b.position - 1 : b.position + 1;
-        return { ...b, position: Math.max(0, Math.min(o.frameOrder.length, newPos)) };
-      }),
-    };
-  });
-  useStore.setState({ sortOrders: orders });
+  if (orderId === '__storyflow__') {
+    const maxPos = getVisibleFrames().length;
+    const breaks = (s.storyFlowBreaks || []).map((b) => {
+      if (b.id !== breakId) return b;
+      const newPos = dir === 'up' ? b.position - 1 : b.position + 1;
+      return { ...b, position: Math.max(0, Math.min(maxPos, newPos)) };
+    });
+    useStore.setState({ storyFlowBreaks: breaks });
+  } else {
+    const orders = s.sortOrders.map((o) => {
+      if (o.id !== orderId) return o;
+      return {
+        ...o,
+        breaks: o.breaks.map((b) => {
+          if (b.id !== breakId) return b;
+          const newPos = dir === 'up' ? b.position - 1 : b.position + 1;
+          return { ...b, position: Math.max(0, Math.min(o.frameOrder.length, newPos)) };
+        }),
+      };
+    });
+    useStore.setState({ sortOrders: orders });
+  }
   bumpRenderTick();
   void flushSyncNow();
 }

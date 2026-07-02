@@ -167,6 +167,14 @@ Changes:
 Changes:
 - `src/lib/accountFlow.ts` — Added fullscreen overlay ("Couldn't load all content — check your connection") with Retry/Dismiss buttons when R2 image fetches fail; overlay shows after progress bar hides (no overlap); Retry triggers fresh pull; Dismiss lets user browse but _pullIncomplete stays true (no push/save of half-loaded state).
 
+### v4.9.014 — 2026-07-02 (dev — deployed)
+**Drag-only on active card, auto-scroll edges, card shift animation**
+
+Changes:
+- `src/store/state.ts` — APP_VERSION v4.9.014
+- `src/lib/sortOrder.ts` — Rewrote `setupDragAndDrop()`: drag restricted to active card only (non-active cards are inert, touch scrolling works normally). Added auto-scroll when finger is within 90px of top/bottom screen edge. Uses document-relative midpoints so drop calculation stays accurate during scroll. Other cards shift with smooth `translateY` animation to show drop position.
+- `src/styles/globals.css` — `.sort-card`: removed `cursor:grab`, added `transition:transform .18s ease` for shift animation. `.sort-card-active`: added `touch-action:none` for iOS drag control. `.sort-card-dragging`: changed from opacity to `visibility:hidden` (original hides, clone is visible). `.sort-card-drag-clone`: added `visibility:visible` override so clone stays visible.
+
 ### v4.9.013 — 2026-07-01 (dev — deployed)
 **Fix iPad sort-edit-view hidden under bars + dropdown not working when scrolled**
 

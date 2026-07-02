@@ -58,7 +58,7 @@ export interface Setup {
 
 /** 12-colour palette for setups. */
 /** App version — bump before every deploy. */
-export const APP_VERSION = 'v4.9.014';
+export const APP_VERSION = 'v4.9.015';
 
 export const SETUP_COLORS: { name: string; hex: string }[] = [
   { name: 'DAYLIGHT',      hex: '#CFE2F6' },
@@ -387,6 +387,8 @@ export interface FrameHowState {
   frameNeeds: Record<number, FrameNeedState>;
   /** Needs strip — visible in view bar */
   needsStripVisible: boolean;
+  /** Breaks for story flow (default frame order) */
+  storyFlowBreaks: SortBreak[];
   /** Custom frame orderings (e.g. "Shooting order") */
   sortOrders: SortOrder[];
   /** Which sort order is active; null = Story flow (default frame order) */
@@ -482,6 +484,7 @@ const initial: FrameHowState = {
   needDefinitions: DEFAULT_NEED_DEFINITIONS,
   frameNeeds: {},
   needsStripVisible: false,
+  storyFlowBreaks: [],
   sortOrders: [],
   activeSortOrderId: null,
   sortMode: false,
