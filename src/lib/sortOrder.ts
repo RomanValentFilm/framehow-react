@@ -339,6 +339,8 @@ function renderSortEditView(el: HTMLElement, orderId: string): void {
   // Wire events
   wireEditViewEvents(el, orderId);
 
+  // No auto-focus. Input is readonly in HTML; tap handler removes readonly + focuses with preventScroll.
+
   // Fill in sketch images that need rasterization (async, non-blocking)
   void fillSketchImages(el);
 }
@@ -411,7 +413,7 @@ function renderBreakCard(brk: SortBreak, activeBreakId: string | null): string {
   const isActive = activeBreakId === brk.id;
   return `
     <div class="sort-break-card${isActive ? ' sort-break-active' : ''}" data-break-id="${brk.id}">
-      <input class="sort-break-text" value="${brk.text}" data-break-rename="${brk.id}" placeholder="BREAK" />
+      <input class="sort-break-text" value="${brk.text}" data-break-rename="${brk.id}" placeholder="BREAK NAME" readonly />
       <div class="sort-break-arrows${isActive ? ' sort-col-active' : ''}">
         ${isActive
           ? `<span class="sort-arrow sort-break-arrow" data-break-move="up" data-break-id="${brk.id}">&#9650;</span>
@@ -618,7 +620,72 @@ function wireEditViewEvents(el: HTMLElement, orderId: string): void {
     });
   });
 
-  // Break rename
+  // Break rename — input is always readonly in HTML to prevent iOS scroll-to-input.
+  // Different handling per device:
+  const isPhone = Math.min(window.innerWidth, window.innerHeight) <= 430;
+  const hasTouchScreen = navigator.maxTouchPoints > 0;
+  el.querySelectorAll('.sort-break-active .sort-break-text').forEach((input) => {
+    const inp = input as HTMLInputElement;
+    if (isPhone) {
+      // iPhone: remove readonly on tap, let iOS handle focus + keyboard scroll naturally
+      inp.addEventListener('touchstart', () => { inp.removeAttribute('readonly'); }, { passive: true });
+      // When keyboard closes, slide break card to 25% from top of screen
+      inp.addEventListener('blur', () => {
+        const card = inp.closest('.sort-break-card');
+        if (card) setTimeout(() => {
+          const target = card.getBoundingClientRect().top + window.scrollY - window.innerHeight * 0.25;
+          window.scrollTo({ top: Math.max(0, target), behavior: 'smooth' });
+        }, 300);
+      });
+    } else if (hasTouchScreen) {
+      // iPad: prevent iOS scroll, focus manually without scrolling
+      inp.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        inp.removeAttribute('readonly');
+        inp.focus({ preventScroll: true });
+        useStore.setState({ scrollHideGuard: Date.now() + 1200 });
+        // After 500ms, detect keyboard type:
+        // - Software keyboard: viewport shrinks → scroll input into view
+        // - Physical keyboard: viewport unchanged → scroll to 25% + hard-lock body
+        setTimeout(() => {
+          const vv = window.visualViewport;
+          if (!vv) return;
+          const rect = inp.getBoundingClientRect();
+          if (rect.bottom > vv.height) {
+            // Software keyboard covers input — scroll into view (don't touch, working)
+            useStore.setState({ scrollHideGuard: Date.now() + 800 });
+            inp.scrollIntoView({ block: 'center', behavior: 'smooth' });
+          } else {
+            // Physical keyboard — scroll to 25% then freeze body with position:fixed
+            const card = inp.closest('.sort-break-card');
+            useStore.setState({ scrollHideGuard: Date.now() + 800 });
+            const cardTop = card ? card.getBoundingClientRect().top + window.scrollY : window.scrollY;
+            const lockY = Math.max(0, cardTop - window.innerHeight * 0.25);
+            window.scrollTo(0, lockY);
+            // position:fixed is the only iOS-proof scroll lock
+            document.body.style.position = 'fixed';
+            document.body.style.top = `-${lockY}px`;
+            document.body.style.width = '100%';
+            document.body.style.overflow = 'hidden';
+          }
+        }, 500);
+      }, { passive: false });
+      // Unlock body when input loses focus
+      inp.addEventListener('blur', () => {
+        if (document.body.style.position === 'fixed') {
+          const lockY = Math.abs(parseInt(document.body.style.top || '0', 10));
+          document.body.style.position = '';
+          document.body.style.top = '';
+          document.body.style.width = '';
+          document.body.style.overflow = '';
+          window.scrollTo(0, lockY);
+        }
+      });
+    } else {
+      // Desktop: just remove readonly on mousedown, native focus handles cursor position
+      inp.addEventListener('mousedown', () => { inp.removeAttribute('readonly'); });
+    }
+  });
   el.querySelectorAll('.sort-break-text').forEach((input) => {
     (input as HTMLInputElement).addEventListener('change', () => {
       const brkId = (input as HTMLElement).dataset.breakRename!;
@@ -716,7 +783,7 @@ function addBreak(orderId: string, editView: HTMLElement): void {
     }
   }
 
-  const newBreak: SortBreak = { id: breakId, text: 'BREAK', position };
+  const newBreak: SortBreak = { id: breakId, text: 'BREAK NAME', position };
 
   if (orderId === '__storyflow__') {
     useStore.setState({ storyFlowBreaks: [...(s.storyFlowBreaks || []), newBreak] });
@@ -809,14 +876,16 @@ function setupDragAndDrop(el: HTMLElement, orderId: string): void {
     currentDropIdx = activeItemIdx;
     lastMoveY = clientY;
 
+    const activeRect = activeCard.getBoundingClientRect();
+    const draggedH = activeRect.height + 6;
+    const cloneOffset = activeRect.height / 2;
+
     itemDocMids.length = 0;
     const sy = window.scrollY;
     for (const c of allItems) {
       const r = c.getBoundingClientRect();
       itemDocMids.push(r.top + sy + r.height / 2);
     }
-
-    const draggedH = activeCard.getBoundingClientRect().height + 6;
 
     const shiftItems = (dropIdx: number) => {
       for (let i = 0; i < allItems.length; i++) {
@@ -833,10 +902,28 @@ function setupDragAndDrop(el: HTMLElement, orderId: string): void {
 
     const updateDropIndex = () => {
       const touchDocY = lastMoveY + window.scrollY;
-      let newDropIdx = allItems.length - 1;
-      for (let i = 0; i < allItems.length; i++) {
-        if (touchDocY < itemDocMids[i]) { newDropIdx = i; break; }
+      let newDropIdx = activeItemIdx;
+
+      // Scan downward: shift happens when finger passes each item's midpoint
+      for (let i = activeItemIdx + 1; i < allItems.length; i++) {
+        if (touchDocY >= itemDocMids[i]) {
+          newDropIdx = i;
+        } else {
+          break;
+        }
       }
+
+      // Scan upward: only if we haven't moved down
+      if (newDropIdx === activeItemIdx) {
+        for (let i = activeItemIdx - 1; i >= 0; i--) {
+          if (touchDocY < itemDocMids[i]) {
+            newDropIdx = i;
+          } else {
+            break;
+          }
+        }
+      }
+
       if (newDropIdx !== currentDropIdx) {
         currentDropIdx = newDropIdx;
         shiftItems(currentDropIdx);
@@ -862,6 +949,7 @@ function setupDragAndDrop(el: HTMLElement, orderId: string): void {
       lastMoveY = moveY;
       if (!dragging && Math.abs(moveY - startY) > 10) {
         dragging = true;
+        el.classList.add('sort-dragging');
         activeCard.classList.add('sort-card-dragging');
         dragClone = activeCard.cloneNode(true) as HTMLElement;
         dragClone.classList.add('sort-card-drag-clone');
@@ -873,7 +961,7 @@ function setupDragAndDrop(el: HTMLElement, orderId: string): void {
         scrollRAF = requestAnimationFrame(autoScroll);
       }
       if (dragging && dragClone) {
-        dragClone.style.top = `${moveY - 30}px`;
+        dragClone.style.top = `${moveY - cloneOffset}px`;
         dragClone.style.left = `${activeCard.getBoundingClientRect().left}px`;
         updateDropIndex();
       }
@@ -892,61 +980,57 @@ function setupDragAndDrop(el: HTMLElement, orderId: string): void {
       cleanup();
 
       if (dragging) {
+        el.classList.remove('sort-dragging');
         activeCard.classList.remove('sort-card-dragging');
         if (dragClone) { dragClone.remove(); dragClone = null; }
 
         if (currentDropIdx !== activeItemIdx) {
-          // Build reordered list: remove from old position, insert at new
+          // Build reordered visual list — source of truth for new arrangement
           const reordered = allItems.filter((_, i) => i !== activeItemIdx);
-          const insertAt = currentDropIdx > activeItemIdx ? currentDropIdx - 1 : currentDropIdx;
-          reordered.splice(insertAt, 0, activeCard);
-          // Count frame cards before the dragged item in the new order
-          let newFrameIdx = 0;
+          reordered.splice(currentDropIdx, 0, activeCard);
+
+          // Derive new frame order + new break positions from visual order
+          const newFrameOrder: number[] = [];
+          const newBreakPositions = new Map<string, number>();
+          let fCount = 0;
           for (const item of reordered) {
-            if (item === activeCard) break;
-            if (item.classList.contains('sort-card')) newFrameIdx++;
+            if (item.classList.contains('sort-card')) {
+              newFrameOrder.push(parseInt(item.dataset.sortFid!, 10));
+              fCount++;
+            } else if (item.classList.contains('sort-break-card')) {
+              newBreakPositions.set(item.dataset.breakId!, fCount);
+            }
           }
 
-          if (isBreakDrag) {
-            // Break drag — newFrameIdx = the break's new position field
-            const brkId = activeCard.dataset.breakId!;
-            const s = state();
-            if (orderId === '__storyflow__') {
-              const breaks = (s.storyFlowBreaks || []).map((b) =>
-                b.id === brkId ? { ...b, position: newFrameIdx } : b
-              );
-              useStore.setState({ storyFlowBreaks: breaks });
-            } else {
-              const orders = s.sortOrders.map((o) => {
-                if (o.id !== orderId) return o;
-                return { ...o, breaks: o.breaks.map((b) => b.id === brkId ? { ...b, position: newFrameIdx } : b) };
-              });
-              useStore.setState({ sortOrders: orders });
+          const s = state();
+          if (orderId === '__storyflow__') {
+            // Rearrange visible frames within s.frames, preserving non-visible frame positions
+            const frames = [...s.frames];
+            const visibleSet = new Set(newFrameOrder);
+            const visibleSlots: number[] = [];
+            for (let i = 0; i < frames.length; i++) {
+              if (visibleSet.has(frames[i].id)) visibleSlots.push(i);
             }
+            const frameById = new Map(frames.map((f) => [f.id, f]));
+            for (let i = 0; i < newFrameOrder.length; i++) {
+              frames[visibleSlots[i]] = frameById.get(newFrameOrder[i])!;
+            }
+            // Update break positions
+            const newBreaks = (s.storyFlowBreaks || []).map((b) => {
+              const pos = newBreakPositions.get(b.id);
+              return pos !== undefined ? { ...b, position: pos } : b;
+            });
+            useStore.setState({ frames, storyFlowBreaks: newBreaks });
           } else {
-            // Frame card drag — newFrameIdx = insert index in frame-only array
-            const fid = parseInt(activeCard.dataset.sortFid!, 10);
-            const s = state();
-            if (orderId === '__storyflow__') {
-              const frames = [...s.frames];
-              const fromIdx = frames.findIndex((fr) => fr.id === fid);
-              if (fromIdx >= 0) {
-                const [moved] = frames.splice(fromIdx, 1);
-                frames.splice(newFrameIdx, 0, moved);
-                useStore.setState({ frames });
-              }
-            } else {
-              const orders = s.sortOrders.map((o) => {
-                if (o.id !== orderId) return o;
-                const arr = [...o.frameOrder];
-                const fromIdx = arr.indexOf(fid);
-                if (fromIdx < 0) return o;
-                arr.splice(fromIdx, 1);
-                arr.splice(newFrameIdx, 0, fid);
-                return { ...o, frameOrder: arr };
+            const orders = s.sortOrders.map((o) => {
+              if (o.id !== orderId) return o;
+              const newBreaks = o.breaks.map((b) => {
+                const pos = newBreakPositions.get(b.id);
+                return pos !== undefined ? { ...b, position: pos } : b;
               });
-              useStore.setState({ sortOrders: orders });
-            }
+              return { ...o, frameOrder: newFrameOrder, breaks: newBreaks };
+            });
+            useStore.setState({ sortOrders: orders });
           }
           bumpRenderTick();
           void flushSyncNow();
