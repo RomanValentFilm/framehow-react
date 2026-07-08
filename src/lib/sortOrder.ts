@@ -6,12 +6,54 @@ import type { SortOrder, SortBreak, Frame } from '../store/state';
 import { flushSyncNow } from './currentProject';
 import { getStripVersions } from './helpers';
 import { getVisibleFrames } from './groups';
-import { rasterizeVersion, versionHasContent } from './rasterize';
+import { rasterizeMain, rasterizeVersion, versionHasContent } from './rasterize';
 
 // ─── Helpers ──────────────────────────────────────────────────────────
 
 function genId(prefix: string, n: number): string {
   return `${prefix}_${n}`;
+}
+
+/** Add a newly created frame to all existing sort orders (appended at end). */
+export function addFrameToSortOrders(frameId: number, afterFrameId?: number): void {
+  const s = state();
+  if (!s.sortOrders.length) return;
+  const updated = s.sortOrders.map((o) => {
+    if (o.frameOrder.includes(frameId)) return o; // already present
+    const newOrder = [...o.frameOrder];
+    if (afterFrameId !== undefined) {
+      const afterIdx = newOrder.indexOf(afterFrameId);
+      if (afterIdx >= 0) {
+        newOrder.splice(afterIdx + 1, 0, frameId);
+      } else {
+        newOrder.push(frameId);
+      }
+    } else {
+      newOrder.push(frameId);
+    }
+    return { ...o, frameOrder: newOrder };
+  });
+  useStore.setState({ sortOrders: updated });
+}
+
+/** Remove a deleted frame from all sort orders. */
+export function removeFrameFromSortOrders(frameId: number): void {
+  const s = state();
+  if (!s.sortOrders.length) return;
+  const updated = s.sortOrders.map((o) => {
+    if (!o.frameOrder.includes(frameId)) return o;
+    return {
+      ...o,
+      frameOrder: o.frameOrder.filter((id) => id !== frameId),
+      breaks: o.breaks.map((b) => {
+        // Adjust break positions if needed
+        const removedIdx = o.frameOrder.indexOf(frameId);
+        if (b.position > removedIdx) return { ...b, position: b.position - 1 };
+        return b;
+      }),
+    };
+  });
+  useStore.setState({ sortOrders: updated });
 }
 
 /** Get frames in a sort order's sequence, filtered by active group. */
@@ -342,7 +384,7 @@ function renderSortEditView(el: HTMLElement, orderId: string): void {
   // No auto-focus. Input is readonly in HTML; tap handler removes readonly + focuses with preventScroll.
 
   // Fill in sketch images that need rasterization (async, non-blocking)
-  void fillSketchImages(el);
+  void fillRasterizedImages(el);
 }
 
 function renderFrameSetCard(f: Frame, idx: number, activeReorderFid: number | null): string {
@@ -355,10 +397,13 @@ function renderFrameSetCard(f: Frame, idx: number, activeReorderFid: number | nu
   // Get first version image and first sketch image
   const verVersions = getStripVersions(f.id, 'ver');
   const sketchVersions = getStripVersions(f.id, 'floor');
-  const verImg = verVersions?.[0]?.bgImage || '';
+  const verVer = verVersions?.[0];
+  const verImg = verVer?.bgImage || '';
+  const verHasStrokes = (verVer?.strokes || []).length > 0;
   const sketchVer = sketchVersions?.[0];
   const sketchImg = sketchVer?.bgImage || '';
-  const sketchHasStrokes = !sketchImg && versionHasContent(sketchVer);
+  const sketchHasStrokes = versionHasContent(sketchVer) && (!sketchImg || (sketchVer?.strokes || []).length > 0);
+  const mainHasStrokes = (f.strokes || []).length > 0;
 
   // Get frame text content (from strokes text type)
   const textStroke = (f.strokes || []).find((st: any) => st.type === 'text');
@@ -381,14 +426,14 @@ function renderFrameSetCard(f: Frame, idx: number, activeReorderFid: number | nu
           ${setupName ? `<span class="sort-card-pill" style="background:${setupColor}">${setupName}</span>` : ''}
         </div>
         <div class="sort-card-col-main">
-          <div class="sort-card-main-img">
-            ${f.src ? `<img src="${f.src}" />` : `<div class="sort-card-empty">MAIN</div>`}
+          <div class="sort-card-main-img" ${mainHasStrokes ? `data-raster-main="${f.id}"` : ''}>
+            ${f.src ? `<img src="${f.src}" />` : mainHasStrokes ? `<div class="sort-card-empty sort-main-placeholder">MAIN</div>` : `<div class="sort-card-empty">MAIN</div>`}
           </div>
           <div class="sort-card-desc">${descText}</div>
         </div>
         <div class="sort-card-col-strips">
-          <div class="sort-card-strip-img">
-            ${verImg ? `<img src="${verImg}" />` : `<div class="sort-card-empty">VERSN</div>`}
+          <div class="sort-card-strip-img" ${verHasStrokes ? `data-raster-ver="${f.id}"` : ''}>
+            ${verImg ? `<img src="${verImg}" />` : verHasStrokes ? `<div class="sort-card-empty sort-ver-placeholder">VERSN</div>` : `<div class="sort-card-empty">VERSN</div>`}
           </div>
           <div class="sort-card-strip-img" ${sketchHasStrokes ? `data-sketch-fid="${f.id}"` : ''}>
             ${sketchImg ? `<img src="${sketchImg}" />` : sketchHasStrokes ? `<div class="sort-card-empty sort-sketch-placeholder">SKETCH</div>` : `<div class="sort-card-empty">SKETCH</div>`}
@@ -491,12 +536,61 @@ function renderNeedsInfo(fid: number): string {
   return html;
 }
 
-/** Async: rasterize sketch strokes for cards that need it */
-async function fillSketchImages(el: HTMLElement): Promise<void> {
-  const containers = el.querySelectorAll('[data-sketch-fid]');
-  for (const container of Array.from(containers)) {
+/** Async: rasterize images with stroke overlays for sort cards (MAIN, VERSN, SKETCH) */
+async function fillRasterizedImages(el: HTMLElement): Promise<void> {
+  const s = state();
+
+  // MAIN frames with strokes — replace raw f.src or placeholder with composited image
+  const mainContainers = el.querySelectorAll('[data-raster-main]');
+  for (const container of Array.from(mainContainers)) {
+    const fid = parseInt((container as HTMLElement).dataset.rasterMain!, 10);
+    const f = s.frames.find((fr) => fr.id === fid);
+    if (!f) continue;
+    try {
+      const canvas = await rasterizeMain(f, 1);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+      const placeholder = container.querySelector('.sort-main-placeholder');
+      const existingImg = container.querySelector('img');
+      if (placeholder) {
+        placeholder.remove();
+        const img = document.createElement('img');
+        img.src = dataUrl;
+        container.appendChild(img);
+      } else if (existingImg) {
+        existingImg.src = dataUrl;
+      }
+    } catch { /* skip */ }
+  }
+
+  // VERSN with strokes — replace raw ver.bgImage or placeholder with composited image
+  const verContainers = el.querySelectorAll('[data-raster-ver]');
+  for (const container of Array.from(verContainers)) {
+    const fid = parseInt((container as HTMLElement).dataset.rasterVer!, 10);
+    const vers = getStripVersions(fid, 'ver');
+    const ver = vers?.[0];
+    const f = s.frames.find((fr) => fr.id === fid);
+    if (!ver || !f) continue;
+    try {
+      const canvas = await rasterizeVersion(ver, f.cropW || 960, f.cropH || 540, 1);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+      const placeholder = container.querySelector('.sort-ver-placeholder');
+      const existingImg = container.querySelector('img');
+      if (placeholder) {
+        placeholder.remove();
+        const img = document.createElement('img');
+        img.src = dataUrl;
+        container.appendChild(img);
+      } else if (existingImg) {
+        existingImg.src = dataUrl;
+      }
+    } catch { /* skip */ }
+  }
+
+  // SKETCH with strokes (stroke-only or bgImage+strokes)
+  const sketchContainers = el.querySelectorAll('[data-sketch-fid]');
+  for (const container of Array.from(sketchContainers)) {
     const fid = parseInt((container as HTMLElement).dataset.sketchFid!, 10);
-    const f = state().frames.find((fr) => fr.id === fid);
+    const f = s.frames.find((fr) => fr.id === fid);
     if (!f) continue;
     const vers = getStripVersions(fid, 'floor');
     const ver = vers?.[0];
@@ -504,13 +598,18 @@ async function fillSketchImages(el: HTMLElement): Promise<void> {
     try {
       const canvas = await rasterizeVersion(ver, f.cropW || 960, f.cropH || 540, 1);
       const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
-      // Replace placeholder with rasterized image
+      // If there's a placeholder (stroke-only), replace it; if there's an img (bgImage+strokes), update src
       const placeholder = container.querySelector('.sort-sketch-placeholder');
-      if (placeholder) placeholder.remove();
-      const img = document.createElement('img');
-      img.src = dataUrl;
-      container.appendChild(img);
-    } catch { /* skip if rasterization fails */ }
+      const existingImg = container.querySelector('img');
+      if (placeholder) {
+        placeholder.remove();
+        const img = document.createElement('img');
+        img.src = dataUrl;
+        container.appendChild(img);
+      } else if (existingImg) {
+        existingImg.src = dataUrl;
+      }
+    } catch { /* skip */ }
   }
 }
 

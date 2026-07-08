@@ -38,6 +38,7 @@ import { openCamera, getCameraTarget, clearCameraTarget, setOnCapturedImage } fr
 import { recordTombstone } from './accountFlow';
 import { openFullscreen } from './fullscreen';
 import { flushSyncNow } from './currentProject';
+import { addFrameToSortOrders, removeFrameFromSortOrders } from './sortOrder';
 
 export function handleMainAction(action: string, fid: number, div: HTMLElement): void {
   const s = state();
@@ -154,6 +155,7 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
       s2.drawWidth[nid] = 6;
       s2.drawEraser[nid] = false;
       addFrameToActiveGroup(nid, fid);
+      addFrameToSortOrders(nid, fid);
       updateFrameBadge();
       renderAll();
       void flushSyncNow(); // FRM-1: create new frame (portrait)
@@ -204,6 +206,7 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
       s2.drawWidth[nid] = 6;
       s2.drawEraser[nid] = false;
       addFrameToActiveGroup(nid, fid);
+      addFrameToSortOrders(nid, fid);
       updateFrameBadge();
       renderAll();
       void flushSyncNow(); // FRM-1: create new frame
@@ -229,6 +232,7 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
     s.drawWidth[nid] = 6;
     s.drawEraser[nid] = false;
     addFrameToActiveGroup(nid, fid);
+    addFrameToSortOrders(nid, fid);
     updateFrameBadge();
     renderAll();
     void flushSyncNow(); // duplicate frame
@@ -365,6 +369,7 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
           delete s.versions[fid];
           delete s.activeTab[fid];
           delete s.drawColor[fid];
+          removeFrameFromSortOrders(fid);
           updateFrameBadge();
           renderAll();
           void flushSyncNow(); // FRM-3: delete frame (tombstone recorded)

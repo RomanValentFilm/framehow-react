@@ -601,8 +601,9 @@ export function initFramehow(): void {
       // Block everything except SETUPS button while setup mode is open
       if (state().setupMode && view !== 'setups') return;
 
-      // Close sort mode when pressing any non-sort view button (except GROUP — it opens as overlay first)
-      if (view !== 'sortby' && view !== 'group' && state().sortMode) {
+      // Close sort mode when pressing any non-sort view button
+      // (except GROUP — opens as overlay; and 3x2 — handled inside its block after portrait check)
+      if (view !== 'sortby' && view !== 'group' && view !== '3x2' && state().sortMode) {
         closeSortMode();
       }
 
@@ -635,19 +636,22 @@ export function initFramehow(): void {
           }
           return;
         }
-        const s = state();
-        // Toggle off if already in 3×2
-        if (s.currentViewMode === 'grid3x2') {
-          setViewMode('both');
-          return;
-        }
-        // Pick companion strip (for cross-swipe to version)
-        const companion = s.activeStrips.find((st: string) => st !== 'main') || 'ver';
-        // Deactivate NEEDS strip when entering 3×2
-        useStore.setState({ activeStrips: ['main', companion] as any, needsStripVisible: false });
-        const needsBtn = document.getElementById('needsStripBtn');
-        if (needsBtn) needsBtn.classList.remove('active');
-        setViewMode('grid3x2' as any);
+        const wasSort = state().sortMode;
+        if (wasSort) closeSortMode();
+        const enter3x2 = (skipToggle: boolean) => {
+          const s = state();
+          // Toggle off if already in 3×2 (but not when coming from sort mode — user explicitly wants 3×2)
+          if (!skipToggle && s.currentViewMode === 'grid3x2') { setViewMode('both'); return; }
+          // Save current strip combination so pressing MAIN from 3x2 restores it
+          (window as any).__pre3x2Strips = { activeStrips: [...s.activeStrips], needsStripVisible: s.needsStripVisible };
+          const companion = s.activeStrips.find((st: string) => st !== 'main') || 'ver';
+          useStore.setState({ activeStrips: ['main', companion] as any, needsStripVisible: false });
+          const needsBtn = document.getElementById('needsStripBtn');
+          if (needsBtn) needsBtn.classList.remove('active');
+          setViewMode('grid3x2' as any);
+        };
+        // If coming from sort mode, let DOM settle before switching view
+        if (wasSort) { requestAnimationFrame(() => enter3x2(true)); } else { enter3x2(false); }
         return;
       }
 
@@ -738,8 +742,10 @@ export function initFramehow(): void {
   document.querySelectorAll('.strip-toggle').forEach((b) =>
     b.addEventListener('click', () => {
       if (state().setupMode) return; // locked while setup bar is open
-      // Close sort mode if active
-      if (state().sortMode) closeSortMode();
+      // Close sort mode if active — remember we came from sort so strip buttons
+      // should activate (not toggle off) the pressed strip
+      const wasSort = state().sortMode;
+      if (wasSort) closeSortMode();
       const strip = (b as HTMLElement).dataset.strip as 'main' | 'ver' | 'floor' | 'refs';
       const s = state();
       const w = window.innerWidth, h = window.innerHeight;
@@ -747,13 +753,38 @@ export function initFramehow(): void {
       const isPhonePortrait = isPhone && h > w;
       const isPhoneLandscape = isPhone && w > h;
 
+      // Coming from sort mode: restore the strip view without toggling
+      if (wasSort) {
+        const current = [...s.activeStrips];
+        if (!current.includes(strip)) current.push(strip);
+        let viewMode: 'main' | 'ver' | 'both' = 'both';
+        if (current.length === 1 && current[0] === 'main') viewMode = 'main';
+        else if (current.length === 1) viewMode = 'ver';
+        useStore.setState({ activeStrips: current, currentViewMode: viewMode });
+        requestAnimationFrame(() => renderAll());
+        return;
+      }
+
       // In grid3x2: clicking any strip button exits to that strip's view
       // Must use renderAll() because strip scroll containers (floor/refs) may
       // not have frame cards — they're only built when the strip is in activeStrips.
       if (s.currentViewMode === 'grid3x2') {
         useStore.setState({ crossCompare: {} });
         if (strip === 'main') {
-          useStore.setState({ activeStrips: ['main'], currentViewMode: 'main' });
+          // Restore the strip combination from before entering 3x2
+          const saved = (window as any).__pre3x2Strips;
+          if (saved) {
+            useStore.setState({ activeStrips: saved.activeStrips, needsStripVisible: saved.needsStripVisible });
+            const needsBtn = document.getElementById('needsStripBtn');
+            if (needsBtn) needsBtn.classList.toggle('active', saved.needsStripVisible);
+            let viewMode: 'main' | 'ver' | 'both' = 'both';
+            if (saved.activeStrips.length === 1 && saved.activeStrips[0] === 'main') viewMode = 'main';
+            else if (saved.activeStrips.length === 1) viewMode = 'ver';
+            useStore.setState({ currentViewMode: viewMode });
+            (window as any).__pre3x2Strips = null;
+          } else {
+            useStore.setState({ activeStrips: ['main'], currentViewMode: 'main' });
+          }
         } else {
           useStore.setState({ activeStrips: ['main', strip] as any, currentViewMode: 'both' });
         }

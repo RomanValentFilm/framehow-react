@@ -167,6 +167,14 @@ Changes:
 Changes:
 - `src/lib/accountFlow.ts` — Added fullscreen overlay ("Couldn't load all content — check your connection") with Retry/Dismiss buttons when R2 image fetches fail; overlay shows after progress bar hides (no overlap); Retry triggers fresh pull; Dismiss lets user browse but _pullIncomplete stays true (no push/save of half-loaded state).
 
+### v4.9.016 — 2026-07-07 (dev — deployed)
+**Break text input: iOS scroll-to-input fix across all devices**
+
+Changes:
+- `src/store/state.ts` — APP_VERSION v4.9.016
+- `src/lib/sortOrder.ts` — Break text input always rendered with `readonly` attribute. Device-specific focus handling: iPhone lets iOS handle naturally + scrolls break to 25% from top on blur; iPad uses `focus({ preventScroll: true })`, detects physical vs software keyboard after 500ms (visualViewport check), locks body with `position:fixed` for physical keyboard, `scrollIntoView` for software keyboard; Desktop removes readonly on mousedown for native cursor positioning. Break default text "BREAK NAME".
+- `src/styles/globals.css` — Break text input width reduced to 60% (`flex:0 1 60%`). Active break text uses `box-shadow: inset 0 0 0 1px` instead of `border` to avoid layout shift triggering iOS scroll. `.sort-dragging` class prevents text selection during drag.
+
 ### v4.9.015 — 2026-07-02 (dev — deployed)
 **Break cards, auto-deactivate, iPhone portrait layout, column/padding tweaks**
 
