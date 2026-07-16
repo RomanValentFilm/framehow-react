@@ -221,6 +221,22 @@
   .g3-needs-modal .needs-header,.g3-needs-modal .needs-tabs{flex-shrink:0;}
   .g3-needs-modal .needs-body{flex:1;min-height:0;overflow-y:auto;}
   .g3-needs-modal .needs-action-row{flex:none;padding:8px 8px;}
+
+  /* ── Scribble overlay for 3×2 view ── */
+  .scribble-toolbar{position:fixed;left:1.5vw;top:calc(52px + env(safe-area-inset-top)*0.5 + 42px);transform:translateX(-50%);z-index:120;display:flex;flex-direction:column;align-items:center;gap:0;}
+  .scribble-toggle-btn{background:none;border:none;padding:4px;cursor:pointer;}
+  .scribble-tools{display:flex;flex-direction:column;align-items:center;gap:5px;margin-top:10px;padding:8px 5px;background:rgba(0,0,0,.65);border-radius:8px;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);}
+  .scribble-color-dot{width:18px;height:18px;border-radius:50%;border:2px solid transparent;cursor:pointer;transition:border-color .15s;flex-shrink:0;}
+  .scribble-color-dot.selected{border-color:#fff;}
+  .scribble-brush-btn{cursor:pointer;border:2px solid transparent;border-radius:4px;padding:1px;transition:border-color .15s;display:flex;align-items:center;justify-content:center;}
+  .scribble-brush-btn.selected{border-color:#fff;}
+  .scribble-eraser-btn{cursor:pointer;border:2px solid transparent;border-radius:4px;padding:2px;color:#fff;transition:border-color .15s,background .15s;display:flex;align-items:center;justify-content:center;}
+  .scribble-eraser-btn.selected{border-color:var(--accent);background:var(--surface2);}
+  .scribble-sep{width:20px;height:1px;background:rgba(255,255,255,.2);margin:1px 0;}
+  .scribble-undo-btn{background:none;border:none;color:rgba(255,255,255,.6);cursor:pointer;padding:3px;display:flex;align-items:center;justify-content:center;transition:color .15s;}
+  .scribble-undo-btn:active{color:#fff;}
+  .scribble-page-canvas{position:absolute;top:0;left:0;z-index:10;touch-action:none;cursor:crosshair;transition:opacity .2s;}
+
   .overview-col{display:none;flex-direction:column;width:100%;min-width:0;}
   .overview-scroll{padding:12px;display:flex;flex-direction:column;gap:0;}
   .overview-row{display:flex;align-items:flex-start;gap:12px;padding:12px 0;border-bottom:1px solid var(--border);}

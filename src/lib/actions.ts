@@ -221,6 +221,7 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
       cropW: f.cropW,
       cropH: f.cropH,
       strokes: JSON.parse(JSON.stringify(f.strokes || [])),
+      scribbles: f.scribbles ? JSON.parse(JSON.stringify(f.scribbles)) : [],
       drawMode: false,
       textContent: f.textContent || '',
       tableData: f.tableData ? JSON.parse(JSON.stringify(f.tableData)) : null,

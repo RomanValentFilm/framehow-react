@@ -47,6 +47,8 @@ export interface Frame {
   r2Key?: string;
   /** Free-text note attached to this frame (shown via notepad icon in fullscreen canvas). */
   note?: string;
+  /** Scribble strokes drawn over this frame in 3×2 view. Stored per-frame so they move with reorder. */
+  scribbles?: Stroke[];
 }
 
 /** A named colour-coded setup (lighting / time-of-day label for frames). */
@@ -58,7 +60,7 @@ export interface Setup {
 
 /** 12-colour palette for setups. */
 /** App version — bump before every deploy. */
-export const APP_VERSION = 'v4.9.017';
+export const APP_VERSION = 'v4.9.018';
 
 export const SETUP_COLORS: { name: string; hex: string }[] = [
   { name: 'DAYLIGHT',      hex: '#CFE2F6' },
@@ -395,6 +397,8 @@ export interface FrameHowState {
   activeSortOrderId: string | null;
   /** True while the sort-order dropdown or edit view is active */
   sortMode: boolean;
+  /** True when scribble overlay is active in 3×2 view */
+  scribbleMode: boolean;
   /** ID of sort order currently being edited in frame-set view; null = not editing */
   sortEditingId: string | null;
   nextSortOrderId: number;
@@ -488,6 +492,7 @@ const initial: FrameHowState = {
   sortOrders: [],
   activeSortOrderId: null,
   sortMode: false,
+  scribbleMode: false,
   sortEditingId: null,
   nextSortOrderId: 1,
   renderTick: 0,

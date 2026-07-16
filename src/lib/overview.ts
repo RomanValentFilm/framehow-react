@@ -33,6 +33,7 @@ import { setupTagHTML, stripTagHTML } from './setups';
 import { recordTombstone } from './accountFlow';
 import { openFullscreen } from './fullscreen';
 import { buildNeedsCard, ensureFrameNeeds } from './needs';
+import { injectScribbleButton, attachScribbleOverlays } from './scribble';
 
 export function renderOverview(): void {
   const overviewScroll = document.getElementById('overviewScroll')!;
@@ -790,6 +791,12 @@ export function renderGrid3x2(): void {
   // Wire pinch-to-zoom (idempotent — only attaches listeners once)
   wireGrid3x2PinchZoom();
 
+  // Scribble overlays + toggle button
+  requestAnimationFrame(() => {
+    attachScribbleOverlays();
+    injectScribbleButton();
+  });
+
   // Tap outside reorder controls → cancel reorder (same as other views)
   overviewScroll.addEventListener('click', (e) => {
     const s2 = state();
@@ -1149,6 +1156,7 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
         canvasWrap.addEventListener('click', (e) => {
           if ((e.target as HTMLElement).closest('.act-btn,.fs-btn,.star-btn,.nav-arrow,[data-setup-fid],[data-striptag-fid],[data-setup-hint],[data-setup-remove-fid]')) return;
           if (state().setupMode) return; // Block canvas navigation while setup bar is open
+          if (state().scribbleMode) return; // Block canvas navigation while scribble is active
           if (s.drawingInProgress || s.drawSuppressClick) return;
           const dx = Math.abs(e.clientX - _tapX), dy = Math.abs(e.clientY - _tapY);
           if (dx > 15 || dy > 15) return; // was a swipe, not a tap
@@ -1169,6 +1177,11 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
   // (render.ts line 156) already wires all [data-setup-fid] buttons. Adding
   // a second handler here would cause double-toggle (assign then immediately
   // unassign) so the click appears to do nothing.
+
+  // After card re-render, refresh the page-level scribble canvas
+  requestAnimationFrame(() => {
+    import('./scribble').then(({ refreshScribbleOverlays }) => refreshScribbleOverlays());
+  });
 }
 
 /** Add swipe (touch) and arrow (desktop) navigation for 3×2 cards.
@@ -1341,6 +1354,23 @@ function _touchDist(t1: Touch, t2: Touch): number {
   const dx = t1.clientX - t2.clientX;
   const dy = t1.clientY - t2.clientY;
   return Math.sqrt(dx * dx + dy * dy);
+}
+
+/** Get current zoom state (used by scribble module for pinch-zoom). */
+export function getZoomState(): { scale: number; tx: number; ty: number } {
+  return { scale: _zoomScale, tx: _zoomTx, ty: _zoomTy };
+}
+
+/** Set zoom state programmatically (used by scribble module for pinch-zoom). */
+export function setZoomState(scale: number, tx: number, ty: number): void {
+  _zoomScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale));
+  _zoomTx = tx;
+  _zoomTy = ty;
+  _clampTranslation();
+  const container = _getContainer();
+  if (container) _applyTransform(container);
+  const scrollParent = _getScrollParent();
+  if (scrollParent) scrollParent.style.overflow = _zoomScale > 1 ? 'hidden' : '';
 }
 
 /** Reset zoom to 1x (called on view change, draw mode, etc.) */

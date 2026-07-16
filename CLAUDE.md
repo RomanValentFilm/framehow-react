@@ -167,6 +167,15 @@ Changes:
 Changes:
 - `src/lib/accountFlow.ts` — Added fullscreen overlay ("Couldn't load all content — check your connection") with Retry/Dismiss buttons when R2 image fetches fail; overlay shows after progress bar hides (no overlap); Retry triggers fresh pull; Dismiss lets user browse but _pullIncomplete stays true (no push/save of half-loaded state).
 
+### v4.9.017 — 2026-07-08 (dev — deployed)
+**Drawings visible in SORT BY, new frames in all sort orders, strip restore from sort/3x2**
+
+Changes:
+- `src/store/state.ts` — APP_VERSION v4.9.017
+- `src/lib/sortOrder.ts` — Sort cards now show stroke overlays (drawings) on MAIN, VERSN, and SKETCH via async rasterization. Added `fillRasterizedImages()` replacing `fillSketchImages()` — handles all three strip types including stroke-only versions (no bgImage). Imported `rasterizeMain`. Added `addFrameToSortOrders(frameId, afterFrameId)` — inserts new frames into all existing custom sort orders after the reference frame. Added `removeFrameFromSortOrders(frameId)` — removes deleted frames from all sort orders with break position adjustment.
+- `src/lib/actions.ts` — Calls `addFrameToSortOrders` after every frame creation (new, portrait new, duplicate). Calls `removeFrameFromSortOrders` on permanent delete.
+- `src/lib/init.ts` — Strip toggle from sort mode: detects `wasSort`, ensures pressed strip is activated without toggle-off. 3x2 entry saves pre-3x2 strip combination to `window.__pre3x2Strips`. Pressing MAIN from 3x2 restores previous strip combo (e.g. MAIN+REFS) instead of going to MAIN-only.
+
 ### v4.9.016 — 2026-07-07 (dev — deployed)
 **Break text input: iOS scroll-to-input fix across all devices**
 

@@ -1064,7 +1064,7 @@ async function fetchImageFromR2(r2Key: string, token: string): Promise<string> {
 interface CloudProjectTree {
   project: { id: string; name: string; created_at: number; updated_at: number; last_device_id: string | null; last_device_name: string | null; metadata: string | null };
   strips: Array<{ id: string; project_id: string; label: string | null; sort_order: number; updated_at: number }>;
-  frames: Array<{ id: string; strip_id: string; label: string | null; sort_order: number; crop_w: number | null; crop_h: number | null; text_content: string | null; table_data: string | null; version_label: string | null; strip_labels: string | null; hidden: number; note: string | null; updated_at: number }>;
+  frames: Array<{ id: string; strip_id: string; label: string | null; sort_order: number; crop_w: number | null; crop_h: number | null; text_content: string | null; table_data: string | null; version_label: string | null; strip_labels: string | null; hidden: number; note: string | null; scribbles: string | null; updated_at: number }>;
   versions: Array<{ id: string; frame_id: string; label: string | null; type: string; hidden: number; starred: number; note: string | null; updated_at: number }>;
   images: Array<{ id: string; version_id: string; r2_key: string; width: number | null; height: number | null; size_bytes: number | null; content_type: string | null; updated_at: number }>;
   drawings: Array<{ id: string; version_id: string; drawing_data: string; updated_at: number }>;
@@ -1156,11 +1156,19 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
 
   console.log(`[sync] Delta push: ${dirtyLocalIds.size}/${s.frames.length} frames dirty, partial=${isPartial}`);
 
+  // Debug: trace scribble data in push
+  for (const f of s.frames) {
+    if (f.scribbles && f.scribbles.length > 0) {
+      const isDirty = dirtyLocalIds.has(f.id);
+      console.log(`[sync][scribble] frame ${f.id} has ${f.scribbles.length} scribbles, dirty=${isDirty}, serverFrameId=${f.serverFrameId || 'NONE'}`);
+    }
+  }
+
   // One strip per project — all frames live here. Strip versions use type prefixes.
   const stripId = uuid();
   const strips = [{ id: stripId, label: 'Main', sort_order: 0, updated_at: now }];
 
-  const frames: Array<{ id: string; strip_id: string; label: string | null; sort_order: number; crop_w: number | null; crop_h: number | null; text_content: string | null; table_data: string | null; version_label: string | null; strip_labels: string | null; hidden: boolean; note: string | null; updated_at: number }> = [];
+  const frames: Array<{ id: string; strip_id: string; label: string | null; sort_order: number; crop_w: number | null; crop_h: number | null; text_content: string | null; table_data: string | null; version_label: string | null; strip_labels: string | null; hidden: boolean; note: string | null; scribbles: string | null; updated_at: number }> = [];
   const versions: Array<{ id: string; frame_id: string; label: string | null; type: string; hidden: boolean; starred: boolean; note: string | null; updated_at: number }> = [];
   const drawings: Array<{ id: string; version_id: string; drawing_data: string; updated_at: number }> = [];
   const imageUploads: Array<{
@@ -1213,8 +1221,12 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
       strip_labels: f.stripLabels ? JSON.stringify(f.stripLabels) : null,
       hidden: !!f.hidden,
       note: f.note || null,
+      scribbles: f.scribbles && f.scribbles.length > 0 ? JSON.stringify(f.scribbles) : null,
       updated_at: now,
     });
+    if (f.scribbles && f.scribbles.length > 0) {
+      console.log(`[sync][scribble] INCLUDED frame ${f.id} in push payload with ${f.scribbles.length} scribbles (${JSON.stringify(f.scribbles).length} bytes)`);
+    }
 
     // Frame-level strokes → "main" version
     const mainVersionId = f.serverMainVersionId || preAssignedMainVersionIds.get(f.id) || uuid();
@@ -1663,6 +1675,7 @@ async function applyCloudTreeToStore(tree: CloudProjectTree, keepLocalFrameIds?:
         textContent: sf.text_content ?? '',
         tableData: sf.table_data ? parseTableData(sf.table_data) : null,
         note: sf.note ?? '',
+        scribbles: sf.scribbles ? parseScribbles(sf.scribbles) : [],
         // Persist server IDs + r2Key so the diff-based pull can match frames
         serverFrameId: sf.id,
         serverMainVersionId: mainV?.id,
@@ -1988,6 +2001,14 @@ async function applyCloudTreeToStore(tree: CloudProjectTree, keepLocalFrameIds?:
 }
 
 function parseStrokes(json: string | undefined): Stroke[] {
+  if (!json) return [];
+  try {
+    const v = JSON.parse(json);
+    return Array.isArray(v) ? v : [];
+  } catch { return []; }
+}
+
+function parseScribbles(json: string | undefined): Stroke[] {
   if (!json) return [];
   try {
     const v = JSON.parse(json);
@@ -2495,6 +2516,7 @@ function frameFingerprint(f: Frame, sortOrder: number, s: { stripVersions: Recor
     f.setupId || '',
     f.stripLabels ? JSON.stringify(f.stripLabels) : '',
     f.note || '',
+    String(f.scribbles?.length || 0),
   ];
   // Include versions for each strip
   for (const stripType of ['ver', 'floor', 'refs']) {
@@ -2629,6 +2651,7 @@ function framesMatch(
   if (localFrame.textContent !== cloudFrame.textContent) return false;
   if (JSON.stringify(localFrame.tableData) !== JSON.stringify(cloudFrame.tableData)) return false;
   if (JSON.stringify(localFrame.strokes) !== JSON.stringify(cloudFrame.strokes)) return false;
+  if (JSON.stringify(localFrame.scribbles || []) !== JSON.stringify(cloudFrame.scribbles || [])) return false;
   // Compare version count
   if (localVersions.length !== cloudVersions.length) return false;
   // Compare each version

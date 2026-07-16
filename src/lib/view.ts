@@ -7,6 +7,7 @@ import type { ViewMode, StripType } from '../store/state';
 import { hasVisibleVer, nextVisibleVer, ovCollapseExpanded, clearAllDrawActive, clearReorder, relabelVersions, saveOpenTextEdits, saveOpenTableEdits, _actionAnchorTimers, getStripVersions, getStripActiveTab, setStripActiveTab, getStripCrossCompare, setStripCrossCompare, relabelStripVersions, stripScrollId } from './helpers';
 import { fhTrack } from './tracking';
 import { resetGrid3x2Zoom } from './overview';
+import { cleanupScribble } from './scribble';
 
 let _syncRAF: number | null = null;
 // Orientation-flip anchor timers — can be cancelled if user starts scrolling
@@ -312,7 +313,7 @@ export function setViewMode(mode: ViewMode, keepCompare?: boolean, forceAnchorFi
   fhTrack('view_' + mode);
   const s = state();
   // Reset pinch-zoom when leaving 3x2 grid view
-  if (s.currentViewMode === 'grid3x2' && mode !== 'grid3x2') resetGrid3x2Zoom();
+  if (s.currentViewMode === 'grid3x2' && mode !== 'grid3x2') { resetGrid3x2Zoom(); cleanupScribble(); }
   ovCollapseExpanded();
   for (const k in s.drawActive) {
     if (s.drawActive[+k]) s.drawEraser[+k] = false;
