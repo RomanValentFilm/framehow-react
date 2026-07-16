@@ -620,6 +620,10 @@ export function applyCapturedImage(dataURL: string, target: any): void {
   }
   // toast removed
   useStore.setState({ centerFid: String(fid) });
+  // If fullscreen overlay is open, refresh it instead of strip DOM
+  if (s.fsOverlayActive && s.fsOverlayActive.fid === fid) {
+    window.dispatchEvent(new Event('fs-refresh'));
+  }
   if (s.currentViewMode === 'grid3x2') {
     // After camera capture in grid3x2, switch card to show the captured version
     // (unless image went directly to an empty main canvas)

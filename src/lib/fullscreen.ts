@@ -1,12 +1,14 @@
 // Fullscreen overlay (desktop/tablet only) — opens a frame or version
 // in a large overlay with the same drawing toolbar.
 
-import { COLORS, state, useStore } from '../store/state';
+import { COLORS, state, useStore, bumpRenderTick } from '../store/state';
 import type { StripType } from '../store/state';
-import { drawToolbarHTML, starHTML, getStripVersions } from './helpers';
-import { restoreCanvas, restoreMainCanvas, setupDrawing, setupMainDrawing } from './drawing';
+import { drawToolbarHTML, starHTML, getStripVersions, stripTabPrefix, ensureStripVersions, getStripActiveTab, setStripActiveTab, addNewStripVersion } from './helpers';
+import { restoreCanvas, restoreMainCanvas, setupDrawing, setupMainDrawing, snapshotFrame } from './drawing';
 import { resetToolbarState } from './view';
 import { flushSyncNow } from './currentProject';
+import { openCamera } from './camera';
+import { openTextModal } from './modals';
 
 // Default draw settings: blue, middle thickness, no eraser
 const DEFAULT_DRAW_COLOR = COLORS[4]; // #3080e0 blue
@@ -18,16 +20,26 @@ let _lastWidth: number = DEFAULT_DRAW_WIDTH;
 
 const fsCollapseSVG = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M4 14h6v6M20 10h-6V4M10 14l-7 7M14 10l7-7"/></svg>';
 
-export function openFullscreen(fid: number, vi: number, origin: 'main' | 'ver' | 'floor' | 'refs'): void {
+/** Check if any visible version in a strip has content (image or strokes) */
+export function stripHasContent(fid: number, strip: StripType): boolean {
+  const vers = getStripVersions(fid, strip);
+  return vers.some(v => !v.hidden && (v.bgImage || (v.strokes && v.strokes.length > 0)));
+}
+
+export function openFullscreen(fid: number, startVi: number, origin: 'main' | 'ver' | 'floor' | 'refs', initialMode?: 'draw' | 'cam'): void {
   if (document.querySelector('.fs-overlay')) return;
-  useStore.setState({ fsOverlayActive: { fid, vi, origin } });
+  useStore.setState({ fsOverlayActive: { fid, vi: startVi, origin } });
   const s = state();
   const f = s.frames.find((x) => x.id === fid)!;
   const strip: StripType = origin === 'main' ? 'ver' : origin as StripType;
-  const ver = getStripVersions(fid, strip)[vi];
+  let vi = startVi;
+  let ver = getStripVersions(fid, strip)[vi];
   const isMain = origin === 'main';
   const src: any = isMain ? f : ver;
   if (!src) return;
+
+  // Current mode: draw (default), cam, write
+  let fsMode: 'draw' | 'cam' | 'write' = 'draw';
 
   // Apply last-used color/width (carries across frames), eraser always off
   s.drawColor[fid] = _lastColor;
@@ -41,7 +53,7 @@ export function openFullscreen(fid: number, vi: number, origin: 'main' | 'ver' |
     ch = (f && f.cropH) || 540;
   const aspect = cw / ch;
 
-  const cid = 'fs_cvs_' + fid + '_' + vi;
+  function getCid() { return 'fs_cvs_' + fid + '_' + vi; }
 
   function calcSize() {
     const maxW = window.innerWidth - 40;
@@ -55,18 +67,118 @@ export function openFullscreen(fid: number, vi: number, origin: 'main' | 'ver' |
     return { dw, dh };
   }
 
+  function buildVersionTabs(): string {
+    if (isMain) return '';
+    const vers = getStripVersions(fid, strip);
+    const prefix = stripTabPrefix(strip);
+    const tabs = vers.map((v, i) =>
+      `<button class="vtab${i === vi ? ' active' : ''}" data-fstab="${i}">${v.label || prefix + (i + 1)}</button>`
+    ).join('');
+    return `<div class="fs-strip-tabs"><span class="frame-label-tag">${f.label || '#'}</span><div class="version-tabs">${tabs}<button class="vtab-add" data-fsadd>+</button></div></div>`;
+  }
+
+  function buildBottomBar(): string {
+    if (isMain) {
+      // Main frame: just the draw toolbar, no mode buttons
+      return `<div class="color-row fs-color-row">${drawToolbarHTML(fid, 'data-fsfid', fid)}</div>`;
+    }
+    const drawActive = fsMode === 'draw' ? ' active' : '';
+    const camActive = fsMode === 'cam' ? ' active' : '';
+    const writeActive = fsMode === 'write' ? ' active' : '';
+    return `<div class="fs-bottom-bar">
+      <div class="fs-mode-btns">
+        <button class="fs-mode-btn${drawActive}" data-fsmode="draw">DRAW</button>
+        <button class="fs-mode-btn${camActive}" data-fsmode="cam">CAM</button>
+        <button class="fs-mode-btn${writeActive}" data-fsmode="write">WRITE</button>
+      </div>
+      <div class="color-row fs-color-row" style="${fsMode === 'draw' ? '' : 'display:none;'}">${drawToolbarHTML(fid, 'data-fsfid', fid)}</div>
+    </div>`;
+  }
+
   function buildOverlay() {
     const { dw, dh } = calcSize();
+    const cid = getCid();
     overlay.innerHTML = `
       <button class="fs-close">${fsCollapseSVG}</button>
       <div class="fs-inner">
+        ${buildVersionTabs()}
         <div class="fs-canvas-area">
           <div class="fs-canvas-wrap draw-active" style="width:${dw}px;height:${dh}px;cursor:crosshair;"><canvas id="${cid}" width="${cw}" height="${ch}" style="width:${dw}px;height:${dh}px;"></canvas>${
       !isMain ? starHTML(fid, vi) : ''
     }</div>
         </div>
-        <div class="color-row fs-color-row">${drawToolbarHTML(fid, 'data-fsfid', fid)}</div>
+        ${buildBottomBar()}
       </div>`;
+  }
+
+  function switchTab(newVi: number) {
+    vi = newVi;
+    ver = getStripVersions(fid, strip)[vi];
+    if (!ver) return;
+    setStripActiveTab(fid, strip, vi);
+    useStore.setState({ fsOverlayActive: { fid, vi, origin } });
+    fsMode = 'draw';
+    buildOverlay();
+    initCanvas();
+    wireEvents();
+  }
+
+  // Refresh after camera capture (called via custom event from applyCapturedImage)
+  function onFsRefresh() {
+    const vers = getStripVersions(fid, strip);
+    const newVi = getStripActiveTab(fid, strip);
+    vi = Math.min(newVi, vers.length - 1);
+    ver = vers[vi];
+    if (!ver) return;
+    fsMode = 'draw';
+    buildOverlay();
+    initCanvas();
+    wireEvents();
+  }
+
+  function triggerCamera() {
+    fsMode = 'cam';
+    // Highlight CAM button
+    overlay.querySelectorAll('.fs-mode-btn').forEach(b => b.classList.remove('active'));
+    const camBtn = overlay.querySelector('[data-fsmode="cam"]');
+    if (camBtn) camBtn.classList.add('active');
+    // Hide draw toolbar
+    const toolbar = overlay.querySelector('.fs-color-row') as HTMLElement | null;
+    if (toolbar) toolbar.style.display = 'none';
+    // Open camera — pass overlay as anchor div, fromCompare=false, fromMain=false
+    openCamera(fid, overlay, false, false, strip);
+  }
+
+  function triggerWrite() {
+    if (!ver) return;
+    ver.strokes = ver.strokes || [];
+    const existing = ver.strokes.find((st: any) => st.type === 'text');
+    const curColor = existing ? existing.color : s.drawColor[fid] || '#fff';
+    openTextModal(existing ? existing.text || '' : '', curColor || '#fff').then((result) => {
+      if (result !== null) {
+        snapshotFrame(fid, strip);
+        const { text, color } = result;
+        s.drawColor[fid] = color;
+        if (existing) {
+          if (text) {
+            existing.text = text;
+            existing.color = color;
+          } else {
+            ver.strokes = ver.strokes.filter((stk: any) => stk !== existing);
+          }
+        } else if (text) {
+          ver.strokes.push({ type: 'text', text, color, x: 20, y: 50 });
+        }
+        if (ver.type === 'empty' && ver.strokes.length > 0) ver.type = 'drawing';
+        bumpRenderTick();
+      }
+      // Refresh canvas to show text
+      fsMode = 'draw';
+      buildOverlay();
+      initCanvas();
+      wireEvents();
+      void flushSyncNow();
+    });
   }
 
   buildOverlay();
@@ -75,6 +187,7 @@ export function openFullscreen(fid: number, vi: number, origin: 'main' | 'ver' |
   document.body.appendChild(overlay);
 
   function initCanvas() {
+    const cid = getCid();
     const cvs = overlay.querySelector(`#${cid}`) as HTMLCanvasElement | null;
     if (!cvs) return;
     if (isMain && !f.drawMode) {
@@ -99,6 +212,43 @@ export function openFullscreen(fid: number, vi: number, origin: 'main' | 'ver' |
     overlay.addEventListener('click', (e) => {
       if (e.target === overlay) closeFullscreen();
     });
+    // Version tab switching
+    overlay.querySelectorAll('[data-fstab]').forEach((t) =>
+      t.addEventListener('click', () => {
+        const idx = parseInt((t as HTMLElement).dataset.fstab!);
+        if (idx !== vi) switchTab(idx);
+      })
+    );
+    // Add new version
+    const addBtn = overlay.querySelector('[data-fsadd]');
+    if (addBtn) addBtn.addEventListener('click', () => {
+      const vers = ensureStripVersions(fid, strip);
+      const prefix = stripTabPrefix(strip);
+      const n = vers.length + 1;
+      const newVer = { id: n, label: `${prefix}${n}`, type: 'empty' as const, strokes: [], bgImage: null };
+      addNewStripVersion(fid, strip, newVer);
+      // Switch to the newly added version (last visible)
+      const updatedVers = getStripVersions(fid, strip);
+      switchTab(updatedVers.length - 1);
+    });
+    // Mode buttons (DRAW / CAM / WRITE)
+    overlay.querySelectorAll('[data-fsmode]').forEach((btn) =>
+      btn.addEventListener('click', () => {
+        const mode = (btn as HTMLElement).dataset.fsmode as 'draw' | 'cam' | 'write';
+        if (mode === 'draw') {
+          fsMode = 'draw';
+          overlay.querySelectorAll('.fs-mode-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          const toolbar = overlay.querySelector('.fs-color-row') as HTMLElement | null;
+          if (toolbar) toolbar.style.display = '';
+        } else if (mode === 'cam') {
+          triggerCamera();
+        } else if (mode === 'write') {
+          triggerWrite();
+        }
+      })
+    );
+    // Draw toolbar: colors
     overlay.querySelectorAll('.color-dot').forEach((d) =>
       d.addEventListener('click', () => {
         const c = (d as HTMLElement).dataset.color!;
@@ -145,6 +295,9 @@ export function openFullscreen(fid: number, vi: number, origin: 'main' | 'ver' |
   }
   wireEvents();
 
+  // Listen for camera capture refresh
+  window.addEventListener('fs-refresh', onFsRefresh);
+
   function onResize() {
     const { dw, dh } = calcSize();
     const wrap = overlay.querySelector('.fs-canvas-wrap') as HTMLElement | null;
@@ -166,17 +319,30 @@ export function openFullscreen(fid: number, vi: number, origin: 'main' | 'ver' |
   }
   window.addEventListener('resize', onResize);
   (overlay as any)._resizeHandler = onResize;
+  (overlay as any)._fsRefreshHandler = onFsRefresh;
   (overlay as any)._escHandler = (e: KeyboardEvent) => {
     if (e.key === 'Escape') closeFullscreen();
   };
   document.addEventListener('keydown', (overlay as any)._escHandler);
+
+  // If initial mode is 'cam', trigger camera after overlay is ready
+  if (initialMode === 'cam' && !isMain) {
+    setTimeout(() => triggerCamera(), 100);
+  }
 }
 
 export function closeFullscreen(): void {
   const overlay = document.querySelector('.fs-overlay') as HTMLElement | null;
   if (!overlay) return;
+  const s = state();
+  // Reset crossCompare so 3x2 card shows main frame content, not the version
+  const fsInfo = s.fsOverlayActive;
+  if (fsInfo) {
+    s.crossCompare[fsInfo.fid] = -1;
+  }
   document.removeEventListener('keydown', (overlay as any)._escHandler);
   if ((overlay as any)._resizeHandler) window.removeEventListener('resize', (overlay as any)._resizeHandler);
+  if ((overlay as any)._fsRefreshHandler) window.removeEventListener('fs-refresh', (overlay as any)._fsRefreshHandler);
   overlay.remove();
   document.body.style.overflow = '';
   useStore.setState({ fsOverlayActive: null });

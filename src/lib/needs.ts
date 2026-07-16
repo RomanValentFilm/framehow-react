@@ -505,6 +505,18 @@ function wireNeedsCard(container: HTMLElement, fid: number): void {
         };
         // Enable all Paste buttons across visible cards
         rerenderAllNeedsCards();
+        // Visual feedback: flash the NEW copy button (rerender replaced the old one)
+        const newBtn = container.querySelector('[data-needs-act="copy"]') as HTMLElement | null;
+        if (newBtn) {
+          newBtn.textContent = 'Copied!';
+          newBtn.style.background = '#888';
+          newBtn.style.color = '#fff';
+          setTimeout(() => {
+            newBtn.textContent = 'Copy Settings';
+            newBtn.style.background = '';
+            newBtn.style.color = '';
+          }, 600);
+        }
         return;
       }
 

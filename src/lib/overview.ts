@@ -31,7 +31,7 @@ import { showLabelEdit, showVerLabelEdit, showDeleteChoice, showConfirm } from '
 import { getVisibleFrames, removeFrameFromGroup } from './groups';
 import { setupTagHTML, stripTagHTML } from './setups';
 import { recordTombstone } from './accountFlow';
-import { openFullscreen } from './fullscreen';
+import { openFullscreen, stripHasContent } from './fullscreen';
 import { buildNeedsCard, ensureFrameNeeds } from './needs';
 import { injectScribbleButton, attachScribbleOverlays } from './scribble';
 
@@ -858,7 +858,12 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
     ).join('') + `<button class="vtab-add" data-g3vadd="${fid}">+</button>`;
 
     const mainReorder = s.reorderFid === fid;
-    const quickBtnsVer = `<div class="g3-quick-btns"><button class="g3-quick-btn" data-g3sketch="${fid}">SKETCH</button><button class="g3-quick-btn" data-g3needs="${fid}">NEEDS</button></div>`;
+    const vHas = stripHasContent(fid, 'ver') ? ' has-content' : '';
+    const sHas = stripHasContent(fid, 'floor') ? ' has-content' : '';
+    const rHas = stripHasContent(fid, 'refs') ? ' has-content' : '';
+    const fn = s.frameNeeds[fid];
+    const nHas = fn && (Object.values(fn.toggles).some(Boolean) || Object.values(fn.counters).some((c: number) => c > 0) || Object.values(fn.memos).some((m: string) => m.length > 0) || Object.values(fn.locationToggles).some(Boolean)) ? ' has-content' : '';
+    const quickBtnsVer = `<div class="g3-quick-btns"><button class="g3-quick-btn${vHas}" data-g3versn="${fid}">VERSN</button><button class="g3-quick-btn${sHas}" data-g3sketch="${fid}">SKETCH</button><button class="g3-quick-btn${rHas}" data-g3refs="${fid}">REFS</button><button class="g3-quick-btn${nHas}" data-g3needs="${fid}">NEEDS</button></div>`;
     wrap.innerHTML = `${quickBtnsVer}<div class="frame-card${mainReorder ? ' g3-reorder-active' : ''}" data-g3fid="${fid}">
       <div class="frame-num ver-frame-num">
         <span class="frame-label-tag">${f.label || '#'} ${getFrameStripLabel(f, companionStrip)}</span>
@@ -879,11 +884,27 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
       </div>
     </div>`;
 
-    // SKETCH / NEEDS buttons (same as main content branch)
+    // VERSN / SKETCH / REFS / NEEDS buttons (same as main content branch)
+    const versnBtnV = wrap.querySelector(`[data-g3versn="${fid}"]`) as HTMLElement | null;
+    if (versnBtnV) versnBtnV.addEventListener('click', () => {
+      ensureStripVersions(fid, 'ver');
+      const hasCon = stripHasContent(fid, 'ver');
+      const startVi = hasCon ? getStripActiveTab(fid, 'ver') : 0;
+      openFullscreen(fid, startVi, 'ver', hasCon ? undefined : 'cam');
+    });
     const sketchBtnV = wrap.querySelector(`[data-g3sketch="${fid}"]`) as HTMLElement | null;
     if (sketchBtnV) sketchBtnV.addEventListener('click', () => {
       ensureStripVersions(fid, 'floor');
-      openFullscreen(fid, 0, 'floor');
+      const hasCon = stripHasContent(fid, 'floor');
+      const startVi = hasCon ? getStripActiveTab(fid, 'floor') : 0;
+      openFullscreen(fid, startVi, 'floor');
+    });
+    const refsBtnV = wrap.querySelector(`[data-g3refs="${fid}"]`) as HTMLElement | null;
+    if (refsBtnV) refsBtnV.addEventListener('click', () => {
+      ensureStripVersions(fid, 'refs');
+      const hasCon = stripHasContent(fid, 'refs');
+      const startVi = hasCon ? getStripActiveTab(fid, 'refs') : 0;
+      openFullscreen(fid, startVi, 'refs');
     });
     const needsBtnV = wrap.querySelector(`[data-g3needs="${fid}"]`) as HTMLElement | null;
     if (needsBtnV) needsBtnV.addEventListener('click', () => {
@@ -986,7 +1007,12 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
 
     const g3Reorder = s.reorderFid === fid;
     // SKETCH / NEEDS quick-access buttons above card
-    const quickBtnsHTML = `<div class="g3-quick-btns"><button class="g3-quick-btn" data-g3sketch="${fid}">SKETCH</button><button class="g3-quick-btn" data-g3needs="${fid}">NEEDS</button></div>`;
+    const vHas2 = stripHasContent(fid, 'ver') ? ' has-content' : '';
+    const sHas2 = stripHasContent(fid, 'floor') ? ' has-content' : '';
+    const rHas2 = stripHasContent(fid, 'refs') ? ' has-content' : '';
+    const fn2 = s.frameNeeds[fid];
+    const nHas2 = fn2 && (Object.values(fn2.toggles).some(Boolean) || Object.values(fn2.counters).some((c: number) => c > 0) || Object.values(fn2.memos).some((m: string) => m.length > 0) || Object.values(fn2.locationToggles).some(Boolean)) ? ' has-content' : '';
+    const quickBtnsHTML = `<div class="g3-quick-btns"><button class="g3-quick-btn${vHas2}" data-g3versn="${fid}">VERSN</button><button class="g3-quick-btn${sHas2}" data-g3sketch="${fid}">SKETCH</button><button class="g3-quick-btn${rHas2}" data-g3refs="${fid}">REFS</button><button class="g3-quick-btn${nHas2}" data-g3needs="${fid}">NEEDS</button></div>`;
     wrap.innerHTML = `${quickBtnsHTML}<div class="frame-card${g3Reorder ? ' g3-reorder-active' : ''}" data-g3fid="${fid}">
       <div class="frame-num"><span class="frame-label-tag" data-editlabel="${fid}">${f.label || '#'}</span><button class="vtab pictxt-btn${
       viewMode ? ' active' : ''
@@ -1028,11 +1054,29 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
       });
     }
 
-    // SKETCH button — open fullscreen draw on s1 of floor/sketch strip
+    // VERSN button — open fullscreen on ver strip
+    const versnBtn = wrap.querySelector(`[data-g3versn="${fid}"]`) as HTMLElement | null;
+    if (versnBtn) versnBtn.addEventListener('click', () => {
+      ensureStripVersions(fid, 'ver');
+      const hasCon = stripHasContent(fid, 'ver');
+      const startVi = hasCon ? getStripActiveTab(fid, 'ver') : 0;
+      openFullscreen(fid, startVi, 'ver', hasCon ? undefined : 'cam');
+    });
+    // SKETCH button — open fullscreen draw on floor/sketch strip
     const sketchBtn = wrap.querySelector(`[data-g3sketch="${fid}"]`) as HTMLElement | null;
     if (sketchBtn) sketchBtn.addEventListener('click', () => {
       ensureStripVersions(fid, 'floor');
-      openFullscreen(fid, 0, 'floor');
+      const hasCon = stripHasContent(fid, 'floor');
+      const startVi = hasCon ? getStripActiveTab(fid, 'floor') : 0;
+      openFullscreen(fid, startVi, 'floor');
+    });
+    // REFS button — open fullscreen on refs strip
+    const refsBtn = wrap.querySelector(`[data-g3refs="${fid}"]`) as HTMLElement | null;
+    if (refsBtn) refsBtn.addEventListener('click', () => {
+      ensureStripVersions(fid, 'refs');
+      const hasCon = stripHasContent(fid, 'refs');
+      const startVi = hasCon ? getStripActiveTab(fid, 'refs') : 0;
+      openFullscreen(fid, startVi, 'refs');
     });
     // NEEDS button — open modal overlay with NEEDS card
     const needsBtn = wrap.querySelector(`[data-g3needs="${fid}"]`) as HTMLElement | null;
@@ -1565,6 +1609,9 @@ function _openNeedsModal(fid: number): void {
       e.stopPropagation();
       overlay.remove();
       document.body.style.overflow = '';
+      // Re-render card so NEEDS button updates has-content state
+      const cw = document.querySelector(`#overviewScroll .grid3x2-card-wrap[data-g3fid="${fid}"]`) as HTMLElement | null;
+      if (cw) renderGrid3x2Card(cw, fid);
     }
   });
 }

@@ -167,6 +167,14 @@ Changes:
 Changes:
 - `src/lib/accountFlow.ts` — Added fullscreen overlay ("Couldn't load all content — check your connection") with Retry/Dismiss buttons when R2 image fetches fail; overlay shows after progress bar hides (no overlap); Retry triggers fresh pull; Dismiss lets user browse but _pullIncomplete stays true (no push/save of half-loaded state).
 
+### v4.9.018 — 2026-07-16 (dev — deployed)
+**Scribble sync fix, two-finger scroll in scribble mode**
+
+Changes:
+- `src/store/state.ts` — APP_VERSION v4.9.018
+- `backend/src/routes/projects.ts` — Fixed scribble sync: `parseSyncPayload` was silently dropping the `scribbles` field from push payloads. Added `scribbles` to `SyncPayload` interface and parser. Added `scribbles` to `ProjectTree` interface.
+- `src/lib/scribble.ts` — Fixed two-finger scroll in scribble mode when not zoomed: was calling `scrollEl.scrollBy()` on `overviewScroll` which has no overflow (not a scroll container). Changed to `window.scrollBy()`. Reduced scroll intent threshold from 12px to 6px. Removed scrolling during undecided phase to prevent jitter. Switched to `Math.round` for smoother sub-pixel handling.
+
 ### v4.9.017 — 2026-07-08 (dev — deployed)
 **Drawings visible in SORT BY, new frames in all sort orders, strip restore from sort/3x2**
 
