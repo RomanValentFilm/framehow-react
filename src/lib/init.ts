@@ -603,8 +603,60 @@ export function initFramehow(): void {
 
       // Close sort mode when pressing any non-sort view button
       // (except GROUP — opens as overlay; and 3x2 — handled inside its block after portrait check)
-      if (view !== 'sortby' && view !== 'group' && view !== '3x2' && state().sortMode) {
+      if (view !== 'sortby' && view !== 'group' && view !== '3x2' && view !== 'detail' && state().sortMode) {
         closeSortMode();
+      }
+
+      // Close detail bar when pressing VIEW MODE BAR buttons
+      // Keep open for: DETAIL (own toggle), SETUPS, GROUP (overlay), SORT BY (overlay)
+      // In portrait: also keep open for 3×2VIEW (blocked in portrait, just shows rotate overlay)
+      if (view !== 'detail' && view !== 'setups' && view !== 'group' && view !== 'sortby' && !(view === '3x2' && h > w) && (b as HTMLElement).closest('.view-bar')) {
+        const detailBar = document.getElementById('detailBar');
+        if (detailBar && detailBar.style.display !== 'none') {
+          detailBar.style.display = 'none';
+          document.body.classList.remove('detail-open');
+          const detailBtn = document.getElementById('detailBtn');
+          if (detailBtn) detailBtn.classList.remove('active');
+        }
+      }
+
+      // DETAIL toggle — open/close the detail bar
+      if (view === 'detail') {
+        // Phone: detail bar always visible in strip view (CSS), no-op
+        // But in 3×2 landscape, allow toggling so user can open bar + pick a strip
+        const isPhoneNow = Math.min(w, h) <= 430;
+        if (isPhoneNow) {
+          if (state().currentViewMode !== 'grid3x2') return;
+          // 3×2 on phone landscape: toggle detail bar (no strip buttons active)
+          const isDetailOpen = document.body.classList.contains('detail-open');
+          document.body.classList.toggle('detail-open', !isDetailOpen);
+          (b as HTMLElement).classList.toggle('active', !isDetailOpen);
+          return;
+        }
+        const detailBar = document.getElementById('detailBar');
+        if (detailBar) {
+          const isOpen = detailBar.style.display !== 'none';
+          // iPad portrait: detail bar stays open (user always sees strips)
+          if (isOpen && h > w) return;
+          detailBar.style.display = isOpen ? 'none' : '';
+          document.body.classList.toggle('detail-open', !isOpen);
+          (b as HTMLElement).classList.toggle('active', !isOpen);
+          if (isOpen) {
+            // Closing detail bar → return to 3×2VIEW (landscape only)
+            const enter3x2Btn = document.querySelector('.view-btn[data-view="3x2"]') as HTMLElement | null;
+            if (enter3x2Btn) enter3x2Btn.click();
+          } else {
+            // Opening detail bar → update strip-toggle buttons to reflect what's visible
+            // In 3×2 mode: no buttons active (grid is showing, not individual strips)
+            const curMode = state().currentViewMode;
+            const curStrips = state().activeStrips;
+            document.querySelectorAll('.strip-toggle').forEach((btn) => {
+              const strip = (btn as HTMLElement).dataset.strip as string;
+              btn.classList.toggle('active', curMode !== 'grid3x2' && curStrips.includes(strip as any));
+            });
+          }
+        }
+        return;
       }
 
       // Left-side buttons: iPad/Desktop only
@@ -641,7 +693,7 @@ export function initFramehow(): void {
         const enter3x2 = (skipToggle: boolean) => {
           const s = state();
           // Toggle off if already in 3×2 (but not when coming from sort mode — user explicitly wants 3×2)
-          if (!skipToggle && s.currentViewMode === 'grid3x2') { setViewMode('both'); return; }
+          if (!skipToggle && s.currentViewMode === 'grid3x2') return;
           // Save current strip combination so pressing MAIN from 3x2 restores it
           (window as any).__pre3x2Strips = { activeStrips: [...s.activeStrips], needsStripVisible: s.needsStripVisible };
           const companion = s.activeStrips.find((st: string) => st !== 'main') || 'ver';
@@ -1071,6 +1123,14 @@ export function initFramehow(): void {
         maybeFireToaster();
       }
     });
+  }
+
+  // Phone: detail bar always visible (CSS forces it) — set body class + activate DETAIL button
+  const isPhoneInit = Math.min(window.innerWidth, window.innerHeight) <= 430;
+  if (isPhoneInit) {
+    document.body.classList.add('detail-open');
+    const detailBtnInit = document.getElementById('detailBtn');
+    if (detailBtnInit) detailBtnInit.classList.add('active');
   }
 
   // Hide view-bar on initial empty state

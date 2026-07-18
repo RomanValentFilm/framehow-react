@@ -17,7 +17,7 @@ const PENCIL_SVG_ACTIVE = `<svg viewBox="0 0 24 30" fill="none" stroke="#222" st
 
 const ERASER_SVG = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20H7L3 16c-.8-.8-.8-2 0-2.8L14.6 1.6c.8-.8 2-.8 2.8 0L21.4 5.6c.8.8.8 2 0 2.8L12 18"/><path d="M6 12l5 5"/></svg>`;
 
-const UNDO_SVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>`;
+const UNDO_SVG = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 19v-2h7.1c1.15 0 2.13-.4 2.93-1.2.8-.8 1.2-1.78 1.2-2.93s-.4-2.13-1.2-2.93c-.8-.8-1.78-1.2-2.93-1.2H7.83l2.59 2.59L9 12.74 4 7.74l5-5 1.41 1.41L7.83 6.74H14.1c1.71 0 3.16.6 4.36 1.8s1.8 2.65 1.8 4.36-.6 3.16-1.8 4.36-2.65 1.8-4.36 1.8H7Z"/></svg>`;
 
 function brushSVG(sw: number): string {
   return `<svg width="24" height="16" viewBox="0 0 24 16"><path d="M2 10 Q6 ${10 - sw * 1.5} 8 10 Q10 ${10 + sw * 1.5} 12 10 Q14 ${10 - sw * 1.5} 16 10 Q18 ${10 + sw * 1.5} 22 10" fill="none" stroke="#fff" stroke-width="${sw}" stroke-linecap="round"/></svg>`;
@@ -128,6 +128,7 @@ function clipToZones(pts: { x: number; y: number }[], zones: CardZone[]): Map<nu
 export function toggleScribbleMode(): void {
   const next = !state().scribbleMode;
   useStore.setState({ scribbleMode: next });
+  document.body.classList.toggle('scribble-on', next);
 
   const btn = document.getElementById('scribbleBtn');
   if (btn) {
@@ -334,13 +335,29 @@ function renderAllScribbles(cvs: HTMLCanvasElement): void {
     if (!f?.scribbles?.length) continue;
 
     for (const stroke of f.scribbles) {
-      if (!stroke.points || stroke.points.length < 2) continue;
-      ctx.strokeStyle = stroke.color || SCRIBBLE_COLORS[0];
-      ctx.lineWidth = stroke.width || SCRIBBLE_WIDTHS[0];
+      if (!stroke.points || stroke.points.length < 1) continue;
+      const col = stroke.color || SCRIBBLE_COLORS[0];
+      const w = stroke.width || SCRIBBLE_WIDTHS[0];
+      const p0 = toAbs(stroke.points[0].x, stroke.points[0].y, zone);
+
+      // Dot detection: single point or two identical points
+      if (stroke.points.length <= 2) {
+        const pLast = toAbs(stroke.points[stroke.points.length - 1].x, stroke.points[stroke.points.length - 1].y, zone);
+        const dx = pLast.x - p0.x, dy = pLast.y - p0.y;
+        if (stroke.points.length === 1 || (dx * dx + dy * dy < 1)) {
+          ctx.fillStyle = col;
+          ctx.beginPath();
+          ctx.arc(p0.x, p0.y, w / 2, 0, Math.PI * 2);
+          ctx.fill();
+          continue;
+        }
+      }
+
+      ctx.strokeStyle = col;
+      ctx.lineWidth = w;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
       ctx.beginPath();
-      const p0 = toAbs(stroke.points[0].x, stroke.points[0].y, zone);
       ctx.moveTo(p0.x, p0.y);
       for (let i = 1; i < stroke.points.length; i++) {
         const p = toAbs(stroke.points[i].x, stroke.points[i].y, zone);
@@ -609,7 +626,10 @@ function wirePageDrawing(cvs: HTMLCanvasElement): void {
     if (commitTimer) { clearTimeout(commitTimer); commitTimer = null; }
     committed = true;
 
-    const wasTap = (Date.now() - t0) < TAP_MAX_DURATION && dist < TAP_MAX_DISTANCE;
+    const isTouch = e.pointerType === 'touch';
+    const tapDur = isTouch ? 400 : TAP_MAX_DURATION;
+    const tapDist = isTouch ? 30 : TAP_MAX_DISTANCE;
+    const wasTap = (Date.now() - t0) < tapDur && dist < tapDist;
     if (wasTap) {
       if (eraserOn && raw.length > 0) {
         // Tap-to-erase: remove the nearest stroke under the tap point
@@ -618,13 +638,36 @@ function wirePageDrawing(cvs: HTMLCanvasElement): void {
         raw = [];
         return;
       }
+      // Draw a dot at the tap point
+      if (raw.length > 0) {
+        const dotPt = raw[0];
+        const dotRaw = [dotPt, { x: dotPt.x, y: dotPt.y }];
+        const zones = getCardZones();
+        const segments = clipToZones(dotRaw, zones);
+        const undoEntries: { fid: number; count: number }[] = [];
+        for (const [fid, segs] of segments) {
+          const f = state().frames.find((fr) => fr.id === fid);
+          if (!f) continue;
+          if (!f.scribbles) f.scribbles = [];
+          for (const seg of segs) {
+            f.scribbles.push({ color: activeColor, width: activeWidth, points: seg });
+          }
+          undoEntries.push({ fid, count: segs.length });
+        }
+        if (undoEntries.length > 0) {
+          undoStack.push({ type: 'draw', drawEntries: undoEntries });
+          if (undoStack.length > UNDO_LIMIT) undoStack.shift();
+          for (const entry of undoEntries) {
+            const fr = state().frames.find((x) => x.id === entry.fid);
+            if (fr?.serverFrameId) markFrameDirty(fr.serverFrameId);
+          }
+          bumpRenderTick();
+          void flushSyncNow();
+        }
+      }
       drawing = false;
       raw = [];
       renderAllScribbles(cvs);
-      cvs.style.pointerEvents = 'none';
-      const el = document.elementFromPoint(e.clientX, e.clientY);
-      cvs.style.pointerEvents = state().scribbleMode ? 'auto' : 'none';
-      if (el) (el as HTMLElement).click();
       return;
     }
 

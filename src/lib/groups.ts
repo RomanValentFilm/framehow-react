@@ -206,7 +206,7 @@ function buildSidebarHTML(): string {
         <button class="group-close-btn" title="Close">&times;</button>
       </div>
       <div class="group-item${activeId === null ? ' active' : ''}" data-gid="all">
-        <span class="group-name">ALL</span>
+        <span class="group-name">ALL FRAMES</span>
         <span class="group-count">${s.frames.length}</span>
       </div>
       ${groupsHTML}

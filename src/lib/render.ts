@@ -100,6 +100,8 @@ export function renderAll(): void {
   const s = state();
   // Toggle portrait-mode class on body for CSS sizing
   document.body.classList.toggle('portrait-mode', !!s.portraitMode);
+  // Toggle view-grid3x2 on body so phone CSS can hide detail bar in 3×2
+  document.body.classList.toggle('view-grid3x2', s.currentViewMode === 'grid3x2');
   // Sync column layout classes with current state
   const columnsEl = document.querySelector('.columns');
   if (columnsEl) {
@@ -126,6 +128,7 @@ export function renderAll(): void {
   if (!s.sortMode) {
   document.querySelectorAll('.view-btn:not(.strip-toggle)').forEach((b) => {
     const bv = (b as HTMLElement).dataset.view;
+    if (bv === 'detail') return; // managed by detail toggle, not view mode
     if (bv === 'needs') {
       b.classList.toggle('active', s.needsStripVisible);
     } else {

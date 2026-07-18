@@ -352,6 +352,8 @@ export function setViewMode(mode: ViewMode, keepCompare?: boolean, forceAnchorFi
   }
 
   useStore.setState({ currentViewMode: mode });
+  // Toggle body class so phone CSS can hide detail bar in 3×2
+  document.body.classList.toggle('view-grid3x2', mode === 'grid3x2');
   // Show/hide OFF button for 1+2V / GRID4 modes
   const offBtn = document.getElementById('vbOffBtn') as HTMLElement | null;
   if (offBtn) offBtn.style.display = (mode === 'overview' || mode === 'grid4') ? '' : 'none';
@@ -382,6 +384,7 @@ export function setViewMode(mode: ViewMode, keepCompare?: boolean, forceAnchorFi
   }
   document.querySelectorAll('.view-btn:not(.strip-toggle)').forEach((b) => {
     const bv = (b as HTMLElement).dataset.view;
+    if (bv === 'detail') return; // managed by detail toggle, not view mode
     if (bv === 'needs') {
       b.classList.toggle('active', state().needsStripVisible);
     } else {
@@ -729,16 +732,19 @@ export function resetToolbarState(): void {
 
   const toolbar = document.getElementById('mainToolbar');
   const viewBar = document.querySelector('.view-bar');
+  const detailBar = document.getElementById('detailBar');
 
   // Clear everything
   if (toolbar) toolbar.classList.remove('tb-hide');
   if (viewBar) viewBar.classList.remove('tb-hide');
+  if (detailBar) detailBar.classList.remove('tb-hide');
 
   const shouldHide = window.scrollY > 10;
   if (shouldHide) {
-    // iPad: hide both
+    // iPad: hide all bars
     if (toolbar) toolbar.classList.add('tb-hide');
     if (viewBar) viewBar.classList.add('tb-hide');
+    if (detailBar) detailBar.classList.add('tb-hide');
   }
 
   if ((window as any)._scrollHideReset) (window as any)._scrollHideReset(shouldHide);
@@ -776,6 +782,10 @@ export function handleOrientationFlip(): void {
     // Also update the NEEDS button visual
     const needsBtn = document.getElementById('needsStripBtn');
     if (needsBtn) needsBtn.classList.remove('active');
+    // Keep detail bar active on phone (CSS manages visibility)
+    document.body.classList.add('detail-open');
+    const detailBtnEl = document.getElementById('detailBtn');
+    if (detailBtnEl) detailBtnEl.classList.add('active');
     const renderAll = (window as any).__fh_renderAll;
     if (renderAll) renderAll();
   } else if (isPhone && newW > newH) {
@@ -788,8 +798,13 @@ export function handleOrientationFlip(): void {
       const stripMax = s.needsStripVisible ? 1 : 2;
       useStore.setState({ activeStrips: sorted.slice(0, stripMax) });
     }
+    // Keep detail bar active on phone (CSS manages visibility, hides in 3×2)
+    document.body.classList.add('detail-open');
+    const detailBtnLand = document.getElementById('detailBtn');
+    if (detailBtnLand) detailBtnLand.classList.add('active');
   } else if (!isPhone && newH > newW && state().currentViewMode === 'grid3x2') {
     // iPad/tablet rotated to portrait while in 3x2: exit to MAIN+VERSN double strip
+    // Detail bar stays open if it was open — renderAll updates strip-toggle + view-btn states
     useStore.setState({ activeStrips: ['main', 'ver'] as any, currentViewMode: 'both', crossCompare: {} });
     const renderAll = (window as any).__fh_renderAll;
     if (renderAll) renderAll();
@@ -903,32 +918,66 @@ export function wireScrollHandlers(): void {
     // status-bar tap zone that triggers scroll-to-top.
     const vb = document.querySelector('.view-bar') as HTMLElement | null;
     const tb = document.getElementById('mainToolbar');
+    const db = document.getElementById('detailBar');
+    // Sync detail bar sticky-top to sit right below the view bar
+    const syncDetailTop = () => {
+      if (vb && db) {
+        const vbTop = parseFloat(getComputedStyle(vb).top) || 0;
+        db.style.top = (vbTop + vb.offsetHeight - 1) + 'px';
+      }
+    };
+    syncDetailTop();
     if (vb && tb) {
       window.addEventListener('scroll', () => {
         if (window.innerWidth <= window.innerHeight) {
           // Portrait: never stuck-pad
           vb.classList.remove('vb-stuck');
+          syncDetailTop();
           return;
         }
         const tbBottom = tb.getBoundingClientRect().bottom;
         vb.classList.toggle('vb-stuck', tbBottom <= 0);
+        syncDetailTop();
       }, { passive: true });
     }
+    window.addEventListener('resize', syncDetailTop);
     return;
   }
 
   // iPad: JS-controlled show/hide
   let hidden = false;
   const toolbar = document.getElementById('mainToolbar');
-  const viewBar = document.querySelector('.view-bar');
+  const viewBar = document.querySelector('.view-bar') as HTMLElement | null;
+  const detailBar = document.getElementById('detailBar');
   if (!toolbar || !viewBar) return;
   (window as any)._scrollHideReset = function (h?: boolean) {
     hidden = h !== undefined ? h : false;
   };
   const TH = 10;
 
+  // Sync detail bar position to sit right below the view bar
+  const syncDetailTopIPad = () => {
+    if (!detailBar) return;
+    if (hidden) {
+      if (document.body.classList.contains('detail-open')) {
+        // Detail bar stays visible below the hidden view bar
+        const vbRect = viewBar.getBoundingClientRect();
+        detailBar.style.top = (vbRect.bottom - 1) + 'px';
+      } else {
+        // Detail bar off screen
+        detailBar.style.top = '-200px';
+      }
+    } else {
+      // Below visible view bar
+      const vbTop = parseFloat(getComputedStyle(viewBar).top) || 0;
+      detailBar.style.top = (vbTop + viewBar.offsetHeight - 1) + 'px';
+    }
+  };
+
   // Apply initial state
   resetToolbarState();
+  syncDetailTopIPad();
+  window.addEventListener('resize', syncDetailTopIPad);
 
   window.addEventListener(
     'scroll',
@@ -940,15 +989,19 @@ export function wireScrollHandlers(): void {
       const y = window.scrollY;
 
       if (y <= TH && hidden) {
-        // At top → show toolbar
+        // At top → show all bars
         hidden = false;
         toolbar.classList.remove('tb-hide');
         viewBar.classList.remove('tb-hide');
+        if (detailBar) detailBar.classList.remove('tb-hide');
+        syncDetailTopIPad();
       } else if (y > TH && !hidden) {
-        // Scrolled away → hide toolbar
+        // Scrolled away → hide all bars
         hidden = true;
         toolbar.classList.add('tb-hide');
         viewBar.classList.add('tb-hide');
+        if (detailBar) detailBar.classList.add('tb-hide');
+        syncDetailTopIPad();
       }
     },
     { passive: true }

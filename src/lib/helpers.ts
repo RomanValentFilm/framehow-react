@@ -196,7 +196,9 @@ export function drawToolbarHTML(fid: number, attrName: string, attrVal: string |
     .join('');
   const eraserSVG = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20H7L3 16c-.8-.8-.8-2 0-2.8L14.6 1.6c.8-.8 2-.8 2.8 0L21.4 5.6c.8.8.8 2 0 2.8L12 18"/><path d="M6 12l5 5"/></svg>`;
   const eraser = `<div class="eraser-btn${isEraser ? ' selected' : ''}" data-eraser="1" ${attrName}="${attrVal}" title="Eraser">${eraserSVG}</div>`;
-  return `${dots}<div class="draw-sep"></div>${thicks}<div class="draw-sep"></div>${eraser}`;
+  const undoSVG = `<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 19v-2h7.1c1.15 0 2.13-.4 2.93-1.2.8-.8 1.2-1.78 1.2-2.93s-.4-2.13-1.2-2.93c-.8-.8-1.78-1.2-2.93-1.2H7.83l2.59 2.59L9 12.74 4 7.74l5-5 1.41 1.41L7.83 6.74H14.1c1.71 0 3.16.6 4.36 1.8s1.8 2.65 1.8 4.36-.6 3.16-1.8 4.36-2.65 1.8-4.36 1.8H7Z"/></svg>`;
+  const undo = `<div class="draw-undo-btn" data-drawundo="1" ${attrName}="${attrVal}" title="Undo">${undoSVG}</div>`;
+  return `${dots}<div class="draw-sep"></div>${thicks}<div class="draw-sep"></div>${eraser}<div class="draw-sep"></div>${undo}`;
 }
 
 export function defaultTableData(): TableData {

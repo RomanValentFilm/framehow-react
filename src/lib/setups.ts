@@ -21,7 +21,7 @@ export function toggleSetupMode(): void {
     useStore.setState({ setupMode: false, setupEditing: false });
     bar.style.display = 'none';
     bar.innerHTML = '';
-    document.body.classList.remove('setup-lock');
+    document.body.classList.remove('setup-lock', 'setup-expanded');
     document.getElementById('setupsBtn')?.classList.remove('active');
     const renderAll = (window as any).__fh_renderAll;
     if (renderAll) renderAll();
@@ -55,6 +55,7 @@ function renderSetupBarEdit(bar: HTMLElement): void {
     return;
   }
 
+  document.body.classList.remove('setup-expanded');
   useStore.setState({ setupEditing: true });
 
   const isPhone = Math.min(window.innerWidth, window.innerHeight) <= 430;
@@ -157,6 +158,7 @@ function _showInlineCreateForm(bar: HTMLElement): void {
     <button class="setup-cancel-btn" id="setupInlineCancelBtn">CANCEL</button>
   `;
   bar.appendChild(row);
+  document.body.classList.add('setup-expanded');
 
   let selectedCI = defaultCI;
 
@@ -193,6 +195,7 @@ function _showInlineCreateForm(bar: HTMLElement): void {
   // Wire CANCEL — remove the creation row
   row.querySelector('#setupInlineCancelBtn')!.addEventListener('click', () => {
     row.remove();
+    document.body.classList.remove('setup-expanded');
   });
 
   // Auto-focus
@@ -229,6 +232,7 @@ function _showInlineEditForm(bar: HTMLElement): void {
     <button class="setup-cancel-btn" id="setupInlineEditCancelBtn">CANCEL</button>
   `;
   bar.appendChild(row);
+  document.body.classList.add('setup-expanded');
 
   let selectedCI = su.colorIndex;
 
@@ -265,6 +269,7 @@ function _showInlineEditForm(bar: HTMLElement): void {
   // Wire CANCEL — remove the edit row
   row.querySelector('#setupInlineEditCancelBtn')!.addEventListener('click', () => {
     row.remove();
+    document.body.classList.remove('setup-expanded');
   });
 
   // Auto-focus
@@ -299,6 +304,7 @@ function renderSetupEditForm(bar: HTMLElement, setupId: string): void {
       <button class="setup-delete-btn" id="setupEditDeleteBtn">DELETE</button>
     </div>
   `;
+  document.body.classList.add('setup-expanded');
 
   let selectedCI = su.colorIndex;
 
@@ -366,6 +372,7 @@ function renderSetupCreateForm(bar: HTMLElement): void {
       <button class="setup-cancel-btn" id="setupCancelBtn">CANCEL</button>
     </div>
   `;
+  document.body.classList.add('setup-expanded');
 
   // Pre-select first available colour
   let selectedCI = defaultCI;

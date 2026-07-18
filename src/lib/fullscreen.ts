@@ -292,6 +292,29 @@ export function openFullscreen(fid: number, startVi: number, origin: 'main' | 'v
         }
       })
     );
+    // Undo button — remove last drawn stroke
+    overlay.querySelectorAll('.draw-undo-btn').forEach((d) =>
+      d.addEventListener('click', () => {
+        const strokes = isMain ? f.strokes : (ver ? ver.strokes : null);
+        if (!strokes || strokes.length === 0) return;
+        // Find last non-text stroke and remove it
+        for (let i = strokes.length - 1; i >= 0; i--) {
+          if (strokes[i].type !== 'text') {
+            strokes.splice(i, 1);
+            break;
+          }
+        }
+        // Re-render canvas
+        const cvs = overlay.querySelector('canvas') as HTMLCanvasElement | null;
+        if (cvs) {
+          if (isMain) restoreMainCanvas(cvs, f);
+          else if (ver) restoreCanvas(cvs, ver);
+          if (isMain) setupMainDrawing(cvs, fid);
+          else setupDrawing(cvs, fid, vi, strip);
+        }
+        bumpRenderTick();
+      })
+    );
   }
   wireEvents();
 

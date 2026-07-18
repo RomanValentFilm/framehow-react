@@ -38,7 +38,7 @@ cd ~/Desktop/Framehow\ Files/framehow-react && git add -A && git commit -m "v4.6
 ### Version numbering
 - `APP_VERSION` constant in `src/store/state.ts` — displayed in toolbar next to logo
 - Format: `v4.6.0XX` where XX increments with each deploy
-- Current: `v4.9.010`
+- Current: `v4.9.020`
 - Production: `v4.9.001`
 
 ### Clean rebuild (if changes don't appear)
@@ -166,6 +166,16 @@ Changes:
 
 Changes:
 - `src/lib/accountFlow.ts` — Added fullscreen overlay ("Couldn't load all content — check your connection") with Retry/Dismiss buttons when R2 image fetches fail; overlay shows after progress bar hides (no overlap); Retry triggers fresh pull; Dismiss lets user browse but _pullIncomplete stays true (no push/save of half-loaded state).
+
+### v4.9.019 — 2026-07-16 (dev — deployed)
+**Fullscreen DRAW/CAM/WRITE buttons, version tabs, smart opening, has-content button styling**
+
+Changes:
+- `src/store/state.ts` — APP_VERSION v4.9.019
+- `src/lib/fullscreen.ts` — Added DRAW/CAM/WRITE mode buttons below canvas in fullscreen overlay. DRAW shows color/thickness toolbar to its right. CAM triggers camera capture. WRITE opens text modal. Added version tabs (v1, v2, +) centered above canvas with frame label. Smart tab opening: remembers last active tab per strip. Camera auto-triggers for VERSN when strip has no content. Added `stripHasContent()` helper. Closing fullscreen resets `crossCompare` so 3x2 card shows main frame.
+- `src/lib/overview.ts` — VERSN/SKETCH/REFS buttons use smart tab selection (last active tab if content exists). NEEDS button gets `has-content` class when frame has toggles/counters/memos set. Re-renders card on NEEDS modal close to update button state.
+- `src/lib/actions.ts` — `applyCapturedImage` dispatches `fs-refresh` event when fullscreen overlay is active, so canvas refreshes after camera capture.
+- `src/styles/globals.css` — `.fs-strip-tabs` centered with `justify-content:center`. `.vtab-add` red in fullscreen. New `.fs-bottom-bar`, `.fs-mode-btn` styles. `.g3-quick-btn.has-content` reversed colors (dark fill, bright text). Camera overlay z-index 500→10000, text modal z-index 300→10000 (above fullscreen overlay's 9999).
 
 ### v4.9.018 — 2026-07-16 (dev — deployed)
 **Scribble sync fix, two-finger scroll in scribble mode**

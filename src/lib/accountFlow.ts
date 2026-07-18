@@ -2239,6 +2239,12 @@ export async function flowAccountOrSignIn(): Promise<void> {
       if (!cp.projectId && state().frames.length > 0) {
         await saveNow();
       }
+      // If a cloud project is already loaded, pull latest changes from server.
+      // This covers the case where the user was browsing a project while signed
+      // out and another device pushed updates in the meantime.
+      if (cp.projectId) {
+        setTimeout(() => void tryPullFromCloud(), 500);
+      }
     }
   }
 }
