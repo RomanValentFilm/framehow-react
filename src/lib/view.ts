@@ -729,6 +729,8 @@ export function addCrossSwipe(el: HTMLElement, fid: number, fromStrip: StripType
 export function resetToolbarState(): void {
   const isPhone = Math.min(window.innerWidth, window.innerHeight) <= 430;
   if (isPhone) return; // iPhone: toolbar scrolls naturally via CSS, no JS needed
+  // Respect scrollHideGuard — don't touch bars during guarded period
+  if (Date.now() < state().scrollHideGuard) return;
 
   const toolbar = document.getElementById('mainToolbar');
   const viewBar = document.querySelector('.view-bar');
@@ -763,7 +765,8 @@ export function handleOrientationFlip(): void {
 
   document.getElementById('rotateMsg')!.classList.remove('show');
   const g3Overlay = document.getElementById('g3RotateMsg');
-  if (g3Overlay) g3Overlay.classList.remove('show');
+  // Only auto-dismiss g3RotateMsg if rotating back to landscape (not during portrait resize events)
+  if (g3Overlay && nowLandscape) g3Overlay.classList.remove('show');
   if (!flipped) return;
 
   // Block scroll handler during the entire orientation transition.
@@ -803,11 +806,54 @@ export function handleOrientationFlip(): void {
     const detailBtnLand = document.getElementById('detailBtn');
     if (detailBtnLand) detailBtnLand.classList.add('active');
   } else if (!isPhone && newH > newW && state().currentViewMode === 'grid3x2') {
-    // iPad/tablet rotated to portrait while in 3x2: exit to MAIN+VERSN double strip
-    // Detail bar stays open if it was open — renderAll updates strip-toggle + view-btn states
+    // iPad/tablet rotated to portrait while in 3x2:
+    // Remember we came from 3x2 so rotating back restores it
+    (window as any)._returnTo3x2 = true;
+    // 1. Switch to MAIN+VERSN immediately (3x2 disappears)
     useStore.setState({ activeStrips: ['main', 'ver'] as any, currentViewMode: 'both', crossCompare: {} });
+    // 2. Force detail bar visible with display + class + button
+    const detailBar = document.getElementById('detailBar');
+    if (detailBar) detailBar.style.display = '';
+    document.body.classList.add('detail-open');
+    const detailBtnEl = document.getElementById('detailBtn');
+    if (detailBtnEl) detailBtnEl.classList.add('active');
+    // 3. Render strips and set view mode (activates MAIN+VERSN toggle buttons)
     const renderAll = (window as any).__fh_renderAll;
     if (renderAll) renderAll();
+    setViewMode('both');
+    // 4. Force all bars visible — remove tb-hide AND reset scroll handler's hidden flag
+    const toolbar = document.getElementById('mainToolbar');
+    const viewBar = document.querySelector('.view-bar');
+    if (toolbar) toolbar.classList.remove('tb-hide');
+    if (viewBar) (viewBar as HTMLElement).classList.remove('tb-hide');
+    if (detailBar) detailBar.classList.remove('tb-hide');
+    if ((window as any)._scrollHideReset) (window as any)._scrollHideReset(false);
+    useStore.setState({ scrollHideGuard: Date.now() + 2000 });
+    // Scroll to top so bars stay visible naturally after guard expires
+    window.scrollTo(0, 0);
+    // 5. Show rotate overlay on top — user taps to dismiss
+    const g3Msg = document.getElementById('g3RotateMsg');
+    if (g3Msg) {
+      g3Msg.classList.add('show');
+      const dismiss = () => { g3Msg.classList.remove('show'); };
+      g3Msg.addEventListener('click', dismiss, { once: true });
+      setTimeout(dismiss, 5000);
+    }
+    syncCardHeights();
+  } else if (!isPhone && newW > newH && (window as any)._returnTo3x2) {
+    // iPad rotated back to landscape — restore 3x2 view
+    (window as any)._returnTo3x2 = false;
+    useStore.setState({ currentViewMode: 'grid3x2', crossCompare: {} });
+    // Close detail bar (3x2 doesn't use it)
+    const detailBar = document.getElementById('detailBar');
+    if (detailBar) detailBar.style.display = 'none';
+    document.body.classList.remove('detail-open');
+    const detailBtnEl = document.getElementById('detailBtn');
+    if (detailBtnEl) detailBtnEl.classList.remove('active');
+    setViewMode('grid3x2');
+    const renderAll = (window as any).__fh_renderAll;
+    if (renderAll) renderAll();
+    syncCardHeights();
   }
   // iPad (non-Pro): enforce strip limits on orientation change
   // Use maxTouchPoints instead of isTouch — works even with Magic Keyboard attached

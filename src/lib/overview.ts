@@ -1549,6 +1549,9 @@ function _openNeedsModal(fid: number): void {
 
   ensureFrameNeeds(fid);
 
+  // Find source card for animation
+  const sourceCard = document.querySelector(`.grid3x2-card-wrap[data-g3fid="${fid}"] .canvas-wrap`) as HTMLElement | null;
+
   // Block scroll/touch behind modal
   document.body.style.overflow = 'hidden';
 
@@ -1602,16 +1605,55 @@ function _openNeedsModal(fid: number): void {
     }
   });
 
+  // Opening animation: zoom from source card
+  if (sourceCard) {
+    const sourceRect = sourceCard.getBoundingClientRect();
+    const modalRect = container.getBoundingClientRect();
+    const scaleX = sourceRect.width / modalRect.width;
+    const scaleY = sourceRect.height / modalRect.height;
+    const translateX = (sourceRect.left + sourceRect.width / 2) - (modalRect.left + modalRect.width / 2);
+    const translateY = (sourceRect.top + sourceRect.height / 2) - (modalRect.top + modalRect.height / 2);
+    container.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scaleX}, ${scaleY})`;
+    container.style.opacity = '0.3';
+    requestAnimationFrame(() => { requestAnimationFrame(() => {
+      container.style.transition = 'transform 0.18s ease-out, opacity 0.18s ease-out';
+      container.style.transform = '';
+      container.style.opacity = '1';
+      setTimeout(() => { container.style.transition = ''; }, 200);
+    }); });
+  }
+
+  // Close helper with animation
+  const doClose = () => {
+    const target = document.querySelector(`.grid3x2-card-wrap[data-g3fid="${fid}"] .canvas-wrap`) as HTMLElement | null;
+    const doRemove = () => {
+      overlay.remove();
+      document.body.style.overflow = '';
+      const cw = document.querySelector(`#overviewScroll .grid3x2-card-wrap[data-g3fid="${fid}"]`) as HTMLElement | null;
+      if (cw) renderGrid3x2Card(cw, fid);
+    };
+    if (target) {
+      const targetRect = target.getBoundingClientRect();
+      const modalRect = container.getBoundingClientRect();
+      const scaleX = targetRect.width / modalRect.width;
+      const scaleY = targetRect.height / modalRect.height;
+      const translateX = (targetRect.left + targetRect.width / 2) - (modalRect.left + modalRect.width / 2);
+      const translateY = (targetRect.top + targetRect.height / 2) - (modalRect.top + modalRect.height / 2);
+      container.style.transition = 'transform 0.18s ease-in, opacity 0.18s ease-in';
+      container.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scaleX}, ${scaleY})`;
+      container.style.opacity = '0.3';
+      setTimeout(doRemove, 200);
+    } else {
+      doRemove();
+    }
+  };
+
   // Tap outside the modal container → close (uses pointerup to avoid pass-through)
   overlay.addEventListener('pointerup', (e) => {
     if (!(e.target as HTMLElement).closest('.g3-needs-modal')) {
       e.preventDefault();
       e.stopPropagation();
-      overlay.remove();
-      document.body.style.overflow = '';
-      // Re-render card so NEEDS button updates has-content state
-      const cw = document.querySelector(`#overviewScroll .grid3x2-card-wrap[data-g3fid="${fid}"]`) as HTMLElement | null;
-      if (cw) renderGrid3x2Card(cw, fid);
+      doClose();
     }
   });
 }

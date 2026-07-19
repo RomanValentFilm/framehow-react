@@ -3,12 +3,13 @@
 
 import { COLORS, state, useStore, bumpRenderTick } from '../store/state';
 import type { StripType } from '../store/state';
-import { drawToolbarHTML, starHTML, getStripVersions, stripTabPrefix, ensureStripVersions, getStripActiveTab, setStripActiveTab, addNewStripVersion, relabelStripVersions } from './helpers';
+import { drawToolbarHTML, starHTML, toggleStar, getStripVersions, stripTabPrefix, stripScrollId, ensureStripVersions, getStripActiveTab, setStripActiveTab, addNewStripVersion, relabelStripVersions } from './helpers';
 import { restoreCanvas, restoreMainCanvas, setupDrawing, setupMainDrawing, snapshotFrame } from './drawing';
 import { resetToolbarState } from './view';
 import { flushSyncNow } from './currentProject';
 import { openCamera } from './camera';
 import { openTextModal, showVersionChoice } from './modals';
+import { stripTagHTML, handleStripTagClick } from './setups';
 
 // Default draw settings: blue, middle thickness, no eraser
 const DEFAULT_DRAW_COLOR = COLORS[4]; // #3080e0 blue
@@ -19,6 +20,27 @@ let _lastColor: string = DEFAULT_DRAW_COLOR;
 let _lastWidth: number = DEFAULT_DRAW_WIDTH;
 
 const fsCollapseSVG = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M4 14h6v6M20 10h-6V4M10 14l-7 7M14 10l7-7"/></svg>';
+
+/** Find the source card element for open/close animation */
+function findSourceCard(fid: number, origin?: string): HTMLElement | null {
+  // 3x2 card canvas
+  const g3 = document.querySelector(`.grid3x2-card-wrap[data-g3fid="${fid}"] .canvas-wrap`) as HTMLElement | null;
+  if (g3 && g3.offsetParent) return g3;
+  // Main frame canvas
+  if (origin === 'main') {
+    const main = document.querySelector(`.frame-card[data-mfid="${fid}"] .canvas-wrap`) as HTMLElement | null;
+    if (main && main.offsetParent) return main;
+  }
+  // Specific strip scroll container (finds the right canvas in multi-strip views)
+  const strip = (!origin || origin === 'main') ? 'ver' : origin;
+  const scrollId = stripScrollId(strip as StripType);
+  const stripEl = document.querySelector(`#${scrollId} .frame-card[data-vfid="${fid}"] .canvas-wrap`) as HTMLElement | null;
+  if (stripEl && stripEl.offsetParent) return stripEl;
+  // Fallback: any version frame canvas
+  const ver = document.querySelector(`.frame-card[data-vfid="${fid}"] .canvas-wrap`) as HTMLElement | null;
+  if (ver && ver.offsetParent) return ver;
+  return null;
+}
 
 /** Check if any visible version in a strip has content (image or strokes) */
 export function stripHasContent(fid: number, strip: StripType): boolean {
@@ -133,14 +155,25 @@ export function openFullscreen(fid: number, startVi: number, origin: 'main' | 'v
     const canvasStyle = `width:${dw}px;height:${dh}px;${isHidden ? 'opacity:0.3;pointer-events:none;' : fsReorder ? 'pointer-events:none;' : fsMode === 'draw' ? 'cursor:crosshair;' : 'pointer-events:none;cursor:default;'}`;
     const wrapStyle = `width:${dw}px;height:${dh}px;${fsReorder ? 'outline:2px solid #d52632;outline-offset:-2px;' : ''}`;
     const wrapClass = `fs-canvas-wrap${fsMode === 'draw' ? ' draw-active' : ''}`;
+
+    // Navigation arrows (skip hidden versions)
+    let navLeft = '', navRight = '';
+    if (!isMain && !fsReorder) {
+      const allVers = getStripVersions(fid, strip);
+      const hasPrev = allVers.slice(0, vi).some(v => !v.hidden);
+      const hasNext = allVers.slice(vi + 1).some(v => !v.hidden);
+      if (hasPrev) navLeft = '<button class="nav-arrow nav-arrow-left" data-fsnav="left">‹</button>';
+      if (hasNext) navRight = '<button class="nav-arrow nav-arrow-right" data-fsnav="right">›</button>';
+    }
+
     overlay.innerHTML = `
       <button class="fs-close">${fsCollapseSVG}</button>
       <div class="fs-inner">
         ${buildVersionTabs()}
         <div class="fs-canvas-area">
           <div class="${wrapClass}" style="${wrapStyle}"><canvas id="${cid}" width="${cw}" height="${ch}" style="${canvasStyle}"></canvas>${
-      !isMain && !isHidden ? starHTML(fid, vi) : ''
-    }</div>
+      !isMain && !isHidden ? starHTML(fid, vi, strip) : ''
+    }${!isMain && !isHidden ? stripTagHTML(fid, vi, strip) : ''}${navLeft}${navRight}</div>
         </div>
         ${buildBottomBar()}
       </div>`;
@@ -219,6 +252,11 @@ export function openFullscreen(fid: number, startVi: number, origin: 'main' | 'v
   buildOverlay();
   // Lock body scroll so the page behind the overlay doesn't shift on iOS
   document.body.style.overflow = 'hidden';
+
+  // Prepare opening animation (set transparent before appending so no flash)
+  const sourceEl = findSourceCard(fid, origin);
+  if (sourceEl) overlay.style.background = 'transparent';
+
   document.body.appendChild(overlay);
 
   function initCanvas() {
@@ -331,11 +369,15 @@ export function openFullscreen(fid: number, startVi: number, origin: 'main' | 'v
         });
       })
     );
-    // Move arrows — swap version position (mirrors strip pattern)
+    // Move arrows — swap version position (also activates reorder if not active)
     overlay.querySelectorAll('[data-fsmove]').forEach((btn) =>
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        if (!fsReorder) return;
+        if (!fsReorder) {
+          vi = getStripActiveTab(fid, strip);
+          ver = getStripVersions(fid, strip)[vi];
+          fsReorder = true;
+        }
         const dir = (btn as HTMLElement).dataset.fsmove as 'left' | 'right';
         const allVers = getStripVersions(fid, strip);
         const ai = getStripActiveTab(fid, strip);
@@ -490,8 +532,131 @@ export function openFullscreen(fid: number, startVi: number, origin: 'main' | 'v
         bumpRenderTick();
       })
     );
+    // Navigation arrows — switch to prev/next visible version
+    overlay.querySelectorAll('[data-fsnav]').forEach((btn) =>
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const dir = (btn as HTMLElement).dataset.fsnav as 'left' | 'right';
+        const allVers = getStripVersions(fid, strip);
+        let target = vi;
+        if (dir === 'left') {
+          for (let i = vi - 1; i >= 0; i--) { if (!allVers[i].hidden) { target = i; break; } }
+        } else {
+          for (let i = vi + 1; i < allVers.length; i++) { if (!allVers[i].hidden) { target = i; break; } }
+        }
+        if (target !== vi) switchTab(target);
+      })
+    );
+    // Star button — toggle star, rebuild overlay
+    overlay.querySelectorAll('.star-btn').forEach((btn) =>
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        toggleStar(fid, vi, strip);
+        // After reorder, find where current version moved
+        const allVers = getStripVersions(fid, strip);
+        vi = getStripActiveTab(fid, strip);
+        ver = allVers[vi];
+        bumpRenderTick();
+        buildOverlay();
+        initCanvas();
+        wireEvents();
+      })
+    );
+    // TAG button — handle strip tag click, rebuild after modal closes
+    overlay.querySelectorAll('[data-striptag-fid]').forEach((btn) =>
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        const verRef = ver; // capture reference before reorder
+        handleStripTagClick(fid, vi, strip);
+        // Poll for tag overlay removal, then find version's new position and rebuild
+        const poll = setInterval(() => {
+          if (!document.getElementById('stripTagOverlay')) {
+            clearInterval(poll);
+            setTimeout(() => {
+              // Tagging/untagging reorders versions — find by reference
+              const allVers = getStripVersions(fid, strip);
+              const newIdx = allVers.indexOf(verRef);
+              vi = newIdx >= 0 ? newIdx : 0;
+              ver = allVers[vi];
+              setStripActiveTab(fid, strip, vi);
+              buildOverlay();
+              initCanvas();
+              wireEvents();
+            }, 100);
+          }
+        }, 200);
+      })
+    );
+    // Swipe between versions (touch only, only when not drawing)
+    if (!isMain) {
+      const canvasArea = overlay.querySelector('.fs-canvas-area') as HTMLElement | null;
+      if (canvasArea) {
+        let swipeX = 0, swipeY = 0;
+        canvasArea.addEventListener('touchstart', (e) => {
+          swipeX = e.touches[0].clientX;
+          swipeY = e.touches[0].clientY;
+        }, { passive: true });
+        canvasArea.addEventListener('touchend', (e) => {
+          if (fsMode === 'draw') return; // don't interfere with drawing
+          const dx = e.changedTouches[0].clientX - swipeX;
+          const dy = e.changedTouches[0].clientY - swipeY;
+          if (Math.abs(dx) < 50 || Math.abs(dy) > Math.abs(dx) * 0.7) return;
+          const allVers = getStripVersions(fid, strip);
+          let target = vi;
+          if (dx < 0) { // swipe left → next
+            for (let i = vi + 1; i < allVers.length; i++) { if (!allVers[i].hidden) { target = i; break; } }
+          } else { // swipe right → prev
+            for (let i = vi - 1; i >= 0; i--) { if (!allVers[i].hidden) { target = i; break; } }
+          }
+          if (target !== vi) switchTab(target);
+        }, { passive: true });
+      }
+    }
   }
   wireEvents();
+
+  // Opening animation: zoom from source card
+  if (sourceEl) {
+    const wrap = overlay.querySelector('.fs-canvas-wrap') as HTMLElement;
+    if (wrap) {
+      const sourceRect = sourceEl.getBoundingClientRect();
+      const wrapRect = wrap.getBoundingClientRect();
+      const scaleX = sourceRect.width / wrapRect.width;
+      const scaleY = sourceRect.height / wrapRect.height;
+      const translateX = (sourceRect.left + sourceRect.width / 2) - (wrapRect.left + wrapRect.width / 2);
+      const translateY = (sourceRect.top + sourceRect.height / 2) - (wrapRect.top + wrapRect.height / 2);
+
+      // Initial state: canvas at source card position, controls hidden
+      wrap.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scaleX}, ${scaleY})`;
+      wrap.style.outline = 'none';
+      overlay.querySelectorAll('.fs-strip-tabs, .fs-bottom-bar, .fs-close').forEach((el) => {
+        (el as HTMLElement).style.opacity = '0';
+      });
+
+      requestAnimationFrame(() => { requestAnimationFrame(() => {
+        // Animate to fullscreen
+        overlay.style.transition = 'background 0.18s ease-out';
+        overlay.style.background = '';
+        wrap.style.transition = 'transform 0.18s ease-out';
+        wrap.style.transform = '';
+        overlay.querySelectorAll('.fs-strip-tabs, .fs-bottom-bar, .fs-close').forEach((el) => {
+          (el as HTMLElement).style.transition = 'opacity 0.1s ease-out 0.08s';
+          (el as HTMLElement).style.opacity = '';
+        });
+        // Clean up inline styles after animation
+        setTimeout(() => {
+          overlay.style.transition = '';
+          wrap.style.transition = '';
+          wrap.style.outline = '';
+          overlay.querySelectorAll('.fs-strip-tabs, .fs-bottom-bar, .fs-close').forEach((el) => {
+            (el as HTMLElement).style.transition = '';
+          });
+        }, 200);
+      }); });
+    }
+  }
 
   // Listen for camera capture refresh
   window.addEventListener('fs-refresh', onFsRefresh);
@@ -532,20 +697,53 @@ export function openFullscreen(fid: number, startVi: number, origin: 'main' | 'v
 export function closeFullscreen(): void {
   const overlay = document.querySelector('.fs-overlay') as HTMLElement | null;
   if (!overlay) return;
+  if ((overlay as any)._closing) return; // prevent double-close during animation
+
   const s = state();
-  // Reset crossCompare so 3x2 card shows main frame content, not the version
   const fsInfo = s.fsOverlayActive;
-  if (fsInfo) {
-    s.crossCompare[fsInfo.fid] = -1;
+
+  const doRemove = () => {
+    // Reset crossCompare so 3x2 card shows main frame content, not the version
+    if (fsInfo) s.crossCompare[fsInfo.fid] = -1;
+    document.removeEventListener('keydown', (overlay as any)._escHandler);
+    if ((overlay as any)._resizeHandler) window.removeEventListener('resize', (overlay as any)._resizeHandler);
+    if ((overlay as any)._fsRefreshHandler) window.removeEventListener('fs-refresh', (overlay as any)._fsRefreshHandler);
+    overlay.remove();
+    document.body.style.overflow = '';
+    useStore.setState({ fsOverlayActive: null });
+    resetToolbarState();
+    const renderAll = (window as any).__fh_renderAll;
+    if (renderAll) renderAll();
+    void flushSyncNow(); // DRW-5: close fullscreen canvas → end of drawing session
+  };
+
+  // Try animated close: zoom back to source card
+  const targetEl = fsInfo ? findSourceCard(fsInfo.fid, fsInfo.origin) : null;
+  const wrap = targetEl ? overlay.querySelector('.fs-canvas-wrap') as HTMLElement : null;
+
+  if (targetEl && wrap) {
+    (overlay as any)._closing = true;
+    const targetRect = targetEl.getBoundingClientRect();
+    const wrapRect = wrap.getBoundingClientRect();
+    const scaleX = targetRect.width / wrapRect.width;
+    const scaleY = targetRect.height / wrapRect.height;
+    const translateX = (targetRect.left + targetRect.width / 2) - (wrapRect.left + wrapRect.width / 2);
+    const translateY = (targetRect.top + targetRect.height / 2) - (wrapRect.top + wrapRect.height / 2);
+
+    // Fade out controls
+    overlay.querySelectorAll('.fs-strip-tabs, .fs-bottom-bar, .fs-close').forEach((el) => {
+      (el as HTMLElement).style.transition = 'opacity 0.08s';
+      (el as HTMLElement).style.opacity = '0';
+    });
+    // Animate canvas to source card + fade background
+    overlay.style.transition = 'background 0.18s ease-in';
+    overlay.style.background = 'transparent';
+    wrap.style.transition = 'transform 0.18s ease-in';
+    wrap.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scaleX}, ${scaleY})`;
+    wrap.style.outline = 'none';
+
+    setTimeout(doRemove, 200);
+  } else {
+    doRemove();
   }
-  document.removeEventListener('keydown', (overlay as any)._escHandler);
-  if ((overlay as any)._resizeHandler) window.removeEventListener('resize', (overlay as any)._resizeHandler);
-  if ((overlay as any)._fsRefreshHandler) window.removeEventListener('fs-refresh', (overlay as any)._fsRefreshHandler);
-  overlay.remove();
-  document.body.style.overflow = '';
-  useStore.setState({ fsOverlayActive: null });
-  resetToolbarState();
-  const renderAll = (window as any).__fh_renderAll;
-  if (renderAll) renderAll();
-  void flushSyncNow(); // DRW-5: close fullscreen canvas → end of drawing session
 }

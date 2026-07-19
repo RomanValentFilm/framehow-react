@@ -640,6 +640,56 @@ export function applyCapturedImage(dataURL: string, target: any): void {
   clearCameraTarget();
   scrollFrameIntoView(fid, fromMain ? 'main' : strip);
   void flushSyncNow(); // FRM-17/VER-14: camera capture → snap
+
+  // Zoom-out animation: image zooms from full-screen down to target card
+  // Skip when fullscreen overlay is open (camera from 3x2 fullscreen refreshes in place)
+  if (s.fsOverlayActive) return;
+  requestAnimationFrame(() => {
+    let targetEl: HTMLElement | null = null;
+    if (s.currentViewMode === 'grid3x2') {
+      targetEl = document.querySelector(`.grid3x2-card-wrap[data-g3fid="${fid}"] .canvas-wrap`) as HTMLElement | null;
+    } else if (fromMain && !capturedToVersion) {
+      // Photo went directly to main (empty main frame)
+      targetEl = document.querySelector(`#mainScroll .frame-card[data-mfid="${fid}"] .canvas-wrap`) as HTMLElement | null;
+    } else {
+      // Photo went to version strip — but if strip card isn't visible, target main instead
+      const verEl = document.querySelector(`#${scrollId} .frame-card[data-vfid="${fid}"] .canvas-wrap`) as HTMLElement | null;
+      if (verEl && verEl.offsetParent) {
+        const vr = verEl.getBoundingClientRect();
+        if (vr.width > 0 && vr.top < window.innerHeight && vr.bottom > 0) {
+          targetEl = verEl;
+        }
+      }
+      // Fallback to main frame card (single-strip main view, portrait mode)
+      if (!targetEl) {
+        targetEl = document.querySelector(`#mainScroll .frame-card[data-mfid="${fid}"] .canvas-wrap`) as HTMLElement | null;
+      }
+    }
+    if (!targetEl) return;
+    const tr = targetEl.getBoundingClientRect();
+    if (tr.width === 0 || tr.height === 0) return;
+    const vw = window.innerWidth, vh = window.innerHeight;
+
+    // Place thumb at target card position, scaled up to fill screen
+    const scaleX = vw / tr.width;
+    const scaleY = vh / tr.height;
+    const scale = Math.max(scaleX, scaleY);
+    const thumb = document.createElement('img');
+    thumb.src = dataURL;
+    thumb.style.cssText = `position:fixed;z-index:100000;pointer-events:none;object-fit:cover;` +
+      `left:${tr.left}px;top:${tr.top}px;width:${tr.width}px;height:${tr.height}px;` +
+      `transform-origin:center center;transform:scale(${scale});border-radius:0;opacity:0.85;`;
+    document.body.appendChild(thumb);
+
+    // Animate zoom-out to card
+    requestAnimationFrame(() => { requestAnimationFrame(() => {
+      thumb.style.transition = 'transform 0.28s ease-in, opacity 0.28s ease-in, border-radius 0.28s ease-in';
+      thumb.style.transform = 'scale(1)';
+      thumb.style.borderRadius = '4px';
+      thumb.style.opacity = '0';
+      setTimeout(() => thumb.remove(), 320);
+    }); });
+  });
 }
 
 // Wire up the camera capture pipeline → applyCapturedImage

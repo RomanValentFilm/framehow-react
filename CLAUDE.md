@@ -167,6 +167,14 @@ Changes:
 Changes:
 - `src/lib/accountFlow.ts` — Added fullscreen overlay ("Couldn't load all content — check your connection") with Retry/Dismiss buttons when R2 image fetches fail; overlay shows after progress bar hides (no overlap); Retry triggers fresh pull; Dismiss lets user browse but _pullIncomplete stays true (no push/save of half-loaded state).
 
+### v4.9.023 — 2026-07-19 (dev — deployed)
+**Two fullscreen modes: draw-only + full neutral**
+
+Changes:
+- `src/store/state.ts` — APP_VERSION v4.9.023
+- `src/lib/fullscreen.ts` — Two fullscreen modes: draw-only (triggered by DRAW buttons, shows only toolbar) and full (triggered by VERSN buttons, starts neutral with no draw active). Added `drawOnly` flag based on `initialMode === 'draw'`. Added `fsMode: 'none'` for neutral state. Canvas gets `pointer-events:none` in neutral mode. DRAW button toggles on/off in full mode. After CAM/WRITE actions, returns to neutral in full mode. `initCanvas()` completely untouched.
+- `src/lib/actions.ts` — Main DRAW and strip DRAW handlers now pass `'draw'` as `initialMode` to `openFullscreen()`.
+
 ### v4.9.020 — 2026-07-18 (dev — deployed)
 **Detail bar: persistent on iPhone/iPad portrait, dynamic positioning, setup-lock blocks DETAIL**
 

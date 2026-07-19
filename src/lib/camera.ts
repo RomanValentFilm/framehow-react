@@ -182,9 +182,14 @@ export function closeCamera(): void {
     cameraStream.getTracks().forEach((t) => t.stop());
     cameraStream = null;
   }
-  useStore.setState({ scrollHideGuard: Date.now() + 1000 });
-  resetToolbarState();
-  setTimeout(resetToolbarState, 300);
+  useStore.setState({ scrollHideGuard: Date.now() + 1500 });
+  // Force all bars visible after capture (resetToolbarState would hide them if scrollY > 10)
+  const toolbar = document.getElementById('mainToolbar');
+  const viewBar = document.querySelector('.view-bar');
+  const detailBar = document.getElementById('detailBar');
+  if (toolbar) toolbar.classList.remove('tb-hide');
+  if (viewBar) viewBar.classList.remove('tb-hide');
+  if (detailBar) detailBar.classList.remove('tb-hide');
   document.getElementById('cameraOverlay')!.classList.add('hidden');
   const vid = document.getElementById('cameraVideo') as HTMLVideoElement;
   vid.srcObject = null;
