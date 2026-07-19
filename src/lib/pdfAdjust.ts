@@ -10,6 +10,7 @@ import type { TestFrame, ExtractedFrame, TextItem } from './pdf';
 // @ts-ignore
 import { createWorker } from 'tesseract.js';
 import { COLORS, state, useStore, resetStoryboardState } from '../store/state';
+import type { Version } from '../store/state';
 import { getCurrentProject, flushSyncNow } from './currentProject';
 import { updateFrameBadge } from './helpers';
 import { autoPhoneMainView } from './view';
@@ -1237,6 +1238,45 @@ function snapToContent(canvas: HTMLCanvasElement, rx: number, ry: number, rw: nu
 }
 
 // ---------------------------------------------------------------------------
+// Center-crop fingerprint for image matching across PDF re-adjustments.
+// Takes the inner 60% of an image, downscales to 8×8 grayscale → 64 numbers.
+// ---------------------------------------------------------------------------
+
+function computeFingerprint(src: string): Promise<number[]> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const S = 8; // fingerprint grid size
+      const cvs = document.createElement('canvas');
+      cvs.width = S;
+      cvs.height = S;
+      const ctx = cvs.getContext('2d')!;
+      // Inner 60% crop (skip 20% from each edge)
+      const sx = img.width * 0.2;
+      const sy = img.height * 0.2;
+      const sw = img.width * 0.6;
+      const sh = img.height * 0.6;
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, S, S);
+      const data = ctx.getImageData(0, 0, S, S).data;
+      const fp: number[] = [];
+      for (let i = 0; i < data.length; i += 4) {
+        fp.push(Math.round(0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]));
+      }
+      resolve(fp);
+    };
+    img.onerror = () => resolve([]);
+    img.src = src;
+  });
+}
+
+function fingerprintDistance(a: number[], b: number[]): number {
+  if (a.length !== b.length || a.length === 0) return Infinity;
+  let sum = 0;
+  for (let i = 0; i < a.length; i++) sum += Math.abs(a[i] - b[i]);
+  return sum / a.length; // average per-pixel difference (0-255 scale)
+}
+
+// ---------------------------------------------------------------------------
 // Apply — re-extract with adjusted rectangles
 // ---------------------------------------------------------------------------
 
@@ -2010,40 +2050,257 @@ async function onApply(): Promise<void> {
     // Re-save rects now that labelText has been populated from extraction/OCR
     saveRectsForFile();
 
-    setApplyProgress(92, 'Loading into app…', `${framesToLoad.length} frames`);
+    setApplyProgress(90, 'Matching frames…', `${framesToLoad.length} new frames`);
     await new Promise(r => setTimeout(r, 50));
 
-    closePdfAdjust();
-
-    // Load into app
-    resetStoryboardState();
-    if (fileName) useStore.setState({ lastPdfName: fileName });
     const s = state();
-    const frameStartIdx = s.frames.length;
-    let nextId = s.nextId;
-    for (const item of framesToLoad) {
-      const id = nextId++;
-      s.frames.push({
-        id, src: item.src, label: item.label,
-        cropW: item.cropW, cropH: item.cropH,
-        strokes: [], drawMode: false,
-        textContent: item.textContent || '', tableData: null,
-      });
-      s.versions[id] = [{ id: 1, label: 'v1', type: 'empty', strokes: [], bgImage: null }];
-      s.activeTab[id] = 0;
-      s.drawColor[id] = COLORS[0];
-      s.drawWidth[id] = 6;
-      s.drawEraser[id] = false;
+    const hadExistingFrames = s.frames.length > 0;
+
+    if (!hadExistingFrames) {
+      // ── First import: no existing frames to match — fresh load ──
+      closePdfAdjust();
+      resetStoryboardState();
+      if (fileName) useStore.setState({ lastPdfName: fileName });
+      const s2 = state();
+      let nextId = s2.nextId;
+      for (const item of framesToLoad) {
+        const id = nextId++;
+        s2.frames.push({
+          id, src: item.src, label: item.label,
+          cropW: item.cropW, cropH: item.cropH,
+          strokes: [], drawMode: false,
+          textContent: item.textContent || '', tableData: null,
+        });
+        s2.versions[id] = [{ id: 1, label: 'v1', type: 'empty', strokes: [], bgImage: null }];
+        s2.activeTab[id] = 0;
+        s2.drawColor[id] = COLORS[0];
+        s2.drawWidth[id] = 6;
+        s2.drawEraser[id] = false;
+      }
+      for (let i = 0; i < s2.frames.length; i++) {
+        if (!s2.frames[i].label) s2.frames[i].label = '#' + (i + 1);
+      }
+      useStore.setState({ nextId });
+      updateFrameBadge();
+      showToast(`${framesToLoad.length} frames loaded`);
+      requestAnimationFrame(() => { (window as any).__fh_renderAll?.(); autoPhoneMainView(); });
+      setTimeout(() => void flushSyncNow(), 5000);
+    } else {
+      // ── Re-adjust: match new frames to existing ones by image similarity ──
+      // 1. Compute fingerprints for all old frames (main src)
+      setApplyProgress(91, 'Computing fingerprints…', 'existing frames');
+      await new Promise(r => setTimeout(r, 30));
+      const oldFrames = s.frames;
+      const oldFPs: { fid: number; fp: number[] }[] = [];
+      for (const f of oldFrames) {
+        if (f.src) {
+          const fp = await computeFingerprint(f.src);
+          oldFPs.push({ fid: f.id, fp });
+        }
+      }
+
+      // 2. Compute fingerprints for all new frames
+      setApplyProgress(93, 'Computing fingerprints…', 'new frames');
+      await new Promise(r => setTimeout(r, 30));
+      const newFPs: { idx: number; fp: number[] }[] = [];
+      for (let i = 0; i < framesToLoad.length; i++) {
+        const fp = await computeFingerprint(framesToLoad[i].src);
+        newFPs.push({ idx: i, fp });
+      }
+
+      // 3. Match: for each new frame, find the closest old frame
+      // Threshold: average per-pixel difference < 40 (out of 255) = same image
+      const MATCH_THRESHOLD = 40;
+      const matchedOldIds = new Set<number>();
+      const newToOld: Map<number, number> = new Map(); // newIdx → old fid
+
+      for (const nf of newFPs) {
+        let bestDist = Infinity;
+        let bestOldFid = -1;
+        for (const of2 of oldFPs) {
+          if (matchedOldIds.has(of2.fid)) continue; // already claimed
+          const dist = fingerprintDistance(nf.fp, of2.fp);
+          if (dist < bestDist) {
+            bestDist = dist;
+            bestOldFid = of2.fid;
+          }
+        }
+        if (bestDist < MATCH_THRESHOLD && bestOldFid >= 0) {
+          newToOld.set(nf.idx, bestOldFid);
+          matchedOldIds.add(bestOldFid);
+        }
+      }
+
+      const matchedCount = newToOld.size;
+      const newCount = framesToLoad.length - matchedCount;
+      setApplyProgress(96, 'Merging…', `${matchedCount} matched, ${newCount} new`);
+      await new Promise(r => setTimeout(r, 50));
+
+      // 4. Build merged frame list preserving old data for matches
+      // Collect all per-frame keyed state from old frames for preservation
+      const oldFrameMap = new Map<number, typeof oldFrames[0]>();
+      for (const f of oldFrames) oldFrameMap.set(f.id, f);
+
+      // Collect strip versions/tabs/etc for all strip types
+      const stripIds = ['ver', 'floor', 'refs'];
+      const oldStripVersions: Record<string, Record<number, Version[]>> = {};
+      const oldStripActiveTab: Record<string, Record<number, number>> = {};
+      for (const sid of stripIds) {
+        oldStripVersions[sid] = { ...(s.stripVersions?.[sid] || {}) };
+        oldStripActiveTab[sid] = { ...(s.stripActiveTab?.[sid] || {}) };
+      }
+
+      closePdfAdjust();
+
+      // Build new frames array in new order
+      const newFrames: typeof oldFrames = [];
+      const newVersions: Record<number, Version[]> = {};
+      const newActiveTab: Record<number, number> = {};
+      const newDrawColor: Record<number, string> = {};
+      const newDrawWidth: Record<number, number> = {};
+      const newDrawEraser: Record<number, boolean> = {};
+      const newFrameNeeds: Record<number, any> = {};
+      const newStripVersions: Record<string, Record<number, Version[]>> = {};
+      const newStripActiveTab: Record<string, Record<number, number>> = {};
+      for (const sid of stripIds) {
+        newStripVersions[sid] = {};
+        newStripActiveTab[sid] = {};
+      }
+
+      let nextId = s.nextId;
+
+      for (let i = 0; i < framesToLoad.length; i++) {
+        const item = framesToLoad[i];
+        const oldFid = newToOld.get(i);
+
+        if (oldFid !== undefined) {
+          // ── Matched: preserve old data, update src/crop/label ──
+          const oldFrame = oldFrameMap.get(oldFid)!;
+          const id = oldFrame.id;
+          newFrames.push({
+            ...oldFrame,
+            src: item.src,
+            label: item.label || oldFrame.label,
+            cropW: item.cropW,
+            cropH: item.cropH,
+            textContent: item.textContent || oldFrame.textContent,
+            orphaned: undefined, // clear orphaned flag if previously set
+            // Keep: strokes, scribbles, drawMode, setupId, note, serverFrameId, r2Key, etc.
+          });
+          // Preserve all keyed state
+          newVersions[id] = s.versions[id] || [{ id: 1, label: 'v1', type: 'empty', strokes: [], bgImage: null }];
+          newActiveTab[id] = s.activeTab[id] || 0;
+          newDrawColor[id] = s.drawColor[id] || COLORS[0];
+          newDrawWidth[id] = s.drawWidth[id] || 6;
+          newDrawEraser[id] = s.drawEraser[id] || false;
+          if (s.frameNeeds[id]) newFrameNeeds[id] = s.frameNeeds[id];
+          // Preserve strip versions
+          for (const sid of stripIds) {
+            if (oldStripVersions[sid][id]) newStripVersions[sid][id] = oldStripVersions[sid][id];
+            if (oldStripActiveTab[sid][id] !== undefined) newStripActiveTab[sid][id] = oldStripActiveTab[sid][id];
+          }
+        } else {
+          // ── New frame: create fresh ──
+          const id = nextId++;
+          newFrames.push({
+            id, src: item.src, label: item.label,
+            cropW: item.cropW, cropH: item.cropH,
+            strokes: [], drawMode: false,
+            textContent: item.textContent || '', tableData: null,
+          });
+          newVersions[id] = [{ id: 1, label: 'v1', type: 'empty', strokes: [], bgImage: null }];
+          newActiveTab[id] = 0;
+          newDrawColor[id] = COLORS[0];
+          newDrawWidth[id] = 6;
+          newDrawEraser[id] = false;
+        }
+      }
+
+      // Insert unmatched old frames near their original position (marked as orphaned).
+      // For each orphan, find the last matched neighbor before it in the old order
+      // and insert right after that neighbor's position in newFrames.
+      let keptCount = 0;
+      const orphans: { oldIdx: number; frame: typeof oldFrames[0] }[] = [];
+      for (let oi = 0; oi < oldFrames.length; oi++) {
+        if (matchedOldIds.has(oldFrames[oi].id)) continue;
+        orphans.push({ oldIdx: oi, frame: oldFrames[oi] });
+      }
+      // Process orphans in reverse so insertions don't shift indices
+      for (let k = orphans.length - 1; k >= 0; k--) {
+        const { oldIdx, frame: oldF } = orphans[k];
+        keptCount++;
+        const id = oldF.id;
+        // Clear orphaned flag from matched frames, set on this one
+        const orphanFrame = { ...oldF, orphaned: true };
+        // Preserve all keyed state
+        newVersions[id] = s.versions[id] || [{ id: 1, label: 'v1', type: 'empty', strokes: [], bgImage: null }];
+        newActiveTab[id] = s.activeTab[id] || 0;
+        newDrawColor[id] = s.drawColor[id] || COLORS[0];
+        newDrawWidth[id] = s.drawWidth[id] || 6;
+        newDrawEraser[id] = s.drawEraser[id] || false;
+        if (s.frameNeeds[id]) newFrameNeeds[id] = s.frameNeeds[id];
+        for (const sid of stripIds) {
+          if (oldStripVersions[sid][id]) newStripVersions[sid][id] = oldStripVersions[sid][id];
+          if (oldStripActiveTab[sid][id] !== undefined) newStripActiveTab[sid][id] = oldStripActiveTab[sid][id];
+        }
+        // Find last matched old frame before this orphan's original position
+        let insertAfterFid = -1;
+        for (let b = oldIdx - 1; b >= 0; b--) {
+          if (matchedOldIds.has(oldFrames[b].id)) { insertAfterFid = oldFrames[b].id; break; }
+        }
+        // Find that frame's position in newFrames and insert after it
+        let insertPos = 0;
+        if (insertAfterFid >= 0) {
+          const pos = newFrames.findIndex(f => f.id === insertAfterFid);
+          insertPos = pos >= 0 ? pos + 1 : 0;
+        }
+        newFrames.splice(insertPos, 0, orphanFrame);
+      }
+      // Clear orphaned flag on matched frames (in case they were orphaned from a previous adjust)
+      for (const f of newFrames) {
+        if (!f.orphaned) f.orphaned = undefined;
+      }
+
+      // Assign labels to any that are still empty
+      for (let i = 0; i < newFrames.length; i++) {
+        if (!newFrames[i].label) newFrames[i].label = '#' + (i + 1);
+      }
+
+      // 5. Apply merged state
+      s.frames = newFrames;
+      // Update versions
+      for (const id of Object.keys(newVersions)) s.versions[+id] = newVersions[+id];
+      for (const id of Object.keys(newActiveTab)) s.activeTab[+id] = newActiveTab[+id];
+      s.drawColor = newDrawColor;
+      s.drawWidth = newDrawWidth;
+      s.drawEraser = newDrawEraser;
+      s.frameNeeds = newFrameNeeds;
+      // Apply strip state
+      for (const sid of stripIds) {
+        if (s.stripVersions?.[sid]) {
+          for (const id of Object.keys(newStripVersions[sid])) {
+            s.stripVersions[sid][+id] = newStripVersions[sid][+id];
+          }
+        }
+        if (s.stripActiveTab?.[sid]) {
+          for (const id of Object.keys(newStripActiveTab[sid])) {
+            s.stripActiveTab[sid][+id] = newStripActiveTab[sid][+id];
+          }
+        }
+      }
+
+      useStore.setState({ nextId });
+      if (fileName) useStore.setState({ lastPdfName: fileName });
+      updateFrameBadge();
+
+      const parts: string[] = [];
+      if (matchedCount > 0) parts.push(`${matchedCount} preserved`);
+      if (newCount > 0) parts.push(`${newCount} new`);
+      if (keptCount > 0) parts.push(`${keptCount} kept (not in PDF)`);
+      showToast(`${newFrames.length} frames: ${parts.join(', ')}`);
+      requestAnimationFrame(() => { (window as any).__fh_renderAll?.(); autoPhoneMainView(); });
+      setTimeout(() => void flushSyncNow(), 5000);
     }
-    for (let i = frameStartIdx; i < s.frames.length; i++) {
-      if (!s.frames[i].label) s.frames[i].label = '#' + (i - frameStartIdx + 1);
-    }
-    useStore.setState({ nextId });
-    updateFrameBadge();
-    showToast(`${framesToLoad.length} frames loaded from adjusted positions`);
-    requestAnimationFrame(() => { (window as any).__fh_renderAll?.(); autoPhoneMainView(); });
-    // IMP-5: PDF adjust complete → 5s delay lets images settle
-    setTimeout(() => void flushSyncNow(), 5000);
   } catch (err) {
     console.error('[pdfAdjust] Apply failed:', err);
     showToast('Error applying adjustments');

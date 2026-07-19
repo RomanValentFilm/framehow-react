@@ -33,7 +33,7 @@ import type { StripType } from '../store/state';
 import { snapshotFrame } from './drawing';
 import { drawFit } from './drawing';
 import { setupDrawing } from './drawing';
-import { showToast, showNewProjectModal, isNewProjectModalOpen } from './modals';
+import { showToast, showNewProjectModal, isNewProjectModalOpen, showOrphanChoice } from './modals';
 import type { NewProjectChoice } from './modals';
 import { handlePDF } from './pdf';
 import { handleFolderImages, startFromScratch, startPortrait } from './files';
@@ -92,6 +92,49 @@ export function initFramehow(): void {
     if (state().drawingInProgress) return;
     setTimeout(() => useStore.setState({ drawSuppressClick: false }), 0);
   });
+
+  // Orphaned frame click interceptor — capture phase blocks normal handlers
+  document.addEventListener('click', (e: MouseEvent) => {
+    const target = e.target as HTMLElement;
+    const orphanedCard = target.closest('.frame-card.orphaned, .grid3x2-card-wrap.orphaned') as HTMLElement | null;
+    if (!orphanedCard) return;
+    // Don't intercept clicks on buttons inside the card (un-hide etc.)
+    if (target.closest('button, .btn, .vtab, .act-btn')) return;
+    e.stopPropagation();
+    e.preventDefault();
+    const fidStr = orphanedCard.dataset.mfid || orphanedCard.dataset.vfid || orphanedCard.dataset.g3fid;
+    const fid = fidStr ? parseInt(fidStr) : 0;
+    if (!fid) return;
+    showOrphanChoice().then((choice) => {
+      const s = state();
+      const f = s.frames.find((fr) => fr.id === fid);
+      if (!f) return;
+      if (choice === 'keep') {
+        f.orphaned = undefined;
+        // Re-render the card
+        const mainCard = document.querySelector(`.frame-card[data-mfid="${fid}"]`) as HTMLElement | null;
+        if (mainCard) { mainCard.classList.remove('orphaned'); renderMainFrame(mainCard, fid); }
+        const verCard = document.querySelector(`.frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
+        if (verCard) { verCard.classList.remove('orphaned'); renderVersionFrame(verCard, fid); }
+        const g3Card = document.querySelector(`.grid3x2-card-wrap[data-g3fid="${fid}"]`) as HTMLElement | null;
+        if (g3Card) { g3Card.classList.remove('orphaned'); renderGrid3x2Card(g3Card, fid); }
+      } else if (choice === 'hide') {
+        f.hidden = true;
+        f.orphaned = undefined;
+        renderAll();
+      } else if (choice === 'delete') {
+        s.frames = s.frames.filter((fr) => fr.id !== fid);
+        delete s.versions[fid];
+        delete s.activeTab[fid];
+        delete s.drawColor[fid];
+        delete s.drawWidth[fid];
+        delete s.drawEraser[fid];
+        delete s.frameNeeds[fid];
+        updateFrameBadge();
+        renderAll();
+      }
+    });
+  }, true); // capture phase
 
   // Overview scroll click — collapse expanded version + close main draw on outside click
   document.getElementById('overviewScroll')!.addEventListener('click', (e: MouseEvent) => {

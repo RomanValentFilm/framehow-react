@@ -241,6 +241,7 @@ export function renderMainFrame(div: HTMLElement, fid: number): void {
   const s = state();
   const f = s.frames.find((fr) => fr.id === fid);
   if (!f) return;
+  div.classList.toggle('orphaned', !!f.orphaned);
 
   // Only show as hidden in ALL mode — inside a group, frames are always visible
   if (f.hidden && s.activeGroupId === null) {
@@ -602,6 +603,8 @@ export function renderMainFrame(div: HTMLElement, fid: number): void {
 
 export function renderVersionFrame(div: HTMLElement, fid: number, strip: StripType = 'ver'): void {
   const s = state();
+  const _f = s.frames.find((fr) => fr.id === fid);
+  div.classList.toggle('orphaned', !!(_f && _f.orphaned));
   if (strip !== 'ver') ensureStripVersions(fid, strip);
   let tabs = getStripVersions(fid, strip);
   // Guard: if the ver strip has no versions yet (e.g. just loaded from cloud

@@ -482,6 +482,63 @@ export function showDeleteChoice(): Promise<'hide' | 'delete' | null> {
   });
 }
 
+export function showOrphanChoice(): Promise<'keep' | 'hide' | 'delete' | null> {
+  return new Promise((resolve) => {
+    const modal = document.getElementById('choiceModal')!;
+    const content = document.getElementById('choiceContent')!;
+    let selected: 'keep' | 'hide' | 'delete' = 'keep';
+    function renderOptions() {
+      content.innerHTML = `
+        <div style="margin-bottom:12px;font-size:13px;color:#ccc;line-height:1.5;">This frame was not found in the latest PDF import.</div>
+        <div class="choice-modal-options">
+          <div class="choice-option${selected === 'keep' ? ' selected' : ''}" data-choice="keep">
+            <div class="choice-radio"><div class="choice-radio-dot"></div></div>
+            <span class="choice-label">KEEP this frame</span>
+          </div>
+          <div class="choice-option${selected === 'hide' ? ' selected' : ''}" data-choice="hide">
+            <div class="choice-radio"><div class="choice-radio-dot"></div></div>
+            <span class="choice-label">HIDE this frame</span>
+          </div>
+          <div class="choice-option danger${selected === 'delete' ? ' selected' : ''}" data-choice="delete">
+            <div class="choice-radio"><div class="choice-radio-dot"></div></div>
+            <span class="choice-label">DELETE this frame and all its versions</span>
+          </div>
+        </div>
+        <div class="confirm-modal-btns">
+          <button class="btn" id="orphanCancel">Cancel</button>
+          <button class="btn" id="orphanOk">OK</button>
+        </div>`;
+      content.querySelectorAll('.choice-option').forEach((opt) => {
+        opt.addEventListener('click', () => {
+          selected = (opt as HTMLElement).dataset.choice as 'keep' | 'hide' | 'delete';
+          renderOptions();
+        });
+      });
+      document.getElementById('orphanCancel')!.addEventListener('click', () => cleanup(null));
+      document.getElementById('orphanOk')!.addEventListener('click', async () => {
+        if (selected === 'delete') {
+          modal.classList.add('hidden');
+          const confirmed = await showConfirm('Are you sure you want to delete this frame and all its versions?');
+          if (confirmed) {
+            cleanup('delete');
+          } else {
+            modal.classList.remove('hidden');
+            renderOptions();
+          }
+        } else {
+          cleanup(selected);
+        }
+      });
+    }
+    modal.classList.remove('hidden');
+    renderOptions();
+    function cleanup(result: 'keep' | 'hide' | 'delete' | null) {
+      modal.classList.add('hidden');
+      resolve(result);
+    }
+  });
+}
+
 export function showGroupDeleteChoice(): Promise<'hide' | 'remove' | null> {
   return new Promise((resolve) => {
     const modal = document.getElementById('choiceModal')!;

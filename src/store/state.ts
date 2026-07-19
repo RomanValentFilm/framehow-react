@@ -49,6 +49,8 @@ export interface Frame {
   note?: string;
   /** Scribble strokes drawn over this frame in 3×2 view. Stored per-frame so they move with reorder. */
   scribbles?: Stroke[];
+  /** Frame was not found in the latest PDF re-adjust — kept but visually flagged. */
+  orphaned?: boolean;
 }
 
 /** A named colour-coded setup (lighting / time-of-day label for frames). */
@@ -60,7 +62,7 @@ export interface Setup {
 
 /** 12-colour palette for setups. */
 /** App version — bump before every deploy. */
-export const APP_VERSION = 'v4.9.024';
+export const APP_VERSION = 'v4.9.025';
 
 export const SETUP_COLORS: { name: string; hex: string }[] = [
   { name: 'DAYLIGHT',      hex: '#CFE2F6' },

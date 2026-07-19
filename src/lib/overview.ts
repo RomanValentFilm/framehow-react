@@ -833,6 +833,7 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
   const s = state();
   const f = s.frames.find((x: any) => x.id === fid);
   if (!f) return;
+  wrap.classList.toggle('orphaned', !!f.orphaned);
   wrap.innerHTML = '';
 
   // Grid 3×2 always uses 'ver' as companion — same as MAIN STRIP SINGLE VIEW

@@ -167,6 +167,17 @@ Changes:
 Changes:
 - `src/lib/accountFlow.ts` — Added fullscreen overlay ("Couldn't load all content — check your connection") with Retry/Dismiss buttons when R2 image fetches fail; overlay shows after progress bar hides (no overlap); Retry triggers fresh pull; Dismiss lets user browse but _pullIncomplete stays true (no push/save of half-loaded state).
 
+### v4.9.024 — 2026-07-19 (dev — deployed)
+**Camera fly-to animation, NEEDS modal zoom, 3x2 portrait rotation fixes**
+
+Changes:
+- `src/store/state.ts` — APP_VERSION v4.9.024
+- `src/lib/overview.ts` — NEEDS modal (`_openNeedsModal`) now has zoom-from/zoom-to animation matching fullscreen (0.18s ease-out open, 0.18s ease-in close), animating from/to the source 3x2 card.
+- `src/lib/fullscreen.ts` — `findSourceCard` uses `origin` + `stripScrollId` to locate correct strip canvas-wrap in multi-strip views.
+- `src/lib/actions.ts` — Camera capture fly-to animation: captured image zooms out from full-screen to target frame card. Targets version strip card when visible, falls back to main card in single-strip/portrait mode. Skipped when fullscreen overlay is active.
+- `src/lib/camera.ts` — `closeCamera` forces all bars visible instead of calling `resetToolbarState` (which would hide them when scrolled).
+- `src/lib/view.ts` — iPad 3x2→portrait rotation: switches to MAIN+VERSN immediately, shows rotate overlay, activates detail bar + detail button + strip toggles. `_returnTo3x2` flag restores 3x2 when rotating back to landscape. `resetToolbarState` now respects `scrollHideGuard`. `_scrollHideReset(false)` + `scrollTo(0,0)` on rotation to prevent bar hiding. `g3RotateMsg` only auto-dismissed on landscape (not killed by portrait resize events).
+
 ### v4.9.023 — 2026-07-19 (dev — deployed)
 **Two fullscreen modes: draw-only + full neutral**
 
