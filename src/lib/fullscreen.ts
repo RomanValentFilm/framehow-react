@@ -38,8 +38,12 @@ export function openFullscreen(fid: number, startVi: number, origin: 'main' | 'v
   const src: any = isMain ? f : ver;
   if (!src) return;
 
-  // Current mode: draw (default), cam, write
-  let fsMode: 'draw' | 'cam' | 'write' = 'draw';
+  // Draw-only mode: triggered by DRAW buttons — just toolbar, no mode buttons
+  // Full mode: triggered by VERSN buttons — all buttons, starts neutral
+  const drawOnly = initialMode === 'draw';
+
+  // Current mode: none (neutral), draw, cam, write
+  let fsMode: 'none' | 'draw' | 'cam' | 'write' = drawOnly ? 'draw' : 'none';
   let fsReorder = false;
 
   // Apply last-used color/width (carries across frames), eraser always off
@@ -97,10 +101,19 @@ export function openFullscreen(fid: number, startVi: number, origin: 'main' | 'v
 
   function buildBottomBar(): string {
     const isHidden = !isMain && ver && ver.hidden;
+    const disabledAttr = isHidden ? ' disabled style="opacity:0.3;pointer-events:none;"' : '';
+
+    // Draw-only mode: just the drawing toolbar, no mode buttons
+    if (drawOnly) {
+      return `<div class="fs-bottom-bar">
+        <div class="color-row fs-color-row">${drawToolbarHTML(fid, 'data-fsfid', fid)}</div>
+      </div>`;
+    }
+
+    // Full mode: all buttons, toolbar hidden until DRAW pressed
     const drawActive = fsMode === 'draw' ? ' active' : '';
     const camActive = fsMode === 'cam' ? ' active' : '';
     const writeActive = fsMode === 'write' ? ' active' : '';
-    const disabledAttr = isHidden ? ' disabled style="opacity:0.3;pointer-events:none;"' : '';
     return `<div class="fs-bottom-bar">
       ${!isMain ? `<button class="fs-util-btn" data-fsutil="load"${disabledAttr}>Load</button>` : ''}
       <div class="fs-mode-btns">
@@ -117,14 +130,15 @@ export function openFullscreen(fid: number, startVi: number, origin: 'main' | 'v
     const { dw, dh } = calcSize();
     const cid = getCid();
     const isHidden = !isMain && ver && ver.hidden;
-    const canvasStyle = `width:${dw}px;height:${dh}px;${isHidden ? 'opacity:0.3;pointer-events:none;' : fsReorder ? 'pointer-events:none;' : 'cursor:crosshair;'}`;
+    const canvasStyle = `width:${dw}px;height:${dh}px;${isHidden ? 'opacity:0.3;pointer-events:none;' : fsReorder ? 'pointer-events:none;' : fsMode === 'draw' ? 'cursor:crosshair;' : 'pointer-events:none;cursor:default;'}`;
     const wrapStyle = `width:${dw}px;height:${dh}px;${fsReorder ? 'outline:2px solid #d52632;outline-offset:-2px;' : ''}`;
+    const wrapClass = `fs-canvas-wrap${fsMode === 'draw' ? ' draw-active' : ''}`;
     overlay.innerHTML = `
       <button class="fs-close">${fsCollapseSVG}</button>
       <div class="fs-inner">
         ${buildVersionTabs()}
         <div class="fs-canvas-area">
-          <div class="fs-canvas-wrap draw-active" style="${wrapStyle}"><canvas id="${cid}" width="${cw}" height="${ch}" style="${canvasStyle}"></canvas>${
+          <div class="${wrapClass}" style="${wrapStyle}"><canvas id="${cid}" width="${cw}" height="${ch}" style="${canvasStyle}"></canvas>${
       !isMain && !isHidden ? starHTML(fid, vi) : ''
     }</div>
         </div>
@@ -138,7 +152,7 @@ export function openFullscreen(fid: number, startVi: number, origin: 'main' | 'v
     if (!ver) return;
     setStripActiveTab(fid, strip, vi);
     useStore.setState({ fsOverlayActive: { fid, vi, origin } });
-    fsMode = 'draw';
+    fsMode = drawOnly ? 'draw' : 'none';
     buildOverlay();
     initCanvas();
     wireEvents();
@@ -151,7 +165,7 @@ export function openFullscreen(fid: number, startVi: number, origin: 'main' | 'v
     vi = Math.min(newVi, vers.length - 1);
     ver = vers[vi];
     if (!ver) return;
-    fsMode = 'draw';
+    fsMode = drawOnly ? 'draw' : 'none';
     buildOverlay();
     initCanvas();
     wireEvents();
@@ -194,7 +208,7 @@ export function openFullscreen(fid: number, startVi: number, origin: 'main' | 'v
         bumpRenderTick();
       }
       // Refresh canvas to show text
-      fsMode = 'draw';
+      fsMode = drawOnly ? 'draw' : 'none';
       buildOverlay();
       initCanvas();
       wireEvents();
@@ -374,17 +388,34 @@ export function openFullscreen(fid: number, startVi: number, origin: 'main' | 'v
       initCanvas();
       wireEvents();
     });
-    // Mode buttons (DRAW / CAM / WRITE)
+    // Mode buttons (DRAW / CAM / WRITE) — only in full mode
     overlay.querySelectorAll('[data-fsmode]').forEach((btn) =>
       btn.addEventListener('click', () => {
         const mode = (btn as HTMLElement).dataset.fsmode as 'draw' | 'cam' | 'write';
         if (fsReorder) exitReorder();
         if (mode === 'draw') {
-          fsMode = 'draw';
-          overlay.querySelectorAll('.fs-mode-btn').forEach(b => b.classList.remove('active'));
-          btn.classList.add('active');
-          const toolbar = overlay.querySelector('.fs-color-row') as HTMLElement | null;
-          if (toolbar) toolbar.style.display = '';
+          if (fsMode === 'draw') {
+            // Toggle off → neutral
+            fsMode = 'none';
+            overlay.querySelectorAll('.fs-mode-btn').forEach(b => b.classList.remove('active'));
+            const toolbar = overlay.querySelector('.fs-color-row') as HTMLElement | null;
+            if (toolbar) toolbar.style.display = 'none';
+            const cvs = overlay.querySelector('canvas') as HTMLElement | null;
+            if (cvs) { cvs.style.pointerEvents = 'none'; cvs.style.cursor = 'default'; }
+            const wrap = overlay.querySelector('.fs-canvas-wrap') as HTMLElement | null;
+            if (wrap) wrap.classList.remove('draw-active');
+          } else {
+            // Activate draw
+            fsMode = 'draw';
+            overlay.querySelectorAll('.fs-mode-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            const toolbar = overlay.querySelector('.fs-color-row') as HTMLElement | null;
+            if (toolbar) toolbar.style.display = '';
+            const cvs = overlay.querySelector('canvas') as HTMLElement | null;
+            if (cvs) { cvs.style.pointerEvents = ''; cvs.style.cursor = 'crosshair'; }
+            const wrap = overlay.querySelector('.fs-canvas-wrap') as HTMLElement | null;
+            if (wrap) wrap.classList.add('draw-active');
+          }
         } else if (mode === 'cam') {
           triggerCamera();
         } else if (mode === 'write') {

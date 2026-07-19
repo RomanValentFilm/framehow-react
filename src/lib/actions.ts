@@ -239,7 +239,7 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
     void flushSyncNow(); // duplicate frame
   } else if (action === 'draw') {
     fhTrack('draw_used', { strip: 'main' });
-    openFullscreen(fid, 0, 'main');
+    openFullscreen(fid, 0, 'main', 'draw');
   } else if (action === 'write') {
     fhTrack('write_used', { strip: 'main' });
     f.strokes = f.strokes || [];
@@ -420,7 +420,7 @@ export function handleAction(action: string, fid: number, div: HTMLElement, from
 
   if (action === 'draw') {
     fhTrack('draw_used', { strip });
-    openFullscreen(fid, ai, strip);
+    openFullscreen(fid, ai, strip, 'draw');
   } else if (action === 'upload') {
     useStore.setState({ imgTarget: { fid, div, fromCompare, stripType: strip } });
     (document.getElementById('imgInput') as HTMLInputElement).removeAttribute('capture');
