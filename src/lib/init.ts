@@ -688,6 +688,18 @@ export function initFramehow(): void {
           const isDetailOpen = document.body.classList.contains('detail-open');
           document.body.classList.toggle('detail-open', !isDetailOpen);
           (b as HTMLElement).classList.toggle('active', !isDetailOpen);
+          if (!isDetailOpen) {
+            // Opening → force all bars visible regardless of scroll position
+            const tbEl = document.getElementById('mainToolbar');
+            const vbEl = document.querySelector('.view-bar');
+            const dbEl = document.getElementById('detailBar');
+            if (tbEl) tbEl.classList.remove('tb-hide');
+            if (vbEl) vbEl.classList.remove('tb-hide');
+            if (dbEl) dbEl.classList.remove('tb-hide');
+            if ((window as any)._scrollHideReset) (window as any)._scrollHideReset(false);
+            useStore.setState({ scrollHideGuard: Date.now() + 1500 });
+            requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
+          }
           return;
         }
         const detailBar = document.getElementById('detailBar');
@@ -703,7 +715,17 @@ export function initFramehow(): void {
             const enter3x2Btn = document.querySelector('.view-btn[data-view="3x2"]') as HTMLElement | null;
             if (enter3x2Btn) enter3x2Btn.click();
           } else {
-            // Opening detail bar → update strip-toggle buttons to reflect what's visible
+            // Opening detail bar → force all bars visible regardless of scroll position
+            const tbEl = document.getElementById('mainToolbar');
+            const vbEl = document.querySelector('.view-bar');
+            if (tbEl) tbEl.classList.remove('tb-hide');
+            if (vbEl) vbEl.classList.remove('tb-hide');
+            detailBar.classList.remove('tb-hide');
+            if ((window as any)._scrollHideReset) (window as any)._scrollHideReset(false);
+            useStore.setState({ scrollHideGuard: Date.now() + 1500 });
+            // Recalculate detail bar position (iPad: position:fixed, top managed by JS)
+            requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
+            // Update strip-toggle buttons to reflect what's visible
             // In 3×2 mode: no buttons active (grid is showing, not individual strips)
             const curMode = state().currentViewMode;
             const curStrips = state().activeStrips;
