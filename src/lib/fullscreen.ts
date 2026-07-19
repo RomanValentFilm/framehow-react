@@ -3,12 +3,12 @@
 
 import { COLORS, state, useStore, bumpRenderTick } from '../store/state';
 import type { StripType } from '../store/state';
-import { drawToolbarHTML, starHTML, getStripVersions, stripTabPrefix, ensureStripVersions, getStripActiveTab, setStripActiveTab, addNewStripVersion } from './helpers';
+import { drawToolbarHTML, starHTML, getStripVersions, stripTabPrefix, ensureStripVersions, getStripActiveTab, setStripActiveTab, addNewStripVersion, relabelStripVersions } from './helpers';
 import { restoreCanvas, restoreMainCanvas, setupDrawing, setupMainDrawing, snapshotFrame } from './drawing';
 import { resetToolbarState } from './view';
 import { flushSyncNow } from './currentProject';
 import { openCamera } from './camera';
-import { openTextModal } from './modals';
+import { openTextModal, showVersionChoice } from './modals';
 
 // Default draw settings: blue, middle thickness, no eraser
 const DEFAULT_DRAW_COLOR = COLORS[4]; // #3080e0 blue
@@ -40,6 +40,7 @@ export function openFullscreen(fid: number, startVi: number, origin: 'main' | 'v
 
   // Current mode: draw (default), cam, write
   let fsMode: 'draw' | 'cam' | 'write' = 'draw';
+  let fsReorder = false;
 
   // Apply last-used color/width (carries across frames), eraser always off
   s.drawColor[fid] = _lastColor;
@@ -71,40 +72,60 @@ export function openFullscreen(fid: number, startVi: number, origin: 'main' | 'v
     if (isMain) return '';
     const vers = getStripVersions(fid, strip);
     const prefix = stripTabPrefix(strip);
-    const tabs = vers.map((v, i) =>
-      `<button class="vtab${i === vi ? ' active' : ''}" data-fstab="${i}">${v.label || prefix + (i + 1)}</button>`
-    ).join('');
-    return `<div class="fs-strip-tabs"><span class="frame-label-tag">${f.label || '#'}</span><div class="version-tabs">${tabs}<button class="vtab-add" data-fsadd>+</button></div></div>`;
+    const isHidden = ver && ver.hidden;
+    const tabs = vers.map((v, i) => {
+      const activeClass = i === vi ? ' active' + (fsReorder ? ' reorder-highlight' : '') : '';
+      const hiddenStyle = v.hidden ? ' style="opacity:0.3;"' : '';
+      return `<button class="vtab${activeClass}" data-fstab="${i}"${hiddenStyle}>${v.label || prefix + (i + 1)}</button>`;
+    }).join('');
+    // Right side: Un-Hide (if hidden) or reorder-group (if multiple tabs)
+    let rightHTML = '';
+    if (isHidden) {
+      rightHTML = `<button class="btn" data-fsunhide style="margin-left:auto;font-size:10px;padding:2px 10px;">Un-Hide</button>`;
+    } else if (vers.length > 1) {
+      const { dw } = calcSize();
+      const offsetPx = Math.round(dw * 0.02);
+      rightHTML = `<div class="reorder-group${fsReorder ? ' active' : ''}" style="margin-left:auto;margin-right:${offsetPx}px;"><button class="vtab-add" data-fsmove="left" title="Move left">◀</button>${
+        fsReorder
+          ? `<span class="reorder-label" data-fsreorderdone>DONE</span>`
+          : `<span class="reorder-label" data-fsreorderstart>move</span>`
+      }<button class="vtab-add" data-fsmove="right" title="Move right">▶</button></div>`;
+    }
+    const { dw: tabsW } = calcSize();
+    return `<div class="fs-strip-tabs" style="width:${tabsW}px;max-width:${tabsW}px;"><span class="frame-label-tag">${f.label || '#'}</span><div class="version-tabs">${tabs}<button class="vtab-add" data-fsadd>+</button></div>${rightHTML}</div>`;
   }
 
   function buildBottomBar(): string {
-    if (isMain) {
-      // Main frame: just the draw toolbar, no mode buttons
-      return `<div class="color-row fs-color-row">${drawToolbarHTML(fid, 'data-fsfid', fid)}</div>`;
-    }
+    const isHidden = !isMain && ver && ver.hidden;
     const drawActive = fsMode === 'draw' ? ' active' : '';
     const camActive = fsMode === 'cam' ? ' active' : '';
     const writeActive = fsMode === 'write' ? ' active' : '';
+    const disabledAttr = isHidden ? ' disabled style="opacity:0.3;pointer-events:none;"' : '';
     return `<div class="fs-bottom-bar">
+      ${!isMain ? `<button class="fs-util-btn" data-fsutil="load"${disabledAttr}>Load</button>` : ''}
       <div class="fs-mode-btns">
-        <button class="fs-mode-btn${drawActive}" data-fsmode="draw">DRAW</button>
-        <button class="fs-mode-btn${camActive}" data-fsmode="cam">CAM</button>
-        <button class="fs-mode-btn${writeActive}" data-fsmode="write">WRITE</button>
+        <button class="fs-mode-btn${drawActive}" data-fsmode="draw"${disabledAttr}>DRAW</button>
+        <button class="fs-mode-btn${camActive}" data-fsmode="cam"${disabledAttr}>CAM</button>
+        <button class="fs-mode-btn${writeActive}" data-fsmode="write"${disabledAttr}>WRITE</button>
       </div>
-      <div class="color-row fs-color-row" style="${fsMode === 'draw' ? '' : 'display:none;'}">${drawToolbarHTML(fid, 'data-fsfid', fid)}</div>
+      ${!isMain ? `<button class="fs-util-btn" data-fsutil="hide"${disabledAttr}>Hide</button>` : ''}
+      <div class="color-row fs-color-row" style="${fsMode === 'draw' && !isHidden ? '' : 'display:none;'}">${drawToolbarHTML(fid, 'data-fsfid', fid)}</div>
     </div>`;
   }
 
   function buildOverlay() {
     const { dw, dh } = calcSize();
     const cid = getCid();
+    const isHidden = !isMain && ver && ver.hidden;
+    const canvasStyle = `width:${dw}px;height:${dh}px;${isHidden ? 'opacity:0.3;pointer-events:none;' : fsReorder ? 'pointer-events:none;' : 'cursor:crosshair;'}`;
+    const wrapStyle = `width:${dw}px;height:${dh}px;${fsReorder ? 'outline:2px solid #d52632;outline-offset:-2px;' : ''}`;
     overlay.innerHTML = `
       <button class="fs-close">${fsCollapseSVG}</button>
       <div class="fs-inner">
         ${buildVersionTabs()}
         <div class="fs-canvas-area">
-          <div class="fs-canvas-wrap draw-active" style="width:${dw}px;height:${dh}px;cursor:crosshair;"><canvas id="${cid}" width="${cw}" height="${ch}" style="width:${dw}px;height:${dh}px;"></canvas>${
-      !isMain ? starHTML(fid, vi) : ''
+          <div class="fs-canvas-wrap draw-active" style="${wrapStyle}"><canvas id="${cid}" width="${cw}" height="${ch}" style="${canvasStyle}"></canvas>${
+      !isMain && !isHidden ? starHTML(fid, vi) : ''
     }</div>
         </div>
         ${buildBottomBar()}
@@ -207,14 +228,24 @@ export function openFullscreen(fid: number, startVi: number, origin: 'main' | 'v
   }
   initCanvas();
 
+  /** Exit reorder mode if active, rebuild overlay */
+  function exitReorder() {
+    if (!fsReorder) return;
+    fsReorder = false;
+    relabelStripVersions(fid, strip);
+    bumpRenderTick();
+    void flushSyncNow();
+    buildOverlay();
+    initCanvas();
+    wireEvents();
+  }
+
   function wireEvents() {
     overlay.querySelector('.fs-close')!.addEventListener('click', () => closeFullscreen());
-    overlay.addEventListener('click', (e) => {
-      if (e.target === overlay) closeFullscreen();
-    });
     // Version tab switching
     overlay.querySelectorAll('[data-fstab]').forEach((t) =>
       t.addEventListener('click', () => {
+        exitReorder();
         const idx = parseInt((t as HTMLElement).dataset.fstab!);
         if (idx !== vi) switchTab(idx);
       })
@@ -231,10 +262,123 @@ export function openFullscreen(fid: number, startVi: number, origin: 'main' | 'v
       const updatedVers = getStripVersions(fid, strip);
       switchTab(updatedVers.length - 1);
     });
+    // Load button — trigger file picker for this version
+    overlay.querySelectorAll('[data-fsutil="load"]').forEach((btn) =>
+      btn.addEventListener('click', () => {
+        exitReorder();
+        useStore.setState({ imgTarget: { fid, div: overlay, fromCompare: false, stripType: strip } });
+        (document.getElementById('imgInput') as HTMLInputElement).removeAttribute('capture');
+        (document.getElementById('imgInput') as HTMLInputElement).click();
+      })
+    );
+    // Hide button — hide current version (same as strip Hide)
+    overlay.querySelectorAll('[data-fsutil="hide"]').forEach((btn) =>
+      btn.addEventListener('click', () => {
+        exitReorder();
+        if (!ver) return;
+        showVersionChoice().then((choice) => {
+          if (!choice) return;
+          if (choice === 'hide') {
+            ver.hidden = true;
+            const allVers = getStripVersions(fid, strip);
+            const curIdx = allVers.indexOf(ver);
+            if (curIdx >= 0) {
+              allVers.splice(curIdx, 1);
+              let lastVisible = -1;
+              for (let i = 0; i < allVers.length; i++) {
+                if (!allVers[i].hidden) lastVisible = i;
+              }
+              allVers.splice(lastVisible + 1, 0, ver);
+              const visibleIdx = allVers.findIndex((v) => !v.hidden);
+              setStripActiveTab(fid, strip, visibleIdx >= 0 ? visibleIdx : 0);
+            }
+            relabelStripVersions(fid, strip);
+          } else {
+            // Delete
+            snapshotFrame(fid, strip);
+            const allVers = getStripVersions(fid, strip);
+            const curIdx = allVers.indexOf(ver);
+            if (curIdx >= 0) allVers.splice(curIdx, 1);
+            if (allVers.length === 0) allVers.push({ id: 1, label: 'v1', type: 'empty', strokes: [], bgImage: null });
+            setStripActiveTab(fid, strip, Math.min(getStripActiveTab(fid, strip), allVers.length - 1));
+            relabelStripVersions(fid, strip);
+          }
+          bumpRenderTick();
+          void flushSyncNow();
+          // Switch to first visible version or close if none left
+          const updatedVers = getStripVersions(fid, strip);
+          const visibleVers = updatedVers.filter(v => !v.hidden);
+          if (visibleVers.length === 0) {
+            closeFullscreen();
+          } else {
+            const newVi = updatedVers.indexOf(visibleVers[0]);
+            switchTab(newVi >= 0 ? newVi : 0);
+          }
+        });
+      })
+    );
+    // Move arrows — swap version position (mirrors strip pattern)
+    overlay.querySelectorAll('[data-fsmove]').forEach((btn) =>
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (!fsReorder) return;
+        const dir = (btn as HTMLElement).dataset.fsmove as 'left' | 'right';
+        const allVers = getStripVersions(fid, strip);
+        const ai = getStripActiveTab(fid, strip);
+        if (dir === 'left' && ai > 0) {
+          [allVers[ai - 1], allVers[ai]] = [allVers[ai], allVers[ai - 1]];
+          setStripActiveTab(fid, strip, ai - 1);
+        } else if (dir === 'right' && ai < allVers.length - 1) {
+          [allVers[ai], allVers[ai + 1]] = [allVers[ai + 1], allVers[ai]];
+          setStripActiveTab(fid, strip, ai + 1);
+        } else return;
+        relabelStripVersions(fid, strip);
+        vi = getStripActiveTab(fid, strip);
+        ver = allVers[vi];
+        useStore.setState({ fsOverlayActive: { fid, vi, origin } });
+        buildOverlay();
+        initCanvas();
+        wireEvents();
+      })
+    );
+    // Reorder start
+    const startBtn = overlay.querySelector('[data-fsreorderstart]');
+    if (startBtn) startBtn.addEventListener('click', () => {
+      vi = getStripActiveTab(fid, strip);
+      ver = getStripVersions(fid, strip)[vi];
+      fsReorder = true;
+      buildOverlay();
+      initCanvas();
+      wireEvents();
+    });
+    // Reorder done
+    const doneBtn = overlay.querySelector('[data-fsreorderdone]');
+    if (doneBtn) doneBtn.addEventListener('click', () => {
+      fsReorder = false;
+      relabelStripVersions(fid, strip);
+      bumpRenderTick();
+      void flushSyncNow();
+      buildOverlay();
+      initCanvas();
+      wireEvents();
+    });
+    // Un-Hide button — restore hidden version
+    const unhideBtn = overlay.querySelector('[data-fsunhide]');
+    if (unhideBtn) unhideBtn.addEventListener('click', () => {
+      if (!ver) return;
+      ver.hidden = false;
+      relabelStripVersions(fid, strip);
+      bumpRenderTick();
+      void flushSyncNow();
+      buildOverlay();
+      initCanvas();
+      wireEvents();
+    });
     // Mode buttons (DRAW / CAM / WRITE)
     overlay.querySelectorAll('[data-fsmode]').forEach((btn) =>
       btn.addEventListener('click', () => {
         const mode = (btn as HTMLElement).dataset.fsmode as 'draw' | 'cam' | 'write';
+        if (fsReorder) exitReorder();
         if (mode === 'draw') {
           fsMode = 'draw';
           overlay.querySelectorAll('.fs-mode-btn').forEach(b => b.classList.remove('active'));

@@ -167,6 +167,16 @@ Changes:
 Changes:
 - `src/lib/accountFlow.ts` — Added fullscreen overlay ("Couldn't load all content — check your connection") with Retry/Dismiss buttons when R2 image fetches fail; overlay shows after progress bar hides (no overlap); Retry triggers fresh pull; Dismiss lets user browse but _pullIncomplete stays true (no push/save of half-loaded state).
 
+### v4.9.020 — 2026-07-18 (dev — deployed)
+**Detail bar: persistent on iPhone/iPad portrait, dynamic positioning, setup-lock blocks DETAIL**
+
+Changes:
+- `src/store/state.ts` — APP_VERSION v4.9.020
+- `src/lib/init.ts` — DETAIL toggle: no-op on phone (CSS manages bar), blocked during setup mode. iPad portrait: detail bar stays open. 3×2VIEW in portrait keeps detail bar open. Strip-toggle buttons reflect active strips when opening detail bar (skip in 3×2).
+- `src/lib/view.ts` — Rotation handler: iPad portrait keeps detail bar open. iPhone rotation keeps detail-open + DETAIL active. Dynamic detail bar positioning: JS measures view bar height via `offsetHeight` + computed `top`, positions detail bar below it on scroll/resize. Applied to both iPhone and iPad.
+- `src/lib/render.ts` — `renderAll()` skips DETAIL button active state (managed by toggle, not view mode). Added `body.view-grid3x2` class toggle for CSS.
+- `src/styles/globals.css` — iPhone: detail bar always visible (`display:flex!important`), hidden in 3×2 (`body.view-grid3x2`), shown when detail-open in 3×2. View bar visible in portrait (removed `display:none`). iPad: removed hardcoded detail bar `top` and `tb-hide` transforms (JS handles positioning). Removed DETAIL button exemption from setup-lock dimming.
+
 ### v4.9.019 — 2026-07-16 (dev — deployed)
 **Fullscreen DRAW/CAM/WRITE buttons, version tabs, smart opening, has-content button styling**
 

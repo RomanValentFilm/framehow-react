@@ -890,7 +890,7 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
       ensureStripVersions(fid, 'ver');
       const hasCon = stripHasContent(fid, 'ver');
       const startVi = hasCon ? getStripActiveTab(fid, 'ver') : 0;
-      openFullscreen(fid, startVi, 'ver', hasCon ? undefined : 'cam');
+      openFullscreen(fid, startVi, 'ver');
     });
     const sketchBtnV = wrap.querySelector(`[data-g3sketch="${fid}"]`) as HTMLElement | null;
     if (sketchBtnV) sketchBtnV.addEventListener('click', () => {
@@ -1060,7 +1060,7 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
       ensureStripVersions(fid, 'ver');
       const hasCon = stripHasContent(fid, 'ver');
       const startVi = hasCon ? getStripActiveTab(fid, 'ver') : 0;
-      openFullscreen(fid, startVi, 'ver', hasCon ? undefined : 'cam');
+      openFullscreen(fid, startVi, 'ver');
     });
     // SKETCH button — open fullscreen draw on floor/sketch strip
     const sketchBtn = wrap.querySelector(`[data-g3sketch="${fid}"]`) as HTMLElement | null;

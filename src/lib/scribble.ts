@@ -11,9 +11,9 @@ import { getZoomState, setZoomState } from './overview';
 
 // ─── SVG icons ───────────────────────────────────────────────────────
 
-const PENCIL_SVG_INACTIVE = `<svg viewBox="0 0 24 30" fill="none" stroke="#666" stroke-width="1.5" stroke-linejoin="round" style="width:22px;height:26px"><path d="M8 1h8v4H8z"/><line x1="8" y1="5" x2="16" y2="5"/><path d="M8 5h8v18l-4 6-4-6z"/></svg>`;
+const PENCIL_SVG_INACTIVE = `<svg viewBox="0 0 24 30" fill="none" stroke="#666" stroke-width="1.5" stroke-linejoin="round" style="width:22px;height:26px"><path d="M8 1h8v4H8z"/><line x1="8" y1="5" x2="16" y2="5"/><path d="M8 5h8v18l-4 6-4-6z"/><line x1="12" y1="5" x2="12" y2="18" stroke="#666" stroke-width="1.5"/><path d="M10.5 26l1.5 3 1.5-3z" fill="#666" stroke="none"/></svg>`;
 
-const PENCIL_SVG_ACTIVE = `<svg viewBox="0 0 24 30" fill="none" stroke="#222" stroke-width="1.5" stroke-linejoin="round" style="width:22px;height:26px"><rect x="8" y="1" width="8" height="4" fill="#E91E63" stroke="#222"/><line x1="8" y1="5" x2="16" y2="5" stroke="#222"/><path d="M8 5h8v18l-4 6-4-6z" fill="#FFD600" stroke="#222"/><line x1="8" y1="7" x2="16" y2="7" stroke="#222" stroke-width="0.8"/></svg>`;
+const PENCIL_SVG_ACTIVE = `<svg viewBox="0 0 24 30" fill="none" stroke="#222" stroke-width="1.5" stroke-linejoin="round" style="width:22px;height:26px"><rect x="8" y="1" width="8" height="4" fill="#E91E63" stroke="#222"/><line x1="8" y1="5" x2="16" y2="5" stroke="#222"/><path d="M8 5h8v18l-4 6-4-6z" fill="#FFD600" stroke="#222"/><line x1="12" y1="5" x2="12" y2="18" stroke="#222" stroke-width="1.5"/><path d="M10.5 26l1.5 3 1.5-3z" fill="#222" stroke="none"/><line x1="8" y1="7" x2="16" y2="7" stroke="#222" stroke-width="0.8"/></svg>`;
 
 const ERASER_SVG = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20H7L3 16c-.8-.8-.8-2 0-2.8L14.6 1.6c.8-.8 2-.8 2.8 0L21.4 5.6c.8.8.8 2 0 2.8L12 18"/><path d="M6 12l5 5"/></svg>`;
 

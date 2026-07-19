@@ -313,35 +313,40 @@ export function initFramehow(): void {
   // Centralised handler: opens the New Project modal and acts on the
   // user's choice. The callback pattern (not Promise) preserves the
   // user-gesture chain so file-input .click() works on Safari / iOS.
+  // Dispatch a new-project choice (shared by openNewProjectModal and Menu > New)
+  function openNewProjectModal_dispatch(choice: NewProjectChoice): void {
+    if (choice !== 'cancel') fhTrack('signpost_choice', { choice });
+    switch (choice) {
+      case 'pdf':
+        clearAllDrawActive();
+        (document.getElementById('pdfInput') as HTMLInputElement).click();
+        break;
+      case 'images':
+        clearAllDrawActive();
+        (document.getElementById('folderImgInput') as HTMLInputElement).click();
+        break;
+      case 'scratch':
+        startFromScratch();
+        renderAll();
+        autoPhoneMainView();
+        break;
+      case 'portrait':
+        startPortrait();
+        renderAll();
+        autoPhoneMainView();
+        break;
+      case 'open':
+        void flowLoadProject();
+        break;
+      case 'cancel':
+      default:
+        break;
+    }
+  }
+
   function openNewProjectModal(): void {
     showNewProjectModal((choice: NewProjectChoice) => {
-      if (choice !== 'cancel') fhTrack('signpost_choice', { choice });
-      switch (choice) {
-        case 'pdf':
-          clearAllDrawActive();
-          (document.getElementById('pdfInput') as HTMLInputElement).click();
-          break;
-        case 'images':
-          clearAllDrawActive();
-          (document.getElementById('folderImgInput') as HTMLInputElement).click();
-          break;
-        case 'scratch':
-          startFromScratch();
-          renderAll();
-          autoPhoneMainView();
-          break;
-        case 'portrait':
-          startPortrait();
-          renderAll();
-          autoPhoneMainView();
-          break;
-        case 'open':
-          void flowLoadProject();
-          break;
-        case 'cancel':
-        default:
-          break;
-      }
+      openNewProjectModal_dispatch(choice);
     });
   }
 
@@ -352,32 +357,41 @@ export function initFramehow(): void {
   document.getElementById('menuNewProject')!.addEventListener('click', () => {
     document.getElementById('mainMenu')!.classList.remove('open');
     const cp = getCurrentProject();
-    if (state().frames.length > 0) {
-      if (cp.projectId) {
-        // Already saved — flush in background (state snapshot is synchronous),
-        // then reset immediately so the UI feels instant.
-        void flushSyncNow();
-      } else {
-        // Never saved — ask user asynchronously, then proceed
-        void (async () => {
-          const ok = await import('./modals').then(m => m.showConfirm('Save your current work before starting a new project?'));
-          if (ok) {
-            await flowSaveProject();
-          }
-          resetStoryboardState();
-          clearCurrentProject();
-          renderAll();
-          updateFrameBadge();
-          openNewProjectModal();
-        })();
-        return; // async path handles the rest
-      }
+    const hadFrames = state().frames.length > 0;
+
+    // Helper: clear current work right before starting the new project
+    const clearBeforeNew = () => {
+      if (!hadFrames) return;
+      if (cp.projectId) void flushSyncNow();
       resetStoryboardState();
       clearCurrentProject();
       renderAll();
       updateFrameBadge();
+    };
+
+    if (hadFrames && !cp.projectId) {
+      // Never saved — ask user asynchronously, then proceed
+      void (async () => {
+        const ok = await import('./modals').then(m => m.showConfirm('Save your current work before starting a new project?'));
+        if (ok) {
+          await flowSaveProject();
+        }
+        // Show modal — clear only if user picks something (not cancel)
+        showNewProjectModal((choice: NewProjectChoice) => {
+          if (choice === 'cancel') return;
+          clearBeforeNew();
+          openNewProjectModal_dispatch(choice);
+        });
+      })();
+      return;
     }
-    openNewProjectModal();
+
+    // Show modal — clear only if user picks something (not cancel)
+    showNewProjectModal((choice: NewProjectChoice) => {
+      if (choice === 'cancel') return;
+      clearBeforeNew();
+      openNewProjectModal_dispatch(choice);
+    });
   });
   document.getElementById('menuExport')!.addEventListener('click', () => {
     document.getElementById('mainMenu')!.classList.remove('open');
@@ -1005,6 +1019,8 @@ export function initFramehow(): void {
             if (ovRow) { state().currentViewMode === 'grid4' ? renderGrid4Row(ovRow, fid) : renderOverviewRow(ovRow, fid); }
           }
           useStore.setState({ overviewAction: false });
+          // Refresh fullscreen overlay if open
+          if (document.querySelector('.fs-overlay')) window.dispatchEvent(new Event('fs-refresh'));
           void flushSyncNow(); // VER-3/VER-4: upload to version → file(s) loaded
         }
       };
