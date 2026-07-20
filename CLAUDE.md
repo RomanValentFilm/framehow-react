@@ -167,6 +167,16 @@ Changes:
 Changes:
 - `src/lib/accountFlow.ts` — Added fullscreen overlay ("Couldn't load all content — check your connection") with Retry/Dismiss buttons when R2 image fetches fail; overlay shows after progress bar hides (no overlap); Retry triggers fresh pull; Dismiss lets user browse but _pullIncomplete stays true (no push/save of half-loaded state).
 
+### v4.9.028 — 2026-07-20 (dev — deployed)
+**3x2 iPhone short labels, NOTES has-content fix, strip toggle fixes, remove MAIN quick button**
+
+Changes:
+- `src/store/state.ts` — APP_VERSION v4.9.028
+- `src/lib/overview.ts` — 3x2 quick buttons: short labels on iPhone (VRSN, SKTCH, NEED, NOTE), removed MAIN button, tighter CSS padding on iPhone landscape
+- `src/lib/notes.ts` — `frameHasNoteContent()` now skips headers and first column (Table Settings structure) — only content cells (col 1+) and noteText count
+- `src/lib/init.ts` — Desktop/iPad strip toggle counts NEEDS/NOTES in totalVisible; 3x2 save/restore includes notesStripVisible; 3x2 exit enforces iPhone landscape max-2; clears notesStripBtn on 3x2 entry
+- `src/styles/globals.css` — iPhone landscape media query for tighter g3-quick-btn padding
+
 ### v4.9.027 — 2026-07-20 (dev — deployed)
 **iPhone label truncation, remove NEEDS memo, strip toggle fixes, pill height match, notes default mode, 3x2 exit enforcement**
 

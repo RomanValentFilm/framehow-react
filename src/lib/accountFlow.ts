@@ -666,7 +666,13 @@ async function loadCloudProject(p: CloudProject): Promise<void> {
     // System action: prevent setState calls from being treated as user changes
     beginSystemAction();
     try {
-      await applyCloudTreeToStore(tree);
+      await applyCloudTreeToStore(tree, undefined, (loaded, total) => {
+        if (total === 0) return;
+        // Map image progress from 50% → 85%
+        const pct = 50 + Math.round((loaded / total) * 35);
+        if (progressBar) progressBar.style.width = pct + '%';
+        if (progressLabel) progressLabel.textContent = `Loading image ${loaded} of ${total}…`;
+      });
     } finally {
       endSystemAction();
     }
@@ -1528,7 +1534,11 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
  *   local version (image, strokes, versions) instead of taking the cloud version.
  *   This enables per-frame merge: dirty frames stay local, clean frames take cloud.
  */
-async function applyCloudTreeToStore(tree: CloudProjectTree, keepLocalFrameIds?: ReadonlySet<string>): Promise<void> {
+async function applyCloudTreeToStore(
+  tree: CloudProjectTree,
+  keepLocalFrameIds?: ReadonlySet<string>,
+  onImageProgress?: (loaded: number, total: number) => void,
+): Promise<void> {
   // After pulling cloud data, clear fingerprints so the next push
   // recomputes from scratch (the state changed underneath us).
   clearPushedFingerprints();
@@ -1958,11 +1968,14 @@ async function applyCloudTreeToStore(tree: CloudProjectTree, keepLocalFrameIds?:
           useStore.setState((prev) => ({ frames: updated, renderTick: prev.renderTick + 1 }));
           (window as any).__fh_renderAll?.();
           fetchedImageCount++;
+          onImageProgress?.(fetchedImageCount, expectedImageCount);
         })
         .catch((e) => {
           console.warn('[sync] failed to fetch main image after retries', task.r2Key, e);
           const frame = useStore.getState().frames.find((f) => f.id === task.localId);
           failedTasks.push(`Frame "${frame?.label || task.localId}" main image`);
+          fetchedImageCount++;
+          onImageProgress?.(fetchedImageCount, expectedImageCount);
         }),
     );
   }
@@ -1998,11 +2011,14 @@ async function applyCloudTreeToStore(tree: CloudProjectTree, keepLocalFrameIds?:
           }));
           (window as any).__fh_renderAll?.();
           fetchedImageCount++;
+          onImageProgress?.(fetchedImageCount, expectedImageCount);
         })
         .catch((e) => {
           console.warn('[sync] failed to fetch version image after retries', task.strip, task.r2Key, e);
           const frame = useStore.getState().frames.find((f) => f.id === task.localId);
           failedTasks.push(`Frame "${frame?.label || task.localId}" ${task.strip} v${task.versionIdx + 1}`);
+          fetchedImageCount++;
+          onImageProgress?.(fetchedImageCount, expectedImageCount);
         }),
     );
   }
@@ -2230,7 +2246,12 @@ async function performRestore(projectId: string, snapshotId: string): Promise<vo
 
     beginSystemAction();
     try {
-      await applyCloudTreeToStore(tree);
+      await applyCloudTreeToStore(tree, undefined, (loaded, total) => {
+        if (total === 0) return;
+        const pct = 60 + Math.round((loaded / total) * 35);
+        if (progressBar) progressBar.style.width = pct + '%';
+        if (progressLabel) progressLabel.textContent = `Loading image ${loaded} of ${total}…`;
+      });
     } finally {
       endSystemAction();
     }
@@ -2894,16 +2915,30 @@ async function tryPullFromCloud(): Promise<void> {
       // System action: all setState calls inside are NOT user changes
       beginSystemAction();
       try {
+        const syncImageProgress = (loaded: number, total: number) => {
+          if (total === 0) return;
+          if (progressLabel) progressLabel.textContent = `Loading image ${loaded} of ${total}…`;
+        };
         if (keepLocalIds && keepLocalIds.size > 0) {
           // Per-frame merge: keep selected local frames, take cloud for the rest
           if (progressBar) progressBar.style.width = '70%';
-          await applyCloudTreeToStore(tree, keepLocalIds);
+          await applyCloudTreeToStore(tree, keepLocalIds, (loaded, total) => {
+            syncImageProgress(loaded, total);
+            if (total === 0) return;
+            const pct = 70 + Math.round((loaded / total) * 20);
+            if (progressBar) progressBar.style.width = pct + '%';
+          });
           if (progressBar) progressBar.style.width = '90%';
           showToast(`Synced — kept ${keepLocalIds.size} local frame${keepLocalIds.size > 1 ? 's' : ''}`);
         } else {
           // No local changes (or user chose cloud for everything) — take cloud fully
           if (progressBar) progressBar.style.width = '40%';
-          await applyCloudTreeToStore(tree);
+          await applyCloudTreeToStore(tree, undefined, (loaded, total) => {
+            syncImageProgress(loaded, total);
+            if (total === 0) return;
+            const pct = 40 + Math.round((loaded / total) * 50);
+            if (progressBar) progressBar.style.width = pct + '%';
+          });
           if (progressBar) progressBar.style.width = '90%';
         }
         // renderAll + autoPhoneMainView call setState — keep them inside
