@@ -6,7 +6,7 @@
 // active tab) — UI-only state (drawActive, hover, etc.) is omitted. On
 // restore we merge the payload back into the live store.
 
-import type { Frame, Version, FrameGroup, StripDef, Setup, NeedDefinitions, FrameNeedState } from '../store/state';
+import type { Frame, Version, FrameGroup, StripDef, Setup, NeedDefinitions, FrameNeedState, FrameNoteState } from '../store/state';
 import { useStore, DEFAULT_STRIP_DEFS, DEFAULT_NEED_DEFINITIONS } from '../store/state';
 
 const DB_NAME = 'framehow';
@@ -50,6 +50,8 @@ export interface CurrentProjectSnapshot {
   needDefinitions?: NeedDefinitions;
   /** NEEDS strip — per-frame state keyed by local frame id (v4.9+) */
   frameNeeds?: Record<number, FrameNeedState>;
+  /** NOTES strip — per-frame note state (v4.9+) */
+  frameNotes?: Record<number, FrameNoteState>;
 }
 
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -130,6 +132,7 @@ export function snapshotFromStore(projectId: string | null, name: string | null)
     stripUntagInfoDismissed: s.stripUntagInfoDismissed || undefined,
     needDefinitions: s.needDefinitions,
     frameNeeds: s.frameNeeds,
+    frameNotes: s.frameNotes,
   };
 }
 
@@ -195,6 +198,7 @@ export function applySnapshotToStore(snap: CurrentProjectSnapshot): void {
     stripUntagInfoDismissed: snap.stripUntagInfoDismissed ?? false,
     needDefinitions: snap.needDefinitions ?? DEFAULT_NEED_DEFINITIONS,
     frameNeeds: snap.frameNeeds ?? {},
+    frameNotes: snap.frameNotes ?? {},
     renderTick: prev.renderTick + 1,
   }));
 }

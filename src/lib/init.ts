@@ -9,13 +9,10 @@ import { renderOverview, renderOverviewRow, renderGrid4, renderGrid4Row, renderG
 import { handleAction, handleMainAction } from './actions';
 import { setViewMode, autoPhoneMainView, wireScrollHandlers, scrollAnchorTo } from './view';
 import {
-  saveTableFromDOM,
-  defaultTableData,
   toggleStar,
   clearAllDrawActive,
   clearVerReorder,
   updateFrameBadge,
-  tableHTML,
   autoNewVersionIfNeeded,
   autoNewStripVersionIfNeeded,
   getStripVersions,
@@ -26,8 +23,6 @@ import {
   stripScrollId,
   stripTabPrefix,
   relabelStripVersions,
-  openNoteModal,
-  noteIconSVG,
 } from './helpers';
 import type { StripType } from '../store/state';
 import { snapshotFrame } from './drawing';
@@ -194,38 +189,14 @@ export function initFramehow(): void {
       if (f) f.textContent = (target as HTMLTextAreaElement).value;
       _resetTextFlushTimer();
     }
-    const tbl = target.closest('.frame-table[data-tblfid]') as HTMLElement | null;
-    if (tbl) {
-      saveTableFromDOM(tbl);
-      _resetTextFlushTimer();
-    }
   });
   // FRM-12/FRM-13: blur = end of action → flush immediately
   document.addEventListener('focusout', (e: FocusEvent) => {
     const target = e.target as HTMLElement;
-    if (target.matches('textarea.frame-text-edit[data-textfid]') ||
-        target.closest('.frame-table[data-tblfid]')) {
+    if (target.matches('textarea.frame-text-edit[data-textfid]')) {
       if (_textFlushTimer) { clearTimeout(_textFlushTimer); _textFlushTimer = null; }
       void flushSyncNow(); // FRM-12/FRM-13: blur → end of text/table editing
     }
-  });
-
-  // Add row to table
-  document.addEventListener('click', (e: MouseEvent) => {
-    const btn = (e.target as HTMLElement).closest('[data-addrow]') as HTMLElement | null;
-    if (!btn) return;
-    const fid = parseInt(btn.dataset.addrow!);
-    const f = state().frames.find((fr) => fr.id === fid);
-    if (!f) return;
-    const tbl = btn.parentElement!.querySelector('.frame-table') as HTMLElement | null;
-    if (tbl) saveTableFromDOM(tbl);
-    if (!f.tableData) f.tableData = defaultTableData();
-    f.tableData.rows.push(new Array(f.tableData.headers.length).fill(''));
-    const wrap = btn.closest('.canvas-wrap') as HTMLElement | null;
-    if (wrap) {
-      wrap.innerHTML = tableHTML(fid, f.tableData);
-    }
-    void flushSyncNow(); // FRM-14: add table row
   });
 
   // Star button delegated handler
@@ -262,19 +233,6 @@ export function initFramehow(): void {
     }
   });
 
-  // Note button delegated handler (replaced fullscreen expand)
-  document.addEventListener('click', (e: MouseEvent) => {
-    const btn = (e.target as HTMLElement).closest('.fs-btn') as HTMLElement | null;
-    if (!btn) return;
-    e.stopPropagation();
-    const fid = +btn.dataset.fsfid!;
-    const vi = +(btn.dataset.fsvi ?? 0);
-    const origin = (btn.dataset.fsorigin ?? 'main') as 'main' | 'ver' | 'floor' | 'refs';
-    openNoteModal(fid, vi, origin, () => {
-      // Update the icon to reflect whether note has content
-      btn.innerHTML = noteIconSVG(fid, vi, origin);
-    });
-  });
 
   // Setup frame assignment — delegated so it works regardless of render timing
   document.addEventListener('click', (e: MouseEvent) => {
@@ -774,11 +732,13 @@ export function initFramehow(): void {
           // Toggle off if already in 3×2 (but not when coming from sort mode — user explicitly wants 3×2)
           if (!skipToggle && s.currentViewMode === 'grid3x2') return;
           // Save current strip combination so pressing MAIN from 3x2 restores it
-          (window as any).__pre3x2Strips = { activeStrips: [...s.activeStrips], needsStripVisible: s.needsStripVisible };
+          (window as any).__pre3x2Strips = { activeStrips: [...s.activeStrips], needsStripVisible: s.needsStripVisible, notesStripVisible: s.notesStripVisible };
           const companion = s.activeStrips.find((st: string) => st !== 'main') || 'ver';
-          useStore.setState({ activeStrips: ['main', companion] as any, needsStripVisible: false });
+          useStore.setState({ activeStrips: ['main', companion] as any, needsStripVisible: false, notesStripVisible: false });
           const needsBtn = document.getElementById('needsStripBtn');
           if (needsBtn) needsBtn.classList.remove('active');
+          const notesBtn = document.getElementById('notesStripBtn');
+          if (notesBtn) notesBtn.classList.remove('active');
           setViewMode('grid3x2' as any);
         };
         // If coming from sort mode, let DOM settle before switching view
@@ -801,9 +761,29 @@ export function initFramehow(): void {
         const cur = s.needsStripVisible;
         // If in 3×2, M+2, or M+3 view, exit to MAIN+NEEDS
         if (s.currentViewMode === 'grid3x2' || s.currentViewMode === 'overview' || s.currentViewMode === 'grid4') {
-          useStore.setState({ activeStrips: ['main'] as any, needsStripVisible: true, crossCompare: {}, currentViewMode: 'both' });
+          useStore.setState({ activeStrips: ['main'] as any, needsStripVisible: true, notesStripVisible: false, crossCompare: {}, currentViewMode: 'both' });
           const btn = document.getElementById('needsStripBtn');
           if (btn) btn.classList.add('active');
+          const notesBtn2 = document.getElementById('notesStripBtn');
+          if (notesBtn2) notesBtn2.classList.remove('active');
+          renderAll();
+          return;
+        }
+        // iPhone portrait: single strip — show only NEEDS
+        if (isPhonePortrait) {
+          const show = !cur;
+          useStore.setState({ activeStrips: show ? [] as any : ['main'] as any, needsStripVisible: show, notesStripVisible: false, currentViewMode: show ? 'ver' as any : 'main' as any });
+          const btn = document.getElementById('needsStripBtn');
+          if (btn) btn.classList.toggle('active', show);
+          const notesBtn2 = document.getElementById('notesStripBtn');
+          if (notesBtn2) notesBtn2.classList.remove('active');
+          // Deactivate all strip-toggle buttons
+          document.querySelectorAll('.strip-toggle').forEach((b2) => b2.classList.remove('active'));
+          if (!show) {
+            // Toggled off — go back to MAIN
+            useStore.setState({ activeStrips: ['main'] as any, currentViewMode: 'main' as any });
+            document.querySelector('.strip-toggle[data-strip="main"]')?.classList.add('active');
+          }
           renderAll();
           return;
         }
@@ -812,13 +792,61 @@ export function initFramehow(): void {
           const w = window.innerWidth, h = window.innerHeight;
           const isPhone = Math.min(w, h) <= 430;
           const isTablet = navigator.maxTouchPoints > 1 && !isPhone && Math.min(w, h) <= 830; // excludes iPad Pro
-          const totalVisible = s.activeStrips.length + 1; // +1 for NEEDS about to be added
+          const totalVisible = s.activeStrips.length + (s.notesStripVisible ? 1 : 0) + 1; // +1 for NEEDS about to be added
           if (isPhone && w > h && totalVisible > 2) { showMaxStripsOverlay(2); return; }
           if (isTablet && h > w && totalVisible > 3) { showMaxStripsOverlay(3); return; }
           if (isTablet && w > h && totalVisible > 4) { showMaxStripsOverlay(4); return; }
         }
         useStore.setState({ needsStripVisible: !cur });
         const btn = document.getElementById('needsStripBtn');
+        if (btn) btn.classList.toggle('active', !cur);
+        renderAll();
+        return;
+      }
+
+      if (view === 'notes') {
+        const s = state();
+        const cur = s.notesStripVisible;
+        // If in 3×2, M+2, or M+3 view, exit to MAIN+NOTES
+        if (s.currentViewMode === 'grid3x2' || s.currentViewMode === 'overview' || s.currentViewMode === 'grid4') {
+          useStore.setState({ activeStrips: ['main'] as any, notesStripVisible: true, needsStripVisible: false, crossCompare: {}, currentViewMode: 'both' });
+          const btn = document.getElementById('notesStripBtn');
+          if (btn) btn.classList.add('active');
+          const needsBtn2 = document.getElementById('needsStripBtn');
+          if (needsBtn2) needsBtn2.classList.remove('active');
+          renderAll();
+          return;
+        }
+        // iPhone portrait: single strip — show only NOTES
+        if (isPhonePortrait) {
+          const show = !cur;
+          useStore.setState({ activeStrips: show ? [] as any : ['main'] as any, notesStripVisible: show, needsStripVisible: false, currentViewMode: show ? 'ver' as any : 'main' as any });
+          const btn = document.getElementById('notesStripBtn');
+          if (btn) btn.classList.toggle('active', show);
+          const needsBtn2 = document.getElementById('needsStripBtn');
+          if (needsBtn2) needsBtn2.classList.remove('active');
+          // Deactivate all strip-toggle buttons
+          document.querySelectorAll('.strip-toggle').forEach((b2) => b2.classList.remove('active'));
+          if (!show) {
+            // Toggled off — go back to MAIN
+            useStore.setState({ activeStrips: ['main'] as any, currentViewMode: 'main' as any });
+            document.querySelector('.strip-toggle[data-strip="main"]')?.classList.add('active');
+          }
+          renderAll();
+          return;
+        }
+        if (!cur) {
+          // Toggling NOTES on — check strip limits
+          const w = window.innerWidth, h = window.innerHeight;
+          const isPhone = Math.min(w, h) <= 430;
+          const isTablet = navigator.maxTouchPoints > 1 && !isPhone && Math.min(w, h) <= 830;
+          const totalVisible = s.activeStrips.length + (s.needsStripVisible ? 1 : 0) + 1; // +1 for NOTES about to be added
+          if (isPhone && w > h && totalVisible > 2) { showMaxStripsOverlay(2); return; }
+          if (isTablet && h > w && totalVisible > 3) { showMaxStripsOverlay(3); return; }
+          if (isTablet && w > h && totalVisible > 4) { showMaxStripsOverlay(4); return; }
+        }
+        useStore.setState({ notesStripVisible: !cur });
+        const btn = document.getElementById('notesStripBtn');
         if (btn) btn.classList.toggle('active', !cur);
         renderAll();
         return;
@@ -857,10 +885,12 @@ export function initFramehow(): void {
         }
         // Pick companion: first non-main strip in activeStrips, or default to 'ver'
         const companion = s.activeStrips.find((st: string) => st !== 'main') || 'ver';
-        // Deactivate NEEDS strip in these views
-        useStore.setState({ activeStrips: ['main', companion] as any, needsStripVisible: false });
+        // Deactivate NEEDS + NOTES strips in these views
+        useStore.setState({ activeStrips: ['main', companion] as any, needsStripVisible: false, notesStripVisible: false });
         const needsBtn = document.getElementById('needsStripBtn');
         if (needsBtn) needsBtn.classList.remove('active');
+        const notesBtn2 = document.getElementById('notesStripBtn');
+        if (notesBtn2) notesBtn2.classList.remove('active');
         setViewMode(view as any);
         return;
       }
@@ -901,23 +931,40 @@ export function initFramehow(): void {
       // not have frame cards — they're only built when the strip is in activeStrips.
       if (s.currentViewMode === 'grid3x2') {
         useStore.setState({ crossCompare: {} });
+        const isPhone = Math.min(window.innerWidth, window.innerHeight) <= 430;
+        const isPhoneLand = isPhone && window.innerWidth > window.innerHeight;
         if (strip === 'main') {
           // Restore the strip combination from before entering 3x2
           const saved = (window as any).__pre3x2Strips;
           if (saved) {
-            useStore.setState({ activeStrips: saved.activeStrips, needsStripVisible: saved.needsStripVisible });
+            let restoredStrips = saved.activeStrips;
+            let restoredNeeds = saved.needsStripVisible || false;
+            let restoredNotes = saved.notesStripVisible || false;
+            // iPhone landscape: enforce max 2 visible strips
+            if (isPhoneLand) {
+              const total = restoredStrips.length + (restoredNeeds ? 1 : 0) + (restoredNotes ? 1 : 0);
+              if (total > 2) {
+                restoredStrips = restoredStrips.slice(0, 2);
+                restoredNeeds = false;
+                restoredNotes = false;
+              }
+            }
+            useStore.setState({ activeStrips: restoredStrips, needsStripVisible: restoredNeeds, notesStripVisible: restoredNotes });
             const needsBtn = document.getElementById('needsStripBtn');
-            if (needsBtn) needsBtn.classList.toggle('active', saved.needsStripVisible);
+            if (needsBtn) needsBtn.classList.toggle('active', restoredNeeds);
+            const notesBtn = document.getElementById('notesStripBtn');
+            if (notesBtn) notesBtn.classList.toggle('active', restoredNotes);
             let viewMode: 'main' | 'ver' | 'both' = 'both';
-            if (saved.activeStrips.length === 1 && saved.activeStrips[0] === 'main') viewMode = 'main';
-            else if (saved.activeStrips.length === 1) viewMode = 'ver';
+            if (restoredStrips.length === 1 && restoredStrips[0] === 'main') viewMode = 'main';
+            else if (restoredStrips.length === 1) viewMode = 'ver';
             useStore.setState({ currentViewMode: viewMode });
             (window as any).__pre3x2Strips = null;
           } else {
             useStore.setState({ activeStrips: ['main'], currentViewMode: 'main' });
           }
         } else {
-          useStore.setState({ activeStrips: ['main', strip] as any, currentViewMode: 'both' });
+          // iPhone landscape: just show the selected strip (max 2 = main + strip)
+          useStore.setState({ activeStrips: ['main', strip] as any, currentViewMode: 'both', needsStripVisible: false, notesStripVisible: false });
         }
         renderAll();
         return;
@@ -936,7 +983,12 @@ export function initFramehow(): void {
         const viewMode = strip === 'main' ? 'main' as const : 'ver' as const;
         // Reset cross-compare so stale state from previous view doesn't bleed through
         const freshCC: Record<number, number> = {};
-        useStore.setState({ activeStrips: [strip], currentViewMode: viewMode, crossCompare: freshCC, stripCrossCompare: { ...s.stripCrossCompare, ver: freshCC } });
+        // Turn off NEEDS/NOTES — only one strip at a time
+        useStore.setState({ activeStrips: [strip], currentViewMode: viewMode, crossCompare: freshCC, stripCrossCompare: { ...s.stripCrossCompare, ver: freshCC }, needsStripVisible: false, notesStripVisible: false });
+        const needsBtn = document.getElementById('needsStripBtn');
+        if (needsBtn) needsBtn.classList.remove('active');
+        const notesBtn2 = document.getElementById('notesStripBtn');
+        if (notesBtn2) notesBtn2.classList.remove('active');
         renderAll();
         return;
       }
@@ -946,8 +998,9 @@ export function initFramehow(): void {
         const current = [...s.activeStrips];
         const idx = current.indexOf(strip);
         if (idx >= 0) {
-          // Toggling off — don't allow removing the last strip
-          if (current.length <= 1) return;
+          // Toggling off — don't allow removing if it's the last visible strip overall
+          const totalVisible = current.length + (s.needsStripVisible ? 1 : 0) + (s.notesStripVisible ? 1 : 0);
+          if (totalVisible <= 1) return;
           current.splice(idx, 1);
         } else {
           // Toggling on — enforce max 2 strips (NEEDS counts as one)
@@ -971,8 +1024,9 @@ export function initFramehow(): void {
       const idx = current.indexOf(strip);
 
       if (idx >= 0) {
-        // Don't allow removing the last strip
-        if (current.length <= 1) return;
+        // Don't allow removing the last visible strip (NEEDS/NOTES count)
+        const totalVisible = current.length + (s.needsStripVisible ? 1 : 0) + (s.notesStripVisible ? 1 : 0);
+        if (totalVisible <= 1) return;
         current.splice(idx, 1);
       } else {
         // iPad: enforce max 3 portrait / 4 landscape (NEEDS counts as one)

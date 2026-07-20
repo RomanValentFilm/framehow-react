@@ -48,7 +48,7 @@ import { showConfirm, showToast, showFrameConflictPicker } from './modals';
 import type { FrameConflict } from './modals';
 import { saveOpenTextEdits, saveOpenTableEdits } from './helpers';
 import { resetStoryboardState, state, useStore, DEFAULT_NEED_DEFINITIONS } from '../store/state';
-import type { Frame, Stroke, Version, FrameNeedState } from '../store/state';
+import type { Frame, Stroke, Version, FrameNeedState, FrameNoteState } from '../store/state';
 import { clearRectsForProject } from './pdfAdjust';
 
 // ---------------------------------------------------------------------------
@@ -1370,6 +1370,14 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
     if (serverFid && fn) syncFrameNeeds[serverFid] = fn;
   }
 
+  // Build per-frame notes state for sync (keyed by server frame UUID)
+  const syncFrameNotes: Record<string, FrameNoteState> = {};
+  for (const f of s.frames) {
+    const serverFid = localToServerFrame.get(f.id);
+    const fnote = s.frameNotes[f.id];
+    if (serverFid && fnote) syncFrameNotes[serverFid] = fnote;
+  }
+
   const metadata = JSON.stringify({
     stripDefs: s.stripDefs,
     groups: metaGroups,
@@ -1384,6 +1392,7 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
     stripTagInfoDismissed: s.stripTagInfoDismissed || undefined,
     needDefinitions: s.needDefinitions,
     frameNeeds: Object.keys(syncFrameNeeds).length > 0 ? syncFrameNeeds : undefined,
+    frameNotes: Object.keys(syncFrameNotes).length > 0 ? syncFrameNotes : undefined,
   });
 
   // Upload NEW images to R2 in parallel (images with existing r2Key were already added above)
@@ -1745,6 +1754,7 @@ async function applyCloudTreeToStore(tree: CloudProjectTree, keepLocalFrameIds?:
   let restoredStripTagInfoDismissed = false;
   let restoredNeedDefinitions: any = null;
   let restoredFrameNeeds: Record<string, FrameNeedState> = {};
+  let restoredFrameNotes: Record<string, FrameNoteState> = {};
   let isPortrait = newFrames.length > 0 && newFrames[0].cropH > newFrames[0].cropW;
 
   if (tree.project.metadata) {
@@ -1812,6 +1822,9 @@ async function applyCloudTreeToStore(tree: CloudProjectTree, keepLocalFrameIds?:
       if (meta.frameNeeds && typeof meta.frameNeeds === 'object') {
         restoredFrameNeeds = meta.frameNeeds;
       }
+      if (meta.frameNotes && typeof meta.frameNotes === 'object') {
+        restoredFrameNotes = meta.frameNotes;
+      }
     } catch {
       // Ignore malformed metadata — use defaults
     }
@@ -1833,6 +1846,13 @@ async function applyCloudTreeToStore(tree: CloudProjectTree, keepLocalFrameIds?:
     for (const [uuid, needState] of Object.entries(restoredFrameNeeds)) {
       const localId = serverToLocalFrame.get(uuid);
       if (localId != null) localFrameNeeds[localId] = needState;
+    }
+  }
+  const localFrameNotes: Record<number, FrameNoteState> = {};
+  if (Object.keys(restoredFrameNotes).length > 0) {
+    for (const [uuid, noteState] of Object.entries(restoredFrameNotes)) {
+      const localId = serverToLocalFrame.get(uuid);
+      if (localId != null) localFrameNotes[localId] = noteState;
     }
   }
 
@@ -1898,6 +1918,7 @@ async function applyCloudTreeToStore(tree: CloudProjectTree, keepLocalFrameIds?:
     stripTagInfoDismissed: restoredStripTagInfoDismissed,
     needDefinitions: restoredNeedDefinitions ?? DEFAULT_NEED_DEFINITIONS,
     frameNeeds: localFrameNeeds,
+    frameNotes: localFrameNotes,
     renderTick: prev.renderTick + 1,
   }));
   (window as any).__fh_renderAll?.();
@@ -2508,7 +2529,7 @@ export function clearPushedFingerprints(): void {
  * (fingerprint same but data changed) is extremely unlikely. A false negative
  * (fingerprint changed but data identical) just means we send an extra frame.
  */
-function frameFingerprint(f: Frame, sortOrder: number, s: { stripVersions: Record<string, Record<number, Version[]>>; frameNeeds: Record<number, FrameNeedState> }): string {
+function frameFingerprint(f: Frame, sortOrder: number, s: { stripVersions: Record<string, Record<number, Version[]>>; frameNeeds: Record<number, FrameNeedState>; frameNotes: Record<number, FrameNoteState> }): string {
   const parts: string[] = [
     f.label,
     String(sortOrder),
@@ -2538,6 +2559,9 @@ function frameFingerprint(f: Frame, sortOrder: number, s: { stripVersions: Recor
   // Include per-frame needs state
   const fn = s.frameNeeds[f.id];
   if (fn) parts.push('needs:' + JSON.stringify(fn));
+  // Include per-frame notes state
+  const fnote = s.frameNotes[f.id];
+  if (fnote) parts.push('notes:' + JSON.stringify(fnote));
   return parts.join('\x00');
 }
 

@@ -167,6 +167,25 @@ Changes:
 Changes:
 - `src/lib/accountFlow.ts` — Added fullscreen overlay ("Couldn't load all content — check your connection") with Retry/Dismiss buttons when R2 image fetches fail; overlay shows after progress bar hides (no overlap); Retry triggers fresh pull; Dismiss lets user browse but _pullIncomplete stays true (no push/save of half-loaded state).
 
+### v4.9.026 — 2026-07-19 (dev — deployed)
+**Detail bar visible on DETAIL press at any scroll position**
+
+Changes:
+- `src/store/state.ts` — APP_VERSION v4.9.026
+- `src/lib/init.ts` — DETAIL toggle handler now forces all bars visible (removes `tb-hide`, resets scroll handler's `hidden` flag, sets `scrollHideGuard`) and dispatches resize event to trigger `syncDetailTopIPad()` recalculation. Applies to both iPad/desktop and phone 3x2 landscape paths.
+
+### v4.9.025 — 2026-07-19 (dev — deployed)
+**PDF re-adjust preserving work, orphaned frame handling**
+
+Changes:
+- `src/store/state.ts` — APP_VERSION v4.9.025, added `orphaned?: boolean` to Frame interface
+- `src/lib/pdfAdjust.ts` — PDF re-adjust merge: center-crop 8×8 grayscale fingerprint matching preserves versions/strokes/needs/stars/tags/setups/notes for matched frames. Unmatched old frames kept near original position as orphaned.
+- `src/lib/modals.ts` — `showOrphanChoice()` modal: KEEP/HIDE/DELETE options for orphaned frames.
+- `src/lib/init.ts` — Capture-phase click interceptor for orphaned frames showing choice modal.
+- `src/lib/render.ts` — Orphaned class toggling on frame cards.
+- `src/lib/overview.ts` — Orphaned class toggling on 3x2 cards.
+- `src/styles/globals.css` — Orphaned frame styling (dimmed canvas, red label).
+
 ### v4.9.024 — 2026-07-19 (dev — deployed)
 **Camera fly-to animation, NEEDS modal zoom, 3x2 portrait rotation fixes**
 

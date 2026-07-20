@@ -110,11 +110,9 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
       }
     }
     const cur = s.showText[fid];
-    if (!cur) s.showText[fid] = 'text';
-    else if (cur === 'text') s.showText[fid] = 'table';
-    else s.showText[fid] = null;
+    s.showText[fid] = cur ? null : 'text';
     renderMainFrame(div, fid);
-    void flushSyncNow(); // FRM-11: toggle Pic/Text/Table
+    void flushSyncNow(); // FRM-11: toggle Pic/Text
     return;
   }
 

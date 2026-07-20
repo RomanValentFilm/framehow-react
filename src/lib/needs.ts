@@ -1,6 +1,6 @@
 /**
  * Needs strip — renders inline needs cards in its own column.
- * Handles toggles, counters, tab switching, memos, location, setup pill.
+ * Handles toggles, counters, tab switching, location, setup pill.
  */
 
 import { state, useStore, createDefaultFrameNeedState, SETUP_COLORS } from '../store/state';
@@ -111,9 +111,6 @@ export function renderNeedsCard(div: HTMLElement, fid: number): void {
   // Setup pill
   const setupHTML = renderSetupPill(fid, f, s);
 
-  // Memo for this tab
-  const memoText = ft.memos[activeTab.id] || '';
-
   div.innerHTML = `
     <div class="needs-header">
       <span class="frame-label-tag needs-label-combo" data-needs-editlabel="${fid}">${escapeHtml(frameLabel)}&thinsp;<span class="needs-label-part">${escapeHtml(ft.label)}</span></span>
@@ -124,14 +121,9 @@ export function renderNeedsCard(div: HTMLElement, fid: number): void {
       <div class="needs-bottom">
         <div class="needs-bottom-left">
           ${locationHTML}
-        </div>
-        <div class="needs-bottom-right">
-          <div class="needs-memo">
-            <textarea class="needs-memo-input" data-needs-memo="${fid}" data-needs-memo-tab="${activeTab.id}" placeholder="memo" spellcheck="false" autocomplete="one-time-code">${escapeHtml(memoText)}</textarea>
-          </div>
+          ${setupHTML}
         </div>
       </div>
-      ${setupHTML}
     </div>
     <div class="needs-action-row">
       <button class="act-btn" data-needs-act="copy" data-needs-actfid="${fid}">Copy Settings</button>
@@ -152,7 +144,6 @@ export function renderNeedsCard(div: HTMLElement, fid: number): void {
     const pill = div.querySelector('.needs-setup-pill') as HTMLElement | null;
     if (pill) pill.style.height = storedPillH + 'px';
   }
-
   wireNeedsCard(div, fid);
 }
 
@@ -235,7 +226,7 @@ function renderSetupPill(fid: number, f: any, s: any): string {
   if (!setup) return '';
   const col = SETUP_COLORS[setup.colorIndex] || SETUP_COLORS[0];
   const textCol = needsDarkText(col.hex) ? '#000' : '#fff';
-  return `<button class="needs-setup-pill" style="background:${col.hex};color:${textCol}" tabindex="-1">${escapeHtml(setup.name)}</button>`;
+  return `<button class="setup-pill needs-setup-pill" style="background:${col.hex};color:${textCol}" tabindex="-1">${escapeHtml(setup.name)}</button>`;
 }
 
 /** True when the background is light enough to need dark text. */
@@ -311,17 +302,6 @@ function wireNeedsCard(container: HTMLElement, fid: number): void {
       bumpAndRerender(container, fid);
       flushDebouncedSync();
     });
-  });
-
-  // Memo textarea
-  container.querySelectorAll('[data-needs-memo]').forEach((ta) => {
-    ta.addEventListener('input', () => {
-      const tabId = (ta as HTMLTextAreaElement).dataset.needsMemoTab!;
-      const ft = ensureFrameNeeds(fid);
-      ft.memos[tabId] = (ta as HTMLTextAreaElement).value;
-      debouncedSync();
-    });
-    ta.addEventListener('blur', () => flushDebouncedSync());
   });
 
   // Add item buttons

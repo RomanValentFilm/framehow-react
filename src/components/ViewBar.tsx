@@ -41,6 +41,7 @@ export function ViewBar() {
           ))}
           <div className="vb-sep" />
           <button className="view-btn" id="needsStripBtn" data-view="needs" title="Needs">NEEDS</button>
+          <button className="view-btn" id="notesStripBtn" data-view="notes" title="Notes">NOTES</button>
         </div>
         <div className="view-btns db-right">
           <button className="view-btn vb-off-btn" id="vbOffBtn" data-view="off" title="Back to columns" style={{display:'none'}}>OFF<svg width="10" height="10" viewBox="0 0 10 10" style={{flexShrink:0}}><path d="M2 1l6 4-6 4z" fill="#fff"/></svg></button>

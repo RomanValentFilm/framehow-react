@@ -5,10 +5,7 @@ import { state, useStore, bumpRenderTick, isTouch } from '../store/state';
 import type { StripType } from '../store/state';
 import {
   drawToolbarHTML,
-  fsButtonHTML,
   starHTML,
-  tableHTML,
-  defaultTableData,
   saveOpenTextEdits,
   saveOpenTableEdits,
   addNewVersion,
@@ -40,6 +37,7 @@ import { showLabelEdit, showVerLabelEdit } from './modals';
 import { getVisibleFrames, updateGroupButtonState } from './groups';
 import { setupTagHTML, wireSetupClicks, stripTagHTML } from './setups';
 import { buildNeedsCard } from './needs';
+import { buildNotesCard } from './notes';
 import { flushSyncNow } from './currentProject';
 
 /** iPhone + 9:16 project → strip cards skip the repeated main-frame name. */
@@ -63,29 +61,33 @@ export function renderAll(): void {
   const s0 = state();
   if (_isPhone) {
     if (_h > _w && s0.activeStrips.length > 1) {
-      // iPhone portrait: max 1 strip, hide NEEDS
-      useStore.setState({ activeStrips: [s0.activeStrips[0]], currentViewMode: s0.activeStrips[0] === 'main' ? 'main' : 'ver', needsStripVisible: false });
+      // iPhone portrait: max 1 strip, hide NEEDS + NOTES
+      useStore.setState({ activeStrips: [s0.activeStrips[0]], currentViewMode: s0.activeStrips[0] === 'main' ? 'main' : 'ver', needsStripVisible: false, notesStripVisible: false });
       const needsBtn = document.getElementById('needsStripBtn');
       if (needsBtn) needsBtn.classList.remove('active');
+      const notesBtn0 = document.getElementById('notesStripBtn');
+      if (notesBtn0) notesBtn0.classList.remove('active');
     } else if (_w > _h) {
       // iPhone landscape: max 2 total columns
-      const totalVisible = s0.activeStrips.length + (s0.needsStripVisible ? 1 : 0);
+      const extraCols = (s0.needsStripVisible ? 1 : 0) + (s0.notesStripVisible ? 1 : 0);
+      const totalVisible = s0.activeStrips.length + extraCols;
       if (totalVisible > 2) {
         const visualOrder: Record<string, number> = { main: 0, ver: 1, floor: 2, refs: 3 };
         const sorted = [...s0.activeStrips].sort((a, b) => (visualOrder[a] ?? 9) - (visualOrder[b] ?? 9));
-        const stripMax = s0.needsStripVisible ? 1 : 2;
+        const stripMax = Math.max(1, 2 - extraCols);
         useStore.setState({ activeStrips: sorted.slice(0, stripMax) });
       }
     }
   } else if (_isTablet) {
     // iPad portrait: max 3 / iPad landscape: max 4
     const maxStrips = _h > _w ? 3 : 4;
-    const totalVisible = s0.activeStrips.length + (s0.needsStripVisible ? 1 : 0);
-    if (totalVisible > maxStrips) {
-      const stripMax = maxStrips - (s0.needsStripVisible ? 1 : 0);
+    const extraColsT = (s0.needsStripVisible ? 1 : 0) + (s0.notesStripVisible ? 1 : 0);
+    const totalVisibleT = s0.activeStrips.length + extraColsT;
+    if (totalVisibleT > maxStrips) {
+      const stripMax = Math.max(1, maxStrips - extraColsT);
       const visualOrder: Record<string, number> = { main: 0, ver: 1, floor: 2, refs: 3 };
       const sorted = [...s0.activeStrips].sort((a, b) => (visualOrder[a] ?? 9) - (visualOrder[b] ?? 9));
-      useStore.setState({ activeStrips: sorted.slice(0, Math.max(1, stripMax)) });
+      useStore.setState({ activeStrips: sorted.slice(0, stripMax) });
     }
   }
 
@@ -110,7 +112,7 @@ export function renderAll(): void {
     else if (s.currentViewMode === 'grid4') columnsEl.classList.add('view-grid4');
     else if (s.currentViewMode === 'grid3x2') columnsEl.classList.add('view-grid3x2');
     else {
-      const totalCols = s.activeStrips.length + (s.needsStripVisible ? 1 : 0);
+      const totalCols = s.activeStrips.length + (s.needsStripVisible ? 1 : 0) + (s.notesStripVisible ? 1 : 0);
       columnsEl.classList.add(`strips-${totalCols}`);
     }
   }
@@ -119,11 +121,13 @@ export function renderAll(): void {
   const floorCol = document.getElementById('floorCol') as HTMLElement;
   const refsCol = document.getElementById('refsCol') as HTMLElement;
   const needsCol = document.getElementById('needsCol') as HTMLElement;
+  const notesCol = document.getElementById('notesCol') as HTMLElement;
   if (mainCol) mainCol.style.display = s.activeStrips.includes('main') ? '' : 'none';
   if (verCol) verCol.style.display = s.activeStrips.includes('ver') ? '' : 'none';
   if (floorCol) floorCol.style.display = s.activeStrips.includes('floor') ? '' : 'none';
   if (refsCol) refsCol.style.display = s.activeStrips.includes('refs') ? '' : 'none';
   if (needsCol) needsCol.style.display = s.needsStripVisible ? '' : 'none';
+  if (notesCol) notesCol.style.display = s.notesStripVisible ? '' : 'none';
   // Skip button state sync when in sort mode — sort mode manages its own button states
   if (!s.sortMode) {
   document.querySelectorAll('.view-btn:not(.strip-toggle)').forEach((b) => {
@@ -131,6 +135,8 @@ export function renderAll(): void {
     if (bv === 'detail') return; // managed by detail toggle, not view mode
     if (bv === 'needs') {
       b.classList.toggle('active', s.needsStripVisible);
+    } else if (bv === 'notes') {
+      b.classList.toggle('active', s.notesStripVisible);
     } else {
       b.classList.toggle('active', bv === s.currentViewMode || (bv === '3x2' && s.currentViewMode === 'grid3x2'));
     }
@@ -168,6 +174,8 @@ export function renderAll(): void {
     if (floorScroll) floorScroll.replaceChildren();
     if (refsScroll) refsScroll.replaceChildren();
     if (needsScroll) needsScroll.replaceChildren();
+    const notesScroll = document.getElementById('notesScroll');
+    if (notesScroll) notesScroll.replaceChildren();
     overviewScroll.replaceChildren();
     return;
   }
@@ -179,10 +187,14 @@ export function renderAll(): void {
   const floorFrag = document.createDocumentFragment();
   const refsFrag = document.createDocumentFragment();
   const needsFrag = document.createDocumentFragment();
+  const notesFrag = document.createDocumentFragment();
   visibleFrames.forEach((f) => {
     mainFrag.appendChild(buildMainFrame(f));
     if (s.needsStripVisible) {
       needsFrag.appendChild(buildNeedsCard(f.id));
+    }
+    if (s.notesStripVisible) {
+      notesFrag.appendChild(buildNotesCard(f.id));
     }
     verFrag.appendChild(buildVersionFrame(f.id));
     if (s.activeStrips.includes('floor')) {
@@ -199,6 +211,8 @@ export function renderAll(): void {
   if (floorScroll) floorScroll.replaceChildren(floorFrag);
   if (refsScroll) refsScroll.replaceChildren(refsFrag);
   if (needsScroll) needsScroll.replaceChildren(s.needsStripVisible ? needsFrag : document.createDocumentFragment());
+  const notesScrollEl = document.getElementById('notesScroll');
+  if (notesScrollEl) notesScrollEl.replaceChildren(s.notesStripVisible ? notesFrag : document.createDocumentFragment());
   if (s.currentViewMode === 'overview') {
     const fn = (window as any).__fh_renderOverview;
     if (fn) fn();
@@ -325,7 +339,7 @@ export function renderMainFrame(div: HTMLElement, fid: number): void {
         f.cropW || 960
       }" height="${f.cropH || 540}"${cVerHidden ? ' style="pointer-events:none;"' : ''}></canvas>${
           !cVerHidden && ver.type === 'empty' ? '<div class="canvas-hint"><span>choose an action below</span></div>' : ''
-        }${!cVerHidden ? starHTML(fid, ai, ccStrip) : ''}${!cVerHidden ? fsButtonHTML(fid, ai, ccStrip) : ''}${!cVerHidden ? stripTagHTML(fid, ai, ccStrip) : ''}</div></div>
+        }${!cVerHidden ? starHTML(fid, ai, ccStrip) : ''}${!cVerHidden ? stripTagHTML(fid, ai, ccStrip) : ''}</div></div>
       </div>
       ${!cVerHidden && s.drawActive[fid] === ccStrip ? `<div class="color-row">${colorDots}</div>` : ''}
       <div class="version-actions"${cVerHidden ? ' style="pointer-events:none;opacity:0.3;"' : ''}>
@@ -499,12 +513,6 @@ export function renderMainFrame(div: HTMLElement, fid: number): void {
     bodyHTML = `<div class="canvas-wrap text-view" style="aspect-ratio:${f.cropW || 16}/${
       f.cropH || 9
     }"><textarea class="frame-text-edit" data-textfid="${fid}" placeholder="No text — click to add">${f.textContent || ''}</textarea></div>`;
-  } else if (viewMode2 === 'table') {
-    if (!f.tableData) f.tableData = defaultTableData();
-    bodyHTML = `<div class="canvas-wrap text-view" style="aspect-ratio:${f.cropW || 16}/${f.cropH || 9}">${tableHTML(
-      fid,
-      f.tableData
-    )}</div>`;
   } else {
     bodyHTML = `<div class="canvas-wrap${
       s.drawActive[fid] === 'main' ? ' draw-active' : ''
@@ -512,14 +520,12 @@ export function renderMainFrame(div: HTMLElement, fid: number): void {
       (f.drawMode || !f.src)
         ? `<canvas id="${mcid}" width="${f.cropW || 960}" height="${f.cropH || 540}"></canvas>`
         : `<img src="${f.src}" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;">`
-    }${fsButtonHTML(fid, 0, 'main')}${setupTagHTML(fid)}</div>`;
+    }${setupTagHTML(fid)}</div>`;
   }
   const btnLabel2 =
     viewMode2 === 'text'
-      ? 'Pic/<span class="ptt-bold">Txt</span>/Tbl'
-      : viewMode2 === 'table'
-      ? 'Pic/Txt/<span class="ptt-bold">Tbl</span>'
-      : '<span class="ptt-bold">Pic</span>/Txt/Tbl';
+      ? 'Pic/<span class="ptt-bold">Txt</span>'
+      : '<span class="ptt-bold">Pic</span>/Txt';
   div.innerHTML = `
     <div class="frame-num"><span class="frame-label-tag" data-editlabel="${fid}">${f.label || '#'}</span><button class="vtab pictxt-btn${
     viewMode2 ? ' active' : ''
@@ -669,12 +675,6 @@ export function renderVersionFrame(div: HTMLElement, fid: number, strip: StripTy
       bodyHTML = `<div class="canvas-wrap text-view" style="aspect-ratio:${f.cropW || 16}/${
         f.cropH || 9
       }"><textarea class="frame-text-edit" data-textfid="${fid}" placeholder="No text — click to add">${f.textContent || ''}</textarea></div>`;
-    } else if (viewMode3 === 'table') {
-      if (!f.tableData) f.tableData = defaultTableData();
-      bodyHTML = `<div class="canvas-wrap text-view" style="aspect-ratio:${f.cropW || 16}/${f.cropH || 9}">${tableHTML(
-        fid,
-        f.tableData
-      )}</div>`;
     } else {
       bodyHTML = `<div class="canvas-wrap${
         s.drawActive[fid] === 'main' ? ' draw-active' : ''
@@ -684,14 +684,12 @@ export function renderVersionFrame(div: HTMLElement, fid: number, strip: StripTy
         f.drawMode
           ? `<canvas id="${mcid}" width="${f.cropW || 960}" height="${f.cropH || 540}"></canvas>`
           : `<img src="${f.src}" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;">`
-      }${fsButtonHTML(fid, 0, 'main')}${setupTagHTML(fid)}</div>`;
+      }${setupTagHTML(fid)}</div>`;
     }
     const btnLabel3 =
       viewMode3 === 'text'
-        ? 'Pic/<span class="ptt-bold">Txt</span>/Tbl'
-        : viewMode3 === 'table'
-        ? 'Pic/Txt/<span class="ptt-bold">Tbl</span>'
-        : '<span class="ptt-bold">Pic</span>/Txt/Tbl';
+        ? 'Pic/<span class="ptt-bold">Txt</span>'
+        : '<span class="ptt-bold">Pic</span>/Txt';
     div.innerHTML = `
       <div class="frame-num"><span class="frame-label-tag" data-editlabel="${fid}">${f.label || '#'}</span><button class="vtab pictxt-btn${
       viewMode3 ? ' active' : ''
@@ -825,7 +823,7 @@ export function renderVersionFrame(div: HTMLElement, fid: number, strip: StripTy
     f?.cropW || 960
   }" height="${f?.cropH || 540}"${_verHidden ? ' style="pointer-events:none;"' : ''}></canvas>${
       !_verHidden && ver && ver.type === 'empty' && (getStripCrossCompare(fid, strip) ?? -1) < 0 ? '<div class="canvas-hint"><span>choose an action below</span></div>' : ''
-    }${!_verHidden ? starHTML(fid, ai, strip) : ''}${!_verHidden ? fsButtonHTML(fid, ai, strip) : ''}${!_verHidden ? stripTagHTML(fid, ai, strip) : ''}</div></div>
+    }${!_verHidden ? starHTML(fid, ai, strip) : ''}${!_verHidden ? stripTagHTML(fid, ai, strip) : ''}</div></div>
       ${
         !_verHidden && s.drawActive[fid] === strip
           ? `<div class="color-row">${colorDots}</div>`

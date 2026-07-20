@@ -230,6 +230,12 @@
   .g3-needs-modal .needs-header,.g3-needs-modal .needs-tabs{flex-shrink:0;}
   .g3-needs-modal .needs-body{flex:1;min-height:0;overflow-y:auto;}
   .g3-needs-modal .needs-action-row{flex:none;padding:8px 8px;}
+  .g3-notes-overlay{position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,0.01);display:flex;align-items:center;justify-content:center;touch-action:none;overscroll-behavior:none;}
+  .g3-notes-modal{background:#222;border-radius:14px;overflow:hidden;padding:12px;display:flex;flex-direction:column;}
+  .g3-notes-modal .notes-card{border:none;background:transparent;display:flex;flex-direction:column;flex:1;min-height:0;}
+  .g3-notes-modal .notes-header{flex-shrink:0;}
+  .g3-notes-modal .notes-body{flex:1;min-height:0;overflow-y:auto;}
+  .g3-notes-modal .notes-action-row{flex:none;padding:8px 8px;}
 
   /* ── Scribble overlay for 3×2 view ── */
   .scribble-toolbar{position:fixed;left:1.5vw;top:calc(44px + env(safe-area-inset-top)*0.5 + 42px);transform:translateX(-50%);z-index:120;display:flex;flex-direction:column;align-items:center;gap:0;}
@@ -286,8 +292,8 @@
   .ov-ver-label{font-family:var(--mono);font-size:12px;color:var(--accent);padding:0 10px;height:24px;letter-spacing:.05em;display:flex;justify-content:space-between;align-items:center;gap:4px;position:relative;}
   .ov-ver-label .reorder-group{margin-left:auto;}
   @media (max-width:430px) and (orientation:portrait){.view-btn[data-view="ver"]{display:none;}}
-  /* iPhone portrait: hide GRID/GRID4/NEEDS (not enough room) */
-  @media (max-width:430px) and (orientation:portrait){.view-btn[data-view="overview"],.view-btn[data-view="grid4"],.view-btn[data-view="needs"]{display:none;}}
+  /* iPhone portrait: hide GRID/GRID4 (not enough room) — NEEDS stays in detail bar */
+  @media (max-width:430px) and (orientation:portrait){.view-btn[data-view="overview"],.view-btn[data-view="grid4"]{display:none;}}
   /* iPhone portrait + landscape project: hide frame count badge */
   @media (max-width:430px) and (orientation:portrait){body:not(.portrait-mode) .frame-badge{display:none;}}
   .strip-scroll{padding:10px;display:flex;flex-direction:column;gap:12px;}
@@ -524,7 +530,7 @@
   .text-modal-colors .color-label{font-size:10px;color:var(--text-muted);font-family:var(--mono);}
   /* Confirm modal */
   /* Label edit modal */
-  .label-modal{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:350;display:flex;align-items:center;justify-content:center;}
+  .label-modal{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:200000;display:flex;align-items:center;justify-content:center;}
   .label-modal.hidden{display:none!important;}
   .label-modal-box{background:var(--surface);border:1px solid var(--border-strong);border-radius:var(--radius);padding:20px;width:min(320px,88vw);text-align:center;}
   .label-modal-box p{font-size:13px;color:var(--text-muted);margin:0 0 12px;}
@@ -636,8 +642,15 @@
     body.setup-lock .columns{padding-top:0;}
     body.setup-lock.detail-open .columns{padding-top:0;}
   }
-  /* iPhone portrait: allow setup bar to wrap so DONE button stays visible */
+  /* iPhone portrait: hide view-bar, always show detail bar, swipeable buttons */
   @media (hover:none) and (pointer:coarse) and (max-width:430px) and (orientation:portrait){
+    .view-bar{display:none!important;}
+    .detail-bar{display:flex!important;position:-webkit-sticky;position:sticky;top:env(safe-area-inset-top);z-index:20;}
+    .detail-bar .db-left{display:none;}
+    .detail-bar .db-middle{flex:1;min-width:0;overflow-x:auto;-webkit-overflow-scrolling:touch;flex-wrap:nowrap;scrollbar-width:none;}
+    .detail-bar .db-middle::-webkit-scrollbar{display:none;}
+    .detail-bar .db-middle .view-btn{flex-shrink:0;}
+    .detail-bar .db-right{flex:none;}
     .setup-helper-text{font-size:9px;}
   }
   /* iPhone landscape: when view-bar is stuck at top (toolbar scrolled off),
@@ -958,27 +971,11 @@
     flex:1;min-width:0;display:flex;flex-direction:column;
   }
   .needs-location{min-width:0;}
-  /* Setup pill — matches .setup-tag / .strip-tag exactly, but bottom-LEFT.
-     Lives inside needs-body (whose bottom = canvas bottom line).
-     height:10% of needs-body ≈ 10% of canvas-wrap. */
+  /* Setup pill — left-aligned inside needs-bottom-left */
   .needs-setup-pill{
-    position:absolute;bottom:4px;left:10px;
-    font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.05em;
-    padding:0 8px;border-radius:4px;line-height:1.2;
-    display:flex;align-items:center;
-    pointer-events:none;z-index:3;
-    border:none;outline:none;box-shadow:none;margin:0;box-sizing:border-box;
+    pointer-events:none;cursor:default;
+    align-self:flex-start;margin:2px 0 0;
   }
-  .needs-memo{flex:1;display:flex;flex-direction:column;}
-  .needs-memo-input{
-    width:100%;flex:1;min-height:40px;resize:vertical;
-    font-family:var(--font);font-size:13px;color:#ccc;
-    background:var(--surface2);border:1px solid var(--border);border-radius:3px;
-    padding:4px 6px;outline:none;box-sizing:border-box;
-  }
-  .needs-memo-input:focus{border-color:var(--accent);}
-  .needs-memo-input::placeholder{color:#555;}
-
   /* Action row — matches .version-actions position; border-top aligns with canvas bottom.
      flex:1 fills remaining card space; align-content:center vertically centres buttons. */
   .needs-action-row{
@@ -988,6 +985,78 @@
   /* Match DRAW/CAM/WRITE design: bright outline, tinted bg, bold white text */
   .needs-action-row .act-btn{border-width:3px;border-color:rgba(255,255,255,0.5);background:rgba(255,255,255,0.15);color:rgba(255,255,255,0.8);}
   @media (hover:hover){.needs-action-row .act-btn:hover{border-color:var(--border-strong);color:#e6e6e6;background:#262626;}}
+
+  /* ─── NOTES STRIP ─── */
+  .notes-card{
+    background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+    overflow:visible;transition:border .15s;font-family:var(--mono);
+    box-sizing:border-box;display:flex;flex-direction:column;
+  }
+  .notes-header{
+    position:relative;
+    display:flex;align-items:center;gap:4px;padding:0 10px;height:24px;
+  }
+  .notes-label-combo{cursor:pointer;}
+  .notes-label-part{color:rgba(255,255,255,.9);}
+  /* Note/Table toggle inherits .vtab + .pictxt-btn styles; just ensure top alignment */
+  .notes-mode-btn{top:auto;}
+  .notes-body{
+    position:relative;
+    flex:1;display:flex;flex-direction:column;min-height:0;
+    padding:6px 10px 3px;overflow-y:auto;-webkit-overflow-scrolling:touch;
+  }
+  .notes-textarea{
+    width:100%;flex:1;min-height:80px;resize:none;
+    font-family:var(--font);font-size:14px;font-weight:700;color:#fff;line-height:1.5;
+    background:#222;border:none;border-radius:var(--radius-sm);
+    padding:8px;outline:none;box-sizing:border-box;
+  }
+  .notes-textarea::placeholder{color:#555;}
+  .notes-textarea:focus{border-color:transparent;}
+  /* Table inside notes card */
+  .notes-table-wrap{width:100%;flex:1;overflow:auto;display:flex;flex-direction:column;}
+  .notes-table{width:100%;border-collapse:collapse;font-size:12px;font-family:var(--mono);}
+  .notes-table{table-layout:fixed;}
+  .notes-table th,.notes-table td{border:1px solid #555;padding:4px 6px;text-align:left;vertical-align:top;overflow:hidden;background:#999;}
+  .notes-table th{background:#222;color:#ccc;font-weight:500;font-size:11px;}
+  .notes-table td:first-child{background:#222;color:#ccc;}
+  .notes-table th{position:relative;}
+  .notes-col-resize{position:absolute;top:0;right:-3px;bottom:0;width:6px;cursor:col-resize;z-index:2;touch-action:none;}
+  .notes-col-resize::after{content:'';position:absolute;top:25%;bottom:25%;right:2px;width:2px;background:rgba(255,255,255,0.2);border-radius:1px;transition:background .15s;}
+  @media (hover:hover){.notes-col-resize:hover::after{background:rgba(255,255,255,0.5);}}
+  .notes-table th input{background:transparent;border:none;color:inherit;font:inherit;font-weight:700;width:100%;outline:none;padding:0;}
+  .notes-table td textarea{background:transparent;border:none;color:#333;font:inherit;font-weight:700;width:100%;resize:none;outline:none;padding:0;min-height:1.3em;}
+  .notes-table td:first-child textarea{color:#ccc;}
+  .notes-table-actions{display:flex;gap:8px;margin-top:4px;justify-content:center;}
+  .notes-table-addrow,.notes-table-addcol,.notes-table-delrow,.notes-table-delcol{
+    font-family:var(--mono);font-size:11px;font-weight:400;color:#999;
+    background:transparent;border:1px solid #666;border-radius:3px;
+    cursor:pointer;height:26px;display:flex;align-items:center;justify-content:center;
+    line-height:1;padding:0 8px;gap:2px;white-space:nowrap;
+  }
+  .notes-add-plus{font-size:16px;font-weight:300;line-height:1;}
+  .notes-table-actions-sep{width:1px;height:16px;background:#555;flex-shrink:0;}
+  @media (hover:hover){.notes-table-addrow:hover,.notes-table-addcol:hover,.notes-table-delrow:hover,.notes-table-delcol:hover{color:#ccc;border-color:#888;}}
+  /* Action row — Copy Note / Paste / Reset */
+  .notes-action-row{
+    display:flex;gap:5px;flex-wrap:wrap;padding:6px 8px;align-items:center;justify-content:center;
+    border-top:1px solid var(--border);flex-shrink:0;
+  }
+  .notes-action-row .act-btn{border-width:3px;border-color:rgba(255,255,255,0.5);background:rgba(255,255,255,0.15);color:rgba(255,255,255,0.8);}
+  @media (hover:hover){.notes-action-row .act-btn:hover{border-color:var(--border-strong);color:#e6e6e6;background:#262626;}}
+  .notes-tbl-settings-btn{margin-left:auto!important;}
+  /* Table Settings overlay + modal */
+  .notes-tbl-settings-overlay{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:200000;display:flex;align-items:center;justify-content:center;}
+  .notes-tbl-settings-modal{background:var(--surface);border:1px solid var(--border-strong);border-radius:var(--radius);padding:20px;width:min(320px,88vw);text-align:center;font-family:var(--font);}
+  .notes-tbl-settings-desc{font-size:13px;color:#808080;margin:0 0 16px;line-height:1.4;}
+  .notes-tbl-settings-opt{display:flex;align-items:center;gap:10px;padding:8px 0;cursor:pointer;font-size:14px;color:#ccc;}
+  .notes-tbl-settings-dot{
+    width:18px;height:18px;border-radius:50%;border:2px solid #808080;
+    background:transparent;cursor:pointer;flex-shrink:0;
+    transition:background .15s,border-color .15s;
+  }
+  .notes-tbl-settings-dot.on{background:var(--accent);border-color:var(--accent);}
+  .notes-tbl-settings-btns{display:flex;justify-content:center;gap:10px;margin-top:16px;}
 
   /* ─── SORT ORDER dropdown ─── */
   #sortByBtn{word-spacing:-3px;}

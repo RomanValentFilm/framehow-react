@@ -24,6 +24,7 @@ export interface Stroke {
 export interface TableData {
   headers: string[];
   rows: string[][];
+  colWidths?: number[];   // percentage widths per column (optional, for resize)
 }
 
 export interface Frame {
@@ -62,7 +63,7 @@ export interface Setup {
 
 /** 12-colour palette for setups. */
 /** App version — bump before every deploy. */
-export const APP_VERSION = 'v4.9.025';
+export const APP_VERSION = 'v4.9.027';
 
 export const SETUP_COLORS: { name: string; hex: string }[] = [
   { name: 'DAYLIGHT',      hex: '#CFE2F6' },
@@ -242,6 +243,26 @@ export function createDefaultFrameNeedState(): FrameNeedState {
   };
 }
 
+// ─── Notes Strip Types ──────────────────────────────────────────────
+
+/** Per-frame note state — text note or table, displayed in the NOTES strip. */
+export interface FrameNoteState {
+  label: string;                   // editable suffix, default "note"
+  mode: 'note' | 'table';         // current view toggle
+  noteText: string;                // free-text note content
+  tableData: TableData;            // table data (always present, toggle switches view)
+}
+
+/** Create default per-frame note state. */
+export function createDefaultFrameNoteState(): FrameNoteState {
+  return {
+    label: 'note',
+    mode: 'note',
+    noteText: '',
+    tableData: { headers: ['', '', ''], rows: [['', '', ''], ['', '', ''], ['', '', '']] },
+  };
+}
+
 export type StripType = 'main' | 'ver' | 'floor' | 'refs';
 export type LayoutMode = 'auto' | 'overview' | 'grid4';
 // Keep ViewMode for backward compat during transition
@@ -391,6 +412,10 @@ export interface FrameHowState {
   frameNeeds: Record<number, FrameNeedState>;
   /** Needs strip — visible in view bar */
   needsStripVisible: boolean;
+  /** Notes strip — per-frame note/table state */
+  frameNotes: Record<number, FrameNoteState>;
+  /** Notes strip — visible in view bar */
+  notesStripVisible: boolean;
   /** Breaks for story flow (default frame order) */
   storyFlowBreaks: SortBreak[];
   /** Custom frame orderings (e.g. "Shooting order") */
@@ -490,6 +515,8 @@ const initial: FrameHowState = {
   needDefinitions: DEFAULT_NEED_DEFINITIONS,
   frameNeeds: {},
   needsStripVisible: false,
+  frameNotes: {},
+  notesStripVisible: false,
   storyFlowBreaks: [],
   sortOrders: [],
   activeSortOrderId: null,
@@ -545,6 +572,8 @@ export function resetStoryboardState(): void {
     needDefinitions: DEFAULT_NEED_DEFINITIONS,
     frameNeeds: {},
     needsStripVisible: false,
+    frameNotes: {},
+    notesStripVisible: false,
     renderTick: state().renderTick + 1,
   });
 }

@@ -79,6 +79,14 @@ export function syncCardHeights(): void {
       if (tagsCards.length) activeCardArrays.push(tagsCards);
     }
   }
+  // Notes column participates in height sync when visible
+  if (s.notesStripVisible) {
+    const notesEl = document.getElementById('notesScroll');
+    if (notesEl) {
+      const notesCards = notesEl.querySelectorAll('.notes-card');
+      if (notesCards.length) activeCardArrays.push(notesCards);
+    }
+  }
   // Aliases for backward compat in STEP 2 canvas capping
   const mainCards = document.getElementById('mainScroll')?.querySelectorAll('.frame-card') || document.querySelectorAll('#mainScroll .frame-card');
   const verCards = document.getElementById('versionsScroll')?.querySelectorAll('.frame-card') || document.querySelectorAll('#versionsScroll .frame-card');
@@ -92,7 +100,10 @@ export function syncCardHeights(): void {
     const nb = c.querySelector('.needs-body') as HTMLElement | null;
     if (nb) { nb.style.flex = ''; nb.style.height = ''; }
     delete (c as HTMLElement).dataset.needsBodyH;
-    delete (c as HTMLElement).dataset.needsPillH;
+    // Reset notes-body flex override from STEP 2b
+    const notesB = c.querySelector('.notes-body') as HTMLElement | null;
+    if (notesB) { notesB.style.flex = ''; notesB.style.height = ''; }
+    delete (c as HTMLElement).dataset.notesBodyH;
   });
 
   // STEP 2: Measure non-canvas overhead per card and cap the canvas so the
@@ -226,6 +237,45 @@ export function syncCardHeights(): void {
     }
   }
 
+  // STEP 2c: Pre-cap notes-body height to match canvas bottom (mirrors STEP 2b for needs).
+  if (s.notesStripVisible) {
+    const notesEl = document.getElementById('notesScroll');
+    if (notesEl) {
+      const notesCards = notesEl.querySelectorAll('.notes-card');
+      let refCards: NodeListOf<Element> | null = null;
+      for (const { strip, scrollId } of stripScrollIds) {
+        if (!s.activeStrips.includes(strip as any)) continue;
+        const el = document.getElementById(scrollId);
+        if (!el) continue;
+        const cards = el.querySelectorAll('.frame-card');
+        if (cards.length && cards[0].querySelector('.canvas-wrap')) {
+          refCards = cards;
+          break;
+        }
+      }
+      if (refCards) {
+        const count = Math.min(notesCards.length, refCards.length);
+        for (let i = 0; i < count; i++) {
+          const refCard = refCards[i] as HTMLElement;
+          const notesCard = notesCards[i] as HTMLElement;
+          const wrap = refCard.querySelector('.canvas-wrap') as HTMLElement;
+          const notesBody = notesCard.querySelector('.notes-body') as HTMLElement;
+          if (!wrap || !notesBody) continue;
+          const cardRect = refCard.getBoundingClientRect();
+          const wrapRect = wrap.getBoundingClientRect();
+          const canvasBottomFromCardTop = wrapRect.bottom - cardRect.top;
+          const notesCardRect = notesCard.getBoundingClientRect();
+          const notesBodyRect = notesBody.getBoundingClientRect();
+          const topOverhead = notesBodyRect.top - notesCardRect.top;
+          const targetHeight = Math.max(50, canvasBottomFromCardTop - topOverhead);
+          notesBody.style.flex = 'none';
+          notesBody.style.height = targetHeight + 'px';
+          notesCard.dataset.notesBodyH = String(Math.round(targetHeight));
+        }
+      }
+    }
+  }
+
   // STEP 3: Force layout, then sync card heights across all active strip columns
   void document.body.offsetHeight;
   if (activeCardArrays.length > 1) {
@@ -262,6 +312,39 @@ export function syncCardHeights(): void {
         img.addEventListener('error', scheduleSyncHeights, { once: true });
       }
     });
+  });
+
+  // iPhone: truncate labels after layout sync
+  _truncatePhoneLabels();
+}
+
+/** On iPhone: truncate frame labels — keep identifier, show only first 3 chars of extra text.
+ *  e.g. "1A OPTIONAL" → "1A OPT". Runs after every render/sync.
+ *  Handles plain labels and combo labels (NEEDS/NOTES with child <span>). */
+function _truncatePhoneLabels(): void {
+  const w = window.innerWidth, h = window.innerHeight;
+  if (Math.min(w, h) > 430) return; // not iPhone
+  document.querySelectorAll('.frame-label-tag').forEach((el) => {
+    const htm = el as HTMLElement;
+    // Find the text node to truncate — either the first text node (combo labels) or the only one
+    let targetNode: Text | null = null;
+    for (let i = 0; i < htm.childNodes.length; i++) {
+      if (htm.childNodes[i].nodeType === Node.TEXT_NODE && (htm.childNodes[i].textContent || '').trim()) {
+        targetNode = htm.childNodes[i] as Text;
+        break;
+      }
+    }
+    if (!targetNode) return;
+    const text = targetNode.textContent || '';
+    // Store full text on first pass
+    if (!htm.dataset.fullLabel && text) htm.dataset.fullLabel = text;
+    const full = htm.dataset.fullLabel || text;
+    if (!full) return;
+    const spaceIdx = full.indexOf(' ');
+    if (spaceIdx < 0) return; // no extra text
+    const rest = full.substring(spaceIdx + 1);
+    if (rest.length <= 3) return; // already short
+    targetNode.textContent = full.substring(0, spaceIdx + 1) + rest.substring(0, 3);
   });
 }
 
@@ -438,6 +521,7 @@ export function setViewMode(mode: ViewMode, keepCompare?: boolean, forceAnchorFi
     }
   }
   if (mode !== 'overview' && mode !== 'grid4' && mode !== 'grid3x2') syncCardHeights();
+  else _truncatePhoneLabels(); // overview/grid views skip syncCardHeights but still need label truncation
 
   if (anchorFid) {
     void (columnsEl as HTMLElement).offsetHeight;
@@ -781,10 +865,12 @@ export function handleOrientationFlip(): void {
   const isPhonePortrait = isPhone && newH > newW;
   if (isPhonePortrait) {
     // iPhone portrait: always MAIN single strip (including 3x2 exit)
-    useStore.setState({ activeStrips: ['main'], currentViewMode: 'main', crossCompare: {}, needsStripVisible: false });
-    // Also update the NEEDS button visual
+    useStore.setState({ activeStrips: ['main'], currentViewMode: 'main', crossCompare: {}, needsStripVisible: false, notesStripVisible: false });
+    // Also update the NEEDS/NOTES button visuals
     const needsBtn = document.getElementById('needsStripBtn');
     if (needsBtn) needsBtn.classList.remove('active');
+    const notesBtn = document.getElementById('notesStripBtn');
+    if (notesBtn) notesBtn.classList.remove('active');
     // Keep detail bar active on phone (CSS manages visibility)
     document.body.classList.add('detail-open');
     const detailBtnEl = document.getElementById('detailBtn');
@@ -792,13 +878,14 @@ export function handleOrientationFlip(): void {
     const renderAll = (window as any).__fh_renderAll;
     if (renderAll) renderAll();
   } else if (isPhone && newW > newH) {
-    // iPhone landscape: enforce max 2 total columns (activeStrips + NEEDS)
+    // iPhone landscape: enforce max 2 total columns (activeStrips + NEEDS + NOTES)
     const s = state();
-    const totalVisible = s.activeStrips.length + (s.needsStripVisible ? 1 : 0);
+    const totalVisible = s.activeStrips.length + (s.needsStripVisible ? 1 : 0) + (s.notesStripVisible ? 1 : 0);
     if (totalVisible > 2) {
+      const specialCount = (s.needsStripVisible ? 1 : 0) + (s.notesStripVisible ? 1 : 0);
       const visualOrder: Record<string, number> = { main: 0, ver: 1, floor: 2, refs: 3 };
       const sorted = [...s.activeStrips].sort((a, b) => (visualOrder[a] ?? 9) - (visualOrder[b] ?? 9));
-      const stripMax = s.needsStripVisible ? 1 : 2;
+      const stripMax = Math.max(1, 2 - specialCount);
       useStore.setState({ activeStrips: sorted.slice(0, stripMax) });
     }
     // Keep detail bar active on phone (CSS manages visibility, hides in 3×2)
@@ -968,6 +1055,11 @@ export function wireScrollHandlers(): void {
     // Sync detail bar sticky-top to sit right below the view bar
     const syncDetailTop = () => {
       if (vb && db) {
+        // iPhone portrait: view-bar hidden via CSS, let detail-bar sticky handle itself
+        if (window.innerWidth <= window.innerHeight && getComputedStyle(vb).display === 'none') {
+          db.style.top = '';
+          return;
+        }
         const vbTop = parseFloat(getComputedStyle(vb).top) || 0;
         db.style.top = (vbTop + vb.offsetHeight - 1) + 'px';
       }

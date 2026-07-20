@@ -4,10 +4,7 @@ import { state, useStore, isTouch, bumpRenderTick } from '../store/state';
 import type { StripType } from '../store/state';
 import {
   drawToolbarHTML,
-  fsButtonHTML,
   starHTML,
-  tableHTML,
-  defaultTableData,
   addNewStripVersion,
   unhideVersion,
   relabelStripVersions,
@@ -33,6 +30,7 @@ import { setupTagHTML, stripTagHTML } from './setups';
 import { recordTombstone } from './accountFlow';
 import { openFullscreen, stripHasContent } from './fullscreen';
 import { buildNeedsCard, ensureFrameNeeds } from './needs';
+import { buildNotesCard, ensureFrameNote, frameHasNoteContent } from './notes';
 import { injectScribbleButton, attachScribbleOverlays } from './scribble';
 
 export function renderOverview(): void {
@@ -96,22 +94,17 @@ export function renderOverviewRow(row: HTMLElement, fid: number): void {
   const viewMode = s.showText[fid];
   if (viewMode === 'text') {
     mainBody = `<div class="canvas-wrap text-view" style="aspect-ratio:${f.cropW || 16}/${f.cropH || 9}"><textarea class="frame-text-edit" data-textfid="${fid}" placeholder="No text — click to add">${f.textContent || ''}</textarea></div>`;
-  } else if (viewMode === 'table') {
-    if (!f.tableData) f.tableData = defaultTableData();
-    mainBody = `<div class="canvas-wrap text-view" style="aspect-ratio:${f.cropW || 16}/${f.cropH || 9}">${tableHTML(fid, f.tableData)}</div>`;
   } else {
     mainBody = `<div class="canvas-wrap${s.drawActive[fid] === 'main' ? ' draw-active' : ''}" style="aspect-ratio:${f.cropW || 16}/${f.cropH || 9}">${
       (f.drawMode || !f.src)
         ? `<canvas id="${mcid}" width="${f.cropW || 960}" height="${f.cropH || 540}"></canvas>`
         : `<img src="${f.src}" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;">`
-    }${fsButtonHTML(fid, 0, 'main')}${setupTagHTML(fid)}</div>`;
+    }${setupTagHTML(fid)}</div>`;
   }
   const btnLabel =
     viewMode === 'text'
-      ? 'Pic/<span class="ptt-bold">Txt</span>/Tbl'
-      : viewMode === 'table'
-      ? 'Pic/Txt/<span class="ptt-bold">Tbl</span>'
-      : '<span class="ptt-bold">Pic</span>/Txt/Tbl';
+      ? 'Pic/<span class="ptt-bold">Txt</span>'
+      : '<span class="ptt-bold">Pic</span>/Txt';
   const mainReorder = s.reorderFid === fid;
   mainDiv.innerHTML = `<div class="frame-card${mainReorder ? ' ov-reorder' : ''}" data-mfid="${fid}">
     <div class="frame-num"><span class="frame-label-tag" data-editlabel="${fid}">${f.label || '#'}</span><button class="vtab pictxt-btn${
@@ -235,7 +228,7 @@ export function renderOverviewRow(row: HTMLElement, fid: number): void {
         s.drawActive[fid] === companionStrip && isActive ? ' draw-active' : ''
       }" style="aspect-ratio:${f.cropW || 16}/${f.cropH || 9}"><canvas id="${vcid}" width="${f.cropW || 960}" height="${f.cropH || 540}"></canvas>${
       ver.type === 'empty' ? '<div class="canvas-hint"><span>click to choose action</span></div>' : ''
-    }${starHTML(fid, vi, companionStrip)}${fsButtonHTML(fid, vi, companionStrip)}${stripTagHTML(fid, vi, companionStrip)}</div></div>
+    }${starHTML(fid, vi, companionStrip)}${stripTagHTML(fid, vi, companionStrip)}</div></div>
       ${s.drawActive[fid] === companionStrip && isActive ? `<div class="color-row">${colorDotsVer}</div>` : ''}
       <div class="version-actions">
         <button class="act-btn" data-action="upload" data-fid="${fid}">Load</button>
@@ -477,22 +470,17 @@ export function renderGrid4Row(row: HTMLElement, fid: number): void {
   let mainBody = '';
   if (viewMode === 'text') {
     mainBody = `<div class="canvas-wrap text-view" style="aspect-ratio:${ar}"><textarea class="frame-text-edit" data-textfid="${fid}" placeholder="No text — click to add">${f.textContent || ''}</textarea></div>`;
-  } else if (viewMode === 'table') {
-    if (!f.tableData) f.tableData = defaultTableData();
-    mainBody = `<div class="canvas-wrap text-view" style="aspect-ratio:${ar}">${tableHTML(fid, f.tableData)}</div>`;
   } else {
     mainBody = `<div class="canvas-wrap${s.drawActive[fid] === 'main' ? ' draw-active' : ''}" style="aspect-ratio:${ar}">${
       (f.drawMode || !f.src)
         ? `<canvas id="${mcid}" width="${f.cropW || 960}" height="${f.cropH || 540}"></canvas>`
         : `<img src="${f.src}" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;">`
-    }${fsButtonHTML(fid, 0, 'main')}${setupTagHTML(fid)}</div>`;
+    }${setupTagHTML(fid)}</div>`;
   }
   const btnLabel =
     viewMode === 'text'
-      ? 'Pic/<span class="ptt-bold">Txt</span>/Tbl'
-      : viewMode === 'table'
-      ? 'Pic/Txt/<span class="ptt-bold">Tbl</span>'
-      : '<span class="ptt-bold">Pic</span>/Txt/Tbl';
+      ? 'Pic/<span class="ptt-bold">Txt</span>'
+      : '<span class="ptt-bold">Pic</span>/Txt';
   const mainReorder = s.reorderFid === fid;
   mainWrap.innerHTML = `<div class="frame-card${mainReorder ? ' ov-reorder' : ''}" data-mfid="${fid}">
     <div class="frame-num"><span class="frame-label-tag" data-editlabel="${fid}">${f.label || '#'}</span><button class="vtab pictxt-btn${viewMode ? ' active' : ''}" data-mact="pictxt" data-mfid="${fid}">${btnLabel}</button><div class="reorder-group${
@@ -616,7 +604,7 @@ export function renderGrid4Row(row: HTMLElement, fid: number): void {
         s.drawActive[fid] === companionStrip && isActive ? ' draw-active' : ''
       }" style="aspect-ratio:${ar}"><canvas id="${vcid}" width="${f.cropW || 960}" height="${f.cropH || 540}"></canvas>${
       ver.type === 'empty' ? '<div class="canvas-hint"><span>click to choose action</span></div>' : ''
-    }${starHTML(fid, vi, companionStrip)}${fsButtonHTML(fid, vi, companionStrip)}${stripTagHTML(fid, vi, companionStrip)}</div></div>
+    }${starHTML(fid, vi, companionStrip)}${stripTagHTML(fid, vi, companionStrip)}</div></div>
       ${s.drawActive[fid] === companionStrip && isActive ? `<div class="color-row">${colorDotsVer}</div>` : ''}
       <div class="version-actions">
         <button class="act-btn" data-action="upload" data-fid="${fid}">Load</button>
@@ -864,7 +852,8 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
     const rHas = stripHasContent(fid, 'refs') ? ' has-content' : '';
     const fn = s.frameNeeds[fid];
     const nHas = fn && (Object.values(fn.toggles).some(Boolean) || Object.values(fn.counters).some((c: number) => c > 0) || Object.values(fn.memos).some((m: string) => m.length > 0) || Object.values(fn.locationToggles).some(Boolean)) ? ' has-content' : '';
-    const quickBtnsVer = `<div class="g3-quick-btns"><button class="g3-quick-btn${vHas}" data-g3versn="${fid}">VERSN</button><button class="g3-quick-btn${sHas}" data-g3sketch="${fid}">SKETCH</button><button class="g3-quick-btn${rHas}" data-g3refs="${fid}">REFS</button><button class="g3-quick-btn${nHas}" data-g3needs="${fid}">NEEDS</button></div>`;
+    const ntHas = frameHasNoteContent(fid) ? ' has-content' : '';
+    const quickBtnsVer = `<div class="g3-quick-btns"><button class="g3-quick-btn${vHas}" data-g3versn="${fid}">VERSN</button><button class="g3-quick-btn${sHas}" data-g3sketch="${fid}">SKETCH</button><button class="g3-quick-btn${rHas}" data-g3refs="${fid}">REFS</button><button class="g3-quick-btn${nHas}" data-g3needs="${fid}">NEEDS</button><button class="g3-quick-btn${ntHas}" data-g3notes="${fid}">NOTES</button></div>`;
     wrap.innerHTML = `${quickBtnsVer}<div class="frame-card${mainReorder ? ' g3-reorder-active' : ''}" data-g3fid="${fid}">
       <div class="frame-num ver-frame-num">
         <span class="frame-label-tag">${f.label || '#'} ${getFrameStripLabel(f, companionStrip)}</span>
@@ -874,7 +863,7 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
         s.drawActive[fid] === companionStrip ? ' draw-active' : ''
       }" style="aspect-ratio:${ar}"><canvas id="${vcid}" width="${f.cropW || 960}" height="${f.cropH || 540}"></canvas>${
         ver.type === 'empty' ? '<div class="canvas-hint"><span>choose an action below</span></div>' : ''
-      }${starHTML(fid, ai, companionStrip)}${fsButtonHTML(fid, ai, companionStrip)}${stripTagHTML(fid, ai, companionStrip)}</div></div>
+      }${starHTML(fid, ai, companionStrip)}${stripTagHTML(fid, ai, companionStrip)}</div></div>
       ${s.drawActive[fid] === companionStrip ? `<div class="color-row">${colorDots}</div>` : ''}
       <div class="version-actions">
         <button class="act-btn" data-action="upload" data-fid="${fid}">Load</button>
@@ -910,6 +899,10 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
     const needsBtnV = wrap.querySelector(`[data-g3needs="${fid}"]`) as HTMLElement | null;
     if (needsBtnV) needsBtnV.addEventListener('click', () => {
       _openNeedsModal(fid);
+    });
+    const notesBtnV = wrap.querySelector(`[data-g3notes="${fid}"]`) as HTMLElement | null;
+    if (notesBtnV) notesBtnV.addEventListener('click', () => {
+      _openNotesModal(fid);
     });
 
     // Wire version tab clicks
@@ -990,21 +983,16 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
     let bodyHTML = '';
     if (viewMode === 'text') {
       bodyHTML = `<div class="canvas-wrap text-view" style="aspect-ratio:${ar}"><textarea class="frame-text-edit" data-textfid="${fid}" placeholder="No text — click to add">${f.textContent || ''}</textarea></div>`;
-    } else if (viewMode === 'table') {
-      if (!f.tableData) f.tableData = defaultTableData();
-      bodyHTML = `<div class="canvas-wrap text-view" style="aspect-ratio:${ar}">${tableHTML(fid, f.tableData)}</div>`;
     } else {
       bodyHTML = `<div class="canvas-wrap${s.drawActive[fid] === 'main' ? ' draw-active' : ''}" style="aspect-ratio:${ar}">${
         (f.drawMode || !f.src)
           ? `<canvas id="${mcid}" width="${f.cropW || 960}" height="${f.cropH || 540}"></canvas>`
           : `<img src="${f.src}" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;">`
-      }${fsButtonHTML(fid, 0, 'main')}${setupTagHTML(fid)}</div>`;
+      }${setupTagHTML(fid)}</div>`;
     }
     const btnLabel = viewMode === 'text'
-      ? 'Pic/<span class="ptt-bold">Txt</span>/Tbl'
-      : viewMode === 'table'
-      ? 'Pic/Txt/<span class="ptt-bold">Tbl</span>'
-      : '<span class="ptt-bold">Pic</span>/Txt/Tbl';
+      ? 'Pic/<span class="ptt-bold">Txt</span>'
+      : '<span class="ptt-bold">Pic</span>/Txt';
 
     const g3Reorder = s.reorderFid === fid;
     // SKETCH / NEEDS quick-access buttons above card
@@ -1013,7 +1001,8 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
     const rHas2 = stripHasContent(fid, 'refs') ? ' has-content' : '';
     const fn2 = s.frameNeeds[fid];
     const nHas2 = fn2 && (Object.values(fn2.toggles).some(Boolean) || Object.values(fn2.counters).some((c: number) => c > 0) || Object.values(fn2.memos).some((m: string) => m.length > 0) || Object.values(fn2.locationToggles).some(Boolean)) ? ' has-content' : '';
-    const quickBtnsHTML = `<div class="g3-quick-btns"><button class="g3-quick-btn${vHas2}" data-g3versn="${fid}">VERSN</button><button class="g3-quick-btn${sHas2}" data-g3sketch="${fid}">SKETCH</button><button class="g3-quick-btn${rHas2}" data-g3refs="${fid}">REFS</button><button class="g3-quick-btn${nHas2}" data-g3needs="${fid}">NEEDS</button></div>`;
+    const ntHas2 = frameHasNoteContent(fid) ? ' has-content' : '';
+    const quickBtnsHTML = `<div class="g3-quick-btns"><button class="g3-quick-btn${vHas2}" data-g3versn="${fid}">VERSN</button><button class="g3-quick-btn${sHas2}" data-g3sketch="${fid}">SKETCH</button><button class="g3-quick-btn${rHas2}" data-g3refs="${fid}">REFS</button><button class="g3-quick-btn${nHas2}" data-g3needs="${fid}">NEEDS</button><button class="g3-quick-btn${ntHas2}" data-g3notes="${fid}">NOTES</button></div>`;
     wrap.innerHTML = `${quickBtnsHTML}<div class="frame-card${g3Reorder ? ' g3-reorder-active' : ''}" data-g3fid="${fid}">
       <div class="frame-num"><span class="frame-label-tag" data-editlabel="${fid}">${f.label || '#'}</span><button class="vtab pictxt-btn${
       viewMode ? ' active' : ''
@@ -1083,6 +1072,11 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
     const needsBtn = wrap.querySelector(`[data-g3needs="${fid}"]`) as HTMLElement | null;
     if (needsBtn) needsBtn.addEventListener('click', () => {
       _openNeedsModal(fid);
+    });
+    // NOTES button — open modal overlay with NOTES card
+    const notesBtn = wrap.querySelector(`[data-g3notes="${fid}"]`) as HTMLElement | null;
+    if (notesBtn) notesBtn.addEventListener('click', () => {
+      _openNotesModal(fid);
     });
 
     // Color toolbar wiring
@@ -1193,7 +1187,7 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
       }
     }
     // Canvas click → exit 3×2, jump to MAIN + companion strip view (single click, all platforms)
-    if (!s.drawActive[fid] && viewMode !== 'text' && viewMode !== 'table') {
+    if (!s.drawActive[fid] && viewMode !== 'text') {
       const canvasWrap = card.querySelector('.canvas-wrap') as HTMLElement | null;
       if (canvasWrap) {
         let _tapX = 0, _tapY = 0;
@@ -1652,6 +1646,136 @@ function _openNeedsModal(fid: number): void {
   // Tap outside the modal container → close (uses pointerup to avoid pass-through)
   overlay.addEventListener('pointerup', (e) => {
     if (!(e.target as HTMLElement).closest('.g3-needs-modal')) {
+      e.preventDefault();
+      e.stopPropagation();
+      doClose();
+    }
+  });
+}
+
+function _openNotesModal(fid: number): void {
+  if (document.querySelector('.g3-notes-overlay')) return; // already open
+
+  const wasZoomed = _zoomScale > 1.1;
+  resetGrid3x2Zoom();
+
+  ensureFrameNote(fid);
+
+  // Find source card for animation
+  const sourceCard = document.querySelector(`.grid3x2-card-wrap[data-g3fid="${fid}"] .canvas-wrap`) as HTMLElement | null;
+
+  document.body.style.overflow = 'hidden';
+
+  const overlay = document.createElement('div');
+  overlay.className = 'g3-notes-overlay';
+
+  // Block all events on the overlay backdrop
+  const blockBg = (e: Event) => {
+    if (!(e.target as HTMLElement).closest('.g3-notes-modal')) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  };
+  overlay.addEventListener('click', blockBg, true);
+  overlay.addEventListener('touchstart', blockBg, { capture: true, passive: false } as any);
+  overlay.addEventListener('touchend', blockBg, { capture: true, passive: false } as any);
+  overlay.addEventListener('wheel', blockBg, { capture: true, passive: false });
+  overlay.addEventListener('touchmove', blockBg, { capture: true, passive: false });
+
+  const refFrameCard = document.querySelector('.grid3x2-card-wrap .frame-card') as HTMLElement | null;
+
+  const container = document.createElement('div');
+  container.className = 'g3-notes-modal';
+  if (refFrameCard) {
+    const rc = refFrameCard.getBoundingClientRect();
+    if (rc.width > 0 && rc.height > 0) {
+      container.style.width = (rc.width * 1.8) + 'px';
+      container.style.height = (rc.height * 1.8) + 'px';
+    }
+  }
+  if (wasZoomed) {
+    const isPhone = Math.min(window.innerWidth, window.innerHeight) <= 430;
+    (container.style as any).zoom = isPhone ? '1.2' : '1.4';
+  }
+
+  const notesCard = buildNotesCard(fid);
+  container.appendChild(notesCard);
+
+  overlay.appendChild(container);
+  document.body.appendChild(overlay);
+
+  // Opening animation: zoom from source card
+  if (sourceCard) {
+    const sourceRect = sourceCard.getBoundingClientRect();
+    const modalRect = container.getBoundingClientRect();
+    const scaleX = sourceRect.width / modalRect.width;
+    const scaleY = sourceRect.height / modalRect.height;
+    const translateX = (sourceRect.left + sourceRect.width / 2) - (modalRect.left + modalRect.width / 2);
+    const translateY = (sourceRect.top + sourceRect.height / 2) - (modalRect.top + modalRect.height / 2);
+    container.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scaleX}, ${scaleY})`;
+    container.style.opacity = '0.3';
+    requestAnimationFrame(() => { requestAnimationFrame(() => {
+      container.style.transition = 'transform 0.18s ease-out, opacity 0.18s ease-out';
+      container.style.transform = '';
+      container.style.opacity = '1';
+      setTimeout(() => { container.style.transition = ''; }, 200);
+    }); });
+  }
+
+  // Close helper with animation
+  const doClose = () => {
+    // Save any open note text before closing
+    const ta = container.querySelector('.notes-textarea') as HTMLTextAreaElement | null;
+    if (ta) {
+      const fn = state().frameNotes[fid];
+      if (fn) fn.noteText = ta.value;
+    }
+    // Save any open table edits
+    const tbl = container.querySelector('.notes-table[data-notes-tblfid]') as HTMLElement | null;
+    if (tbl) {
+      const fn = state().frameNotes[fid];
+      if (fn) {
+        const headers: string[] = [];
+        tbl.querySelectorAll('thead input').forEach((inp) => headers.push((inp as HTMLInputElement).value));
+        const rows: string[][] = [];
+        tbl.querySelectorAll('tbody tr').forEach((tr) => {
+          const cells: string[] = [];
+          tr.querySelectorAll('textarea').forEach((t) => cells.push((t as HTMLTextAreaElement).value));
+          rows.push(cells);
+        });
+        fn.tableData = { headers, rows };
+      }
+    }
+    bumpRenderTick();
+    const flush = (window as any).__fh_flushSyncNow;
+    if (flush) flush();
+
+    const target = document.querySelector(`.grid3x2-card-wrap[data-g3fid="${fid}"] .canvas-wrap`) as HTMLElement | null;
+    const doRemove = () => {
+      overlay.remove();
+      document.body.style.overflow = '';
+      const cw = document.querySelector(`#overviewScroll .grid3x2-card-wrap[data-g3fid="${fid}"]`) as HTMLElement | null;
+      if (cw) renderGrid3x2Card(cw, fid);
+    };
+    if (target) {
+      const targetRect = target.getBoundingClientRect();
+      const modalRect = container.getBoundingClientRect();
+      const scaleX = targetRect.width / modalRect.width;
+      const scaleY = targetRect.height / modalRect.height;
+      const translateX = (targetRect.left + targetRect.width / 2) - (modalRect.left + modalRect.width / 2);
+      const translateY = (targetRect.top + targetRect.height / 2) - (modalRect.top + modalRect.height / 2);
+      container.style.transition = 'transform 0.18s ease-in, opacity 0.18s ease-in';
+      container.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scaleX}, ${scaleY})`;
+      container.style.opacity = '0.3';
+      setTimeout(doRemove, 200);
+    } else {
+      doRemove();
+    }
+  };
+
+  // Tap outside the modal container → close
+  overlay.addEventListener('pointerup', (e) => {
+    if (!(e.target as HTMLElement).closest('.g3-notes-modal')) {
       e.preventDefault();
       e.stopPropagation();
       doClose();

@@ -43,6 +43,10 @@ export function StripColumns() {
       <div className="strip-col" id="needsCol" data-strip="needs" style={{display:'none'}}>
         <div className="strip-scroll" id="needsScroll"></div>
       </div>
+      {/* Notes strip column — toggled via NOTES button */}
+      <div className="strip-col" id="notesCol" data-strip="notes" style={{display:'none'}}>
+        <div className="strip-scroll" id="notesScroll"></div>
+      </div>
       {/* Overview column */}
       <div className="overview-col">
         <div className="overview-scroll" id="overviewScroll"></div>
