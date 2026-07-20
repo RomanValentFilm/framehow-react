@@ -223,6 +223,11 @@
   .g3-quick-btn:active{background:rgba(0,0,0,0.15);color:rgba(0,0,0,0.6);}
   .g3-quick-btn.has-content{background:rgba(0,0,0,0.35);color:rgba(255,255,255,0.85);border-color:transparent;}
   .g3-quick-btn.has-content:active{background:rgba(0,0,0,0.5);color:#fff;}
+  /* iPhone landscape: tighter quick buttons to fit all 6 in a row */
+  @media (max-width:932px) and (max-height:430px) and (orientation:landscape){
+    .g3-quick-btns{gap:2px;}
+    .g3-quick-btn{padding:2px 3px;font-size:8px;letter-spacing:.02em;}
+  }
   /* ─── 3×2 NEEDS modal overlay ─── */
   .g3-needs-overlay{position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,0.01);display:flex;align-items:center;justify-content:center;touch-action:none;overscroll-behavior:none;}
   .g3-needs-modal{background:#222;border-radius:14px;overflow:hidden;padding:12px;display:flex;flex-direction:column;}

@@ -853,7 +853,8 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
     const fn = s.frameNeeds[fid];
     const nHas = fn && (Object.values(fn.toggles).some(Boolean) || Object.values(fn.counters).some((c: number) => c > 0) || Object.values(fn.memos).some((m: string) => m.length > 0) || Object.values(fn.locationToggles).some(Boolean)) ? ' has-content' : '';
     const ntHas = frameHasNoteContent(fid) ? ' has-content' : '';
-    const quickBtnsVer = `<div class="g3-quick-btns"><button class="g3-quick-btn${vHas}" data-g3versn="${fid}">VERSN</button><button class="g3-quick-btn${sHas}" data-g3sketch="${fid}">SKETCH</button><button class="g3-quick-btn${rHas}" data-g3refs="${fid}">REFS</button><button class="g3-quick-btn${nHas}" data-g3needs="${fid}">NEEDS</button><button class="g3-quick-btn${ntHas}" data-g3notes="${fid}">NOTES</button></div>`;
+    const _ph = Math.min(window.innerWidth, window.innerHeight) <= 430;
+    const quickBtnsVer = `<div class="g3-quick-btns"><button class="g3-quick-btn${vHas}" data-g3versn="${fid}">${_ph ? 'VRSN' : 'VERSN'}</button><button class="g3-quick-btn${sHas}" data-g3sketch="${fid}">${_ph ? 'SKTCH' : 'SKETCH'}</button><button class="g3-quick-btn${rHas}" data-g3refs="${fid}">REFS</button><button class="g3-quick-btn${nHas}" data-g3needs="${fid}">${_ph ? 'NEED' : 'NEEDS'}</button><button class="g3-quick-btn${ntHas}" data-g3notes="${fid}">${_ph ? 'NOTE' : 'NOTES'}</button></div>`;
     wrap.innerHTML = `${quickBtnsVer}<div class="frame-card${mainReorder ? ' g3-reorder-active' : ''}" data-g3fid="${fid}">
       <div class="frame-num ver-frame-num">
         <span class="frame-label-tag">${f.label || '#'} ${getFrameStripLabel(f, companionStrip)}</span>
@@ -904,7 +905,6 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
     if (notesBtnV) notesBtnV.addEventListener('click', () => {
       _openNotesModal(fid);
     });
-
     // Wire version tab clicks
     wrap.querySelectorAll('[data-g3tab]').forEach((t) =>
       t.addEventListener('click', () => {
@@ -1002,7 +1002,8 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
     const fn2 = s.frameNeeds[fid];
     const nHas2 = fn2 && (Object.values(fn2.toggles).some(Boolean) || Object.values(fn2.counters).some((c: number) => c > 0) || Object.values(fn2.memos).some((m: string) => m.length > 0) || Object.values(fn2.locationToggles).some(Boolean)) ? ' has-content' : '';
     const ntHas2 = frameHasNoteContent(fid) ? ' has-content' : '';
-    const quickBtnsHTML = `<div class="g3-quick-btns"><button class="g3-quick-btn${vHas2}" data-g3versn="${fid}">VERSN</button><button class="g3-quick-btn${sHas2}" data-g3sketch="${fid}">SKETCH</button><button class="g3-quick-btn${rHas2}" data-g3refs="${fid}">REFS</button><button class="g3-quick-btn${nHas2}" data-g3needs="${fid}">NEEDS</button><button class="g3-quick-btn${ntHas2}" data-g3notes="${fid}">NOTES</button></div>`;
+    const _ph2 = Math.min(window.innerWidth, window.innerHeight) <= 430;
+    const quickBtnsHTML = `<div class="g3-quick-btns"><button class="g3-quick-btn${vHas2}" data-g3versn="${fid}">${_ph2 ? 'VRSN' : 'VERSN'}</button><button class="g3-quick-btn${sHas2}" data-g3sketch="${fid}">${_ph2 ? 'SKTCH' : 'SKETCH'}</button><button class="g3-quick-btn${rHas2}" data-g3refs="${fid}">REFS</button><button class="g3-quick-btn${nHas2}" data-g3needs="${fid}">${_ph2 ? 'NEED' : 'NEEDS'}</button><button class="g3-quick-btn${ntHas2}" data-g3notes="${fid}">${_ph2 ? 'NOTE' : 'NOTES'}</button></div>`;
     wrap.innerHTML = `${quickBtnsHTML}<div class="frame-card${g3Reorder ? ' g3-reorder-active' : ''}" data-g3fid="${fid}">
       <div class="frame-num"><span class="frame-label-tag" data-editlabel="${fid}">${f.label || '#'}</span><button class="vtab pictxt-btn${
       viewMode ? ' active' : ''
@@ -1078,7 +1079,6 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
     if (notesBtn) notesBtn.addEventListener('click', () => {
       _openNotesModal(fid);
     });
-
     // Color toolbar wiring
     card.querySelectorAll('.color-dot[data-g3mfid]').forEach((d) =>
       d.addEventListener('click', () => {

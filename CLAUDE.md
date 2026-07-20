@@ -167,6 +167,17 @@ Changes:
 Changes:
 - `src/lib/accountFlow.ts` — Added fullscreen overlay ("Couldn't load all content — check your connection") with Retry/Dismiss buttons when R2 image fetches fail; overlay shows after progress bar hides (no overlap); Retry triggers fresh pull; Dismiss lets user browse but _pullIncomplete stays true (no push/save of half-loaded state).
 
+### v4.9.027 — 2026-07-20 (dev — deployed)
+**iPhone label truncation, remove NEEDS memo, strip toggle fixes, pill height match, notes default mode, 3x2 exit enforcement**
+
+Changes:
+- `src/store/state.ts` — APP_VERSION v4.9.027
+- `src/lib/view.ts` — `_truncatePhoneLabels()`: on iPhone, truncates frame labels to first 3 chars of extra text (e.g. "1A OPTIONAL" → "1A OPT"). Handles combo labels (NEEDS/NOTES). Called from `syncCardHeights()` and after overview/grid renders. Restored pill height matching code in STEP 2b.
+- `src/lib/needs.ts` — Removed memo textarea and event handler. Moved setup pill to `needs-bottom-left` for left alignment. Added `setup-pill` class to needs pill for size matching. Restored pill height re-application from stored data.
+- `src/lib/notes.ts` — Table Settings no longer forces `mode: 'table'` on all cards; keeps existing mode.
+- `src/lib/init.ts` — Desktop/iPad strip toggle-off now counts NEEDS/NOTES in totalVisible. 3x2 save/restore includes `notesStripVisible`. 3x2 exit enforces iPhone landscape max-2 strips. Clears notesStripBtn when entering 3x2.
+- `src/styles/globals.css` — Removed `.needs-memo` CSS. `.needs-setup-pill` now inherits from `.setup-pill`.
+
 ### v4.9.026 — 2026-07-19 (dev — deployed)
 **Detail bar visible on DETAIL press at any scroll position**
 

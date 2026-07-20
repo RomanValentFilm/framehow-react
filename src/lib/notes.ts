@@ -546,9 +546,13 @@ export function frameHasNoteContent(fid: number): boolean {
   const fn = state().frameNotes[fid];
   if (!fn) return false;
   if (fn.noteText.length > 0) return true;
-  // Check table for any non-empty cell
+  // Check table for user-entered content only — skip headers (first row)
+  // and first column since those can be copied via Table Settings.
   const td = fn.tableData;
-  if (td.headers.some((h) => h.length > 0)) return true;
-  if (td.rows.some((row) => row.some((cell) => cell.length > 0))) return true;
+  for (let r = 0; r < td.rows.length; r++) {
+    for (let c = 1; c < td.rows[r].length; c++) {
+      if (td.rows[r][c].length > 0) return true;
+    }
+  }
   return false;
 }
