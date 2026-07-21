@@ -167,6 +167,13 @@ Changes:
 Changes:
 - `src/lib/accountFlow.ts` — Added fullscreen overlay ("Couldn't load all content — check your connection") with Retry/Dismiss buttons when R2 image fetches fail; overlay shows after progress bar hides (no overlap); Retry triggers fresh pull; Dismiss lets user browse but _pullIncomplete stays true (no push/save of half-loaded state).
 
+### v4.9.029 — 2026-07-20 (dev — deployed)
+**Real image-count progress bar during project loading**
+
+Changes:
+- `src/store/state.ts` — APP_VERSION v4.9.029
+- `src/lib/accountFlow.ts` — `applyCloudTreeToStore` now accepts optional `onImageProgress(loaded, total)` callback. Both main and version image fetch loops report progress (including on failure). Wired into openProject (50→85%), performRestore (60→95%), and sync pull callers. Label shows "Loading image N of M…" with proportional bar movement.
+
 ### v4.9.028 — 2026-07-20 (dev — deployed)
 **3x2 iPhone short labels, NOTES has-content fix, strip toggle fixes, remove MAIN quick button**
 

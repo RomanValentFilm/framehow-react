@@ -47,7 +47,7 @@ import { applySnapshotToStore, loadSnapshot, snapshotFromStore } from './persist
 import { showConfirm, showToast, showFrameConflictPicker } from './modals';
 import type { FrameConflict } from './modals';
 import { saveOpenTextEdits, saveOpenTableEdits } from './helpers';
-import { resetStoryboardState, state, useStore, DEFAULT_NEED_DEFINITIONS } from '../store/state';
+import { resetStoryboardState, state, useStore, DEFAULT_NEED_DEFINITIONS, DEFAULT_STRIP_DEFS } from '../store/state';
 import type { Frame, Stroke, Version, FrameNeedState, FrameNoteState } from '../store/state';
 import { clearRectsForProject } from './pdfAdjust';
 
@@ -1772,6 +1772,18 @@ async function applyCloudTreeToStore(
       const meta = JSON.parse(tree.project.metadata);
       if (meta.stripDefs && Array.isArray(meta.stripDefs)) {
         restoredStripDefs = meta.stripDefs;
+        // Migrate old default names → new defaults (preserve user customizations)
+        const OLD_LABELS: Record<string, { btn: string; frame: string }> = {
+          ver: { btn: 'VERSN', frame: 'vers' },
+        };
+        for (const def of restoredStripDefs!) {
+          const old = OLD_LABELS[def.id];
+          const current = DEFAULT_STRIP_DEFS.find((d) => d.id === def.id);
+          if (old && current) {
+            if (def.buttonLabel === old.btn) def.buttonLabel = current.buttonLabel;
+            if (def.defaultFrameLabel === old.frame) def.defaultFrameLabel = current.defaultFrameLabel;
+          }
+        }
       }
       if (meta.portraitMode != null) {
         isPortrait = !!meta.portraitMode;

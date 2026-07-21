@@ -854,7 +854,7 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
     const nHas = fn && (Object.values(fn.toggles).some(Boolean) || Object.values(fn.counters).some((c: number) => c > 0) || Object.values(fn.memos).some((m: string) => m.length > 0) || Object.values(fn.locationToggles).some(Boolean)) ? ' has-content' : '';
     const ntHas = frameHasNoteContent(fid) ? ' has-content' : '';
     const _ph = Math.min(window.innerWidth, window.innerHeight) <= 430;
-    const quickBtnsVer = `<div class="g3-quick-btns"><button class="g3-quick-btn${vHas}" data-g3versn="${fid}">${_ph ? 'VRSN' : 'VERSN'}</button><button class="g3-quick-btn${sHas}" data-g3sketch="${fid}">${_ph ? 'SKTCH' : 'SKETCH'}</button><button class="g3-quick-btn${rHas}" data-g3refs="${fid}">REFS</button><button class="g3-quick-btn${nHas}" data-g3needs="${fid}">${_ph ? 'NEED' : 'NEEDS'}</button><button class="g3-quick-btn${ntHas}" data-g3notes="${fid}">${_ph ? 'NOTE' : 'NOTES'}</button></div>`;
+    const quickBtnsVer = `<div class="g3-quick-btns"><button class="g3-quick-btn${vHas}" data-g3versn="${fid}">HOW</button><button class="g3-quick-btn${sHas}" data-g3sketch="${fid}">${_ph ? 'SKTCH' : 'SKETCH'}</button><button class="g3-quick-btn${rHas}" data-g3refs="${fid}">REFS</button><button class="g3-quick-btn${nHas}" data-g3needs="${fid}">${_ph ? 'NEED' : 'NEEDS'}</button><button class="g3-quick-btn${ntHas}" data-g3notes="${fid}">${_ph ? 'NOTE' : 'NOTES'}</button></div>`;
     wrap.innerHTML = `${quickBtnsVer}<div class="frame-card${mainReorder ? ' g3-reorder-active' : ''}" data-g3fid="${fid}">
       <div class="frame-num ver-frame-num">
         <span class="frame-label-tag">${f.label || '#'} ${getFrameStripLabel(f, companionStrip)}</span>
@@ -881,7 +881,7 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
       ensureStripVersions(fid, 'ver');
       const hasCon = stripHasContent(fid, 'ver');
       const startVi = hasCon ? getStripActiveTab(fid, 'ver') : 0;
-      openFullscreen(fid, startVi, 'ver');
+      openFullscreen(fid, startVi, 'ver', hasCon ? undefined : 'cam');
     });
     const sketchBtnV = wrap.querySelector(`[data-g3sketch="${fid}"]`) as HTMLElement | null;
     if (sketchBtnV) sketchBtnV.addEventListener('click', () => {
@@ -1003,7 +1003,7 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
     const nHas2 = fn2 && (Object.values(fn2.toggles).some(Boolean) || Object.values(fn2.counters).some((c: number) => c > 0) || Object.values(fn2.memos).some((m: string) => m.length > 0) || Object.values(fn2.locationToggles).some(Boolean)) ? ' has-content' : '';
     const ntHas2 = frameHasNoteContent(fid) ? ' has-content' : '';
     const _ph2 = Math.min(window.innerWidth, window.innerHeight) <= 430;
-    const quickBtnsHTML = `<div class="g3-quick-btns"><button class="g3-quick-btn${vHas2}" data-g3versn="${fid}">${_ph2 ? 'VRSN' : 'VERSN'}</button><button class="g3-quick-btn${sHas2}" data-g3sketch="${fid}">${_ph2 ? 'SKTCH' : 'SKETCH'}</button><button class="g3-quick-btn${rHas2}" data-g3refs="${fid}">REFS</button><button class="g3-quick-btn${nHas2}" data-g3needs="${fid}">${_ph2 ? 'NEED' : 'NEEDS'}</button><button class="g3-quick-btn${ntHas2}" data-g3notes="${fid}">${_ph2 ? 'NOTE' : 'NOTES'}</button></div>`;
+    const quickBtnsHTML = `<div class="g3-quick-btns"><button class="g3-quick-btn${vHas2}" data-g3versn="${fid}">HOW</button><button class="g3-quick-btn${sHas2}" data-g3sketch="${fid}">${_ph2 ? 'SKTCH' : 'SKETCH'}</button><button class="g3-quick-btn${rHas2}" data-g3refs="${fid}">REFS</button><button class="g3-quick-btn${nHas2}" data-g3needs="${fid}">${_ph2 ? 'NEED' : 'NEEDS'}</button><button class="g3-quick-btn${ntHas2}" data-g3notes="${fid}">${_ph2 ? 'NOTE' : 'NOTES'}</button></div>`;
     wrap.innerHTML = `${quickBtnsHTML}<div class="frame-card${g3Reorder ? ' g3-reorder-active' : ''}" data-g3fid="${fid}">
       <div class="frame-num"><span class="frame-label-tag" data-editlabel="${fid}">${f.label || '#'}</span><button class="vtab pictxt-btn${
       viewMode ? ' active' : ''
@@ -1051,7 +1051,7 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
       ensureStripVersions(fid, 'ver');
       const hasCon = stripHasContent(fid, 'ver');
       const startVi = hasCon ? getStripActiveTab(fid, 'ver') : 0;
-      openFullscreen(fid, startVi, 'ver');
+      openFullscreen(fid, startVi, 'ver', hasCon ? undefined : 'cam');
     });
     // SKETCH button — open fullscreen draw on floor/sketch strip
     const sketchBtn = wrap.querySelector(`[data-g3sketch="${fid}"]`) as HTMLElement | null;
@@ -1720,6 +1720,16 @@ function _openNotesModal(fid: number): void {
       container.style.opacity = '1';
       setTimeout(() => { container.style.transition = ''; }, 200);
     }); });
+  }
+
+  // Auto-focus textarea on desktop (note mode only)
+  const isPhone = Math.min(window.innerWidth, window.innerHeight) <= 430;
+  const isTablet = !isPhone && navigator.maxTouchPoints > 1;
+  if (!isPhone && !isTablet) {
+    setTimeout(() => {
+      const ta = container.querySelector('.notes-textarea') as HTMLTextAreaElement | null;
+      if (ta) ta.focus();
+    }, 220);
   }
 
   // Close helper with animation

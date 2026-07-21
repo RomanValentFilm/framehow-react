@@ -63,7 +63,7 @@ export interface Setup {
 
 /** 12-colour palette for setups. */
 /** App version — bump before every deploy. */
-export const APP_VERSION = 'v4.9.029';
+export const APP_VERSION = 'v4.9.030';
 
 export const SETUP_COLORS: { name: string; hex: string }[] = [
   { name: 'DAYLIGHT',      hex: '#CFE2F6' },
@@ -304,7 +304,7 @@ export interface StripDef {
 // STRIP3 = 'refs'  (originally "references")
 // The buttonLabel is what users see and can rename via Customise.
 export const DEFAULT_STRIP_DEFS: StripDef[] = [
-  { id: 'ver',   buttonLabel: 'VERSN', defaultFrameLabel: 'vers',  prefix: 'v' },
+  { id: 'ver',   buttonLabel: 'HOW', defaultFrameLabel: 'versn',  prefix: 'v' },
   { id: 'floor', buttonLabel: 'SKETCH', defaultFrameLabel: 'sketch', prefix: 's' },
   { id: 'refs',  buttonLabel: 'REFS',  defaultFrameLabel: 'refs',  prefix: 'r' },
 ];
