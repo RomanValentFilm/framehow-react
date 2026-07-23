@@ -1574,8 +1574,8 @@ function _openNeedsModal(fid: number): void {
   if (refFrameCard) {
     const rc = refFrameCard.getBoundingClientRect();
     if (rc.width > 0 && rc.height > 0) {
-      container.style.width = (rc.width * 1.8) + 'px';
-      container.style.height = (rc.height * 1.8) + 'px';
+      container.style.width = (rc.width * 2.2) + 'px';
+      container.style.height = (rc.height * 2.2) + 'px';
     }
   }
   // Zoom the entire modal (text, buttons, everything) when view was zoomed
@@ -1689,8 +1689,8 @@ function _openNotesModal(fid: number): void {
   if (refFrameCard) {
     const rc = refFrameCard.getBoundingClientRect();
     if (rc.width > 0 && rc.height > 0) {
-      container.style.width = (rc.width * 1.8) + 'px';
-      container.style.height = (rc.height * 1.8) + 'px';
+      container.style.width = (rc.width * 2.2) + 'px';
+      container.style.height = (rc.height * 2.2) + 'px';
     }
   }
   if (wasZoomed) {

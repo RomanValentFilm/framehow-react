@@ -6,8 +6,8 @@
 // active tab) — UI-only state (drawActive, hover, etc.) is omitted. On
 // restore we merge the payload back into the live store.
 
-import type { Frame, Version, FrameGroup, StripDef, Setup, NeedDefinitions, FrameNeedState, FrameNoteState } from '../store/state';
-import { useStore, DEFAULT_STRIP_DEFS, DEFAULT_NEED_DEFINITIONS } from '../store/state';
+import type { Frame, Version, FrameGroup, StripDef, Setup, NeedDefinitions, FrameNeedState, FrameNoteState, SortOrder, SortBreak } from '../store/state';
+import { useStore, DEFAULT_STRIP_DEFS, DEFAULT_NEED_DEFINITIONS, migrateNeedDefinitions } from '../store/state';
 
 const DB_NAME = 'framehow';
 const DB_VERSION = 1;
@@ -52,6 +52,12 @@ export interface CurrentProjectSnapshot {
   frameNeeds?: Record<number, FrameNeedState>;
   /** NOTES strip — per-frame note state (v4.9+) */
   frameNotes?: Record<number, FrameNoteState>;
+  /** Sort orders — custom frame orderings (v4.9+) */
+  sortOrders?: SortOrder[];
+  nextSortOrderId?: number;
+  activeSortOrderId?: string | null;
+  /** Story flow breaks — section dividers in default view (v4.9+) */
+  storyFlowBreaks?: SortBreak[];
 }
 
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -133,6 +139,10 @@ export function snapshotFromStore(projectId: string | null, name: string | null)
     needDefinitions: s.needDefinitions,
     frameNeeds: s.frameNeeds,
     frameNotes: s.frameNotes,
+    sortOrders: s.sortOrders.length > 0 ? s.sortOrders : undefined,
+    nextSortOrderId: s.nextSortOrderId > 1 ? s.nextSortOrderId : undefined,
+    activeSortOrderId: s.activeSortOrderId ?? undefined,
+    storyFlowBreaks: s.storyFlowBreaks?.length > 0 ? s.storyFlowBreaks : undefined,
   };
 }
 
@@ -196,9 +206,13 @@ export function applySnapshotToStore(snap: CurrentProjectSnapshot): void {
     nextSetupId: snap.nextSetupId ?? 1,
     stripTagInfoDismissed: snap.stripTagInfoDismissed ?? false,
     stripUntagInfoDismissed: snap.stripUntagInfoDismissed ?? false,
-    needDefinitions: snap.needDefinitions ?? DEFAULT_NEED_DEFINITIONS,
+    needDefinitions: migrateNeedDefinitions(snap.needDefinitions ?? DEFAULT_NEED_DEFINITIONS),
     frameNeeds: snap.frameNeeds ?? {},
     frameNotes: snap.frameNotes ?? {},
+    sortOrders: snap.sortOrders ?? [],
+    nextSortOrderId: snap.nextSortOrderId ?? 1,
+    activeSortOrderId: snap.activeSortOrderId ?? null,
+    storyFlowBreaks: snap.storyFlowBreaks ?? [],
     renderTick: prev.renderTick + 1,
   }));
 }

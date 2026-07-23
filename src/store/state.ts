@@ -63,7 +63,7 @@ export interface Setup {
 
 /** 12-colour palette for setups. */
 /** App version — bump before every deploy. */
-export const APP_VERSION = 'v4.9.030';
+export const APP_VERSION = 'v4.9.031';
 
 export const SETUP_COLORS: { name: string; hex: string }[] = [
   { name: 'DAYLIGHT',      hex: '#CFE2F6' },
@@ -150,6 +150,11 @@ export const DEFAULT_NEED_DEFINITIONS: NeedDefinitions = {
           { id: 'ti_day2', name: 'DAY 2' },
           { id: 'ti_day3', name: 'DAY 3' },
         ]},
+        { id: 'tbl_unit', name: 'UNIT', type: 'toggle', items: [
+          { id: 'ti_unit1', name: '1st UNIT' },
+          { id: 'ti_unit2', name: '2nd UNIT' },
+          { id: 'ti_unit3', name: '3rd UNIT' },
+        ]},
         { id: 'tbl_location', name: 'LOCATION', type: 'toggle', items: [
           { id: 'ti_loc1', name: 'LOCATION 1' },
           { id: 'ti_loc2', name: 'LOCATION 2' },
@@ -163,6 +168,25 @@ export const DEFAULT_NEED_DEFINITIONS: NeedDefinitions = {
           { id: 'ti_day', name: 'DAY' },
           { id: 'ti_sunset', name: 'SUNSET' },
           { id: 'ti_night', name: 'NIGHT' },
+        ]},
+      ],
+    },
+    {
+      id: 'tab_talents', name: 'TALENTS',
+      tables: [
+        { id: 'tbl_talent', name: 'TALENT', type: 'toggle', items: [
+          { id: 'ti_actor1', name: 'ACTOR 1' },
+          { id: 'ti_actor2', name: 'ACTOR 2' },
+          { id: 'ti_actor3', name: 'ACTOR 3' },
+        ]},
+        { id: 'tbl_ward', name: 'WARDR/M&H', type: 'toggle', items: [
+          { id: 'ti_fit1', name: 'FIT 1' },
+          { id: 'ti_fit2', name: 'FIT 2' },
+          { id: 'ti_fit3', name: 'FIT 3' },
+        ]},
+        { id: 'tbl_extras', name: 'EXTRAS', type: 'counter', items: [
+          { id: 'ti_crowd1', name: 'CROWD 1' },
+          { id: 'ti_crowd2', name: 'CROWD 2' },
         ]},
       ],
     },
@@ -189,25 +213,6 @@ export const DEFAULT_NEED_DEFINITIONS: NeedDefinitions = {
       ],
     },
     {
-      id: 'tab_talents', name: 'TALENTS',
-      tables: [
-        { id: 'tbl_talent', name: 'TALENT', type: 'toggle', items: [
-          { id: 'ti_actor1', name: 'ACTOR 1' },
-          { id: 'ti_actor2', name: 'ACTOR 2' },
-          { id: 'ti_actor3', name: 'ACTOR 3' },
-        ]},
-        { id: 'tbl_ward', name: 'WARDR/M&H', type: 'toggle', items: [
-          { id: 'ti_fit1', name: 'FIT 1' },
-          { id: 'ti_fit2', name: 'FIT 2' },
-          { id: 'ti_fit3', name: 'FIT 3' },
-        ]},
-        { id: 'tbl_extras', name: 'EXTRAS', type: 'counter', items: [
-          { id: 'ti_crowd1', name: 'CROWD 1' },
-          { id: 'ti_crowd2', name: 'CROWD 2' },
-        ]},
-      ],
-    },
-    {
       id: 'tab_art', name: 'ART',
       tables: [
         { id: 'tbl_set', name: 'SET', type: 'toggle', items: [
@@ -230,6 +235,36 @@ export const DEFAULT_NEED_DEFINITIONS: NeedDefinitions = {
   ],
   locations: [],
 };
+
+/** Merge saved needDefinitions with DEFAULT_NEED_DEFINITIONS.
+ *  Tab order follows defaults; new tabs/tables added; user customizations preserved. */
+export function migrateNeedDefinitions(saved: NeedDefinitions): NeedDefinitions {
+  const defaults = DEFAULT_NEED_DEFINITIONS;
+  const savedTabMap = new Map(saved.tabs.map(t => [t.id, t]));
+  const resultTabs: NeedTab[] = [];
+
+  for (const defTab of defaults.tabs) {
+    const savedTab = savedTabMap.get(defTab.id);
+    if (!savedTab) {
+      resultTabs.push(defTab);
+    } else {
+      const savedTableMap = new Map(savedTab.tables.map(tbl => [tbl.id, tbl]));
+      const mergedTables: NeedTable[] = [];
+      for (const defTable of defTab.tables) {
+        const saved = savedTableMap.get(defTable.id);
+        // Merge structural props from defaults while keeping user's items
+        mergedTables.push(saved ? { ...saved, type: defTable.type } : defTable);
+        savedTableMap.delete(defTable.id);
+      }
+      for (const extra of savedTableMap.values()) mergedTables.push(extra);
+      resultTabs.push({ ...savedTab, tables: mergedTables });
+    }
+    savedTabMap.delete(defTab.id);
+  }
+  for (const extra of savedTabMap.values()) resultTabs.push(extra);
+
+  return { tabs: resultTabs, locations: saved.locations ?? defaults.locations };
+}
 
 /** Create default per-frame need state (all toggles off, no memos). */
 export function createDefaultFrameNeedState(): FrameNeedState {
@@ -574,8 +609,23 @@ export function resetStoryboardState(): void {
     needsStripVisible: false,
     frameNotes: {},
     notesStripVisible: false,
+    sortOrders: [],
+    storyFlowBreaks: [],
+    activeSortOrderId: null,
+    sortMode: false,
+    sortEditingId: null,
+    nextSortOrderId: 1,
     renderTick: state().renderTick + 1,
   });
+  // Clean up sort DOM elements if they exist
+  const sortDropdown = document.getElementById('sortDropdown');
+  if (sortDropdown) { sortDropdown.style.display = 'none'; sortDropdown.innerHTML = ''; }
+  const sortEditView = document.getElementById('sortEditView');
+  if (sortEditView) { sortEditView.style.display = 'none'; sortEditView.innerHTML = ''; }
+  // Restore normal content visibility
+  const columns = document.querySelector('.columns') as HTMLElement | null;
+  if (columns) columns.style.display = '';
+  document.getElementById('sortByBtn')?.classList.remove('active');
 }
 
 // Touch detection — used in many places.

@@ -47,8 +47,8 @@ import { applySnapshotToStore, loadSnapshot, snapshotFromStore } from './persist
 import { showConfirm, showToast, showFrameConflictPicker } from './modals';
 import type { FrameConflict } from './modals';
 import { saveOpenTextEdits, saveOpenTableEdits } from './helpers';
-import { resetStoryboardState, state, useStore, DEFAULT_NEED_DEFINITIONS, DEFAULT_STRIP_DEFS } from '../store/state';
-import type { Frame, Stroke, Version, FrameNeedState, FrameNoteState } from '../store/state';
+import { resetStoryboardState, state, useStore, DEFAULT_NEED_DEFINITIONS, DEFAULT_STRIP_DEFS, migrateNeedDefinitions } from '../store/state';
+import type { Frame, Stroke, Version, FrameNeedState, FrameNoteState, NeedDefinitions } from '../store/state';
 import { clearRectsForProject } from './pdfAdjust';
 
 // ---------------------------------------------------------------------------
@@ -1384,6 +1384,15 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
     if (serverFid && fnote) syncFrameNotes[serverFid] = fnote;
   }
 
+  // Remap sort order frameOrder arrays from local IDs → server IDs
+  const metaSortOrders = s.sortOrders.map((o) => ({
+    id: o.id,
+    name: o.name,
+    description: o.description,
+    frameOrder: o.frameOrder.map((fid) => localToServerFrame.get(fid) || '').filter(Boolean),
+    breaks: o.breaks,
+  }));
+
   const metadata = JSON.stringify({
     stripDefs: s.stripDefs,
     groups: metaGroups,
@@ -1399,6 +1408,10 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
     needDefinitions: s.needDefinitions,
     frameNeeds: Object.keys(syncFrameNeeds).length > 0 ? syncFrameNeeds : undefined,
     frameNotes: Object.keys(syncFrameNotes).length > 0 ? syncFrameNotes : undefined,
+    sortOrders: metaSortOrders.length > 0 ? metaSortOrders : undefined,
+    nextSortOrderId: s.nextSortOrderId > 1 ? s.nextSortOrderId : undefined,
+    activeSortOrderId: s.activeSortOrderId ?? undefined,
+    storyFlowBreaks: s.storyFlowBreaks?.length > 0 ? s.storyFlowBreaks : undefined,
   });
 
   // Upload NEW images to R2 in parallel (images with existing r2Key were already added above)
@@ -1765,6 +1778,10 @@ async function applyCloudTreeToStore(
   let restoredNeedDefinitions: any = null;
   let restoredFrameNeeds: Record<string, FrameNeedState> = {};
   let restoredFrameNotes: Record<string, FrameNoteState> = {};
+  let restoredSortOrders: any[] = [];
+  let restoredNextSortOrderId = 1;
+  let restoredActiveSortOrderId: string | null = null;
+  let restoredStoryFlowBreaks: import('../store/state').SortBreak[] = [];
   let isPortrait = newFrames.length > 0 && newFrames[0].cropH > newFrames[0].cropW;
 
   if (tree.project.metadata) {
@@ -1847,6 +1864,19 @@ async function applyCloudTreeToStore(
       if (meta.frameNotes && typeof meta.frameNotes === 'object') {
         restoredFrameNotes = meta.frameNotes;
       }
+      // Restore sort orders (remap server UUIDs → local IDs below)
+      if (meta.sortOrders && Array.isArray(meta.sortOrders)) {
+        restoredSortOrders = meta.sortOrders;
+      }
+      if (meta.nextSortOrderId != null) {
+        restoredNextSortOrderId = meta.nextSortOrderId;
+      }
+      if (meta.activeSortOrderId != null) {
+        restoredActiveSortOrderId = meta.activeSortOrderId;
+      }
+      if (meta.storyFlowBreaks && Array.isArray(meta.storyFlowBreaks)) {
+        restoredStoryFlowBreaks = meta.storyFlowBreaks;
+      }
     } catch {
       // Ignore malformed metadata — use defaults
     }
@@ -1877,6 +1907,15 @@ async function applyCloudTreeToStore(
       if (localId != null) localFrameNotes[localId] = noteState;
     }
   }
+
+  // Remap sort order frameOrder arrays from server UUIDs → local IDs
+  const localSortOrders: import('../store/state').SortOrder[] = restoredSortOrders.map((o: any) => ({
+    id: o.id,
+    name: o.name ?? '',
+    description: o.description ?? '',
+    frameOrder: (o.frameOrder || []).map((uuid: string) => serverToLocalFrame.get(uuid)).filter((id: number | undefined) => id != null) as number[],
+    breaks: o.breaks ?? [],
+  }));
 
   // Apply structure immediately so the user sees the project right away.
   // Do a FULL reset of all per-frame maps to avoid stale data from the previous project.
@@ -1938,9 +1977,15 @@ async function applyCloudTreeToStore(
     currentViewMode: 'both',
     portraitMode: isPortrait,
     stripTagInfoDismissed: restoredStripTagInfoDismissed,
-    needDefinitions: restoredNeedDefinitions ?? DEFAULT_NEED_DEFINITIONS,
+    needDefinitions: migrateNeedDefinitions(restoredNeedDefinitions ?? DEFAULT_NEED_DEFINITIONS),
     frameNeeds: localFrameNeeds,
     frameNotes: localFrameNotes,
+    sortOrders: localSortOrders,
+    nextSortOrderId: restoredNextSortOrderId,
+    activeSortOrderId: restoredActiveSortOrderId,
+    storyFlowBreaks: restoredStoryFlowBreaks,
+    sortMode: false,
+    sortEditingId: null,
     renderTick: prev.renderTick + 1,
   }));
   (window as any).__fh_renderAll?.();

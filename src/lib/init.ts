@@ -1161,20 +1161,25 @@ export function initFramehow(): void {
   // Telemetry
   startHeartbeat();
 
-  // Service worker — skip in dev mode so cached SW never blocks fresh code
+  // Service worker — skip in dev mode AND on dev subdomain
   if ('serviceWorker' in navigator) {
-    if (import.meta.env.DEV) {
+    const isDev = import.meta.env.DEV || window.location.hostname.startsWith('dev.');
+    if (isDev) {
+      // Unregister any existing SW so it never blocks fresh code
       navigator.serviceWorker.getRegistrations().then(regs => {
         regs.forEach(r => r.unregister());
       });
+      // Clear all caches
+      caches.keys().then(keys => keys.forEach(k => caches.delete(k)));
     } else {
       navigator.serviceWorker.register('/app/sw.js').then((reg) => {
+        reg.update();
         reg.addEventListener('updatefound', () => {
           const w = reg.installing;
           if (!w) return;
           w.addEventListener('statechange', () => {
             if (w.state === 'installed' && navigator.serviceWorker.controller) {
-              // Update available — next reload will use the new version
+              window.location.reload();
             }
           });
         });

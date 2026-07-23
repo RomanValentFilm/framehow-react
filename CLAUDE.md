@@ -167,6 +167,15 @@ Changes:
 Changes:
 - `src/lib/accountFlow.ts` — Added fullscreen overlay ("Couldn't load all content — check your connection") with Retry/Dismiss buttons when R2 image fetches fail; overlay shows after progress bar hides (no overlap); Retry triggers fresh pull; Dismiss lets user browse but _pullIncomplete stays true (no push/save of half-loaded state).
 
+### v4.9.030 — 2026-07-21 (dev — deployed)
+**Rename VERSN→HOW, 3x2 HOW opens camera when empty, auto-focus notes on desktop**
+
+Changes:
+- `src/store/state.ts` — APP_VERSION v4.9.030, DEFAULT_STRIP_DEFS ver buttonLabel 'HOW', defaultFrameLabel 'versn'
+- `src/components/ViewBar.tsx` — Detail bar MAIN button renamed to FRAME
+- `src/lib/overview.ts` — 3x2 quick buttons: VERSN/VRSN→HOW. HOW button opens camera (initialMode 'cam') when ver strip has no content, otherwise opens last active tab. Notes modal auto-focuses textarea on desktop after opening animation.
+- `src/lib/accountFlow.ts` — Imported DEFAULT_STRIP_DEFS. Migration patch for saved projects: only updates old known labels (VERSN→HOW, vers→versn), preserves user customizations.
+
 ### v4.9.029 — 2026-07-20 (dev — deployed)
 **Real image-count progress bar during project loading**
 
