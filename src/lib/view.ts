@@ -1124,6 +1124,8 @@ export function wireScrollHandlers(): void {
       if (document.querySelector('.fs-overlay')) return;
       const camOvl = document.getElementById('cameraOverlay');
       if (camOvl && !camOvl.classList.contains('hidden')) return;
+      // Don't hide bars when sort-edit view is active — header sticks below them
+      if (state().sortEditingId) return;
       const y = window.scrollY;
 
       if (y <= TH && hidden) {

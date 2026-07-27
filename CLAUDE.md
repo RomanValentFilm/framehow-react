@@ -167,6 +167,13 @@ Changes:
 Changes:
 - `src/lib/accountFlow.ts` — Added fullscreen overlay ("Couldn't load all content — check your connection") with Retry/Dismiss buttons when R2 image fetches fail; overlay shows after progress bar hides (no overlap); Retry triggers fresh pull; Dismiss lets user browse but _pullIncomplete stays true (no push/save of half-loaded state).
 
+### v4.9.032 — 2026-07-27 (dev — deployed)
+**Sort bracket: auto-naming, SORT NOW, frozen bracket, manual reorder detection, red pills, confirmation modal**
+
+Changes:
+- `src/lib/sortOrder.ts` — Auto-name single-frame nodes by parent category (e.g. "LOCATION 2") or "REMAINING"; skip auto-select when expanded (fix reselect click); flattenBracketOrder extracts frame order from tree; SORT NOW button applies bracket order to frameOrder; frozen bracket after SORT NOW (read-only, 45% opacity); sortedSnapshot tracks sorted order for manual-change detection; red warning text + red pills for manually moved frames; reorderPillsByCurrentOrder moves only changed pills cross-group; confirmation modal on re-EDIT ("Your previous frame order will be overwritten"); Yes re-applies bracket order and stays in edit mode; dropdown scrolls to previously selected item on reselect
+- `src/styles/globals.css` — Bracket hint 11px/#aaa; SORT NOW button same size as ADD BREAK; .sort-bracket-frozen, .sort-bracket-warning, .sort-bracket-pill-moved, .sort-bracket-confirm overlay styles; .sort-cards-dimmed
+
 ### v4.9.031 — 2026-07-23 (dev — deployed)
 **Sort bracket: swap fixes, KEEP ORDER, pills column, auto-select single frames**
 

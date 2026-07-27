@@ -47,8 +47,9 @@ import { applySnapshotToStore, loadSnapshot, snapshotFromStore } from './persist
 import { showConfirm, showToast, showFrameConflictPicker } from './modals';
 import type { FrameConflict } from './modals';
 import { saveOpenTextEdits, saveOpenTableEdits } from './helpers';
+import { closeSortMode } from './sortOrder';
 import { resetStoryboardState, state, useStore, DEFAULT_NEED_DEFINITIONS, DEFAULT_STRIP_DEFS, migrateNeedDefinitions } from '../store/state';
-import type { Frame, Stroke, Version, FrameNeedState, FrameNoteState, NeedDefinitions } from '../store/state';
+import type { Frame, Stroke, Version, FrameNeedState, FrameNoteState, NeedDefinitions, BracketNodeData } from '../store/state';
 import { clearRectsForProject } from './pdfAdjust';
 
 // ---------------------------------------------------------------------------
@@ -70,6 +71,26 @@ function getDeviceName(): string {
   if (/iPhone/i.test(ua) || (/Android/i.test(ua) && /Mobile/i.test(ua))) return 'Phone';
   if (/iPad/i.test(ua) || (/Macintosh/i.test(ua) && navigator.maxTouchPoints > 1) || (/Android/i.test(ua) && !/Mobile/i.test(ua))) return 'Tablet';
   return 'Desktop';
+}
+
+// ---------------------------------------------------------------------------
+// Bracket tree frame-ID remapping for cloud sync
+// ---------------------------------------------------------------------------
+
+/** Deep-remap all frame IDs in a bracket tree using a lookup map. */
+function remapBracketIds<T>(node: any, mapping: Map<number | string, T>): BracketNodeData | undefined {
+  const inputIds = (node.inputIds || []).map((id: any) => mapping.get(id)).filter((v: any) => v != null);
+  const matchedIds = (node.matchedIds || []).map((id: any) => mapping.get(id)).filter((v: any) => v != null);
+  if (inputIds.length === 0 && matchedIds.length === 0) return undefined;
+  const out: any = { inputIds, matchedIds };
+  if (node.categoryId) out.categoryId = node.categoryId;
+  if (node.categoryName) out.categoryName = node.categoryName;
+  if (node.itemId) out.itemId = node.itemId;
+  if (node.itemName) out.itemName = node.itemName;
+  if (node.expanded) out.expanded = true;
+  if (node.right) { const r = remapBracketIds(node.right, mapping); if (r) out.right = r; }
+  if (node.down) { const d = remapBracketIds(node.down, mapping); if (d) out.down = d; }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -663,6 +684,8 @@ async function loadCloudProject(p: CloudProject): Promise<void> {
     const tree = await api.get<CloudProjectTree>(`/projects/${encodeURIComponent(p.id)}/sync`, getToken());
     if (progressBar) progressBar.style.width = '50%';
     if (progressLabel) progressLabel.textContent = 'Applying…';
+    // Close sort-edit view if open so new project renders into visible columns
+    if (state().sortEditingId) closeSortMode();
     // System action: prevent setState calls from being treated as user changes
     beginSystemAction();
     try {
@@ -771,6 +794,7 @@ export async function openAccountSettings(): Promise<void> {
     logoutBtn.onclick = async () => {
       cleanup();
       await serverLogout();
+      if (state().sortEditingId) closeSortMode();
       resetStoryboardState();
       clearCurrentProject();
       clearPushedFingerprints();
@@ -785,6 +809,7 @@ export async function openAccountSettings(): Promise<void> {
       try {
         await api.delete('/user/me', getToken());
         clearSession();
+        if (state().sortEditingId) closeSortMode();
         resetStoryboardState();
         clearCurrentProject();
         clearPushedFingerprints();
@@ -968,6 +993,7 @@ async function startNewProject(): Promise<void> {
     const ok = await showConfirm('Start a new project? Your current unsaved work will be replaced.');
     if (!ok) return;
   }
+  if (state().sortEditingId) closeSortMode();
   resetStoryboardState();
   useStore.setState({ portraitMode: false });
   clearCurrentProject();
@@ -1385,13 +1411,18 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   }
 
   // Remap sort order frameOrder arrays from local IDs → server IDs
-  const metaSortOrders = s.sortOrders.map((o) => ({
-    id: o.id,
-    name: o.name,
-    description: o.description,
-    frameOrder: o.frameOrder.map((fid) => localToServerFrame.get(fid) || '').filter(Boolean),
-    breaks: o.breaks,
-  }));
+  const metaSortOrders = s.sortOrders.map((o) => {
+    const mapped: any = {
+      id: o.id,
+      name: o.name,
+      description: o.description,
+      frameOrder: o.frameOrder.map((fid) => localToServerFrame.get(fid) || '').filter(Boolean),
+      breaks: o.breaks,
+    };
+    if (o.bracketTree) mapped.bracketTree = remapBracketIds(o.bracketTree, localToServerFrame);
+    if (o.sortedSnapshot) mapped.sortedSnapshot = o.sortedSnapshot.map((fid) => localToServerFrame.get(fid) || '').filter(Boolean);
+    return mapped;
+  });
 
   const metadata = JSON.stringify({
     stripDefs: s.stripDefs,
@@ -1909,13 +1940,18 @@ async function applyCloudTreeToStore(
   }
 
   // Remap sort order frameOrder arrays from server UUIDs → local IDs
-  const localSortOrders: import('../store/state').SortOrder[] = restoredSortOrders.map((o: any) => ({
-    id: o.id,
-    name: o.name ?? '',
-    description: o.description ?? '',
-    frameOrder: (o.frameOrder || []).map((uuid: string) => serverToLocalFrame.get(uuid)).filter((id: number | undefined) => id != null) as number[],
-    breaks: o.breaks ?? [],
-  }));
+  const localSortOrders: import('../store/state').SortOrder[] = restoredSortOrders.map((o: any) => {
+    const mapped: import('../store/state').SortOrder = {
+      id: o.id,
+      name: o.name ?? '',
+      description: o.description ?? '',
+      frameOrder: (o.frameOrder || []).map((uuid: string) => serverToLocalFrame.get(uuid)).filter((id: number | undefined) => id != null) as number[],
+      breaks: o.breaks ?? [],
+    };
+    if (o.bracketTree) mapped.bracketTree = remapBracketIds(o.bracketTree, serverToLocalFrame) as BracketNodeData | undefined;
+    if (o.sortedSnapshot) mapped.sortedSnapshot = (o.sortedSnapshot as string[]).map((uuid) => serverToLocalFrame.get(uuid)).filter((id: number | undefined) => id != null) as number[];
+    return mapped;
+  });
 
   // Apply structure immediately so the user sees the project right away.
   // Do a FULL reset of all per-frame maps to avoid stale data from the previous project.
@@ -2301,6 +2337,7 @@ async function performRestore(projectId: string, snapshotId: string): Promise<vo
     if (progressBar) progressBar.style.width = '60%';
     if (progressLabel) progressLabel.textContent = 'Loading images…';
 
+    if (state().sortEditingId) closeSortMode();
     beginSystemAction();
     try {
       await applyCloudTreeToStore(tree, undefined, (loaded, total) => {
@@ -2969,6 +3006,8 @@ async function tryPullFromCloud(): Promise<void> {
         }
       }
 
+      // Close sort-edit view before applying cloud tree
+      if (state().sortEditingId) closeSortMode();
       // System action: all setState calls inside are NOT user changes
       beginSystemAction();
       try {

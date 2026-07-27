@@ -63,7 +63,7 @@ export interface Setup {
 
 /** 12-colour palette for setups. */
 /** App version — bump before every deploy. */
-export const APP_VERSION = 'v4.9.032';
+export const APP_VERSION = 'v4.9.033';
 
 export const SETUP_COLORS: { name: string; hex: string }[] = [
   { name: 'DAYLIGHT',      hex: '#CFE2F6' },
@@ -351,6 +351,19 @@ export interface SortBreak {
   position: number;   // index in the order array where this break sits
 }
 
+/** Bracket tree node – serialisable subset (no DOM refs). */
+export interface BracketNodeData {
+  inputIds: number[];
+  categoryId?: string;
+  categoryName?: string;
+  itemId?: string;
+  itemName?: string;
+  matchedIds: number[];
+  right?: BracketNodeData;
+  down?: BracketNodeData;
+  expanded?: boolean;
+}
+
 /** A named custom frame ordering (e.g. "Shooting order", "VFX priority"). */
 export interface SortOrder {
   id: string;
@@ -360,6 +373,10 @@ export interface SortOrder {
   frameOrder: number[];
   /** Breaks inserted between frames. */
   breaks: SortBreak[];
+  /** Persisted bracket tree (last state when user pressed SORT NOW / DONE / YES). */
+  bracketTree?: BracketNodeData;
+  /** Snapshot of bracket-derived order used for manual-change detection. */
+  sortedSnapshot?: number[];
 }
 
 export interface StripClipboard {

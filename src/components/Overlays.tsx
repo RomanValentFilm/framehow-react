@@ -42,6 +42,12 @@ export function Overlays() {
           only in landscape view
         </span>
       </div>
+      <div className="rotate-msg" id="sortRotateMsg">
+        <span>
+          Please rotate the screen<br />
+          to edit the shooting order
+        </span>
+      </div>
       <div className="swipe-hint" id="swipeHint">
         <div className="swipe-hint-inner">
           <div className="swipe-label">Swipe over image</div>

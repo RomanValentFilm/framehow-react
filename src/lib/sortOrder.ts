@@ -2,7 +2,7 @@
 // Imperative DOM pattern matching setups.ts.
 
 import { state, useStore, bumpRenderTick, SETUP_COLORS } from '../store/state';
-import type { SortOrder, SortBreak, Frame, NeedTable } from '../store/state';
+import type { SortOrder, SortBreak, Frame, NeedTable, BracketNodeData } from '../store/state';
 
 // ─── Sort Bracket Types ──────────────────────────────────────────────
 
@@ -37,6 +37,76 @@ interface ItemOption {
 /** Full bracket state. */
 interface BracketState {
   root: BracketNode;
+}
+
+/** Convert BracketNode tree → serialisable BracketNodeData for persistence. */
+function serializeBracket(node: BracketNode): BracketNodeData {
+  const d: BracketNodeData = {
+    inputIds: [...node.inputIds],
+    matchedIds: [...node.matchedIds],
+  };
+  if (node.categoryId) d.categoryId = node.categoryId;
+  if (node.categoryName) d.categoryName = node.categoryName;
+  if (node.itemId) d.itemId = node.itemId;
+  if (node.itemName) d.itemName = node.itemName;
+  if (node.expanded) d.expanded = true;
+  if (node.right) d.right = serializeBracket(node.right);
+  if (node.down) d.down = serializeBracket(node.down);
+  return d;
+}
+
+/** Restore BracketNode tree from persisted BracketNodeData. */
+function deserializeBracket(d: BracketNodeData): BracketNode {
+  return {
+    inputIds: [...d.inputIds],
+    categoryId: d.categoryId ?? null,
+    categoryName: d.categoryName ?? null,
+    itemId: d.itemId ?? null,
+    itemName: d.itemName ?? null,
+    matchedIds: [...d.matchedIds],
+    right: d.right ? deserializeBracket(d.right) : null,
+    down: d.down ? deserializeBracket(d.down) : null,
+    expanded: d.expanded ?? false,
+  };
+}
+
+/** Save bracket tree + snapshot into the SortOrder in the store. */
+function persistBracketToOrder(orderId: string, bracketState: BracketState, sortedSnapshot: number[] | undefined): void {
+  const s = state();
+  const orders = s.sortOrders.map((o) => {
+    if (o.id !== orderId) return o;
+    return {
+      ...o,
+      bracketTree: serializeBracket(bracketState.root),
+      sortedSnapshot: sortedSnapshot ? [...sortedSnapshot] : undefined,
+    };
+  });
+  useStore.setState({ sortOrders: orders });
+}
+
+/** Sync the sort-edit header's sticky top to sit right below the last visible bar.
+ *  Same pattern as syncDetailTop / syncDetailTopIPad in view.ts. */
+function syncSortHeaderTop(): void {
+  const header = document.querySelector('.sort-edit-header') as HTMLElement | null;
+  if (!header) return;
+  const detailBar = document.getElementById('detailBar');
+  const viewBar = document.querySelector('.view-bar') as HTMLElement | null;
+  // Find the last visible bar — detail-bar if visible, otherwise view-bar
+  let anchor: HTMLElement | null = null;
+  if (detailBar && getComputedStyle(detailBar).display !== 'none') {
+    anchor = detailBar;
+  } else if (viewBar && getComputedStyle(viewBar).display !== 'none') {
+    anchor = viewBar;
+  }
+  if (anchor) {
+    const anchorTop = parseFloat(getComputedStyle(anchor).top) || 0;
+    header.style.top = (anchorTop + anchor.offsetHeight - 1) + 'px';
+    // On touch devices with fixed bars, adjust sort-edit-view padding to clear them
+    if (getComputedStyle(anchor).position === 'fixed') {
+      const editView = document.getElementById('sortEditView');
+      if (editView) editView.style.paddingTop = (anchorTop + anchor.offsetHeight) + 'px';
+    }
+  }
 }
 
 // ─── Sort Bracket Logic ──────────────────────────────────────────────
@@ -633,11 +703,7 @@ function wireBracketEvents(el: HTMLElement, bracketState: BracketState, orderId:
 /** Show confirmation modal overlaying the bracket. */
 function showBracketConfirmModal(editViewEl: HTMLElement, _bracketState: BracketState, orderId: string): void {
   // Don't show duplicate
-  if (editViewEl.querySelector('.sort-bracket-confirm')) return;
-  const bracket = editViewEl.querySelector('.sort-bracket') as HTMLElement | null;
-  if (!bracket) return;
-  // Ensure bracket is a positioning context for the overlay
-  bracket.style.position = 'relative';
+  if (document.querySelector('.sort-bracket-confirm')) return;
   const modal = document.createElement('div');
   modal.className = 'sort-bracket-confirm';
   modal.innerHTML = `
@@ -648,7 +714,7 @@ function showBracketConfirmModal(editViewEl: HTMLElement, _bracketState: Bracket
         <button class="sort-bracket-confirm-no">No</button>
       </div>
     </div>`;
-  bracket.appendChild(modal);
+  document.body.appendChild(modal);
   modal.querySelector('.sort-bracket-confirm-yes')!.addEventListener('click', (e) => {
     e.stopPropagation();
     // Re-apply bracket order (overwrite manual changes, keep bracket as-is)
@@ -673,12 +739,15 @@ function showBracketConfirmModal(editViewEl: HTMLElement, _bracketState: Bracket
           o.id === orderId ? { ...o, frameOrder: newFrameOrder } : o
         );
         useStore.setState({ sortOrders: orders });
+        // Persist bracket tree + snapshot
+        persistBracketToOrder(orderId, bs, bracketOrder);
         bumpRenderTick();
         (editViewEl as any).__sortedSnapshot = bracketOrder;
       }
     }
     (editViewEl as any).__pendingConfirm = false;
     // Bracket stays ACTIVE — user can now edit it
+    modal.remove();
     void flushSyncNow();
     renderSortEditView(editViewEl, orderId);
   });
@@ -686,16 +755,17 @@ function showBracketConfirmModal(editViewEl: HTMLElement, _bracketState: Bracket
     e.stopPropagation();
     (editViewEl as any).__pendingConfirm = false;
     (editViewEl as any).__bracketActive = false;
+    modal.remove();
     renderSortEditView(editViewEl, orderId);
   });
 }
 
-/** Move only the manually-moved frame pills to their new row (add, don't replace). */
+/** Reorder bracket pills to reflect current frame order — cross-row AND within-row. */
 function reorderPillsByCurrentOrder(container: HTMLElement, sortedSnapshot: number[], currentOrder: number[]): void {
   const containers = Array.from(container.querySelectorAll('.sort-bracket-pills'));
   if (containers.length === 0) return;
 
-  // Row sizes from original bracket grouping
+  // Row sizes from original bracket grouping (before any moves)
   const sizes = containers.map((c) => c.querySelectorAll('.sort-bracket-pill[data-fid]').length);
   const rowForPos = (pos: number): number => {
     let cumul = 0;
@@ -709,7 +779,7 @@ function reorderPillsByCurrentOrder(container: HTMLElement, sortedSnapshot: numb
   const snapshotPos = new Map(sortedSnapshot.map((id, i) => [id, i]));
   const currentPos = new Map(currentOrder.map((id, i) => [id, i]));
 
-  // Only move pills whose row changed
+  // 1. Move pills whose row changed (cross-row)
   for (const id of currentOrder) {
     const oPos = snapshotPos.get(id);
     const cPos = currentPos.get(id);
@@ -720,19 +790,21 @@ function reorderPillsByCurrentOrder(container: HTMLElement, sortedSnapshot: numb
     if (!pill) continue;
     pill.remove();
 
-    // Insert into target row at correct position among existing pills
     const target = containers[rowForPos(cPos)];
     if (!target) continue;
-    const peers = Array.from(target.querySelectorAll('.sort-bracket-pill[data-fid]')) as HTMLElement[];
-    let inserted = false;
-    for (const p of peers) {
-      if (cPos < (currentPos.get(parseInt(p.dataset.fid!, 10)) ?? 999)) {
-        target.insertBefore(pill, p);
-        inserted = true;
-        break;
-      }
-    }
-    if (!inserted) target.appendChild(pill);
+    target.appendChild(pill);
+  }
+
+  // 2. Within each row, sort pills by their position in currentOrder
+  for (const rowEl of containers) {
+    const pills = Array.from(rowEl.querySelectorAll('.sort-bracket-pill[data-fid]')) as HTMLElement[];
+    if (pills.length < 2) continue;
+    pills.sort((a, b) => {
+      const aPos = currentPos.get(parseInt(a.dataset.fid!, 10)) ?? 999;
+      const bPos = currentPos.get(parseInt(b.dataset.fid!, 10)) ?? 999;
+      return aPos - bPos;
+    });
+    for (const p of pills) rowEl.appendChild(p);
   }
 }
 
@@ -761,8 +833,14 @@ function rerenderBracket(editViewEl: HTMLElement, bracketState: BracketState, or
   existing.replaceWith(newBracket);
   wireBracketEvents(newBracket, bracketState, orderId, editViewEl);
   // Scroll open dropdown to previously selected item
-  const scrollTarget = newBracket.querySelector('.sort-bracket-dd-scrollto');
-  if (scrollTarget) scrollTarget.scrollIntoView({ block: 'nearest' });
+  // Scroll dropdown list to previously selected item (centered)
+  const scrollTarget = newBracket.querySelector('.sort-bracket-dd-scrollto') as HTMLElement | null;
+  if (scrollTarget) {
+    const list = scrollTarget.closest('.sort-bracket-dd-list') as HTMLElement | null;
+    if (list) {
+      list.scrollTop = scrollTarget.offsetTop - list.offsetTop - list.clientHeight / 2 + scrollTarget.offsetHeight / 2;
+    }
+  }
 }
 
 import { flushSyncNow } from './currentProject';
@@ -900,7 +978,23 @@ export function closeSortMode(): void {
   const dropdown = document.getElementById('sortDropdown');
   if (dropdown) { dropdown.style.display = 'none'; dropdown.innerHTML = ''; }
   const editView = document.getElementById('sortEditView');
-  if (editView) { editView.style.display = 'none'; editView.innerHTML = ''; }
+  if (editView) {
+    // Clean up header-sync listeners
+    if ((editView as any).__sortHeaderObserver) {
+      ((editView as any).__sortHeaderObserver as MutationObserver).disconnect();
+      (editView as any).__sortHeaderObserver = null;
+    }
+    if ((editView as any).__sortHeaderListeners) {
+      window.removeEventListener('resize', syncSortHeaderTop);
+      window.removeEventListener('scroll', syncSortHeaderTop);
+      if ((editView as any).__sortOrientHandler) {
+        window.removeEventListener('resize', (editView as any).__sortOrientHandler);
+        (editView as any).__sortOrientHandler = null;
+      }
+      (editView as any).__sortHeaderListeners = false;
+    }
+    editView.style.display = 'none'; editView.innerHTML = '';
+  }
   document.getElementById('sortByBtn')?.classList.remove('active');
 
   // Restore normal content
@@ -1056,6 +1150,14 @@ function openSortEditView(orderId: string): void {
   const editView = document.getElementById('sortEditView');
   if (!editView) return;
 
+  // Clear previous order's bracket state — each order has its own
+  (editView as any).__bracketState = undefined;
+  (editView as any).__sortedSnapshot = undefined;
+  (editView as any).__bracketActive = false;
+  (editView as any).__pendingConfirm = false;
+  (editView as any).__activeReorderFid = null;
+  (editView as any).__activeBreakId = null;
+
   // Hide normal content (columns area)
   const columns = document.querySelector('.columns') as HTMLElement | null;
   if (columns) columns.style.display = 'none';
@@ -1064,6 +1166,39 @@ function openSortEditView(orderId: string): void {
   editView.style.display = '';
   window.scrollTo(0, 0); // Start at top so toolbar is visible
   renderSortEditView(editView, orderId);
+
+  // Keep sort-edit header synced on resize, scroll, and when detail-bar toggles
+  if (!(editView as any).__sortHeaderListeners) {
+    (editView as any).__sortHeaderListeners = true;
+    window.addEventListener('resize', syncSortHeaderTop);
+    window.addEventListener('scroll', syncSortHeaderTop, { passive: true } as any);
+    // Watch for body.detail-open class changes so header repositions when detail-bar shows/hides
+    const obs = new MutationObserver(() => syncSortHeaderTop());
+    obs.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+    (editView as any).__sortHeaderObserver = obs;
+    // iPhone: show rotate overlay when switching to portrait while bracket is active
+    const sortOrientHandler = () => {
+      const isPhone = Math.min(window.innerWidth, window.innerHeight) <= 430;
+      if (!isPhone) return;
+      const ev = document.getElementById('sortEditView');
+      if (!ev || !state().sortEditingId) return;
+      if (window.innerHeight > window.innerWidth && (ev as any).__bracketActive) {
+        // Rotated to portrait while bracket active — deactivate bracket, keep sort view
+        (ev as any).__bracketActive = false;
+        (ev as any).__pendingConfirm = false;
+        renderSortEditView(ev, state().sortEditingId!);
+        const overlay = document.getElementById('sortRotateMsg');
+        if (overlay) {
+          overlay.classList.add('show');
+          const dismiss = () => { overlay.classList.remove('show'); };
+          overlay.addEventListener('click', dismiss, { once: true });
+          setTimeout(dismiss, 4000);
+        }
+      }
+    };
+    window.addEventListener('resize', sortOrientHandler);
+    (editView as any).__sortOrientHandler = sortOrientHandler;
+  }
 }
 
 function renderSortEditView(el: HTMLElement, orderId: string): void {
@@ -1099,24 +1234,37 @@ function renderSortEditView(el: HTMLElement, orderId: string): void {
   }
 
   // Header — breadcrumb + ADD BREAK button for custom orders
+  // Name is always tappable to edit (independent of bracket state)
   html += `
     <div class="sort-edit-header">
       <div class="sort-edit-header-left">
         <span class="sort-edit-label">name:</span>
         <span class="sort-edit-sep">&rsaquo;</span>
-        <span class="sort-edit-name-static${bracketActive ? ' sort-edit-name-hidden' : ''}" data-sort-namelabel="${orderId}">${orderName}</span>
-        ${orderId !== '__storyflow__' ? `<input class="sort-edit-name${bracketActive ? '' : ' sort-edit-name-hidden'}" value="${orderName}" data-sort-rename="${orderId}" />` : ''}
+        ${orderId !== '__storyflow__'
+          ? `<span class="sort-edit-name-static" data-sort-namelabel="${orderId}">${orderName}</span>
+             <input class="sort-edit-name sort-edit-name-hidden" value="${orderName}" data-sort-rename="${orderId}" />`
+          : `<span class="sort-edit-name-static">${orderName}</span>`}
       </div>
       <div class="sort-edit-header-right">
         ${orderId !== '__storyflow__' ? (bracketActive
-          ? `<div class="sort-edit-sort-wrap"><button class="sort-edit-rename-btn sort-edit-save-btn" data-sort-action="rename">SORT NOW</button><span class="sort-edit-sort-hint">sort frames by bracket below</span></div>`
-          : `<button class="sort-edit-rename-btn" data-sort-action="rename">EDIT</button>`)
+          ? `<div class="sort-edit-sort-wrap"><span class="sort-edit-sort-hint">sort frames by<br>bracket below</span><button class="sort-edit-rename-btn sort-edit-save-btn" data-sort-action="rename">SORT NOW</button></div>`
+          : `<button class="sort-edit-rename-btn" data-sort-action="rename">EDIT ORDER</button>`)
         : ''}
         <button class="sort-edit-add-break-btn" data-sort-action="addbreak">ADD BREAK</button>
       </div>
     </div>`;
 
   // Bracket area — active (editable) or frozen (read-only after SORT NOW)
+  // Restore persisted bracket from SortOrder if not already in DOM
+  if (!(el as any).__bracketState && orderId !== '__storyflow__') {
+    const persistedOrder = order;
+    if (persistedOrder?.bracketTree) {
+      (el as any).__bracketState = { root: deserializeBracket(persistedOrder.bracketTree) };
+      if (persistedOrder.sortedSnapshot && !(el as any).__sortedSnapshot) {
+        (el as any).__sortedSnapshot = [...persistedOrder.sortedSnapshot];
+      }
+    }
+  }
   const bracketState = (el as any).__bracketState as BracketState | undefined;
   const pendingConfirm = (el as any).__pendingConfirm as boolean ?? false;
   if (bracketActive && orderId !== '__storyflow__') {
@@ -1184,6 +1332,9 @@ function renderSortEditView(el: HTMLElement, orderId: string): void {
 
   // Fill in sketch images that need rasterization (async, non-blocking)
   void fillRasterizedImages(el);
+
+  // Sync header sticky top to sit right below the last visible bar
+  syncSortHeaderTop();
 }
 
 function renderFrameSetCard(f: Frame, idx: number, activeReorderFid: number | null): string {
@@ -1415,24 +1566,110 @@ async function fillRasterizedImages(el: HTMLElement): Promise<void> {
 // ─── Edit view event wiring ───────────────────────────────────────────
 
 function wireEditViewEvents(el: HTMLElement, orderId: string): void {
-  // EDIT / SAVE button — toggles bracket area + rename input
+  // ─── Inline name editing (always available, independent of bracket) ───
   const nameLabel = el.querySelector('.sort-edit-name-static') as HTMLElement | null;
   const nameInput = el.querySelector('.sort-edit-name') as HTMLInputElement | null;
+  if (nameLabel && nameInput && orderId !== '__storyflow__') {
+    const commitName = () => {
+      const val = nameInput.value.trim();
+      if (val && val !== nameLabel.textContent) {
+        nameLabel.textContent = val;
+        const s = state();
+        const orders = s.sortOrders.map((o) =>
+          o.id === orderId ? { ...o, name: val } : o
+        );
+        useStore.setState({ sortOrders: orders });
+        bumpRenderTick();
+        void flushSyncNow();
+      }
+      nameInput.classList.add('sort-edit-name-hidden');
+      nameLabel.classList.remove('sort-edit-name-hidden');
+    };
+    const isPhoneName = Math.min(window.innerWidth, window.innerHeight) <= 430;
+    const hasTouchName = navigator.maxTouchPoints > 0;
+
+    const showNameInput = (e: Event) => {
+      e.stopPropagation();
+      nameLabel.classList.add('sort-edit-name-hidden');
+      nameInput.classList.remove('sort-edit-name-hidden');
+
+      if (isPhoneName) {
+        nameInput.focus();
+        nameInput.select();
+      } else if (hasTouchName) {
+        // iPad: prevent iOS scroll, focus manually without scrolling
+        e.preventDefault();
+        nameInput.focus({ preventScroll: true });
+        nameInput.select();
+        useStore.setState({ scrollHideGuard: Date.now() + 1200 });
+        setTimeout(() => {
+          const vv = window.visualViewport;
+          if (!vv) return;
+          const rect = nameInput.getBoundingClientRect();
+          if (rect.bottom > vv.height) {
+            useStore.setState({ scrollHideGuard: Date.now() + 800 });
+            nameInput.scrollIntoView({ block: 'center', behavior: 'smooth' });
+          } else {
+            // Physical keyboard — scroll header to 25% then freeze body
+            const header = nameInput.closest('.sort-edit-header');
+            useStore.setState({ scrollHideGuard: Date.now() + 800 });
+            const headerTop = header ? header.getBoundingClientRect().top + window.scrollY : window.scrollY;
+            const lockY = Math.max(0, headerTop - window.innerHeight * 0.25);
+            window.scrollTo(0, lockY);
+            document.body.style.position = 'fixed';
+            document.body.style.top = `-${lockY}px`;
+            document.body.style.width = '100%';
+            document.body.style.overflow = 'hidden';
+          }
+        }, 500);
+      } else {
+        nameInput.focus();
+        nameInput.select();
+      }
+    };
+
+    nameLabel.addEventListener('click', showNameInput);
+
+    nameInput.addEventListener('blur', () => {
+      // Unlock body if it was locked for physical keyboard
+      if (document.body.style.position === 'fixed') {
+        const lockY = Math.abs(parseInt(document.body.style.top || '0', 10));
+        document.body.style.position = '';
+        document.body.style.top = '';
+        document.body.style.width = '';
+        document.body.style.overflow = '';
+        window.scrollTo(0, lockY);
+      }
+      commitName();
+    });
+    nameInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); nameInput.blur(); }
+      if (e.key === 'Escape') { nameInput.value = nameLabel.textContent || ''; nameInput.blur(); }
+    });
+  }
+
+  // ─── EDIT / SORT NOW button — toggles bracket area ───
   const renameBtn = el.querySelector('[data-sort-action="rename"]') as HTMLElement | null;
-  if (renameBtn && nameInput && nameLabel) {
+  if (renameBtn) {
     renameBtn.addEventListener('click', () => {
       const isSorting = renameBtn.textContent === 'SORT NOW';
       if (isSorting) {
-        // Apply bracket sort order + rename
+        // If there are pending manual changes, ask before overwriting
+        const pendingConfirm = (el as any).__pendingConfirm as boolean ?? false;
+        if (pendingConfirm) {
+          showBracketConfirmModal(el, (el as any).__bracketState!, orderId);
+          return;
+        }
+
+        // Apply bracket sort order
         const bracketState = (el as any).__bracketState as BracketState | undefined;
-        const val = nameInput.value.trim();
         const s = state();
 
         // Build new frameOrder from bracket
         let newFrameOrder: number[] | null = null;
+        let bracketOrder: number[] | undefined;
         if (bracketState) {
-          const bracketOrder = flattenBracketOrder(bracketState.root);
-          // Replace visible frame positions in the full frameOrder
+          bracketOrder = flattenBracketOrder(bracketState.root);
           const order = s.sortOrders.find((o) => o.id === orderId);
           if (order) {
             const visibleSet = new Set(getVisibleFrames().map((f) => f.id));
@@ -1447,36 +1684,58 @@ function wireEditViewEvents(el: HTMLElement, orderId: string): void {
             }
             while (bi < bracketOrder.length) newFrameOrder.push(bracketOrder[bi++]);
           }
-          // Save snapshot of sorted visible order for manual-change detection
           (el as any).__sortedSnapshot = bracketOrder;
         }
 
         const orders = s.sortOrders.map((o) => {
           if (o.id !== orderId) return o;
           const updated = { ...o };
-          if (val) updated.name = val;
           if (newFrameOrder) updated.frameOrder = newFrameOrder;
           return updated;
         });
         useStore.setState({ sortOrders: orders });
+        if (bracketState) {
+          persistBracketToOrder(orderId, bracketState, bracketOrder);
+        }
         bumpRenderTick();
 
-        if (val) nameLabel.textContent = val;
         // Freeze bracket (keep state, disable editing)
         (el as any).__bracketActive = false;
         void flushSyncNow();
         renderSortEditView(el, orderId);
       } else {
+        // iPhone portrait: show rotate overlay instead of entering edit mode
+        const isPhoneEdit = Math.min(window.innerWidth, window.innerHeight) <= 430;
+        if (isPhoneEdit && window.innerHeight > window.innerWidth) {
+          const overlay = document.getElementById('sortRotateMsg');
+          if (overlay) {
+            overlay.classList.add('show');
+            const dismiss = () => { overlay.classList.remove('show'); };
+            overlay.addEventListener('click', dismiss, { once: true });
+            setTimeout(dismiss, 4000);
+          }
+          return;
+        }
         // Enter edit mode
         (el as any).__bracketActive = true;
         if ((el as any).__bracketState) {
-          // Existing bracket — keep it, require confirmation before modifying
+          // Existing bracket in DOM — keep it, require confirmation before modifying
           (el as any).__pendingConfirm = true;
         } else {
-          // First time — fresh bracket
-          (el as any).__sortedSnapshot = undefined;
+          // Try to restore persisted bracket from SortOrder
+          const order = state().sortOrders.find((o) => o.id === orderId);
+          if (order?.bracketTree) {
+            (el as any).__bracketState = { root: deserializeBracket(order.bracketTree) };
+            (el as any).__sortedSnapshot = order.sortedSnapshot ? [...order.sortedSnapshot] : undefined;
+            (el as any).__pendingConfirm = true;
+          } else {
+            // First time — fresh bracket
+            (el as any).__sortedSnapshot = undefined;
+          }
         }
         renderSortEditView(el, orderId);
+        // Scroll to top so bracket area is visible
+        window.scrollTo({ top: 0, behavior: 'smooth' });
       }
     });
   }
@@ -1485,6 +1744,62 @@ function wireEditViewEvents(el: HTMLElement, orderId: string): void {
   const bracketEl = el.querySelector('.sort-bracket') as HTMLElement | null;
   if (bracketEl && (el as any).__bracketState) {
     wireBracketEvents(bracketEl, (el as any).__bracketState, orderId, el);
+  }
+
+  // Wire pill thumbnail tooltips (bracket + frozen bracket)
+  const pillContainer = el.querySelector('.sort-bracket, .sort-bracket-frozen') as HTMLElement | null;
+  if (pillContainer) {
+    const s = state();
+    const hasTouchPill = navigator.maxTouchPoints > 0;
+    let activeThumb: HTMLElement | null = null;
+
+    const removeThumb = () => {
+      if (activeThumb) { activeThumb.remove(); activeThumb = null; }
+    };
+
+    const showThumb = (pill: HTMLElement) => {
+      removeThumb();
+      const fid = parseInt(pill.dataset.fid!, 10);
+      const f = s.frames.find((fr) => fr.id === fid);
+      if (!f || !f.src) return;
+      const img = document.createElement('img');
+      img.className = 'sort-pill-thumb';
+      img.src = f.src;
+      // Position above or below depending on space
+      const rect = pill.getBoundingClientRect();
+      if (rect.top > 180) {
+        img.classList.add('sort-pill-thumb-above');
+      } else {
+        img.classList.add('sort-pill-thumb-below');
+      }
+      pill.appendChild(img);
+      activeThumb = img;
+    };
+
+    pillContainer.querySelectorAll('.sort-bracket-pill[data-fid]').forEach((pill) => {
+      if (hasTouchPill) {
+        pill.addEventListener('touchstart', (e) => {
+          e.stopPropagation();
+          if (activeThumb && activeThumb.parentElement === pill) {
+            removeThumb();
+          } else {
+            showThumb(pill as HTMLElement);
+          }
+        }, { passive: true });
+      } else {
+        pill.addEventListener('mouseenter', () => showThumb(pill as HTMLElement));
+        pill.addEventListener('mouseleave', removeThumb);
+      }
+    });
+
+    // Dismiss on touch outside (iOS)
+    if (hasTouchPill) {
+      el.addEventListener('touchstart', (e) => {
+        if (activeThumb && !(e.target as HTMLElement).closest('.sort-bracket-pill')) {
+          removeThumb();
+        }
+      }, { passive: true });
+    }
   }
 
   // Auto-deactivate active frame or break when tapping anywhere outside it
@@ -1528,10 +1843,16 @@ function wireEditViewEvents(el: HTMLElement, orderId: string): void {
   });
 
   // Done button on active frame card — sync when user finishes reordering
+  // DONE has highest priority: always persist bracket + snapshot so reload restores this state.
   el.querySelectorAll('[data-sort-deactivate]').forEach((btn) => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       (el as any).__activeReorderFid = null;
+      const bs = (el as any).__bracketState as BracketState | undefined;
+      if (bs) {
+        const snap = (el as any).__sortedSnapshot as number[] | undefined;
+        persistBracketToOrder(orderId, bs, snap);
+      }
       void flushSyncNow();
       renderSortEditView(el, orderId);
     });
