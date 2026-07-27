@@ -167,6 +167,13 @@ Changes:
 Changes:
 - `src/lib/accountFlow.ts` — Added fullscreen overlay ("Couldn't load all content — check your connection") with Retry/Dismiss buttons when R2 image fetches fail; overlay shows after progress bar hides (no overlap); Retry triggers fresh pull; Dismiss lets user browse but _pullIncomplete stays true (no push/save of half-loaded state).
 
+### v4.9.031 — 2026-07-23 (dev — deployed)
+**Sort bracket: swap fixes, KEEP ORDER, pills column, auto-select single frames**
+
+Changes:
+- `src/lib/sortOrder.ts` — fixInputIds after swap (correct inputIds without changing matchedIds), KEEP ORDER dropdown option, always show pills in column 5, auto-select single-frame pending nodes, fixed collectNodes column tracking, fixed subtreeHeight for auto-selected nodes
+- `src/styles/globals.css` — KEEP ORDER dropdown style, pill height matched to boxes
+
 ### v4.9.030 — 2026-07-21 (dev — deployed)
 **Rename VERSN→HOW, 3x2 HOW opens camera when empty, auto-focus notes on desktop**
 
