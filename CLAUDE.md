@@ -182,6 +182,15 @@ Changes:
 - `src/styles/globals.css` — KEEP ORDER dropdown style, pill height matched to boxes
 
 ### v4.9.030 — 2026-07-21 (dev — deployed)
+### v4.9.033 — 2026-07-27 (dev — deployed)
+**Fix project-open in sort mode, bracket dropdown scroll-to-selected, iPhone portrait bracket hide, confirm modal top layer**
+
+Changes:
+- `src/lib/accountFlow.ts` — Import closeSortMode; call it before project open/restore/sync/logout/delete/new-project so sort-edit view closes and new project renders
+- `src/lib/sortOrder.ts` — Bracket dropdown: scroll to and highlight previously selected item (red left border, brighter bg) on reselect. iPhone portrait: deactivate bracket on rotation, closeSortMode not needed since sort view stays. Confirm modal appended to document.body instead of bracket for proper z-index layering, removed on Yes/No click
+- `src/styles/globals.css` — `.sort-bracket-dd-scrollto` highlight style. iPhone portrait: hide `.sort-bracket,.sort-bracket-frozen`. Confirm modal `position:fixed;z-index:9999` for top layer visibility
+
+### v4.9.030 — 2026-07-22 (dev — deployed)
 **Rename VERSN→HOW, 3x2 HOW opens camera when empty, auto-focus notes on desktop**
 
 Changes:

@@ -349,6 +349,63 @@ function swapUpInTree(bracketState: BracketState, target: BracketNode): void {
   fixInputIds(target);
 }
 
+/** Sync bracket tree with current visible frames.
+ *  - Adds new frames to root.inputIds (they cascade to "remaining" buckets via fixInputIds)
+ *  - Removes deleted frames from the tree
+ *  Returns true if any changes were made. */
+function syncBracketWithVisibleFrames(root: BracketNode, visibleIds: number[]): boolean {
+  const bracketIds = new Set(flattenBracketOrder(root));
+  const visibleSet = new Set(visibleIds);
+  let changed = false;
+  // Add new frames not in bracket
+  for (const id of visibleIds) {
+    if (!bracketIds.has(id)) {
+      root.inputIds.push(id);
+      changed = true;
+    }
+  }
+  // Remove deleted frames from bracket
+  const removeFromNode = (node: BracketNode) => {
+    const before = node.inputIds.length;
+    node.inputIds = node.inputIds.filter((id) => visibleSet.has(id));
+    node.matchedIds = node.matchedIds.filter((id) => visibleSet.has(id));
+    if (node.inputIds.length !== before) changed = true;
+    if (node.right) removeFromNode(node.right);
+    if (node.down) removeFromNode(node.down);
+  };
+  removeFromNode(root);
+  // Cascade inputIds through the tree so new frames land in correct remaining buckets
+  if (changed) fixInputIds(root);
+  return changed;
+}
+
+/** Detect which bracket nodes are "affected" by manual reordering.
+ *  A node is affected if any of its matchedIds changed position relative to sortedSnapshot. */
+function getAffectedNodes(root: BracketNode, sortedSnapshot: number[], currentOrder: number[]): Set<BracketNode> {
+  const snapshotPos = new Map(sortedSnapshot.map((id, i) => [id, i]));
+  const currentPos = new Map(currentOrder.map((id, i) => [id, i]));
+  const movedIds = new Set<number>();
+  for (const [id, pos] of currentPos) {
+    if (snapshotPos.get(id) !== pos) movedIds.add(id);
+  }
+  const affected = new Set<BracketNode>();
+  const walk = (node: BracketNode) => {
+    if (node.itemId && node.matchedIds.some((id) => movedIds.has(id))) {
+      affected.add(node);
+    }
+    if (node.right) walk(node.right);
+    if (node.down) walk(node.down);
+  };
+  walk(root);
+  return affected;
+}
+
+/** Verify all visible frame IDs are in the bracket tree. Returns missing IDs. */
+function verifyBracketIntegrity(root: BracketNode, visibleIds: number[]): number[] {
+  const bracketIds = new Set(flattenBracketOrder(root));
+  return visibleIds.filter((id) => !bracketIds.has(id));
+}
+
 // ─── Grid-based layout ───────────────────────────────────────────────
 
 interface GridCell {
@@ -407,7 +464,7 @@ function flattenBracketOrder(node: BracketNode): number[] {
 }
 
 /** Recursively lay out nodes into grid cells. */
-function layoutNode(node: BracketNode, col: number, startRow: number, cells: GridCell[], nodeId: number[], root: BracketNode, isDownChild: boolean = false): void {
+function layoutNode(node: BracketNode, col: number, startRow: number, cells: GridCell[], nodeId: number[], root: BracketNode, isDownChild: boolean = false, affectedNodes?: Set<BracketNode>): void {
   const nid = nodeId[0]++;
 
   const MAX_SORT_COLS = 4; // columns 0-3 for sorting, column 4 for frame pills
@@ -505,9 +562,11 @@ function layoutNode(node: BracketNode, col: number, startRow: number, cells: Gri
 
   // Selected red box with ▶ triangle after it — at contentRow
   const hasRight = !!node.right || node.matchedIds.length > 0;
+  const isAffected = affectedNodes?.has(node) ?? false;
+  const affectedClass = isAffected ? ' sort-bracket-sel-affected' : '';
   cells.push({
     row: contentRow, col, type: 'selected', node,
-    html: `<div class="sort-bracket-sel-wrap"><div class="sort-bracket-sel-box" data-bn="${nid}" data-bact="reselect"><span class="sort-bracket-sel-name">${node.itemName!.toUpperCase()}</span><span class="sort-bracket-sel-count">${node.matchedIds.length}</span></div>${hasRight ? '<span class="sort-bracket-harrow">▶</span>' : ''}</div>`,
+    html: `<div class="sort-bracket-sel-wrap"><div class="sort-bracket-sel-box${affectedClass}" data-bn="${nid}" data-bact="reselect"><span class="sort-bracket-sel-name">${node.itemName!.toUpperCase()}</span><span class="sort-bracket-sel-count">${node.matchedIds.length}</span></div>${hasRight ? '<span class="sort-bracket-harrow">▶</span>' : ''}</div>`,
   });
 
   // Right child or final pills — cap at MAX_SORT_COLS
@@ -526,7 +585,7 @@ function layoutNode(node: BracketNode, col: number, startRow: number, cells: Gri
       cells.push({ row: contentRow, col: pillsCol, type: 'pills', node, html: pillsHtml });
     }
   } else {
-    layoutNode(node.right, col + 1, contentRow, cells, nodeId, root);
+    layoutNode(node.right, col + 1, contentRow, cells, nodeId, root, false, affectedNodes);
   }
 
   // Remaining (down) — placed below right-subtree rows
@@ -537,15 +596,15 @@ function layoutNode(node: BracketNode, col: number, startRow: number, cells: Gri
     if (!node.down) {
       node.down = createEmptyNode(remainingIds);
     }
-    layoutNode(node.down, col, remRow, cells, nodeId, root, true);
+    layoutNode(node.down, col, remRow, cells, nodeId, root, true, affectedNodes);
   }
 }
 
 /** Render the bracket area as a CSS grid. */
-function renderBracketArea(bracketState: BracketState, _orderId: string): string {
+function renderBracketArea(bracketState: BracketState, _orderId: string, affectedNodes?: Set<BracketNode>): string {
   const cells: GridCell[] = [];
   const nodeId = [0]; // mutable counter
-  layoutNode(bracketState.root, 0, 0, cells, nodeId, bracketState.root);
+  layoutNode(bracketState.root, 0, 0, cells, nodeId, bracketState.root, false, affectedNodes);
 
   // Find grid dimensions
   let maxRow = 0, maxCol = 0;
@@ -570,18 +629,20 @@ function renderBracketArea(bracketState: BracketState, _orderId: string): string
   return html;
 }
 
+/** Check if a node has any descendant in the affected set. */
+function hasAffectedDescendant(node: BracketNode, affectedNodes: Set<BracketNode>): boolean {
+  if (node.right) {
+    if (affectedNodes.has(node.right) || hasAffectedDescendant(node.right, affectedNodes)) return true;
+  }
+  if (node.down) {
+    if (affectedNodes.has(node.down) || hasAffectedDescendant(node.down, affectedNodes)) return true;
+  }
+  return false;
+}
+
 /** Wire bracket events — uses data-bn (node index) + data-bact (action). */
 function wireBracketEvents(el: HTMLElement, bracketState: BracketState, orderId: string, editViewEl: HTMLElement): void {
-  // If pending confirmation, intercept ALL clicks with a warning modal
-  if ((editViewEl as any).__pendingConfirm) {
-    el.addEventListener('click', (e) => {
-      e.stopPropagation();
-      e.preventDefault();
-      // Show confirmation modal
-      showBracketConfirmModal(editViewEl, bracketState, orderId);
-    });
-    return; // Don't wire normal events
-  }
+  const affectedNodes = (editViewEl as any).__affectedNodes as Set<BracketNode> | undefined;
 
   // Collect all nodes into a flat array matching layoutNode's traversal order
   const MAX_SORT_COLS = 4;
@@ -684,7 +745,20 @@ function wireBracketEvents(el: HTMLElement, bracketState: BracketState, orderId:
       const nid = parseInt((item as HTMLElement).dataset.bn!, 10);
       const node = nodes[nid];
       if (!node || !node.categoryId) return;
-      // Save previous selection so dropdown scrolls to it
+
+      // If this node is affected by manual reordering, show per-node dialog
+      if (affectedNodes?.has(node)) {
+        showBranchConflictDialog(editViewEl, bracketState, orderId, node, nid);
+        return;
+      }
+
+      // Check if this node has affected descendants — reselecting would redistribute their manual order
+      if (affectedNodes && affectedNodes.size > 0 && hasAffectedDescendant(node, affectedNodes)) {
+        showAncestorReselectWarning(editViewEl, bracketState, orderId, node);
+        return;
+      }
+
+      // Unaffected node with no affected descendants — allow reselect directly
       (node as any)._prevItemId = node.itemId;
       // Reset to combined dropdown — clear category + item + children
       node.categoryId = null;
@@ -697,6 +771,157 @@ function wireBracketEvents(el: HTMLElement, bracketState: BracketState, orderId:
       node.expanded = true; // auto-open dropdown for immediate re-pick
       rerenderBracket(editViewEl, bracketState, orderId);
     });
+  });
+}
+
+/** Show per-branch conflict dialog when clicking an affected node. */
+function showBranchConflictDialog(editViewEl: HTMLElement, bracketState: BracketState, orderId: string, node: BracketNode, _nid: number): void {
+  if (document.querySelector('.sort-bracket-confirm')) return;
+  const modal = document.createElement('div');
+  modal.className = 'sort-bracket-confirm';
+  modal.innerHTML = `
+    <div class="sort-bracket-confirm-inner" style="gap:14px;min-width:260px;">
+      <div class="sort-bracket-confirm-text">You're about to overwrite your manual sorting:</div>
+      <div class="sort-branch-options">
+        <label class="sort-branch-option">
+          <input type="radio" name="branchChoice" value="keep" checked />
+          <span>Keep the frame order as is (no change)</span>
+        </label>
+        <label class="sort-branch-option">
+          <input type="radio" name="branchChoice" value="overwrite" />
+          <span>Overwrite the frame order with new rule</span>
+        </label>
+      </div>
+      <div class="sort-bracket-confirm-btns">
+        <button class="sort-bracket-confirm-yes">OK</button>
+        <button class="sort-bracket-confirm-no">Cancel</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+
+  // OK button
+  modal.querySelector('.sort-bracket-confirm-yes')!.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const choice = (modal.querySelector('input[name="branchChoice"]:checked') as HTMLInputElement)?.value;
+    modal.remove();
+
+    if (choice === 'keep') {
+      // Mark node as resolved — remove from affected set, undim
+      const affected = (editViewEl as any).__affectedNodes as Set<BracketNode> | undefined;
+      if (affected) {
+        affected.delete(node);
+        // If no more affected nodes, clear pendingConfirm entirely
+        if (affected.size === 0) {
+          (editViewEl as any).__pendingConfirm = false;
+          (editViewEl as any).__affectedNodes = undefined;
+        }
+      }
+      rerenderBracket(editViewEl, bracketState, orderId);
+    } else {
+      // Overwrite — re-apply bracket order for this node's frames, then open for reselect
+      // First, pull frames back to bracket positions in frameOrder
+      const s = state();
+      const order = s.sortOrders.find((o) => o.id === orderId);
+      const sortedSnapshot = (editViewEl as any).__sortedSnapshot as number[] | undefined;
+      if (order && sortedSnapshot) {
+        // Get the frame IDs this node controls
+        const nodeFrameIds = new Set(node.matchedIds);
+        // Rebuild frameOrder: for node's frames, use their bracket-snapshot positions
+        const snapshotPos = new Map(sortedSnapshot.map((id, i) => [id, i]));
+        const currentOrder = [...order.frameOrder];
+        // Extract node's frames from current order
+        const nodeFramesInOrder = currentOrder.filter((id) => nodeFrameIds.has(id));
+        // Sort them by their snapshot position
+        nodeFramesInOrder.sort((a, b) => (snapshotPos.get(a) ?? 0) - (snapshotPos.get(b) ?? 0));
+        // Put them back
+        let ni = 0;
+        const newOrder = currentOrder.map((id) => nodeFrameIds.has(id) ? nodeFramesInOrder[ni++] : id);
+        const orders = s.sortOrders.map((o) => o.id === orderId ? { ...o, frameOrder: newOrder } : o);
+        useStore.setState({ sortOrders: orders });
+        // Update snapshot to reflect the restored positions
+        const visibleFrames = getOrderedFrames({ ...order, frameOrder: newOrder });
+        const newSnapshot = visibleFrames.map((f) => f.id);
+        (editViewEl as any).__sortedSnapshot = newSnapshot;
+        bumpRenderTick();
+      }
+      // Remove from affected set
+      const affected = (editViewEl as any).__affectedNodes as Set<BracketNode> | undefined;
+      if (affected) {
+        affected.delete(node);
+        if (affected.size === 0) {
+          (editViewEl as any).__pendingConfirm = false;
+          (editViewEl as any).__affectedNodes = undefined;
+        }
+      }
+      // Open node for reselect
+      (node as any)._prevItemId = node.itemId;
+      node.categoryId = null;
+      node.categoryName = null;
+      node.itemId = null;
+      node.itemName = null;
+      node.matchedIds = [];
+      node.right = null;
+      node.down = null;
+      node.expanded = true;
+      // Re-render the whole view to reflect both bracket and frame card changes
+      renderSortEditView(editViewEl, orderId);
+    }
+  });
+
+  // Cancel button
+  modal.querySelector('.sort-bracket-confirm-no')!.addEventListener('click', (e) => {
+    e.stopPropagation();
+    modal.remove();
+  });
+}
+
+/** Show warning when reselecting an unaffected node that has affected descendants. */
+function showAncestorReselectWarning(editViewEl: HTMLElement, bracketState: BracketState, orderId: string, node: BracketNode): void {
+  if (document.querySelector('.sort-bracket-confirm')) return;
+  const modal = document.createElement('div');
+  modal.className = 'sort-bracket-confirm';
+  modal.innerHTML = `
+    <div class="sort-bracket-confirm-inner" style="gap:14px;min-width:260px;">
+      <div class="sort-bracket-confirm-text">This change will redistribute manually ordered frames. Continue?</div>
+      <div class="sort-bracket-confirm-btns">
+        <button class="sort-bracket-confirm-yes">Yes</button>
+        <button class="sort-bracket-confirm-no">No</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+
+  modal.querySelector('.sort-bracket-confirm-yes')!.addEventListener('click', (e) => {
+    e.stopPropagation();
+    modal.remove();
+    // Clear affected descendants from set
+    const affected = (editViewEl as any).__affectedNodes as Set<BracketNode> | undefined;
+    if (affected) {
+      const clearAffected = (n: BracketNode) => {
+        if (n.right) { affected.delete(n.right); clearAffected(n.right); }
+        if (n.down) { affected.delete(n.down); clearAffected(n.down); }
+      };
+      clearAffected(node);
+      if (affected.size === 0) {
+        (editViewEl as any).__pendingConfirm = false;
+        (editViewEl as any).__affectedNodes = undefined;
+      }
+    }
+    // Proceed with reselect — reset node and open dropdown
+    (node as any)._prevItemId = node.itemId;
+    node.categoryId = null;
+    node.categoryName = null;
+    node.itemId = null;
+    node.itemName = null;
+    node.matchedIds = [];
+    node.right = null;
+    node.down = null;
+    node.expanded = true;
+    rerenderBracket(editViewEl, bracketState, orderId);
+  });
+
+  modal.querySelector('.sort-bracket-confirm-no')!.addEventListener('click', (e) => {
+    e.stopPropagation();
+    modal.remove();
   });
 }
 
@@ -826,12 +1051,49 @@ function markMovedPills(container: HTMLElement, sortedSnapshot: number[], curren
 function rerenderBracket(editViewEl: HTMLElement, bracketState: BracketState, orderId: string): void {
   const existing = editViewEl.querySelector('.sort-bracket');
   if (!existing) return;
-  const bracketHtml = renderBracketArea(bracketState, orderId);
+  // Auto-sync: add new frames, remove deleted ones
+  const visibleIds = getVisibleFrames().map((f) => f.id);
+  syncBracketWithVisibleFrames(bracketState.root, visibleIds);
+  // Recompute affected nodes after tree changes (node reselect may redistribute frames)
+  const sortedSnapshot = (editViewEl as any).__sortedSnapshot as number[] | undefined;
+  const pendingConfirm = (editViewEl as any).__pendingConfirm as boolean ?? false;
+  if (pendingConfirm && sortedSnapshot) {
+    const s = state();
+    const order = s.sortOrders.find((o) => o.id === orderId);
+    if (order) {
+      const currentOrder = getOrderedFrames(order).map((f) => f.id);
+      const freshAffected = getAffectedNodes(bracketState.root, sortedSnapshot, currentOrder);
+      (editViewEl as any).__affectedNodes = freshAffected.size > 0 ? freshAffected : undefined;
+      if (freshAffected.size === 0) {
+        (editViewEl as any).__pendingConfirm = false;
+      }
+    }
+  }
+  const affectedNodes = (editViewEl as any).__affectedNodes as Set<BracketNode> | undefined;
+  const bracketHtml = renderBracketArea(bracketState, orderId, affectedNodes);
   const temp = document.createElement('div');
   temp.innerHTML = bracketHtml;
   const newBracket = temp.firstElementChild as HTMLElement;
   existing.replaceWith(newBracket);
   wireBracketEvents(newBracket, bracketState, orderId, editViewEl);
+  // Preserve red pills: reorder + mark moved after re-render
+  if (sortedSnapshot) {
+    const s = state();
+    const order = s.sortOrders.find((o) => o.id === orderId);
+    if (order) {
+      const currentOrder = getOrderedFrames(order).map((f) => f.id);
+      reorderPillsByCurrentOrder(newBracket, sortedSnapshot, currentOrder);
+      markMovedPills(newBracket, sortedSnapshot, currentOrder);
+    }
+  }
+  // Integrity check — ensure all frames remain in bracket
+  const missing = verifyBracketIntegrity(bracketState.root, visibleIds);
+  if (missing.length > 0) {
+    console.warn('[Bracket integrity] Missing frame IDs:', missing);
+  }
+  // Persist bracket to IDB+cloud on every change so it survives browser close
+  persistBracketToOrder(orderId, bracketState, sortedSnapshot);
+  void flushSyncNow();
   // Scroll open dropdown to previously selected item
   // Scroll dropdown list to previously selected item (centered)
   const scrollTarget = newBracket.querySelector('.sort-bracket-dd-scrollto') as HTMLElement | null;
@@ -974,10 +1236,20 @@ export function toggleSortDropdown(): void {
 }
 
 export function closeSortMode(): void {
+  // Persist bracket state before closing so it survives reopen / browser close
+  const editView = document.getElementById('sortEditView');
+  if (editView) {
+    const bracketState = (editView as any).__bracketState as BracketState | undefined;
+    const sortedSnapshot = (editView as any).__sortedSnapshot as number[] | undefined;
+    const editingId = state().sortEditingId;
+    if (bracketState && editingId) {
+      persistBracketToOrder(editingId, bracketState, sortedSnapshot);
+    }
+  }
+
   useStore.setState({ sortMode: false, sortEditingId: null });
   const dropdown = document.getElementById('sortDropdown');
   if (dropdown) { dropdown.style.display = 'none'; dropdown.innerHTML = ''; }
-  const editView = document.getElementById('sortEditView');
   if (editView) {
     // Clean up header-sync listeners
     if ((editView as any).__sortHeaderObserver) {
@@ -992,6 +1264,11 @@ export function closeSortMode(): void {
         (editView as any).__sortOrientHandler = null;
       }
       (editView as any).__sortHeaderListeners = false;
+    }
+    // Clean up beforeunload handler
+    if ((editView as any).__sortUnloadHandler) {
+      window.removeEventListener('beforeunload', (editView as any).__sortUnloadHandler);
+      (editView as any).__sortUnloadHandler = null;
     }
     editView.style.display = 'none'; editView.innerHTML = '';
   }
@@ -1020,13 +1297,13 @@ function renderDropdown(el: HTMLElement): void {
   const s = state();
   const activeId = s.activeSortOrderId;
 
-  // Find existing shooting order (if user already created one)
-  const shootingOrder = s.sortOrders.find((o) => o.name === 'SHOOTING ORDER');
-  const shootingId = shootingOrder ? shootingOrder.id : '__shooting_new__';
+  // Find or reference the first shooting order
+  const firstShootingOrder = s.sortOrders[0]; // first created is the default
+  const shootingId = firstShootingOrder ? firstShootingOrder.id : '__shooting_new__';
 
   let html = `<div class="sort-dd-inner">`;
 
-  // Story flow (always first)
+  // Story flow (always first, no delete)
   html += `
     <div class="sort-dd-item${activeId === null ? ' sort-dd-selected' : ''}" data-sort-id="__storyflow__">
       <div class="sort-dd-item-left">
@@ -1035,19 +1312,33 @@ function renderDropdown(el: HTMLElement): void {
       </div>
     </div>`;
 
-  // Shooting order (always visible)
-  html += `
-    <div class="sort-dd-item${activeId === shootingId ? ' sort-dd-selected' : ''}" data-sort-id="${shootingId}">
-      <div class="sort-dd-item-left">
-        <div class="sort-dd-title-row">
-          <span class="sort-dd-title">SHOOTING ORDER</span>
+  // First shooting order (always visible, no delete)
+  if (firstShootingOrder) {
+    html += `
+      <div class="sort-dd-item${activeId === shootingId ? ' sort-dd-selected' : ''}" data-sort-id="${shootingId}">
+        <div class="sort-dd-item-left">
+          <div class="sort-dd-title-row">
+            <span class="sort-dd-title">${firstShootingOrder.name}</span>
+          </div>
+          <div class="sort-dd-hint">Your custom frame order</div>
         </div>
-        <div class="sort-dd-hint">Your custom frame order</div>
-      </div>
-    </div>`;
+      </div>`;
+  } else {
+    // No shooting order yet — show placeholder that auto-creates on click
+    html += `
+      <div class="sort-dd-item" data-sort-id="__shooting_new__">
+        <div class="sort-dd-item-left">
+          <div class="sort-dd-title-row">
+            <span class="sort-dd-title">SHOOTING ORDER</span>
+          </div>
+          <div class="sort-dd-hint">Your custom frame order</div>
+        </div>
+      </div>`;
+  }
 
-  // Other custom orders (exclude the default shooting order)
-  for (const order of s.sortOrders.filter((o) => o.name !== 'SHOOTING ORDER')) {
+  // Additional shooting orders (with delete button)
+  for (let i = 1; i < s.sortOrders.length; i++) {
+    const order = s.sortOrders[i];
     html += `
       <div class="sort-dd-item${activeId === order.id ? ' sort-dd-selected' : ''}" data-sort-id="${order.id}">
         <div class="sort-dd-item-left">
@@ -1056,6 +1347,7 @@ function renderDropdown(el: HTMLElement): void {
           </div>
           <div class="sort-dd-hint">Your custom frame order</div>
         </div>
+        <button class="sort-dd-delete" data-sort-delete="${order.id}" title="Delete order">&times;</button>
       </div>`;
   }
 
@@ -1067,6 +1359,42 @@ function renderDropdown(el: HTMLElement): void {
 
   html += `</div>`;
   el.innerHTML = html;
+
+  // Wire delete buttons (stop propagation so it doesn't open the order)
+  el.querySelectorAll('.sort-dd-delete').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const delId = (btn as HTMLElement).dataset.sortDelete!;
+      // Confirmation modal
+      if (document.querySelector('.sort-bracket-confirm')) return;
+      const modal = document.createElement('div');
+      modal.className = 'sort-bracket-confirm';
+      modal.innerHTML = `
+        <div class="sort-bracket-confirm-inner">
+          <div class="sort-bracket-confirm-text">Are you sure you want to delete this shooting order?</div>
+          <div class="sort-bracket-confirm-btns">
+            <button class="sort-bracket-confirm-yes">Yes</button>
+            <button class="sort-bracket-confirm-no">No</button>
+          </div>
+        </div>`;
+      document.body.appendChild(modal);
+      modal.querySelector('.sort-bracket-confirm-yes')!.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        modal.remove();
+        const s2 = state();
+        const updated = s2.sortOrders.filter((o) => o.id !== delId);
+        const newActive = s2.activeSortOrderId === delId ? null : s2.activeSortOrderId;
+        useStore.setState({ sortOrders: updated, activeSortOrderId: newActive });
+        bumpRenderTick();
+        void flushSyncNow();
+        renderDropdown(el);
+      });
+      modal.querySelector('.sort-bracket-confirm-no')!.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        modal.remove();
+      });
+    });
+  });
 
   // Wire events — clicking any order opens its frame-set view
   el.querySelectorAll('.sort-dd-item[data-sort-id]').forEach((item) => {
@@ -1084,13 +1412,13 @@ function renderDropdown(el: HTMLElement): void {
 /** Open frame-set view for any order — handles story flow + auto-creates shooting order */
 function openOrderView(orderId: string): void {
   if (orderId === '__shooting_new__') {
-    // Auto-create shooting order on first click
+    // Auto-create first shooting order on first click
     const s = state();
     const id = genId('sort', s.nextSortOrderId);
     const frameOrder = getVisibleFrames().map((f) => f.id);
     const newOrder: SortOrder = {
       id,
-      name: 'SHOOTING ORDER',
+      name: 'SHOOTING ORDER 1',
       description: 'Your custom frame order',
       frameOrder,
       breaks: [],
@@ -1122,9 +1450,13 @@ function addNewOrder(): void {
   const s = state();
   const id = genId('sort', s.nextSortOrderId);
   const frameOrder = getVisibleFrames().map((f) => f.id);
+  // Auto-increment name: SHOOTING ORDER 1 exists by default, so find next number
+  const existingNames = s.sortOrders.map((o) => o.name);
+  let num = 2;
+  while (existingNames.includes(`SHOOTING ORDER ${num}`)) num++;
   const newOrder: SortOrder = {
     id,
-    name: 'SHOOTING ORDER',
+    name: `SHOOTING ORDER ${num}`,
     description: 'Your custom frame order',
     frameOrder,
     breaks: [],
@@ -1166,6 +1498,15 @@ function openSortEditView(orderId: string): void {
   editView.style.display = '';
   window.scrollTo(0, 0); // Start at top so toolbar is visible
   renderSortEditView(editView, orderId);
+
+  // Persist bracket if browser closes mid-sort
+  const unloadHandler = () => {
+    const bs = (editView as any).__bracketState as BracketState | undefined;
+    const snap = (editView as any).__sortedSnapshot as number[] | undefined;
+    if (bs && orderId) persistBracketToOrder(orderId, bs, snap);
+  };
+  window.addEventListener('beforeunload', unloadHandler);
+  (editView as any).__sortUnloadHandler = unloadHandler;
 
   // Keep sort-edit header synced on resize, scroll, and when detail-bar toggles
   if (!(editView as any).__sortHeaderListeners) {
@@ -1274,11 +1615,22 @@ function renderSortEditView(el: HTMLElement, orderId: string): void {
       bs = { root: createEmptyNode(allFrameIds) };
       (el as any).__bracketState = bs;
     }
-    if (pendingConfirm && hasManualChanges) {
+    // Auto-sync: add new frames, remove deleted ones
+    syncBracketWithVisibleFrames(bs.root, allFrameIds);
+    // Compute affected nodes for per-branch conflict handling
+    let affectedNodes: Set<BracketNode> | undefined;
+    if (pendingConfirm && hasManualChanges && sortedSnapshot) {
+      affectedNodes = getAffectedNodes(bs.root, sortedSnapshot, allFrameIds);
+      // Store on el for wireBracketEvents to use
+      (el as any).__affectedNodes = affectedNodes;
       html += `<div class="sort-bracket-warning">You modified the order manually</div>`;
+    } else {
+      (el as any).__affectedNodes = undefined;
     }
-    html += renderBracketArea(bs, orderId);
+    html += renderBracketArea(bs, orderId, affectedNodes);
   } else if (bracketState && !bracketActive && orderId !== '__storyflow__') {
+    // Auto-sync frozen bracket too
+    syncBracketWithVisibleFrames(bracketState.root, frames.map((f) => f.id));
     // Frozen bracket — show read-only after SORT NOW
     if (hasManualChanges) {
       html += `<div class="sort-bracket-warning">You modified the order manually</div>`;
@@ -1654,22 +2006,45 @@ function wireEditViewEvents(el: HTMLElement, orderId: string): void {
     renameBtn.addEventListener('click', () => {
       const isSorting = renameBtn.textContent === 'SORT NOW';
       if (isSorting) {
-        // If there are pending manual changes, ask before overwriting
         const pendingConfirm = (el as any).__pendingConfirm as boolean ?? false;
-        if (pendingConfirm) {
-          showBracketConfirmModal(el, (el as any).__bracketState!, orderId);
-          return;
-        }
-
-        // Apply bracket sort order
         const bracketState = (el as any).__bracketState as BracketState | undefined;
         const s = state();
 
-        // Build new frameOrder from bracket
+        // Build the final frame order from the bracket
         let newFrameOrder: number[] | null = null;
-        let bracketOrder: number[] | undefined;
+        let finalBracketOrder: number[] | undefined;
+        const affectedNodes = (el as any).__affectedNodes as Set<BracketNode> | undefined;
+
         if (bracketState) {
-          bracketOrder = flattenBracketOrder(bracketState.root);
+          // Always get the raw bracket order (used for snapshot + non-affected frames)
+          const rawBracketOrder = flattenBracketOrder(bracketState.root);
+
+          if (pendingConfirm && affectedNodes && affectedNodes.size > 0) {
+            // Hybrid: bracket order for unaffected, manual positions for affected frames
+            const affectedFrameIds = new Set<number>();
+            for (const node of affectedNodes) {
+              for (const id of node.matchedIds) affectedFrameIds.add(id);
+            }
+            const order = s.sortOrders.find((o) => o.id === orderId);
+            if (order) {
+              const currentCardOrder = getOrderedFrames(order).map((f) => f.id);
+              const manualQueue = currentCardOrder.filter((id) => affectedFrameIds.has(id));
+              let mi = 0;
+              finalBracketOrder = rawBracketOrder.map((id) => {
+                if (affectedFrameIds.has(id)) return manualQueue[mi++] ?? id;
+                return id;
+              });
+            } else {
+              finalBracketOrder = rawBracketOrder;
+            }
+            // Snapshot = raw bracket order (not hybrid) so affected frames show as red pills
+            (el as any).__sortedSnapshot = rawBracketOrder;
+          } else {
+            // No manual changes or all resolved — apply bracket order as-is
+            finalBracketOrder = rawBracketOrder;
+            (el as any).__sortedSnapshot = rawBracketOrder;
+          }
+
           const order = s.sortOrders.find((o) => o.id === orderId);
           if (order) {
             const visibleSet = new Set(getVisibleFrames().map((f) => f.id));
@@ -1677,15 +2052,18 @@ function wireEditViewEvents(el: HTMLElement, orderId: string): void {
             let bi = 0;
             for (const fid of order.frameOrder) {
               if (visibleSet.has(fid)) {
-                if (bi < bracketOrder.length) newFrameOrder.push(bracketOrder[bi++]);
+                if (bi < finalBracketOrder!.length) newFrameOrder.push(finalBracketOrder![bi++]);
               } else {
                 newFrameOrder.push(fid);
               }
             }
-            while (bi < bracketOrder.length) newFrameOrder.push(bracketOrder[bi++]);
+            while (bi < finalBracketOrder!.length) newFrameOrder.push(finalBracketOrder![bi++]);
           }
-          (el as any).__sortedSnapshot = bracketOrder;
         }
+
+        // Clear pending state
+        (el as any).__pendingConfirm = false;
+        (el as any).__affectedNodes = undefined;
 
         const orders = s.sortOrders.map((o) => {
           if (o.id !== orderId) return o;
@@ -1695,7 +2073,7 @@ function wireEditViewEvents(el: HTMLElement, orderId: string): void {
         });
         useStore.setState({ sortOrders: orders });
         if (bracketState) {
-          persistBracketToOrder(orderId, bracketState, bracketOrder);
+          persistBracketToOrder(orderId, bracketState, (el as any).__sortedSnapshot);
         }
         bumpRenderTick();
 
