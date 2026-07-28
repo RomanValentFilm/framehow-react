@@ -1443,6 +1443,7 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
     nextSortOrderId: s.nextSortOrderId > 1 ? s.nextSortOrderId : undefined,
     activeSortOrderId: s.activeSortOrderId ?? undefined,
     storyFlowBreaks: s.storyFlowBreaks?.length > 0 ? s.storyFlowBreaks : undefined,
+    camAspectRatio: s.camAspectRatio !== 'canvas' ? s.camAspectRatio : undefined,
   });
 
   // Upload NEW images to R2 in parallel (images with existing r2Key were already added above)
@@ -1813,6 +1814,7 @@ async function applyCloudTreeToStore(
   let restoredNextSortOrderId = 1;
   let restoredActiveSortOrderId: string | null = null;
   let restoredStoryFlowBreaks: import('../store/state').SortBreak[] = [];
+  let restoredCamAspectRatio: import('../store/state').CamRatioKey = 'canvas';
   let isPortrait = newFrames.length > 0 && newFrames[0].cropH > newFrames[0].cropW;
 
   if (tree.project.metadata) {
@@ -1907,6 +1909,9 @@ async function applyCloudTreeToStore(
       }
       if (meta.storyFlowBreaks && Array.isArray(meta.storyFlowBreaks)) {
         restoredStoryFlowBreaks = meta.storyFlowBreaks;
+      }
+      if (meta.camAspectRatio != null) {
+        restoredCamAspectRatio = meta.camAspectRatio;
       }
     } catch {
       // Ignore malformed metadata — use defaults
@@ -2020,6 +2025,7 @@ async function applyCloudTreeToStore(
     nextSortOrderId: restoredNextSortOrderId,
     activeSortOrderId: restoredActiveSortOrderId,
     storyFlowBreaks: restoredStoryFlowBreaks,
+    camAspectRatio: restoredCamAspectRatio,
     sortMode: false,
     sortEditingId: null,
     renderTick: prev.renderTick + 1,

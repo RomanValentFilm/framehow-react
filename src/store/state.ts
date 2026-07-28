@@ -63,7 +63,20 @@ export interface Setup {
 
 /** 12-colour palette for setups. */
 /** App version — bump before every deploy. */
-export const APP_VERSION = 'v4.9.034';
+export const APP_VERSION = 'v4.9.035';
+
+/** Camera guide aspect-ratio presets. 'canvas' = use the frame's own canvas AR. */
+export type CamRatioKey = '2.39' | '2.0' | '1.85' | 'canvas' | '16:9' | '4:3' | '1:1';
+
+export const CAM_RATIOS: { key: CamRatioKey; label: string; value: number | null }[] = [
+  { key: '2.39',   label: '2.39:1', value: 2.39 },
+  { key: '2.0',    label: '2:1',    value: 2 },
+  { key: '1.85',   label: '1.85:1', value: 1.85 },
+  { key: 'canvas', label: 'CANVAS', value: null },
+  { key: '16:9',   label: '16:9',   value: 16 / 9 },
+  { key: '4:3',    label: '4:3',    value: 4 / 3 },
+  { key: '1:1',    label: '1:1',    value: 1 },
+];
 
 export const SETUP_COLORS: { name: string; hex: string }[] = [
   { name: 'DAYLIGHT',      hex: '#CFE2F6' },
@@ -481,6 +494,8 @@ export interface FrameHowState {
   /** ID of sort order currently being edited in frame-set view; null = not editing */
   sortEditingId: string | null;
   nextSortOrderId: number;
+  /** Camera guide aspect ratio preset — 'canvas' uses the frame's own canvas AR */
+  camAspectRatio: CamRatioKey;
   // bumped manually by the imperative core to wake any React subscribers
   // that need to react to mutable state changes (e.g., frame badge count).
   renderTick: number;
@@ -576,6 +591,7 @@ const initial: FrameHowState = {
   scribbleMode: false,
   sortEditingId: null,
   nextSortOrderId: 1,
+  camAspectRatio: 'canvas',
   renderTick: 0,
 };
 
@@ -632,6 +648,7 @@ export function resetStoryboardState(): void {
     sortMode: false,
     sortEditingId: null,
     nextSortOrderId: 1,
+    camAspectRatio: 'canvas',
     renderTick: state().renderTick + 1,
   });
   // Clean up sort DOM elements if they exist

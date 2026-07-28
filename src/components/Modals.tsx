@@ -40,6 +40,8 @@ export function Modals() {
             <button className="camera-snap" id="cameraSnap"></button>
             <button className="camera-flip" id="cameraFlip">⟲</button>
           </div>
+          <button className="camera-ratio-btn" id="cameraRatioBtn">RATIO</button>
+          <div className="camera-ratio-menu hidden" id="cameraRatioMenu"></div>
         </div>
       </div>
 

@@ -368,7 +368,7 @@ export function autoNewVersionIfNeeded(fid: number): Version {
   const s = state();
   const ai = s.activeTab[fid],
     ver = s.versions[fid][ai];
-  if (s.overviewAction) return ver;
+  // NOTE: no overviewAction short-circuit — see autoNewStripVersionIfNeeded.
   if (ver.bgImage || (ver.strokes && ver.strokes.length > 0)) {
     const n = s.versions[fid].length + 1;
     const newVer: Version = { id: n, label: `v${n}`, type: 'empty', strokes: [], bgImage: null };
@@ -715,11 +715,11 @@ export function addNewStripVersion(fid: number, strip: StripType, newVer: Versio
 
 /** Auto-create new version if current one has content, for any strip */
 export function autoNewStripVersionIfNeeded(fid: number, strip: StripType): Version {
-  const s = state();
   const ai = getStripActiveTab(fid, strip);
   const vers = getStripVersions(fid, strip);
   const ver = vers[ai];
-  if (s.overviewAction) return ver;
+  // NOTE: no overviewAction short-circuit — camera/upload from 3x2 view must
+  // create a new version (v2, v3, …) just like the main strip does.
   if (ver.bgImage || (ver.strokes && ver.strokes.length > 0)) {
     const prefix = stripTabPrefix(strip);
     const n = vers.length + 1;

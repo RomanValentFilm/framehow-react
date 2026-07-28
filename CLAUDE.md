@@ -38,7 +38,7 @@ cd ~/Desktop/Framehow\ Files/framehow-react && git add -A && git commit -m "v4.6
 ### Version numbering
 - `APP_VERSION` constant in `src/store/state.ts` — displayed in toolbar next to logo
 - Format: `v4.6.0XX` where XX increments with each deploy
-- Current: `v4.9.020`
+- Current: `v4.9.035`
 - Production: `v4.9.001`
 
 ### Clean rebuild (if changes don't appear)
@@ -167,7 +167,15 @@ Changes:
 Changes:
 - `src/lib/accountFlow.ts` — Added fullscreen overlay ("Couldn't load all content — check your connection") with Retry/Dismiss buttons when R2 image fetches fail; overlay shows after progress bar hides (no overlap); Retry triggers fresh pull; Dismiss lets user browse but _pullIncomplete stays true (no push/save of half-loaded state).
 
-### v4.9.032 — 2026-07-27 (dev — deployed)
+### v4.9.034 — 2026-07-28 (dev — deployed)
+**SORT NOW hybrid order, auto-increment order names, delete button, bracket persist**
+
+Changes:
+- `src/lib/sortOrder.ts` — SORT NOW hybrid: applies bracket order for unaffected branches, preserves manual positions for affected frames; snapshot set to raw bracket order so affected pills stay red; ancestor reselect warning when unaffected node has affected descendants; auto-increment order names (SHOOTING ORDER 2, 3, etc.); delete button with confirmation modal (first order undeletable); bracket persisted on closeSortMode + beforeunload; rerenderBracket persists bracket to IDB+cloud on every change; EDIT ORDER button brighter outline
+- `src/styles/globals.css` — EDIT ORDER button white outline + lighter text; .sort-dd-delete button styles
+- `src/lib/accountFlow.ts` — closeSortMode calls on project open, logout, account delete, new project, restore, sync
+
+
 **Sort bracket: auto-naming, SORT NOW, frozen bracket, manual reorder detection, red pills, confirmation modal**
 
 Changes:

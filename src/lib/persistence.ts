@@ -58,6 +58,8 @@ export interface CurrentProjectSnapshot {
   activeSortOrderId?: string | null;
   /** Story flow breaks — section dividers in default view (v4.9+) */
   storyFlowBreaks?: SortBreak[];
+  /** Camera guide aspect ratio preset (v4.9+) */
+  camAspectRatio?: string;
 }
 
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -143,6 +145,7 @@ export function snapshotFromStore(projectId: string | null, name: string | null)
     nextSortOrderId: s.nextSortOrderId > 1 ? s.nextSortOrderId : undefined,
     activeSortOrderId: s.activeSortOrderId ?? undefined,
     storyFlowBreaks: s.storyFlowBreaks?.length > 0 ? s.storyFlowBreaks : undefined,
+    camAspectRatio: s.camAspectRatio !== 'canvas' ? s.camAspectRatio : undefined,
   };
 }
 
@@ -213,6 +216,7 @@ export function applySnapshotToStore(snap: CurrentProjectSnapshot): void {
     nextSortOrderId: snap.nextSortOrderId ?? 1,
     activeSortOrderId: snap.activeSortOrderId ?? null,
     storyFlowBreaks: snap.storyFlowBreaks ?? [],
+    camAspectRatio: (snap.camAspectRatio as any) ?? 'canvas',
     renderTick: prev.renderTick + 1,
   }));
 }

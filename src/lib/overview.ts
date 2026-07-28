@@ -1223,6 +1223,15 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
   });
 }
 
+/** Index of the first non-hidden version in a strip (falls back to 0). */
+function _firstVisibleVersionIdx(fid: number, strip: StripType): number {
+  const vers = getStripVersions(fid, strip);
+  for (let i = 0; i < vers.length; i++) {
+    if (!vers[i].hidden) return i;
+  }
+  return 0;
+}
+
 /** Add swipe (touch) and arrow (desktop) navigation for 3×2 cards.
  *  @param isVersion true when the card is currently showing version content */
 function _addGrid3x2Nav(wrap: HTMLElement, fid: number, isVersion: boolean): void {
@@ -1252,8 +1261,10 @@ function _addGrid3x2Nav(wrap: HTMLElement, fid: number, isVersion: boolean): voi
         }
         renderGrid3x2Card(wrap, fid);
       } else if (!isVersion && dx < 0) {
-        const ai = getStripActiveTab(fid, companionStrip) || 0;
-        s.crossCompare[fid] = ai;
+        // Entering versions from MAIN — always start at the first version (v1)
+        const first = _firstVisibleVersionIdx(fid, companionStrip);
+        s.crossCompare[fid] = first;
+        setStripActiveTab(fid, companionStrip, first);
         renderGrid3x2Card(wrap, fid);
       } else if (isVersion && dx < 0) {
         const cur = s.crossCompare[fid] ?? 0;
@@ -1302,8 +1313,10 @@ function _addGrid3x2Nav(wrap: HTMLElement, fid: number, isVersion: boolean): voi
           }
         }
       } else {
-        const ai = getStripActiveTab(fid, companionStrip) || 0;
-        s.crossCompare[fid] = ai;
+        // Entering versions from MAIN — always start at the first version (v1)
+        const first = _firstVisibleVersionIdx(fid, companionStrip);
+        s.crossCompare[fid] = first;
+        setStripActiveTab(fid, companionStrip, first);
       }
       renderGrid3x2Card(wrap, fid);
     })

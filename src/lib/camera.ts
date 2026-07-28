@@ -2,10 +2,12 @@
 // All functions match original IDs (#cameraOverlay, #cameraVideo, #cropOverlay, ...)
 // rendered by React.
 
-import { state, useStore } from '../store/state';
+import { state, useStore, CAM_RATIOS } from '../store/state';
+import type { CamRatioKey } from '../store/state';
 import { showToast, showCamBlockedMsg } from './modals';
 import { fhTrack } from './tracking';
 import { resetToolbarState } from './view';
+import { flushSyncNow } from './currentProject';
 
 let cameraStream: MediaStream | null = null;
 let cameraFacing: 'environment' | 'user' = 'environment';
@@ -27,6 +29,20 @@ export function setOnCapturedImage(fn: (dataURL: string, target: CameraTarget) =
   onCapturedImage = fn;
 }
 
+/** Aspect ratio of the frame's own canvas (the 'canvas' preset). */
+function canvasAspectRatio(fid: number): number {
+  const f = state().frames.find((fr) => fr.id === fid);
+  return f && f.cropW && f.cropH ? f.cropW / f.cropH : 16 / 9;
+}
+
+/** Effective guide aspect ratio — resolves the saved preset against the frame canvas. */
+function effectiveAspectRatio(fid: number): number {
+  const key = state().camAspectRatio || 'canvas';
+  const preset = CAM_RATIOS.find((r) => r.key === key);
+  if (preset && preset.value != null) return preset.value;
+  return canvasAspectRatio(fid);
+}
+
 export async function openCamera(
   fid: number,
   div: HTMLElement,
@@ -35,8 +51,7 @@ export async function openCamera(
   strip: string = 'ver'
 ): Promise<void> {
   fhTrack('camera_opened');
-  const f = state().frames.find((fr) => fr.id === fid);
-  const ar = f && f.cropW && f.cropH ? f.cropW / f.cropH : 16 / 9;
+  const ar = effectiveAspectRatio(fid);
   cameraTarget = { fid, div, aspectRatio: ar, fromCompare: !!fromCompare, fromMain: !!fromMain, stripType: strip };
 
   let hasCamera = false;
@@ -191,6 +206,7 @@ export function closeCamera(): void {
   if (viewBar) viewBar.classList.remove('tb-hide');
   if (detailBar) detailBar.classList.remove('tb-hide');
   document.getElementById('cameraOverlay')!.classList.add('hidden');
+  document.getElementById('cameraRatioMenu')?.classList.add('hidden');
   const vid = document.getElementById('cameraVideo') as HTMLVideoElement;
   vid.srcObject = null;
   vid.style.filter = '';
@@ -232,9 +248,53 @@ export function positionExpSlider(): void {
   (sl.querySelector('input[type=range]') as HTMLInputElement).style.width = sliderLen + 'px';
 }
 
+/** Render the RATIO dropdown menu with the current selection marked. */
+function renderRatioMenu(): void {
+  const menu = document.getElementById('cameraRatioMenu');
+  if (!menu) return;
+  const cur = state().camAspectRatio || 'canvas';
+  menu.innerHTML = CAM_RATIOS.map(
+    (r) =>
+      `<button class="camera-ratio-item${r.key === cur ? ' active' : ''}" data-ratio="${r.key}">${r.label}</button>`
+  ).join('');
+  menu.querySelectorAll('.camera-ratio-item').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const key = (btn as HTMLElement).dataset.ratio as CamRatioKey;
+      useStore.setState({ camAspectRatio: key });
+      menu.classList.add('hidden');
+      // Recompute guide with the new ratio
+      if (cameraTarget) {
+        cameraTarget.aspectRatio = effectiveAspectRatio(cameraTarget.fid);
+        positionCameraGuide(cameraTarget.aspectRatio);
+      }
+      void flushSyncNow();
+    });
+  });
+}
+
 // Wire camera button events + viewfinder exposure rendering.
 export function wireCameraEvents(): void {
   document.getElementById('cameraSnap')!.addEventListener('click', captureFromViewfinder);
+
+  // RATIO button — toggle the preset menu
+  const ratioBtn = document.getElementById('cameraRatioBtn');
+  const ratioMenu = document.getElementById('cameraRatioMenu');
+  if (ratioBtn && ratioMenu) {
+    ratioBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (ratioMenu.classList.contains('hidden')) {
+        renderRatioMenu();
+        ratioMenu.classList.remove('hidden');
+      } else {
+        ratioMenu.classList.add('hidden');
+      }
+    });
+    // Close menu when tapping elsewhere in the viewfinder
+    document.getElementById('cameraVideoWrap')?.addEventListener('click', () => {
+      ratioMenu.classList.add('hidden');
+    });
+  }
   document.getElementById('cameraCancel')!.addEventListener('click', () => {
     const fid = cameraTarget && cameraTarget.fid;
     closeCamera();
