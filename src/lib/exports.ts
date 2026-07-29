@@ -158,21 +158,41 @@ function fullVerLabel(fLabel: string, vLabel: string): string {
 }
 
 /** Build strip picker (radio for double = single-select, checkbox for overview = multi-select) */
-export function buildStripPicker(containerId: string, mode: 'radio' | 'checkbox', radioName?: string): void {
+/** Non-image companions the Double Strip layout can show instead of a version. */
+export const DATA_STRIPS = [
+  { id: '__needs__', label: 'NEEDS' },
+  { id: '__notes__', label: 'NOTES' },
+  { id: '__table__', label: 'TABLE' },
+];
+
+export function buildStripPicker(
+  containerId: string,
+  mode: 'radio' | 'checkbox',
+  radioName?: string,
+  withDataStrips = false
+): void {
   const container = document.getElementById(containerId);
   if (!container) return;
   const s = state();
   const defs = s.stripDefs || DEFAULT_STRIP_DEFS;
+  const inputType = mode === 'radio' ? 'radio' : 'checkbox';
+  const nameAttr = mode === 'radio' && radioName ? `name="${radioName}"` : '';
   let html = '';
   defs.forEach((def, i) => {
-    const inputType = mode === 'radio' ? 'radio' : 'checkbox';
-    const checked = i === 0 ? 'checked' : '';
-    const nameAttr = mode === 'radio' && radioName ? `name="${radioName}"` : '';
     html += `<label class="exp-strip-opt">
-      <input type="${inputType}" ${nameAttr} value="${def.id}" ${checked} data-strip="${def.id}">
+      <input type="${inputType}" ${nameAttr} value="${def.id}" ${i === 0 ? 'checked' : ''} data-strip="${def.id}">
       <span>${escapeHtml(def.buttonLabel)}</span>
     </label>`;
   });
+  // Double Strip can also pair the main frame with NEEDS / NOTES / TABLE
+  if (withDataStrips) {
+    for (const d of DATA_STRIPS) {
+      html += `<label class="exp-strip-opt">
+        <input type="${inputType}" ${nameAttr} value="${d.id}" data-strip="${d.id}">
+        <span>${d.label}</span>
+      </label>`;
+    }
+  }
   container.innerHTML = html;
 }
 
@@ -470,6 +490,19 @@ function noteContent(fid: number): { text: string; table: TableData | null } {
   return { text: (fn.noteText || '').trim(), table: null };
 }
 
+/**
+ * Which version the Double Strip layout should print beside the main frame.
+ *   starred — first one the user starred
+ *   tagged  — first carrying a SETUP tag pill (origin or copy)
+ *   active  — whichever tab is currently open
+ */
+function pickDoubleVersion(fid: number, strip: StripType, mode: string) {
+  const vers = getStripVersions(fid, strip);
+  if (mode === 'starred') return vers.find((v) => versionHasContent(v) && (v as any).starred);
+  if (mode === 'tagged') return vers.find((v) => versionHasContent(v) && !!(v as any).setupTagged);
+  return vers[getStripActiveTab(fid, strip)];
+}
+
 /** Sort-order picker — STORY FLOW plus every saved shooting order. */
 function buildSortOrderPicker(containerId: string, radioName: string): void {
   const container = document.getElementById(containerId);
@@ -550,7 +583,7 @@ export function openExportModal(): void {
   if (!nameInput.value) nameInput.value = getCurrentProject().name || s.lastPdfName || 'Storyboard';
   populateMetaFields('export');
   buildGroupPicker('exportGroupPicker', 'exportGroup');
-  buildStripPicker('exportDoubleStripPicker', 'radio', 'exportDoubleStrip');
+  buildStripPicker('exportDoubleStripPicker', 'radio', 'exportDoubleStrip', true);
   buildStripPicker('exportOverviewStripPicker', 'checkbox');
   buildSortOrderPicker('exportSortOrderPicker', 'exportSortOrder');
   buildVersionPicker();
@@ -572,9 +605,10 @@ export function updateExportVisibility(layout: string, prefix: string): void {
   // and always prints NEEDS, so neither picker applies there.
   show(`${prefix}OverviewStripWrap`, isOverview);
   show(`${prefix}VersionPickerWrap`, isOverview);
-  // NEEDS / NOTES apply to Double Strip and Full Overview
-  show(`${prefix}NeedsToggleWrap`, isDouble || isOverview);
-  show(`${prefix}NotesToggleWrap`, isDouble || isOverview);
+  // Double Strip picks NEEDS / NOTES / TABLE as strips instead, so the toggles
+  // only make sense for Full Overview.
+  show(`${prefix}NeedsToggleWrap`, isOverview);
+  show(`${prefix}NotesToggleWrap`, isOverview);
   // 3×2 always prints descriptions, and Sort By has neither toggle
   show(`${prefix}TextToggleWrap`, isDouble || isOverview);
   show(`${prefix}HiddenToggleWrap`, !isSortBy);
@@ -591,7 +625,7 @@ export function openPptxModal(): void {
   if (!nameInput.value) nameInput.value = getCurrentProject().name || s.lastPdfName || 'Storyboard';
   populateMetaFields('pptx');
   buildGroupPicker('pptxGroupPicker', 'pptxGroup');
-  buildStripPicker('pptxDoubleStripPicker', 'radio', 'pptxDoubleStrip');
+  buildStripPicker('pptxDoubleStripPicker', 'radio', 'pptxDoubleStrip', true);
   buildStripPicker('pptxOverviewStripPicker', 'checkbox');
   buildSortOrderPicker('pptxSortOrderPicker', 'pptxSortOrder');
   buildPptxVersionPicker();
@@ -827,42 +861,6 @@ export async function runExport(): Promise<void> {
     }
     return curY - y;
   }
-
-  /** NEEDS / NOTES block used by the Double Strip layout. */
-  function drawDoubleExtras(f: Frame, x: number, y: number, maxW: number): void {
-    let cy = y;
-    if (includeNeeds) {
-      const lines = needsLines(f.id);
-      if (lines.length) {
-        pdf.setFont(PDF_FONT, 'normal');
-        pdf.setFontSize(6.5);
-        pdf.setTextColor(70);
-        for (const raw of lines) {
-          for (const line of hardWrapLines(pdf, raw, maxW)) {
-            pdf.text(line, x, cy + 2.4);
-            cy += 3.3;
-          }
-        }
-        cy += 1.5;
-      }
-    }
-    if (includeNotes) {
-      const nc = noteContent(f.id);
-      if (nc.table && tableHasContent(nc.table)) {
-        drawTableInPDF(x, cy, maxW, nc.table);
-      } else if (nc.text) {
-        pdf.setFont(PDF_FONT, 'normal');
-        pdf.setFontSize(7);
-        pdf.setTextColor(50);
-        for (const line of hardWrapLines(pdf, nc.text, maxW)) {
-          pdf.text(line, x, cy + 2.6);
-          cy += 3.5;
-        }
-      }
-    }
-    pdf.setTextColor(30);
-  }
-
   function calcMainGrid(extraTop = 0) {
     const cols = 3,
       rows = 2;
@@ -1259,8 +1257,11 @@ export async function runExport(): Promise<void> {
     const g = calcDoubleGrid();
     const dblStrips = getSelectedStrips('exportDoubleStripPicker');
     const dblStrip: StripType = dblStrips[0] || 'ver';
+    const dblKey = String(dblStrip);           // may be a data strip, not a StripType
+    const isDataStrip = dblKey.startsWith('__');
+    const dataDef = DATA_STRIPS.find((d) => d.id === dblStrip);
     const dblDef = (s.stripDefs || DEFAULT_STRIP_DEFS).find(d => d.id === dblStrip);
-    const dblStripName = dblDef ? dblDef.defaultFrameLabel : dblStrip;
+    const dblStripName = dataDef ? dataDef.label : dblDef ? dblDef.defaultFrameLabel : dblStrip;
     const dblMode = (document.querySelector('input[name="exportDoubleMode"]:checked') as HTMLInputElement)?.value || 'starred';
     const perPage = g.rows;
     totalPages = Math.ceil(frames.length / perPage);
@@ -1274,23 +1275,64 @@ export async function runExport(): Promise<void> {
       const rowY = g.startY + slot * (LABEL_H + g.frameH + g.gutterY) + LABEL_H;
       const f = frames[i];
       const fLabel = f.label || `${i + 1}`;
-      const vers = getStripVersions(f.id, dblStrip);
-      const ver = dblMode === 'starred'
-        ? vers.find(v => versionHasContent(v) && (v as any).starred)
-        : vers[getStripActiveTab(f.id, dblStrip)];
       const mainCvs = await rasterizeMain(f);
       const fX1 = g.startX;
       await drawFrameTile(fX1, rowY, g.frameW, g.frameH, mainCvs, f.textContent || '', g.textH, g.frameW - 2);
       drawFrameLabel(fX1, rowY, fLabel);
-      if (ver && versionHasContent(ver)) {
-        const verCvs = await rasterizeVersion(ver, f.cropW, f.cropH);
-        const fX2 = g.startX + g.frameW + g.pairGap;
-        await drawFrameTile(fX2, rowY, g.frameW, g.frameH, verCvs, '', 0);
-        drawFrameLabel(fX2, rowY, fullVerLabel(f.label || `${i + 1}`, `${dblStripName} ${ver.label || ''}`));
-      }
-      // NEEDS / NOTES sit under the version column so they never cover the images
-      if (includeNeeds || includeNotes) {
-        drawDoubleExtras(f, g.startX + g.frameW + g.pairGap, rowY + g.frameH + 2, g.frameW);
+      const fX2 = g.startX + g.frameW + g.pairGap;
+
+      if (isDataStrip) {
+        // Right-hand cell holds NEEDS / NOTES / TABLE instead of a version
+        drawFrameLabel(fX2, rowY, `${fLabel} / ${dblStripName}`);
+        let dy = rowY;
+        if (dblKey === '__needs__') {
+          // Same look as the SORT BY card: bold table name, value beside it,
+          // wrapped continuation pushing the next entry down.
+          pdf.setFontSize(7);
+          const [nc1, nc2] = needsColumns(f.id);
+          for (const pr of [...nc1, ...nc2]) {
+            if (dy > rowY + g.frameH) break;
+            pdf.setFont(PDF_FONT, 'bold');
+            pdf.setTextColor(20);
+            const kTxt = `${pr.k} `;
+            pdf.text(kTxt, fX2, dy + 2.6);
+            const tx = fX2 + pdf.getTextWidth(kTxt);
+            pdf.setFont(PDF_FONT, 'normal');
+            pdf.setTextColor(60);
+            const all = hardWrapLines(pdf, pr.v, Math.max(8, g.frameW - (tx - fX2)));
+            if (all.length) pdf.text(all[0], tx, dy + 2.6);
+            dy += 3.9;
+            if (all.length > 1) {
+              for (const line of hardWrapLines(pdf, all.slice(1).join(' '), g.frameW)) {
+                if (dy > rowY + g.frameH) break;
+                pdf.text(line, fX2, dy + 2.6);
+                dy += 3.9;
+              }
+            }
+          }
+          pdf.setFont(PDF_FONT, 'normal');
+        } else {
+          const nc = noteContent(f.id);
+          if (dblKey === '__table__') {
+            if (nc.table && tableHasContent(nc.table)) drawTableInPDF(fX2, dy, g.frameW, nc.table);
+          } else if (nc.text) {
+            pdf.setFontSize(7.5);
+            pdf.setTextColor(50);
+            for (const line of hardWrapLines(pdf, nc.text, g.frameW)) {
+              if (dy > rowY + g.frameH) break;
+              pdf.text(line, fX2, dy + 2.8);
+              dy += 3.9;
+            }
+          }
+        }
+        pdf.setTextColor(30);
+      } else {
+        const ver = pickDoubleVersion(f.id, dblStrip, dblMode);
+        if (ver && versionHasContent(ver)) {
+          const verCvs = await rasterizeVersion(ver, f.cropW, f.cropH);
+          await drawFrameTile(fX2, rowY, g.frameW, g.frameH, verCvs, '', 0);
+          drawFrameLabel(fX2, rowY, fullVerLabel(fLabel, `${dblStripName} ${ver.label || ''}`));
+        }
       }
     }
   } else if (layout === 'overview') {
@@ -1940,8 +1982,11 @@ export async function runPptxExport(): Promise<void> {
   } else if (layout === 'double') {
     const pptxDblStrips = getSelectedStrips('pptxDoubleStripPicker');
     const pptxDblStrip: StripType = pptxDblStrips[0] || 'ver';
+    const pDblKey = String(pptxDblStrip);
+    const pIsData = pDblKey.startsWith('__');
+    const pDataDef = DATA_STRIPS.find((d) => d.id === pDblKey);
     const pptxDblDef = (s.stripDefs || DEFAULT_STRIP_DEFS).find(d => d.id === pptxDblStrip);
-    const pptxDblName = pptxDblDef ? pptxDblDef.defaultFrameLabel : pptxDblStrip;
+    const pptxDblName = pDataDef ? pDataDef.label : pptxDblDef ? pptxDblDef.defaultFrameLabel : pptxDblStrip;
     const pptxDblMode = (document.querySelector('input[name="pptxDoubleMode"]:checked') as HTMLInputElement)?.value || 'starred';
     const pairsPerSlide = 4;
     const pairCols = 2;
@@ -1968,10 +2013,55 @@ export async function runPptxExport(): Promise<void> {
       const mainCvs = await rasterizeWithBorder(await rasterizeMain(f));
       slide.addText(label, { x: baseX, y: baseY - 0.02, w: fW, h: 0.18, fontSize: 7, bold: true, color: '000000', fontFace: 'Arial', valign: 'bottom', margin: 0 });
       slide.addImage({ data: 'image/jpeg;base64,' + canvasToBase64(mainCvs), x: baseX, y: baseY + 0.18, w: fW, h: fH });
-      const vers = getStripVersions(f.id, pptxDblStrip);
-      const ver = pptxDblMode === 'starred'
-        ? vers.find(v => versionHasContent(v) && (v as any).starred)
-        : vers[getStripActiveTab(f.id, pptxDblStrip)];
+      if (pIsData) {
+        // Right cell carries NEEDS / NOTES / TABLE instead of a version image
+        const dx = baseX + fW + 0.15;
+        slide.addText(`${label} / ${pptxDblName}`, {
+          x: dx, y: baseY, w: fW, h: 0.16, fontSize: 7, bold: true,
+          color: '000000', fontFace: 'Arial', valign: 'bottom', margin: 0,
+        });
+        if (pDblKey === '__needs__') {
+          // Bold table name + value, matching the SORT BY card
+          const [nc1, nc2] = needsColumns(f.id);
+          const runs: any[] = [];
+          for (const pr of [...nc1, ...nc2]) {
+            runs.push({ text: `${pr.k} `, options: { bold: true, color: '141414' } });
+            runs.push({ text: pr.v, options: { color: '3C3C3C', breakLine: true } });
+          }
+          if (runs.length) {
+            slide.addText(runs, {
+              x: dx, y: baseY + 0.18, w: fW, h: fH, fontSize: 7,
+              fontFace: 'Arial', valign: 'top', wrap: true, margin: 0, fit: 'shrink',
+            });
+          }
+        } else {
+          const nc = noteContent(f.id);
+          if (pDblKey === '__table__') {
+            const td = nc.table;
+            if (td) {
+              const hasH = td.headers && td.headers.some((h) => h && h.trim());
+              const rows = td.rows ? td.rows.filter((r) => r.some((c) => c && c.trim())) : [];
+              if (hasH || rows.length) {
+                const tbl: any[] = [];
+                if (hasH) tbl.push(td.headers.map((h) => ({ text: h || '', options: { bold: true, fontSize: 6, fill: { color: 'E8E8E8' } } })));
+                for (const r of rows) tbl.push(r.map((c) => ({ text: c || '', options: { fontSize: 6 } })));
+                slide.addTable(tbl, {
+                  x: dx, y: baseY + 0.18, w: fW,
+                  border: { type: 'solid', color: '000000', pt: 0.5 },
+                  colW: Array(td.headers.length).fill(fW / td.headers.length),
+                  fontFace: 'Arial', fontSize: 6, color: '000000', autoPage: false,
+                });
+              }
+            }
+          } else if (nc.text) {
+            slide.addText(nc.text, {
+              x: dx, y: baseY + 0.18, w: fW, h: fH, fontSize: 7, color: '323232',
+              fontFace: 'Arial', valign: 'top', wrap: true, margin: 0, fit: 'shrink',
+            });
+          }
+        }
+      }
+      const ver = pIsData ? undefined : pickDoubleVersion(f.id, pptxDblStrip, pptxDblMode);
       if (ver && versionHasContent(ver)) {
         const verCvs = await rasterizeWithBorder(await rasterizeVersion(ver, f.cropW, f.cropH));
         const vx = baseX + fW + 0.15;

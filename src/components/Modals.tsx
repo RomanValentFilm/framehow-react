@@ -333,11 +333,15 @@ export function Modals() {
               <div className="exp-double-mode">
                 <label className="exp-strip-opt">
                   <input type="radio" name="exportDoubleMode" value="starred" defaultChecked />
-                  <span>Main + Starred Frame</span>
+                  <span>Main Frame + 1st Starred Frame</span>
+                </label>
+                <label className="exp-strip-opt">
+                  <input type="radio" name="exportDoubleMode" value="tagged" />
+                  <span>Main Frame + 1st Tagged Frame</span>
                 </label>
                 <label className="exp-strip-opt">
                   <input type="radio" name="exportDoubleMode" value="active" />
-                  <span>Main + Active Frame</span>
+                  <span>Main Frame + Active Frame</span>
                 </label>
               </div>
             </div>
@@ -526,11 +530,15 @@ export function Modals() {
               <div className="exp-double-mode">
                 <label className="exp-strip-opt">
                   <input type="radio" name="pptxDoubleMode" value="starred" defaultChecked />
-                  <span>Main + Starred Frame</span>
+                  <span>Main Frame + 1st Starred Frame</span>
+                </label>
+                <label className="exp-strip-opt">
+                  <input type="radio" name="pptxDoubleMode" value="tagged" />
+                  <span>Main Frame + 1st Tagged Frame</span>
                 </label>
                 <label className="exp-strip-opt">
                   <input type="radio" name="pptxDoubleMode" value="active" />
-                  <span>Main + Active Frame</span>
+                  <span>Main Frame + Active Frame</span>
                 </label>
               </div>
             </div>

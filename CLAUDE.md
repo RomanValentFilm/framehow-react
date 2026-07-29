@@ -38,7 +38,7 @@ cd ~/Desktop/Framehow\ Files/framehow-react && git add -A && git commit -m "v4.6
 ### Version numbering
 - `APP_VERSION` constant in `src/store/state.ts` — displayed in toolbar next to logo
 - Format: `v4.6.0XX` where XX increments with each deploy
-- Current: `v4.9.038`
+- Current: `v4.9.039`
 - Production: `v4.9.001`
 
 ### Clean rebuild (if changes don't appear)
@@ -166,6 +166,14 @@ Changes:
 
 Changes:
 - `src/lib/accountFlow.ts` — Added fullscreen overlay ("Couldn't load all content — check your connection") with Retry/Dismiss buttons when R2 image fetches fail; overlay shows after progress bar hides (no overlap); Retry triggers fresh pull; Dismiss lets user browse but _pullIncomplete stays true (no push/save of half-loaded state).
+
+### v4.9.038 — 2026-07-29 (dev — deployed)
+**Sort By export rebuilt to mirror the on-screen shooting-order view**
+
+Changes:
+- `src/lib/exports.ts` — Sort By is now portrait (A4) with one bordered card per frame, following the view's own CSS: grid `44px 25% 17% 1fr`, card `#d9d9d9` on `#aaa`, main image bordered / strips not, VERSN+SKETCH = `ver[0]`+`floor[0]` hardcoded as the view does. Number column matches `.sort-card-col-num` — label ellipsised, trailing text beneath, SETUP pill pinned to the bottom (`margin-top:auto`). Breaks render as the grey `#808080` bar with white text (the inset box in the CSS is `.sort-break-active` only — a drag state, not the resting one). NEEDS built per TABLE not per tab, counters as `total (n NAME + …)`, two columns split by tab — matching `renderNeedsInfo`. Wrapped values push following entries down and grow the card. Strip picker + NEEDS toggle hidden for Sort By (layout fixes both). HEADER_H 12.5→10.5mm, FOOTER_H 6→2mm — the page number draws below the reserved band, so 10mm was dead space; ~8.5mm/page recovered.
+- `src/lib/exports.ts` (PPTX) — Sort By gets a true A4 portrait layout (8.27×11.69in; rotating LAYOUT_WIDE gave 1:1.78, far taller than paper). Each card is flattened to one canvas image via `renderSortCardCanvas()` so it moves as a single object — PptxGenJS has no grouping API. Header/page number now derive from `SLIDE_W`/`SLIDE_H` rather than hardcoded 13.333.
+- `src/components/Modals.tsx` — Sort By pictogram redrawn: portrait page of enclosed cards, no red break bars.
 
 ### v4.9.037 — 2026-07-29 (dev — deployed)
 **Export rework: page header, 3x2 + Sort By layouts, NEEDS/NOTES, embedded DM Sans, baked borders**
