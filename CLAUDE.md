@@ -38,7 +38,7 @@ cd ~/Desktop/Framehow\ Files/framehow-react && git add -A && git commit -m "v4.6
 ### Version numbering
 - `APP_VERSION` constant in `src/store/state.ts` — displayed in toolbar next to logo
 - Format: `v4.6.0XX` where XX increments with each deploy
-- Current: `v4.9.036`
+- Current: `v4.9.037`
 - Production: `v4.9.001`
 
 ### Clean rebuild (if changes don't appear)
@@ -166,6 +166,13 @@ Changes:
 
 Changes:
 - `src/lib/accountFlow.ts` — Added fullscreen overlay ("Couldn't load all content — check your connection") with Retry/Dismiss buttons when R2 image fetches fail; overlay shows after progress bar hides (no overlap); Retry triggers fresh pull; Dismiss lets user browse but _pullIncomplete stays true (no push/save of half-loaded state).
+
+### v4.9.036 — 2026-07-29 (dev — deployed)
+**3×2 drag-to-reorder (desktop + iOS), card lock during re-order, canvas tap removed**
+
+Changes:
+- `src/lib/overview.ts` — `_addGrid3x2DragReorder()`: drag-to-reorder for mouse AND touch, wired once per wrap (re-render would otherwise stack listeners). Floating clone follows the pointer while other cards `translate` into their new slots — same interaction as SORT BY, adapted to a 2-D grid (nearest-slot-centre hit test, full grid reflow across rows). Armed only on the frame with re-order active, re-checked from the DOM on every press. `mousedown` calls `preventDefault()` to stop native image drag swallowing `mousemove` (desktop fix). Auto-scroll now drives `#overviewScroll` instead of `window`, band measured from the scroll container's own edges, EDGE_ZONE 130 + quadratic ramp (iOS vertical drag fix). `_commitGrid3x2Order()` rearranges only visible frames, group-aware. `_wireGrid3x2ReorderBlur()`: document-level capture-phase click ends re-order and flushes — toolbars, strips, menu, anywhere. Removed canvas click → MAIN strip navigation. `_firstVisibleVersionIdx()` used by nav.
+- `src/styles/globals.css` — `.g3-reorder-mode` locks every card; only the active card's `.reorder-group` responds. `.nav-arrow` disabled with `!important` (it ships `pointer-events:auto!important`). `touch-action:none` + `-webkit-user-drag:none` on the active card. `.g3-drag-clone` + `.g3-reordering` transition styles.
 
 ### v4.9.035 — 2026-07-28 (dev — deployed)
 **Camera RATIO presets, 3x2 CAM creates new version, arrow enters at v1**

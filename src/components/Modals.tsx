@@ -218,6 +218,15 @@ export function Modals() {
             <label>Project name</label>
             <input type="text" id="exportProjectName" placeholder="Storyboard" autoComplete="one-time-code" />
           </div>
+          <div className="exp-field">
+            <label>Page header</label>
+            <div className="exp-meta-grid">
+              <input type="text" id="exportMetaOrder" placeholder="SHOOTING BOARD" autoComplete="one-time-code" />
+              <input type="text" id="exportMetaUser" placeholder="YOUR NAME" autoComplete="one-time-code" />
+              <input type="text" id="exportMetaVersion" placeholder="VERSION v1" autoComplete="one-time-code" />
+              <input type="text" id="exportMetaDate" placeholder="Date" autoComplete="one-time-code" />
+            </div>
+          </div>
           <div className="exp-field" id="exportGroupPickerWrap" style={{ display: 'none' }}>
             <label>Select group to export</label>
             <div className="exp-group-picker" id="exportGroupPicker"></div>
@@ -225,22 +234,52 @@ export function Modals() {
           <div className="exp-field">
             <label>Layout</label>
             <label className="exp-opt">
-              <input type="radio" name="exportLayout" value="main" defaultChecked />
+              <input type="radio" name="exportLayout" value="grid3x2" defaultChecked />
               <span className="exp-opt-wrap">
                 <svg className="exp-opt-icon" width="76" height="54" viewBox="0 0 76 54">
                   <rect x="0.5" y="0.5" width="75" height="53" rx="2" fill="#222" stroke="#555" strokeWidth="0.8" />
                   <rect x="5" y="5" width="20" height="13" rx="1" fill="none" stroke="#999" strokeWidth="1.1" />
                   <rect x="28" y="5" width="20" height="13" rx="1" fill="none" stroke="#999" strokeWidth="1.1" />
                   <rect x="51" y="5" width="20" height="13" rx="1" fill="none" stroke="#999" strokeWidth="1.1" />
-                  <rect x="5" y="33" width="20" height="13" rx="1" fill="none" stroke="#999" strokeWidth="1.1" />
-                  <rect x="28" y="33" width="20" height="13" rx="1" fill="none" stroke="#999" strokeWidth="1.1" />
-                  <rect x="51" y="33" width="20" height="13" rx="1" fill="none" stroke="#999" strokeWidth="1.1" />
+                  <rect x="5" y="20" width="20" height="3" rx="0.5" fill="#666" />
+                  <rect x="28" y="20" width="20" height="3" rx="0.5" fill="#666" />
+                  <rect x="51" y="20" width="20" height="3" rx="0.5" fill="#666" />
+                  <rect x="5" y="31" width="20" height="13" rx="1" fill="none" stroke="#999" strokeWidth="1.1" />
+                  <rect x="28" y="31" width="20" height="13" rx="1" fill="none" stroke="#999" strokeWidth="1.1" />
+                  <rect x="51" y="31" width="20" height="13" rx="1" fill="none" stroke="#999" strokeWidth="1.1" />
+                  <rect x="5" y="46" width="20" height="3" rx="0.5" fill="#666" />
+                  <rect x="28" y="46" width="20" height="3" rx="0.5" fill="#666" />
+                  <rect x="51" y="46" width="20" height="3" rx="0.5" fill="#666" />
                 </svg>
                 <span className="exp-opt-text">
-                  <strong>Main Frames only</strong>
+                  <strong>3&times;2 View</strong>
+                  <span className="exp-sub">6 frames per page with descriptions</span>
                 </span>
               </span>
             </label>
+            <label className="exp-opt">
+              <input type="radio" name="exportLayout" value="sortby" />
+              <span className="exp-opt-wrap">
+                <svg className="exp-opt-icon" width="76" height="54" viewBox="0 0 76 54">
+                  <rect x="0.5" y="0.5" width="75" height="53" rx="2" fill="#222" stroke="#555" strokeWidth="0.8" />
+                  <rect x="5" y="5" width="66" height="4" rx="1" fill="#d52632" />
+                  <rect x="5" y="12" width="20" height="12" rx="1" fill="none" stroke="#999" strokeWidth="1.1" />
+                  <rect x="28" y="12" width="20" height="12" rx="1" fill="none" stroke="#999" strokeWidth="1.1" />
+                  <rect x="51" y="12" width="20" height="12" rx="1" fill="none" stroke="#999" strokeWidth="1.1" />
+                  <rect x="5" y="28" width="66" height="4" rx="1" fill="#d52632" />
+                  <rect x="5" y="35" width="20" height="12" rx="1" fill="none" stroke="#999" strokeWidth="1.1" />
+                  <rect x="28" y="35" width="20" height="12" rx="1" fill="none" stroke="#999" strokeWidth="1.1" />
+                  <rect x="51" y="35" width="20" height="12" rx="1" fill="none" stroke="#999" strokeWidth="1.1" />
+                </svg>
+                <span className="exp-opt-text">
+                  <strong>Sort By</strong>
+                  <span className="exp-sub">Story flow or shooting order, with breaks</span>
+                </span>
+              </span>
+            </label>
+            <div className="exp-inline-controls" id="exportSortOrderWrap" style={{ display: 'none' }}>
+              <div className="exp-strip-picker" id="exportSortOrderPicker"></div>
+            </div>
             <label className="exp-opt">
               <input type="radio" name="exportLayout" value="double" />
               <span className="exp-opt-wrap">
@@ -257,7 +296,7 @@ export function Modals() {
                 </svg>
                 <span className="exp-opt-text">
                   <strong>Double Strip</strong>
-                  <span className="exp-sub">Main Frame + Selected Frame</span>
+                  <span className="exp-sub">Main Frame + Selected strip</span>
                 </span>
               </span>
             </label>
@@ -297,19 +336,24 @@ export function Modals() {
               </span>
             </label>
           </div>
-          <div className="exp-field">
+          <div className="exp-field" id="exportHiddenToggleWrap">
             <label className="exp-inline">
               <input type="checkbox" id="exportIncludeHidden" /> Include hidden frames
             </label>
           </div>
-          <div className="exp-field">
+          <div className="exp-field" id="exportTextToggleWrap">
             <label className="exp-inline">
               <input type="checkbox" id="exportIncludeText" defaultChecked /> Include text descriptions for storyboard frames
             </label>
           </div>
-          <div className="exp-field" id="exportTableToggleWrap" style={{ display: 'none' }}>
+          <div className="exp-field" id="exportNeedsToggleWrap" style={{ display: 'none' }}>
             <label className="exp-inline">
-              <input type="checkbox" id="exportIncludeTable" defaultChecked /> Include Table
+              <input type="checkbox" id="exportIncludeNeeds" /> Include NEEDS
+            </label>
+          </div>
+          <div className="exp-field" id="exportNotesToggleWrap" style={{ display: 'none' }}>
+            <label className="exp-inline">
+              <input type="checkbox" id="exportIncludeNotes" /> Include NOTES
             </label>
           </div>
           <div className="exp-field">
@@ -339,6 +383,15 @@ export function Modals() {
             <label>Project name</label>
             <input type="text" id="pptxProjectName" placeholder="Storyboard" autoComplete="one-time-code" />
           </div>
+          <div className="exp-field">
+            <label>Page header</label>
+            <div className="exp-meta-grid">
+              <input type="text" id="pptxMetaOrder" placeholder="SHOOTING BOARD" autoComplete="one-time-code" />
+              <input type="text" id="pptxMetaUser" placeholder="YOUR NAME" autoComplete="one-time-code" />
+              <input type="text" id="pptxMetaVersion" placeholder="VERSION v1" autoComplete="one-time-code" />
+              <input type="text" id="pptxMetaDate" placeholder="Date" autoComplete="one-time-code" />
+            </div>
+          </div>
           <div className="exp-field" id="pptxGroupPickerWrap" style={{ display: 'none' }}>
             <label>Select group to export</label>
             <div className="exp-group-picker" id="pptxGroupPicker"></div>
@@ -346,22 +399,52 @@ export function Modals() {
           <div className="exp-field">
             <label>Layout</label>
             <label className="exp-opt">
-              <input type="radio" name="pptxLayout" value="main" defaultChecked />
+              <input type="radio" name="pptxLayout" value="grid3x2" defaultChecked />
               <span className="exp-opt-wrap">
                 <svg className="exp-opt-icon" width="76" height="54" viewBox="0 0 76 54">
                   <rect x="0.5" y="0.5" width="75" height="53" rx="2" fill="#222" stroke="#555" strokeWidth="0.8" />
                   <rect x="5" y="5" width="20" height="13" rx="1" fill="none" stroke="#999" strokeWidth="1.1" />
                   <rect x="28" y="5" width="20" height="13" rx="1" fill="none" stroke="#999" strokeWidth="1.1" />
                   <rect x="51" y="5" width="20" height="13" rx="1" fill="none" stroke="#999" strokeWidth="1.1" />
-                  <rect x="5" y="33" width="20" height="13" rx="1" fill="none" stroke="#999" strokeWidth="1.1" />
-                  <rect x="28" y="33" width="20" height="13" rx="1" fill="none" stroke="#999" strokeWidth="1.1" />
-                  <rect x="51" y="33" width="20" height="13" rx="1" fill="none" stroke="#999" strokeWidth="1.1" />
+                  <rect x="5" y="20" width="20" height="3" rx="0.5" fill="#666" />
+                  <rect x="28" y="20" width="20" height="3" rx="0.5" fill="#666" />
+                  <rect x="51" y="20" width="20" height="3" rx="0.5" fill="#666" />
+                  <rect x="5" y="31" width="20" height="13" rx="1" fill="none" stroke="#999" strokeWidth="1.1" />
+                  <rect x="28" y="31" width="20" height="13" rx="1" fill="none" stroke="#999" strokeWidth="1.1" />
+                  <rect x="51" y="31" width="20" height="13" rx="1" fill="none" stroke="#999" strokeWidth="1.1" />
+                  <rect x="5" y="46" width="20" height="3" rx="0.5" fill="#666" />
+                  <rect x="28" y="46" width="20" height="3" rx="0.5" fill="#666" />
+                  <rect x="51" y="46" width="20" height="3" rx="0.5" fill="#666" />
                 </svg>
                 <span className="exp-opt-text">
-                  <strong>Main Frames only</strong>
+                  <strong>3&times;2 View</strong>
+                  <span className="exp-sub">6 frames per slide with descriptions</span>
                 </span>
               </span>
             </label>
+            <label className="exp-opt">
+              <input type="radio" name="pptxLayout" value="sortby" />
+              <span className="exp-opt-wrap">
+                <svg className="exp-opt-icon" width="76" height="54" viewBox="0 0 76 54">
+                  <rect x="0.5" y="0.5" width="75" height="53" rx="2" fill="#222" stroke="#555" strokeWidth="0.8" />
+                  <rect x="5" y="5" width="66" height="4" rx="1" fill="#d52632" />
+                  <rect x="5" y="12" width="20" height="12" rx="1" fill="none" stroke="#999" strokeWidth="1.1" />
+                  <rect x="28" y="12" width="20" height="12" rx="1" fill="none" stroke="#999" strokeWidth="1.1" />
+                  <rect x="51" y="12" width="20" height="12" rx="1" fill="none" stroke="#999" strokeWidth="1.1" />
+                  <rect x="5" y="28" width="66" height="4" rx="1" fill="#d52632" />
+                  <rect x="5" y="35" width="20" height="12" rx="1" fill="none" stroke="#999" strokeWidth="1.1" />
+                  <rect x="28" y="35" width="20" height="12" rx="1" fill="none" stroke="#999" strokeWidth="1.1" />
+                  <rect x="51" y="35" width="20" height="12" rx="1" fill="none" stroke="#999" strokeWidth="1.1" />
+                </svg>
+                <span className="exp-opt-text">
+                  <strong>Sort By</strong>
+                  <span className="exp-sub">Story flow or shooting order, with breaks</span>
+                </span>
+              </span>
+            </label>
+            <div className="exp-inline-controls" id="pptxSortOrderWrap" style={{ display: 'none' }}>
+              <div className="exp-strip-picker" id="pptxSortOrderPicker"></div>
+            </div>
             <label className="exp-opt">
               <input type="radio" name="pptxLayout" value="double" />
               <span className="exp-opt-wrap">
@@ -378,7 +461,7 @@ export function Modals() {
                 </svg>
                 <span className="exp-opt-text">
                   <strong>Double Strip</strong>
-                  <span className="exp-sub">Main Frame + Selected Frame</span>
+                  <span className="exp-sub">Main Frame + Selected strip</span>
                 </span>
               </span>
             </label>
@@ -418,19 +501,24 @@ export function Modals() {
               </span>
             </label>
           </div>
-          <div className="exp-field">
+          <div className="exp-field" id="pptxHiddenToggleWrap">
             <label className="exp-inline">
               <input type="checkbox" id="pptxIncludeHidden" /> Include hidden frames
             </label>
           </div>
-          <div className="exp-field">
+          <div className="exp-field" id="pptxTextToggleWrap">
             <label className="exp-inline">
               <input type="checkbox" id="pptxIncludeText" defaultChecked /> Include text descriptions
             </label>
           </div>
-          <div className="exp-field" id="pptxTableToggleWrap" style={{ display: 'none' }}>
+          <div className="exp-field" id="pptxNeedsToggleWrap" style={{ display: 'none' }}>
             <label className="exp-inline">
-              <input type="checkbox" id="pptxIncludeTable" defaultChecked /> Include Table
+              <input type="checkbox" id="pptxIncludeNeeds" /> Include NEEDS
+            </label>
+          </div>
+          <div className="exp-field" id="pptxNotesToggleWrap" style={{ display: 'none' }}>
+            <label className="exp-inline">
+              <input type="checkbox" id="pptxIncludeNotes" /> Include NOTES
             </label>
           </div>
           <div className="exp-field" id="pptxOverviewStripWrap" style={{ display: 'none' }}>

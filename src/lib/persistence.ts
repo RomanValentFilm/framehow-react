@@ -7,7 +7,7 @@
 // restore we merge the payload back into the live store.
 
 import type { Frame, Version, FrameGroup, StripDef, Setup, NeedDefinitions, FrameNeedState, FrameNoteState, SortOrder, SortBreak } from '../store/state';
-import { useStore, DEFAULT_STRIP_DEFS, DEFAULT_NEED_DEFINITIONS, migrateNeedDefinitions } from '../store/state';
+import { useStore, DEFAULT_STRIP_DEFS, DEFAULT_NEED_DEFINITIONS, migrateNeedDefinitions, createDefaultExportMeta } from '../store/state';
 
 const DB_NAME = 'framehow';
 const DB_VERSION = 1;
@@ -60,6 +60,8 @@ export interface CurrentProjectSnapshot {
   storyFlowBreaks?: SortBreak[];
   /** Camera guide aspect ratio preset (v4.9+) */
   camAspectRatio?: string;
+  /** Export header fields (v4.9+) */
+  exportMeta?: import('../store/state').ExportMeta;
 }
 
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -146,6 +148,7 @@ export function snapshotFromStore(projectId: string | null, name: string | null)
     activeSortOrderId: s.activeSortOrderId ?? undefined,
     storyFlowBreaks: s.storyFlowBreaks?.length > 0 ? s.storyFlowBreaks : undefined,
     camAspectRatio: s.camAspectRatio !== 'canvas' ? s.camAspectRatio : undefined,
+    exportMeta: s.exportMeta && Object.values(s.exportMeta).some((v) => v) ? s.exportMeta : undefined,
   };
 }
 
@@ -217,6 +220,7 @@ export function applySnapshotToStore(snap: CurrentProjectSnapshot): void {
     activeSortOrderId: snap.activeSortOrderId ?? null,
     storyFlowBreaks: snap.storyFlowBreaks ?? [],
     camAspectRatio: (snap.camAspectRatio as any) ?? 'canvas',
+    exportMeta: snap.exportMeta ?? createDefaultExportMeta(),
     renderTick: prev.renderTick + 1,
   }));
 }

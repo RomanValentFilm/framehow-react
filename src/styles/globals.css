@@ -615,6 +615,8 @@
   .exp-field > label{display:block;font-size:10px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:6px;}
   .exp-field input[type="text"]{width:100%;font-family:var(--font);font-size:13px;color:var(--text);background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 10px;outline:none;}
   .exp-field input[type="text"]:focus{border-color:var(--accent);}
+  .exp-meta-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;}
+  .exp-meta-grid input[type="text"]{width:100%;}
   .exp-opt{display:flex;align-items:flex-start;gap:10px;font-size:13px;color:var(--text);padding:8px 0;cursor:pointer;}
   .exp-opt input[type="radio"]{accent-color:var(--accent);margin-top:2px;flex-shrink:0;}
   .exp-opt-wrap{display:flex;align-items:center;gap:10px;}
@@ -647,6 +649,10 @@
   .exp-ver-actions{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;}
   .exp-ver-actions button{font-family:var(--mono);font-size:10px;padding:3px 8px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text-muted);cursor:pointer;transition:all .15s;}
   .exp-ver-actions button:hover{background:var(--surface2);color:var(--text);}
+  .exp-ver-actions button.active{background:var(--accent);border-color:var(--accent);color:#fff;}
+  /* Per-frame version rows stay in the DOM (the exporters read them) but the
+     action buttons above are the interface — no long scroll list in the modal. */
+  .exp-ver-rows{display:none;}
   .exp-ver-hidden{opacity:.5;}
   @media (hover:none) and (pointer:coarse){
     html{overflow-x:hidden;}

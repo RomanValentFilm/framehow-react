@@ -63,7 +63,19 @@ export interface Setup {
 
 /** 12-colour palette for setups. */
 /** App version — bump before every deploy. */
-export const APP_VERSION = 'v4.9.036';
+export const APP_VERSION = 'v4.9.037';
+
+/** Free-text fields printed in the header of every exported page. */
+export interface ExportMeta {
+  shootingOrder: string;
+  userName: string;
+  version: string;
+  date: string;
+}
+
+export function createDefaultExportMeta(): ExportMeta {
+  return { shootingOrder: '', userName: '', version: '', date: '' };
+}
 
 /** Camera guide aspect-ratio presets. 'canvas' = use the frame's own canvas AR. */
 export type CamRatioKey = '2.39' | '2.0' | '1.85' | 'canvas' | '16:9' | '4:3' | '1:1';
@@ -496,6 +508,8 @@ export interface FrameHowState {
   nextSortOrderId: number;
   /** Camera guide aspect ratio preset — 'canvas' uses the frame's own canvas AR */
   camAspectRatio: CamRatioKey;
+  /** Header text fields carried into every export, remembered per project */
+  exportMeta: ExportMeta;
   // bumped manually by the imperative core to wake any React subscribers
   // that need to react to mutable state changes (e.g., frame badge count).
   renderTick: number;
@@ -592,6 +606,7 @@ const initial: FrameHowState = {
   sortEditingId: null,
   nextSortOrderId: 1,
   camAspectRatio: 'canvas',
+  exportMeta: createDefaultExportMeta(),
   renderTick: 0,
 };
 
@@ -649,6 +664,7 @@ export function resetStoryboardState(): void {
     sortEditingId: null,
     nextSortOrderId: 1,
     camAspectRatio: 'canvas',
+    exportMeta: createDefaultExportMeta(),
     renderTick: state().renderTick + 1,
   });
   // Clean up sort DOM elements if they exist

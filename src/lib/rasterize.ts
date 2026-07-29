@@ -67,6 +67,27 @@ export async function rasterizeVersion(
   return c;
 }
 
+/**
+ * Bake a black outline into the image itself, so it travels with the picture
+ * into PDF, PowerPoint or anywhere else rather than being a separate object.
+ *
+ * Thickness is 0.6% of the image's long edge, and it is drawn fully INSIDE the
+ * bounds (a plain strokeRect centres the line on the edge and loses half of
+ * it), so the visible weight is identical on all four sides.
+ */
+export function withBakedBorder(canvas: HTMLCanvasElement, pct = 0.006): HTMLCanvasElement {
+  const c = document.createElement('canvas');
+  c.width = canvas.width;
+  c.height = canvas.height;
+  const ctx = c.getContext('2d')!;
+  ctx.drawImage(canvas, 0, 0);
+  const lw = Math.max(1, Math.round(Math.max(c.width, c.height) * pct));
+  ctx.strokeStyle = '#000';
+  ctx.lineWidth = lw;
+  ctx.strokeRect(lw / 2, lw / 2, c.width - lw, c.height - lw);
+  return c;
+}
+
 export function versionHasContent(v: Version | null | undefined): boolean {
   if (!v) return false;
   if (v.bgImage) return true;

@@ -48,7 +48,7 @@ import { showConfirm, showToast, showFrameConflictPicker } from './modals';
 import type { FrameConflict } from './modals';
 import { saveOpenTextEdits, saveOpenTableEdits } from './helpers';
 import { closeSortMode } from './sortOrder';
-import { resetStoryboardState, state, useStore, DEFAULT_NEED_DEFINITIONS, DEFAULT_STRIP_DEFS, migrateNeedDefinitions } from '../store/state';
+import { resetStoryboardState, state, useStore, DEFAULT_NEED_DEFINITIONS, DEFAULT_STRIP_DEFS, migrateNeedDefinitions, createDefaultExportMeta } from '../store/state';
 import type { Frame, Stroke, Version, FrameNeedState, FrameNoteState, NeedDefinitions, BracketNodeData } from '../store/state';
 import { clearRectsForProject } from './pdfAdjust';
 
@@ -1444,6 +1444,7 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
     activeSortOrderId: s.activeSortOrderId ?? undefined,
     storyFlowBreaks: s.storyFlowBreaks?.length > 0 ? s.storyFlowBreaks : undefined,
     camAspectRatio: s.camAspectRatio !== 'canvas' ? s.camAspectRatio : undefined,
+    exportMeta: s.exportMeta && Object.values(s.exportMeta).some((v) => v) ? s.exportMeta : undefined,
   });
 
   // Upload NEW images to R2 in parallel (images with existing r2Key were already added above)
@@ -1815,6 +1816,7 @@ async function applyCloudTreeToStore(
   let restoredActiveSortOrderId: string | null = null;
   let restoredStoryFlowBreaks: import('../store/state').SortBreak[] = [];
   let restoredCamAspectRatio: import('../store/state').CamRatioKey = 'canvas';
+  let restoredExportMeta: import('../store/state').ExportMeta | null = null;
   let isPortrait = newFrames.length > 0 && newFrames[0].cropH > newFrames[0].cropW;
 
   if (tree.project.metadata) {
@@ -1912,6 +1914,9 @@ async function applyCloudTreeToStore(
       }
       if (meta.camAspectRatio != null) {
         restoredCamAspectRatio = meta.camAspectRatio;
+      }
+      if (meta.exportMeta && typeof meta.exportMeta === 'object') {
+        restoredExportMeta = meta.exportMeta;
       }
     } catch {
       // Ignore malformed metadata — use defaults
@@ -2026,6 +2031,7 @@ async function applyCloudTreeToStore(
     activeSortOrderId: restoredActiveSortOrderId,
     storyFlowBreaks: restoredStoryFlowBreaks,
     camAspectRatio: restoredCamAspectRatio,
+    exportMeta: restoredExportMeta ?? createDefaultExportMeta(),
     sortMode: false,
     sortEditingId: null,
     renderTick: prev.renderTick + 1,
