@@ -38,7 +38,7 @@ cd ~/Desktop/Framehow\ Files/framehow-react && git add -A && git commit -m "v4.6
 ### Version numbering
 - `APP_VERSION` constant in `src/store/state.ts` — displayed in toolbar next to logo
 - Format: `v4.6.0XX` where XX increments with each deploy
-- Current: `v4.9.037`
+- Current: `v4.9.038`
 - Production: `v4.9.001`
 
 ### Clean rebuild (if changes don't appear)
@@ -166,6 +166,16 @@ Changes:
 
 Changes:
 - `src/lib/accountFlow.ts` — Added fullscreen overlay ("Couldn't load all content — check your connection") with Retry/Dismiss buttons when R2 image fetches fail; overlay shows after progress bar hides (no overlap); Retry triggers fresh pull; Dismiss lets user browse but _pullIncomplete stays true (no push/save of half-loaded state).
+
+### v4.9.037 — 2026-07-29 (dev — deployed)
+**Export rework: page header, 3x2 + Sort By layouts, NEEDS/NOTES, embedded DM Sans, baked borders**
+
+Changes:
+- `src/store/state.ts` — `ExportMeta` (shootingOrder / userName / version / date) + `createDefaultExportMeta()`; persisted per project, reset on new project
+- `src/lib/exports.ts` — new page header (project name centred bold, two meta rows, page number); 3x2 View replaces Main Frames (FIXED layout, 5-line caption band, text clipped — never resizes the page); new Sort By layout (story flow or any shooting order, breaks as red section headings, each section starts a fresh page); Double Strip + Full Overview gain NEEDS/NOTES (Include Table removed); version picker rows hidden, action buttons drive it; `normalizeForPdf` + `hardWrapLines` — own greedy wrapper, measures with getTextWidth so measure and render can never disagree, breaks mid-word rather than overflow; PPTX mirrors all layouts, uses Arial (pptx can't embed fonts), header boxes sized to their text, captions auto-size + shrink-on-overflow so nothing is cut
+- `src/lib/pdfFont.ts` + `src/assets/fonts/dmSansBase64.ts` — DM Sans subset (regular + bold, 56 KB) embedded in PDFs. jsPDF's Helvetica is WinAnsi-only and silently dropped č/ľ/ť; also makes PDFs match the app
+- `src/lib/rasterize.ts` — `withBakedBorder()`: 0.6% of the long edge, drawn fully inside the bounds, baked into the bitmap for PDF/PPTX/ZIP (plain strokeRect centres on the edge and loses half)
+- `src/lib/persistence.ts` / `src/lib/accountFlow.ts` — exportMeta in IDB snapshot + cloud sync
 
 ### v4.9.036 — 2026-07-29 (dev — deployed)
 **3×2 drag-to-reorder (desktop + iOS), card lock during re-order, canvas tap removed**

@@ -260,16 +260,44 @@ export function Modals() {
             <label className="exp-opt">
               <input type="radio" name="exportLayout" value="sortby" />
               <span className="exp-opt-wrap">
-                <svg className="exp-opt-icon" width="76" height="54" viewBox="0 0 76 54">
-                  <rect x="0.5" y="0.5" width="75" height="53" rx="2" fill="#222" stroke="#555" strokeWidth="0.8" />
-                  <rect x="5" y="5" width="66" height="4" rx="1" fill="#d52632" />
-                  <rect x="5" y="12" width="20" height="12" rx="1" fill="none" stroke="#999" strokeWidth="1.1" />
-                  <rect x="28" y="12" width="20" height="12" rx="1" fill="none" stroke="#999" strokeWidth="1.1" />
-                  <rect x="51" y="12" width="20" height="12" rx="1" fill="none" stroke="#999" strokeWidth="1.1" />
-                  <rect x="5" y="28" width="66" height="4" rx="1" fill="#d52632" />
-                  <rect x="5" y="35" width="20" height="12" rx="1" fill="none" stroke="#999" strokeWidth="1.1" />
-                  <rect x="28" y="35" width="20" height="12" rx="1" fill="none" stroke="#999" strokeWidth="1.1" />
-                  <rect x="51" y="35" width="20" height="12" rx="1" fill="none" stroke="#999" strokeWidth="1.1" />
+                <svg className="exp-opt-icon" width="56" height="72" viewBox="0 0 56 72">
+                  <rect x="0.5" y="0.5" width="55" height="71" rx="2" fill="#1c1c1c" stroke="#555" strokeWidth="0.8" />
+                  <rect x="4" y="5" width="48" height="13" rx="1.5" fill="#2c2c2c" stroke="#888" strokeWidth="0.8" />
+                  <rect x="6" y="7" width="2.5" height="2" rx="0.4" fill="#bbb" />
+                  <rect x="10" y="7" width="14" height="9" rx="0.8" fill="none" stroke="#ccc" strokeWidth="0.9" />
+                  <rect x="25.5" y="7" width="7" height="4" rx="0.6" fill="#aaa" stroke="#777" strokeWidth="0.5" />
+                  <rect x="25.5" y="12" width="7" height="4" rx="0.6" fill="#aaa" stroke="#777" strokeWidth="0.5" />
+                  <rect x="34" y="7" width="7.5" height="1.3" rx="0.6" fill="#888" />
+                  <rect x="34" y="10" width="6" height="1.3" rx="0.6" fill="#666" />
+                  <rect x="43" y="7" width="7.5" height="1.3" rx="0.6" fill="#888" />
+                  <rect x="43" y="10" width="5" height="1.3" rx="0.6" fill="#666" />
+                  <rect x="4" y="21" width="48" height="13" rx="1.5" fill="#2c2c2c" stroke="#888" strokeWidth="0.8" />
+                  <rect x="6" y="23" width="2.5" height="2" rx="0.4" fill="#bbb" />
+                  <rect x="10" y="23" width="14" height="9" rx="0.8" fill="none" stroke="#ccc" strokeWidth="0.9" />
+                  <rect x="25.5" y="23" width="7" height="4" rx="0.6" fill="#aaa" stroke="#777" strokeWidth="0.5" />
+                  <rect x="25.5" y="28" width="7" height="4" rx="0.6" fill="#aaa" stroke="#777" strokeWidth="0.5" />
+                  <rect x="34" y="23" width="7.5" height="1.3" rx="0.6" fill="#888" />
+                  <rect x="34" y="26" width="6" height="1.3" rx="0.6" fill="#666" />
+                  <rect x="43" y="23" width="7.5" height="1.3" rx="0.6" fill="#888" />
+                  <rect x="43" y="26" width="5" height="1.3" rx="0.6" fill="#666" />
+                  <rect x="4" y="37" width="48" height="13" rx="1.5" fill="#2c2c2c" stroke="#888" strokeWidth="0.8" />
+                  <rect x="6" y="39" width="2.5" height="2" rx="0.4" fill="#bbb" />
+                  <rect x="10" y="39" width="14" height="9" rx="0.8" fill="none" stroke="#ccc" strokeWidth="0.9" />
+                  <rect x="25.5" y="39" width="7" height="4" rx="0.6" fill="#aaa" stroke="#777" strokeWidth="0.5" />
+                  <rect x="25.5" y="44" width="7" height="4" rx="0.6" fill="#aaa" stroke="#777" strokeWidth="0.5" />
+                  <rect x="34" y="39" width="7.5" height="1.3" rx="0.6" fill="#888" />
+                  <rect x="34" y="42" width="6" height="1.3" rx="0.6" fill="#666" />
+                  <rect x="43" y="39" width="7.5" height="1.3" rx="0.6" fill="#888" />
+                  <rect x="43" y="42" width="5" height="1.3" rx="0.6" fill="#666" />
+                  <rect x="4" y="53" width="48" height="13" rx="1.5" fill="#2c2c2c" stroke="#888" strokeWidth="0.8" />
+                  <rect x="6" y="55" width="2.5" height="2" rx="0.4" fill="#bbb" />
+                  <rect x="10" y="55" width="14" height="9" rx="0.8" fill="none" stroke="#ccc" strokeWidth="0.9" />
+                  <rect x="25.5" y="55" width="7" height="4" rx="0.6" fill="#aaa" stroke="#777" strokeWidth="0.5" />
+                  <rect x="25.5" y="60" width="7" height="4" rx="0.6" fill="#aaa" stroke="#777" strokeWidth="0.5" />
+                  <rect x="34" y="55" width="7.5" height="1.3" rx="0.6" fill="#888" />
+                  <rect x="34" y="58" width="6" height="1.3" rx="0.6" fill="#666" />
+                  <rect x="43" y="55" width="7.5" height="1.3" rx="0.6" fill="#888" />
+                  <rect x="43" y="58" width="5" height="1.3" rx="0.6" fill="#666" />
                 </svg>
                 <span className="exp-opt-text">
                   <strong>Sort By</strong>
@@ -425,16 +453,44 @@ export function Modals() {
             <label className="exp-opt">
               <input type="radio" name="pptxLayout" value="sortby" />
               <span className="exp-opt-wrap">
-                <svg className="exp-opt-icon" width="76" height="54" viewBox="0 0 76 54">
-                  <rect x="0.5" y="0.5" width="75" height="53" rx="2" fill="#222" stroke="#555" strokeWidth="0.8" />
-                  <rect x="5" y="5" width="66" height="4" rx="1" fill="#d52632" />
-                  <rect x="5" y="12" width="20" height="12" rx="1" fill="none" stroke="#999" strokeWidth="1.1" />
-                  <rect x="28" y="12" width="20" height="12" rx="1" fill="none" stroke="#999" strokeWidth="1.1" />
-                  <rect x="51" y="12" width="20" height="12" rx="1" fill="none" stroke="#999" strokeWidth="1.1" />
-                  <rect x="5" y="28" width="66" height="4" rx="1" fill="#d52632" />
-                  <rect x="5" y="35" width="20" height="12" rx="1" fill="none" stroke="#999" strokeWidth="1.1" />
-                  <rect x="28" y="35" width="20" height="12" rx="1" fill="none" stroke="#999" strokeWidth="1.1" />
-                  <rect x="51" y="35" width="20" height="12" rx="1" fill="none" stroke="#999" strokeWidth="1.1" />
+                <svg className="exp-opt-icon" width="56" height="72" viewBox="0 0 56 72">
+                  <rect x="0.5" y="0.5" width="55" height="71" rx="2" fill="#1c1c1c" stroke="#555" strokeWidth="0.8" />
+                  <rect x="4" y="5" width="48" height="13" rx="1.5" fill="#2c2c2c" stroke="#888" strokeWidth="0.8" />
+                  <rect x="6" y="7" width="2.5" height="2" rx="0.4" fill="#bbb" />
+                  <rect x="10" y="7" width="14" height="9" rx="0.8" fill="none" stroke="#ccc" strokeWidth="0.9" />
+                  <rect x="25.5" y="7" width="7" height="4" rx="0.6" fill="#aaa" stroke="#777" strokeWidth="0.5" />
+                  <rect x="25.5" y="12" width="7" height="4" rx="0.6" fill="#aaa" stroke="#777" strokeWidth="0.5" />
+                  <rect x="34" y="7" width="7.5" height="1.3" rx="0.6" fill="#888" />
+                  <rect x="34" y="10" width="6" height="1.3" rx="0.6" fill="#666" />
+                  <rect x="43" y="7" width="7.5" height="1.3" rx="0.6" fill="#888" />
+                  <rect x="43" y="10" width="5" height="1.3" rx="0.6" fill="#666" />
+                  <rect x="4" y="21" width="48" height="13" rx="1.5" fill="#2c2c2c" stroke="#888" strokeWidth="0.8" />
+                  <rect x="6" y="23" width="2.5" height="2" rx="0.4" fill="#bbb" />
+                  <rect x="10" y="23" width="14" height="9" rx="0.8" fill="none" stroke="#ccc" strokeWidth="0.9" />
+                  <rect x="25.5" y="23" width="7" height="4" rx="0.6" fill="#aaa" stroke="#777" strokeWidth="0.5" />
+                  <rect x="25.5" y="28" width="7" height="4" rx="0.6" fill="#aaa" stroke="#777" strokeWidth="0.5" />
+                  <rect x="34" y="23" width="7.5" height="1.3" rx="0.6" fill="#888" />
+                  <rect x="34" y="26" width="6" height="1.3" rx="0.6" fill="#666" />
+                  <rect x="43" y="23" width="7.5" height="1.3" rx="0.6" fill="#888" />
+                  <rect x="43" y="26" width="5" height="1.3" rx="0.6" fill="#666" />
+                  <rect x="4" y="37" width="48" height="13" rx="1.5" fill="#2c2c2c" stroke="#888" strokeWidth="0.8" />
+                  <rect x="6" y="39" width="2.5" height="2" rx="0.4" fill="#bbb" />
+                  <rect x="10" y="39" width="14" height="9" rx="0.8" fill="none" stroke="#ccc" strokeWidth="0.9" />
+                  <rect x="25.5" y="39" width="7" height="4" rx="0.6" fill="#aaa" stroke="#777" strokeWidth="0.5" />
+                  <rect x="25.5" y="44" width="7" height="4" rx="0.6" fill="#aaa" stroke="#777" strokeWidth="0.5" />
+                  <rect x="34" y="39" width="7.5" height="1.3" rx="0.6" fill="#888" />
+                  <rect x="34" y="42" width="6" height="1.3" rx="0.6" fill="#666" />
+                  <rect x="43" y="39" width="7.5" height="1.3" rx="0.6" fill="#888" />
+                  <rect x="43" y="42" width="5" height="1.3" rx="0.6" fill="#666" />
+                  <rect x="4" y="53" width="48" height="13" rx="1.5" fill="#2c2c2c" stroke="#888" strokeWidth="0.8" />
+                  <rect x="6" y="55" width="2.5" height="2" rx="0.4" fill="#bbb" />
+                  <rect x="10" y="55" width="14" height="9" rx="0.8" fill="none" stroke="#ccc" strokeWidth="0.9" />
+                  <rect x="25.5" y="55" width="7" height="4" rx="0.6" fill="#aaa" stroke="#777" strokeWidth="0.5" />
+                  <rect x="25.5" y="60" width="7" height="4" rx="0.6" fill="#aaa" stroke="#777" strokeWidth="0.5" />
+                  <rect x="34" y="55" width="7.5" height="1.3" rx="0.6" fill="#888" />
+                  <rect x="34" y="58" width="6" height="1.3" rx="0.6" fill="#666" />
+                  <rect x="43" y="55" width="7.5" height="1.3" rx="0.6" fill="#888" />
+                  <rect x="43" y="58" width="5" height="1.3" rx="0.6" fill="#666" />
                 </svg>
                 <span className="exp-opt-text">
                   <strong>Sort By</strong>

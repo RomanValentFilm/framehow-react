@@ -5,7 +5,7 @@ import jsPDF from 'jspdf';
 // @ts-ignore — pptxgenjs ships its own bundled types
 import PptxGenJS from 'pptxgenjs';
 import JSZip from 'jszip';
-import { state, useStore, DEFAULT_STRIP_DEFS, createDefaultExportMeta } from '../store/state';
+import { state, useStore, DEFAULT_STRIP_DEFS, createDefaultExportMeta, SETUP_COLORS } from '../store/state';
 import type { Frame, StripType, ExportMeta, SortBreak, TableData } from '../store/state';
 import { rasterizeMain, rasterizeVersion, versionHasContent, canvasToBlob, withBakedBorder } from './rasterize';
 import { showToast } from './modals';
@@ -404,34 +404,61 @@ function getSortedExportFrames(orderId: string, pool: Frame[]): { frames: Frame[
   return { frames: seq, breaks: [...(order.breaks || [])] };
 }
 
-/** Flatten a frame's NEEDS into printable lines. */
-function needsLines(fid: number): string[] {
-  const s = state();
-  const fn = s.frameNeeds[fid];
-  if (!fn) return [];
-  const out: string[] = [];
-  for (const tab of s.needDefinitions.tabs) {
-    const parts: string[] = [];
+/**
+ * A frame's NEEDS as label/value pairs, built exactly the way the on-screen
+ * SORT BY view builds them (sortOrder.ts): one line per TABLE - not per tab -
+ * with counters shown as "total (n NAME + n NAME)".
+ */
+function needsPairsFor(fid: number, tabs: import('../store/state').NeedTab[]): { k: string; v: string }[] {
+  const fn = state().frameNeeds[fid];
+  const out: { k: string; v: string }[] = [];
+  if (!fn) return out;
+  for (const tab of tabs) {
     for (const table of tab.tables) {
-      for (const item of table.items) {
-        if (table.type === 'counter') {
-          const n = fn.counters[item.id] || 0;
-          if (n > 0) parts.push(`${item.name} ×${n}`);
-        } else if (fn.toggles[item.id]) {
-          parts.push(item.name);
+      if (table.type === 'counter') {
+        const items: { name: string; count: number }[] = [];
+        let total = 0;
+        for (const item of table.items) {
+          const c = fn.counters?.[item.id] || 0;
+          if (c > 0) {
+            items.push({ name: item.name, count: c });
+            total += c;
+          }
         }
+        if (items.length) {
+          const breakdown = items.map((i) => `${i.count} ${i.name}`).join(' + ');
+          out.push({ k: table.name, v: `${total} (${breakdown})` });
+        }
+      } else {
+        const on = table.items.filter((it) => fn.toggles?.[it.id]).map((it) => it.name);
+        if (on.length) out.push({ k: table.name, v: on.join(', ') });
       }
     }
-    const memo = (fn.memos?.[tab.id] || '').trim();
-    if (parts.length || memo) {
-      let line = `${tab.name}: ${parts.join(', ')}`;
-      if (memo) line += parts.length ? ` — ${memo}` : ` ${memo}`;
-      out.push(line);
+  }
+  return out;
+}
+
+/** The same two columns the SORT BY view shows - split by tab, as it does. */
+function needsColumns(fid: number): [{ k: string; v: string }[], { k: string; v: string }[]] {
+  const tabs = state().needDefinitions.tabs || [];
+  const mid = Math.ceil(tabs.length / 2);
+  return [needsPairsFor(fid, tabs.slice(0, mid)), needsPairsFor(fid, tabs.slice(mid))];
+}
+
+/** Flat version for the layouts that print NEEDS as running text. */
+function needsLines(fid: number): string[] {
+  const s = state();
+  const lines = needsPairsFor(fid, s.needDefinitions.tabs || []).map((p) => `${p.k}: ${p.v}`);
+  const fn = s.frameNeeds[fid];
+  if (fn) {
+    const locs = s.needDefinitions.locations.filter((l) => fn.locationToggles?.[l.id]).map((l) => l.name);
+    if (locs.length) lines.push(`LOCATION: ${locs.join(', ')}`);
+    for (const tab of s.needDefinitions.tabs || []) {
+      const memo = (fn.memos?.[tab.id] || '').trim();
+      if (memo) lines.push(`${tab.name}: ${memo}`);
     }
   }
-  const locs = s.needDefinitions.locations.filter((l) => fn.locationToggles?.[l.id]).map((l) => l.name);
-  if (locs.length) out.push(`LOCATION: ${locs.join(', ')}`);
-  return out;
+  return lines;
 }
 
 /** A frame's NOTES as either wrapped text or a table, whichever the user set. */
@@ -541,6 +568,8 @@ export function updateExportVisibility(layout: string, prefix: string): void {
   };
   show(`${prefix}DoubleStripWrap`, isDouble);
   show(`${prefix}SortOrderWrap`, isSortBy);
+  // Sort By fixes its own strips (VERSN + SKETCH, mirroring the on-screen row)
+  // and always prints NEEDS, so neither picker applies there.
   show(`${prefix}OverviewStripWrap`, isOverview);
   show(`${prefix}VersionPickerWrap`, isOverview);
   // NEEDS / NOTES apply to Double Strip and Full Overview
@@ -577,7 +606,8 @@ export async function runExport(): Promise<void> {
   // 3×2 always prints descriptions; Sort By prints none
   const includeText =
     layout === 'grid3x2' ? true : layout === 'sortby' ? false : (document.getElementById('exportIncludeText') as HTMLInputElement).checked;
-  const includeNeeds = (document.getElementById('exportIncludeNeeds') as HTMLInputElement)?.checked ?? false;
+  const includeNeeds =
+    layout === 'sortby' ? true : (document.getElementById('exportIncludeNeeds') as HTMLInputElement)?.checked ?? false;
   const includeNotes = (document.getElementById('exportIncludeNotes') as HTMLInputElement)?.checked ?? false;
   const paperLetter = (document.getElementById('exportPaperLetter') as HTMLInputElement).checked;
   // Header prints the project name alone — the group only tags the filename
@@ -605,7 +635,7 @@ export async function runExport(): Promise<void> {
   showToast('Generating PDF…');
 
   const paper = paperLetter ? 'letter' : 'a4';
-  const orient = layout === 'double' ? 'portrait' : 'landscape';
+  const orient = layout === 'double' || layout === 'sortby' ? 'portrait' : 'landscape';
   const pdf = new jsPDF({ orientation: orient, unit: 'mm', format: paper });
   registerPdfFont(pdf);
   const pageW = pdf.internal.pageSize.getWidth();
@@ -614,8 +644,8 @@ export async function runExport(): Promise<void> {
   const MARGIN = 8;
   // Header block: title line + two small meta rows + rule. Deliberately tight
   // so it takes as little off the content area as possible.
-  const HEADER_H = 12.5;
-  const FOOTER_H = 6;
+  const HEADER_H = 10.5;   // meta rows finish ~9.2mm in, so this is just clear of them
+  const FOOTER_H = 2;   // page number is drawn below this band, at pageH - MARGIN/2
   const FRAME_BORDER_PT = 2;
   const LABEL_H = 4.5;
 
@@ -1022,53 +1052,209 @@ export async function runExport(): Promise<void> {
       drawFrameLabel(x, y, f.label || '');
     }
   } else if (layout === 'sortby') {
-    // Split the ordered sequence into sections at each break position
-    const sections: { title: string; items: Frame[] }[] = [];
-    const ordered = [...sortBreaks].sort((a, b) => a.position - b.position);
-    let cursor = 0;
-    let curTitle = '';
-    for (const brk of ordered) {
-      const pos = Math.max(0, Math.min(brk.position, frames.length));
-      sections.push({ title: curTitle, items: frames.slice(cursor, pos) });
-      cursor = pos;
-      curTitle = (brk.text || '').trim();
+    // Portrait. Each frame is a card mirroring the on-screen SORT BY row.
+    // The view's grid is `44px 25% 17% 1fr 30px` with 6px gaps on a ~876px
+    // card, so those become the proportions below. The arrows column is
+    // dropped (nothing to click in a PDF) and its width goes to NEEDS.
+    const contentW = pageW - 2 * MARGIN;
+    const bottomY = pageH - MARGIN - FOOTER_H;
+    const PAD_T = 2.2, PAD_R = 2.4, PAD_L = 0.8;   // .sort-card padding 8/9/8/3 px
+    const GAP = contentW * 0.0068;                  // 6px of 876
+    const CARD_GAP = 1.6;
+    const sbRef = s.frames[0] || { cropW: 16, cropH: 9 };
+    const sbAspect = sbRef.cropW / sbRef.cropH;
+
+    const gridW = contentW - PAD_L - PAD_R;
+    const numW = gridW * 0.050;      // 44px
+    const mainW = gridW * 0.25;      // 25%
+    const verW = gridW * 0.17;       // 17%
+    const needsW = gridW - numW - mainW - verW - GAP * 3;
+    const mainH = mainW / sbAspect;
+    const verH = verW / sbAspect;
+    const colW = (needsW - GAP) / 2;
+
+    let cursorY = MARGIN + HEADER_H;
+    page = 1;
+    drawHeader(page, 0);
+
+    const breakAt = new Map<number, string>();
+    for (const b of sortBreaks) {
+      const t = (b.text || '').trim();
+      if (t) breakAt.set(b.position, t);
     }
-    sections.push({ title: curTitle, items: frames.slice(cursor) });
-    const secs = sections.filter((sec) => sec.items.length > 0);
-    const anyTitle = secs.some((sec) => !!sec.title);
-    const g = calcMainGrid(anyTitle ? 6 : 0);
-    const perPage = g.cols * g.rows;
-    // Each section starts on a fresh page so a break never splits mid-row
-    totalPages = secs.reduce((n, sec) => n + Math.ceil(sec.items.length / perPage), 0) || 1;
-    let first = true;
-    for (const sec of secs) {
-      const pageCount = Math.ceil(sec.items.length / perPage);
-      for (let p = 0; p < pageCount; p++) {
-        if (!first) pdf.addPage();
-        first = false;
-        page++;
-        drawHeader(page, totalPages);
-        if (sec.title) {
+
+    for (let i = 0; i < frames.length; i++) {
+      const f = frames[i];
+
+      const capLines = f.textContent ? hardWrapLines(pdf, f.textContent, mainW).length : 0;
+      const capH = capLines ? 1.2 + capLines * 3.2 : 0;
+      const [col1, col2] = needsColumns(f.id);
+      // Count real rendered lines per column, since a long value wraps
+      pdf.setFontSize(7);
+      const colLines = (pairs: { k: string; v: string }[]) =>
+        pairs.reduce((n, pr) => {
           pdf.setFont(PDF_FONT, 'bold');
-          pdf.setFontSize(9);
-          pdf.setTextColor(213, 38, 50);
-          pdf.text(sec.title.toUpperCase(), MARGIN, MARGIN + HEADER_H + 3);
-          pdf.setTextColor(30);
+          const kW = pdf.getTextWidth(`${pr.k} `);
           pdf.setFont(PDF_FONT, 'normal');
-        }
-        const slice = sec.items.slice(p * perPage, (p + 1) * perPage);
-        for (let i = 0; i < slice.length; i++) {
-          const col = i % g.cols,
-            row = Math.floor(i / g.cols);
-          const x = g.startX + col * (g.frameW + g.gutterX);
-          const y = g.startY + row * (LABEL_H + g.frameH + g.gutterY) + LABEL_H;
-          const f = slice[i];
-          const cvs = await rasterizeMain(f);
-          await drawFrameTile(x, y, g.frameW, g.frameH, cvs, f.textContent || '', g.textH);
-          drawFrameLabel(x, y, f.label || '');
+          return n + hardWrapLines(pdf, pr.v, Math.max(8, colW - kW)).length;
+        }, 0);
+      const textH = Math.max(colLines(col1), colLines(col2)) * 3.9;
+      const cardH = Math.max(mainH + capH, verH * 2 + GAP, textH) + PAD_T * 2;
+
+      const title = breakAt.get(i);
+      const BREAK_H = 5.6;                    // .sort-break-card: 4px pad + 14px text + 4px pad
+      if (cursorY + (title ? BREAK_H + CARD_GAP : 0) + cardH + CARD_GAP > bottomY) {
+        pdf.addPage();
+        page++;
+        drawHeader(page, 0);
+        cursorY = MARGIN + HEADER_H;
+      }
+
+      if (title) {
+        // .sort-break-card — full-width grey bar, #808080 on a #666 border
+        pdf.setFillColor(128, 128, 128);
+        pdf.setDrawColor(102);
+        pdf.setLineWidth(0.25);
+        pdf.roundedRect(MARGIN, cursorY, contentW, BREAK_H, 1.2, 1.2, 'FD');
+        // .sort-break-text — transparent, no border, white semibold.
+        // (The inset box in the CSS is .sort-break-active only, i.e. while a
+        // break is selected for reordering — not its resting state.)
+        pdf.setFont(PDF_FONT, 'bold');
+        pdf.setFontSize(9);
+        pdf.setTextColor(255);
+        const tTxt = hardWrapLines(pdf, title, contentW * 0.6)[0] || title;
+        pdf.text(tTxt, MARGIN + 2.6, cursorY + BREAK_H / 2 + 1.2);
+        pdf.setFont(PDF_FONT, 'normal');
+        pdf.setTextColor(30);
+        cursorY += BREAK_H + CARD_GAP;
+      }
+
+      // .sort-card — #d9d9d9 fill, 1px #aaa border, 4px radius
+      pdf.setFillColor(217, 217, 217);
+      pdf.setDrawColor(170);
+      pdf.setLineWidth(0.25);
+      pdf.roundedRect(MARGIN, cursorY, contentW, cardH, 1.2, 1.2, 'FD');
+
+      const innerY = cursorY + PAD_T;
+      let x = MARGIN + PAD_L;
+
+      // Number column, matching .sort-card-col-num: label number on top, any
+      // trailing text under it, and the SETUP pill pinned to the bottom
+      // (margin-top:auto in the view). Everything is centred and clipped to
+      // the column, never wrapped past it.
+      const lp = (f.label || '').match(/^(\d+[A-Za-z]?\.?)\s*(.*)/);
+      const labelNum = lp ? lp[1] : f.label || '';
+      const labelExtra = lp ? lp[2] : '';
+      const numCx = x + numW / 2;
+      const clipTo = (t: string, w: number) => {
+        if (pdf.getTextWidth(t) <= w) return t;
+        let out = t;
+        while (out.length > 1 && pdf.getTextWidth(out + '…') > w) out = out.slice(0, -1);
+        return out + '…';
+      };
+
+      // .sort-card-num — 13px, weight 500, #333
+      pdf.setFont(PDF_FONT, 'normal');
+      pdf.setFontSize(8);
+      pdf.setTextColor(51);
+      pdf.text(clipTo(labelNum, numW), numCx, innerY + 2.9, { align: 'center' });
+
+      // .sort-card-extra — 8px, black, directly beneath
+      if (labelExtra) {
+        pdf.setFontSize(5);
+        pdf.setTextColor(0);
+        let ly = innerY + 5.6;
+        for (const line of hardWrapLines(pdf, labelExtra, numW)) {
+          if (ly > innerY + cardH - PAD_T * 2 - 3.4) break;   // leave room for the pill
+          pdf.text(line, numCx, ly, { align: 'center' });
+          ly += 2.3;
         }
       }
+
+      // .sort-card-pill — setup name, white on the setup colour, at the bottom
+      const setup = f.setupId ? s.setups.find((su) => su.id === f.setupId) : null;
+      if (setup) {
+        const hex = SETUP_COLORS[setup.colorIndex]?.hex || '#999';
+        const r = parseInt(hex.slice(1, 3), 16),
+          g2 = parseInt(hex.slice(3, 5), 16),
+          b = parseInt(hex.slice(5, 7), 16);
+        pdf.setFontSize(5);
+        const pillTxt = clipTo(setup.name, numW - 1.4);
+        const pillW = Math.min(numW, pdf.getTextWidth(pillTxt) + 1.6);
+        const pillH = 2.6;
+        const pillY = cursorY + cardH - PAD_T - pillH;
+        pdf.setFillColor(r, g2, b);
+        pdf.roundedRect(numCx - pillW / 2, pillY, pillW, pillH, 1.3, 1.3, 'F');
+        // White text unless the swatch is very light, where it would vanish
+        const lum = (0.299 * r + 0.587 * g2 + 0.114 * b) / 255;
+        pdf.setTextColor(lum > 0.7 ? 30 : 255);
+        pdf.text(pillTxt, numCx, pillY + 1.85, { align: 'center' });
+      }
+      x += numW + GAP;
+
+      // MAIN — the only image with an outline in the view (2px black)
+      const mainCvs = await rasterizeMain(f);
+      const mainImg = withBakedBorder(mainCvs).toDataURL('image/jpeg', 0.92);
+      pdf.addImage(mainImg, 'JPEG', x, innerY, mainW, mainH, undefined, 'FAST');
+      if (capLines) {
+        pdf.setFont(PDF_FONT, 'normal');
+        pdf.setFontSize(6.5);
+        pdf.setTextColor(40);
+        let cy = innerY + mainH + 1.2;
+        for (const line of hardWrapLines(pdf, f.textContent, mainW)) {
+          pdf.text(line, x, cy + 2.2);
+          cy += 3.2;
+        }
+      }
+      x += mainW + GAP;
+
+      // VERSN then SKETCH stacked — first version of each, no outline
+      let vy = innerY;
+      for (const sid of ['ver', 'floor'] as StripType[]) {
+        const v = getStripVersions(f.id, sid)[0];
+        if (v && versionHasContent(v)) {
+          const vc = await rasterizeVersion(v, f.cropW, f.cropH);
+          pdf.addImage(vc.toDataURL('image/jpeg', 0.92), 'JPEG', x, vy, verW, verH, undefined, 'FAST');
+        }
+        vy += verH + GAP;
+      }
+      x += verW + GAP;
+
+      // NEEDS — two columns, bold table name then its values
+      pdf.setFontSize(7);
+      [col1, col2].forEach((colPairs, c) => {
+        const cx = x + c * (colW + GAP);
+        let cy = innerY;
+        for (const pr of colPairs) {
+          pdf.setFont(PDF_FONT, 'bold');
+          pdf.setTextColor(20);
+          const kTxt = `${pr.k} `;
+          pdf.text(kTxt, cx, cy + 2.6);
+          const tx = cx + pdf.getTextWidth(kTxt);
+          pdf.setFont(PDF_FONT, 'normal');
+          pdf.setTextColor(60);
+          // First line sits beside the label; any continuation wraps to the
+          // column's full width underneath, and the NEXT entry starts below
+          // all of them rather than overlapping.
+          const firstW = Math.max(8, colW - (tx - cx));
+          const all = hardWrapLines(pdf, pr.v, firstW);
+          if (all.length) pdf.text(all[0], tx, cy + 2.6);
+          cy += 3.9;
+          if (all.length > 1) {
+            const rest = hardWrapLines(pdf, all.slice(1).join(' '), colW);
+            for (const line of rest) {
+              pdf.text(line, cx, cy + 2.6);
+              cy += 3.9;
+            }
+          }
+        }
+      });
+      pdf.setTextColor(30);
+      pdf.setFont(PDF_FONT, 'normal');
+
+      cursorY += cardH + CARD_GAP;
     }
+    totalPages = page;
   } else if (layout === 'double') {
     const g = calcDoubleGrid();
     const dblStrips = getSelectedStrips('exportDoubleStripPicker');
@@ -1312,7 +1498,8 @@ export async function runPptxExport(): Promise<void> {
   // 3x2 always prints descriptions; Sort By prints none
   const includeText =
     layout === 'grid3x2' ? true : layout === 'sortby' ? false : (document.getElementById('pptxIncludeText') as HTMLInputElement).checked;
-  const includeNeeds = (document.getElementById('pptxIncludeNeeds') as HTMLInputElement)?.checked ?? false;
+  const includeNeeds =
+    layout === 'sortby' ? true : (document.getElementById('pptxIncludeNeeds') as HTMLInputElement)?.checked ?? false;
   const includeNotes = (document.getElementById('pptxIncludeNotes') as HTMLInputElement)?.checked ?? false;
   // Header prints the project name alone — the group only tags the filename
   const projectName = ((document.getElementById('pptxProjectName') as HTMLInputElement).value || 'Storyboard').trim();
@@ -1337,7 +1524,18 @@ export async function runPptxExport(): Promise<void> {
   showToast('Generating presentation…');
 
   const pptx: any = new (PptxGenJS as any)();
-  pptx.layout = 'LAYOUT_WIDE';
+  // Sort By prints portrait like the PDF; the other layouts stay widescreen.
+  const sbPortrait = layout === 'sortby';
+  if (sbPortrait) {
+    // True A4 portrait (210x297mm), not the 16:9 slide turned on its side -
+    // that gave a 1:1.78 page, far taller than a sheet of paper.
+    pptx.defineLayout({ name: 'FH_A4_PORTRAIT', width: 8.27, height: 11.69 });
+    pptx.layout = 'FH_A4_PORTRAIT';
+  } else {
+    pptx.layout = 'LAYOUT_WIDE';
+  }
+  const SLIDE_W = sbPortrait ? 8.27 : 13.333;
+  const SLIDE_H = sbPortrait ? 11.69 : 7.5;
   pptx.title = projectName;
 
   /**
@@ -1374,14 +1572,207 @@ export async function runPptxExport(): Promise<void> {
     return sl;
   }
 
+  /**
+   * Draw a whole SORT BY card - background, number, pill, images, NEEDS - onto
+   * a single canvas. PptxGenJS cannot create native PowerPoint groups, so the
+   * only way to make a card move as one object is to flatten it to a picture.
+   */
+  async function renderSortCardCanvas(
+    f: Frame,
+    wIn: number,
+    opts: { dpi?: number } = {}
+  ): Promise<{ canvas: HTMLCanvasElement; hIn: number }> {
+    const DPI = opts.dpi || 160;
+    const W = Math.round(wIn * DPI);
+    const px = (inches: number) => inches * DPI;
+
+    // Same proportions as the PDF card / the on-screen grid
+    const PAD = px(0.06);
+    const GAP = W * 0.0068;
+    const numW = W * 0.05;
+    const mainW = W * 0.25;
+    const verW = W * 0.17;
+    const needsW = W - numW - mainW - verW - GAP * 3 - PAD * 2;
+    const colW = (needsW - GAP) / 2;
+    const mainH = mainW / aspect;
+    const verH = verW / aspect;
+
+    const F_NUM = Math.round(px(0.11));
+    const F_SMALL = Math.round(px(0.07));
+    const F_TXT = Math.round(px(0.097));
+    const LINE = F_TXT * 1.45;
+
+    // Measure first so the canvas is exactly tall enough
+    const probe = document.createElement('canvas').getContext('2d')!;
+    const wrap = (text: string, maxW: number, font: string): string[] => {
+      probe.font = font;
+      const out: string[] = [];
+      for (const para of (text || '').split(/\r?\n/)) {
+        let line = '';
+        for (const word of para.split(' ')) {
+          const cand = line ? line + ' ' + word : word;
+          if (probe.measureText(cand).width <= maxW) line = cand;
+          else {
+            if (line) out.push(line);
+            line = word;
+          }
+        }
+        if (line) out.push(line);
+      }
+      return out;
+    };
+    const fontTxt = `${F_TXT}px "DM Sans", sans-serif`;
+    const fontTxtB = `600 ${F_TXT}px "DM Sans", sans-serif`;
+
+    const [c1, c2] = needsColumns(f.id);
+    const colLines = (pairs: { k: string; v: string }[]) =>
+      pairs.reduce((n, pr) => {
+        probe.font = fontTxtB;
+        const kW = probe.measureText(`${pr.k} `).width;
+        return n + Math.max(1, wrap(pr.v, Math.max(20, colW - kW), fontTxt).length);
+      }, 0);
+    const capLines = f.textContent ? wrap(f.textContent, mainW, `${F_SMALL}px "DM Sans", sans-serif`) : [];
+    const capH = capLines.length ? capLines.length * F_SMALL * 1.4 + px(0.02) : 0;
+    const textH = Math.max(colLines(c1), colLines(c2)) * LINE;
+    const H = Math.round(Math.max(mainH + capH, verH * 2 + GAP, textH) + PAD * 2);
+
+    const c = document.createElement('canvas');
+    c.width = W;
+    c.height = H;
+    const ctx = c.getContext('2d')!;
+
+    // Card: #d9d9d9 fill, #aaa border, rounded
+    const r = px(0.04);
+    ctx.beginPath();
+    ctx.moveTo(r, 0);
+    ctx.arcTo(W, 0, W, H, r);
+    ctx.arcTo(W, H, 0, H, r);
+    ctx.arcTo(0, H, 0, 0, r);
+    ctx.arcTo(0, 0, W, 0, r);
+    ctx.closePath();
+    ctx.fillStyle = '#d9d9d9';
+    ctx.fill();
+    ctx.strokeStyle = '#aaaaaa';
+    ctx.lineWidth = Math.max(1, px(0.006));
+    ctx.stroke();
+
+    let x = PAD;
+    const iy = PAD;
+
+    // Number, trailing text, setup pill
+    const lp = (f.label || '').match(/^(\d+[A-Za-z]?\.?)\s*(.*)/);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = '#333333';
+    ctx.font = `500 ${F_NUM}px "DM Sans", sans-serif`;
+    let numTxt = lp ? lp[1] : f.label || '';
+    while (numTxt.length > 1 && ctx.measureText(numTxt).width > numW) numTxt = numTxt.slice(0, -1);
+    ctx.fillText(numTxt, x + numW / 2, iy);
+    if (lp && lp[2]) {
+      ctx.font = `${F_SMALL}px "DM Sans", sans-serif`;
+      ctx.fillStyle = '#000';
+      let ly = iy + F_NUM * 1.25;
+      for (const line of wrap(lp[2], numW, ctx.font)) {
+        if (ly > H - PAD - F_SMALL * 3) break;
+        ctx.fillText(line, x + numW / 2, ly);
+        ly += F_SMALL * 1.35;
+      }
+    }
+    const setup = f.setupId ? s.setups.find((su) => su.id === f.setupId) : null;
+    if (setup) {
+      const hex = SETUP_COLORS[setup.colorIndex]?.hex || '#999999';
+      const pillH = F_SMALL * 1.9;
+      const pillY = H - PAD - pillH;
+      ctx.beginPath();
+      const pr2 = pillH / 2;
+      ctx.moveTo(x + pr2, pillY);
+      ctx.arcTo(x + numW, pillY, x + numW, pillY + pillH, pr2);
+      ctx.arcTo(x + numW, pillY + pillH, x, pillY + pillH, pr2);
+      ctx.arcTo(x, pillY + pillH, x, pillY, pr2);
+      ctx.arcTo(x, pillY, x + numW, pillY, pr2);
+      ctx.closePath();
+      ctx.fillStyle = hex;
+      ctx.fill();
+      const rr = parseInt(hex.slice(1, 3), 16),
+        gg = parseInt(hex.slice(3, 5), 16),
+        bb = parseInt(hex.slice(5, 7), 16);
+      ctx.fillStyle = (0.299 * rr + 0.587 * gg + 0.114 * bb) / 255 > 0.7 ? '#1e1e1e' : '#ffffff';
+      ctx.font = `${F_SMALL}px "DM Sans", sans-serif`;
+      let pTxt = setup.name;
+      while (pTxt.length > 1 && ctx.measureText(pTxt).width > numW - px(0.03)) pTxt = pTxt.slice(0, -1);
+      ctx.fillText(pTxt, x + numW / 2, pillY + pillH * 0.22);
+    }
+    x += numW + GAP;
+
+    // MAIN (bordered) + caption
+    const mainCvs = withBakedBorder(await rasterizeMain(f));
+    ctx.drawImage(mainCvs, x, iy, mainW, mainH);
+    if (capLines.length) {
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#282828';
+      ctx.font = `${F_SMALL}px "DM Sans", sans-serif`;
+      let cy2 = iy + mainH + px(0.02);
+      for (const line of capLines) {
+        ctx.fillText(line, x, cy2);
+        cy2 += F_SMALL * 1.4;
+      }
+    }
+    x += mainW + GAP;
+
+    // VERSN + SKETCH stacked, unbordered
+    let vy = iy;
+    for (const sid of ['ver', 'floor'] as StripType[]) {
+      const v = getStripVersions(f.id, sid)[0];
+      if (v && versionHasContent(v)) {
+        const vc = await rasterizeVersion(v, f.cropW, f.cropH);
+        ctx.drawImage(vc, x, vy, verW, verH);
+      }
+      vy += verH + GAP;
+    }
+    x += verW + GAP;
+
+    // NEEDS, two columns, wrapped values pushing the next entry down
+    ctx.textAlign = 'left';
+    [c1, c2].forEach((pairs, ci) => {
+      const cx = x + ci * (colW + GAP);
+      let ry = iy;
+      for (const pr of pairs) {
+        ctx.font = fontTxtB;
+        ctx.fillStyle = '#141414';
+        const kTxt = `${pr.k} `;
+        ctx.fillText(kTxt, cx, ry);
+        const kW = ctx.measureText(kTxt).width;
+        ctx.font = fontTxt;
+        ctx.fillStyle = '#3c3c3c';
+        const lines = wrap(pr.v, Math.max(20, colW - kW), fontTxt);
+        if (lines.length) ctx.fillText(lines[0], cx + kW, ry);
+        ry += LINE;
+        for (const extra of wrap(lines.slice(1).join(' '), colW, fontTxt)) {
+          ctx.fillText(extra, cx, ry);
+          ry += LINE;
+        }
+      }
+    });
+
+    return { canvas: c, hIn: H / DPI };
+  }
+
+  /** How many lines a string takes in a box of the given width, at fontPt. */
+  function pptxLineCount(text: string, wIn: number, fontPt: number): number {
+    if (!text) return 1;
+    const charW = (fontPt * 0.52) / 72;
+    const perLine = Math.max(4, Math.floor(wIn / charW));
+    return Math.max(1, Math.ceil(text.length / perLine));
+  }
+
   /** Same header block as the PDF: centred bold title + two meta rows + rule. */
   function addSlideHeader(sl: any) {
     slideNo++;
     // Box hugs the title and is centred as a whole, rather than a full-width
     // slab that merely centres its text.
-    const titleW = Math.min(10, Math.max(1.2, ((projectName.length * 12 * 0.68) / 72) * 1.2 + 0.2));
+    const titleW = Math.min(SLIDE_W - 0.8, Math.max(1.2, ((projectName.length * 12 * 0.68) / 72) * 1.2 + 0.2));
     sl.addText(projectName, {
-      x: (13.333 - titleW) / 2, y: 0.06, w: titleW, h: 0.24,
+      x: (SLIDE_W - titleW) / 2, y: 0.06, w: titleW, h: 0.24,
       fontSize: 12, bold: true, color: '141414', fontFace: 'Arial', align: 'center', margin: 0,
     });
     const rowOpts = { h: 0.15, fontSize: 6, color: '787878', fontFace: 'Arial', margin: 0 };
@@ -1390,15 +1781,15 @@ export async function runPptxExport(): Promise<void> {
     // Width of the text plus 20% headroom. Caps are wider than lowercase, so the
     // per-character estimate leans generous - a wrapped header line looks far
     // worse than a slightly roomy box.
-    const metaW = (t: string) => Math.min(5, Math.max(0.4, ((t.length * 6 * 0.68) / 72) * 1.2 + 0.1));
+    const metaW = (t: string) => Math.min(SLIDE_W * 0.42, Math.max(0.4, ((t.length * 6 * 0.68) / 72) * 1.2 + 0.1));
     const L = 0.4;
-    const R = 13.333 - 0.4;
+    const R = SLIDE_W - 0.4;
     if (meta.shootingOrder) sl.addText(meta.shootingOrder, { ...rowOpts, x: L, y: 0.30, w: metaW(meta.shootingOrder), align: 'left' });
     if (meta.userName) sl.addText(meta.userName, { ...rowOpts, x: R - metaW(meta.userName), y: 0.30, w: metaW(meta.userName), align: 'right' });
     if (meta.version) sl.addText(meta.version, { ...rowOpts, x: L, y: 0.44, w: metaW(meta.version), align: 'left' });
     if (meta.date) sl.addText(meta.date, { ...rowOpts, x: R - metaW(meta.date), y: 0.44, w: metaW(meta.date), align: 'right' });
     sl.addText(String(slideNo), {
-      x: 13.333 - 1.4, y: 7.5 - 0.42, w: 1, h: 0.22,
+      x: SLIDE_W - 1.4, y: SLIDE_H - 0.42, w: 1, h: 0.22,
       fontSize: 7, color: '8C8C8C', fontFace: 'Arial', align: 'right',
     });
   }
@@ -1408,8 +1799,8 @@ export async function runPptxExport(): Promise<void> {
     return withBakedBorder(canvas);
   }
 
-  const SW = 13.333,
-    SH = 7.5;
+  const SW = SLIDE_W,
+    SH = SLIDE_H;
   const MARGIN = 0.4;
   const ref = frames[0] || { cropW: 16, cropH: 9 };
   const aspect = ref.cropW / ref.cropH;
@@ -1497,51 +1888,54 @@ export async function runPptxExport(): Promise<void> {
       }
     }
   } else if (layout === 'sortby') {
-    // Sections split at each break; every section starts on a fresh slide
-    const sections: { title: string; items: Frame[] }[] = [];
-    const ordered = [...sortBreaks].sort((a, b) => a.position - b.position);
-    let cursor = 0;
-    let curTitle = '';
-    for (const brk of ordered) {
-      const pos = Math.max(0, Math.min(brk.position, frames.length));
-      sections.push({ title: curTitle, items: frames.slice(cursor, pos) });
-      cursor = pos;
-      curTitle = (brk.text || '').trim();
+    // Portrait slides. Each frame card is flattened to a single picture so it
+    // selects and moves as one object in Keynote / PowerPoint (PptxGenJS has
+    // no API for real groups). Breaks stay as editable shapes.
+    const contentW = SW - 2 * MARGIN;
+    const bottomY = SH - MARGIN - 0.3;
+    const CARD_GAP = 0.05;
+    const BREAK_H = 0.26;
+
+    const breakAt = new Map<number, string>();
+    for (const b of sortBreaks) {
+      const t = (b.text || '').trim();
+      if (t) breakAt.set(b.position, t);
     }
-    sections.push({ title: curTitle, items: frames.slice(cursor) });
-    const secs = sections.filter((sec) => sec.items.length > 0);
 
-    const cols = 3, rows = 2;
-    const cellW = (SW - 2 * MARGIN - 0.6) / cols;
-    const fW = cellW;
-    const fH = fW / aspect;
-    const cellH = (SH - 2 * MARGIN - 0.2) / rows;
-    const perSlide = cols * rows;
+    const HEADER_BOTTOM = 0.68;   // meta rows end at ~0.6in
 
-    for (const sec of secs) {
-      const slideCount = Math.ceil(sec.items.length / perSlide);
-      for (let p = 0; p < slideCount; p++) {
-        const slide = newSlide();
+    let slide = newSlide();
+    addSlideHeader(slide);
+    let cy = HEADER_BOTTOM;
+
+    for (let i = 0; i < frames.length; i++) {
+      const f = frames[i];
+      const { canvas: cardCvs, hIn } = await renderSortCardCanvas(f, contentW);
+      const title = breakAt.get(i);
+
+      if (cy + (title ? BREAK_H + CARD_GAP : 0) + hIn + CARD_GAP > bottomY) {
+        slide = newSlide();
         addSlideHeader(slide);
-        if (sec.title) {
-          slide.addText(sec.title.toUpperCase(), {
-            x: MARGIN, y: 0.86, w: SW - 2 * MARGIN, h: 0.24,
-            fontSize: 10, bold: true, color: 'D52632', fontFace: 'Arial',
-          });
-        }
-        const offY = sec.title ? 0.28 : 0;
-        const slice = sec.items.slice(p * perSlide, (p + 1) * perSlide);
-        for (let i = 0; i < slice.length; i++) {
-          const col = i % cols,
-            row = Math.floor(i / cols);
-          const x = MARGIN + col * (cellW + 0.3);
-          const y = 0.5 + offY + row * cellH;
-          const f = slice[i];
-          const cvs = await rasterizeWithBorder(await rasterizeMain(f));
-          slide.addText(f.label || '', { x, y: y - 0.02, w: fW, h: 0.2, fontSize: 7, bold: true, color: '000000', fontFace: 'Arial', valign: 'bottom', margin: 0 });
-          slide.addImage({ data: 'image/jpeg;base64,' + canvasToBase64(cvs), x, y: y + 0.2, w: fW, h: fH });
-        }
+        cy = HEADER_BOTTOM;
       }
+
+      if (title) {
+        slide.addShape('roundRect', {
+          x: MARGIN, y: cy, w: contentW, h: BREAK_H,
+          fill: { color: '808080' }, line: { color: '666666', width: 0.5 }, rectRadius: 0.03,
+        });
+        slide.addText(title, {
+          x: MARGIN + 0.1, y: cy, w: contentW * 0.6, h: BREAK_H,
+          fontSize: 9, bold: true, color: 'FFFFFF', fontFace: 'Arial', valign: 'middle', margin: 0,
+        });
+        cy += BREAK_H + CARD_GAP;
+      }
+
+      slide.addImage({
+        data: 'image/png;base64,' + cardCvs.toDataURL('image/png').split(',')[1],
+        x: MARGIN, y: cy, w: contentW, h: hIn,
+      });
+      cy += hIn + CARD_GAP;
     }
   } else if (layout === 'double') {
     const pptxDblStrips = getSelectedStrips('pptxDoubleStripPicker');
