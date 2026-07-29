@@ -756,7 +756,7 @@ export function renderGrid3x2(): void {
   if (!visibleFrames.length) return;
 
   const container = document.createElement('div');
-  container.className = 'grid3x2-container';
+  container.className = 'grid3x2-container' + (s.reorderFid !== null ? ' g3-reorder-mode' : '');
 
   visibleFrames.forEach((f: any, idx: number) => {
     // Page separator after every 6 frames
@@ -785,16 +785,8 @@ export function renderGrid3x2(): void {
     injectScribbleButton();
   });
 
-  // Tap outside reorder controls → cancel reorder (same as other views)
-  overviewScroll.addEventListener('click', (e) => {
-    const s2 = state();
-    if (s2.reorderFid === null) return;
-    // Don't cancel if tap was on a reorder button or move arrow
-    if ((e.target as HTMLElement).closest('.reorder-group')) return;
-    clearReorder();
-    const renderFn = (window as any).__fh_renderGrid3x2;
-    if (renderFn) renderFn();
-  });
+  // Anything outside the reorder controls acts as DONE (blur)
+  _wireGrid3x2ReorderBlur();
 }
 
 /** Recalculate grid3x2 per-element margins (call on render AND on resize).
@@ -822,6 +814,11 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
   const f = s.frames.find((x: any) => x.id === fid);
   if (!f) return;
   wrap.classList.toggle('orphaned', !!f.orphaned);
+  // Reorder mode locks the rest of the UI until DONE is pressed. The container
+  // flag drives the lock; the per-wrap flag marks the one draggable frame.
+  wrap.classList.toggle('g3-reorder-target', s.reorderFid === fid);
+  const g3Container = wrap.parentElement;
+  if (g3Container) g3Container.classList.toggle('g3-reorder-mode', s.reorderFid !== null);
   wrap.innerHTML = '';
 
   // Grid 3×2 always uses 'ver' as companion — same as MAIN STRIP SINGLE VIEW
@@ -1186,29 +1183,8 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
         if (s.drawActive[fid] === 'main') setupMainDrawing(cvs, fid);
       }
     }
-    // Canvas click → exit 3×2, jump to MAIN + companion strip view (single click, all platforms)
-    if (!s.drawActive[fid] && viewMode !== 'text') {
-      const canvasWrap = card.querySelector('.canvas-wrap') as HTMLElement | null;
-      if (canvasWrap) {
-        let _tapX = 0, _tapY = 0;
-        canvasWrap.addEventListener('pointerdown', (e) => { _tapX = e.clientX; _tapY = e.clientY; }, { passive: true });
-        canvasWrap.addEventListener('click', (e) => {
-          if ((e.target as HTMLElement).closest('.act-btn,.fs-btn,.star-btn,.nav-arrow,[data-setup-fid],[data-striptag-fid],[data-setup-hint],[data-setup-remove-fid]')) return;
-          if (state().setupMode) return; // Block canvas navigation while setup bar is open
-          if (state().scribbleMode) return; // Block canvas navigation while scribble is active
-          if (s.drawingInProgress || s.drawSuppressClick) return;
-          const dx = Math.abs(e.clientX - _tapX), dy = Math.abs(e.clientY - _tapY);
-          if (dx > 15 || dy > 15) return; // was a swipe, not a tap
-          // Exit 3×2 → MAIN + closest companion (ver > floor > refs)
-          const curStrips = state().activeStrips;
-          const priority: StripType[] = ['ver', 'floor', 'refs'];
-          const best = priority.find((st) => curStrips.includes(st as any)) || 'ver';
-          useStore.setState({ activeStrips: ['main', best] as any });
-          const setVm = (window as any).__fh_setViewMode;
-          if (setVm) setVm('both', false, String(fid));
-        });
-      }
-    }
+    // NOTE: canvas click no longer exits 3×2 into the MAIN strip view — tapping
+    // a card in 3×2 should do nothing. Navigation stays on the explicit buttons.
     // Cross-swipe/arrows: swipe right → show version content
     if (!s.drawActive[fid]) _addGrid3x2Nav(wrap, fid, false);
   }
@@ -1217,10 +1193,289 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
   // a second handler here would cause double-toggle (assign then immediately
   // unassign) so the click appears to do nothing.
 
+  // Desktop drag-and-drop reorder (arrows keep working alongside this)
+  _addGrid3x2DragReorder(wrap, fid);
+
   // After card re-render, refresh the page-level scribble canvas
   requestAnimationFrame(() => {
     import('./scribble').then(({ refreshScribbleOverlays }) => refreshScribbleOverlays());
   });
+}
+
+/**
+ * Commit a new visible-frame order coming from a 3×2 drag. Mirrors the SORT BY
+ * story-flow logic: rearranges only the visible frames and leaves any
+ * non-visible frames sitting in their original slots.
+ */
+function _commitGrid3x2Order(newFids: number[]): void {
+  const s = state();
+  if (s.activeGroupId !== null) {
+    const group = s.groups.find((g) => g.id === s.activeGroupId);
+    if (!group) return;
+    const movedSet = new Set(newFids);
+    const slots: number[] = [];
+    for (let i = 0; i < group.frameIds.length; i++) {
+      if (movedSet.has(group.frameIds[i])) slots.push(i);
+    }
+    const ids = [...group.frameIds];
+    for (let i = 0; i < newFids.length; i++) ids[slots[i]] = newFids[i];
+    const newGroups = s.groups.map((g) => (g.id === group.id ? { ...g, frameIds: ids } : g));
+    useStore.setState({ groups: newGroups });
+    return;
+  }
+  const frames = [...s.frames];
+  const movedSet = new Set(newFids);
+  const slots: number[] = [];
+  for (let i = 0; i < frames.length; i++) {
+    if (movedSet.has(frames[i].id)) slots.push(i);
+  }
+  const byId = new Map(frames.map((f) => [f.id, f]));
+  for (let i = 0; i < newFids.length; i++) {
+    const f = byId.get(newFids[i]);
+    if (f) frames[slots[i]] = f;
+  }
+  useStore.setState({ frames });
+}
+
+/**
+ * Drag-to-reorder for 3×2 cards — mouse AND touch. Only active while reorder
+ * mode is on. Uses the same interaction as the SORT BY view: a floating clone
+ * follows the pointer while the remaining cards translate out of the way, so
+ * the grid visibly reflows around the dragged frame.
+ */
+function _addGrid3x2DragReorder(wrap: HTMLElement, _fid: number): void {
+  // Wire once per wrap element. renderGrid3x2Card only swaps innerHTML, so the
+  // wrap survives re-renders — re-wiring would stack duplicate listeners that
+  // keep firing after reorder mode ends.
+  if ((wrap as any).__g3DragWired) return;
+  (wrap as any).__g3DragWired = true;
+
+  const DRAG_THRESHOLD = 8;
+  const EDGE_ZONE = 130;
+  const SCROLL_SPEED = 22;
+
+  /** Draggable only while THIS frame is the one with re-order active (red outline). */
+  const dragArmed = (): number | null => {
+    const id = parseInt(wrap.dataset.g3fid || '', 10);
+    if (!Number.isFinite(id)) return null;
+    return state().reorderFid === id ? id : null;
+  };
+
+  const onStart = (startX: number, startY: number, fromTouch: boolean) => {
+    const fid = dragArmed();
+    if (fid === null) return;
+    const container = wrap.parentElement;
+    if (!container) return;
+
+    const items = Array.from(container.querySelectorAll('.grid3x2-card-wrap')) as HTMLElement[];
+    const activeIdx = items.indexOf(wrap);
+    if (activeIdx < 0 || items.length < 2) return;
+
+    // The grid may live inside #overviewScroll rather than scrolling the window,
+    // so resolve which element actually scrolls and drive everything off that.
+    const sp = _getScrollParent();
+    const spScrolls = !!sp && sp.scrollHeight > sp.clientHeight + 1;
+    const scrollY = () => (spScrolls ? sp!.scrollTop : window.scrollY);
+    const scrollByY = (d: number) => {
+      if (spScrolls) sp!.scrollTop += d;
+      else window.scrollBy(0, d);
+    };
+    // Vertical band the finger must reach to trigger auto-scroll
+    const band = () => {
+      if (spScrolls) {
+        const r = sp!.getBoundingClientRect();
+        return { top: r.top, bottom: r.bottom };
+      }
+      return { top: 0, bottom: window.innerHeight };
+    };
+
+    // Slot geometry captured once, in scroll-space coordinates
+    const sx = window.scrollX, sy = scrollY();
+    const slots = items.map((it) => {
+      const r = it.getBoundingClientRect();
+      return { left: r.left + sx, top: r.top + sy, w: r.width, h: r.height };
+    });
+
+    let dragging = false;
+    let clone: HTMLElement | null = null;
+    let dropIdx = activeIdx;
+    let lastX = startX, lastY = startY;
+    let scrollRAF = 0;
+    let grabDX = 0, grabDY = 0;
+
+    const layout = (idx: number) => {
+      // order[slot] = index of the item that should sit in that slot
+      const order = items.map((_, i) => i).filter((i) => i !== activeIdx);
+      order.splice(idx, 0, activeIdx);
+      for (let slot = 0; slot < order.length; slot++) {
+        const it = order[slot];
+        if (it === activeIdx) continue;
+        const dx = slots[slot].left - slots[it].left;
+        const dy = slots[slot].top - slots[it].top;
+        items[it].style.transform = dx || dy ? `translate(${dx}px, ${dy}px)` : '';
+      }
+    };
+
+    const updateDrop = () => {
+      // Nearest slot centre to the pointer — natural for a 2-D grid
+      const px = lastX + window.scrollX, py = lastY + scrollY();
+      let best = activeIdx, bestD = Infinity;
+      for (let i = 0; i < slots.length; i++) {
+        const cx = slots[i].left + slots[i].w / 2;
+        const cy = slots[i].top + slots[i].h / 2;
+        const d = Math.hypot(px - cx, py - cy);
+        if (d < bestD) { bestD = d; best = i; }
+      }
+      if (best !== dropIdx) { dropIdx = best; layout(dropIdx); }
+    };
+
+    const autoScroll = () => {
+      if (!dragging) return;
+      const b = band();
+      const downEdge = b.bottom - EDGE_ZONE;
+      const upEdge = b.top + EDGE_ZONE;
+      if (lastY > downEdge) {
+        const t = Math.min((lastY - downEdge) / EDGE_ZONE, 1);
+        scrollByY(Math.round(SCROLL_SPEED * t * t + 2));
+        updateDrop();
+      } else if (lastY < upEdge) {
+        const t = Math.min((upEdge - lastY) / EDGE_ZONE, 1);
+        scrollByY(-Math.round(SCROLL_SPEED * t * t + 2));
+        updateDrop();
+      }
+      scrollRAF = requestAnimationFrame(autoScroll);
+    };
+
+    const begin = () => {
+      dragging = true;
+      const r = wrap.getBoundingClientRect();
+      grabDX = startX - r.left;
+      grabDY = startY - r.top;
+      container.classList.add('g3-reordering');
+      wrap.classList.add('g3-dragging');
+      clone = wrap.cloneNode(true) as HTMLElement;
+      clone.classList.add('g3-drag-clone');
+      clone.classList.remove('g3-dragging');
+      clone.style.position = 'fixed';
+      clone.style.width = `${r.width}px`;
+      clone.style.height = `${r.height}px`;
+      clone.style.pointerEvents = 'none';
+      clone.style.zIndex = '9999';
+      document.body.appendChild(clone);
+      useStore.setState({ reorderFid: fid });
+      scrollRAF = requestAnimationFrame(autoScroll);
+    };
+
+    const onMove = (x: number, y: number) => {
+      lastX = x; lastY = y;
+      if (!dragging && Math.hypot(x - startX, y - startY) > DRAG_THRESHOLD) begin();
+      if (dragging && clone) {
+        clone.style.left = `${x - grabDX}px`;
+        clone.style.top = `${y - grabDY}px`;
+        updateDrop();
+      }
+    };
+
+    const cleanup = () => {
+      if (scrollRAF) { cancelAnimationFrame(scrollRAF); scrollRAF = 0; }
+      document.removeEventListener('mousemove', mouseMove);
+      document.removeEventListener('mouseup', mouseUp);
+      document.removeEventListener('touchmove', touchMove);
+      document.removeEventListener('touchend', touchEnd);
+      document.removeEventListener('touchcancel', touchEnd);
+    };
+
+    const onEnd = () => {
+      cleanup();
+      for (const it of items) it.style.transform = '';
+      if (!dragging) return;
+      _g3DragEndedAt = Date.now();
+      container.classList.remove('g3-reordering');
+      wrap.classList.remove('g3-dragging');
+      if (clone) { clone.remove(); clone = null; }
+
+      if (dropIdx !== activeIdx) {
+        const order = items.map((_, i) => i).filter((i) => i !== activeIdx);
+        order.splice(dropIdx, 0, activeIdx);
+        const newFids = order.map((i) => parseInt(items[i].dataset.g3fid || '', 10)).filter(Number.isFinite);
+        _commitGrid3x2Order(newFids);
+        bumpRenderTick();
+        void import('./currentProject').then(({ flushSyncNow }) => flushSyncNow());
+      }
+      const renderFn = (window as any).__fh_renderGrid3x2;
+      if (renderFn) renderFn();
+    };
+
+    const mouseMove = (e: MouseEvent) => onMove(e.clientX, e.clientY);
+    const mouseUp = () => onEnd();
+    const touchMove = (e: TouchEvent) => {
+      if (e.touches.length !== 1) return; // let pinch-zoom through
+      if (dragging) e.preventDefault();
+      onMove(e.touches[0].clientX, e.touches[0].clientY);
+    };
+    const touchEnd = () => onEnd();
+
+    if (fromTouch) {
+      document.addEventListener('touchmove', touchMove, { passive: false });
+      document.addEventListener('touchend', touchEnd);
+      document.addEventListener('touchcancel', touchEnd);
+    } else {
+      document.addEventListener('mousemove', mouseMove);
+      document.addEventListener('mouseup', mouseUp);
+    }
+  };
+
+  // Ignore presses on controls so buttons/arrows keep working
+  const IGNORE = '.act-btn,.fs-btn,.star-btn,.nav-arrow,.vtab,.vtab-add,.reorder-label,.color-dot,.thick-btn,.eraser-btn,.g3-quick-btn,input,textarea,[data-editlabel],[data-setup-fid],[data-striptag-fid],[data-setup-hint],[data-setup-remove-fid]';
+
+  wrap.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    if (dragArmed() === null) return; // not the re-order frame → normal behaviour
+    if ((e.target as HTMLElement).closest(IGNORE)) return;
+    // Stop the browser's native image/text drag — it swallows mousemove and
+    // would kill the custom drag entirely on desktop.
+    e.preventDefault();
+    onStart(e.clientX, e.clientY, false);
+  });
+
+  wrap.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1) return; // pinch-zoom wins
+    if (dragArmed() === null) return; // not the re-order frame → normal scrolling
+    if ((e.target as HTMLElement).closest(IGNORE)) return;
+    onStart(e.touches[0].clientX, e.touches[0].clientY, true);
+  }, { passive: true });
+}
+
+/** Timestamp of the last 3×2 drag end — used to swallow the trailing click. */
+let _g3DragEndedAt = 0;
+let _g3BlurWired = false;
+
+/**
+ * Ends 3×2 re-order mode ("blur") on any click that isn't the arrows or DONE —
+ * elsewhere in the grid, the toolbars, the strips, the menu, anywhere. Runs in
+ * the capture phase so it still fires when a handler stops propagation.
+ */
+function _wireGrid3x2ReorderBlur(): void {
+  if (_g3BlurWired) return;
+  _g3BlurWired = true;
+  document.addEventListener(
+    'click',
+    (e) => {
+      const s = state();
+      if (s.reorderFid === null) return;
+      if (s.currentViewMode !== 'grid3x2') return;
+      const t = e.target as HTMLElement;
+      if (t.closest('.reorder-group')) return; // arrows + DONE
+      if (t.closest('.g3-reorder-target')) return; // the frame being moved
+      if (Date.now() - _g3DragEndedAt < 300) return; // trailing click after a drag
+      clearReorder();
+      const renderFn = (window as any).__fh_renderGrid3x2;
+      if (renderFn) renderFn();
+      // Same as pressing DONE — persist the new order
+      void import('./currentProject').then(({ flushSyncNow }) => flushSyncNow());
+    },
+    true
+  );
 }
 
 /** Index of the first non-hidden version in a strip (falls back to 0). */

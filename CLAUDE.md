@@ -38,7 +38,7 @@ cd ~/Desktop/Framehow\ Files/framehow-react && git add -A && git commit -m "v4.6
 ### Version numbering
 - `APP_VERSION` constant in `src/store/state.ts` — displayed in toolbar next to logo
 - Format: `v4.6.0XX` where XX increments with each deploy
-- Current: `v4.9.035`
+- Current: `v4.9.036`
 - Production: `v4.9.001`
 
 ### Clean rebuild (if changes don't appear)
@@ -167,7 +167,19 @@ Changes:
 Changes:
 - `src/lib/accountFlow.ts` — Added fullscreen overlay ("Couldn't load all content — check your connection") with Retry/Dismiss buttons when R2 image fetches fail; overlay shows after progress bar hides (no overlap); Retry triggers fresh pull; Dismiss lets user browse but _pullIncomplete stays true (no push/save of half-loaded state).
 
-### v4.9.034 — 2026-07-28 (dev — deployed)
+### v4.9.035 — 2026-07-28 (dev — deployed)
+**Camera RATIO presets, 3x2 CAM creates new version, arrow enters at v1**
+
+Changes:
+- `src/store/state.ts` — `CamRatioKey` type + `CAM_RATIOS` presets (2.39:1, 2:1, 1.85:1, CANVAS, 16:9, 4:3, 1:1); `camAspectRatio` state field, defaults to 'canvas'; reset on new project
+- `src/lib/camera.ts` — `canvasAspectRatio()` / `effectiveAspectRatio()` resolve the saved preset against the frame canvas; RATIO button toggles preset menu, selection re-positions the white guide and persists; menu closes on capture/cancel
+- `src/components/Modals.tsx` — RATIO button + menu markup in camera overlay
+- `src/styles/globals.css` — `.camera-ratio-btn` (top-left, no text-shadow) + `.camera-ratio-menu` / `.camera-ratio-item` styles
+- `src/lib/helpers.ts` — removed `overviewAction` short-circuit from `autoNewStripVersionIfNeeded` + `autoNewVersionIfNeeded` so CAM/upload from 3x2 creates v2, v3… like the main strip
+- `src/lib/overview.ts` — `_firstVisibleVersionIdx()`; arrow/swipe from MAIN into versions now enters at v1 instead of the last-viewed version
+- `src/lib/persistence.ts` / `src/lib/accountFlow.ts` — `camAspectRatio` in IDB snapshot + cloud sync metadata
+
+
 **SORT NOW hybrid order, auto-increment order names, delete button, bracket persist**
 
 Changes:

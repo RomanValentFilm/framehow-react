@@ -201,6 +201,35 @@
   .grid3x2-card-wrap .nav-arrow-left{opacity:1!important;pointer-events:auto!important;}
   .grid3x2-card-wrap .nav-arrow-right{opacity:1!important;pointer-events:auto!important;}
   .grid3x2-card-wrap .frame-card.g3-reorder-active{border:3px solid #d52632;}
+  /* Re-order mode: lock the whole grid until DONE. Only the active frame's
+     arrows + DONE stay live, and only that frame can be dragged. */
+  /* Every card is inert; only the active one accepts the drag gesture */
+  .grid3x2-container.g3-reorder-mode .grid3x2-card-wrap{pointer-events:none;}
+  /* touch-action:none so iOS gives the gesture to the drag instead of scrolling;
+     auto-scroll then moves the grid while the finger holds the frame. */
+  .grid3x2-container.g3-reorder-mode .grid3x2-card-wrap.g3-reorder-target{pointer-events:auto;touch-action:none;}
+  /* Nothing inside the active card is clickable — quick buttons, canvas nav
+     arrows, actions, labels, everything — so the only way out is DONE/blur. */
+  .grid3x2-container.g3-reorder-mode .g3-reorder-target > *{pointer-events:none;}
+  /* .nav-arrow ships with pointer-events:auto!important, so it needs !important
+     here too — otherwise the cross-swipe arrows stay live during re-order. */
+  .grid3x2-container.g3-reorder-mode .nav-arrow,
+  .grid3x2-container.g3-reorder-mode .nav-arrow-left,
+  .grid3x2-container.g3-reorder-mode .nav-arrow-right{pointer-events:none!important;}
+  .grid3x2-container.g3-reorder-mode .g3-reorder-target .reorder-group,
+  .grid3x2-container.g3-reorder-mode .g3-reorder-target .reorder-group *{pointer-events:auto;}
+  /* Kill native image/text dragging so the custom drag gets its mousemove */
+  .grid3x2-container.g3-reorder-mode .grid3x2-card-wrap,
+  .grid3x2-container.g3-reorder-mode .grid3x2-card-wrap img{-webkit-user-drag:none;user-select:none;-webkit-user-select:none;}
+  .grid3x2-container.g3-reorder-mode .g3-reorder-target{cursor:grab;}
+  .grid3x2-container.g3-reorder-mode .g3-reorder-target.g3-dragging{cursor:grabbing;}
+
+  /* Drag-to-reorder (mouse + touch) — cards give way like the SORT BY view */
+  .grid3x2-card-wrap{position:relative;}
+  .g3-reordering .grid3x2-card-wrap{transition:transform .18s cubic-bezier(.2,.7,.3,1);}
+  .g3-reordering .grid3x2-card-wrap.g3-dragging{transition:none;opacity:.25;}
+  .grid3x2-card-wrap.g3-drag-clone{margin:0!important;opacity:.95;transform:scale(1.03);box-shadow:0 12px 32px rgba(0,0,0,.65);border-radius:6px;}
+  .grid3x2-card-wrap.g3-drag-clone .g3-quick-btns{opacity:0;}
   .grid3x2-card-wrap .frame-label-tag,
   .grid3x2-card-wrap .reorder-label,
   .grid3x2-card-wrap .vtab-add{position:relative;}

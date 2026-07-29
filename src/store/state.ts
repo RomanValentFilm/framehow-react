@@ -63,7 +63,7 @@ export interface Setup {
 
 /** 12-colour palette for setups. */
 /** App version — bump before every deploy. */
-export const APP_VERSION = 'v4.9.035';
+export const APP_VERSION = 'v4.9.036';
 
 /** Camera guide aspect-ratio presets. 'canvas' = use the frame's own canvas AR. */
 export type CamRatioKey = '2.39' | '2.0' | '1.85' | 'canvas' | '16:9' | '4:3' | '1:1';
