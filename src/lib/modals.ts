@@ -3,7 +3,7 @@
 
 import { COLORS } from '../store/state';
 
-export type NewProjectChoice = 'pdf' | 'images' | 'scratch' | 'portrait' | 'open' | 'cancel';
+export type NewProjectChoice = 'pdf' | 'images' | 'scratch' | 'portrait' | 'fitting' | 'open' | 'cancel';
 
 let _newProjectModalOpen = false;
 
@@ -35,16 +35,20 @@ export function showNewProjectModal(onChoice: (choice: NewProjectChoice) => void
     'color:#fff;font-size:15px;font-weight:600;cursor:pointer;text-align:center;' +
     'font-family:-apple-system,BlinkMacSystemFont,sans-serif;';
 
+  const tallBtn =
+    'width:48px;padding:0;border-radius:8px;border:none;' +
+    accentBg + 'color:#fff;font-weight:600;cursor:pointer;' +
+    'aspect-ratio:9/16;display:flex;align-items:center;justify-content:center;';
+
   box.innerHTML = `
     <div style="display:flex;flex-direction:column;gap:12px;align-items:center;">
       <button data-choice="pdf" class="np-btn" style="${btnBase}${accentBg}">Load Storyboard from PDF</button>
       <button data-choice="images" class="np-btn" style="${btnBase}${accentBg}">Load Images from Folder</button>
       <button data-choice="scratch" class="np-btn" style="${btnBase}${accentBg}">16×9 Start from Scratch</button>
-      <button data-choice="portrait" class="np-btn" style="
-        width:48px;padding:0;border-radius:8px;border:none;
-        ${accentBg}color:#fff;font-size:15px;font-weight:600;cursor:pointer;
-        aspect-ratio:9/16;display:flex;align-items:center;justify-content:center;
-      ">9x16</button>
+      <div style="display:flex;flex-direction:row;gap:12px;align-items:center;justify-content:center;">
+        <button data-choice="portrait" class="np-btn" style="${tallBtn}font-size:15px;">9x16</button>
+        <button data-choice="fitting" class="np-btn" style="${tallBtn}font-size:11px;letter-spacing:0.2px;">FITTING</button>
+      </div>
       <button data-choice="open" class="np-btn" style="${btnBase}${accentBg}">Open Project</button>
       <button data-choice="cancel" class="np-btn" style="
         ${btnBase}background:#2a2a2a;border:1px solid #555;color:#ccc;font-weight:500;

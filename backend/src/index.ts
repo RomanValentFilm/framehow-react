@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { resolveAllowedOrigin } from "./cors";
 import type { AppVariables, Env } from "./types";
 import authRouter from "./routes/auth";
 import userRouter from "./routes/user";
@@ -9,14 +10,16 @@ import cleanupRouter, { purgeExpiredProjects } from "./routes/cleanup";
 
 const app = new Hono<{ Bindings: Env; Variables: AppVariables }>();
 
-// CORS — wide-open during local dev. Lock down to APP_URL in production.
+// CORS — only origins we own (see ./cors.ts).
 app.use("*", async (c, next) => {
-  const origin = c.req.header("Origin") ?? "*";
-  c.header("Access-Control-Allow-Origin", origin);
+  const allowed = resolveAllowedOrigin(c.req.header("Origin"), c.env.APP_URL);
   c.header("Vary", "Origin");
-  c.header("Access-Control-Allow-Credentials", "true");
-  c.header("Access-Control-Allow-Headers", "Authorization, Content-Type");
-  c.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  if (allowed) {
+    c.header("Access-Control-Allow-Origin", allowed);
+    c.header("Access-Control-Allow-Credentials", "true");
+    c.header("Access-Control-Allow-Headers", "Authorization, Content-Type");
+    c.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  }
   if (c.req.method === "OPTIONS") return c.body(null, 204);
   await next();
 });

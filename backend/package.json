@@ -12,11 +12,11 @@
     "db:reset:local": "rm -rf .wrangler/state/v3/d1 && npm run db:migrate:local"
   },
   "dependencies": {
-    "hono": "^4.6.10"
+    "hono": "^4.12.33"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20241127.0",
+    "@cloudflare/workers-types": "^5.20260731.1",
     "typescript": "^5.6.3",
-    "wrangler": "^3.91.0"
+    "wrangler": "^4.118.0"
   }
 }

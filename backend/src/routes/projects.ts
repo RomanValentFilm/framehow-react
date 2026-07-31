@@ -388,10 +388,6 @@ interface ProjectTree {
   deletions: Array<{ id: string; entity_type: string; entity_id: string; deleted_at: number; device_id: string | null }>;
 }
 
-function placeholders(n: number): string {
-  return Array.from({ length: n }, () => "?").join(",");
-}
-
 async function loadProjectTree(db: D1Database, projectId: string): Promise<ProjectTree> {
   // Use subqueries instead of IN (?, ?, ...) to avoid D1's 100-variable limit.
   // All queries filter through project_id, so only 1 bind param each.

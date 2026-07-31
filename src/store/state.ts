@@ -63,7 +63,7 @@ export interface Setup {
 
 /** 12-colour palette for setups. */
 /** App version — bump before every deploy. */
-export const APP_VERSION = 'v4.9.041';
+export const APP_VERSION = 'v4.9.042';
 
 /** Free-text fields printed in the header of every exported page. */
 export interface ExportMeta {
@@ -411,6 +411,9 @@ export interface StripClipboard {
   cropH?: number;
 }
 
+/** Project kinds. 'fitting' currently behaves like 'portrait' but is tracked separately. */
+export type ProjectType = 'landscape' | 'portrait' | 'fitting';
+
 export interface FrameHowState {
   frames: Frame[];
   /** Generic per-strip data — keyed by StripType, then by frame id */
@@ -467,8 +470,10 @@ export interface FrameHowState {
   centerFid: string | null;
   scrollHideGuard: number;
   swipeHintShown: boolean;
-  /** 9:16 portrait storyboard mode */
+  /** 9:16 portrait storyboard mode (true for both 'portrait' and 'fitting' projects) */
   portraitMode: boolean;
+  /** Which kind of project this is. 'fitting' shares 9:16 behaviour but can diverge. */
+  projectType: ProjectType;
   /** Frame groups */
   groups: FrameGroup[];
   activeGroupId: number | null;  // null = ALL
@@ -583,6 +588,7 @@ const initial: FrameHowState = {
   scrollHideGuard: 0,
   swipeHintShown: false,
   portraitMode: false,
+  projectType: 'landscape',
   groups: [],
   activeGroupId: null,
   nextGroupId: 1,
@@ -643,6 +649,7 @@ export function resetStoryboardState(): void {
     mainImgTarget: null,
     currentViewMode: 'both',
     portraitMode: false,
+    projectType: 'landscape',
     groups: [],
     activeGroupId: null,
     nextGroupId: 1,

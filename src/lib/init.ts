@@ -31,7 +31,7 @@ import { setupDrawing } from './drawing';
 import { showToast, showNewProjectModal, isNewProjectModalOpen, showOrphanChoice } from './modals';
 import type { NewProjectChoice } from './modals';
 import { handlePDF } from './pdf';
-import { handleFolderImages, startFromScratch, startPortrait } from './files';
+import { handleFolderImages, startFromScratch, startPortrait, startFitting } from './files';
 import { openExportModal, openPptxModal, runExport, runPptxExport, openImageExportModal, runImageExport, openPortraitExportModal, runPortraitExport, openPortraitImageExportModal, runPortraitImageExport, updateExportVisibility, buildVersionPicker, buildPptxVersionPicker, lockPageScroll, unlockPageScroll } from './exports';
 import { wireCameraEvents } from './camera';
 // openFullscreen is now triggered by DRAW button (actions.ts), not the fs-btn
@@ -333,6 +333,11 @@ export function initFramehow(): void {
         break;
       case 'portrait':
         startPortrait();
+        renderAll();
+        autoPhoneMainView();
+        break;
+      case 'fitting':
+        startFitting();
         renderAll();
         autoPhoneMainView();
         break;

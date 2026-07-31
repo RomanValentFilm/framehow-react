@@ -114,7 +114,7 @@ export function handleFolderImages(e: Event): void {
 export function startFromScratch(): void {
   fhTrack('start_scratch');
   resetStoryboardState();
-  useStore.setState({ portraitMode: false });
+  useStore.setState({ portraitMode: false, projectType: 'landscape' });
   const s = state();
   const id = s.nextId;
   useStore.setState({ nextId: id + 1 });
@@ -140,8 +140,41 @@ export function startFromScratch(): void {
 export function startPortrait(): void {
   fhTrack('start_portrait');
   resetStoryboardState();
-  useStore.setState({ portraitMode: true });
+  useStore.setState({ portraitMode: true, projectType: 'portrait' });
   // Portrait (9:16) projects default strips to costume-fitting labels
+  const s = state();
+  s.stripDefs = s.stripDefs.map((def, i) => ({
+    ...def,
+    buttonLabel: `LOOK${i + 1}`,
+    defaultFrameLabel: `fit ${String.fromCharCode(65 + i)}`,
+    prefix: 'f',
+  }));
+  const id = s.nextId;
+  useStore.setState({ nextId: id + 1 });
+  s.frames.push({
+    id,
+    src: '',
+    label: 'name',
+    cropW: 540,
+    cropH: 960,
+    strokes: [],
+    drawMode: false,
+    textContent: '',
+    tableData: null,
+  });
+  s.versions[id] = [{ id: 1, label: 'v1', type: 'empty', strokes: [], bgImage: null }];
+  s.activeTab[id] = 0;
+  s.drawColor[id] = COLORS[0];
+  s.drawWidth[id] = 6;
+  s.drawEraser[id] = false;
+  updateFrameBadge();
+}
+
+export function startFitting(): void {
+  fhTrack('start_fitting');
+  resetStoryboardState();
+  useStore.setState({ portraitMode: true, projectType: 'fitting' });
+  // FITTING projects share 9:16 geometry and costume-fitting strip labels
   const s = state();
   s.stripDefs = s.stripDefs.map((def, i) => ({
     ...def,

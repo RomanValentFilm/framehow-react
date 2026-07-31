@@ -6,7 +6,7 @@
 // active tab) — UI-only state (drawActive, hover, etc.) is omitted. On
 // restore we merge the payload back into the live store.
 
-import type { Frame, Version, FrameGroup, StripDef, Setup, NeedDefinitions, FrameNeedState, FrameNoteState, SortOrder, SortBreak } from '../store/state';
+import type { Frame, Version, FrameGroup, StripDef, Setup, NeedDefinitions, FrameNeedState, FrameNoteState, SortOrder, SortBreak, ProjectType } from '../store/state';
 import { useStore, DEFAULT_STRIP_DEFS, DEFAULT_NEED_DEFINITIONS, migrateNeedDefinitions, createDefaultExportMeta } from '../store/state';
 
 const DB_NAME = 'framehow';
@@ -27,6 +27,7 @@ export interface CurrentProjectSnapshot {
   activeTab: Record<number, number>;
   nextId: number;
   portraitMode?: boolean;
+  projectType?: ProjectType;
   groups?: FrameGroup[];
   nextGroupId?: number;
   /** Generic strip data (v4.1+) */
@@ -126,6 +127,7 @@ export function snapshotFromStore(projectId: string | null, name: string | null)
     activeTab: s.stripActiveTab.ver || {},
     nextId: s.nextId,
     portraitMode: s.portraitMode,
+    projectType: s.projectType,
     groups: s.groups,
     nextGroupId: s.nextGroupId,
     stripVersions: s.stripVersions,
@@ -204,7 +206,8 @@ export function applySnapshotToStore(snap: CurrentProjectSnapshot): void {
     refsCrossCompare: refsCC,
     refsPrevFrameState: refsPFS,
     nextId: snap.nextId,
-    portraitMode: snap.portraitMode ?? false,
+    portraitMode: snap.portraitMode ?? (snap.projectType ? snap.projectType !== 'landscape' : false),
+    projectType: snap.projectType ?? (snap.portraitMode ? 'portrait' : 'landscape'),
     groups: snap.groups ?? [],
     nextGroupId: snap.nextGroupId ?? 1,
     stripDefs: snap.stripDefs ?? DEFAULT_STRIP_DEFS,

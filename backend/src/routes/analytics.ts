@@ -219,7 +219,7 @@ router.get("/analytics", async (c) => {
   }
 
   const db = c.env.DB;
-  const [sessionsR, activeUsersR, totalUsersR, eventsR, topEventsR,
+  const [sessionsR, activeUsersR, totalUsersR, topEventsR,
     desktopSessionsR, tabletSessionsR, phoneSessionsR,
     desktopUsersR, pwaTabletUsersR, pwaPhoneUsersR, browserMobileSessionsR,
     totalProjectsR, projectBreakdownR,
@@ -227,7 +227,6 @@ router.get("/analytics", async (c) => {
     db.prepare("SELECT COUNT(*) as n FROM analytics_sessions").first<{ n: number }>(),
     db.prepare("SELECT COUNT(DISTINCT uid) as n FROM analytics_sessions WHERE uid IS NOT NULL").first<{ n: number }>(),
     db.prepare("SELECT COUNT(*) as n FROM users").first<{ n: number }>(),
-    db.prepare("SELECT COUNT(*) as n FROM analytics_events").first<{ n: number }>(),
     db.prepare("SELECT event, COUNT(*) as n FROM analytics_events GROUP BY event ORDER BY n DESC LIMIT 20").all(),
     // Device session counts
     db.prepare("SELECT COUNT(*) as n FROM analytics_sessions WHERE device = 'desktop'").first<{ n: number }>(),
@@ -288,7 +287,6 @@ router.get("/analytics", async (c) => {
   const totalSessions = sessionsR?.n || 0;
   const activeUsers = activeUsersR?.n || 0;
   const totalUsers = totalUsersR?.n || 0;
-  const totalEvents = eventsR?.n || 0;
   const desktopSessions = desktopSessionsR?.n || 0;
   const tabletSessions = tabletSessionsR?.n || 0;
   const phoneSessions = phoneSessionsR?.n || 0;
@@ -318,6 +316,7 @@ router.get("/analytics", async (c) => {
     images: "Load Images from Folder",
     scratch: "16×9 Start from Scratch",
     portrait: "9×16 Portrait",
+    fitting: "Fitting",
     open: "Open Project",
   };
   const signpostCounts: Record<string, number> = {};
@@ -668,7 +667,7 @@ router.get("/analytics/projects", async (c) => {
   // Count signpost choices
   const signpostLabels: Record<string, string> = {
     pdf: "From PDF", images: "From Images", scratch: "16×9 from Scratch",
-    portrait: "9×16 Portrait", open: "Opened existing",
+    portrait: "9×16 Portrait", fitting: "Fitting", open: "Opened existing",
   };
   const choiceCounts: Record<string, number> = {};
   for (const row of signpostR.results as any[]) {

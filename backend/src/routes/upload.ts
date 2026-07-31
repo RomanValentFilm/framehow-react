@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { resolveAllowedOrigin } from "../cors";
 import type { AppVariables, Env } from "../types";
 import { requireUser } from "../lib/auth";
 import { newId } from "../lib/crypto";
@@ -132,9 +133,11 @@ upload.get("/images/*", requireUser, async (c) => {
   // Private to the owner; no shared/public caching.
   headers.set("Cache-Control", "private, max-age=3600");
   // CORS: new Response() bypasses Hono's middleware headers, so add them here.
-  const origin = c.req.header("Origin") ?? "*";
-  headers.set("Access-Control-Allow-Origin", origin);
-  headers.set("Access-Control-Allow-Credentials", "true");
+  const allowed = resolveAllowedOrigin(c.req.header("Origin"), c.env.APP_URL);
+  if (allowed) {
+    headers.set("Access-Control-Allow-Origin", allowed);
+    headers.set("Access-Control-Allow-Credentials", "true");
+  }
   headers.set("Vary", "Origin");
   return new Response(obj.body as unknown as ReadableStream, { headers });
 });

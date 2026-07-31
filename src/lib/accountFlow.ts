@@ -49,7 +49,7 @@ import type { FrameConflict } from './modals';
 import { saveOpenTextEdits, saveOpenTableEdits } from './helpers';
 import { closeSortMode } from './sortOrder';
 import { resetStoryboardState, state, useStore, DEFAULT_NEED_DEFINITIONS, DEFAULT_STRIP_DEFS, migrateNeedDefinitions, createDefaultExportMeta } from '../store/state';
-import type { Frame, Stroke, Version, FrameNeedState, FrameNoteState, NeedDefinitions, BracketNodeData } from '../store/state';
+import type { Frame, Stroke, Version, FrameNeedState, FrameNoteState, NeedDefinitions, BracketNodeData, ProjectType } from '../store/state';
 import { clearRectsForProject } from './pdfAdjust';
 
 // ---------------------------------------------------------------------------
@@ -995,7 +995,7 @@ async function startNewProject(): Promise<void> {
   }
   if (state().sortEditingId) closeSortMode();
   resetStoryboardState();
-  useStore.setState({ portraitMode: false });
+  useStore.setState({ portraitMode: false, projectType: 'landscape' });
   clearCurrentProject();
   clearPushedFingerprints();
   // Clear stale timestamp from previous project so the first sync for the new
@@ -1429,6 +1429,7 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
     groups: metaGroups,
     nextGroupId: s.nextGroupId,
     portraitMode: s.portraitMode,
+    projectType: s.projectType,
     pdfAdjustRects: Object.keys(pdfAdjustRects).length > 0 ? pdfAdjustRects : undefined,
     pdfAdjustLastFile: lastPdfName,
     setups: s.setups.length > 0 ? s.setups : undefined,
@@ -1818,6 +1819,8 @@ async function applyCloudTreeToStore(
   let restoredCamAspectRatio: import('../store/state').CamRatioKey = 'canvas';
   let restoredExportMeta: import('../store/state').ExportMeta | null = null;
   let isPortrait = newFrames.length > 0 && newFrames[0].cropH > newFrames[0].cropW;
+  // Project kind: falls back to the shape inference above for legacy projects
+  let restoredProjectType: ProjectType = isPortrait ? 'portrait' : 'landscape';
 
   if (tree.project.metadata) {
     try {
@@ -1839,6 +1842,11 @@ async function applyCloudTreeToStore(
       }
       if (meta.portraitMode != null) {
         isPortrait = !!meta.portraitMode;
+        restoredProjectType = isPortrait ? 'portrait' : 'landscape';
+      }
+      if (meta.projectType === 'landscape' || meta.projectType === 'portrait' || meta.projectType === 'fitting') {
+        restoredProjectType = meta.projectType;
+        isPortrait = restoredProjectType !== 'landscape';
       }
       if (meta.nextGroupId != null) {
         restoredNextGroupId = meta.nextGroupId;
@@ -2022,6 +2030,7 @@ async function applyCloudTreeToStore(
     fsOverlayActive: null,
     currentViewMode: 'both',
     portraitMode: isPortrait,
+    projectType: restoredProjectType,
     stripTagInfoDismissed: restoredStripTagInfoDismissed,
     needDefinitions: migrateNeedDefinitions(restoredNeedDefinitions ?? DEFAULT_NEED_DEFINITIONS),
     frameNeeds: localFrameNeeds,
