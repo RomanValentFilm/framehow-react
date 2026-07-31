@@ -388,6 +388,11 @@ export function Modals() {
               <input type="checkbox" id="exportIncludeNotes" /> Include NOTES
             </label>
           </div>
+          <div className="exp-field" id="exportTablesToggleWrap" style={{ display: 'none' }}>
+            <label className="exp-inline">
+              <input type="checkbox" id="exportIncludeTables" /> Include TABLES
+            </label>
+          </div>
           <div className="exp-field">
             <label className="exp-inline">
               <input type="checkbox" id="exportPaperLetter" /> US Letter paper (default A4)
@@ -583,6 +588,11 @@ export function Modals() {
           <div className="exp-field" id="pptxNotesToggleWrap" style={{ display: 'none' }}>
             <label className="exp-inline">
               <input type="checkbox" id="pptxIncludeNotes" /> Include NOTES
+            </label>
+          </div>
+          <div className="exp-field" id="pptxTablesToggleWrap" style={{ display: 'none' }}>
+            <label className="exp-inline">
+              <input type="checkbox" id="pptxIncludeTables" /> Include TABLES
             </label>
           </div>
           <div className="exp-field" id="pptxOverviewStripWrap" style={{ display: 'none' }}>

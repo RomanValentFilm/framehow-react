@@ -624,13 +624,28 @@
   .exp-opt-text{display:flex;flex-direction:column;gap:1px;}
   .exp-opt-text strong{font-size:13px;}
   .exp-opt-text .exp-sub{font-size:11px;color:var(--text-faint);}
-  .exp-inline{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--text);padding:4px 12px 4px 0;cursor:pointer;}
+  .exp-inline{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--text);padding:1px 12px 1px 0;cursor:pointer;}
+  /* Checkbox rows are single lines — they don't need the 14px block spacing
+     that separates the bigger sections. */
+  .exp-field:has(> .exp-inline){margin-bottom:3px;}
+  /* ...but a titled section following them must read as separate, so give the
+     section header room above it. */
+  .exp-field:has(> .exp-inline) + .exp-field:not(:has(> .exp-inline)){margin-top:18px;}
   .exp-group-picker{display:flex;flex-wrap:wrap;gap:6px;padding:4px 0;}
   .exp-group-opt{display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border:1px solid var(--border-strong);border-radius:var(--radius-sm);background:var(--surface);cursor:pointer;font-size:12px;transition:all .15s;}
   .exp-group-opt:hover{background:var(--surface2);}
   .exp-group-opt input[type="radio"]{accent-color:var(--accent);}
   .exp-inline input[type="checkbox"]{accent-color:var(--accent);}
-  .exp-version-picker{max-height:240px;overflow-y:auto;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px;}
+  /* Tall enough for all three strips (title + button row each) without
+     scrolling. Capped against the viewport so it can't outgrow the screen. */
+  .exp-version-picker{max-height:min(340px,42vh);overflow-y:auto;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px;
+    /* Keep the scrollbar permanently visible — otherwise there's nothing to
+       tell the user more strips exist below the fold. */
+    scrollbar-width:thin;scrollbar-color:var(--border-strong) transparent;}
+  .exp-version-picker::-webkit-scrollbar{width:8px;-webkit-appearance:none;}
+  .exp-version-picker::-webkit-scrollbar-track{background:rgba(0,0,0,.25);border-radius:4px;}
+  .exp-version-picker::-webkit-scrollbar-thumb{background:var(--border-strong);border-radius:4px;min-height:28px;}
+  .exp-version-picker::-webkit-scrollbar-thumb:hover{background:#999;}
   .exp-frame-row{padding:6px 0;border-bottom:1px solid var(--border);font-size:12px;}
   .exp-frame-row:last-child{border-bottom:none;}
   .exp-frame-row-label{font-family:var(--mono);color:var(--text-muted);margin-bottom:4px;font-size:11px;}
@@ -643,10 +658,11 @@
   .exp-strip-opt input[type="radio"],.exp-strip-opt input[type="checkbox"]{accent-color:var(--accent);}
   .exp-inline-controls{padding:4px 0 6px 0;margin-left:2px;}
   .exp-double-mode{display:flex;flex-wrap:wrap;gap:6px;padding:6px 0 0;}
-  .exp-ver-section{margin-bottom:14px;}
+  .exp-ver-section{margin-bottom:8px;}
   .exp-ver-section:last-child{margin-bottom:0;}
-  .exp-ver-section-header{font-family:var(--mono);font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text);padding:6px 10px;margin-bottom:8px;background:var(--surface2);border-radius:var(--radius-sm);}
-  .exp-ver-actions{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;}
+  .exp-ver-section:last-child{margin-bottom:0;}
+  .exp-ver-section-header{font-family:var(--mono);font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text);padding:4px 10px;margin-bottom:5px;background:var(--surface2);border-radius:var(--radius-sm);}
+  .exp-ver-actions{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:0;}
   .exp-ver-actions button{font-family:var(--mono);font-size:10px;padding:3px 8px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text-muted);cursor:pointer;transition:all .15s;}
   .exp-ver-actions button:hover{background:var(--surface2);color:var(--text);}
   .exp-ver-actions button.active{background:var(--accent);border-color:var(--accent);color:#fff;}

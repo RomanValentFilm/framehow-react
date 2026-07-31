@@ -38,7 +38,7 @@ cd ~/Desktop/Framehow\ Files/framehow-react && git add -A && git commit -m "v4.6
 ### Version numbering
 - `APP_VERSION` constant in `src/store/state.ts` — displayed in toolbar next to logo
 - Format: `v4.6.0XX` where XX increments with each deploy
-- Current: `v4.9.039`
+- Current: `v4.9.040`
 - Production: `v4.9.001`
 
 ### Clean rebuild (if changes don't appear)
@@ -166,6 +166,13 @@ Changes:
 
 Changes:
 - `src/lib/accountFlow.ts` — Added fullscreen overlay ("Couldn't load all content — check your connection") with Retry/Dismiss buttons when R2 image fetches fail; overlay shows after progress bar hides (no overlap); Retry triggers fresh pull; Dismiss lets user browse but _pullIncomplete stays true (no push/save of half-loaded state).
+
+### v4.9.039 — 2026-07-29 (dev — deployed)
+**Double Strip: NEEDS/NOTES/TABLE as strips, Tagged pairing mode**
+
+Changes:
+- `src/lib/exports.ts` — `DATA_STRIPS` (`__needs__`/`__notes__`/`__table__`); `buildStripPicker()` takes `withDataStrips` so Double Strip offers HOW/SKETCH/REFS/NEEDS/NOTES/TABLE. Picking a data strip fills the right-hand cell with that content instead of a version, labelled like a version label. NEEDS there renders as in the SORT BY card — bold table name, value beside it, wrapped lines pushing the next entry down. TABLE draws a real table (jsPDF + pptx `addTable`), NOTES wrapped text. New `pickDoubleVersion()` shared by both exporters: starred / tagged (`setupTagged` — the TAG pill) / active. Include NEEDS + Include NOTES toggles hidden for Double Strip (they're strips now), kept for Full Overview; dead `drawDoubleExtras()` removed.
+- `src/components/Modals.tsx` — pairing options renamed and reordered: Main Frame + 1st Starred Frame / + 1st Tagged Frame / + Active Frame.
 
 ### v4.9.038 — 2026-07-29 (dev — deployed)
 **Sort By export rebuilt to mirror the on-screen shooting-order view**

@@ -226,10 +226,9 @@ function buildVersionPickerForStrips(wrapperId: string, strips: StripType[]): vo
     // Action buttons
     headerHTML += `<div class="exp-ver-actions">
       <button data-action="starred-only" data-strip="${stripId}">Starred only</button>
-      <button data-action="active-only" data-strip="${stripId}">Active only</button>
+      <button data-action="active-only" data-strip="${stripId}">Current view only</button>
       <button data-action="all-visible" data-strip="${stripId}">All visible (excl. hidden)</button>
-      <button data-action="select-all" data-strip="${stripId}">Select all</button>
-      <button data-action="deselect-all" data-strip="${stripId}">Deselect all</button>
+      <button data-action="select-all" data-strip="${stripId}">All versions</button>
     </div>`;
 
     section.innerHTML = headerHTML;
@@ -325,8 +324,6 @@ function buildVersionPickerForStrips(wrapperId: string, strips: StripType[]): vo
           row.innerHTML = html;
           sectionEl.appendChild(row);
         });
-      } else if (action === 'deselect-all') {
-        cbs.forEach(cb => cb.checked = false);
       }
     });
   });
@@ -482,12 +479,19 @@ function needsLines(fid: number): string[] {
 }
 
 /** A frame's NOTES as either wrapped text or a table, whichever the user set. */
+/**
+ * A frame keeps BOTH a written note and a table — `mode` only decides which one
+ * the app currently shows. Export must return both and let the Include NOTES /
+ * Include TABLES toggles decide what gets printed, otherwise ticking both still
+ * only ever yields one of them.
+ */
 function noteContent(fid: number): { text: string; table: TableData | null } {
-  const s = state();
-  const fn = s.frameNotes[fid];
+  const fn = state().frameNotes[fid];
   if (!fn) return { text: '', table: null };
-  if (fn.mode === 'table') return { text: '', table: fn.tableData || null };
-  return { text: (fn.noteText || '').trim(), table: null };
+  return {
+    text: (fn.noteText || '').trim(),
+    table: fn.tableData || null,
+  };
 }
 
 /**
@@ -609,6 +613,7 @@ export function updateExportVisibility(layout: string, prefix: string): void {
   // only make sense for Full Overview.
   show(`${prefix}NeedsToggleWrap`, isOverview);
   show(`${prefix}NotesToggleWrap`, isOverview);
+  show(`${prefix}TablesToggleWrap`, isOverview);
   // 3×2 always prints descriptions, and Sort By has neither toggle
   show(`${prefix}TextToggleWrap`, isDouble || isOverview);
   show(`${prefix}HiddenToggleWrap`, !isSortBy);
@@ -643,6 +648,7 @@ export async function runExport(): Promise<void> {
   const includeNeeds =
     layout === 'sortby' ? true : (document.getElementById('exportIncludeNeeds') as HTMLInputElement)?.checked ?? false;
   const includeNotes = (document.getElementById('exportIncludeNotes') as HTMLInputElement)?.checked ?? false;
+  const includeTables = (document.getElementById('exportIncludeTables') as HTMLInputElement)?.checked ?? false;
   const paperLetter = (document.getElementById('exportPaperLetter') as HTMLInputElement).checked;
   // Header prints the project name alone — the group only tags the filename
   const projectName = ((document.getElementById('exportProjectName') as HTMLInputElement).value || 'Storyboard').trim();
@@ -808,25 +814,28 @@ export async function runExport(): Promise<void> {
 
   function measureTableH(td: any): number {
     if (!td) return 0;
-    const dataRows = td.rows ? td.rows.filter((r: string[]) => r.some((c: string) => c && c.trim())).length : 0;
-    const hasHeaders = td.headers && td.headers.some((h: string) => h && h.trim());
+    const dataRows = td.rows ? td.rows.length : 0;
+    const hasHeaders = !!(td.headers && td.headers.length);
     if (!hasHeaders && dataRows === 0) return 0;
     return (hasHeaders ? TABLE_HEADER_H : 0) + dataRows * TABLE_ROW_H + 2;
   }
 
   function drawTableInPDF(x: number, y: number, maxW: number, td: any): number {
     if (!td) return 0;
-    const hasHeaders = td.headers && td.headers.some((h: string) => h && h.trim());
-    const dataRows = td.rows ? td.rows.filter((r: string[]) => r.some((c: string) => c && c.trim())) : [];
+    // Draw the table exactly as built — every column and row, including blank
+    // ones. Filtering empties made the header and first rows disappear.
+    const hasHeaders = !!(td.headers && td.headers.length);
+    const dataRows: string[][] = td.rows || [];
     if (!hasHeaders && dataRows.length === 0) return 0;
     const cols = td.headers ? td.headers.length : 3;
     const colW = maxW / cols;
     let curY = y;
 
     if (hasHeaders) {
-      pdf.setFillColor(255, 255, 255);
+      // Matches .notes-table th in the app — dark bar, light lettering
+      pdf.setFillColor(78, 78, 78);
       pdf.rect(x, curY, maxW, TABLE_HEADER_H, 'F');
-      pdf.setTextColor(0);
+      pdf.setTextColor(235);
       pdf.setFont(PDF_FONT, 'bold');
       pdf.setFontSize(TABLE_FONT);
       for (let c = 0; c < cols; c++) {
@@ -845,14 +854,18 @@ export async function runExport(): Promise<void> {
     for (const row of dataRows) {
       pdf.setFillColor(255, 255, 255);
       pdf.rect(x, curY, maxW, TABLE_ROW_H, 'F');
-      pdf.setTextColor(0);
+      // First column is a dark label column — .notes-table td:first-child
+      pdf.setFillColor(78, 78, 78);
+      pdf.rect(x, curY, colW, TABLE_ROW_H, 'F');
       for (let c = 0; c < cols; c++) {
         const text = (row[c] || '').trim();
         if (text) {
+          pdf.setTextColor(c === 0 ? 235 : 0);
           const clipped = hardWrapLines(pdf, text, colW - 2 * TABLE_PAD)[0] || '';
           pdf.text(clipped, x + c * colW + TABLE_PAD, curY + TABLE_ROW_H - 1.5);
         }
       }
+      pdf.setTextColor(0);
       pdf.setDrawColor(0);
       pdf.setLineWidth(0.3);
       pdf.rect(x, curY, maxW, TABLE_ROW_H);
@@ -934,52 +947,58 @@ export async function runExport(): Promise<void> {
   }
 
   function calcOverviewGrid() {
+    // Page is four quadrants belonging to ONE frame:
+    //   TL main frame        TR 2x2 versions (or the table)
+    //   BL text/NEEDS/NOTES  BR 2x2 versions, continuing from TR
+    // On a continuation page the main frame isn't repeated, so all four
+    // quadrants become 2x2 version grids.
     const contentW = pageW - 2 * MARGIN;
     const contentH = pageH - 2 * MARGIN - HEADER_H - FOOTER_H;
     const ref = s.frames[0] || { cropW: 16, cropH: 9 };
     const aspect = ref.cropW / ref.cropH;
     const mainGap = 4;
-    const vGapX = mainGap;
-    const vGapY = mainGap;
-    const mainTextH = 0;
-    const mainMaxW = contentW * 0.48 * 0.95;
-    let mainW = mainMaxW,
-      mainH = mainW / aspect;
-    let rowGap = (contentH - 2 * (LABEL_H + mainH)) / 2;
-    if (rowGap < 5) {
-      rowGap = 5;
-      mainH = (contentH - 2 * (LABEL_H + rowGap)) / 2;
+    const vGapX = 2;
+    const vGapY = 2;
+    const rowGap = 5;
+
+    // Solve so main + gap + (2 version cells) spans the full width.
+    // verCellW = ((mainW/aspect) - 2*LABEL_H - vGapY)/2 * aspect
+    //          = (mainW - (2*LABEL_H + vGapY)*aspect) / 2
+    // => 2*mainW + mainGap + vGapX - (2*LABEL_H + vGapY)*aspect = contentW
+    const labelSlack = (2 * LABEL_H + vGapY) * aspect;
+    let mainW = (contentW - mainGap - vGapX + labelSlack) / 2;
+    let mainH = mainW / aspect;
+
+    // Both quadrant rows are one main-height tall, so they must fit the page
+    const maxRowH = (contentH - rowGap) / 2;
+    if (mainH > maxRowH) {
+      mainH = maxRowH;
       mainW = mainH * aspect;
     }
-    let verCellH = (mainH - vGapY) / 2;
-    let verCellW = verCellH * aspect;
-    const totalRowW = mainW + mainGap + verCellW * 2 + vGapX;
-    if (totalRowW > contentW) {
-      const scale = contentW / totalRowW;
-      mainW *= scale;
-      mainH *= scale;
-      verCellH = (mainH - vGapY) / 2;
-      verCellW = verCellH * aspect;
-      rowGap = (contentH - 2 * (LABEL_H + mainH)) / 2;
-    }
-    const blockH = mainH + LABEL_H;
-    const actualW = mainW + mainGap + verCellW * 2 + vGapX;
-    const centreX = MARGIN + (contentW - actualW) / 2;
+    // A quadrant holds 2 rows, each of: label + tile + gap. Size the tile so
+    // both rows (labels included) fit exactly in one main-frame height.
+    const verCellH = (mainH - 2 * LABEL_H - vGapY) / 2;
+    const verCellW = verCellH * aspect;
+
+    const rightW = verCellW * 2 + vGapX;
+    const actualW = mainW + mainGap + rightW;
+    const startX = MARGIN + (contentW - actualW) / 2;
+    const startY = MARGIN + HEADER_H;
+    const rightX = startX + mainW + mainGap;
+    const bottomY = startY + mainH + rowGap;
+
     return {
-      mainW,
-      mainH,
-      mainTextH,
-      verCellW,
-      verCellH,
-      vGapX,
-      vGapY,
-      mainGap,
-      blockH,
-      rowGap,
-      contentH,
-      startX: centreX,
-      startY: MARGIN + HEADER_H,
+      mainW, mainH, mainTextH: 0,
+      verCellW, verCellH, vGapX, vGapY, mainGap,
+      blockH: mainH + LABEL_H, rowGap, contentH,
+      startX, startY, rightX, bottomY,
+      // quadrant origins
+      quadTL: { x: startX, y: startY },
+      quadTR: { x: rightX, y: startY },
+      quadBL: { x: startX, y: bottomY },
+      quadBR: { x: rightX, y: bottomY },
     };
+
   }
 
   let page = 0,
@@ -1096,7 +1115,7 @@ export async function runExport(): Promise<void> {
           pdf.setFont(PDF_FONT, 'normal');
           return n + hardWrapLines(pdf, pr.v, Math.max(8, colW - kW)).length;
         }, 0);
-      const textH = Math.max(colLines(col1), colLines(col2)) * 3.9;
+      const textH = Math.max(colLines(col1), colLines(col2)) * 2.15;
       const cardH = Math.max(mainH + capH, verH * 2 + GAP, textH) + PAD_T * 2;
 
       const title = breakAt.get(i);
@@ -1201,7 +1220,7 @@ export async function runExport(): Promise<void> {
         let cy = innerY + mainH + 1.2;
         for (const line of hardWrapLines(pdf, f.textContent, mainW)) {
           pdf.text(line, x, cy + 2.2);
-          cy += 3.2;
+          cy += 3.0;
         }
       }
       x += mainW + GAP;
@@ -1237,12 +1256,12 @@ export async function runExport(): Promise<void> {
           const firstW = Math.max(8, colW - (tx - cx));
           const all = hardWrapLines(pdf, pr.v, firstW);
           if (all.length) pdf.text(all[0], tx, cy + 2.6);
-          cy += 3.9;
+          cy += 2.15;
           if (all.length > 1) {
             const rest = hardWrapLines(pdf, all.slice(1).join(' '), colW);
             for (const line of rest) {
               pdf.text(line, cx, cy + 2.6);
-              cy += 3.9;
+              cy += 2.15;
             }
           }
         }
@@ -1340,86 +1359,94 @@ export async function runExport(): Promise<void> {
     const ovStrips = getSelectedStrips('exportOverviewStripPicker');
     const ovStripIds: StripType[] = ovStrips.length ? ovStrips : ['ver'];
     const stripDefs = s.stripDefs || DEFAULT_STRIP_DEFS;
-    // frames is already filtered by includeHidden checkbox — don't filter again
     const visibleFrames = frames;
 
-    // Collect versions grouped by strip (each strip starts a new row in export)
-    type StripVerGroup = { stripName: string; vers: { v: any; label: string }[] };
-    const frameStripGroups: StripVerGroup[][] = visibleFrames.map((f) => {
-      const groups: StripVerGroup[] = [];
+    // One quadrant = a 2x2 grid = 2 rows of 2. Versions flow row by row, and a
+    // new strip always starts on a fresh row (so a 3-version strip leaves the
+    // second slot of its last row empty rather than letting the next strip in).
+    const ROWS_PER_QUAD = 2;
+    const COLS = 2;
+    // Each tile carries its label above it, so a row is label + tile + gap.
+    // Without LABEL_H the second row's label was drawn over the first row.
+    const vRowH = g.verCellH + LABEL_H + g.vGapY;
+
+    /** Rows a group of strips occupies, each strip starting on a new row. */
+    const rowsFor = (groups: { vers: any[] }[]) =>
+      groups.reduce((n, sg) => n + Math.ceil(sg.vers.length / COLS), 0);
+
+    type VerEntry = { v: any; label: string };
+    type StripGroup = { stripName: string; vers: VerEntry[] };
+
+    // Gather each frame's versions, honouring the version picker
+    const frameGroups: StripGroup[][] = visibleFrames.map((f, fIdx) => {
+      const groups: StripGroup[] = [];
       for (const sid of ovStripIds) {
-        const def = stripDefs.find(d => d.id === sid);
+        const def = stripDefs.find((d) => d.id === sid);
         const sName = def ? def.defaultFrameLabel : sid;
-        const vGroup: { v: any; label: string }[] = [];
-        const allVers = getStripVersions(f.id, sid);
-        allVers.forEach((v, vi) => {
+        const vGroup: VerEntry[] = [];
+        getStripVersions(f.id, sid).forEach((v, vi) => {
           if (!versionHasContent(v)) return;
-          const cb = document.querySelector(`#exportVersionPicker input[data-fid="${f.id}"][data-vi="${vi}"][data-strip="${sid}"]`) as HTMLInputElement | null;
+          const cb = document.querySelector(
+            `#exportVersionPicker input[data-fid="${f.id}"][data-vi="${vi}"][data-strip="${sid}"]`
+          ) as HTMLInputElement | null;
           if (cb && !cb.checked) return;
-          const fIdx = visibleFrames.indexOf(f);
           vGroup.push({ v, label: fullVerLabel(f.label || `${fIdx + 1}`, `${sName} ${v.label || `v${vi + 1}`}`) });
         });
-        if (vGroup.length > 0) groups.push({ stripName: sName, vers: vGroup });
+        if (vGroup.length) groups.push({ stripName: sName, vers: vGroup });
       }
       return groups;
     });
 
-    // Count version rows for strip groups (each strip starts on a new row)
-    function stripGroupRows(groups: StripVerGroup[]): number {
-      let rows = 0;
-      for (const sg of groups) { rows += Math.ceil(sg.vers.length / 2); }
-      return rows;
+    /** A frame's NOTES table, when tables are switched on. */
+    function frameTableBlockFor(f: Frame): TableData | null {
+      if (!includeTables) return null;
+      const nc = noteContent(f.id);
+      return nc.table && tableHasContent(nc.table) ? nc.table : null;
     }
 
-    function frameTextH(f: any) {
-      if (!includeText || !f.textContent) return 0;
-      return measureTextH(f.textContent, g.mainW, 8);
-    }
-    /** Height of the NEEDS + NOTES block printed under a frame's main image. */
-    function frameTableExH(f: any) {
-      let h = 0;
-      if (includeNeeds) {
-        const lines = needsLines(f.id);
-        if (lines.length) h += measureTextH(lines.join('\n'), g.mainW, 7) + 2;
-      }
-      if (includeNotes) {
-        const nc = noteContent(f.id);
-        if (nc.table && tableHasContent(nc.table)) h += measureTableH(nc.table) + 2;
-        else if (nc.text) h += measureTextH(nc.text, g.mainW, 7.5) + 2;
-      }
-      return h;
-    }
-
-    /** Draw the NEEDS + NOTES block, returning the height consumed. */
-    function drawFrameExtras(f: any, x: number, y: number, maxW: number): number {
+    /** NEEDS (two columns) then the written NOTE. Returns height used. */
+    function drawFrameExtras(f: Frame, x: number, y: number, maxW: number): number {
       let cy = y;
       if (includeNeeds) {
-        const lines = needsLines(f.id);
-        if (lines.length) {
-          pdf.setFont(PDF_FONT, 'normal');
+        const [n1, n2] = needsColumns(f.id);
+        if (n1.length || n2.length) {
+          const cGap = 3;
+          const cW = (maxW - cGap) / 2;
           pdf.setFontSize(7);
-          pdf.setTextColor(70);
-          for (const raw of lines) {
-            for (const line of hardWrapLines(pdf, raw, maxW)) {
-              pdf.text(line, x, cy + 2.6);
-              cy += 3.65;
+          let deepest = cy;
+          [n1, n2].forEach((pairs, ci) => {
+            const cx = x + ci * (cW + cGap);
+            let ry = cy;
+            for (const pr of pairs) {
+              pdf.setFont(PDF_FONT, 'bold');
+              pdf.setTextColor(20);
+              const kTxt = `${pr.k} `;
+              pdf.text(kTxt, cx, ry + 2.6);
+              const tx = cx + pdf.getTextWidth(kTxt);
+              pdf.setFont(PDF_FONT, 'normal');
+              pdf.setTextColor(70);
+              const all = hardWrapLines(pdf, pr.v, Math.max(8, cW - (tx - cx)));
+              if (all.length) pdf.text(all[0], tx, ry + 2.6);
+              ry += 2.15;
+              for (const line of hardWrapLines(pdf, all.slice(1).join(' '), cW)) {
+                pdf.text(line, cx, ry + 2.6);
+                ry += 2.15;
+              }
             }
-          }
-          cy += 2;
+            deepest = Math.max(deepest, ry);
+          });
+          cy = deepest + 2;
+          pdf.setFont(PDF_FONT, 'normal');
         }
       }
       if (includeNotes) {
         const nc = noteContent(f.id);
-        if (nc.table && tableHasContent(nc.table)) {
-          drawTableInPDF(x, cy, maxW, nc.table);
-          cy += measureTableH(nc.table) + 2;
-        } else if (nc.text) {
-          pdf.setFont(PDF_FONT, 'normal');
+        if (nc.text) {
           pdf.setFontSize(7.5);
           pdf.setTextColor(50);
           for (const line of hardWrapLines(pdf, nc.text, maxW)) {
             pdf.text(line, x, cy + 2.8);
-            cy += 3.9;
+            cy += 3.6;
           }
           cy += 2;
         }
@@ -1428,100 +1455,140 @@ export async function runExport(): Promise<void> {
       return cy - y;
     }
 
-    // Version row height
-    const vRowH = g.verCellH + g.vGapY;
-    // Max version rows per page (4 rows = 8 versions in 2 cols)
-    const maxVRows = Math.min(4, Math.floor((g.contentH - LABEL_H) / vRowH));
+    /** True when a frame needs the bottom half (text/NEEDS/NOTES, table, or
+     *  more versions than one quadrant holds). If not, two frames share a page. */
+    function needsBottomHalf(f: Frame, rowCount: number): boolean {
+      if (rowCount > ROWS_PER_QUAD) return true;
+      if (frameTableBlockFor(f)) return true;
+      if (includeText && f.textContent) return true;
+      if (includeNeeds) {
+        const [n1, n2] = needsColumns(f.id);
+        if (n1.length || n2.length) return true;
+      }
+      if (includeNotes) {
+        const nc = noteContent(f.id);
+        if (nc.text) return true;
+      }
+      return false;
+    }
 
-    // Each strip gets its own page(s). If a strip overflows, continue on next page.
-    function splitStripGroupsIntoChunks(groups: StripVerGroup[]): StripVerGroup[][] {
-      const chunks: StripVerGroup[][] = [];
+    /** Lay strips into rows; a strip never shares a row with another. */
+    function toRows(groups: StripGroup[]): (VerEntry | null)[][] {
+      const rows: (VerEntry | null)[][] = [];
       for (const sg of groups) {
-        const sgRows = Math.ceil(sg.vers.length / 2);
-        if (sgRows <= maxVRows) {
-          // Fits on one page
-          chunks.push([sg]);
-        } else {
-          // Split this strip's versions across multiple pages
-          for (let v = 0; v < sg.vers.length; v += maxVRows * 2) {
-            chunks.push([{ stripName: sg.stripName, vers: sg.vers.slice(v, v + maxVRows * 2) }]);
-          }
+        for (let i = 0; i < sg.vers.length; i += COLS) {
+          const row = sg.vers.slice(i, i + COLS) as (VerEntry | null)[];
+          while (row.length < COLS) row.push(null);
+          rows.push(row);
         }
       }
-      return chunks.length > 0 ? chunks : [[]];
+      return rows;
     }
 
-    // Build page items
-    type OvPageItem = { fIdx: number; stripGroups: StripVerGroup[]; neededH: number; txtH: number; tblH: number; showMain: boolean };
-    const pages: OvPageItem[][] = [];
-    let currentPage: OvPageItem[] = [];
-    let usedH = 0;
+    /** Draw one quadrant's worth of rows at the given origin. */
+    async function drawQuad(origin: { x: number; y: number }, rows: (VerEntry | null)[][], f: Frame) {
+      for (let r = 0; r < rows.length && r < ROWS_PER_QUAD; r++) {
+        for (let c = 0; c < COLS; c++) {
+          const entry = rows[r][c];
+          if (!entry) continue;
+          const vx = origin.x + c * (g.verCellW + g.vGapX);
+          const vy = origin.y + LABEL_H + r * vRowH;
+          const cvs = await rasterizeVersion(entry.v, f.cropW, f.cropH);
+          await drawFrameTile(vx, vy, g.verCellW, g.verCellH, cvs, '', 0);
+          drawFrameLabel(vx, vy, entry.label);
+        }
+      }
+    }
 
-    for (let i = 0; i < visibleFrames.length; i++) {
+    /** Draw a frame's main image + its BL block at the given quadrant pair. */
+    async function drawFrameBlock(
+      f: Frame,
+      idx: number,
+      mainQuad: { x: number; y: number },
+      textQuad: { x: number; y: number } | null
+    ) {
+      const mainY = mainQuad.y + LABEL_H;
+      const mainCvs = await rasterizeMain(f);
+      await drawFrameTile(mainQuad.x, mainY, g.mainW, g.mainH, mainCvs, '', 0);
+      drawFrameLabel(mainQuad.x, mainY, f.label || `${idx + 1}`);
+      if (!textQuad) return;
+      let blY = textQuad.y;
+      if (includeText && f.textContent) {
+        pdf.setFont(PDF_FONT, 'normal');
+        pdf.setFontSize(8);
+        pdf.setTextColor(30);
+        for (const line of hardWrapLines(pdf, f.textContent, g.mainW)) {
+          if (blY > textQuad.y + g.mainH) break;
+          pdf.text(line, textQuad.x, blY + 3);
+          blY += 4.1;
+        }
+        blY += 2;
+      }
+      drawFrameExtras(f, textQuad.x, blY, g.mainW);
+    }
+
+    let first = true;
+    const startPage = () => {
+      if (!first) pdf.addPage();
+      first = false;
+      page++;
+      drawHeader(page, 0);
+    };
+
+    let i = 0;
+    while (i < visibleFrames.length) {
       const f = visibleFrames[i];
-      const groups = frameStripGroups[i];
-      const txtH = frameTextH(f);
-      const tblH = frameTableExH(f);
-      const chunks = splitStripGroupsIntoChunks(groups);
+      const rows = toRows(frameGroups[i]);
+      const table = frameTableBlockFor(f);
+      const wantsBottom = needsBottomHalf(f, rows.length);
 
-      for (let ci = 0; ci < chunks.length; ci++) {
-        const chunk = chunks[ci];
-        const isFirst = ci === 0;
-        const chunkRows = stripGroupRows(chunk);
-        const verSideH = LABEL_H + chunkRows * vRowH;
-        const mainSideH = isFirst ? (g.mainH + LABEL_H + txtH + tblH) : 0;
-        const neededH = Math.max(verSideH, mainSideH);
-        const gapIfNotFirst = currentPage.length > 0 ? g.rowGap : 0;
-        if (currentPage.length > 0 && usedH + gapIfNotFirst + neededH > g.contentH) {
-          pages.push(currentPage);
-          currentPage = [];
-          usedH = 0;
-        }
-        currentPage.push({ fIdx: i, stripGroups: chunk, neededH, txtH: isFirst ? txtH : 0, tblH: isFirst ? tblH : 0, showMain: isFirst });
-        usedH += (usedH > 0 ? g.rowGap : 0) + neededH;
+      // Two simple frames share a page: first in TL/TR, second in BL/BR.
+      const nf = visibleFrames[i + 1];
+      const nRows = nf ? toRows(frameGroups[i + 1]) : [];
+      const pairable =
+        !wantsBottom && nf && !needsBottomHalf(nf, nRows.length);
+
+      startPage();
+
+      if (pairable) {
+        await drawFrameBlock(f, i, g.quadTL, null);
+        await drawQuad(g.quadTR, rows.slice(0, ROWS_PER_QUAD), f);
+        await drawFrameBlock(nf!, i + 1, g.quadBL, null);
+        await drawQuad(g.quadBR, nRows.slice(0, ROWS_PER_QUAD), nf!);
+        i += 2;
+        continue;
       }
-    }
-    if (currentPage.length) pages.push(currentPage);
-    totalPages = pages.length;
 
-    // Render pages
-    for (let pi = 0; pi < pages.length; pi++) {
-      if (pi > 0) pdf.addPage();
-      page = pi + 1;
-      drawHeader(page, totalPages);
-      let curY = g.startY;
-      for (const item of pages[pi]) {
-        const f = visibleFrames[item.fIdx];
-        const mainX = g.startX;
+      // Otherwise the frame owns the page
+      await drawFrameBlock(f, i, g.quadTL, g.quadBL);
 
-        // Draw main frame only on the first page for this frame
-        if (item.showMain) {
-          const mainY = curY + LABEL_H;
-          const mainCvs = await rasterizeMain(f);
-          await drawFrameTile(mainX, mainY, g.mainW, g.mainH, mainCvs, f.textContent || '', item.txtH, g.mainW - 2);
-          drawFrameLabel(mainX, mainY, f.label || `${item.fIdx + 1}`);
-          drawFrameExtras(f, mainX, mainY + g.mainH + item.txtH + 2, g.mainW);
-        }
-
-        // Draw versions — each strip starts on a new row
-        const verStartX = mainX + g.mainW + g.mainGap;
-        let vRow = 0;
-        for (const sg of item.stripGroups) {
-          for (let vi = 0; vi < sg.vers.length; vi++) {
-            const vc = vi % 2;
-            const row = vRow + Math.floor(vi / 2);
-            const vx = verStartX + vc * (g.verCellW + g.vGapX);
-            const vy = curY + LABEL_H + row * vRowH;
-            const entry = sg.vers[vi];
-            const vCanvas = await rasterizeVersion(entry.v, f.cropW, f.cropH);
-            await drawFrameTile(vx, vy, g.verCellW, g.verCellH, vCanvas, '', 0);
-            drawFrameLabel(vx, vy, entry.label);
-          }
-          vRow += Math.ceil(sg.vers.length / 2);
-        }
-        curY += item.neededH + g.rowGap;
+      let rowCursor = 0;
+      let quadIdx = 0;                       // 0 = TR, 1 = BR
+      if (table) {
+        drawTableInPDF(g.quadTR.x, g.quadTR.y + LABEL_H, g.verCellW * 2 + g.vGapX, table);
+        const tblRows = Math.ceil(measureTableH(table) / vRowH);
+        quadIdx = Math.min(2, Math.ceil(tblRows / ROWS_PER_QUAD));
       }
+      for (const quad of [g.quadTR, g.quadBR].slice(quadIdx)) {
+        const slice = rows.slice(rowCursor, rowCursor + ROWS_PER_QUAD);
+        if (!slice.length) break;
+        await drawQuad(quad, slice, f);
+        rowCursor += ROWS_PER_QUAD;
+      }
+
+      // Continuation pages — no main frame, so all four quadrants hold versions
+      while (rowCursor < rows.length) {
+        startPage();
+        for (const quad of [g.quadTL, g.quadTR, g.quadBL, g.quadBR]) {
+          const slice = rows.slice(rowCursor, rowCursor + ROWS_PER_QUAD);
+          if (!slice.length) break;
+          await drawQuad(quad, slice, f);
+          rowCursor += ROWS_PER_QUAD;
+        }
+      }
+      i++;
     }
+    totalPages = page;
   }
 
   // Repaint footers now that the true page count is known
@@ -1543,6 +1610,7 @@ export async function runPptxExport(): Promise<void> {
   const includeNeeds =
     layout === 'sortby' ? true : (document.getElementById('pptxIncludeNeeds') as HTMLInputElement)?.checked ?? false;
   const includeNotes = (document.getElementById('pptxIncludeNotes') as HTMLInputElement)?.checked ?? false;
+  const includeTables = (document.getElementById('pptxIncludeTables') as HTMLInputElement)?.checked ?? false;
   // Header prints the project name alone — the group only tags the filename
   const projectName = ((document.getElementById('pptxProjectName') as HTMLInputElement).value || 'Storyboard').trim();
   const fileBase = withGroupSuffix(projectName, 'pptxGroup');
@@ -2043,8 +2111,11 @@ export async function runPptxExport(): Promise<void> {
               const rows = td.rows ? td.rows.filter((r) => r.some((c) => c && c.trim())) : [];
               if (hasH || rows.length) {
                 const tbl: any[] = [];
-                if (hasH) tbl.push(td.headers.map((h) => ({ text: h || '', options: { bold: true, fontSize: 6, fill: { color: 'E8E8E8' } } })));
-                for (const r of rows) tbl.push(r.map((c) => ({ text: c || '', options: { fontSize: 6 } })));
+                if (hasH) tbl.push(td.headers.map((h) => ({ text: h || '', options: { bold: true, fontSize: 6, color: 'EBEBEB', fill: { color: '4E4E4E' } } })));
+                for (const r of rows) tbl.push(r.map((c, ci) => ({
+                  text: c || '',
+                  options: ci === 0 ? { fontSize: 6, color: 'EBEBEB', fill: { color: '4E4E4E' } } : { fontSize: 6, color: '000000' },
+                })));
                 slide.addTable(tbl, {
                   x: dx, y: baseY + 0.18, w: fW,
                   border: { type: 'solid', color: '000000', pt: 0.5 },
@@ -2159,11 +2230,11 @@ export async function runPptxExport(): Promise<void> {
             if (nc.table) {
               const td = nc.table;
               const hasHeaders = td.headers && td.headers.some((h) => h && h.trim());
-              const dataRows = td.rows ? td.rows.filter((r) => r.some((c) => c && c.trim())) : [];
+              const dataRows = td.rows || [];
               if (hasHeaders || dataRows.length > 0) {
                 const tblRows: any[] = [];
-                if (hasHeaders) tblRows.push(td.headers.map((h) => ({ text: h || '', options: { bold: true, fontSize: 6, color: '000000', fill: { color: 'E8E8E8' } } })));
-                for (const row of dataRows) tblRows.push(row.map((c) => ({ text: c || '', options: { fontSize: 6, color: '000000' } })));
+                if (hasHeaders) tblRows.push(td.headers.map((h) => ({ text: h || '', options: { bold: true, fontSize: 6, color: 'EBEBEB', fill: { color: '4E4E4E' } } })));
+                for (const row of dataRows) tblRows.push(row.map((c, ci) => ({ text: c || '', options: ci === 0 ? { fontSize: 6, color: 'EBEBEB', fill: { color: '4E4E4E' } } : { fontSize: 6, color: '000000' } })));
                 if (tblRows.length > 0) {
                   slide.addTable(tblRows, { x: mainX, y: belowY, w: mainW, border: { type: 'solid', color: '000000', pt: 0.5 }, colW: Array(td.headers.length).fill(mainW / td.headers.length), fontFace: 'Arial', fontSize: 6, color: '000000', autoPage: false });
                 }
@@ -2383,8 +2454,8 @@ async function runPortraitPdfExport(): Promise<void> {
 
   function drawTable(x: number, y: number, maxW: number, td: any): number {
     if (!td) return 0;
-    const hasHeaders = td.headers && td.headers.some((h: string) => h && h.trim());
-    const dataRows = td.rows ? td.rows.filter((r: string[]) => r.some((c: string) => c && c.trim())) : [];
+    const hasHeaders = !!(td.headers && td.headers.length);
+    const dataRows: string[][] = td.rows || [];
     if (!hasHeaders && dataRows.length === 0) return 0;
     const cols = td.headers ? td.headers.length : 3;
     const cW = maxW / cols;
@@ -2655,7 +2726,7 @@ async function runPortraitPptxExport(): Promise<void> {
           if (includeTable && f.tableData) {
             const td = f.tableData as any;
             const hasHeaders = td.headers && td.headers.some((h: string) => h && h.trim());
-            const dataRows = td.rows ? td.rows.filter((r: string[]) => r.some((c: string) => c && c.trim())) : [];
+            const dataRows = td.rows || [];
             if (hasHeaders || dataRows.length > 0) {
               const tblRows: any[] = [];
               if (hasHeaders) {
