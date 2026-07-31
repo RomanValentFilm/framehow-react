@@ -32,7 +32,7 @@ import { showToast, showNewProjectModal, isNewProjectModalOpen, showOrphanChoice
 import type { NewProjectChoice } from './modals';
 import { handlePDF } from './pdf';
 import { handleFolderImages, startFromScratch, startPortrait } from './files';
-import { openExportModal, openPptxModal, runExport, runPptxExport, openImageExportModal, runImageExport, openPortraitExportModal, runPortraitExport, openPortraitImageExportModal, runPortraitImageExport, updateExportVisibility, buildVersionPicker, buildPptxVersionPicker } from './exports';
+import { openExportModal, openPptxModal, runExport, runPptxExport, openImageExportModal, runImageExport, openPortraitExportModal, runPortraitExport, openPortraitImageExportModal, runPortraitImageExport, updateExportVisibility, buildVersionPicker, buildPptxVersionPicker, lockPageScroll, unlockPageScroll } from './exports';
 import { wireCameraEvents } from './camera';
 // openFullscreen is now triggered by DRAW button (actions.ts), not the fs-btn
 import { toggleGroupSidebar } from './groups';
@@ -404,6 +404,7 @@ export function initFramehow(): void {
       document.getElementById('portraitExportChooser')!.classList.remove('hidden');
     } else {
       document.getElementById('exportChooser')!.classList.remove('hidden');
+      lockPageScroll();
     }
   });
   // Account-system menu entries (v1.6)
@@ -514,26 +515,31 @@ export function initFramehow(): void {
   document.getElementById('folderImgInput')!.addEventListener('change', handleFolderImages);
 
   // Export chooser
-  document.getElementById('exportFmtCancel')!.addEventListener('click', () =>
-    document.getElementById('exportChooser')!.classList.add('hidden')
-  );
+  document.getElementById('exportFmtCancel')!.addEventListener('click', () => {
+    document.getElementById('exportChooser')!.classList.add('hidden');
+    unlockPageScroll();
+  });
   document.getElementById('exportFmtPDF')!.addEventListener('click', () => {
     document.getElementById('exportChooser')!.classList.add('hidden');
+    unlockPageScroll();
     openExportModal();
   });
   document.getElementById('exportFmtPPTX')!.addEventListener('click', () => {
     document.getElementById('exportChooser')!.classList.add('hidden');
+    unlockPageScroll();
     openPptxModal();
   });
   document.getElementById('exportFmtImages')!.addEventListener('click', () => {
     document.getElementById('exportChooser')!.classList.add('hidden');
+    unlockPageScroll();
     openImageExportModal();
   });
 
   // PDF export modal
-  document.getElementById('exportCancel')!.addEventListener('click', () =>
-    document.getElementById('exportModal')!.classList.add('hidden')
-  );
+  document.getElementById('exportCancel')!.addEventListener('click', () => {
+    document.getElementById('exportModal')!.classList.add('hidden');
+    unlockPageScroll();
+  });
   document.querySelectorAll('input[name="exportLayout"]').forEach((r) =>
     r.addEventListener('change', () => {
       const layout = (document.querySelector('input[name="exportLayout"]:checked') as HTMLInputElement).value;
@@ -546,9 +552,10 @@ export function initFramehow(): void {
   document.getElementById('exportGo')!.addEventListener('click', runExport);
 
   // PPTX export modal
-  document.getElementById('pptxCancel')!.addEventListener('click', () =>
-    document.getElementById('pptxModal')!.classList.add('hidden')
-  );
+  document.getElementById('pptxCancel')!.addEventListener('click', () => {
+    document.getElementById('pptxModal')!.classList.add('hidden');
+    unlockPageScroll();
+  });
   document.querySelectorAll('input[name="pptxLayout"]').forEach((r) =>
     r.addEventListener('change', () => {
       const layout = (document.querySelector('input[name="pptxLayout"]:checked') as HTMLInputElement).value;
@@ -560,9 +567,10 @@ export function initFramehow(): void {
   document.getElementById('pptxGo')!.addEventListener('click', runPptxExport);
 
   // Image export modal
-  document.getElementById('imageExportCancel')!.addEventListener('click', () =>
-    document.getElementById('imageExportModal')!.classList.add('hidden')
-  );
+  document.getElementById('imageExportCancel')!.addEventListener('click', () => {
+    document.getElementById('imageExportModal')!.classList.add('hidden');
+    unlockPageScroll();
+  });
   document.getElementById('imageExportGo')!.addEventListener('click', runImageExport);
 
   // Portrait (9:16) export chooser

@@ -27,6 +27,13 @@ const isIOS =
  * unbreakable word and shoots straight off the edge of the frame.
  * Fold them all down to ordinary spaces before measuring or drawing.
  */
+function safeName(text: string): string {
+  return String(text ?? '')
+    .replace(/[^\w\-]+/g, '_')   // any run of odd characters becomes one underscore
+    .replace(/_+/g, '_')          // collapse repeats
+    .replace(/^[_\-]+|[_\-]+$/g, ''); // trim them off both ends
+}
+
 function normalizeForPdf(text: string): string {
   if (!text) return '';
   return text
@@ -507,6 +514,44 @@ function pickDoubleVersion(fid: number, strip: StripType, mode: string) {
   return vers[getStripActiveTab(fid, strip)];
 }
 
+/**
+ * Freeze the page behind the export dialogs. Without this the storyboard keeps
+ * scrolling under the overlay when the wheel or a touch lands outside the box,
+ * so you lose your place while choosing options.
+ *
+ * Ref-counted, because the chooser and the format dialog are briefly both open.
+ */
+let _scrollLockDepth = 0;
+let _scrollLockY = 0;
+
+export function lockPageScroll(): void {
+  if (_scrollLockDepth++ > 0) return;
+  _scrollLockY = window.scrollY;
+  const b = document.body;
+  b.dataset.fhLockTop = String(_scrollLockY);
+  b.style.position = 'fixed';
+  b.style.top = `-${_scrollLockY}px`;
+  b.style.left = '0';
+  b.style.right = '0';
+  b.style.width = '100%';
+  b.style.overflow = 'hidden';
+}
+
+export function unlockPageScroll(): void {
+  if (_scrollLockDepth === 0) return;
+  if (--_scrollLockDepth > 0) return;
+  const b = document.body;
+  const y = parseInt(b.dataset.fhLockTop || '0', 10) || _scrollLockY;
+  b.style.position = '';
+  b.style.top = '';
+  b.style.left = '';
+  b.style.right = '';
+  b.style.width = '';
+  b.style.overflow = '';
+  delete b.dataset.fhLockTop;
+  window.scrollTo(0, y);
+}
+
 /** Sort-order picker — STORY FLOW plus every saved shooting order. */
 function buildSortOrderPicker(containerId: string, radioName: string): void {
   const container = document.getElementById(containerId);
@@ -583,6 +628,7 @@ export function openExportModal(): void {
     return;
   }
   document.getElementById('exportModal')!.classList.remove('hidden');
+  lockPageScroll();
   const nameInput = document.getElementById('exportProjectName') as HTMLInputElement;
   if (!nameInput.value) nameInput.value = getCurrentProject().name || s.lastPdfName || 'Storyboard';
   populateMetaFields('export');
@@ -626,6 +672,7 @@ export function openPptxModal(): void {
     return;
   }
   document.getElementById('pptxModal')!.classList.remove('hidden');
+  lockPageScroll();
   const nameInput = document.getElementById('pptxProjectName') as HTMLInputElement;
   if (!nameInput.value) nameInput.value = getCurrentProject().name || s.lastPdfName || 'Storyboard';
   populateMetaFields('pptx');
@@ -672,6 +719,7 @@ export async function runExport(): Promise<void> {
   const frames = exportFrames;
 
   document.getElementById('exportModal')!.classList.add('hidden');
+  unlockPageScroll();
   showToast('Generating PDF…');
 
   const paper = paperLetter ? 'letter' : 'a4';
@@ -1595,7 +1643,7 @@ export async function runExport(): Promise<void> {
   stampPageNumbers();
 
   const now = new Date();
-  const fname = `${fileBase.replace(/[^\w\-]+/g, '_')}_${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}.pdf`;
+  const fname = `${safeName(fileBase)}_${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}.pdf`;
   offerSave(pdf.output('blob') as Blob, fname);
   showToast('PDF ready');
 }
@@ -1631,21 +1679,28 @@ export async function runPptxExport(): Promise<void> {
   const frames = exportFrames;
 
   document.getElementById('pptxModal')!.classList.add('hidden');
+  unlockPageScroll();
   showToast('Generating presentation…');
 
   const pptx: any = new (PptxGenJS as any)();
   // Sort By prints portrait like the PDF; the other layouts stay widescreen.
+  // Match the PDF's paper. Sort By = A4 portrait, Full Overview = A4 landscape.
+  // 16:9 is too short for the overview's four quadrants: the main frame gets
+  // clipped to fit two rows, and the row then spans only ~81% of the width,
+  // leaving the right side empty. Other layouts stay widescreen.
   const sbPortrait = layout === 'sortby';
+  const a4Landscape = layout === 'overview';
   if (sbPortrait) {
-    // True A4 portrait (210x297mm), not the 16:9 slide turned on its side -
-    // that gave a 1:1.78 page, far taller than a sheet of paper.
     pptx.defineLayout({ name: 'FH_A4_PORTRAIT', width: 8.27, height: 11.69 });
     pptx.layout = 'FH_A4_PORTRAIT';
+  } else if (a4Landscape) {
+    pptx.defineLayout({ name: 'FH_A4_LANDSCAPE', width: 11.69, height: 8.27 });
+    pptx.layout = 'FH_A4_LANDSCAPE';
   } else {
     pptx.layout = 'LAYOUT_WIDE';
   }
-  const SLIDE_W = sbPortrait ? 8.27 : 13.333;
-  const SLIDE_H = sbPortrait ? 11.69 : 7.5;
+  const SLIDE_W = sbPortrait ? 8.27 : a4Landscape ? 11.69 : 13.333;
+  const SLIDE_H = sbPortrait ? 11.69 : a4Landscape ? 8.27 : 7.5;
   pptx.title = projectName;
 
   /**
@@ -2145,127 +2200,255 @@ export async function runPptxExport(): Promise<void> {
       }
     }
   } else if (layout === 'overview') {
-    const pptxOvStrips = getSelectedStrips('pptxOverviewStripPicker');
-    const pptxOvStripIds: StripType[] = pptxOvStrips.length ? pptxOvStrips : ['ver'];
+    // Same four-quadrant model as the PDF:
+    //   TL main frame        TR 2x2 versions (or the table)
+    //   BL text/NEEDS/NOTES  BR 2x2 versions continuing from TR
+    // Continuation slides drop the main frame, so all four hold versions.
+    const pptxOvStripIds: StripType[] = (() => {
+      const sel = getSelectedStrips('pptxOverviewStripPicker');
+      return sel.length ? sel : (['ver'] as StripType[]);
+    })();
     const pptxStripDefs = s.stripDefs || DEFAULT_STRIP_DEFS;
-    // frames is already filtered by includeHidden checkbox — don't filter again
     const visibleFrames = frames;
 
-    const mainW = (SW - 2 * MARGIN) * 0.48;
-    const mainH = mainW / aspect;
-    const mainX = MARGIN;
-    const mainY = 0.7;
-    const vGap = 0.12;
-    const gridX = mainX + mainW + 0.2;
-    const gridW = SW - MARGIN - gridX;
-    const vCols = 2;
-    const vCellW = (gridW - vGap) / vCols;
-    const vCellH = vCellW / aspect;
-    const vRowH = vCellH + vGap + 0.2;
-    const maxVRows = Math.min(4, Math.floor((SH - mainY - 0.3) / vRowH));
+    const ROWS_PER_QUAD = 2;
+    const COLS = 2;
+    const contentW = SW - 2 * MARGIN;
+    const contentH = SH - 0.95 - MARGIN;
+    const mainGap = 0.14;
+    const vGapX = 0.07;
+    const vGapY = 0.07;
+    const rowGap = 0.16;
+    const LBL = 0.15;                       // label strip above each tile
 
-    type PptxStripGroup = { stripName: string; vers: { v: any; fullLabel: string }[] };
+    // Solve so main + gap + two version cells spans the full width, with a
+    // quadrant (2 rows of label+tile+gap) exactly one main height tall.
+    const labelSlack = (2 * LBL + vGapY) * aspect;
+    let mainW = (contentW - mainGap - vGapX + labelSlack) / 2;
+    let mainH = mainW / aspect;
+    const maxRowH = (contentH - rowGap) / 2;
+    if (mainH > maxRowH) {
+      mainH = maxRowH;
+      mainW = mainH * aspect;
+    }
+    const vCellH = (mainH - 2 * LBL - vGapY) / 2;
+    const vCellW = vCellH * aspect;
+    const vRowH = vCellH + LBL + vGapY;
 
-    for (let i = 0; i < visibleFrames.length; i++) {
-      const f = visibleFrames[i];
-      const label = f.label || `${i + 1}`;
+    const originX = MARGIN + (contentW - (mainW + mainGap + vCellW * 2 + vGapX)) / 2;
+    const topY = 0.95;
+    const rightX = originX + mainW + mainGap;
+    const botY = topY + mainH + rowGap;
+    const quadTL = { x: originX, y: topY };
+    const quadTR = { x: rightX, y: topY };
+    const quadBL = { x: originX, y: botY };
+    const quadBR = { x: rightX, y: botY };
 
-      // Collect versions grouped by strip
-      const stripGroups: PptxStripGroup[] = [];
+    type VerEntry = { v: any; label: string };
+
+    /** Rows of at most COLS; every strip starts on a fresh row. */
+    function toRows(f: Frame, fIdx: number): (VerEntry | null)[][] {
+      const rows: (VerEntry | null)[][] = [];
       for (const sid of pptxOvStripIds) {
-        const def = pptxStripDefs.find(d => d.id === sid);
+        const def = pptxStripDefs.find((d) => d.id === sid);
         const sName = def ? def.defaultFrameLabel : sid;
-        const vGroup: { v: any; fullLabel: string }[] = [];
-        const allVers = getStripVersions(f.id, sid);
-        allVers.forEach((v, vi) => {
+        const group: VerEntry[] = [];
+        getStripVersions(f.id, sid).forEach((v, vi) => {
           if (!versionHasContent(v)) return;
-          const cb = document.querySelector(`#pptxVersionPicker input[data-fid="${f.id}"][data-vi="${vi}"][data-strip="${sid}"]`) as HTMLInputElement | null;
+          const cb = document.querySelector(
+            `#pptxVersionPicker input[data-fid="${f.id}"][data-vi="${vi}"][data-strip="${sid}"]`
+          ) as HTMLInputElement | null;
           if (cb && !cb.checked) return;
-          vGroup.push({ v, fullLabel: fullVerLabel(f.label || `${i + 1}`, `${sName} ${v.label || `v${vi + 1}`}`) });
+          group.push({ v, label: fullVerLabel(f.label || `${fIdx + 1}`, `${sName} ${v.label || `v${vi + 1}`}`) });
         });
-        if (vGroup.length > 0) stripGroups.push({ stripName: sName, vers: vGroup });
-      }
-
-      // Each strip gets its own slide(s). If a strip overflows, continue on next slide.
-      const chunks: PptxStripGroup[][] = [];
-      for (const sg of stripGroups) {
-        const sgRows = Math.ceil(sg.vers.length / 2);
-        if (sgRows <= maxVRows) {
-          chunks.push([sg]);
-        } else {
-          for (let v = 0; v < sg.vers.length; v += maxVRows * 2) {
-            chunks.push([{ stripName: sg.stripName, vers: sg.vers.slice(v, v + maxVRows * 2) }]);
-          }
+        for (let i2 = 0; i2 < group.length; i2 += COLS) {
+          const row = group.slice(i2, i2 + COLS) as (VerEntry | null)[];
+          while (row.length < COLS) row.push(null);
+          rows.push(row);
         }
       }
-      if (chunks.length === 0) chunks.push([]);
+      return rows;
+    }
 
-      const mainCvs = await rasterizeWithBorder(await rasterizeMain(f));
-      const mainB64 = 'image/jpeg;base64,' + canvasToBase64(mainCvs);
+    async function drawQuad(sl: any, o: { x: number; y: number }, rows: (VerEntry | null)[][], f: Frame) {
+      for (let r = 0; r < rows.length && r < ROWS_PER_QUAD; r++) {
+        for (let c = 0; c < COLS; c++) {
+          const e = rows[r][c];
+          if (!e) continue;
+          const vx = o.x + c * (vCellW + vGapX);
+          const vy = o.y + r * vRowH;
+          sl.addText(e.label, {
+            x: vx, y: vy, w: vCellW, h: LBL, fontSize: 6, bold: true,
+            color: '000000', fontFace: 'Arial', valign: 'bottom', margin: 0, fit: 'shrink', wrap: false,
+          });
+          const cvs = await rasterizeWithBorder(await rasterizeVersion(e.v, f.cropW, f.cropH));
+          sl.addImage({ data: 'image/jpeg;base64,' + canvasToBase64(cvs), x: vx, y: vy + LBL, w: vCellW, h: vCellH });
+        }
+      }
+    }
 
-      for (let ci = 0; ci < chunks.length; ci++) {
-        const chunk = chunks[ci];
-        const isFirst = ci === 0;
-        const slide = newSlide();
+    /** Main image, plus text/NEEDS/NOTES when a text quadrant is given. */
+    async function drawMainBlock(sl: any, f: Frame, idx: number, mq: { x: number; y: number }, tq: { x: number; y: number } | null) {
+      sl.addText(f.label || `${idx + 1}`, {
+        x: mq.x, y: mq.y, w: mainW, h: LBL, fontSize: 7, bold: true,
+        color: '000000', fontFace: 'Arial', valign: 'bottom', margin: 0,
+      });
+      const cvs = await rasterizeWithBorder(await rasterizeMain(f));
+      sl.addImage({ data: 'image/jpeg;base64,' + canvasToBase64(cvs), x: mq.x, y: mq.y + LBL, w: mainW, h: mainH - LBL });
+      if (!tq) return;
+
+      let ty = tq.y;
+      if (includeText && f.textContent) {
+        const h = Math.min(0.6, mainH * 0.3);
+        sl.addText(f.textContent, {
+          x: tq.x, y: ty, w: mainW, h, fontSize: 8, color: '1E1E1E',
+          fontFace: 'Arial', valign: 'top', wrap: true, margin: 0, fit: 'shrink',
+        });
+        ty += h + 0.04;
+      }
+      if (includeNeeds) {
+        const [n1, n2] = needsColumns(f.id);
+        if (n1.length || n2.length) {
+          const cGap = 0.08;
+          const cW = (mainW - cGap) / 2;
+          const rowsN = Math.max(n1.length, n2.length);
+          const h = Math.min(mainH - (ty - tq.y), rowsN * 0.1 + 0.05);
+          [n1, n2].forEach((pairs, ci) => {
+            if (!pairs.length) return;
+            const runs: any[] = [];
+            for (const pr of pairs) {
+              runs.push({ text: `${pr.k} `, options: { bold: true, color: '141414' } });
+              runs.push({ text: pr.v, options: { color: '464646', breakLine: true } });
+            }
+            sl.addText(runs, {
+              x: tq.x + ci * (cW + cGap), y: ty, w: cW, h,
+              fontSize: 7, fontFace: 'Arial', valign: 'top', wrap: true, margin: 0, fit: 'shrink',
+            });
+          });
+          ty += h + 0.04;
+        }
+      }
+      if (includeNotes) {
+        const nc = noteContent(f.id);
+        if (nc.text) {
+          sl.addText(nc.text, {
+            x: tq.x, y: ty, w: mainW, h: Math.max(0.2, mainH - (ty - tq.y)),
+            fontSize: 7.5, color: '323232', fontFace: 'Arial', valign: 'top', wrap: true, margin: 0, fit: 'shrink',
+          });
+        }
+      }
+    }
+
+    /** The frame's table, when tables are switched on. */
+    function tableFor(f: Frame): TableData | null {
+      if (!includeTables) return null;
+      const td = noteContent(f.id).table;
+      if (!td) return null;
+      const has =
+        (td.headers && td.headers.some((h) => h && h.trim())) ||
+        (td.rows && td.rows.some((r) => r.some((c) => c && c.trim())));
+      return has ? td : null;
+    }
+
+    function addTableAt(sl: any, o: { x: number; y: number }, td: TableData, w: number) {
+      const hasH = !!(td.headers && td.headers.length);
+      const rows: any[] = [];
+      if (hasH) {
+        rows.push(td.headers.map((h) => ({
+          text: h || '', options: { bold: true, fontSize: 6, color: 'EBEBEB', fill: { color: '4E4E4E' } },
+        })));
+      }
+      for (const r of td.rows || []) {
+        rows.push(r.map((c, ci) => ({
+          text: c || '',
+          options: ci === 0
+            ? { fontSize: 6, color: 'EBEBEB', fill: { color: '4E4E4E' } }
+            : { fontSize: 6, color: '000000' },
+        })));
+      }
+      if (!rows.length) return 0;
+      const cols = td.headers ? td.headers.length : 3;
+      sl.addTable(rows, {
+        x: o.x, y: o.y, w,
+        border: { type: 'solid', color: '000000', pt: 0.5 },
+        colW: Array(cols).fill(w / cols),
+        fontFace: 'Arial', fontSize: 6, color: '000000', autoPage: false,
+      });
+      return rows.length;
+    }
+
+    /** True when the frame needs the bottom half to itself. */
+    function needsBottom(f: Frame, rowCount: number): boolean {
+      if (rowCount > ROWS_PER_QUAD) return true;
+      if (tableFor(f)) return true;
+      if (includeText && f.textContent) return true;
+      if (includeNeeds) {
+        const [n1, n2] = needsColumns(f.id);
+        if (n1.length || n2.length) return true;
+      }
+      if (includeNotes && noteContent(f.id).text) return true;
+      return false;
+    }
+
+    let i = 0;
+    while (i < visibleFrames.length) {
+      const f = visibleFrames[i];
+      const rows = toRows(f, i);
+      const table = tableFor(f);
+      const nf = visibleFrames[i + 1];
+      const nRows = nf ? toRows(nf, i + 1) : [];
+      const pairable = !needsBottom(f, rows.length) && nf && !needsBottom(nf, nRows.length);
+
+      let slide = newSlide();
+      addSlideHeader(slide);
+
+      if (pairable) {
+        await drawMainBlock(slide, f, i, quadTL, null);
+        await drawQuad(slide, quadTR, rows.slice(0, ROWS_PER_QUAD), f);
+        await drawMainBlock(slide, nf!, i + 1, quadBL, null);
+        await drawQuad(slide, quadBR, nRows.slice(0, ROWS_PER_QUAD), nf!);
+        i += 2;
+        continue;
+      }
+
+      await drawMainBlock(slide, f, i, quadTL, quadBL);
+
+      let cursor = 0;
+      let quadIdx = 0;
+      if (table) {
+        // Start level with the main IMAGE, not its label — the main frame draws
+        // at quad.y + LBL, so the table must too or it sits a label higher.
+        const nRowsDrawn = addTableAt(slide, { x: quadTR.x, y: quadTR.y + LBL }, table, vCellW * 2 + vGapX);
+        // Measure the table against the quadrant height rather than guessing a
+        // row count. At 6pt a row is ~0.18in and a quadrant ~3in, so a short
+        // table takes only TR and the versions still get BR.
+        const TBL_ROW_IN = 0.18;
+        const quadH = ROWS_PER_QUAD * vRowH;
+        quadIdx = Math.min(2, Math.max(1, Math.ceil((nRowsDrawn * TBL_ROW_IN) / quadH)));
+      }
+      for (const q of [quadTR, quadBR].slice(quadIdx)) {
+        const slice = rows.slice(cursor, cursor + ROWS_PER_QUAD);
+        if (!slice.length) break;
+        await drawQuad(slide, q, slice, f);
+        cursor += ROWS_PER_QUAD;
+      }
+
+      while (cursor < rows.length) {
+        slide = newSlide();
         addSlideHeader(slide);
-
-        // Main frame only on the first slide for this frame
-        if (isFirst) {
-          slide.addText(label, { x: mainX, y: mainY - 0.22, w: mainW, h: 0.2, fontSize: 8, bold: true, color: '000000', fontFace: 'Arial', valign: 'bottom', margin: 0 });
-          slide.addImage({ data: mainB64, x: mainX, y: mainY, w: mainW, h: mainH });
-          let belowY = mainY + mainH + 0.1;
-          if (includeText && f.textContent) {
-            slide.addText(f.textContent, { x: mainX, y: belowY, w: mainW, h: 1.2, fontSize: 7, color: '333333', fontFace: 'Arial', valign: 'top', wrap: true, margin: 0 });
-            belowY += 1.2;
-          }
-          if (includeNeeds) {
-            const nl = needsLines(f.id);
-            if (nl.length) {
-              slide.addText(nl.join('\n'), { x: mainX, y: belowY, w: mainW, h: 0.9, fontSize: 6.5, color: '555555', fontFace: 'Arial', valign: 'top', wrap: true, margin: 0 });
-              belowY += 0.9;
-            }
-          }
-          if (includeNotes) {
-            const nc = noteContent(f.id);
-            if (nc.table) {
-              const td = nc.table;
-              const hasHeaders = td.headers && td.headers.some((h) => h && h.trim());
-              const dataRows = td.rows || [];
-              if (hasHeaders || dataRows.length > 0) {
-                const tblRows: any[] = [];
-                if (hasHeaders) tblRows.push(td.headers.map((h) => ({ text: h || '', options: { bold: true, fontSize: 6, color: 'EBEBEB', fill: { color: '4E4E4E' } } })));
-                for (const row of dataRows) tblRows.push(row.map((c, ci) => ({ text: c || '', options: ci === 0 ? { fontSize: 6, color: 'EBEBEB', fill: { color: '4E4E4E' } } : { fontSize: 6, color: '000000' } })));
-                if (tblRows.length > 0) {
-                  slide.addTable(tblRows, { x: mainX, y: belowY, w: mainW, border: { type: 'solid', color: '000000', pt: 0.5 }, colW: Array(td.headers.length).fill(mainW / td.headers.length), fontFace: 'Arial', fontSize: 6, color: '000000', autoPage: false });
-                }
-              }
-            } else if (nc.text) {
-              slide.addText(nc.text, { x: mainX, y: belowY, w: mainW, h: 0.9, fontSize: 7, color: '333333', fontFace: 'Arial', valign: 'top', wrap: true, margin: 0 });
-            }
-          }
-        }
-
-        // Versions — each strip starts on a new row
-        let vRow = 0;
-        for (const sg of chunk) {
-          for (let vi = 0; vi < sg.vers.length; vi++) {
-            const vc = vi % vCols;
-            const row = vRow + Math.floor(vi / 2);
-            const vx = gridX + vc * (vCellW + vGap);
-            const vy = mainY + row * vRowH;
-            const entry = sg.vers[vi];
-            const vCanvas = await rasterizeWithBorder(await rasterizeVersion(entry.v, f.cropW, f.cropH), 2);
-            slide.addText(entry.fullLabel, { x: vx, y: vy - 0.18, w: vCellW, h: 0.16, fontSize: 6, bold: true, color: '000000', fontFace: 'Arial', valign: 'bottom', margin: 0 });
-            slide.addImage({ data: 'image/jpeg;base64,' + canvasToBase64(vCanvas), x: vx, y: vy, w: vCellW, h: vCellH });
-          }
-          vRow += Math.ceil(sg.vers.length / 2);
+        for (const q of [quadTL, quadTR, quadBL, quadBR]) {
+          const slice = rows.slice(cursor, cursor + ROWS_PER_QUAD);
+          if (!slice.length) break;
+          await drawQuad(slide, q, slice, f);
+          cursor += ROWS_PER_QUAD;
         }
       }
+      i++;
     }
   }
 
   const now = new Date();
-  const fname = `${fileBase.replace(/[^\w\-]+/g, '_')}_${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const fname = `${safeName(fileBase)}_${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   const blob = (await pptx.write({ outputType: 'blob' })) as Blob;
   offerSave(blob, fname + '.pptx');
   showToast('Presentation ready');
@@ -2278,6 +2461,7 @@ export function openImageExportModal(): void {
     return;
   }
   document.getElementById('imageExportModal')!.classList.remove('hidden');
+  lockPageScroll();
   const nameInput = document.getElementById('imageExportProjectName') as HTMLInputElement;
   if (!nameInput.value) nameInput.value = getCurrentProject().name || s.lastPdfName || 'Storyboard';
   buildGroupPicker('imageGroupPicker', 'imageGroup');
@@ -2296,14 +2480,15 @@ export async function runImageExport(): Promise<void> {
   fhTrack('export_images');
   const s = state();
   const nameInput = document.getElementById('imageExportProjectName') as HTMLInputElement;
-  const baseName = ((nameInput?.value || s.lastPdfName || 'PROJECT_NAME')).replace(/[^\w\-]+/g, '_');
+  const baseName = safeName(nameInput?.value || s.lastPdfName || 'PROJECT_NAME');
   const groupName = getExportGroupName('imageGroup');
-  const projectName = groupName ? `${baseName}_${groupName.replace(/[^\w\-]+/g, '_')}` : baseName;
+  const projectName = groupName ? `${baseName}_${safeName(groupName)}` : baseName;
   const zip = new JSZip();
   const imgIncludeHiddenMain = (document.getElementById('imageIncludeHiddenMain') as HTMLInputElement)?.checked ?? false;
   let exportFrames = getExportFrames('imageGroup');
   if (!imgIncludeHiddenMain && !isGroupSelected('imageGroup')) exportFrames = exportFrames.filter((f: Frame) => !f.hidden);
   document.getElementById('imageExportModal')?.classList.add('hidden');
+  unlockPageScroll();
   showToast('Generating images…');
 
   const imageScope = (document.querySelector('input[name="imageVersionScope"]:checked') as HTMLInputElement)?.value || 'starred';
@@ -2314,8 +2499,8 @@ export async function runImageExport(): Promise<void> {
 
   for (let i = 0; i < exportFrames.length; i++) {
     const f = exportFrames[i];
-    const label = (f.label || `${i + 1}`).replace(/[^\w\-]+/g, '_');
-    const prefix = `${projectName}_${label}`;
+    const label = safeName(f.label || `${i + 1}`);
+    const prefix = `${baseName}_${label}`;
     if (includeMain) {
       const mainCvs = withBakedBorder(await rasterizeMain(f));
       zip.file(`${prefix}.jpg`, await canvasToBlob(mainCvs), { binary: true });
@@ -2333,7 +2518,7 @@ export async function runImageExport(): Promise<void> {
         // 'all' includes everything (no filter)
         const vLabel = v.label || `${def.prefix}${vi + 1}`;
         const verCvs = withBakedBorder(await rasterizeVersion(v, f.cropW, f.cropH));
-        zip.file(`${prefix}_${sName}_${vLabel}.jpg`, await canvasToBlob(verCvs), { binary: true });
+        zip.file(`${prefix}~${safeName(sName)}_${safeName(vLabel)}.jpg`, await canvasToBlob(verCvs), { binary: true });
       }
     }
   }
@@ -2604,7 +2789,7 @@ async function runPortraitPdfExport(): Promise<void> {
   }
 
   const now = new Date();
-  const fname = `${projectName.replace(/[^\w\-]+/g, '_')}_${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}.pdf`;
+  const fname = `${safeName(projectName)}_${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}.pdf`;
   offerSave(pdf.output('blob') as Blob, fname);
   showToast('PDF ready');
 }
@@ -2754,7 +2939,7 @@ async function runPortraitPptxExport(): Promise<void> {
 
   const blob = await pptx.write({ outputType: 'blob' }) as Blob;
   const now = new Date();
-  const fname = `${projectName.replace(/[^\w\-]+/g, '_')}_${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}.pptx`;
+  const fname = `${safeName(projectName)}_${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}.pptx`;
   offerSave(blob, fname);
   showToast('Presentation ready');
 }
@@ -2783,9 +2968,9 @@ export function openPortraitImageExportModal(): void {
 export async function runPortraitImageExport(): Promise<void> {
   fhTrack('export_portrait_images');
   const s = state();
-  const baseName = ((document.getElementById('portraitImageExportName') as HTMLInputElement)?.value || 'Storyboard').replace(/[^\w\-]+/g, '_');
+  const baseName = safeName((document.getElementById('portraitImageExportName') as HTMLInputElement)?.value || 'Storyboard');
   const groupName = getExportGroupName('portraitImageGroup');
-  const projectName = groupName ? `${baseName}_${groupName.replace(/[^\w\-]+/g, '_')}` : baseName;
+  const projectName = groupName ? `${baseName}_${safeName(groupName)}` : baseName;
   let exportFrames = getExportFrames('portraitImageGroup');
   const pImgIncludeHiddenMain = (document.getElementById('portraitImageIncludeHiddenMain') as HTMLInputElement)?.checked ?? false;
   if (!pImgIncludeHiddenMain && !isGroupSelected('portraitImageGroup')) exportFrames = exportFrames.filter((f: Frame) => !f.hidden);
@@ -2801,8 +2986,8 @@ export async function runPortraitImageExport(): Promise<void> {
   const zip = new JSZip();
   for (let i = 0; i < exportFrames.length; i++) {
     const f = exportFrames[i];
-    const label = (f.label || `${i + 1}`).replace(/[^\w\-]+/g, '_');
-    const prefix = `${projectName}_${label}`;
+    const label = safeName(f.label || `${i + 1}`);
+    const prefix = `${baseName}_${label}`;
     if (includeMain) {
       const mainCvs = withBakedBorder(await rasterizeMain(f));
       zip.file(`${prefix}.jpg`, await canvasToBlob(mainCvs), { binary: true });
@@ -2820,7 +3005,7 @@ export async function runPortraitImageExport(): Promise<void> {
         // 'all' includes everything (no filter)
         const vLabel = v.label || `${def.prefix}${vi + 1}`;
         const verCvs = withBakedBorder(await rasterizeVersion(v, f.cropW, f.cropH));
-        zip.file(`${prefix}_${sName}_${vLabel}.jpg`, await canvasToBlob(verCvs), { binary: true });
+        zip.file(`${prefix}~${safeName(sName)}_${safeName(vLabel)}.jpg`, await canvasToBlob(verCvs), { binary: true });
       }
     }
   }

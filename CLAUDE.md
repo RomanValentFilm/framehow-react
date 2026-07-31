@@ -38,7 +38,7 @@ cd ~/Desktop/Framehow\ Files/framehow-react && git add -A && git commit -m "v4.6
 ### Version numbering
 - `APP_VERSION` constant in `src/store/state.ts` — displayed in toolbar next to logo
 - Format: `v4.6.0XX` where XX increments with each deploy
-- Current: `v4.9.040`
+- Current: `v4.9.041`
 - Production: `v4.9.001`
 
 ### Clean rebuild (if changes don't appear)
@@ -166,6 +166,16 @@ Changes:
 
 Changes:
 - `src/lib/accountFlow.ts` — Added fullscreen overlay ("Couldn't load all content — check your connection") with Retry/Dismiss buttons when R2 image fetches fail; overlay shows after progress bar hides (no overlap); Retry triggers fresh pull; Dismiss lets user browse but _pullIncomplete stays true (no push/save of half-loaded state).
+
+### v4.9.040 — 2026-07-31 (dev — deployed)
+**Full Overview rebuilt as quadrants; NOTES + TABLES no longer mutually exclusive**
+
+Changes:
+- `src/lib/exports.ts` — Full Overview is now four quadrants owned by one frame: TL main, BL description + NEEDS (2 cols) + note, TR 2x2 versions or the table, BR versions continuing from TR. Overflow goes to continuation pages where the main frame isn't repeated, so all four quadrants hold versions. Versions pack 2 per row and each strip starts a fresh row. Two simple frames share a page when neither needs the bottom half. Geometry solves so the row spans the full content width — the earlier "zoomed out" look came from shrinking version cells, which shrank the whole row. `vRowH` now includes LABEL_H (labels sit above tiles, so row 2's label was drawn over row 1) and cell height was resized to match, keeping a quadrant exactly one main-height tall.
+- `src/lib/exports.ts` — **`noteContent()` no longer gates on `fn.mode`.** A frame stores BOTH `noteText` and `tableData`; `mode` only picks what the app displays. Gating on it meant ticking Include NOTES *and* Include TABLES still only ever produced one. Now returns both and the toggles decide. Separate `Include TABLES` toggle added (was sharing the NOTES switch).
+- `src/lib/exports.ts` — tables draw every column and row including blank ones (empty-row filtering made headers/first rows vanish); header row + first column `#4E4E4E` with light text, matching `.notes-table`. NEEDS line step 3.9→2.15mm; NOTES/caption steps restored after a blanket replace wrongly tightened them too.
+- `src/lib/exports.ts` — version picker buttons renamed (Current view only / All versions), Deselect all removed.
+- `src/styles/globals.css` — checkbox rows tightened, section headers get room above, version picker 240→340px with permanently visible scrollbar.
 
 ### v4.9.039 — 2026-07-29 (dev — deployed)
 **Double Strip: NEEDS/NOTES/TABLE as strips, Tagged pairing mode**
