@@ -2,6 +2,7 @@
 // `renderVersionFrame`, `buildMainFrame`, `buildVersionFrame`, `renderAll`.
 
 import { state, useStore, bumpRenderTick, isTouch } from '../store/state';
+import { applyFittingChrome } from './fitting';
 import type { StripType } from '../store/state';
 import {
   drawToolbarHTML,
@@ -29,8 +30,7 @@ import {
   stripScrollId,
   stripDefaultLabel,
   getFrameStripLabel,
-  setFrameStripLabel,
-} from './helpers';
+  setFrameStripLabel, canvasHintFor, talentHintHTML } from './helpers';
 import { restoreCanvas, restoreMainCanvas, setupDrawing, setupMainDrawing } from './drawing';
 import { addCrossSwipe, addNavArrows, scheduleSyncHeights } from './view';
 import { showLabelEdit, showVerLabelEdit } from './modals';
@@ -102,6 +102,7 @@ export function renderAll(): void {
   const s = state();
   // Toggle portrait-mode class on body for CSS sizing
   document.body.classList.toggle('portrait-mode', !!s.portraitMode);
+  applyFittingChrome();
   // Toggle view-grid3x2 on body so phone CSS can hide detail bar in 3×2
   document.body.classList.toggle('view-grid3x2', s.currentViewMode === 'grid3x2');
   // Sync column layout classes with current state
@@ -326,7 +327,7 @@ export function renderMainFrame(div: HTMLElement, fid: number): void {
     const cVerHidden = ver && ver.hidden;
     div.innerHTML = `
       <div class="frame-num ver-frame-num">${
-        f.label ? `<span class="frame-label-tag">${_phonePortraitProject() ? '' : f.label + '&thinsp;'}${getFrameStripLabel(f, ccStrip)}</span>` : '<span></span>'
+        f.label ? `<span class="frame-label-tag">${(_phonePortraitProject() || state().projectType === 'fitting') ? '' : f.label + '&thinsp;'}${getFrameStripLabel(f, ccStrip)}</span>` : '<span></span>'
       }<div class="version-tabs${
         s.reorderFid === fid ? ' locked-dim' : s.verReorderFid === fid && s.verReorderStrip === ccStrip ? ' locked' : ''
       }">${tabsHTML}</div>${
@@ -338,7 +339,7 @@ export function renderMainFrame(div: HTMLElement, fid: number): void {
         }" style="aspect-ratio:${f.cropW || 16}/${f.cropH || 9};${cCanvasBorder}"><canvas id="${cid}" width="${
         f.cropW || 960
       }" height="${f.cropH || 540}"${cVerHidden ? ' style="pointer-events:none;"' : ''}></canvas>${
-          !cVerHidden && ver.type === 'empty' ? '<div class="canvas-hint"><span>choose an action below</span></div>' : ''
+          !cVerHidden && ver.type === 'empty' ? `<div class="canvas-hint"><span>${canvasHintFor(ccStrip)}</span></div>` : ''
         }${!cVerHidden ? starHTML(fid, ai, ccStrip) : ''}${!cVerHidden ? stripTagHTML(fid, ai, ccStrip) : ''}</div></div>
       </div>
       ${!cVerHidden && s.drawActive[fid] === ccStrip ? `<div class="color-row">${colorDots}</div>` : ''}
@@ -520,7 +521,7 @@ export function renderMainFrame(div: HTMLElement, fid: number): void {
       (f.drawMode || !f.src)
         ? `<canvas id="${mcid}" width="${f.cropW || 960}" height="${f.cropH || 540}"></canvas>`
         : `<img src="${f.src}" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;">`
-    }${setupTagHTML(fid)}</div>`;
+    }${talentHintHTML(f)}${setupTagHTML(fid)}</div>`;
   }
   const btnLabel2 =
     viewMode2 === 'text'
@@ -810,7 +811,7 @@ export function renderVersionFrame(div: HTMLElement, fid: number, strip: StripTy
     : '';
   div.innerHTML = `
     <div class="frame-num ver-frame-num">${
-      f && f.label ? `<span class="frame-label-tag ver-label-combo" data-editverlabel="${fid}">${_phonePortraitProject() ? '' : f.label + '&thinsp;'}${getFrameStripLabel(f, strip)}</span>` : '<span></span>'
+      f && f.label ? `<span class="frame-label-tag ver-label-combo" data-editverlabel="${fid}">${(_phonePortraitProject() || state().projectType === 'fitting') ? '' : f.label + '&thinsp;'}${getFrameStripLabel(f, strip)}</span>` : '<span></span>'
     }<div class="version-tabs${
     s.reorderFid === fid ? ' locked-dim' : s.verReorderFid === fid && s.verReorderStrip === strip ? ' locked' : ''
   }">${tabsHTML}</div>${
@@ -822,7 +823,7 @@ export function renderVersionFrame(div: HTMLElement, fid: number, strip: StripTy
       }" data-fid="${fid}" style="aspect-ratio:${f?.cropW || 16}/${f?.cropH || 9};${canvasBorder}"><canvas id="${cid}" width="${
     f?.cropW || 960
   }" height="${f?.cropH || 540}"${_verHidden ? ' style="pointer-events:none;"' : ''}></canvas>${
-      !_verHidden && ver && ver.type === 'empty' && (getStripCrossCompare(fid, strip) ?? -1) < 0 ? '<div class="canvas-hint"><span>choose an action below</span></div>' : ''
+      !_verHidden && ver && ver.type === 'empty' && (getStripCrossCompare(fid, strip) ?? -1) < 0 ? `<div class="canvas-hint"><span>${canvasHintFor(strip)}</span></div>` : ''
     }${!_verHidden ? starHTML(fid, ai, strip) : ''}${!_verHidden ? stripTagHTML(fid, ai, strip) : ''}</div></div>
       ${
         !_verHidden && s.drawActive[fid] === strip

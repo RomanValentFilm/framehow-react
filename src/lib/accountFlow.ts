@@ -995,6 +995,7 @@ async function startNewProject(): Promise<void> {
   }
   if (state().sortEditingId) closeSortMode();
   resetStoryboardState();
+  resetProjectSyncGuards();
   useStore.setState({ portraitMode: false, projectType: 'landscape' });
   clearCurrentProject();
   clearPushedFingerprints();
@@ -1139,7 +1140,7 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   const currentImageCount = countCurrentImages();
   if (currentImageCount === 0 && _lastKnownImageCount > 0) {
     console.warn(`[sync] Aborted: state has 0 images but last known count was ${_lastKnownImageCount} — refusing to overwrite server data`);
-    return;
+    throw new Error('Save cancelled: the project looks empty. Nothing was uploaded, your work is safe.');
   }
   // Safety net: frame count should never decrease unless tombstones account for it.
   // Catches corrupt state, partial data, or races that would wipe frames on the server.
@@ -1147,7 +1148,7 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   const tombstonedFrameCount = _pendingTombstones.filter((t) => t.entity_type === 'frame').length;
   if (_lastKnownFrameCount > 0 && currentFrameCount < _lastKnownFrameCount - tombstonedFrameCount) {
     console.warn(`[sync] Aborted: ${currentFrameCount} frames locally but expected at least ${_lastKnownFrameCount - tombstonedFrameCount} (last known: ${_lastKnownFrameCount}, tombstones: ${tombstonedFrameCount})`);
-    return;
+    throw new Error('Save cancelled: fewer frames than expected. Nothing was uploaded, your work is safe.');
   }
   // Flush in-progress text/table edits from DOM to frame objects before snapshotting
   saveOpenTextEdits();
@@ -2652,6 +2653,21 @@ const _lastPushedFingerprints = new Map<string, string>();
 
 /** Clear fingerprints (on project switch, new pull, etc.). Next push sends all. */
 export function clearPushedFingerprints(): void {
+  _lastPushedFingerprints.clear();
+}
+
+/**
+ * Forget everything we remember about the PREVIOUS project.
+ *
+ * The frame/image guards below refuse to push when the current project looks
+ * emptier than the last one. Those counters used to survive a project switch,
+ * so creating a fresh project (1 frame, no images) right after working on a
+ * full one made the guard cancel the very first upload — silently, while the
+ * app still reported a successful save. Every switch must reset them.
+ */
+export function resetProjectSyncGuards(): void {
+  _lastKnownImageCount = 0;
+  _lastKnownFrameCount = 0;
   _lastPushedFingerprints.clear();
 }
 

@@ -1,11 +1,12 @@
 // Folder-image loader and "start from scratch" — port of original handlers.
 
 import { COLORS, state, useStore, resetStoryboardState } from '../store/state';
+import { resetProjectSyncGuards } from './accountFlow';
 import { setProgress, showToast } from './modals';
 import { fhTrack } from './tracking';
 import { renderAll } from './render';
 import { autoPhoneMainView } from './view';
-import { updateFrameBadge } from './helpers';
+import { updateFrameBadge, firstVerLabel } from './helpers';
 import { flushSyncNow } from './currentProject';
 
 export function handleFolderImages(e: Event): void {
@@ -112,6 +113,7 @@ export function handleFolderImages(e: Event): void {
 }
 
 export function startFromScratch(): void {
+  resetProjectSyncGuards();
   fhTrack('start_scratch');
   resetStoryboardState();
   useStore.setState({ portraitMode: false, projectType: 'landscape' });
@@ -138,6 +140,7 @@ export function startFromScratch(): void {
 }
 
 export function startPortrait(): void {
+  resetProjectSyncGuards();
   fhTrack('start_portrait');
   resetStoryboardState();
   useStore.setState({ portraitMode: true, projectType: 'portrait' });
@@ -171,23 +174,25 @@ export function startPortrait(): void {
 }
 
 export function startFitting(): void {
+  resetProjectSyncGuards();
   fhTrack('start_fitting');
   resetStoryboardState();
   useStore.setState({ portraitMode: true, projectType: 'fitting' });
-  // FITTING projects share 9:16 geometry and costume-fitting strip labels
+  // FITTING strips: LOOKS (looks photographed at the fitting) and REFS
+  // (references loaded in). The middle strip is unused and stays hidden.
   const s = state();
-  s.stripDefs = s.stripDefs.map((def, i) => ({
-    ...def,
-    buttonLabel: `LOOK${i + 1}`,
-    defaultFrameLabel: `fit ${String.fromCharCode(65 + i)}`,
-    prefix: 'f',
-  }));
+  const FITTING_STRIPS: Record<string, { buttonLabel: string; defaultFrameLabel: string; prefix: string }> = {
+    ver:   { buttonLabel: 'LOOKS', defaultFrameLabel: 'look',  prefix: 'L' },
+    floor: { buttonLabel: 'LOOK2', defaultFrameLabel: 'fit B', prefix: 'f' },
+    refs:  { buttonLabel: 'REFS',  defaultFrameLabel: 'ref',   prefix: 'r' },
+  };
+  s.stripDefs = s.stripDefs.map((def) => ({ ...def, ...(FITTING_STRIPS[def.id] || {}) }));
   const id = s.nextId;
   useStore.setState({ nextId: id + 1 });
   s.frames.push({
     id,
     src: '',
-    label: 'name',
+    label: 'Name',
     cropW: 540,
     cropH: 960,
     strokes: [],
@@ -195,7 +200,7 @@ export function startFitting(): void {
     textContent: '',
     tableData: null,
   });
-  s.versions[id] = [{ id: 1, label: 'v1', type: 'empty', strokes: [], bgImage: null }];
+  s.versions[id] = [{ id: 1, label: firstVerLabel(), type: 'empty', strokes: [], bgImage: null }];
   s.activeTab[id] = 0;
   s.drawColor[id] = COLORS[0];
   s.drawWidth[id] = 6;

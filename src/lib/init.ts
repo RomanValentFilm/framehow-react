@@ -46,8 +46,7 @@ import {
   flowRestoreProject,
   flowSaveProject,
   isToasterShowing,
-  showSaveToaster,
-} from './accountFlow';
+  showSaveToaster, resetProjectSyncGuards } from './accountFlow';
 import { getActiveMs, onActivityTick, startActivityTracking } from './activity';
 import { startAutosave, getCurrentProject, clearCurrentProject, flushSyncNow, subscribe as subscribeProject } from './currentProject';
 import { subscribe as subscribeSession, isLoggedIn } from './session';
@@ -370,6 +369,7 @@ export function initFramehow(): void {
       if (!hadFrames) return;
       if (cp.projectId) void flushSyncNow();
       resetStoryboardState();
+      resetProjectSyncGuards();
       clearCurrentProject();
       renderAll();
       updateFrameBadge();
@@ -1068,7 +1068,7 @@ export function initFramehow(): void {
     const file = (e.target as HTMLInputElement).files?.[0];
     const s = state();
     if (!file || !s.mainImgTarget) return;
-    const { fid, div, toVersion, fromOverview } = s.mainImgTarget;
+    const { fid, div, toVersion } = s.mainImgTarget;
     const f = s.frames.find((fr) => fr.id === fid);
     if (!f) return;
     const reader = new FileReader();
@@ -1088,13 +1088,21 @@ export function initFramehow(): void {
         f.src = (ev.target as FileReader).result as string;
         f.r2Key = undefined; // Clear so sync uploads the new image
         f.drawMode = false;
-        renderMainFrame(div, fid);
-        const vd = document.querySelector(`#versionsScroll .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
-        if (vd) renderVersionFrame(vd, fid);
-      }
-      if (fromOverview) {
-        const ovRow = document.querySelector(`#overviewScroll .overview-row[data-ofid="${fid}"]`) as HTMLElement | null;
-        if (ovRow) renderOverviewRow(ovRow, fid);
+        // Redraw with the renderer that matches the CURRENT view. Using the
+        // strip-view renderer inside a gallery card produced the wrong markup,
+        // which made the card the wrong shape until the view was changed.
+        const vm = state().currentViewMode;
+        if (vm === 'grid3x2') {
+          const cw = document.querySelector(`#overviewScroll .grid3x2-card-wrap[data-g3fid="${fid}"]`) as HTMLElement | null;
+          if (cw) renderGrid3x2Card(cw, fid);
+        } else if (vm === 'grid4' || vm === 'overview') {
+          const ovRow = document.querySelector(`#overviewScroll .overview-row[data-ofid="${fid}"]`) as HTMLElement | null;
+          if (ovRow) (vm === 'grid4' ? renderGrid4Row : renderOverviewRow)(ovRow, fid);
+        } else {
+          renderMainFrame(div, fid);
+          const vd = document.querySelector(`#versionsScroll .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
+          if (vd) renderVersionFrame(vd, fid);
+        }
       }
       void flushSyncNow(); // FRM-7: upload image to main → file selected
     };

@@ -38,7 +38,7 @@ cd ~/Desktop/Framehow\ Files/framehow-react && git add -A && git commit -m "v4.6
 ### Version numbering
 - `APP_VERSION` constant in `src/store/state.ts` — displayed in toolbar next to logo
 - Format: `v4.6.0XX` where XX increments with each deploy
-- Current: `v4.9.042`
+- Current: `v4.9.043`
 - Production: `v4.9.001`
 
 ### Clean rebuild (if changes don't appear)

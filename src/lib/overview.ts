@@ -20,8 +20,7 @@ import {
   getFrameStripLabel,
   setFrameStripLabel,
   ensureStripVersions,
-  clearReorder,
-} from './helpers';
+  clearReorder, canvasHintFor, talentHintHTML } from './helpers';
 import { restoreCanvas, restoreMainCanvas, setupMainDrawing } from './drawing';
 import { renderVersionFrame } from './render';
 import { showLabelEdit, showVerLabelEdit, showDeleteChoice, showConfirm } from './modals';
@@ -99,7 +98,7 @@ export function renderOverviewRow(row: HTMLElement, fid: number): void {
       (f.drawMode || !f.src)
         ? `<canvas id="${mcid}" width="${f.cropW || 960}" height="${f.cropH || 540}"></canvas>`
         : `<img src="${f.src}" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;">`
-    }${setupTagHTML(fid)}</div>`;
+    }${talentHintHTML(f)}${setupTagHTML(fid)}</div>`;
   }
   const btnLabel =
     viewMode === 'text'
@@ -223,11 +222,11 @@ export function renderOverviewRow(row: HTMLElement, fid: number): void {
     }
     vcard.style.opacity = '';
     vcard.innerHTML = `<div class="frame-card${cardClass ? ' ' + cardClass : ''}" data-ovfid="${fid}" data-ovi="${vi}">
-      <div class="ov-ver-label"><span class="frame-label-tag ver-label-combo" data-oveditver="${fid}">${f.label} ${getFrameStripLabel(f, companionStrip)}</span><span class="g4-ver-tab">${ver.label || tabPrefix + (vi + 1)}</span>${reorderHTML}</div>
+      <div class="ov-ver-label"><span class="frame-label-tag ver-label-combo" data-oveditver="${fid}">${state().projectType === 'fitting' ? '' : (f.label || '#') + ' '}${getFrameStripLabel(f, companionStrip)}</span><span class="g4-ver-tab">${ver.label || tabPrefix + (vi + 1)}</span>${reorderHTML}</div>
       <div class="ver-canvas-area"><div class="canvas-wrap${
         s.drawActive[fid] === companionStrip && isActive ? ' draw-active' : ''
       }" style="aspect-ratio:${f.cropW || 16}/${f.cropH || 9}"><canvas id="${vcid}" width="${f.cropW || 960}" height="${f.cropH || 540}"></canvas>${
-      ver.type === 'empty' ? '<div class="canvas-hint"><span>click to choose action</span></div>' : ''
+      ver.type === 'empty' ? `<div class="canvas-hint"><span>${canvasHintFor(companionStrip, 'click to choose action')}</span></div>` : ''
     }${starHTML(fid, vi, companionStrip)}${stripTagHTML(fid, vi, companionStrip)}</div></div>
       ${s.drawActive[fid] === companionStrip && isActive ? `<div class="color-row">${colorDotsVer}</div>` : ''}
       <div class="version-actions">
@@ -384,7 +383,7 @@ export function renderOverviewRow(row: HTMLElement, fid: number): void {
 
   const addCard = document.createElement('div');
   addCard.className = 'ov-add-card';
-  addCard.innerHTML = '<span class="ov-add-label">+ New Version</span>';
+  addCard.innerHTML = `<span class="ov-add-label">+ New ${state().projectType === 'fitting' ? 'Look' : 'Version'}</span>`;
   addCard.addEventListener('click', () => {
     const fn = (window as any).__fh_clearAllDrawActive;
     if (fn) fn();
@@ -475,7 +474,7 @@ export function renderGrid4Row(row: HTMLElement, fid: number): void {
       (f.drawMode || !f.src)
         ? `<canvas id="${mcid}" width="${f.cropW || 960}" height="${f.cropH || 540}"></canvas>`
         : `<img src="${f.src}" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;">`
-    }${setupTagHTML(fid)}</div>`;
+    }${talentHintHTML(f)}${setupTagHTML(fid)}</div>`;
   }
   const btnLabel =
     viewMode === 'text'
@@ -599,11 +598,11 @@ export function renderGrid4Row(row: HTMLElement, fid: number): void {
           }<button class="vtab-add" data-ovmove="right" data-fid="${fid}" title="Move right">▶</button></div>`
         : '';
     colWrap.innerHTML = `<div class="frame-card${cardClass ? ' ' + cardClass : ''}" data-ovfid="${fid}" data-ovi="${vi}">
-      <div class="frame-num ver-frame-num"><span class="frame-label-tag ver-label-combo" data-g4verlabel="${fid}">${f.label} ${getFrameStripLabel(f, companionStrip)}</span><span class="g4-ver-tab">${ver.label || tabPrefix + (vi + 1)}</span>${reorderHTML}</div>
+      <div class="frame-num ver-frame-num"><span class="frame-label-tag ver-label-combo" data-g4verlabel="${fid}">${state().projectType === 'fitting' ? '' : (f.label || '#') + ' '}${getFrameStripLabel(f, companionStrip)}</span><span class="g4-ver-tab">${ver.label || tabPrefix + (vi + 1)}</span>${reorderHTML}</div>
       <div class="ver-canvas-area"><div class="canvas-wrap${
         s.drawActive[fid] === companionStrip && isActive ? ' draw-active' : ''
       }" style="aspect-ratio:${ar}"><canvas id="${vcid}" width="${f.cropW || 960}" height="${f.cropH || 540}"></canvas>${
-      ver.type === 'empty' ? '<div class="canvas-hint"><span>click to choose action</span></div>' : ''
+      ver.type === 'empty' ? `<div class="canvas-hint"><span>${canvasHintFor(companionStrip, 'click to choose action')}</span></div>` : ''
     }${starHTML(fid, vi, companionStrip)}${stripTagHTML(fid, vi, companionStrip)}</div></div>
       ${s.drawActive[fid] === companionStrip && isActive ? `<div class="color-row">${colorDotsVer}</div>` : ''}
       <div class="version-actions">
@@ -724,7 +723,7 @@ export function renderGrid4Row(row: HTMLElement, fid: number): void {
   // ── "+ New Version" card ──
   const addCard = document.createElement('div');
   addCard.className = 'ov-add-card g4-add-card';
-  addCard.innerHTML = '<span class="ov-add-label">+ New Version</span>';
+  addCard.innerHTML = `<span class="ov-add-label">+ New ${state().projectType === 'fitting' ? 'Look' : 'Version'}</span>`;
   addCard.addEventListener('click', () => {
     const fn = (window as any).__fh_clearAllDrawActive;
     if (fn) fn();
@@ -851,16 +850,16 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
     const nHas = fn && (Object.values(fn.toggles).some(Boolean) || Object.values(fn.counters).some((c: number) => c > 0) || Object.values(fn.memos).some((m: string) => m.length > 0) || Object.values(fn.locationToggles).some(Boolean)) ? ' has-content' : '';
     const ntHas = frameHasNoteContent(fid) ? ' has-content' : '';
     const _ph = Math.min(window.innerWidth, window.innerHeight) <= 430;
-    const quickBtnsVer = `<div class="g3-quick-btns"><button class="g3-quick-btn${vHas}" data-g3versn="${fid}">HOW</button><button class="g3-quick-btn${sHas}" data-g3sketch="${fid}">${_ph ? 'SKTCH' : 'SKETCH'}</button><button class="g3-quick-btn${rHas}" data-g3refs="${fid}">REFS</button><button class="g3-quick-btn${nHas}" data-g3needs="${fid}">${_ph ? 'NEED' : 'NEEDS'}</button><button class="g3-quick-btn${ntHas}" data-g3notes="${fid}">${_ph ? 'NOTE' : 'NOTES'}</button></div>`;
+    const quickBtnsVer = quickBtnsFor(fid, { ver: vHas, floor: sHas, refs: rHas, needs: nHas, notes: ntHas }, _ph);
     wrap.innerHTML = `${quickBtnsVer}<div class="frame-card${mainReorder ? ' g3-reorder-active' : ''}" data-g3fid="${fid}">
       <div class="frame-num ver-frame-num">
-        <span class="frame-label-tag">${f.label || '#'} ${getFrameStripLabel(f, companionStrip)}</span>
+        <span class="frame-label-tag">${state().projectType === 'fitting' ? '' : (f.label || '#') + ' '}${getFrameStripLabel(f, companionStrip)}</span>
         <div class="version-tabs">${tabsHTML}</div>
       </div>
       <div class="ver-canvas-area"><div class="canvas-wrap${
         s.drawActive[fid] === companionStrip ? ' draw-active' : ''
       }" style="aspect-ratio:${ar}"><canvas id="${vcid}" width="${f.cropW || 960}" height="${f.cropH || 540}"></canvas>${
-        ver.type === 'empty' ? '<div class="canvas-hint"><span>choose an action below</span></div>' : ''
+        ver.type === 'empty' ? `<div class="canvas-hint"><span>${canvasHintFor(companionStrip)}</span></div>` : ''
       }${starHTML(fid, ai, companionStrip)}${stripTagHTML(fid, ai, companionStrip)}</div></div>
       ${s.drawActive[fid] === companionStrip ? `<div class="color-row">${colorDots}</div>` : ''}
       <div class="version-actions">
@@ -878,21 +877,21 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
       ensureStripVersions(fid, 'ver');
       const hasCon = stripHasContent(fid, 'ver');
       const startVi = hasCon ? getStripActiveTab(fid, 'ver') : 0;
-      openFullscreen(fid, startVi, 'ver', hasCon ? undefined : 'cam');
+      openFullscreen(fid, startVi, 'ver', hasCon ? undefined : 'cam', true);
     });
     const sketchBtnV = wrap.querySelector(`[data-g3sketch="${fid}"]`) as HTMLElement | null;
     if (sketchBtnV) sketchBtnV.addEventListener('click', () => {
       ensureStripVersions(fid, 'floor');
       const hasCon = stripHasContent(fid, 'floor');
       const startVi = hasCon ? getStripActiveTab(fid, 'floor') : 0;
-      openFullscreen(fid, startVi, 'floor');
+      openFullscreen(fid, startVi, 'floor', undefined, true);
     });
     const refsBtnV = wrap.querySelector(`[data-g3refs="${fid}"]`) as HTMLElement | null;
     if (refsBtnV) refsBtnV.addEventListener('click', () => {
       ensureStripVersions(fid, 'refs');
       const hasCon = stripHasContent(fid, 'refs');
       const startVi = hasCon ? getStripActiveTab(fid, 'refs') : 0;
-      openFullscreen(fid, startVi, 'refs');
+      openFullscreen(fid, startVi, 'refs', undefined, true);
     });
     const needsBtnV = wrap.querySelector(`[data-g3needs="${fid}"]`) as HTMLElement | null;
     if (needsBtnV) needsBtnV.addEventListener('click', () => {
@@ -985,7 +984,7 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
         (f.drawMode || !f.src)
           ? `<canvas id="${mcid}" width="${f.cropW || 960}" height="${f.cropH || 540}"></canvas>`
           : `<img src="${f.src}" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;">`
-      }${setupTagHTML(fid)}</div>`;
+      }${talentHintHTML(f)}${setupTagHTML(fid)}</div>`;
     }
     const btnLabel = viewMode === 'text'
       ? 'Pic/<span class="ptt-bold">Txt</span>'
@@ -1000,7 +999,7 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
     const nHas2 = fn2 && (Object.values(fn2.toggles).some(Boolean) || Object.values(fn2.counters).some((c: number) => c > 0) || Object.values(fn2.memos).some((m: string) => m.length > 0) || Object.values(fn2.locationToggles).some(Boolean)) ? ' has-content' : '';
     const ntHas2 = frameHasNoteContent(fid) ? ' has-content' : '';
     const _ph2 = Math.min(window.innerWidth, window.innerHeight) <= 430;
-    const quickBtnsHTML = `<div class="g3-quick-btns"><button class="g3-quick-btn${vHas2}" data-g3versn="${fid}">HOW</button><button class="g3-quick-btn${sHas2}" data-g3sketch="${fid}">${_ph2 ? 'SKTCH' : 'SKETCH'}</button><button class="g3-quick-btn${rHas2}" data-g3refs="${fid}">REFS</button><button class="g3-quick-btn${nHas2}" data-g3needs="${fid}">${_ph2 ? 'NEED' : 'NEEDS'}</button><button class="g3-quick-btn${ntHas2}" data-g3notes="${fid}">${_ph2 ? 'NOTE' : 'NOTES'}</button></div>`;
+    const quickBtnsHTML = quickBtnsFor(fid, { ver: vHas2, floor: sHas2, refs: rHas2, needs: nHas2, notes: ntHas2 }, _ph2);
     wrap.innerHTML = `${quickBtnsHTML}<div class="frame-card${g3Reorder ? ' g3-reorder-active' : ''}" data-g3fid="${fid}">
       <div class="frame-num"><span class="frame-label-tag" data-editlabel="${fid}">${f.label || '#'}</span><button class="vtab pictxt-btn${
       viewMode ? ' active' : ''
@@ -1048,7 +1047,7 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
       ensureStripVersions(fid, 'ver');
       const hasCon = stripHasContent(fid, 'ver');
       const startVi = hasCon ? getStripActiveTab(fid, 'ver') : 0;
-      openFullscreen(fid, startVi, 'ver', hasCon ? undefined : 'cam');
+      openFullscreen(fid, startVi, 'ver', hasCon ? undefined : 'cam', true);
     });
     // SKETCH button — open fullscreen draw on floor/sketch strip
     const sketchBtn = wrap.querySelector(`[data-g3sketch="${fid}"]`) as HTMLElement | null;
@@ -1056,7 +1055,7 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
       ensureStripVersions(fid, 'floor');
       const hasCon = stripHasContent(fid, 'floor');
       const startVi = hasCon ? getStripActiveTab(fid, 'floor') : 0;
-      openFullscreen(fid, startVi, 'floor');
+      openFullscreen(fid, startVi, 'floor', undefined, true);
     });
     // REFS button — open fullscreen on refs strip
     const refsBtn = wrap.querySelector(`[data-g3refs="${fid}"]`) as HTMLElement | null;
@@ -1064,7 +1063,7 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
       ensureStripVersions(fid, 'refs');
       const hasCon = stripHasContent(fid, 'refs');
       const startVi = hasCon ? getStripActiveTab(fid, 'refs') : 0;
-      openFullscreen(fid, startVi, 'refs');
+      openFullscreen(fid, startVi, 'refs', undefined, true);
     });
     // NEEDS button — open modal overlay with NEEDS card
     const needsBtn = wrap.querySelector(`[data-g3needs="${fid}"]`) as HTMLElement | null;
@@ -1207,6 +1206,28 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
  * story-flow logic: rearranges only the visible frames and leaves any
  * non-visible frames sitting in their original slots.
  */
+
+/**
+ * The quick buttons above each CAST BOARD / grid card.
+ * FITTING projects show only the strips they use, under fitting names.
+ */
+function quickBtnsFor(fid: number, has: Record<string, string>, short: boolean): string {
+  const b = (cls: string, attr: string, label: string) =>
+    `<button class="g3-quick-btn${cls}" ${attr}="${fid}">${label}</button>`;
+  if (state().projectType === 'fitting') {
+    return `<div class="g3-quick-btns">${
+      b(has.ver, 'data-g3versn', 'LOOKS')}${
+      b(has.refs, 'data-g3refs', 'REFS')}${
+      b(has.notes, 'data-g3notes', short ? 'NOTE' : 'NOTES')}</div>`;
+  }
+  return `<div class="g3-quick-btns">${
+    b(has.ver, 'data-g3versn', 'HOW')}${
+    b(has.floor, 'data-g3sketch', short ? 'SKTCH' : 'SKETCH')}${
+    b(has.refs, 'data-g3refs', 'REFS')}${
+    b(has.needs, 'data-g3needs', short ? 'NEED' : 'NEEDS')}${
+    b(has.notes, 'data-g3notes', short ? 'NOTE' : 'NOTES')}</div>`;
+}
+
 function _commitGrid3x2Order(newFids: number[]): void {
   const s = state();
   if (s.activeGroupId !== null) {
@@ -1839,18 +1860,7 @@ function _openNeedsModal(fid: number): void {
 
   const container = document.createElement('div');
   container.className = 'g3-needs-modal';
-  if (refFrameCard) {
-    const rc = refFrameCard.getBoundingClientRect();
-    if (rc.width > 0 && rc.height > 0) {
-      container.style.width = (rc.width * 2.2) + 'px';
-      container.style.height = (rc.height * 2.2) + 'px';
-    }
-  }
-  // Zoom the entire modal (text, buttons, everything) when view was zoomed
-  if (wasZoomed) {
-    const isPhone = Math.min(window.innerWidth, window.innerHeight) <= 430;
-    (container.style as any).zoom = isPhone ? '1.2' : '1.4';
-  }
+  _sizeGridModal(container, refFrameCard, wasZoomed);
 
   const needsCard = buildNeedsCard(fid);
   container.appendChild(needsCard);
@@ -1921,6 +1931,30 @@ function _openNeedsModal(fid: number): void {
   });
 }
 
+
+/**
+ * Size a grid modal at 2.2x its source card, but never past the screen.
+ * The zoom factor applied afterwards multiplies the visual size, so the
+ * limit has to be divided by it — otherwise the modal grows off-screen.
+ */
+function _sizeGridModal(container: HTMLElement, refFrameCard: HTMLElement | null, wasZoomed: boolean): void {
+  const isPhone = Math.min(window.innerWidth, window.innerHeight) <= 430;
+  const z = wasZoomed ? (isPhone ? 1.2 : 1.4) : 1;
+  const margin = 24;
+  const maxW = (window.innerWidth - margin * 2) / z;
+  const maxH = (window.innerHeight - margin * 2) / z;
+  if (refFrameCard) {
+    const rc = refFrameCard.getBoundingClientRect();
+    if (rc.width > 0 && rc.height > 0) {
+      container.style.width = Math.min(rc.width * 2.2, maxW) + 'px';
+      container.style.height = Math.min(rc.height * 2.2, maxH) + 'px';
+    }
+  }
+  container.style.maxWidth = maxW + 'px';
+  container.style.maxHeight = maxH + 'px';
+  if (wasZoomed) (container.style as any).zoom = String(z);
+}
+
 function _openNotesModal(fid: number): void {
   if (document.querySelector('.g3-notes-overlay')) return; // already open
 
@@ -1954,17 +1988,7 @@ function _openNotesModal(fid: number): void {
 
   const container = document.createElement('div');
   container.className = 'g3-notes-modal';
-  if (refFrameCard) {
-    const rc = refFrameCard.getBoundingClientRect();
-    if (rc.width > 0 && rc.height > 0) {
-      container.style.width = (rc.width * 2.2) + 'px';
-      container.style.height = (rc.height * 2.2) + 'px';
-    }
-  }
-  if (wasZoomed) {
-    const isPhone = Math.min(window.innerWidth, window.innerHeight) <= 430;
-    (container.style as any).zoom = isPhone ? '1.2' : '1.4';
-  }
+  _sizeGridModal(container, refFrameCard, wasZoomed);
 
   const notesCard = buildNotesCard(fid);
   container.appendChild(notesCard);

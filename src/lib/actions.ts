@@ -26,8 +26,7 @@ import {
   relabelStripVersions,
   addNewStripVersion,
   autoNewStripVersionIfNeeded,
-  stripScrollId,
-} from './helpers';
+  stripScrollId, firstVerLabel } from './helpers';
 import { snapshotFrame } from './drawing';
 import { renderAll, renderMainFrame, renderVersionFrame } from './render';
 import { renderOverviewRow, renderGrid4Row, renderGrid3x2Card } from './overview';
@@ -137,7 +136,7 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
       const newFrame: any = {
         id: nid,
         src: '',
-        label: 'name',
+        label: state().projectType === 'fitting' ? 'Name' : 'name',
         cropW: f2.cropW || 540,
         cropH: f2.cropH || 960,
         strokes: [],
@@ -147,7 +146,7 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
       };
       if (insideGroup) newFrame.hidden = true;
       s2.frames.splice(idx2 + 1, 0, newFrame);
-      s2.versions[nid] = [{ id: 1, label: 'v1', type: 'empty', strokes: [], bgImage: null }];
+      s2.versions[nid] = [{ id: 1, label: firstVerLabel(), type: 'empty', strokes: [], bgImage: null }];
       s2.activeTab[nid] = 0;
       s2.drawColor[nid] = COLORS[0];
       s2.drawWidth[nid] = 6;
@@ -198,7 +197,7 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
       // Frames created inside a group are auto-hidden in ALL view
       if (insideGroup) newFrame.hidden = true;
       s2.frames.splice(idx2 + 1, 0, newFrame);
-      s2.versions[nid] = [{ id: 1, label: 'v1', type: 'empty', strokes: [], bgImage: null }];
+      s2.versions[nid] = [{ id: 1, label: firstVerLabel(), type: 'empty', strokes: [], bgImage: null }];
       s2.activeTab[nid] = 0;
       s2.drawColor[nid] = COLORS[0];
       s2.drawWidth[nid] = 6;
@@ -225,7 +224,7 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
       tableData: f.tableData ? JSON.parse(JSON.stringify(f.tableData)) : null,
     };
     s.frames.splice(idx + 1, 0, newFrame);
-    s.versions[nid] = [{ id: 1, label: 'v1', type: 'empty', strokes: [], bgImage: null }];
+    s.versions[nid] = [{ id: 1, label: firstVerLabel(), type: 'empty', strokes: [], bgImage: null }];
     s.activeTab[nid] = 0;
     s.drawColor[nid] = COLORS[0];
     s.drawWidth[nid] = 6;

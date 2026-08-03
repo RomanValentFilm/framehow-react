@@ -63,7 +63,7 @@ export interface Setup {
 
 /** 12-colour palette for setups. */
 /** App version — bump before every deploy. */
-export const APP_VERSION = 'v4.9.042';
+export const APP_VERSION = 'v4.9.043';
 
 /** Free-text fields printed in the header of every exported page. */
 export interface ExportMeta {
@@ -78,7 +78,7 @@ export function createDefaultExportMeta(): ExportMeta {
 }
 
 /** Camera guide aspect-ratio presets. 'canvas' = use the frame's own canvas AR. */
-export type CamRatioKey = '2.39' | '2.0' | '1.85' | 'canvas' | '16:9' | '4:3' | '1:1';
+export type CamRatioKey = '2.39' | '2.0' | '1.85' | 'canvas' | '16:9' | '4:3' | '1:1' | '9:16';
 
 export const CAM_RATIOS: { key: CamRatioKey; label: string; value: number | null }[] = [
   { key: '2.39',   label: '2.39:1', value: 2.39 },
@@ -88,6 +88,7 @@ export const CAM_RATIOS: { key: CamRatioKey; label: string; value: number | null
   { key: '16:9',   label: '16:9',   value: 16 / 9 },
   { key: '4:3',    label: '4:3',    value: 4 / 3 },
   { key: '1:1',    label: '1:1',    value: 1 },
+  { key: '9:16',   label: '9:16',   value: 9 / 16 },
 ];
 
 export const SETUP_COLORS: { name: string; hex: string }[] = [

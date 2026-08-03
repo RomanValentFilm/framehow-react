@@ -544,6 +544,12 @@ export function autoPhoneMainView(): void {
       useStore.setState({ activeStrips: ['main'], currentViewMode: 'main' });
       setViewMode('main');
     }
+  } else if (s.projectType === 'fitting') {
+    // FITTING opens on the LOOKS strip alone
+    if (s.currentViewMode !== 'ver') {
+      useStore.setState({ activeStrips: ['ver'], currentViewMode: 'ver' });
+      setViewMode('ver');
+    }
   } else if (!s.portraitMode) {
     // Landscape project: default to 3x2 grid view
     if (s.currentViewMode !== 'grid3x2') setViewMode('grid3x2');
@@ -918,8 +924,10 @@ export function handleOrientationFlip(): void {
     useStore.setState({ scrollHideGuard: Date.now() + 2000 });
     // Scroll to top so bars stay visible naturally after guard expires
     window.scrollTo(0, 0);
-    // 5. Show rotate overlay on top — user taps to dismiss
-    const g3Msg = document.getElementById('g3RotateMsg');
+    // 5. Show rotate overlay on top — user taps to dismiss.
+    // FITTING projects hide the CAST BOARD button in portrait, so the message
+    // would be telling the user about a view they cannot reach from here.
+    const g3Msg = state().projectType === 'fitting' ? null : document.getElementById('g3RotateMsg');
     if (g3Msg) {
       g3Msg.classList.add('show');
       const dismiss = () => { g3Msg.classList.remove('show'); };

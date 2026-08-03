@@ -729,3 +729,33 @@ export function autoNewStripVersionIfNeeded(fid: number, strip: StripType): Vers
   }
   return ver;
 }
+
+/**
+ * Default text shown inside an empty picture box.
+ * FITTING projects word it per strip and set it over fixed lines, with the
+ * key word in capitals. Returns the caller's own wording for every other
+ * project type, so 9:16 and landscape are unchanged.
+ */
+export function canvasHintFor(strip: StripType, fallback = 'choose an action below'): string {
+  if (state().projectType !== 'fitting') return fallback;
+  if (strip === 'ver') return 'photograph different<br><b>LOOKS</b>';
+  if (strip === 'refs') return 'load your<br><b>REFERENCES</b>';
+  return fallback;
+}
+
+export function firstVerLabel(): string {
+  if (state().projectType !== 'fitting') return 'v1';
+  // Follow whatever prefix the LOOKS strip is configured with, so the first
+  // tab matches the ones the + button will create.
+  return `${stripTabPrefix('ver')}1`;
+}
+
+/**
+ * Prompt shown on an empty TALENTS (main frame) canvas in fitting projects.
+ * Returns '' for every other project type and for frames that have content.
+ */
+export function talentHintHTML(f: Frame): string {
+  if (state().projectType !== 'fitting') return '';
+  if (f.src || (f.strokes && f.strokes.length)) return '';
+  return '<div class="canvas-hint"><span>add a<br><b>TALENT PROFILE PICTURE</b><br>by choosing an action below</span></div>';
+}

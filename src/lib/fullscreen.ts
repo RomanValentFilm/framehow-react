@@ -48,7 +48,19 @@ export function stripHasContent(fid: number, strip: StripType): boolean {
   return vers.some(v => !v.hidden && (v.bgImage || (v.strokes && v.strokes.length > 0)));
 }
 
-export function openFullscreen(fid: number, startVi: number, origin: 'main' | 'ver' | 'floor' | 'refs', initialMode?: 'draw' | 'cam'): void {
+/** Extra breathing room under the button row when opened from a grid card. */
+const FS_GRID_BOTTOM_GAP = 24;
+
+export function openFullscreen(
+  fid: number,
+  startVi: number,
+  origin: 'main' | 'ver' | 'floor' | 'refs',
+  initialMode?: 'draw' | 'cam',
+  /** Opened from a CAST BOARD / 3x2 grid card rather than a strip column.
+   *  Those cards sit low on the page, so the picture is shrunk slightly to
+   *  keep the button row clear of the bottom edge. */
+  fromGrid = false,
+): void {
   if (document.querySelector('.fs-overlay')) return;
   useStore.setState({ fsOverlayActive: { fid, vi: startVi, origin } });
   const s = state();
@@ -74,6 +86,8 @@ export function openFullscreen(fid: number, startVi: number, origin: 'main' | 'v
   s.drawEraser[fid] = false;
 
   const overlay = document.createElement('div');
+  // FITTING and 9:16 projects only — landscape projects are untouched.
+  const gridGap = fromGrid && state().portraitMode;
   overlay.className = 'fs-overlay';
 
   const cw = (f && f.cropW) || 960,
@@ -84,7 +98,7 @@ export function openFullscreen(fid: number, startVi: number, origin: 'main' | 'v
 
   function calcSize() {
     const maxW = window.innerWidth - 40;
-    const maxH = window.innerHeight - 100;
+    const maxH = window.innerHeight - 100 - (gridGap ? FS_GRID_BOTTOM_GAP : 0);
     let dw = maxW,
       dh = maxW / aspect;
     if (dh > maxH) {
@@ -150,6 +164,12 @@ export function openFullscreen(fid: number, startVi: number, origin: 'main' | 'v
 
   function buildOverlay() {
     const { dw, dh } = calcSize();
+    // Only pay out the bottom gap if the picture actually gave up height for
+    // it; otherwise the block would just drift upwards for no reason.
+    if (gridGap && dh >= window.innerHeight - 100 - FS_GRID_BOTTOM_GAP - 1) {
+      overlay.classList.add('fs-from-grid');
+    }
+
     const cid = getCid();
     const isHidden = !isMain && ver && ver.hidden;
     const canvasStyle = `width:${dw}px;height:${dh}px;${isHidden ? 'opacity:0.3;pointer-events:none;' : fsReorder ? 'pointer-events:none;' : fsMode === 'draw' ? 'cursor:crosshair;' : 'pointer-events:none;cursor:default;'}`;

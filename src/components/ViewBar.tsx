@@ -44,7 +44,7 @@ export function ViewBar() {
           <button className="view-btn" id="notesStripBtn" data-view="notes" title="Notes">NOTES</button>
         </div>
         <div className="view-btns db-right">
-          <button className="view-btn vb-off-btn" id="vbOffBtn" data-view="off" title="Back to columns" style={{display:'none'}}>OFF<svg width="10" height="10" viewBox="0 0 10 10" style={{flexShrink:0}}><path d="M2 1l6 4-6 4z" fill="#fff"/></svg></button>
+          <button className="view-btn vb-off-btn" id="vbOffBtn" data-view="off" title="Back to columns" style={{display:'none'}}>CLOSE<svg width="10" height="10" viewBox="0 0 10 10" style={{flexShrink:0}}><path d="M2 1l6 4-6 4z" fill="#fff"/></svg></button>
           <button className="view-btn" data-view="overview" title="Main + 2 Versions">M+2</button>
           <button className="view-btn" data-view="grid4" title="Main + 3 Versions">M+3</button>
         </div>

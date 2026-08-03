@@ -206,14 +206,17 @@ function buildSidebarHTML(): string {
         <button class="group-close-btn" title="Close">&times;</button>
       </div>
       <div class="group-item${activeId === null ? ' active' : ''}" data-gid="all">
-        <span class="group-name">ALL FRAMES</span>
+        <span class="group-name">${_fitting() ? 'ALL TALENTS' : 'ALL FRAMES'}</span>
         <span class="group-count">${s.frames.length}</span>
       </div>
       ${groupsHTML}
       <button class="group-new-btn">+ New Group</button>
-      <div class="group-subtitle">Sort frames by locations, scenes, or cutdowns</div>
+      <div class="group-subtitle">${_fitting() ? 'Sort talents into groups' : 'Sort frames by locations, scenes, or cutdowns'}</div>
     </div>`;
 }
+
+/** FITTING projects speak about talents, not frames. */
+const _fitting = (): boolean => state().projectType === 'fitting';
 
 function wireSidebarEvents(sidebar: HTMLElement): void {
   // Close button
@@ -315,7 +318,7 @@ function openGroupEditor(existing: FrameGroup | null): void {
         ${existing ? 'Edit Group' : 'New Group'}
       </div>
       <input type="text" class="group-name-input" value="${existing ? escH(existing.name) : ''}"
-        placeholder="Group name (e.g. Kitchen, Scene 2)" autocomplete="one-time-code"
+        placeholder="${_fitting() ? 'Group name (e.g. Scene 1, Main talents)' : 'Group name (e.g. Kitchen, Scene 2)'}" autocomplete="one-time-code"
         style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid #555;
         background:#2a2a2a;color:#fff;font-size:14px;outline:none;
         font-family:-apple-system,BlinkMacSystemFont,sans-serif;">

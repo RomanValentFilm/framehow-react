@@ -185,8 +185,8 @@
   .g4-row .frame-card.ov-reorder{border:2px solid #d52632;opacity:.7;}
   .g4-row .version-actions{display:flex!important;}
   .g4-ver-tab{font-family:var(--mono);font-size:13px;font-weight:500;color:var(--accent);border:1px solid var(--border);border-radius:3px;padding:0 8px 0 5px;line-height:1.1;letter-spacing:.05em;position:absolute;left:50%;transform:translateX(-50%);pointer-events:none;}
-  .g4-add-card{width:calc(33.333% - 5.333px);min-width:0;display:flex;align-items:center;justify-content:center;background:var(--surface);border:1px dashed var(--border);border-radius:var(--radius);cursor:pointer;min-height:36px;max-height:48px;transition:border-color .15s,background .15s;}
-  .g4-add-card .ov-add-label{font-size:16px;color:var(--text-faint);font-weight:400;line-height:1;}
+  .g4-add-card{width:calc(33.333% - 5.333px);min-width:0;display:flex;align-items:center;justify-content:center;background:var(--surface);border:2px solid #595959;border-radius:var(--radius-sm);cursor:pointer;height:36px;min-height:36px;max-height:36px;flex-shrink:0;align-self:flex-start;transition:border-color .15s,background .15s;}
+  .g4-add-card .ov-add-label{font-size:15px;color:#757575;font-weight:400;line-height:1;text-transform:uppercase;letter-spacing:.03em;}
   @media (hover:hover){.g4-add-card:hover{border-color:var(--accent);background:var(--surface2);}}
   /* 3×2 Grid View — 3-column MAIN frame grid, light background, page separators */
   .columns.view-grid3x2 .strip-col{display:none;}
@@ -320,9 +320,9 @@
   .overview-versions .ov-ver-card .frame-card.ov-moving{opacity:1;border:2px solid #d52632;}
   .overview-main .frame-card.ov-reorder{border:2px solid #d52632;}
   .overview-versions .ov-ver-card .frame-card.ov-reorder{opacity:1;border:2px solid #d52632;}
-  .overview-versions .ov-add-card{width:calc(50% - 4px);min-width:0;display:flex;align-items:center;justify-content:center;background:var(--surface);border:1px dashed var(--border);border-radius:var(--radius);cursor:pointer;min-height:36px;max-height:48px;transition:border-color .15s,background .15s;}
+  .overview-versions .ov-add-card{width:calc(50% - 4px);min-width:0;display:flex;align-items:center;justify-content:center;background:var(--surface);border:2px solid #595959;border-radius:var(--radius-sm);cursor:pointer;height:36px;min-height:36px;max-height:36px;flex-shrink:0;align-self:flex-start;transition:border-color .15s,background .15s;}
   @media (hover:hover){.ov-add-card:hover{border-color:var(--accent);background:var(--surface2);}}
-  .ov-add-card .ov-add-label{font-size:16px;color:var(--text-faint);font-weight:400;line-height:1;}
+  .ov-add-card .ov-add-label{font-size:15px;color:#757575;font-weight:400;line-height:1;text-transform:uppercase;letter-spacing:.03em;}
   .ov-ver-label{font-family:var(--mono);font-size:12px;color:var(--accent);padding:0 10px;height:24px;letter-spacing:.05em;display:flex;justify-content:space-between;align-items:center;gap:4px;position:relative;}
   .ov-ver-label .reorder-group{margin-left:auto;}
   @media (max-width:430px) and (orientation:portrait){.view-btn[data-view="ver"]{display:none;}}
@@ -1323,3 +1323,158 @@
     .sort-break-active .sort-arrow{font-size:14px;padding:4px;}
     .sort-break-active .sort-break-delete-btn{padding:4px 4px;font-size:8px;}
   }
+
+/* The gallery/overview scroll area already pads 12px at the top, and the first
+   row adds another 12px on top of it — so the first cards sat 24px below the
+   toolbar while every other view uses 12px. Drop the first row's top padding
+   only; spacing BETWEEN rows is untouched. */
+.overview-scroll > .overview-row:first-child,
+.overview-scroll > .g4-row:first-child{padding-top:0;}
+
+/* Fullscreen opened from a CAST BOARD / 3x2 grid card, in FITTING and 9:16
+   projects only. The picture is shrunk by FS_GRID_BOTTOM_GAP in JS, which on a
+   centred overlay would give half that gap at the top and half at the bottom.
+   Adding the same amount as bottom padding pushes the block back up, so the
+   top is exactly as before and the whole gain lands under the buttons.
+   The overlay already carries 20px padding, hence 20 + 24. */
+.fs-overlay.fs-from-grid{padding-bottom:44px;}
+
+/* ============================================================
+   FITTING PROJECTS
+   Scoped to body.fitting-mode so 9:16 and landscape are untouched.
+   ============================================================ */
+
+/* Buttons a fitting project does not use (moved aside by fitting.ts) */
+.fitting-hidden{display:none !important;}
+
+/* No detail bar in fitting projects */
+body.fitting-mode .detail-bar{display:none !important;}
+
+/* Talent cards have no Pic/Txt toggle */
+body.fitting-mode .pictxt-btn{display:none !important;}
+
+/* Only the REFS strip swaps emphasis: references are LOADED in, so LOAD is the
+   prominent button there. TALENTS and LOOKS keep the original styling, where
+   DRAW / CAM / WRITE are the prominent ones. */
+body.fitting-mode .frame-card[data-strip="refs"] .act-btn[data-action="upload"]{
+  border-width:3px;border-color:rgba(255,255,255,0.5);
+  background:rgba(255,255,255,0.15);color:rgba(255,255,255,0.8);
+}
+@media (hover:hover){
+  body.fitting-mode .frame-card[data-strip="refs"] .act-btn[data-action="upload"]:hover{
+    border-color:var(--border-strong);color:#e6e6e6;background:#262626;
+  }
+}
+body.fitting-mode .frame-card[data-strip="refs"] .act-btn[data-action="draw"],
+body.fitting-mode .frame-card[data-strip="refs"] .act-btn[data-action="camera"],
+body.fitting-mode .frame-card[data-strip="refs"] .act-btn[data-action="text"]{
+  border-width:2px;border-color:var(--border);
+  background:var(--surface2);color:#b8b8b8;
+}
+body.fitting-mode .frame-card[data-strip="refs"] .act-btn.active[data-action="draw"]{
+  background:transparent;color:#d52632;border:2px solid #d52632;font-weight:600;
+}
+
+/* Canvas prompts are two points larger in fitting projects */
+/* The key word sits on its own line, in caps, slightly brighter */
+body.fitting-mode .canvas-hint b{font-weight:700;color:inherit;letter-spacing:.04em;}
+body.fitting-mode .canvas-hint span{
+  font-size:13px;
+  /* Longer prompts wrap in narrow portrait cards; without this the wrapped
+     lines sit left while only the block itself is centred. */
+  text-align:center;line-height:1.7;padding:0 8px;max-width:100%;
+}
+
+/* No scribble in fitting projects */
+body.fitting-mode .scribble-toolbar{display:none !important;}
+
+/* Separator sits between REFS and NOTES; the view bar's own hairline is unused */
+body.fitting-mode .view-bar .vb-sep-hair{display:none !important;}
+
+
+/* LOOKS cards: only CAM stands out — looks are photographed at the fitting.
+   DRAW, WRITE and LOAD all sit back at the plain style. */
+body.fitting-mode .frame-card[data-strip="ver"] .act-btn[data-action="camera"]{
+  border-width:3px;border-color:rgba(255,255,255,0.5);
+  background:rgba(255,255,255,0.15);color:rgba(255,255,255,0.8);
+}
+@media (hover:hover){
+  body.fitting-mode .frame-card[data-strip="ver"] .act-btn[data-action="camera"]:hover{
+    border-color:var(--border-strong);color:#e6e6e6;background:#262626;
+  }
+}
+body.fitting-mode .frame-card[data-strip="ver"] .act-btn[data-action="draw"],
+body.fitting-mode .frame-card[data-strip="ver"] .act-btn[data-action="text"]{
+  border-width:2px;border-color:var(--border);
+  background:var(--surface2);color:#b8b8b8;
+}
+body.fitting-mode .frame-card[data-strip="ver"] .act-btn.active[data-action="draw"]{
+  background:transparent;color:#d52632;border:2px solid #d52632;font-weight:600;
+}
+
+/* TALENTS cards: LOAD and CAM are the prominent buttons; DRAW and WRITE step
+   back. data-mact only ever appears on main-frame buttons, so this reaches
+   the talent card in every view without touching the strips. */
+body.fitting-mode .act-btn[data-mact="upload"],
+body.fitting-mode .act-btn[data-mact="camera"]{
+  border-width:3px;border-color:rgba(255,255,255,0.5);
+  background:rgba(255,255,255,0.15);color:rgba(255,255,255,0.8);
+}
+@media (hover:hover){
+  body.fitting-mode .act-btn[data-mact="upload"]:hover,
+  body.fitting-mode .act-btn[data-mact="camera"]:hover{
+    border-color:var(--border-strong);color:#e6e6e6;background:#262626;
+  }
+}
+body.fitting-mode .act-btn[data-mact="draw"],
+body.fitting-mode .act-btn[data-mact="write"]{
+  border-width:2px;border-color:var(--border);
+  background:var(--surface2);color:#b8b8b8;
+}
+body.fitting-mode .act-btn.active[data-mact="draw"]{
+  background:transparent;color:#d52632;border:2px solid #d52632;font-weight:600;
+}
+
+/* --- FITTING on phones ---------------------------------------------------
+   The phone layout normally hides .view-bar and uses the detail bar as its
+   toolbar. In fitting projects every button lives on .view-bar instead, so
+   that has to be flipped back, or the phone ends up with no toolbar at all. */
+@media (hover:none) and (pointer:coarse) and (max-width:430px) and (orientation:portrait){
+  body.fitting-mode .view-bar{
+    display:flex !important;
+    position:-webkit-sticky;position:sticky;top:env(safe-area-inset-top);z-index:20;
+  }
+  body.fitting-mode .view-bar .vb-left{display:none;}
+  body.fitting-mode .view-bar .vb-middle{
+    flex:1;min-width:0;overflow-x:auto;-webkit-overflow-scrolling:touch;
+    flex-wrap:nowrap;scrollbar-width:none;
+  }
+  body.fitting-mode .view-bar .vb-middle::-webkit-scrollbar{display:none;}
+  body.fitting-mode .view-bar .vb-middle .view-btn{flex-shrink:0;}
+  body.fitting-mode .view-bar .vb-right{flex:none;}
+}
+/* Keep the emptied detail bar down even where other rules force it open, and
+   drop the padding those rules add for a second bar that fitting doesn't have. */
+body.fitting-mode.view-grid3x2.detail-open .detail-bar,
+body.fitting-mode.detail-open .detail-bar{display:none !important;}
+/* Touch devices reserve space for a second bar when detail-open is set; a
+   fitting project has only one bar, so put the padding back to the one-bar
+   value. Phones already use 0, so only the tablet rule needs correcting. */
+@media (hover:none) and (pointer:coarse){
+  body.fitting-mode.detail-open .columns{padding-top:calc(74px + env(safe-area-inset-top) * 0.5);}
+}
+@media (hover:none) and (pointer:coarse) and (max-width:430px),
+       (hover:none) and (pointer:coarse) and (max-height:430px){
+  body.fitting-mode.detail-open .columns{padding-top:0;}
+}
+
+/* CAST BOARD needs a landscape screen (it is the 3x2 grid). A fitting project
+   is held in portrait most of the time, so hide the button there rather than
+   let it open a "rotate your device" message. */
+@media (hover:none) and (pointer:coarse) and (orientation:portrait){
+  body.fitting-mode .view-btn[data-view="3x2"]{display:none !important;}
+}
+
+/* FITTING projects shoot to the frame's own shape — no RATIO picker */
+body.fitting-mode .camera-ratio-btn,
+body.fitting-mode .camera-ratio-menu{display:none !important;}
