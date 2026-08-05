@@ -20,7 +20,7 @@ import {
   getFrameStripLabel,
   setFrameStripLabel,
   ensureStripVersions,
-  clearReorder, canvasHintFor, talentHintHTML, isNewlyAddedFrame } from './helpers';
+  clearReorder, canvasHintFor, talentHintHTML, isNewlyAddedFrame, revealActiveVersionTab } from './helpers';
 import { restoreCanvas, restoreMainCanvas, setupMainDrawing } from './drawing';
 import { renderVersionFrame } from './render';
 import { showLabelEdit, showVerLabelEdit, showDeleteChoice, showConfirm } from './modals';
@@ -403,6 +403,7 @@ export function renderOverviewRow(row: HTMLElement, fid: number): void {
   row.innerHTML = '';
   row.appendChild(mainDiv);
   row.appendChild(verDiv);
+  revealActiveVersionTab(row);
 }
 
 /* ── GRID4 view ─────────────────────────────────────────────── */
@@ -736,6 +737,7 @@ export function renderGrid4Row(row: HTMLElement, fid: number): void {
   versionsWrap.appendChild(addCard);
 
   row.appendChild(versionsWrap);
+  revealActiveVersionTab(row);
 }
 
 /* ── GRID 3×2 view ─────────────────────────────────────────────── */
@@ -1198,6 +1200,7 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
   requestAnimationFrame(() => {
     import('./scribble').then(({ refreshScribbleOverlays }) => refreshScribbleOverlays());
   });
+  revealActiveVersionTab(wrap);
 }
 
 /**

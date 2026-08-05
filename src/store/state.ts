@@ -63,7 +63,7 @@ export interface Setup {
 
 /** 12-colour palette for setups. */
 /** App version — bump before every deploy. */
-export const APP_VERSION = 'v4.9.045';
+export const APP_VERSION = 'v4.9.046';
 
 /** Free-text fields printed in the header of every exported page. */
 export interface ExportMeta {
@@ -113,7 +113,12 @@ export interface Version {
   strokes: Stroke[];
   bgImage: string | null;
   hidden?: boolean;
+  /** Legacy single star. Kept in step with `stars` (true when stars > 0) so
+   *  exports and older data keep working unchanged. */
   starred?: boolean;
+  /** Rating 0-3. FITTING shows three stars; other project types only ever
+   *  set 0 or 1, which behaves exactly as the single star always did. */
+  stars?: number;
   /** Tagged with parent MAIN frame's SETUP — shares content across same-SETUP frames.
    *  'origin' = the source version where the user clicked TAG.
    *  'copy'   = image propagated from an origin to other same-SETUP frames. */

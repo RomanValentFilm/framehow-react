@@ -164,14 +164,31 @@ export function openNoteModal(fid: number, vi: number, origin: 'main' | 'ver' | 
   area.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); cleanup(); } });
 }
 
+/** Rating of a version, 0-3. Falls back to the legacy single star. */
+export function versionStars(v: Version): number {
+  if (typeof v.stars === 'number') return v.stars;
+  return v.starred ? 1 : 0;
+}
+
+const STAR_FILLED = '<svg viewBox="0 0 24 24" fill="#fff" stroke="#fff" stroke-width="1.5"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 22 12 18.56 5.82 22 7 14.14l-5-4.87 6.91-1.01z"/></svg>';
+const STAR_EMPTY = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.5"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 22 12 18.56 5.82 22 7 14.14l-5-4.87 6.91-1.01z"/></svg>';
+
 export function starHTML(fid: number, vi: number, strip: StripType = 'ver'): string {
   const ver = getStripVersions(fid, strip)[vi];
   if (!ver) return '';
-  const filled = ver.starred;
-  const starSVG = filled
-    ? '<svg viewBox="0 0 24 24" fill="#fff" stroke="#fff" stroke-width="1.5"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 22 12 18.56 5.82 22 7 14.14l-5-4.87 6.91-1.01z"/></svg>'
-    : '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.5"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 22 12 18.56 5.82 22 7 14.14l-5-4.87 6.91-1.01z"/></svg>';
-  return `<button class="star-btn" data-starfid="${fid}" data-starvi="${vi}" data-starstrip="${strip}">${starSVG}</button>`;
+  const attrs = `data-starfid="${fid}" data-starvi="${vi}" data-starstrip="${strip}"`;
+
+  // FITTING: a column of three stars, 1 at the bottom, 3 at the top.
+  if (state().projectType === 'fitting') {
+    const rating = versionStars(ver);
+    const levels = [3, 2, 1]
+      .map((n) => `<span class="star-lvl" data-starlevel="${n}">${rating >= n ? STAR_FILLED : STAR_EMPTY}</span>`)
+      .join('');
+    return `<div class="star-btn star-col" ${attrs}>${levels}</div>`;
+  }
+
+  // Every other project type keeps the single star exactly as it was.
+  return `<button class="star-btn" ${attrs}>${ver.starred ? STAR_FILLED : STAR_EMPTY}</button>`;
 }
 
 export function drawToolbarHTML(fid: number, attrName: string, attrVal: string | number): string {
@@ -302,13 +319,31 @@ export function reorderByStars(fid: number, strip: StripType = 'ver'): void {
   const untagged = vers.filter((v) => !v.setupTagged);
   const visible = untagged.filter((v) => !v.hidden);
   const hidden = untagged.filter((v) => v.hidden);
-  const visStarred = visible.filter((v) => v.starred);
-  const visUnstarred = visible.filter((v) => !v.starred);
-  const hidStarred = hidden.filter((v) => v.starred);
-  const hidUnstarred = hidden.filter((v) => !v.starred);
-  const newOrder = [...tagged, ...visStarred, ...visUnstarred, ...hidStarred, ...hidUnstarred];
+  // Highest rating first. sort() is stable, so versions on the same rating keep
+  // the order they were already in. With only 0 and 1 in play — every project
+  // type except FITTING — this is exactly the old starred-then-unstarred split.
+  const byStars = (a: Version, b: Version) => versionStars(b) - versionStars(a);
+  const newOrder = [...tagged, ...[...visible].sort(byStars), ...[...hidden].sort(byStars)];
   vers.length = 0;
   newOrder.forEach((v) => vers.push(v));
+}
+
+/**
+ * Set a version's rating. Pressing the level it is already on clears it back
+ * to none, which is how the single star has always behaved.
+ */
+export function setVersionStars(fid: number, vi: number, strip: StripType, level: number): void {
+  const vers = getStripVersions(fid, strip);
+  if (!vers || !vers[vi]) return;
+  const ver = vers[vi];
+  const next = versionStars(ver) === level ? 0 : level;
+  ver.stars = next;
+  ver.starred = next > 0;   // keep the legacy flag in step for exports and sync
+  reorderByStars(fid, strip);
+  const newIdx = vers.indexOf(ver);
+  setStripActiveTab(fid, strip, newIdx);
+  relabelStripVersions(fid, strip);
+  void flushSyncNow(); // VER-12: rate version -> click star
 }
 
 export function toggleStar(fid: number, vi: number, strip: StripType = 'ver'): void {
@@ -316,6 +351,7 @@ export function toggleStar(fid: number, vi: number, strip: StripType = 'ver'): v
   if (!vers || !vers[vi]) return;
   const ver = vers[vi];
   ver.starred = !ver.starred;
+  ver.stars = ver.starred ? 1 : 0;
   reorderByStars(fid, strip);
   const newIdx = vers.indexOf(ver);
   setStripActiveTab(fid, strip, newIdx);
@@ -802,5 +838,35 @@ export function flashNewFrame(fid: number): void {
       document.querySelector(`.frame-card[data-mfid="${fid}"]`) ||
       document.querySelector(`.frame-card[data-vfid="${fid}"]`);
     if (card) (card as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' });
+  });
+}
+
+/**
+ * Bring the active version tab into view inside its own scrolling row.
+ *
+ * The tab rows are hand-scrollable (overflow-x). With many versions the active
+ * one can sit off the end of the row, so you cannot see which Look you are
+ * drawing into. This scrolls the ROW only — the page itself never moves.
+ *
+ * Called after any render that rebuilds the tabs, which is also every action
+ * that changes which tab is active: new, move, draw, photo, opening fullscreen.
+ */
+export function revealActiveVersionTab(root: ParentNode = document): void {
+  const rows = root.querySelectorAll<HTMLElement>('.version-tabs');
+  rows.forEach((row) => {
+    const active = row.querySelector<HTMLElement>('.vtab.active');
+    if (!active) return;
+    if (row.scrollWidth <= row.clientWidth + 1) return; // everything already fits
+    const rowRect = row.getBoundingClientRect();
+    const tabRect = active.getBoundingClientRect();
+    const pad = 12; // a little breathing room so it never sits flush to the edge
+
+    // Move as little as possible: if the tab is already on screen, leave the
+    // row alone. Otherwise bring it just inside the nearer edge, so the tabs
+    // either side of it stay in view.
+    const overLeft = rowRect.left + pad - tabRect.left;
+    const overRight = tabRect.right - (rowRect.right - pad);
+    if (overLeft > 0) row.scrollLeft -= overLeft;
+    else if (overRight > 0) row.scrollLeft += overRight;
   });
 }

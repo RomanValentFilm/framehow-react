@@ -480,7 +480,7 @@ interface SyncPayload {
   partial: boolean;
   strips: Array<{ id: string; label: string | null; sort_order: number; updated_at: number }>;
   frames: Array<{ id: string; strip_id: string; label: string | null; sort_order: number; crop_w: number | null; crop_h: number | null; text_content: string | null; table_data: string | null; version_label: string | null; strip_labels: string | null; hidden: boolean; note: string | null; scribbles: string | null; updated_at: number }>;
-  versions: Array<{ id: string; frame_id: string; label: string | null; type: string; hidden: boolean; starred: boolean; note: string | null; updated_at: number }>;
+  versions: Array<{ id: string; frame_id: string; label: string | null; type: string; hidden: boolean; starred: number; note: string | null; updated_at: number }>;
   images: Array<{
     id: string;
     version_id: string;
@@ -574,7 +574,8 @@ function parseSyncPayload(body: unknown): Parsed<SyncPayload> {
     const updated_at = asInt(r.updated_at);
     const label = asNullableStr(r.label, MAX_LABEL_LEN);
     const hidden = r.hidden === true || r.hidden === 1;
-    const starred = r.starred === true || r.starred === 1;
+    // 0-3 rating. Older clients only ever sent 0/1, which still reads as 0/1.
+    const starred = Number(r.starred) || 0;
     const note = r.note === null || r.note === undefined ? null : asStr(r.note);
     if (!id || !frame_id || !type || type.length > MAX_VERSION_TYPE_LEN || updated_at === null || label === undefined) {
       return err("versions[]");
@@ -850,7 +851,7 @@ function appendFrameInserts(db: D1Database, stmts: D1PreparedStatement[], payloa
       db.prepare(
         `INSERT INTO versions (id, frame_id, label, type, hidden, starred, note, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).bind(v.id, v.frame_id, v.label, v.type, v.hidden ? 1 : 0, v.starred ? 1 : 0, v.note ?? null, v.updated_at),
+      ).bind(v.id, v.frame_id, v.label, v.type, v.hidden ? 1 : 0, Number(v.starred) || 0, v.note ?? null, v.updated_at),
     );
   }
   for (const img of payload.images) {

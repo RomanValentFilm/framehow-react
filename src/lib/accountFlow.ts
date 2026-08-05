@@ -46,7 +46,7 @@ import {
 import { applySnapshotToStore, loadSnapshot, snapshotFromStore } from './persistence';
 import { showConfirm, showToast, showFrameConflictPicker } from './modals';
 import type { FrameConflict } from './modals';
-import { saveOpenTextEdits, saveOpenTableEdits } from './helpers';
+import { saveOpenTextEdits, saveOpenTableEdits, versionStars } from './helpers';
 import { closeSortMode } from './sortOrder';
 import { resetStoryboardState, state, useStore, DEFAULT_NEED_DEFINITIONS, DEFAULT_STRIP_DEFS, migrateNeedDefinitions, createDefaultExportMeta } from '../store/state';
 import type { Frame, Stroke, Version, FrameNeedState, FrameNoteState, NeedDefinitions, BracketNodeData, ProjectType } from '../store/state';
@@ -1290,7 +1290,7 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
         const fullType = prefix ? `${prefix}:${lv.type}` : lv.type;
         versions.push({
           id: vid, frame_id: frameId, label: lv.label || null, type: fullType,
-          hidden: !!lv.hidden, starred: !!lv.starred, note: lv.note || null, updated_at: now,
+          hidden: !!lv.hidden, starred: versionStars(lv) as unknown as boolean, note: lv.note || null, updated_at: now,
         });
         if (lv.strokes && lv.strokes.length > 0) {
           drawings.push({ id: uuid(), version_id: vid, drawing_data: JSON.stringify(lv.strokes), updated_at: now });
@@ -1783,6 +1783,7 @@ async function applyCloudTreeToStore(
             bgImage: imageUnchanged ? existingVer!.bgImage : null as string | null,
             hidden: !!sv.hidden,
             starred: !!sv.starred,
+            stars: Number(sv.starred) || 0,
             note: sv.note ?? '',
             // Persist server ID + r2Key for diff-based sync
             serverVersionId: sv.id,
@@ -2703,7 +2704,7 @@ function frameFingerprint(f: Frame, sortOrder: number, s: { stripVersions: Recor
     if (vers) {
       for (const v of vers) {
         parts.push(
-          `${stripType}:${v.label}|${v.type}|${v.hidden ? 1 : 0}|${v.starred ? 1 : 0}|${v.setupTagged || ''}|${v.r2Key || (v.bgImage ? v.bgImage.substring(0, 40) : '')}|${v.strokes?.length || 0}|${v.note || ''}`,
+          `${stripType}:${v.label}|${v.type}|${v.hidden ? 1 : 0}|${versionStars(v)}|${v.setupTagged || ''}|${v.r2Key || (v.bgImage ? v.bgImage.substring(0, 40) : '')}|${v.strokes?.length || 0}|${v.note || ''}`,
         );
       }
     }

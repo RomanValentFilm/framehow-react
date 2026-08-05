@@ -23,6 +23,7 @@ import {
   stripScrollId,
   stripTabPrefix,
   relabelStripVersions,
+  setVersionStars,
 } from './helpers';
 import type { StripType } from '../store/state';
 import { snapshotFrame } from './drawing';
@@ -207,7 +208,10 @@ export function initFramehow(): void {
       vi = +btn.dataset.starvi!;
     const starStrip = (btn.dataset.starstrip || 'ver') as StripType;
     const oldIdx = vi;
-    toggleStar(fid, vi, starStrip);
+    // FITTING: three stacked stars — which one was pressed sets the rating.
+    const lvlEl = (e.target as HTMLElement).closest('[data-starlevel]') as HTMLElement | null;
+    if (lvlEl) setVersionStars(fid, vi, starStrip, +lvlEl.dataset.starlevel!);
+    else toggleStar(fid, vi, starStrip);
     const newIdx = getStripActiveTab(fid, starStrip);
     renderAll();
     if (oldIdx !== newIdx) {

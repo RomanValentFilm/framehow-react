@@ -3,7 +3,7 @@
 
 import { COLORS, state, useStore, bumpRenderTick } from '../store/state';
 import type { StripType } from '../store/state';
-import { drawToolbarHTML, starHTML, toggleStar, getStripVersions, stripTabPrefix, stripScrollId, ensureStripVersions, getStripActiveTab, setStripActiveTab, addNewStripVersion, relabelStripVersions } from './helpers';
+import { drawToolbarHTML, starHTML, toggleStar, getStripVersions, stripTabPrefix, stripScrollId, ensureStripVersions, getStripActiveTab, setStripActiveTab, addNewStripVersion, relabelStripVersions, revealActiveVersionTab } from './helpers';
 import { restoreCanvas, restoreMainCanvas, setupDrawing, setupMainDrawing, snapshotFrame } from './drawing';
 import { resetToolbarState } from './view';
 import { flushSyncNow } from './currentProject';
@@ -197,6 +197,9 @@ export function openFullscreen(
         </div>
         ${buildBottomBar()}
       </div>`;
+    // Make sure the active tab is on screen in its row — with many versions it
+    // can otherwise sit off the end, hiding which Look you are drawing into.
+    requestAnimationFrame(() => revealActiveVersionTab(overlay));
   }
 
   function switchTab(newVi: number) {

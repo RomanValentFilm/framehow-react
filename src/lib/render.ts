@@ -30,7 +30,7 @@ import {
   stripScrollId,
   stripDefaultLabel,
   getFrameStripLabel,
-  setFrameStripLabel, canvasHintFor, talentHintHTML, scrollFrameIntoView, isNewlyAddedFrame } from './helpers';
+  setFrameStripLabel, canvasHintFor, talentHintHTML, scrollFrameIntoView, isNewlyAddedFrame, revealActiveVersionTab } from './helpers';
 import { restoreCanvas, restoreMainCanvas, setupDrawing, setupMainDrawing } from './drawing';
 import { addCrossSwipe, addNavArrows, scheduleSyncHeights } from './view';
 import { showLabelEdit, showVerLabelEdit } from './modals';
@@ -645,6 +645,7 @@ export function renderMainFrame(div: HTMLElement, fid: number): void {
     if (nw) addNavArrows(nw, fid, 'main');
   }
   scheduleSyncHeights();
+  revealActiveVersionTab(div);
 }
 
 export function renderVersionFrame(div: HTMLElement, fid: number, strip: StripType = 'ver'): void {
@@ -1089,4 +1090,5 @@ export function renderVersionFrame(div: HTMLElement, fid: number, strip: StripTy
     if (nw) addNavArrows(nw, fid, strip);
   }
   scheduleSyncHeights();
+  revealActiveVersionTab(div);
 }
