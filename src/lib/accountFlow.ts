@@ -4,7 +4,7 @@
 //
 // Network calls go through ./api with the bearer token from ./session.
 
-import { autoPhoneMainView } from './view';
+import { autoPhoneMainView, setViewMode, scrollAnchorTo } from './view';
 import { dismissNewProjectModal } from './modals';
 import { api, API_BASE_URL } from './api';
 import { fhTrack } from './tracking';
@@ -2208,13 +2208,23 @@ export async function flowRestoreProject(): Promise<void> {
 
 async function openRestoreModal(projectId: string): Promise<void> {
   // Fetch available snapshots from the server
-  let snapshots: Array<{ id: string; created_at: number }>;
+  let snapshots: Array<{ id: string; created_at: number; reason?: string; continued_at?: number | null }>;
+  let currentSnapshotId: string | null = null;
+  // Capture where the user is right now, so it is in the list as "you are here"
+  // and they can always come back to it after experimenting.
   try {
-    const res = await api.get<{ snapshots: Array<{ id: string; created_at: number }> }>(
+    await api.post(`/projects/${encodeURIComponent(projectId)}/snapshots`, undefined, getToken());
+  } catch { /* listing still works without it */ }
+  try {
+    const res = await api.get<{
+      snapshots: Array<{ id: string; created_at: number; reason?: string; continued_at?: number | null }>;
+      currentSnapshotId?: string | null;
+    }>(
       `/projects/${encodeURIComponent(projectId)}/snapshots`,
       getToken(),
     );
     snapshots = res.snapshots;
+    currentSnapshotId = res.currentSnapshotId ?? null;
   } catch {
     showToast('Could not load restore points.');
     return;
@@ -2227,30 +2237,41 @@ async function openRestoreModal(projectId: string): Promise<void> {
 
   const now = Date.now();
 
-  // Define time buckets
-  const buckets: Array<{ label: string; minAge: number; maxAge: number }> = [
-    { label: '10 min ago',  minAge: 0,                    maxAge: 10 * 60 * 1000 },
-    { label: '20 min ago',  minAge: 10 * 60 * 1000,       maxAge: 20 * 60 * 1000 },
-    { label: '30 min ago',  minAge: 20 * 60 * 1000,       maxAge: 30 * 60 * 1000 },
-    { label: '1 hour ago',  minAge: 40 * 60 * 1000,       maxAge: 80 * 60 * 1000 },
-    { label: '2 hours ago', minAge: 80 * 60 * 1000,       maxAge: 3 * 60 * 60 * 1000 },
-    { label: '3 hours ago', minAge: 3 * 60 * 60 * 1000,   maxAge: 4.5 * 60 * 60 * 1000 },
-    { label: '5 hours ago', minAge: 4 * 60 * 60 * 1000,   maxAge: 12 * 60 * 60 * 1000 },
-    { label: '15 hours ago',minAge: 12 * 60 * 60 * 1000,  maxAge: 24 * 60 * 60 * 1000 },
-    { label: 'Yesterday',   minAge: 24 * 60 * 60 * 1000,  maxAge: 48 * 60 * 60 * 1000 },
-  ];
+  // One plain list of the actual restore points, oldest at the top, each with
+  // the time it was taken. No fuzzy slots: every point stays reachable, which
+  // is what makes experimenting with restores safe.
+  // The newest point is the one just taken — that is where the user stands.
+  const newestId = snapshots.length
+    ? [...snapshots].sort((a, b) => b.created_at - a.created_at)[0].id
+    : null;
 
-  // Match each bucket to the best (most recent) snapshot in its range
-  const matched: Array<{ label: string; snapshot: { id: string; created_at: number }; timeAgo: string; clockTime: string }> = [];
-  for (const b of buckets) {
-    const match = snapshots.find((s) => {
-      const age = now - s.created_at;
-      return age >= b.minAge && age < b.maxAge;
-    });
-    if (match) {
-      matched.push({ label: b.label, snapshot: match, timeAgo: formatTimeAgo(now - match.created_at), clockTime: formatClockTime(match.created_at) });
-    }
-  }
+  // Several restores in a row leave several "left off" points. Keep the three
+  // most recent so the list stays readable; older ones are still on the server.
+  const keepLeftOff = new Set(
+    snapshots
+      .filter((sn) => sn.reason === 'pre_restore')
+      .sort((a, b) => b.created_at - a.created_at)
+      .slice(0, 3)
+      .map((sn) => sn.id),
+  );
+
+  // Where the user actually stands: the point they restored to, or — if they
+  // have not restored, or have edited since — the most recent point.
+  const hereId = currentSnapshotId && snapshots.some((sn) => sn.id === currentSnapshotId)
+    ? currentSnapshotId
+    : newestId;
+
+  const matched = [...snapshots]
+    .filter((sn) => sn.reason !== 'pre_restore' || sn.id === hereId || keepLeftOff.has(sn.id))
+    .sort((a, b) => a.created_at - b.created_at)
+    .map((sn) => ({
+      snapshot: sn,
+      clockTime: formatClockTime(sn.created_at),
+      timeAgo: formatTimeAgo(now - sn.created_at),
+      isLeftOff: sn.reason === 'pre_restore' && sn.id !== hereId,
+      isCurrent: sn.id === hereId,
+      continuedAt: sn.continued_at ? formatClockTime(sn.continued_at) : null,
+    }));
 
   if (matched.length === 0) {
     showToast('No restore points available yet — they are created automatically every 10 minutes.');
@@ -2284,18 +2305,26 @@ async function openRestoreModal(projectId: string): Promise<void> {
       const btn = document.createElement('button');
       btn.style.cssText =
         'display:block;width:100%;padding:12px 16px;margin-bottom:8px;' +
-        'background:#2a2a2a;border:1px solid #444;border-radius:8px;' +
+        `background:${m.isCurrent ? '#3a2a2b' : '#2a2a2a'};` +
+        `border:1px solid ${m.isCurrent ? '#d52632' : '#444'};border-radius:8px;` +
         'color:#fff;font-size:14px;cursor:pointer;text-align:left;' +
         'transition:background 0.15s;';
-      btn.innerHTML = `<span style="color:#888;">${m.timeAgo}</span>` +
-        `<span style="color:#555;margin:0 8px;">›</span>` +
-        `<span style="float:right;color:#fff;">${m.clockTime}</span>`;
-      btn.addEventListener('mouseenter', () => { btn.style.background = '#333'; });
-      btn.addEventListener('mouseleave', () => { btn.style.background = '#2a2a2a'; });
+      const tag = m.isCurrent
+        ? '<span style="color:#d52632;margin-left:8px;font-size:11px;">you are here</span>'
+        : m.continuedAt
+          ? `<span style="color:#888;margin-left:8px;font-size:11px;">continued at ${m.continuedAt}</span>`
+          : m.isLeftOff
+            ? `<span style="color:#d52632;margin-left:8px;font-size:11px;">left off at ${m.clockTime}</span>`
+            : '';
+      btn.innerHTML = `<span style="color:#fff;">${m.clockTime}</span>${tag}` +
+        `<span style="float:right;color:#888;font-size:12px;">${m.timeAgo}</span>`;
+      btn.addEventListener('mouseenter', () => { btn.style.background = m.isCurrent ? '#4a3233' : '#333'; });
+      btn.addEventListener('mouseleave', () => { btn.style.background = m.isCurrent ? '#3a2a2b' : '#2a2a2a'; });
       btn.addEventListener('click', async () => {
         overlay.style.display = 'none';
-        const confirmMsg = `Restore project to ${m.timeAgo} (${m.clockTime})?\n\nYour current state will be saved as a restore point before restoring.`;
-        const ok = await showConfirm(confirmMsg);
+        const ok = await showConfirm(
+          `Restore project to ${m.clockTime}?\n\nWhere you are now will be saved as a restore point first.`,
+        );
         if (!ok) { overlay.style.display = 'flex'; return; }
         overlay.remove();
         await performRestore(projectId, m.snapshot.id);
@@ -2350,6 +2379,18 @@ async function performRestore(projectId: string, snapshotId: string): Promise<vo
   if (progressBar) progressBar.style.width = '10%';
   if (progressLabel) progressLabel.textContent = 'Restoring…';
 
+  // Restoring reloads the whole project, which would drop the user back into
+  // the default view. Remember where they were so they land back on it.
+  const before = state();
+  const viewBefore = {
+    currentViewMode: before.currentViewMode,
+    activeStrips: [...before.activeStrips],
+    notesStripVisible: before.notesStripVisible,
+    needsStripVisible: before.needsStripVisible,
+    activeGroupId: before.activeGroupId,
+    centerFid: before.centerFid,
+  };
+
   try {
     if (progressBar) progressBar.style.width = '30%';
     const tree = await api.post<CloudProjectTree>(
@@ -2373,9 +2414,31 @@ async function performRestore(projectId: string, snapshotId: string): Promise<vo
       endSystemAction();
     }
 
+    // Put the view back the way the user left it. A group or frame that the
+    // older snapshot does not contain is simply skipped.
+    const after = state();
+    const groupStillExists =
+      viewBefore.activeGroupId !== null &&
+      after.groups.some((g) => g.id === viewBefore.activeGroupId);
+    useStore.setState({
+      currentViewMode: viewBefore.currentViewMode,
+      activeStrips: viewBefore.activeStrips,
+      notesStripVisible: viewBefore.notesStripVisible,
+      needsStripVisible: viewBefore.needsStripVisible,
+      activeGroupId: groupStillExists ? viewBefore.activeGroupId : null,
+    });
+
     if (progressBar) progressBar.style.width = '100%';
     clearDirtyState();
     (window as any).__fh_renderAll?.();
+    // After the rebuild, not before — otherwise renderAll has the last word
+    // and drops the user back into the default view.
+    setViewMode(viewBefore.currentViewMode);
+
+    const frameStillExists =
+      viewBefore.centerFid != null &&
+      state().frames.some((f) => String(f.id) === String(viewBefore.centerFid));
+    if (frameStillExists) requestAnimationFrame(() => scrollAnchorTo(viewBefore.centerFid));
     showToast('Project restored successfully.');
     setTimeout(() => {
       if (progressEl) progressEl.classList.add('hidden');

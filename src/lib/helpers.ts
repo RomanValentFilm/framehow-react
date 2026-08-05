@@ -823,9 +823,19 @@ export function flashNewFrame(fid: number): void {
   window.clearTimeout(_newFrameTimer);
   _newFrameTimer = window.setTimeout(() => {
     _newFrameFid = null;
-    // Repaint once more so the highlight is taken off again.
+    // Fullscreen is open — the card underneath is not on screen, so leave the
+    // page alone. Rebuilding here pulled the ground out from under the canvas
+    // the user had just opened to draw on.
+    if (document.querySelector('.fs-overlay')) return;
+    // Repaint once more so the highlight is taken off again. The rebuild
+    // changes every card's height for a moment and the page would settle back
+    // to where it was before the new frame — so hold the position across it.
+    const y = window.scrollY;
     const rerender = (window as any).__fh_renderAll;
     if (rerender) rerender();
+    const hold = () => { if (window.scrollY !== y) window.scrollTo(0, y); };
+    hold();
+    requestAnimationFrame(() => { hold(); requestAnimationFrame(hold); });
   }, 1400);
 
   // Redraw now so the card is built with the highlight, then bring it on screen.

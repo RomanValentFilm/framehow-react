@@ -247,6 +247,22 @@ projects.post("/:id/sync", async (c) => {
 
   // Snapshot: save a copy of the current state before overwriting,
   // but only if 10+ minutes have passed since the last snapshot.
+  // The user has edited since restoring, so they are no longer standing on that
+  // restore point. Note on the point itself that the work carried on from there
+  // — the snapshot stays exactly as it was — and stop marking it as "here".
+  const standing = await c.env.DB
+    .prepare("SELECT restored_snapshot_id FROM projects WHERE id = ?")
+    .bind(project.id)
+    .first<{ restored_snapshot_id: string | null }>();
+  if (standing?.restored_snapshot_id) {
+    await c.env.DB.batch([
+      c.env.DB.prepare(
+        "UPDATE project_snapshots SET continued_at = ? WHERE id = ? AND continued_at IS NULL",
+      ).bind(now, standing.restored_snapshot_id),
+      c.env.DB.prepare("UPDATE projects SET restored_snapshot_id = NULL WHERE id = ?").bind(project.id),
+    ]);
+  }
+
   await maybeCreateSnapshot(c.env.DB, project.id, now);
 
   await applySync(c.env.DB, project.id, payload, now);
@@ -265,13 +281,33 @@ projects.get("/:id/snapshots", async (c) => {
 
   const result = await c.env.DB
     .prepare(
-      `SELECT id, created_at FROM project_snapshots
+      `SELECT id, created_at, reason, continued_at FROM project_snapshots
        WHERE project_id = ? ORDER BY created_at DESC`,
     )
     .bind(project.id)
-    .all<{ id: string; created_at: number }>();
+    .all<{ id: string; created_at: number; reason: string; continued_at: number | null }>();
 
-  return c.json({ snapshots: result.results });
+  const cur = await c.env.DB
+    .prepare("SELECT restored_snapshot_id FROM projects WHERE id = ?")
+    .bind(project.id)
+    .first<{ restored_snapshot_id: string | null }>();
+
+  return c.json({ snapshots: result.results, currentSnapshotId: cur?.restored_snapshot_id ?? null });
+});
+
+// ---------------------------------------------------------------------------
+// POST /projects/:id/snapshots — capture the current state as a restore point.
+// Called when the restore list is opened, so "where you are now" is always in
+// the list and the user can always come back to it.
+// ---------------------------------------------------------------------------
+projects.post("/:id/snapshots", async (c) => {
+  const me = c.get("user");
+  const id = c.req.param("id");
+  const project = await loadOwnedProject(c.env.DB, me.id, id);
+  if (!project) return jsonError(c, 404, "not_found", "Project not found.");
+
+  await forceCreateSnapshot(c.env.DB, project.id, Date.now(), 'pre_restore');
+  return c.json({ ok: true });
 });
 
 // ---------------------------------------------------------------------------
@@ -290,9 +326,11 @@ projects.post("/:id/restore/:snapshotId", async (c) => {
     .first<{ tree_json: string; created_at: number }>();
   if (!snap) return jsonError(c, 404, "not_found", "Snapshot not found.");
 
-  // Save a snapshot of the CURRENT state before restoring (so user can undo the restore)
+  // Save a snapshot of the CURRENT state before restoring, marked so the modal
+  // can always offer it back by name — this is the user's way out of a restore
+  // they did not like.
   const now = Date.now();
-  await forceCreateSnapshot(c.env.DB, project.id, now);
+  await forceCreateSnapshot(c.env.DB, project.id, now, 'pre_restore');
 
   // Parse the snapshot tree and re-apply it as a full sync
   const tree: ProjectTree = JSON.parse(snap.tree_json);
@@ -356,6 +394,12 @@ projects.post("/:id/restore/:snapshotId", async (c) => {
   );
 
   if (stmts.length > 0) await c.env.DB.batch(stmts);
+
+  // Remember where the user now stands, so the list can mark it.
+  await c.env.DB
+    .prepare("UPDATE projects SET restored_snapshot_id = ? WHERE id = ?")
+    .bind(snapshotId, project.id)
+    .run();
 
   // Thin snapshots after restore
   await thinSnapshots(c.env.DB, project.id, now);
@@ -913,15 +957,35 @@ async function maybeCreateSnapshot(db: D1Database, projectId: string, now: numbe
 /**
  * Unconditionally save a snapshot (used before restore and when interval elapsed).
  */
-async function forceCreateSnapshot(db: D1Database, projectId: string, now: number): Promise<void> {
+async function forceCreateSnapshot(
+  db: D1Database,
+  projectId: string,
+  now: number,
+  reason: 'auto' | 'pre_restore' = 'auto',
+): Promise<void> {
   const tree = await loadProjectTree(db, projectId);
   // Skip snapshot if project is empty (no frames)
   if (tree.frames.length === 0) return;
 
+  const json = JSON.stringify(tree);
+
+  // Don't stack up identical "where you left off" points. Opening the restore
+  // list and then restoring from it happens seconds apart with nothing changed
+  // in between, so compare the actual content rather than guessing at a delay.
+  if (reason === 'pre_restore') {
+    // Match against EVERY point, not just the newest: right after a restore the
+    // project is identical to the point it was restored to, and stamping that
+    // same content with the present time is what made the list nonsense.
+    const same = await db.prepare(
+      "SELECT 1 AS hit FROM project_snapshots WHERE project_id = ? AND tree_json = ? LIMIT 1",
+    ).bind(projectId, json).first<{ hit: number }>();
+    if (same) return;
+  }
+
   const id = newId();
   await db.prepare(
-    "INSERT INTO project_snapshots (id, project_id, tree_json, created_at) VALUES (?, ?, ?, ?)",
-  ).bind(id, projectId, JSON.stringify(tree), now).run();
+    "INSERT INTO project_snapshots (id, project_id, tree_json, created_at, reason) VALUES (?, ?, ?, ?, ?)",
+  ).bind(id, projectId, json, now, reason).run();
 }
 
 /**
@@ -935,13 +999,19 @@ async function forceCreateSnapshot(db: D1Database, projectId: string, now: numbe
  */
 async function thinSnapshots(db: D1Database, projectId: string, now: number): Promise<void> {
   const all = await db.prepare(
-    "SELECT id, created_at FROM project_snapshots WHERE project_id = ? ORDER BY created_at DESC",
-  ).bind(projectId).all<{ id: string; created_at: number }>();
+    "SELECT id, created_at, reason FROM project_snapshots WHERE project_id = ? ORDER BY created_at DESC",
+  ).bind(projectId).all<{ id: string; created_at: number; reason: string }>();
 
   const snaps = all.results;
   if (snaps.length <= 1) return;
 
   const keep = new Set<string>();
+
+  // Pre-restore points are the user's way back out of a restore. Keep every one
+  // of them for the full 48h window — they are never thinned into a bucket.
+  for (const s of snaps) {
+    if (s.reason === 'pre_restore' && now - s.created_at <= 48 * 60 * 60 * 1000) keep.add(s.id);
+  }
 
   // Bucket boundaries in ms
   const ONE_HOUR   = 60 * 60 * 1000;

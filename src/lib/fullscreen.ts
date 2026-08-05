@@ -654,6 +654,14 @@ export function openFullscreen(
       // Initial state: canvas at source card position, controls hidden
       wrap.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scaleX}, ${scaleY})`;
       wrap.style.outline = 'none';
+
+      // While the zoom runs the canvas is still scaled down to the size of the
+      // source card, so a touch would be mapped through the wrong scale and the
+      // stroke would land far outside the picture — drawing appears dead. Take
+      // input off the canvas until the zoom has finished.
+      const animCvs = overlay.querySelector('canvas') as HTMLElement | null;
+      const cvsPointerEvents = animCvs ? animCvs.style.pointerEvents : '';
+      if (animCvs) animCvs.style.pointerEvents = 'none';
       overlay.querySelectorAll('.fs-strip-tabs, .fs-bottom-bar, .fs-close').forEach((el) => {
         (el as HTMLElement).style.opacity = '0';
       });
@@ -673,6 +681,8 @@ export function openFullscreen(
           overlay.style.transition = '';
           wrap.style.transition = '';
           wrap.style.outline = '';
+          // Zoom finished — hand the canvas back exactly as it was.
+          if (animCvs) animCvs.style.pointerEvents = cvsPointerEvents;
           overlay.querySelectorAll('.fs-strip-tabs, .fs-bottom-bar, .fs-close').forEach((el) => {
             (el as HTMLElement).style.transition = '';
           });
