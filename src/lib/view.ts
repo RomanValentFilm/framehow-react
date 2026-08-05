@@ -971,6 +971,40 @@ export function addCrossSwipe(el: HTMLElement, fid: number, fromStrip: StripType
   );
 }
 
+// --- Tell the app's own scrolling apart from the user's -------------------
+// The existing rule is right and stays exactly as it is: scrolled down means
+// the bars hide. The only thing it cannot see is WHO scrolled. When the app
+// moves the page itself (after a photo, after a swipe) the bars must stay as
+// they were, because the user did nothing.
+//
+// No timer is involved. The flag is raised when the app scrolls and lowered
+// by a real touch or wheel — the moment the user takes the page back.
+let _appScroll = false;
+
+export function markAppScroll(): void {
+  _appScroll = true;
+}
+
+/**
+ * Put the bars back on screen properly.
+ *
+ * Removing `tb-hide` is not enough on iPad: the detail bar is placed by
+ * position, measured against the view bar. While the view bar is hidden that
+ * measurement is off the top of the screen, so the detail bar is parked at a
+ * negative offset. Nothing recomputes it afterwards, which is why the DETAIL
+ * button stayed lit while its bar was nowhere to be seen.
+ */
+export function showBarsNow(): void {
+  const isPhone = Math.min(window.innerWidth, window.innerHeight) <= 430;
+  if (isPhone) return;
+  document.getElementById('mainToolbar')?.classList.remove('tb-hide');
+  document.querySelector('.view-bar')?.classList.remove('tb-hide');
+  document.getElementById('detailBar')?.classList.remove('tb-hide');
+  if ((window as any)._scrollHideReset) (window as any)._scrollHideReset(false);
+  const sync = (window as any)._fhSyncDetailTop;
+  if (sync) sync();                       // re-measure now the view bar is back
+}
+
 export function resetToolbarState(): void {
   const isPhone = Math.min(window.innerWidth, window.innerHeight) <= 430;
   if (isPhone) return; // iPhone: toolbar scrolls naturally via CSS, no JS needed
@@ -1256,6 +1290,10 @@ export function wireScrollHandlers(): void {
   };
   const TH = 10;
 
+  // A real touch or wheel = the user has taken the page back.
+  (['touchstart', 'wheel', 'keydown'] as const).forEach((evt) =>
+    window.addEventListener(evt, () => { _appScroll = false; }, { passive: true }));
+
   // Sync detail bar position to sit right below the view bar
   const syncDetailTopIPad = () => {
     if (!detailBar) return;
@@ -1275,6 +1313,8 @@ export function wireScrollHandlers(): void {
     }
   };
 
+  (window as any)._fhSyncDetailTop = syncDetailTopIPad;
+
   // Apply initial state
   resetToolbarState();
   syncDetailTopIPad();
@@ -1283,6 +1323,7 @@ export function wireScrollHandlers(): void {
   window.addEventListener(
     'scroll',
     () => {
+      if (_appScroll) return; // the app moved the page, not the user — leave bars alone
       if (Date.now() < state().scrollHideGuard) return;
       if (document.querySelector('.fs-overlay')) return;
       const camOvl = document.getElementById('cameraOverlay');

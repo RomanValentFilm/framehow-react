@@ -36,6 +36,7 @@ import { drawFit } from './drawing';
 import { openCamera, getCameraTarget, clearCameraTarget, setOnCapturedImage } from './camera';
 import { recordTombstone } from './accountFlow';
 import { openFullscreen } from './fullscreen';
+import { markAppScroll, showBarsNow } from './view';
 import { flushSyncNow } from './currentProject';
 import { addFrameToSortOrders, removeFrameFromSortOrders } from './sortOrder';
 
@@ -572,6 +573,10 @@ export function applyCapturedImage(dataURL: string, target: any): void {
   const { fid, div, fromCompare, fromMain } = target;
   const strip: StripType = target.stripType || 'ver';
   const scrollId = stripScrollId(strip);
+  // The CAM button was pressed ON the card, so the card is on screen already.
+  // The page must therefore not move at all. Remember where it is and put it
+  // back, because re-rendering the card changes its height for a moment.
+  const _scrollY0 = window.scrollY;
   snapshotFrame(fid, fromMain ? 'main' : strip);
   let capturedToVersion = false;
   if (fromMain) {
@@ -639,12 +644,16 @@ export function applyCapturedImage(dataURL: string, target: any): void {
   }
   useStore.setState({ overviewAction: false });
   clearCameraTarget();
-  // In 3x2 the card is already on screen and centring it moves the whole grid,
-  // which costs the user their bearings. The strip views still centre, where
-  // the card can genuinely be off screen.
-  if (state().currentViewMode !== 'grid3x2') {
-    scrollFrameIntoView(fid, fromMain ? 'main' : strip);
-  }
+  // No centring anywhere: the card was on screen when CAM was pressed, so
+  // moving the page only costs the user their bearings. Hold the position
+  // across the re-render instead.
+  markAppScroll();
+  const _holdScroll = () => { if (window.scrollY !== _scrollY0) window.scrollTo(0, _scrollY0); };
+  _holdScroll();
+  requestAnimationFrame(() => { _holdScroll(); requestAnimationFrame(_holdScroll); });
+  // Bring the bars back properly (the detail bar needs repositioning, not just
+  // its class removed) so you can still see which strips you are in.
+  showBarsNow();
   void flushSyncNow(); // FRM-17/VER-14: camera capture → snap
 
   // Zoom-out animation: image zooms from full-screen down to target card
