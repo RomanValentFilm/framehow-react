@@ -7,7 +7,7 @@ import { state, useStore, isTouch, resetStoryboardState } from '../store/state';
 import { renderAll, renderMainFrame, renderVersionFrame } from './render';
 import { renderOverview, renderOverviewRow, renderGrid4, renderGrid4Row, renderGrid3x2, renderGrid3x2Card, recalcGrid3x2Margins, resetGrid3x2Zoom } from './overview';
 import { handleAction, handleMainAction } from './actions';
-import { setViewMode, autoPhoneMainView, wireScrollHandlers, scrollAnchorTo } from './view';
+import { setViewMode, autoPhoneMainView, wireScrollHandlers, scrollAnchorTo, captureFrameAnchor, restoreFrameAnchor, syncCardHeights } from './view';
 import {
   toggleStar,
   clearAllDrawActive,
@@ -769,6 +769,17 @@ export function initFramehow(): void {
         return;
       }
 
+      // NOTES and NEEDS add or remove a column just like the strip buttons do,
+      // so keep the user on the same frame. Registered before the branch
+      // because each one returns from several places.
+      if (view === 'needs' || view === 'notes') {
+        const _npAnchor = captureFrameAnchor();
+        requestAnimationFrame(() => {
+          syncCardHeights();
+          void (document.querySelector('.columns') as HTMLElement | null)?.offsetHeight;
+          restoreFrameAnchor(_npAnchor);
+        });
+      }
       if (view === 'needs') {
         const s = state();
         const cur = s.needsStripVisible;
@@ -916,6 +927,19 @@ export function initFramehow(): void {
   document.querySelectorAll('.strip-toggle').forEach((b) =>
     b.addEventListener('click', () => {
       if (state().setupMode) return; // locked while setup bar is open
+      // Adding or removing a column rebuilds every card at a new width, so the
+      // frame you were looking at ends up somewhere else. Remember the spot and
+      // return to it once the new layout has settled.
+      const _posAnchor = captureFrameAnchor();
+      requestAnimationFrame(() => {
+        // Card heights are normally recalculated two frames after the rebuild,
+        // so centring here would measure provisional geometry that is then
+        // replaced. Run that calculation now, force the layout, then centre —
+        // no timers, no race. Same pattern setViewMode already uses.
+        syncCardHeights();
+        void (document.querySelector('.columns') as HTMLElement | null)?.offsetHeight;
+        restoreFrameAnchor(_posAnchor);
+      });
       // Close sort mode if active — remember we came from sort so strip buttons
       // should activate (not toggle off) the pressed strip
       const wasSort = state().sortMode;

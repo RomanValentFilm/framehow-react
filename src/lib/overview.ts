@@ -20,7 +20,7 @@ import {
   getFrameStripLabel,
   setFrameStripLabel,
   ensureStripVersions,
-  clearReorder, canvasHintFor, talentHintHTML } from './helpers';
+  clearReorder, canvasHintFor, talentHintHTML, isNewlyAddedFrame } from './helpers';
 import { restoreCanvas, restoreMainCanvas, setupMainDrawing } from './drawing';
 import { renderVersionFrame } from './render';
 import { showLabelEdit, showVerLabelEdit, showDeleteChoice, showConfirm } from './modals';
@@ -414,7 +414,7 @@ export function renderGrid4(): void {
   if (!visibleFrames.length) return;
   visibleFrames.forEach((f) => {
     const row = document.createElement('div');
-    row.className = 'overview-row g4-row';
+    row.className = 'overview-row g4-row' + (isNewlyAddedFrame(f.id) ? ' frame-just-added' : '');
     row.dataset.ofid = String(f.id);
     renderGrid4Row(row, f.id);
     overviewScroll.appendChild(row);
@@ -765,7 +765,7 @@ export function renderGrid3x2(): void {
       container.appendChild(sep);
     }
     const cardWrap = document.createElement('div');
-    cardWrap.className = 'grid3x2-card-wrap';
+    cardWrap.className = 'grid3x2-card-wrap' + (isNewlyAddedFrame(f.id) ? ' g3-just-added' : '');
     cardWrap.dataset.g3fid = String(f.id);
     renderGrid3x2Card(cardWrap, f.id);
     container.appendChild(cardWrap);
@@ -1151,12 +1151,11 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
         const asyncActs = ['write', 'upload', 'camera'];
         if (!asyncActs.includes(act)) {
           requestAnimationFrame(() => {
-            if (act === 'new') {
-              const renderFn = (window as any).__fh_renderGrid3x2;
-              if (renderFn) renderFn();
-            } else {
-              renderGrid3x2Card(wrap, fid);
-            }
+            // 'new' is deliberately excluded: handleMainAction already calls
+            // renderAll(), which rebuilds this whole grid. Rebuilding it a
+            // second time here threw away the freshly created card — including
+            // its flash — before the browser had painted once.
+            if (act !== 'new') renderGrid3x2Card(wrap, fid);
           });
         }
       })

@@ -30,7 +30,7 @@ import {
   stripScrollId,
   stripDefaultLabel,
   getFrameStripLabel,
-  setFrameStripLabel, canvasHintFor, talentHintHTML } from './helpers';
+  setFrameStripLabel, canvasHintFor, talentHintHTML, scrollFrameIntoView, isNewlyAddedFrame } from './helpers';
 import { restoreCanvas, restoreMainCanvas, setupDrawing, setupMainDrawing } from './drawing';
 import { addCrossSwipe, addNavArrows, scheduleSyncHeights } from './view';
 import { showLabelEdit, showVerLabelEdit } from './modals';
@@ -236,7 +236,7 @@ export function renderAll(): void {
 
 export function buildMainFrame(f: any): HTMLElement {
   const div = document.createElement('div');
-  div.className = 'frame-card';
+  div.className = 'frame-card' + (isNewlyAddedFrame(f.id) ? ' frame-just-added' : '');
   div.dataset.mfid = String(f.id);
   renderMainFrame(div, f.id);
   return div;
@@ -252,7 +252,39 @@ export function buildVersionFrame(fid: number, strip: StripType = 'ver'): HTMLEl
   return div;
 }
 
+
+/**
+ * Card sizing (--ph, maxWidth, margin) is written inline onto .canvas-wrap by
+ * syncCardHeights. Every renderer rebuilds that element through innerHTML,
+ * which throws those values away — so until the next frame all cards fall back
+ * to the CSS default and the page collapses to about two-thirds its height.
+ * On iOS that makes the browser clamp the scroll position, and the clamp is
+ * never undone: the user lands back at the first frame.
+ *
+ * These two helpers carry the sizing across the rebuild, so the card height
+ * never changes and the page never shrinks.
+ */
+function grabWrapSizing(div: HTMLElement): [string, string, string] | null {
+  const w = div.querySelector('.canvas-wrap') as HTMLElement | null;
+  if (!w) return null;
+  const ph = w.style.getPropertyValue('--ph');
+  if (!ph && !w.style.maxWidth) return null;
+  return [ph, w.style.maxWidth, w.style.margin];
+}
+
+function restoreWrapSizing(div: HTMLElement, saved: [string, string, string] | null): void {
+  if (!saved) return;
+  const [ph, maxWidth, margin] = saved;
+  div.querySelectorAll('.canvas-wrap').forEach((el) => {
+    const w = el as HTMLElement;
+    if (ph) w.style.setProperty('--ph', ph);
+    if (maxWidth) w.style.maxWidth = maxWidth;
+    if (margin) w.style.margin = margin;
+  });
+}
+
 export function renderMainFrame(div: HTMLElement, fid: number): void {
+  const _wrapSizing = grabWrapSizing(div);
   const s = state();
   const f = s.frames.find((fr) => fr.id === fid);
   if (!f) return;
@@ -267,6 +299,7 @@ export function renderMainFrame(div: HTMLElement, fid: number): void {
         ${f.label ? `<span class="frame-label-tag">${f.label}</span>` : '<span style="color:var(--text-faint);font-style:italic;">hidden</span>'}
         <button class="btn" data-unhide="${fid}" style="margin-left:auto;font-size:10px;padding:2px 10px;">Un-Hide</button>
       </div>`;
+    restoreWrapSizing(div, _wrapSizing);
     div.querySelector(`[data-unhide="${fid}"]`)!.addEventListener('click', () => {
       // Look up frame from CURRENT state — the closure's `f` may be stale
       // if a sync cycle replaced frame objects via useStore.setState.
@@ -353,6 +386,7 @@ export function renderMainFrame(div: HTMLElement, fid: number): void {
         <button class="act-btn" data-cact="clear" data-cfid="${fid}">HIDE</button>
         <button class="act-btn${cVerHidden ? ' disabled' : getStripPrevFrameState(fid, ccStrip) ? '' : ' disabled'}" data-cact="undo" data-cfid="${fid}"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M7 19v-2h7.1c1.15 0 2.13-.4 2.93-1.2.8-.8 1.2-1.78 1.2-2.93s-.4-2.13-1.2-2.93c-.8-.8-1.78-1.2-2.93-1.2H7.83l2.59 2.59L9 12.74 4 7.74l5-5 1.41 1.41L7.83 6.74H14.1c1.71 0 3.16.6 4.36 1.8s1.8 2.65 1.8 4.36-.6 3.16-1.8 4.36-2.65 1.8-4.36 1.8H7Z"/></svg></button>
       </div>`;
+    restoreWrapSizing(div, _wrapSizing);
 
     div.querySelectorAll('[data-cfidtab]').forEach((t) =>
       t.addEventListener('click', () => {
@@ -542,14 +576,19 @@ export function renderMainFrame(div: HTMLElement, fid: number): void {
     <div class="version-actions">
       <button class="act-btn" data-mact="new" data-mfid="${fid}">New</button>
       <button class="act-btn" data-mact="upload" data-mfid="${fid}">Load</button>
-      <button class="act-btn${s.drawActive[fid] === 'main' ? ' active' : ''}" data-mact="draw" data-mfid="${fid}">DRAW</button>
-      <button class="act-btn" data-mact="camera" data-mfid="${fid}">◎ CAM</button>
+      ${(() => {
+        const drawBtn = `<button class="act-btn${s.drawActive[fid] === 'main' ? ' active' : ''}" data-mact="draw" data-mfid="${fid}">DRAW</button>`;
+        const camBtn = `<button class="act-btn" data-mact="camera" data-mfid="${fid}">◎ CAM</button>`;
+        // TALENTS cards lead with the camera, so: New, Load, CAM, DRAW, ...
+        return s.projectType === 'fitting' ? camBtn + drawBtn : drawBtn + camBtn;
+      })()}
       <button class="act-btn" data-mact="write" data-mfid="${fid}">WRITE</button>
       <button class="act-btn" data-mact="copy" data-mfid="${fid}">Copy</button>
       <button class="act-btn" data-mact="paste" data-mfid="${fid}">Paste</button>
       <button class="act-btn" data-mact="delete" data-mfid="${fid}">HIDE</button>
       <button class="act-btn${s.prevFrameState[fid] && s.prevFrameState[fid]!.origin === 'main' ? '' : ' disabled'}" data-mact="undo" data-mfid="${fid}"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M7 19v-2h7.1c1.15 0 2.13-.4 2.93-1.2.8-.8 1.2-1.78 1.2-2.93s-.4-2.13-1.2-2.93c-.8-.8-1.78-1.2-2.93-1.2H7.83l2.59 2.59L9 12.74 4 7.74l5-5 1.41 1.41L7.83 6.74H14.1c1.71 0 3.16.6 4.36 1.8s1.8 2.65 1.8 4.36-.6 3.16-1.8 4.36-2.65 1.8-4.36 1.8H7Z"/></svg></button>
     </div>`;
+  restoreWrapSizing(div, _wrapSizing);
 
   div.querySelectorAll('.color-dot[data-mfid]').forEach((d) =>
     d.addEventListener('click', () => {
@@ -609,6 +648,7 @@ export function renderMainFrame(div: HTMLElement, fid: number): void {
 }
 
 export function renderVersionFrame(div: HTMLElement, fid: number, strip: StripType = 'ver'): void {
+  const _wrapSizing = grabWrapSizing(div);
   const s = state();
   const _f = s.frames.find((fr) => fr.id === fid);
   div.classList.toggle('orphaned', !!(_f && _f.orphaned));
@@ -642,6 +682,7 @@ export function renderVersionFrame(div: HTMLElement, fid: number, strip: StripTy
         <div class="version-tabs" style="pointer-events:none;">${tabsHTML}</div>
         <button class="btn" data-unhide="${fid}" style="margin-left:auto;font-size:10px;padding:2px 10px;">Un-Hide</button>
       </div>`;
+    restoreWrapSizing(div, _wrapSizing);
     div.querySelector(`[data-unhide="${fid}"]`)!.addEventListener('click', () => {
       // Look up frame from CURRENT state — the closure's `f` may be stale
       // if a sync cycle replaced frame objects via useStore.setState.
@@ -714,6 +755,7 @@ export function renderVersionFrame(div: HTMLElement, fid: number, strip: StripTy
         <button class="act-btn" data-mact="delete" data-mfid="${fid}">HIDE</button>
         <button class="act-btn${s.prevFrameState[fid] && s.prevFrameState[fid]!.origin === 'main' ? '' : ' disabled'}" data-mact="undo" data-mfid="${fid}"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M7 19v-2h7.1c1.15 0 2.13-.4 2.93-1.2.8-.8 1.2-1.78 1.2-2.93s-.4-2.13-1.2-2.93c-.8-.8-1.78-1.2-2.93-1.2H7.83l2.59 2.59L9 12.74 4 7.74l5-5 1.41 1.41L7.83 6.74H14.1c1.71 0 3.16.6 4.36 1.8s1.8 2.65 1.8 4.36-.6 3.16-1.8 4.36-2.65 1.8-4.36 1.8H7Z"/></svg></button>
       </div>`;
+    restoreWrapSizing(div, _wrapSizing);
     div.querySelectorAll('.color-dot[data-mfid]').forEach((d) =>
       d.addEventListener('click', () => {
         const c = (d as HTMLElement).dataset.color!;
@@ -843,6 +885,7 @@ export function renderVersionFrame(div: HTMLElement, fid: number, strip: StripTy
         <button class="act-btn${_verHidden ? ' disabled' : getStripPrevFrameState(fid, strip) && getStripPrevFrameState(fid, strip)!.origin === strip ? '' : ' disabled'}" ${_verHidden ? '' : 'data-action="undo" data-fid="' + fid + '"'}><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M7 19v-2h7.1c1.15 0 2.13-.4 2.93-1.2.8-.8 1.2-1.78 1.2-2.93s-.4-2.13-1.2-2.93c-.8-.8-1.78-1.2-2.93-1.2H7.83l2.59 2.59L9 12.74 4 7.74l5-5 1.41 1.41L7.83 6.74H14.1c1.71 0 3.16.6 4.36 1.8s1.8 2.65 1.8 4.36-.6 3.16-1.8 4.36-2.65 1.8-4.36 1.8H7Z"/></svg></button>
       </div>
     </div>`;
+  restoreWrapSizing(div, _wrapSizing);
   div.querySelectorAll('.vtab[data-fid]').forEach((t) =>
     t.addEventListener('click', () => {
       if (s.reorderFid === fid || s.verReorderFid === fid) return;
@@ -1034,6 +1077,9 @@ export function renderVersionFrame(div: HTMLElement, fid: number, strip: StripTy
           s.crossCompare[fid] = -1;
           renderVersionFrame(div, fid, strip);
         }
+        // Keep the swiped card in view. Every other action path anchors after
+        // re-rendering; the swipe was the one that did not.
+        scrollFrameIntoView(fid, strip);
       },
       { passive: true }
     );

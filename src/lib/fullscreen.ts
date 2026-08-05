@@ -723,8 +723,14 @@ export function closeFullscreen(): void {
   const fsInfo = s.fsOverlayActive;
 
   const doRemove = () => {
-    // Reset crossCompare so 3x2 card shows main frame content, not the version
-    if (fsInfo) s.crossCompare[fsInfo.fid] = -1;
+    // Reset crossCompare so the 3x2 / gallery card shows the main frame again.
+    // In the strip views the user cross-swiped to that version deliberately —
+    // dropping it there would throw them back to the main picture straight
+    // after they finished working on the version.
+    const inGridView = s.currentViewMode === 'grid3x2'
+      || s.currentViewMode === 'grid4'
+      || s.currentViewMode === 'overview';
+    if (fsInfo && inGridView) s.crossCompare[fsInfo.fid] = -1;
     document.removeEventListener('keydown', (overlay as any)._escHandler);
     if ((overlay as any)._resizeHandler) window.removeEventListener('resize', (overlay as any)._resizeHandler);
     if ((overlay as any)._fsRefreshHandler) window.removeEventListener('fs-refresh', (overlay as any)._fsRefreshHandler);

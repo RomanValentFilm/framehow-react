@@ -759,3 +759,48 @@ export function talentHintHTML(f: Frame): string {
   if (f.src || (f.strokes && f.strokes.length)) return '';
   return '<div class="canvas-hint"><span>add a<br><b>TALENT PROFILE PICTURE</b><br>by choosing an action below</span></div>';
 }
+
+/**
+ * Bring a freshly created frame into view and flash its outline, so the user
+ * can see what they just made. On phones and tablets the new card is normally
+ * created below the visible area, where nothing appears to happen.
+ */
+/**
+ * Frame that was just created, or null. The renderers check this while building
+ * a card and apply the highlight themselves.
+ *
+ * Marking after the fact meant searching the page for the new card, and that
+ * search could come up empty depending on the view — the highlight then never
+ * appeared and there was no way to tell from the outside. Marking during the
+ * build cannot miss: whichever renderer draws the card applies it.
+ */
+let _newFrameFid: number | null = null;
+let _newFrameTimer = 0;
+
+/** True while this frame should be drawn highlighted. */
+export function isNewlyAddedFrame(fid: number): boolean {
+  return _newFrameFid === fid;
+}
+
+export function flashNewFrame(fid: number): void {
+  _newFrameFid = fid;
+  window.clearTimeout(_newFrameTimer);
+  _newFrameTimer = window.setTimeout(() => {
+    _newFrameFid = null;
+    // Repaint once more so the highlight is taken off again.
+    const rerender = (window as any).__fh_renderAll;
+    if (rerender) rerender();
+  }, 1400);
+
+  // Redraw now so the card is built with the highlight, then bring it on screen.
+  const rerender = (window as any).__fh_renderAll;
+  if (rerender) rerender();
+  requestAnimationFrame(() => {
+    const card =
+      document.querySelector(`.grid3x2-card-wrap[data-g3fid="${fid}"]`) ||
+      document.querySelector(`.overview-row[data-ofid="${fid}"]`) ||
+      document.querySelector(`.frame-card[data-mfid="${fid}"]`) ||
+      document.querySelector(`.frame-card[data-vfid="${fid}"]`);
+    if (card) (card as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' });
+  });
+}

@@ -54,7 +54,25 @@ function _getLockedIH(): number {
 /* Reset lock on real orientation change */
 function _resetLockedIH(): void { _lockedIH = null; }
 
+
+/**
+ * Last known body height for each NOTES / NEEDS card, keyed by frame id.
+ *
+ * Those cards are sized by measuring the picture card in the same row. When
+ * NOTES (or NEEDS) is the only column on screen there is no picture card to
+ * measure, and a full redraw builds brand-new cards, so the previously applied
+ * height is lost and the cards collapse to their content. Remembering the last
+ * good value lets a lone column keep the height it had.
+ */
+const _notesBodyH: Record<number, number> = {};
+const _needsBodyH: Record<number, number> = {};
+
 export function syncCardHeights(): void {
+  // This function forces synchronous layout several times. If the page is
+  // momentarily shorter than the current scroll offset, iOS clamps the scroll
+  // and never restores it — the user gets thrown back to the first frame.
+  // Remember where we were and put it back if the browser moved us.
+  const _scrollY = window.scrollY;
   const s = state();
   // Gather card lists from all visible strip columns
   const stripScrollIds = [
@@ -219,6 +237,8 @@ export function syncCardHeights(): void {
           needsBody.style.flex = 'none';
           needsBody.style.height = targetHeight + 'px';
           needsCard.dataset.needsBodyH = String(Math.round(targetHeight));
+          const nfid = parseInt(needsCard.dataset.needsFid || '', 10);
+          if (!isNaN(nfid)) _needsBodyH[nfid] = Math.round(targetHeight);
 
           // Match needs-setup-pill height to the MAIN strip's setup-tag pill.
           const needsPill = needsCard.querySelector('.needs-setup-pill') as HTMLElement | null;
@@ -233,6 +253,20 @@ export function syncCardHeights(): void {
             }
           }
         }
+      } else {
+        // No picture column on screen — reuse the height this card had the last
+        // time one was, so a lone NEEDS column keeps its proportions.
+        needsCards.forEach((c) => {
+          const needsCard = c as HTMLElement;
+          const nfid2 = parseInt(needsCard.dataset.needsFid || '', 10);
+          const remembered = isNaN(nfid2) ? undefined : _needsBodyH[nfid2];
+          if (!remembered) return;
+          const needsBody = needsCard.querySelector('.needs-body') as HTMLElement | null;
+          if (!needsBody) return;
+          needsBody.style.flex = 'none';
+          needsBody.style.height = remembered + 'px';
+          needsCard.dataset.needsBodyH = String(remembered);
+        });
       }
     }
   }
@@ -271,7 +305,23 @@ export function syncCardHeights(): void {
           notesBody.style.flex = 'none';
           notesBody.style.height = targetHeight + 'px';
           notesCard.dataset.notesBodyH = String(Math.round(targetHeight));
+          const nfid = parseInt(notesCard.dataset.notesFid || '', 10);
+          if (!isNaN(nfid)) _notesBodyH[nfid] = Math.round(targetHeight);
         }
+      } else {
+        // No picture column on screen — fall back to the height this card had
+        // the last time one was, so a lone NOTES column keeps its proportions.
+        notesCards.forEach((c) => {
+          const notesCard = c as HTMLElement;
+          const nfid = parseInt(notesCard.dataset.notesFid || '', 10);
+          const remembered = isNaN(nfid) ? undefined : _notesBodyH[nfid];
+          if (!remembered) return;
+          const notesBody = notesCard.querySelector('.notes-body') as HTMLElement | null;
+          if (!notesBody) return;
+          notesBody.style.flex = 'none';
+          notesBody.style.height = remembered + 'px';
+          notesCard.dataset.notesBodyH = String(remembered);
+        });
       }
     }
   }
@@ -316,6 +366,9 @@ export function syncCardHeights(): void {
 
   // iPhone: truncate labels after layout sync
   _truncatePhoneLabels();
+
+  // Undo any scroll clamp caused by the reflows above.
+  if (window.scrollY !== _scrollY) window.scrollTo(0, _scrollY);
 }
 
 /** On iPhone: truncate frame labels — keep identifier, show only first 3 chars of extra text.
@@ -375,19 +428,110 @@ export function _updateCenterFid(): void {
   if (best) useStore.setState({ centerFid: best.dataset.g3fid || best.dataset.ofid || best.dataset.mfid || best.dataset.vfid || null });
 }
 
+/**
+ * Find the card representing a frame in whichever view is current.
+ * Shared by scrollAnchorTo and the relative-position anchor below.
+ */
+/**
+ * The scroll container that is actually on screen for the current view.
+ * The main column is still in the page when its strip is switched off, just
+ * hidden — so assuming it silently broke anchoring for any layout without the
+ * main strip (e.g. SKETCH + REFS).
+ */
+function visibleScrollEl(): HTMLElement | null {
+  const s = state();
+  if (s.currentViewMode === 'overview' || s.currentViewMode === 'grid4' || s.currentViewMode === 'grid3x2')
+    return document.getElementById('overviewScroll');
+  if (s.activeStrips.includes('main')) return document.getElementById('mainScroll');
+  const companion = s.activeStrips.find((st: string) => st !== 'main');
+  if (companion) return activeCompanionScrollEl();
+  // No picture column at all — NOTES or NEEDS is the view.
+  if (s.notesStripVisible) return document.getElementById('notesScroll');
+  if (s.needsStripVisible) return document.getElementById('needsScroll');
+  return activeCompanionScrollEl();
+}
+
+function anchorTargetFor(fid: string | number): HTMLElement | null {
+  const s = state();
+  if (s.currentViewMode === 'grid3x2')
+    return document.querySelector(`#overviewScroll .grid3x2-card-wrap[data-g3fid="${fid}"]`);
+  if (s.currentViewMode === 'overview' || s.currentViewMode === 'grid4')
+    return document.querySelector(`#overviewScroll .overview-row[data-ofid="${fid}"]`);
+  const scrollEl = visibleScrollEl();
+  if (!scrollEl) return null;
+  return (scrollEl.querySelector(`.frame-card[data-mfid="${fid}"]`) ||
+          scrollEl.querySelector(`.frame-card[data-vfid="${fid}"]`) ||
+          scrollEl.querySelector(`.notes-card[data-notes-fid="${fid}"]`) ||
+          scrollEl.querySelector(`.needs-card[data-needs-fid="${fid}"]`)) as HTMLElement | null;
+}
+
+/**
+ * Put a frame back where the user was looking at it.
+ *
+ * `rel` is how far into the card the top of the screen sat before the change
+ * (0 = card top at screen top, 0.5 = halfway down the card). Restoring that
+ * ratio keeps your place even though the card is now a different height —
+ * whereas centring the card moves you by up to half a card, which is what
+ * made switching strips feel like it jumped.
+ */
+export function scrollAnchorToRel(fid: string | number | null, rel: number | null): void {
+  if (!fid) return;
+  if (rel == null) { scrollAnchorTo(fid); return; }
+  const target = anchorTargetFor(fid);
+  if (!target) return;
+  const rect = target.getBoundingClientRect();
+  const cardTop = rect.top + window.scrollY;
+  const y = Math.max(0, Math.round(cardTop + rel * rect.height));
+  window.scrollTo(0, y);
+}
+
+
+/**
+ * Remember which frame the user is looking at, and where in that frame the top
+ * of the screen sits. Pair with restoreFrameAnchor() around anything that
+ * rebuilds the columns — adding or removing a strip changes every card's width
+ * and therefore its height, so without this the view lands somewhere random.
+ */
+export function captureFrameAnchor(): { fid: string; rel: number } | null {
+  const s = state();
+  const scroller = visibleScrollEl();
+  if (!scroller) return null;
+  const cards = scroller.querySelectorAll(
+    '.frame-card, .overview-row, .grid3x2-card-wrap, .notes-card, .needs-card');
+  let best: HTMLElement | null = null;
+  let bestDist = Infinity;
+  const mid = window.innerHeight / 2;
+  for (const card of cards) {
+    const r = card.getBoundingClientRect();
+    const d = Math.abs(r.top + r.height / 2 - mid);
+    if (d < bestDist) { bestDist = d; best = card as HTMLElement; }
+  }
+  if (!best) return null;
+  const r = best.getBoundingClientRect();
+  const fid = best.dataset.mfid || best.dataset.vfid || best.dataset.ofid
+           || best.dataset.g3fid || best.dataset.notesFid || best.dataset.needsFid;
+  if (!fid || r.height <= 0) return null;
+  return { fid, rel: Math.max(-1, Math.min(2, -r.top / r.height)) };
+}
+
+/**
+ * Put the view back on the frame captured by captureFrameAnchor().
+ * The frame is CENTRED: adding or removing a column changes every card's
+ * height, so keeping the old position within the card lands inconsistently —
+ * centring the same frame is what reads as "staying where I was".
+ */
+export function restoreFrameAnchor(a: { fid: string; rel: number } | null): void {
+  if (!a) return;
+  scrollAnchorTo(a.fid);
+}
+
+
 export function scrollAnchorTo(fid: string | number | null): void {
   if (!fid) return;
-  const s = state();
-  let target: HTMLElement | null = null;
-  if (s.currentViewMode === 'grid3x2')
-    target = document.querySelector(`#overviewScroll .grid3x2-card-wrap[data-g3fid="${fid}"]`) as HTMLElement | null;
-  else if (s.currentViewMode === 'overview' || s.currentViewMode === 'grid4')
-    target = document.querySelector(`#overviewScroll .overview-row[data-ofid="${fid}"]`) as HTMLElement | null;
-  else if (s.currentViewMode === 'ver') {
-    const scrollEl = activeCompanionScrollEl();
-    target = scrollEl ? scrollEl.querySelector(`.frame-card[data-vfid="${fid}"]`) as HTMLElement | null : null;
-  }
-  else target = document.querySelector(`#mainScroll .frame-card[data-mfid="${fid}"]`) as HTMLElement | null;
+  // Uses the shared lookup, which picks the column that is actually visible.
+  // This used to carry its own copy that always looked in the main column, so
+  // any layout without the main strip silently failed to anchor.
+  const target = anchorTargetFor(fid);
   if (!target) return;
   target.scrollIntoView({ block: 'center', behavior: 'instant' as ScrollBehavior });
 }
@@ -404,6 +548,7 @@ export function setViewMode(mode: ViewMode, keepCompare?: boolean, forceAnchorFi
   clearAllDrawActive();
 
   let anchorFid: string | null = forceAnchorFid || null;
+  let anchorRel: number | null = null;
   if (!anchorFid) {
     const visibleScroll =
       s.currentViewMode === 'overview' || s.currentViewMode === 'grid4' || s.currentViewMode === 'grid3x2'
@@ -431,6 +576,12 @@ export function setViewMode(mode: ViewMode, keepCompare?: boolean, forceAnchorFi
         }
       }
       anchorFid = anchorCard ? (anchorCard.dataset.ofid || anchorCard.dataset.g3fid || anchorCard.dataset.mfid || anchorCard.dataset.vfid || null) : null;
+      if (anchorCard) {
+        const r = anchorCard.getBoundingClientRect();
+        // Where the top of the screen sits within this card, as a fraction of
+        // its height. Restored after the switch so the view does not shift.
+        if (r.height > 0) anchorRel = Math.max(-1, Math.min(2, -r.top / r.height));
+      }
     }
   }
 
@@ -525,7 +676,11 @@ export function setViewMode(mode: ViewMode, keepCompare?: boolean, forceAnchorFi
 
   if (anchorFid) {
     void (columnsEl as HTMLElement).offsetHeight;
-    scrollAnchorTo(anchorFid);
+    scrollAnchorToRel(anchorFid, anchorRel);
+    // Adding, removing or swapping a column changes every card's width and so
+    // its height. iOS finishes that layout a frame later, so restore the same
+    // position once it has settled — otherwise you lose your place.
+    requestAnimationFrame(() => scrollAnchorToRel(anchorFid, anchorRel));
   }
 
   if (mode === 'main') setTimeout(showSwipeHint, 2000);

@@ -1478,3 +1478,27 @@ body.fitting-mode.detail-open .detail-bar{display:none !important;}
 /* FITTING projects shoot to the frame's own shape — no RATIO picker */
 body.fitting-mode .camera-ratio-btn,
 body.fitting-mode .camera-ratio-menu{display:none !important;}
+
+/* A newly created frame announces itself briefly. Each view builds its card
+   from a different element, so all three are listed. */
+/* A newly created frame announces itself briefly.
+   Deliberately NOT wrapped in a reduced-motion opt-out: on a machine with
+   "reduce motion" enabled that silently removed the highlight altogether,
+   with no way to tell from the outside. */
+.frame-just-added{animation:fh-new-frame 1.4s ease-out 1;}
+@keyframes fh-new-frame{
+  0%   {box-shadow:0 0 0 4px #d52632;}
+  70%  {box-shadow:0 0 0 4px #d52632;}
+  100% {box-shadow:0 0 0 0 transparent;}
+}
+/* The 3x2 / CAST BOARD grid: the wrap is marked, the card inside is outlined. */
+.grid3x2-card-wrap .frame-just-added,
+.g3-just-added > .frame-card{animation:fh-new-frame-dark 1.4s ease-out 1;border-radius:var(--radius);}
+@keyframes fh-new-frame-dark{
+  0%   {box-shadow:0 0 0 4px #d52632;}
+  70%  {box-shadow:0 0 0 4px #d52632;}
+  100% {box-shadow:0 0 0 0 transparent;}
+}
+/* NOTE: the reduced-motion opt-out was removed while diagnosing why the
+   highlight never appeared on desktop. It is the only rule in this file that
+   can suppress this animation. */

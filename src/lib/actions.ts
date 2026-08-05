@@ -26,7 +26,7 @@ import {
   relabelStripVersions,
   addNewStripVersion,
   autoNewStripVersionIfNeeded,
-  stripScrollId, firstVerLabel } from './helpers';
+  stripScrollId, firstVerLabel, flashNewFrame } from './helpers';
 import { snapshotFrame } from './drawing';
 import { renderAll, renderMainFrame, renderVersionFrame } from './render';
 import { renderOverviewRow, renderGrid4Row, renderGrid3x2Card } from './overview';
@@ -155,6 +155,9 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
       addFrameToSortOrders(nid, fid);
       updateFrameBadge();
       renderAll();
+      // The new card is usually created below the fold on phones and tablets,
+      // so scroll to it — otherwise nothing appears to have happened.
+      flashNewFrame(nid);
       void flushSyncNow(); // FRM-1: create new frame (portrait)
       return;
     }
@@ -206,6 +209,7 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
       addFrameToSortOrders(nid, fid);
       updateFrameBadge();
       renderAll();
+      flashNewFrame(nid);
       void flushSyncNow(); // FRM-1: create new frame
     }
   } else if (action === 'duplicate') {
@@ -635,7 +639,12 @@ export function applyCapturedImage(dataURL: string, target: any): void {
   }
   useStore.setState({ overviewAction: false });
   clearCameraTarget();
-  scrollFrameIntoView(fid, fromMain ? 'main' : strip);
+  // In 3x2 the card is already on screen and centring it moves the whole grid,
+  // which costs the user their bearings. The strip views still centre, where
+  // the card can genuinely be off screen.
+  if (state().currentViewMode !== 'grid3x2') {
+    scrollFrameIntoView(fid, fromMain ? 'main' : strip);
+  }
   void flushSyncNow(); // FRM-17/VER-14: camera capture → snap
 
   // Zoom-out animation: image zooms from full-screen down to target card
