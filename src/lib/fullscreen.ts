@@ -290,9 +290,21 @@ export function openFullscreen(
       f.drawMode = true;
       f.strokes = f.strokes || [];
       restoreMainCanvas(cvs, f);
-      const _img = new Image();
-      _img.src = f.src;
-      _img.onload = () => setupMainDrawing(cvs, fid);
+      // Switch drawing on straight away. This used to wait for the frame's
+      // image to finish loading — but a frame with no image, or one whose
+      // image is already cached, never reports finishing, so drawing was
+      // never switched on and the first open after loading a project was dead.
+      setupMainDrawing(cvs, fid);
+      if (f.src) {
+        const _img = new Image();
+        _img.onload = () => {
+          // Not while a stroke is in progress — the repaint would wipe the
+          // line under the user's finger. It is redrawn when the stroke ends.
+          if (state().drawingInProgress) return;
+          restoreMainCanvas(cvs, f);
+        };
+        _img.src = f.src;                              // set src AFTER onload
+      }
     } else if (isMain) {
       restoreMainCanvas(cvs, f);
       setupMainDrawing(cvs, fid);

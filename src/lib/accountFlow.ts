@@ -25,6 +25,7 @@ import {
   getCurrentProject,
   isDirty,
   getDirtyFrameIds,
+  claimStoreAsLocalWork,
   clearDirtyState,
   markSaved,
   isLoadInFlight,
@@ -32,6 +33,10 @@ import {
   isPushInFlight,
   setCloudSyncInFlight,
   registerCloudSync,
+  registerCreateAndSync,
+  localProjectId,
+  adoptLocalProjectId,
+  adoptDirtyFrameIds,
   registerPullFn,
   setCurrentProject,
   setProjectName,
@@ -42,8 +47,10 @@ import {
   cancelPendingPush,
   beginSystemAction,
   endSystemAction,
+  pendingOnDevice,
 } from './currentProject';
-import { applySnapshotToStore, loadSnapshot, snapshotFromStore } from './persistence';
+import { applySnapshotToStore, loadSnapshot, snapshotFromStore, listPending, isArchived, getPending, markPendingUploaded, saveProjectListCache, loadProjectListCache, deletePending, requestDurableStorage } from './persistence';
+import type { PendingRecord } from './persistence';
 import { showConfirm, showToast, showFrameConflictPicker } from './modals';
 import type { FrameConflict } from './modals';
 import { saveOpenTextEdits, saveOpenTableEdits, versionStars } from './helpers';
@@ -449,7 +456,7 @@ export async function openProjectList(): Promise<void> {
       if (editMode) {
         editMode = false;
         setEditModeUI(false);
-        renderProjectList(projects, editMode, onPick, onEdit, onDelete, onRecover);
+        renderList();
         return;
       }
       cleanup();
@@ -464,8 +471,67 @@ export async function openProjectList(): Promise<void> {
     editBtn.onclick = () => {
       editMode = !editMode;
       setEditModeUI(editMode);
-      renderProjectList(projects, editMode, onPick, onEdit, onDelete, onRecover);
+      renderList();
     };
+
+    /** Open an offline copy that is already in the cloud. This replaces what
+     *  you are working on, so it is a deliberate act and asks first. */
+    async function onPickArchived(rec: PendingRecord): Promise<void> {
+      if (editMode) return;
+      const ok = await showConfirm(
+        `Open the offline copy of "${rec.name || 'this project'}" from ` +
+        `${formatClockTime(rec.savedAt)}?\n\n` +
+        `It replaces what is currently open. The cloud version is updated only ` +
+        `when this is saved.`,
+      );
+      if (!ok) return;
+      cleanup();
+      if (!rec.snapshot?.frames?.length) { showToast('That copy is empty — nothing to open.'); return; }
+      beginSystemAction();
+      try {
+        applySnapshotToStore(rec.snapshot);
+        setCurrentProject({ projectId: rec.projectId, name: rec.name });
+      } finally {
+        endSystemAction();
+      }
+      // The user picked this version, so it wins and gets uploaded. Without
+      // this the next pull replaced it with the cloud copy seconds later.
+      claimStoreAsLocalWork();
+      (window as any).__fh_renderAll?.();
+      setViewMode(state().currentViewMode);
+    }
+
+    /** Open a project that exists only on this device. */
+    function onPickDevice(rec: PendingRecord): void {
+      if (editMode) return;
+      cleanup();
+      if (!rec.snapshot?.frames?.length) { showToast('That copy is empty — nothing to open.'); return; }
+      beginSystemAction();
+      try {
+        applySnapshotToStore(rec.snapshot);
+        setCurrentProject({ projectId: rec.projectId, name: rec.name });
+        // Keep the identity this copy is already filed under. Otherwise the
+        // project would be filed a second time under a fresh key, and the
+        // clear-on-confirmation would remove the wrong one.
+        adoptLocalProjectId(rec.key);
+      } finally {
+        endSystemAction();
+      }
+      claimStoreAsLocalWork();
+      (window as any).__fh_renderAll?.();
+      // Put it in the cloud now if we can. saveNow() creates the project and
+      // uploads it; on success the device copy is dropped, never before.
+      void saveNow();
+    }
+
+    /** Every re-render goes through here, so the offline entries can never be
+     *  dropped by a call site that forgot to pass them — which is exactly what
+     *  made them vanish when EDIT was pressed. */
+    function renderList(): void {
+      renderProjectList(projects, editMode, onPick, onEdit, onDelete, onRecover,
+                        deviceOnly, onPickDevice, archived, onPickArchived,
+                        offlineListing, onDeleteLocal);
+    }
 
     function onPick(p: CloudProject): void {
       if (editMode) return;
@@ -485,7 +551,7 @@ export async function openProjectList(): Promise<void> {
         }
       }
       show('projectListModal');
-      renderProjectList(projects, editMode, onPick, onEdit, onDelete, onRecover);
+      renderList();
     }
 
     async function onDelete(p: CloudProject): Promise<void> {
@@ -502,7 +568,7 @@ export async function openProjectList(): Promise<void> {
         showToast(asMessage(e, 'Could not delete project.'));
       }
       show('projectListModal');
-      renderProjectList(projects, editMode, onPick, onEdit, onDelete, onRecover);
+      renderList();
     }
 
     async function onRecover(p: CloudProject): Promise<void> {
@@ -516,16 +582,52 @@ export async function openProjectList(): Promise<void> {
         showToast(asMessage(e, 'Could not recover project.'));
       }
       show('projectListModal');
-      renderProjectList(projects, editMode, onPick, onEdit, onDelete, onRecover);
+      renderList();
     }
 
+    let deviceOnly: PendingRecord[] = [];
+    let archived: PendingRecord[] = [];
+    let offlineListing = false;
+
+    /** Remove an offline copy the user does not want to keep. */
+    async function onDeleteLocal(rec: PendingRecord): Promise<void> {
+      const ok = await showConfirm(
+        `Delete the offline copy of "${rec.name || 'this project'}" from ` +
+        `${formatClockTime(rec.savedAt)}?\n\n` +
+        (isArchived(rec)
+          ? 'It is already in the cloud, so only this device copy goes.'
+          : 'This work is NOT in the cloud yet. Deleting it cannot be undone.'),
+      );
+      if (!ok) return;
+      await deletePending(rec.key);
+      deviceOnly = deviceOnly.filter((r) => r.key !== rec.key);
+      archived = archived.filter((r) => r.key !== rec.key);
+      renderList();
+    }
     void (async () => {
       try {
+        // Projects that only exist on this device — made or edited offline and
+        // never confirmed by the server. They belong in the same list, or the
+        // user has no way to reach their own work.
+        const allLocal = await listPending();
+        // EVERY piece of unsent work gets its own openable row — not just
+        // projects that have never been to the cloud. Work on a cloud project
+        // used to appear only as a note on the cloud row, which offline is
+        // dimmed and refuses to open: the work was on the device with no way
+        // to reach it.
+        deviceOnly = allLocal.filter((r) => !isArchived(r));
+        archived = allLocal.filter((r) => isArchived(r));
         const res = await api.get<{ projects: CloudProject[] }>('/projects', getToken());
         projects = res.projects;
-        renderProjectList(projects, editMode, onPick, onEdit, onDelete, onRecover);
+        void saveProjectListCache(projects);   // so the list is not empty offline
+        renderList();
       } catch (e) {
-        content.textContent = asMessage(e, 'Could not load your projects.');
+        // No connection: still show whatever is held on this device.
+        if (deviceOnly.length > 0) {
+          renderList();
+        } else {
+          content.textContent = asMessage(e, 'Could not load your projects.');
+        }
       }
     })();
   });
@@ -540,26 +642,109 @@ function renderProjectList(
   onEdit: (p: CloudProject) => void,
   onDelete: (p: CloudProject) => void,
   onRecover: (p: CloudProject) => void,
+  deviceOnly: PendingRecord[] = [],
+  onPickDevice?: (rec: PendingRecord) => void,
+  archived: PendingRecord[] = [],
+  onPickArchived?: (rec: PendingRecord) => void,
+  /** True when the cloud list could not be fetched and we are showing the
+   *  last one we saw. Those rows can be read but not opened. */
+  offlineListing = false,
+  onDeleteLocal?: (rec: PendingRecord) => void,
 ): void {
   const content = el('projectListContent');
   content.innerHTML = '';
-  if (projects.length === 0) {
+  document.getElementById('projectListOfflineNote')?.classList.toggle('hidden', !offlineListing);
+
+  // One list, most recent first, so the project you are working on is at the
+  // top and everything else falls into place behind it by when it was last
+  // touched — cloud projects and offline copies together.
+  type Row = { at: number; render: () => HTMLElement };
+  const rows: Row[] = [];
+  const openId = getCurrentProject().projectId;
+
+  const localRow = (rec: PendingRecord, archivedCopy: boolean): HTMLElement => {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'project-list-row';
+    const name = document.createElement('span');
+    name.className = 'project-list-name';
+    name.textContent = rec.name || 'Unnamed project';
+    if (archivedCopy) name.style.cssText = 'font-style:italic;color:#888;';
+    row.appendChild(name);
+    const tag = document.createElement('span');
+    tag.textContent = archivedCopy
+      ? `offline copy from ${formatClockTime(rec.savedAt)} — already uploaded`
+      : `saved offline at ${formatClockTime(rec.savedAt)} — open to upload`;
+    tag.style.cssText = archivedCopy
+      ? 'font-style:italic;color:#888;font-size:11px;margin-left:8px;'
+      : 'color:#d52632;font-size:11px;margin-left:8px;';
+    row.appendChild(tag);
+    if (editMode && onDeleteLocal) {
+      const del = document.createElement('span');
+      del.textContent = 'Delete';
+      del.style.cssText = 'color:#ff6b6b;font-size:12px;margin-left:auto;cursor:pointer;';
+      del.onclick = (e) => { e.stopPropagation(); onDeleteLocal(rec); };
+      row.appendChild(del);
+    } else {
+      row.onclick = () => (archivedCopy ? onPickArchived?.(rec) : onPickDevice?.(rec));
+    }
+    return row;
+  };
+
+  for (const rec of archived) rows.push({ at: rec.savedAt, render: () => localRow(rec, true) });
+  for (const rec of deviceOnly) rows.push({ at: rec.savedAt, render: () => localRow(rec, false) });
+
+  if (projects.length === 0 && deviceOnly.length === 0 && archived.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'project-list-empty';
     empty.textContent = 'No saved projects yet. Click "New project" to start.';
     content.appendChild(empty);
     return;
   }
-  for (const p of projects) {
+  for (const p of projects) rows.push({
+    at: p.id === openId ? Number.MAX_SAFE_INTEGER : (p.updated_at || 0),
+    render: () => cloudRow(p),
+  });
+
+  // Most recent first; the project currently open is pinned to the top.
+  rows.sort((a, b) => b.at - a.at);
+  for (const r of rows) content.appendChild(r.render());
+
+  function cloudRow(p: CloudProject): HTMLElement {
     const isDeleted = p.deleted_at != null;
     const row = document.createElement('button');
     row.type = 'button';
     row.className = 'project-list-row';
     if (isDeleted) row.style.opacity = '0.35';
+    if (offlineListing) row.style.opacity = '0.45';
     const name = document.createElement('span');
     name.className = 'project-list-name';
     name.textContent = p.name;
     row.appendChild(name);
+
+    if (p.id === openId) {
+      const nowTag = document.createElement('span');
+      nowTag.textContent = 'just now — open';
+      nowTag.style.cssText = 'color:#888;font-size:11px;margin-left:8px;';
+      row.appendChild(nowTag);
+    }
+
+    // Work on this device that the server has not confirmed yet. Opening the
+    // project here uploads it; opening it elsewhere would not show it.
+    if (offlineListing) {
+      const off = document.createElement('span');
+      off.textContent = 'needs a connection to open';
+      off.style.cssText = 'color:#888;font-size:11px;margin-left:8px;';
+      row.appendChild(off);
+    }
+
+    const waiting = pendingOnDevice().find((w) => w.projectId === p.id);
+    if (waiting) {
+      const tag = document.createElement('span');
+      tag.textContent = `offline changes from ${formatClockTime(waiting.savedAt)} — open here to upload`;
+      tag.style.cssText = 'color:#d52632;font-size:11px;margin-left:8px;';
+      row.appendChild(tag);
+    }
 
     if (editMode) {
       const actions = document.createElement('span');
@@ -596,10 +781,14 @@ function renderProjectList(
       }
     }
     if (!editMode) {
-      row.onclick = isDeleted ? null : () => onPick(p);
+      row.onclick = isDeleted
+        ? null
+        : offlineListing
+          ? () => showToast('This project is in the cloud — you need a connection to open it.')
+          : () => onPick(p);
       if (isDeleted) row.style.cursor = 'default';
     }
-    content.appendChild(row);
+    return row;
   }
 }
 
@@ -950,6 +1139,18 @@ export async function saveNow(): Promise<void> {
       markSaved(projectId);
       fhTrack('project_created', { name: cp.name });
     } catch (e) {
+      // A named project the user asked to save, which cannot reach the server:
+      // this is exactly the moment to explain what happens next.
+      if (!navigator.onLine || e instanceof TypeError) {
+        const { showImportantNote } = await import('./modals');
+        await showImportantNote(
+          'IMPORTANT NOTE',
+          'Your device seems to be working offline. Once THIS DEVICE is online again, ' +
+          'open FRAMEHOW on THIS DEVICE and the project will upload to the cloud. ' +
+          'Until then, your changes are not available on other devices.',
+        );
+        return;
+      }
       showToast(asMessage(e, 'Could not create project.'));
       return;
     }
@@ -977,6 +1178,24 @@ export async function saveNow(): Promise<void> {
     markSaved(projectId);
     clearDirtyState();
     updateLastKnownTimestamp(Date.now());
+
+    // If this project was carrying work made offline, put a restore point in
+    // the cloud stamped with when that work was actually made — so it is
+    // recoverable from any device, not just this one. Then hand the device
+    // copy over to its 24-hour safety window.
+    for (const key of [localProjectId(), projectId]) {
+      const rec = await getPending(key);
+      if (!rec) continue;
+      try {
+        await api.post(
+          `/projects/${encodeURIComponent(projectId)}/snapshots`,
+          { reason: 'offline', madeAt: rec.savedAt },
+          getToken(),
+        );
+      } catch { /* the copy stays on the device either way */ }
+      await markPendingUploaded(key);
+    }
+
     fhTrack('project_saved');
     showToast('SAVED.');
   } catch (e) {
@@ -990,10 +1209,21 @@ async function startNewProject(): Promise<void> {
   // Spec: only one unsaved project at a time.
   const cp = getCurrentProject();
   if (cp.dirty) {
-    const ok = await showConfirm('Start a new project? Your current unsaved work will be replaced.');
+    const ok = await showConfirm(
+      'Start a new project?\n\n' +
+      'Your current work is kept on this device and stays in the project list ' +
+      'until it has reached the cloud.',
+    );
     if (!ok) return;
   }
   if (state().sortEditingId) closeSortMode();
+
+  // File the outgoing project BEFORE the store is wiped. Online this uploads
+  // it; offline it is written to the device under its own key. Opening another
+  // project already did this — creating a new one did not, and relied on the
+  // last failed push having happened to catch everything.
+  await flushSyncNow();
+
   resetStoryboardState();
   resetProjectSyncGuards();
   useStore.setState({ portraitMode: false, projectType: 'landscape' });
@@ -2237,6 +2467,11 @@ async function openRestoreModal(projectId: string): Promise<void> {
 
   const now = Date.now();
 
+  // Offline copies of THIS project sitting on the device.
+  const localCopies = (await listPending())
+    .filter((r) => isArchived(r) && r.projectId === projectId)
+    .sort((a, b) => b.savedAt - a.savedAt);   // most recent first
+
   // One plain list of the actual restore points, oldest at the top, each with
   // the time it was taken. No fuzzy slots: every point stays reachable, which
   // is what makes experimenting with restores safe.
@@ -2263,7 +2498,7 @@ async function openRestoreModal(projectId: string): Promise<void> {
 
   const matched = [...snapshots]
     .filter((sn) => sn.reason !== 'pre_restore' || sn.id === hereId || keepLeftOff.has(sn.id))
-    .sort((a, b) => a.created_at - b.created_at)
+    .sort((a, b) => b.created_at - a.created_at)   // most recent first
     .map((sn) => ({
       snapshot: sn,
       clockTime: formatClockTime(sn.created_at),
@@ -2328,6 +2563,47 @@ async function openRestoreModal(projectId: string): Promise<void> {
         if (!ok) { overlay.style.display = 'flex'; return; }
         overlay.remove();
         await performRestore(projectId, m.snapshot.id);
+        resolve();
+      });
+      modal.appendChild(btn);
+    }
+
+    // Offline copies held on this device for this project. Italic and grey —
+    // they come from the device, not the cloud, and are kept 24 hours.
+    for (const rec of localCopies) {
+      const btn = document.createElement('button');
+      btn.style.cssText =
+        'display:block;width:100%;padding:12px 16px;margin-bottom:8px;' +
+        'background:#232323;border:1px solid #3a3a3a;border-radius:8px;' +
+        'color:#888;font-size:14px;font-style:italic;cursor:pointer;text-align:left;';
+      btn.innerHTML = `<span>${formatClockTime(rec.savedAt)}</span>` +
+        `<span style="margin-left:8px;font-size:11px;">offline copy on this device</span>`;
+      btn.addEventListener('click', async () => {
+        overlay.style.display = 'none';
+        const ok = await showConfirm(
+          `Open the offline copy from ${formatClockTime(rec.savedAt)}?\n\n` +
+          `It replaces what is currently open. The cloud version is updated ` +
+          `only when this is saved.`,
+        );
+        if (!ok) { overlay.style.display = 'flex'; return; }
+        overlay.remove();
+        if (!rec.snapshot || !rec.snapshot.frames || rec.snapshot.frames.length === 0) {
+          showToast('That copy is empty — nothing to open.');
+          resolve();
+          return;
+        }
+        beginSystemAction();
+        try {
+          applySnapshotToStore(rec.snapshot);
+          setCurrentProject({ projectId: rec.projectId, name: rec.name });
+        } finally {
+          endSystemAction();
+        }
+        claimStoreAsLocalWork();
+        (window as any).__fh_renderAll?.();
+        // Same as after a cloud restore: the view has to be re-applied AFTER
+        // the rebuild, or the columns come back empty and the page looks dead.
+        setViewMode(state().currentViewMode);
         resolve();
       });
       modal.appendChild(btn);
@@ -2974,6 +3250,14 @@ async function tryPullFromCloud(): Promise<void> {
   const cp = getCurrentProject();
   if (!cp.projectId) return;
 
+  // Never pull on top of work the server has not taken yet. Try to send it
+  // first; if that cannot get through, skip the pull entirely rather than
+  // letting the older cloud copy replace it.
+  if (getDirtyFrameIds().size > 0) {
+    await flushSyncNow();
+    if (getDirtyFrameIds().size > 0) return;
+  }
+
   pullInFlight = true;
   setPullInFlight(true);
   lastPullAt = Date.now();
@@ -3179,6 +3463,26 @@ function updateLastKnownTimestamp(ts: number): void {
 export async function bootstrapAccountSystem(): Promise<void> {
   // 0. Register cloud sync and pull-on-focus.
   registerCloudSync(syncCurrentToServer);
+  // Ask iOS not to clear our storage after a week of not opening the app —
+  // that would take offline projects with it.
+  void requestDurableStorage();
+  // Make sure the PDF engine is on the device before it is ever needed — but
+  // only once the app is up and the device is idle. Loading the module is
+  // itself heavy, so the WAIT has to happen before the import, not inside it.
+  const warmPdfWhenIdle = () => {
+    if (!navigator.onLine) return;
+    const go = () => { void import('./pdf').then((m) => m.warmPdfEngine()); };
+    const ric = (window as { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => void })
+      .requestIdleCallback;
+    if (ric) ric(go, { timeout: 10_000 });
+    else window.setTimeout(go, 5_000);
+  };
+  if (document.readyState === 'complete') warmPdfWhenIdle();
+  else window.addEventListener('load', warmPdfWhenIdle, { once: true });
+  window.addEventListener('online', warmPdfWhenIdle);
+  // A project made offline has no cloud id, so it cannot be pushed — it has to
+  // be created first. saveNow() does exactly that, then uploads.
+  registerCreateAndSync(saveNow);
   registerPullFn(tryPullFromCloud);
   startPullOnFocus();
 
@@ -3192,6 +3496,8 @@ export async function bootstrapAccountSystem(): Promise<void> {
       dismissNewProjectModal();
       beginSystemAction();
       try {
+        adoptLocalProjectId(snap.localId);   // keep the same key across restarts
+        adoptDirtyFrameIds(snap.dirtyFrameIds);  // protect them from the first pull
         applySnapshotToStore(snap);
         // renderAll + autoPhoneMainView call setState — keep them inside
         // the system action so their setState calls don't mark dirty.

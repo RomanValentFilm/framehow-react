@@ -129,6 +129,10 @@ export function AccountModals() {
             <h2>Open project</h2>
             <button className="btn btn-accent" id="projectListNew" type="button">New project</button>
           </div>
+          <div id="projectListOfflineNote" className="hidden"
+               style={{fontSize:'11px',color:'#888',margin:'-4px 0 10px'}}>
+            To access your cloud projects, you have to be online.
+          </div>
           <div className="project-list" id="projectListContent">
             {/* populated dynamically */}
           </div>

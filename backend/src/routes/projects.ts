@@ -306,7 +306,17 @@ projects.post("/:id/snapshots", async (c) => {
   const project = await loadOwnedProject(c.env.DB, me.id, id);
   if (!project) return jsonError(c, 404, "not_found", "Project not found.");
 
-  await forceCreateSnapshot(c.env.DB, project.id, Date.now(), 'pre_restore');
+  // Work made offline is stamped with the time it was actually made, not the
+  // time it reached us — otherwise the restore list would misreport it.
+  let reason: 'pre_restore' | 'offline' = 'pre_restore';
+  let at = Date.now();
+  try {
+    const b = (await c.req.json()) as { reason?: string; madeAt?: number };
+    if (b?.reason === 'offline') reason = 'offline';
+    if (typeof b?.madeAt === 'number' && b.madeAt > 0 && b.madeAt <= Date.now()) at = b.madeAt;
+  } catch { /* no body — ordinary "where you are now" point */ }
+
+  await forceCreateSnapshot(c.env.DB, project.id, at, reason);
   return c.json({ ok: true });
 });
 
@@ -961,7 +971,7 @@ async function forceCreateSnapshot(
   db: D1Database,
   projectId: string,
   now: number,
-  reason: 'auto' | 'pre_restore' = 'auto',
+  reason: 'auto' | 'pre_restore' | 'offline' = 'auto',
 ): Promise<void> {
   const tree = await loadProjectTree(db, projectId);
   // Skip snapshot if project is empty (no frames)
@@ -972,7 +982,7 @@ async function forceCreateSnapshot(
   // Don't stack up identical "where you left off" points. Opening the restore
   // list and then restoring from it happens seconds apart with nothing changed
   // in between, so compare the actual content rather than guessing at a delay.
-  if (reason === 'pre_restore') {
+  if (reason === 'pre_restore' || reason === 'offline') {
     // Match against EVERY point, not just the newest: right after a restore the
     // project is identical to the point it was restored to, and stamping that
     // same content with the present time is what made the list nonsense.
@@ -1010,7 +1020,8 @@ async function thinSnapshots(db: D1Database, projectId: string, now: number): Pr
   // Pre-restore points are the user's way back out of a restore. Keep every one
   // of them for the full 48h window — they are never thinned into a bucket.
   for (const s of snaps) {
-    if (s.reason === 'pre_restore' && now - s.created_at <= 48 * 60 * 60 * 1000) keep.add(s.id);
+    if ((s.reason === 'pre_restore' || s.reason === 'offline')
+        && now - s.created_at <= 48 * 60 * 60 * 1000) keep.add(s.id);
   }
 
   // Bucket boundaries in ms

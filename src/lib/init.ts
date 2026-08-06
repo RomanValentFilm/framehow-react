@@ -7,7 +7,7 @@ import { state, useStore, isTouch, resetStoryboardState } from '../store/state';
 import { renderAll, renderMainFrame, renderVersionFrame } from './render';
 import { renderOverview, renderOverviewRow, renderGrid4, renderGrid4Row, renderGrid3x2, renderGrid3x2Card, recalcGrid3x2Margins, resetGrid3x2Zoom } from './overview';
 import { handleAction, handleMainAction } from './actions';
-import { setViewMode, autoPhoneMainView, wireScrollHandlers, scrollAnchorTo, captureFrameAnchor, restoreFrameAnchor, syncCardHeights } from './view';
+import { setViewMode, autoPhoneMainView, wireScrollHandlers, scrollAnchorTo, captureFrameAnchor, restoreFrameAnchor, syncCardHeights, showBarsNow } from './view';
 import {
   toggleStar,
   clearAllDrawActive,
@@ -513,6 +513,21 @@ export function initFramehow(): void {
   document.getElementById('pdfInput')!.addEventListener('change', async (e) => {
     const file = (e.target as HTMLInputElement).files?.[0];
     if (!file) return;
+
+    // A file kept in iCloud Drive but not downloaded to this iPad still appears
+    // in the picker. Offline, nothing can be read from it and it arrives empty
+    // — which used to look identical to a broken PDF.
+    if (file.size === 0) {
+      const { showImportantNote } = await import('./modals');
+      await showImportantNote(
+        'FILE NOT ON THIS DEVICE',
+        'This PDF is stored in iCloud and has not been downloaded to this iPad. ' +
+        'Open it once in the Files app while you have a connection, then import it here.',
+      );
+      (e.target as HTMLInputElement).value = '';
+      return;
+    }
+
     await handlePDF(file);
     renderAll();
     autoPhoneMainView();
@@ -1202,6 +1217,18 @@ export function initFramehow(): void {
 
   // Scroll/orientation
   wireScrollHandlers();
+
+  // On opening, the bars must be there. iOS restores the previous scroll
+  // position, so the app could come back with the page scrolled down and the
+  // toolbar — and with it the MENU button — already hidden, with no obvious
+  // way to get it back. Force them open, and again when returning from the
+  // background, which is how an iPad usually "opens" the app.
+  showBarsNow();
+  window.addEventListener('pageshow', () => showBarsNow());
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') showBarsNow();
+  });
+  window.addEventListener('focus', () => showBarsNow());
 
   // Set initial view mode (no project loaded yet — autoPhoneMainView will
   // switch to grid3x2 or main once a project loads)

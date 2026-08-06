@@ -703,3 +703,44 @@ export function openTextModal(
     area.addEventListener('input', onInput);
   });
 }
+
+/**
+ * Single-button notice with a red headline. Used for things the user must
+ * read but has no decision to make about — a confirm dialog with OK/Cancel
+ * would wrongly imply a choice.
+ */
+export function showImportantNote(headline: string, body: string): Promise<void> {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText =
+      'position:fixed;inset:0;z-index:999999;background:rgba(0,0,0,0.75);' +
+      'display:flex;align-items:center;justify-content:center;padding:20px;' +
+      'font-family:-apple-system,BlinkMacSystemFont,sans-serif;';
+
+    const box = document.createElement('div');
+    box.style.cssText =
+      'background:#1a1a1a;border-radius:12px;padding:24px;max-width:380px;width:100%;' +
+      'color:#fff;text-align:left;';
+
+    const h = document.createElement('div');
+    h.textContent = headline;
+    h.style.cssText = 'color:#d52632;font-weight:700;font-size:15px;margin-bottom:12px;';
+    box.appendChild(h);
+
+    const p = document.createElement('div');
+    p.textContent = body;
+    p.style.cssText = 'color:#fff;font-size:13px;line-height:1.5;margin-bottom:20px;';
+    box.appendChild(p);
+
+    const ok = document.createElement('button');
+    ok.textContent = 'GOT IT';
+    ok.style.cssText =
+      'display:block;width:100%;padding:12px;background:#2a2a2a;border:1px solid #555;' +
+      'border-radius:8px;color:#fff;font-size:14px;cursor:pointer;';
+    ok.onclick = () => { overlay.remove(); resolve(); };
+    box.appendChild(ok);
+
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+  });
+}

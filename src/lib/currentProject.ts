@@ -43,7 +43,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { useStore } from '../store/state';
-import { clearSnapshot, saveSnapshot, snapshotFromStore } from './persistence';
+import { clearSnapshot, saveSnapshot, snapshotFromStore, savePending, clearPending, listPending, markPendingWarned, markPendingUploaded, sweepUploaded, isArchived } from './persistence';
 import { isLoggedIn } from './session';
 
 interface CurrentProject {
@@ -58,6 +58,24 @@ interface CurrentProject {
 }
 
 let cp: CurrentProject = { projectId: null, name: null, lastSavedAt: null, dirty: false };
+
+/**
+ * Identity of the open project ON THIS DEVICE, which exists even before the
+ * project has ever reached the cloud. Without it, a project that has never
+ * been saved has nothing to be filed under, and starting a second project
+ * would overwrite it — the exact case we must never lose.
+ */
+let _localId: string = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+/** Key the open project is filed under while its work is unsent. */
+function unsentKey(): string {
+  return cp.projectId ?? _localId;
+}
+
+/** A different project is becoming the open one — give it its own identity. */
+export function newLocalProjectIdentity(): void {
+  _localId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
 const listeners = new Set<() => void>();
 
 function emit(): void {
@@ -80,6 +98,7 @@ export function setCurrentProject(p: { projectId: string | null; name: string | 
     lastSavedAt: p.lastSavedAt ?? (p.projectId ? Date.now() : null),
     dirty: false,
   };
+  if (!p.projectId) newLocalProjectIdentity();   // a project of its own on this device
   scheduleAutosave();
   emit();
 }
@@ -101,7 +120,13 @@ export function clearCurrentProject(): void {
   cp = { projectId: null, name: null, lastSavedAt: null, dirty: false };
   _dirty = false;
   _dirtyFrameIds.clear();
+  // The next project is a different thing on this device and must be filed
+  // separately — otherwise two projects that never reached the cloud would
+  // share one key and the second would overwrite the first.
+  newLocalProjectIdentity();
   emit();
+  // Only the "currently open" record is cleared. Anything the server has not
+  // confirmed stays exactly where it is, under its own key.
   void clearSnapshot();
 }
 
@@ -115,6 +140,13 @@ let cloudSyncInFlight = false;
 
 // Lazy-loaded to avoid circular imports (accountFlow → currentProject).
 let _syncFn: ((projectId: string) => Promise<void>) | null = null;
+
+/** Creates the project on the server and uploads it — used for a project made
+ *  offline that has no cloud id yet, so a plain push cannot carry it. */
+let _createAndSyncFn: (() => Promise<void>) | null = null;
+export function registerCreateAndSync(fn: () => Promise<void>): void {
+  _createAndSyncFn = fn;
+}
 let _pullFn: (() => Promise<void>) | null = null;
 let _pullInFlight = false;
 
@@ -179,12 +211,34 @@ export function isDirty(): boolean { return _dirty; }
 /** Get the set of server frame UUIDs modified locally since last push. */
 export function getDirtyFrameIds(): ReadonlySet<string> { return _dirtyFrameIds; }
 
+/** Restore the unconfirmed-frame list saved before the app was closed. */
+export function adoptDirtyFrameIds(ids: string[] | undefined | null): void {
+  if (!ids || ids.length === 0) return;
+  for (const id of ids) _dirtyFrameIds.add(id);
+  _dirty = true;   // there is work here the server has not taken
+}
+
 /** Explicitly mark a frame dirty by its server UUID.
  *  Use this for in-place mutations (e.g. setting noteHolder.note) where
  *  the object reference doesn't change so the ref-based subscriber can't
  *  detect the change automatically. */
 export function markFrameDirty(serverFrameId: string): void {
   _dirtyFrameIds.add(serverFrameId);
+}
+
+/**
+ * Treat everything currently in the store as local work the server does not
+ * have. Used when the user deliberately opens a copy held on this device: they
+ * chose that version, so it must win over the cloud and be uploaded — without
+ * this, the next pull quietly replaced it with the cloud copy again.
+ */
+export function claimStoreAsLocalWork(): void {
+  for (const f of useStore.getState().frames) {
+    if (f.serverFrameId) _dirtyFrameIds.add(f.serverFrameId);
+  }
+  _dirty = true;
+  cp = { ...cp, dirty: true };
+  emit();
 }
 
 /** Called after a successful push to clear dirty state. */
@@ -234,7 +288,18 @@ export async function flushSyncNow(): Promise<void> {
     clearTimeout(_syncDebounceTimer);
     _syncDebounceTimer = null;
   }
-  if (!_syncFn || !cp.projectId || !isLoggedIn()) return;
+  if (!_syncFn || !cp.projectId || !isLoggedIn()) {
+    // No server id yet (never saved) or not signed in: there is nothing to push,
+    // but the work still must not be lost when another project is opened. File
+    // it on the device under this project's own key.
+    if (_dirty && useStore.getState().frames.length > 0) {
+      // Filed for safety, but silent: a project the user has not saved yet is
+      // not "failing to reach the cloud" — it was never sent anywhere. The
+      // notice belongs to the explicit Save that fails.
+      void noticeUnsent(null, cp.name, snapshotFromStore(cp.projectId, cp.name), unsentKey(), false);
+    }
+    return;
+  }
   if (cloudSyncInFlight) return;
   if (_pullInFlight) return;
   if (_projectSwitchInFlight) return;
@@ -244,9 +309,17 @@ export async function flushSyncNow(): Promise<void> {
   try {
     await _syncFn(pid);
 
+    // The server answered. Only now is the work known to be in the cloud, so
+    // only now is it safe to drop the copy held on this device.
     clearDirtyState();
     cp = { ...cp, lastSavedAt: Date.now(), dirty: false };
     _pendingSyncIds.delete(pid);
+    // Clear both keys: a project saved to the cloud for the first time was
+    // filed under its device-only id until it had a cloud id. Deleting a key
+    // that is not there is harmless, and this only runs after confirmation.
+    _unsentSince = null;                       // the run of failures is over
+    void markPendingUploaded(pid);
+    void markPendingUploaded(_localId);
     hideOfflineBanner();
     emit();
   } catch (e: unknown) {
@@ -265,10 +338,14 @@ export async function flushSyncNow(): Promise<void> {
         setTimeout(() => void flushSyncNow(), 500);
       } catch {
         _pendingSyncIds.add(pid);
+        void noticeUnsent(pid, cp.name, snapshotFromStore(pid, cp.name), pid);
       }
       return; // skip the finally's cloudSyncInFlight = false (already cleared)
     }
+    // Unsent. Keep this project's work under its own key so opening another
+    // project cannot overwrite it, and so it survives closing the app.
     _pendingSyncIds.add(pid);
+    void noticeUnsent(pid, cp.name, snapshotFromStore(pid, cp.name), pid);
   } finally {
     cloudSyncInFlight = false;
   }
@@ -281,18 +358,111 @@ export async function flushSyncNow(): Promise<void> {
 
 const _pendingSyncIds = new Set<string>();
 
+
+/**
+ * Told once per project, not on every failed attempt. The user needs to know
+ * one thing: the work is safe on this device, and this is the device to open
+ * the project on when there is a connection again.
+ */
+async function noticeUnsent(pid: string | null, name: string | null,
+                            snapshot: ReturnType<typeof snapshotFromStore>,
+                            key: string = pid ?? unsentKey(),
+                            mayWarn = true): Promise<void> {
+  const firstTime = await savePending(key, pid, name, snapshot);
+
+  // The work is filed either way. Whether to SAY anything is a separate
+  // question — a dropped signal that recovers on the next action is not worth
+  // interrupting for.
+  if (!mayWarn || !firstTime) return;
+  if (_unsentSince === null) _unsentSince = Date.now();
+  if (Date.now() - _unsentSince < OFFLINE_NOTICE_DELAY_MS) return;
+
+  await markPendingWarned(key);
+  const { showImportantNote } = await import('./modals');
+  void showImportantNote(
+    'IMPORTANT NOTE',
+    'Your device seems to be working offline. Once THIS DEVICE is online again, ' +
+    'open FRAMEHOW on THIS DEVICE and the project will upload to the cloud. ' +
+    'Until then, your changes are not available on other devices.',
+  );
+}
+
+/**
+ * When the current run of failed saves began, or null if the last save worked.
+ * The notice waits for this to pass OFFLINE_NOTICE_DELAY_MS, so a brief outage
+ * that recovers on the next action is never mentioned.
+ */
+let _unsentSince: number | null = null;
+
+/** How long the work must have been stuck before the user is told. Sits just
+ *  past the retry cycle, so a retry has always been attempted and failed
+ *  before the user is told — no warning about outages that clear themselves. */
+const OFFLINE_NOTICE_DELAY_MS = 45_000;
+
+/** How often to try again for work the server has not confirmed. */
+const RETRY_INTERVAL_MS = 40_000;
+
+/** Projects with unsent work found on the device, other than the open one. */
+let _pendingOnDevice: Array<{ projectId: string | null; name: string | null; savedAt: number }> = [];
+
+/** The device-only identity of the open project. */
+export function localProjectId(): string { return _localId; }
+
+/** Restore the identity a project had before the app was closed, so unsent
+ *  work is not filed twice under two different keys. */
+export function adoptLocalProjectId(id: string | undefined | null): void {
+  if (id) _localId = id;
+}
+
+/** Unsent projects sitting on this device — shown in the project list. */
+export function pendingOnDevice(): ReadonlyArray<{ projectId: string | null; name: string | null; savedAt: number }> {
+  return _pendingOnDevice;
+}
+
+/**
+ * Read back what the previous session could not send. The knowledge used to
+ * live only in memory, so closing the app meant the app forgot there was
+ * anything outstanding — the work stayed on the device but nothing ever tried
+ * to send it again.
+ */
+async function restorePendingFromDevice(): Promise<void> {
+  try {
+    void sweepUploaded();                       // drop copies past their 24 hours
+    const recs = (await listPending()).filter((r) => !isArchived(r));
+    _pendingOnDevice = recs.map((r) => ({ projectId: r.projectId, name: r.name, savedAt: r.savedAt }));
+    for (const r of recs) if (r.projectId) _pendingSyncIds.add(r.projectId);
+    if (recs.length > 0) void retryPendingSyncs();
+  } catch { /* nothing outstanding, or storage unavailable */ }
+}
+
 async function retryPendingSyncs(): Promise<void> {
   if (!_syncFn || !isLoggedIn() || !navigator.onLine) return;
   if (_pendingSyncIds.size === 0) return;
   if (cloudSyncInFlight || _projectSwitchInFlight) return;
+  // Made offline and never uploaded: it needs creating on the server first.
+  // Only when it already has a name — otherwise saving would have to stop and
+  // ask for one, and this runs in the background.
+  if (!cp.projectId && _dirty && cp.name && _createAndSyncFn
+      && useStore.getState().frames.length > 0) {
+    cloudSyncInFlight = true;
+    try {
+      await _createAndSyncFn();
+    } catch { /* still unreachable — the device copy stays put */ }
+    finally { cloudSyncInFlight = false; }
+    return;
+  }
+
   const currentPid = cp.projectId;
   if (currentPid && _pendingSyncIds.has(currentPid) && _dirty) {
+    // Success below is the server's answer, not the browser's opinion.
     cloudSyncInFlight = true;
     try {
       await _syncFn(currentPid);
       clearDirtyState();
       cp = { ...cp, lastSavedAt: Date.now(), dirty: false };
       _pendingSyncIds.delete(currentPid);
+      void markPendingUploaded(currentPid);
+      _pendingOnDevice = _pendingOnDevice.filter((p) => p.projectId !== currentPid);
       hideOfflineBanner();
       emit();
     } catch {
@@ -334,6 +504,10 @@ async function runAutosave(): Promise<void> {
   _autosaveInFlight = true;
   try {
     const snap = snapshotFromStore(cp.projectId, cp.name);
+    snap.localId = _localId;   // survives restarts, so the key stays the same
+    // Which frames are still unconfirmed. Without this a pull after a restart
+    // sees everything as clean and replaces local work with the cloud copy.
+    snap.dirtyFrameIds = [..._dirtyFrameIds];
     if (snap.frames.length === 0 && cp.name === null) {
       await clearSnapshot();
       return;
@@ -398,7 +572,7 @@ function showOfflineBanner(): void {
     offlineBanner.id = 'offlineBanner';
     offlineBanner.style.cssText =
       'position:fixed;top:0;left:0;right:0;z-index:99999;' +
-      'background:#e65100;color:#fff;text-align:center;' +
+      'background:#d52632;color:#fff;text-align:center;' +
       'padding:8px 40px 8px 12px;font-size:13px;font-weight:500;' +
       'box-shadow:0 2px 8px rgba(0,0,0,0.3);';
     offlineBanner.innerHTML =
@@ -407,13 +581,25 @@ function showOfflineBanner(): void {
       'background:none;border:none;color:#fff;font-size:18px;cursor:pointer;' +
       'padding:4px 8px;line-height:1;" id="offlineDismiss">×</button>';
     document.body.appendChild(offlineBanner);
-    offlineBanner.querySelector('#offlineDismiss')!.addEventListener('click', () => {
-      offlineDismissedAt = Date.now();
-      isOffline = false;
-      offlineBanner!.style.display = 'none';
-    });
+    offlineBanner.querySelector('#offlineDismiss')!.addEventListener('click', dismissOfflineBanner);
   }
   offlineBanner.style.display = 'block';
+
+  // It holds for five seconds so it is actually read — a tap during that time
+  // does nothing to it. After that, tapping anywhere gets rid of it; the × is
+  // easy to miss on a tablet. It stays gone for the cooldown, or until the
+  // next time a save cannot get through.
+  const onAnyTap = () => {
+    document.removeEventListener('pointerdown', onAnyTap, true);
+    dismissOfflineBanner();
+  };
+  window.setTimeout(() => document.addEventListener('pointerdown', onAnyTap, true), 5000);
+}
+
+function dismissOfflineBanner(): void {
+  offlineDismissedAt = Date.now();
+  isOffline = false;
+  if (offlineBanner) offlineBanner.style.display = 'none';
 }
 
 function hideOfflineBanner(): void {
@@ -479,12 +665,17 @@ export function startAutosave(): void {
     }
   });
 
-  // Listen for browser online/offline events
+  // Listen for browser online/offline events. The browser saying "online" only
+  // means a network exists — hotel wifi and captive portals claim it while
+  // nothing gets through — so it is a hint to try, never proof of success.
   window.addEventListener('offline', showOfflineBanner);
-  window.addEventListener('online', () => {
-    hideOfflineBanner();
-    void retryPendingSyncs();
-  });
+  window.addEventListener('online', () => { void retryPendingSyncs(); });
+
+  // Anything the server has not confirmed is retried on startup and then at
+  // intervals, because the browser's online event may never arrive (the app
+  // can simply be reopened later, already connected).
+  void restorePendingFromDevice();
+  window.setInterval(() => { void retryPendingSyncs(); }, RETRY_INTERVAL_MS);
 
 }
 

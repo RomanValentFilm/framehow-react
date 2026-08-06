@@ -15,6 +15,42 @@ import { flushSyncNow } from './currentProject';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
+/**
+ * Make sure the PDF engine can start without a network.
+ *
+ * pdf.js loads the engine as a WORKER script, and Safari does not reliably put
+ * worker script loads through the app's cache — it goes to the network, which
+ * offline simply fails. Caching the file therefore never helped.
+ *
+ * So we fetch it ourselves — an ordinary request, which DOES use the cache —
+ * and hand pdf.js the contents directly. Once this has run, importing a PDF
+ * works with no connection at all.
+ */
+let _workerReady: Promise<void> | null = null;
+
+export function preparePdfWorker(): Promise<void> {
+  if (_workerReady) return _workerReady;
+  _workerReady = (async () => {
+    try {
+      const res = await fetch(pdfWorkerUrl);
+      if (!res.ok) return;                       // leave the plain URL in place
+      const blob = await res.blob();
+      pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(blob);
+    } catch {
+      // No cached copy and no network — the plain URL stays, and the caller
+      // reports it properly rather than failing silently.
+    }
+  })();
+  return _workerReady;
+}
+
+/** Fetch the engine while there is a connection, so it is there when needed. */
+export function warmPdfEngine(): void {
+  void preparePdfWorker();
+}
+
+
+
 interface Candidate {
   x: number;
   y: number;
@@ -611,7 +647,8 @@ export async function handlePDF(file: File): Promise<void> {
   setProgress(0, 'Loading PDF…');
   try {
     const ab = await file.arrayBuffer();
-    const pdf = await pdfjsLib.getDocument({ data: ab }).promise;
+    await preparePdfWorker();
+  const pdf = await pdfjsLib.getDocument({ data: ab }).promise;
 
     setProgress(5, 'Scanning pages…');
     const allCandidates: any[] = [];
@@ -1363,7 +1400,9 @@ export async function handlePDF(file: File): Promise<void> {
   } catch (err) {
     console.error('[StripBoard] PDF extraction error:', err);
     document.getElementById('progressOverlay')!.classList.add('hidden');
-    showToast('Error extracting PDF — check console (F12)');
+    showToast(navigator.onLine
+      ? 'Could not read this PDF.'
+      : 'Could not read this PDF — open Framehow once with a connection first.');
   }
 }
 
@@ -1389,6 +1428,7 @@ export async function testExtractPDF(
   onProgress?: (msg: string) => void
 ): Promise<{ frames: TestFrame[]; pages: number; dominantRW: number | null; dominantRH: number | null; forceFullPage: boolean }> {
   const ab = await file.arrayBuffer();
+  await preparePdfWorker();
   const pdf = await pdfjsLib.getDocument({ data: ab }).promise;
 
   onProgress?.('Scanning pages…');

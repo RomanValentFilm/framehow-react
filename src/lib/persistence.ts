@@ -10,9 +10,13 @@ import type { Frame, Version, FrameGroup, StripDef, Setup, NeedDefinitions, Fram
 import { useStore, DEFAULT_STRIP_DEFS, DEFAULT_NEED_DEFINITIONS, migrateNeedDefinitions, createDefaultExportMeta } from '../store/state';
 
 const DB_NAME = 'framehow';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_NAME = 'state';
 const KEY = 'currentProject';
+/** Projects with work that has NOT been confirmed by the server yet.
+ *  One record per project, keyed by project id — so opening a second project
+ *  can never overwrite the unsent work of the first. */
+const PENDING_STORE = 'pending';
 
 export interface CurrentProjectSnapshot {
   /** Set once the project has been saved to the cloud. Null = never saved. */
@@ -21,6 +25,15 @@ export interface CurrentProjectSnapshot {
   name: string | null;
   /** Wall-clock ms of last local edit. */
   lastModified: number;
+  /** Server ids of frames changed here but not yet confirmed by the server.
+   *  Kept with the snapshot because this is what stops a cloud pull from
+   *  overwriting local edits — and it used to live only in memory, so closing
+   *  the app threw it away and the next pull replaced offline work. */
+  dirtyFrameIds?: string[];
+  /** This project's identity ON THIS DEVICE. Restored on boot so a project
+   *  that has never reached the cloud keeps the same key across restarts —
+   *  otherwise reopening it would file the same work a second time. */
+  localId?: string;
   /** Storyboard payload — minimal subset of FrameHowState. */
   frames: Frame[];
   versions: Record<number, Version[]>;
@@ -76,6 +89,9 @@ function openDb(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         db.createObjectStore(STORE_NAME);
       }
+      if (!db.objectStoreNames.contains(PENDING_STORE)) {
+        db.createObjectStore(PENDING_STORE);
+      }
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -83,11 +99,11 @@ function openDb(): Promise<IDBDatabase> {
   return dbPromise;
 }
 
-async function withStore<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
+async function withStore<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<T>, storeName = STORE_NAME): Promise<T> {
   const db = await openDb();
   return new Promise<T>((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, mode);
-    const store = tx.objectStore(STORE_NAME);
+    const tx = db.transaction(storeName, mode);
+    const store = tx.objectStore(storeName);
     const req = fn(store);
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -226,4 +242,201 @@ export function applySnapshotToStore(snap: CurrentProjectSnapshot): void {
     exportMeta: snap.exportMeta ?? createDefaultExportMeta(),
     renderTick: prev.renderTick + 1,
   }));
+}
+
+// ---------------------------------------------------------------------------
+// Unsent work — projects whose changes the server has NOT confirmed.
+//
+// These are kept per project, so starting or opening another project can never
+// overwrite work that has not reached the cloud. A record is removed ONLY when
+// the server has confirmed it has the changes; nothing else deletes it.
+// ---------------------------------------------------------------------------
+
+export interface PendingRecord {
+  /** The key this record is filed under — its cloud id, or its device-only id. */
+  key: string;
+  /** Project id, or null for a project never yet saved to the cloud. */
+  projectId: string | null;
+  name: string | null;
+  /** When the last change was made on this device. */
+  savedAt: number;
+  /** The one-time "you are offline" notice has been shown for this project. */
+  warned?: boolean;
+  /** When the server confirmed it has this work. The copy is then kept for a
+   *  further 24 hours as a safety net before being removed. */
+  uploadedAt?: number;
+  snapshot: CurrentProjectSnapshot;
+}
+
+/** Key a project is filed under while its work is unsent. */
+export async function savePending(key: string, projectId: string | null, name: string | null,
+                                  snapshot: CurrentProjectSnapshot): Promise<boolean> {
+  // An empty snapshot must NEVER replace real work. The store is momentarily
+  // empty while switching or starting a project, and a save landing in that
+  // window would otherwise wipe the copy this whole system exists to protect.
+  if (!snapshot?.frames?.length) return false;
+
+  const existing = await getPending(key);
+  const rec: PendingRecord = {
+    key, projectId, name, savedAt: Date.now(), snapshot,
+    warned: existing?.warned ?? false,
+  };
+  await withStore('readwrite', (s) => s.put(rec, key), PENDING_STORE);
+  return !rec.warned;   // true = the user has not been told about this one yet
+}
+
+/** Remember that the one-time notice has been shown, so it is not repeated. */
+export async function markPendingWarned(key: string): Promise<void> {
+  const rec = await getPending(key);
+  if (!rec || rec.warned) return;
+  rec.warned = true;
+  await withStore('readwrite', (s) => s.put(rec, key), PENDING_STORE);
+}
+
+/** How long a confirmed copy is kept on the device as a safety net. The most
+ *  recent copy of each project is held longer — it is the one most likely to
+ *  be wanted, and by then the older two have served their purpose. */
+export const UPLOADED_GRACE_MS = 24 * 60 * 60 * 1000;
+export const NEWEST_GRACE_MS = 72 * 60 * 60 * 1000;
+
+/**
+ * The server has confirmed it has this work. The copy is NOT deleted yet — it
+ * is stamped and kept for a further 24 hours, then swept.
+ */
+export async function markPendingUploaded(key: string): Promise<void> {
+  const rec = await getPending(key);
+  if (!rec || rec.uploadedAt) return;
+  // Move it to an archive key of its own. Carrying on working — online or not
+  // — writes to the live key, so the copy as it stood when it was offline is
+  // never overwritten, only swept once its 24 hours are up.
+  const archived: PendingRecord = { ...rec, key: `archive:${key}:${Date.now()}`, uploadedAt: Date.now() };
+  await withStore('readwrite', (s) => s.put(archived, archived.key), PENDING_STORE);
+  await clearPending(key);
+
+  // A flaky connection can produce one archive per offline stretch, each a full
+  // copy including photos. Keep only the most recent few per project.
+  const all = await listPending();
+  const mine = all
+    .filter((r) => r.key.startsWith(`archive:${key}:`))
+    .sort((a, b) => (b.uploadedAt ?? 0) - (a.uploadedAt ?? 0));
+  for (const old of mine.slice(MAX_ARCHIVES_PER_PROJECT)) await clearPending(old.key);
+}
+
+/** How many "as it stood when it finally uploaded" copies to keep per project. */
+export const MAX_ARCHIVES_PER_PROJECT = 3;
+
+/** True for a copy kept purely as a safety net — not work awaiting upload. */
+export function isArchived(rec: PendingRecord): boolean {
+  return !!rec.uploadedAt || rec.key.startsWith('archive:');
+}
+
+/** Remove confirmed copies once their 24 hours are up. */
+export async function sweepUploaded(): Promise<void> {
+  try {
+    const recs = await listPending();
+    const now = Date.now();
+
+    // Newest copy per project first, so it can be given the longer window.
+    const byProject = new Map<string, PendingRecord[]>();
+    for (const r of recs) {
+      if (!r.uploadedAt) continue;
+      const base = r.key.replace(/^archive:/, '').replace(/:\d+$/, '');
+      const list = byProject.get(base) ?? [];
+      list.push(r);
+      byProject.set(base, list);
+    }
+
+    for (const list of byProject.values()) {
+      list.sort((a, b) => (b.uploadedAt ?? 0) - (a.uploadedAt ?? 0));
+      for (let i = 0; i < list.length; i++) {
+        const grace = i === 0 ? NEWEST_GRACE_MS : UPLOADED_GRACE_MS;
+        if (now - (list[i].uploadedAt ?? 0) > grace) await clearPending(list[i].key);
+      }
+    }
+  } catch { /* nothing to sweep */ }
+}
+
+/** Called only after the server has confirmed it has the changes. */
+export async function clearPending(key: string): Promise<void> {
+  try {
+    await withStore('readwrite', (s) => s.delete(key), PENDING_STORE);
+  } catch (e) {
+    console.warn('[persistence] clearPending failed', e);
+  }
+}
+
+export async function listPending(): Promise<PendingRecord[]> {
+  try {
+    const values = await withStore<any[]>('readonly', (s) => s.getAll(), PENDING_STORE);
+    return (values as PendingRecord[]) ?? [];
+  } catch (e) {
+    console.warn('[persistence] listPending failed', e);
+    return [];
+  }
+}
+
+export async function getPending(key: string): Promise<PendingRecord | null> {
+  try {
+    const v = await withStore('readonly', (s) => s.get(key), PENDING_STORE);
+    return (v as PendingRecord | undefined) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Last-known project list, so the list is not empty when there is no
+// connection. These are cloud projects: they can be SEEN offline but not
+// opened, because their contents live on the server.
+// ---------------------------------------------------------------------------
+
+const PROJECT_LIST_KEY = 'projectListCache';
+
+export async function saveProjectListCache(list: unknown[]): Promise<void> {
+  try {
+    await withStore('readwrite', (s) => s.put(list, PROJECT_LIST_KEY));
+  } catch { /* cache is a convenience, never critical */ }
+}
+
+export async function loadProjectListCache<T>(): Promise<T[]> {
+  try {
+    const v = await withStore('readonly', (s) => s.get(PROJECT_LIST_KEY));
+    return (v as T[] | undefined) ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/** Remove one offline copy the user no longer wants. */
+export async function deletePending(key: string): Promise<void> {
+  await clearPending(key);
+}
+
+/**
+ * Ask the browser to treat this site's storage as durable.
+ *
+ * Without it, iOS clears everything a site has stored after about a week
+ * without a visit — which would take offline projects with it. Safari grants
+ * this readily once Framehow has been added to the Home Screen, and ignores it
+ * otherwise, so it is safe to ask on every start.
+ */
+export async function requestDurableStorage(): Promise<boolean> {
+  try {
+    if (!navigator.storage?.persist) return false;
+    if (await navigator.storage.persisted?.()) return true;
+    return await navigator.storage.persist();
+  } catch {
+    return false;
+  }
+}
+
+/** Roughly how much room the device is willing to give us, in bytes. */
+export async function storageEstimate(): Promise<{ usage: number; quota: number } | null> {
+  try {
+    const e = await navigator.storage?.estimate?.();
+    if (!e) return null;
+    return { usage: e.usage ?? 0, quota: e.quota ?? 0 };
+  } catch {
+    return null;
+  }
 }
