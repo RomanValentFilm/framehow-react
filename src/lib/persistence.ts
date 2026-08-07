@@ -262,6 +262,9 @@ export interface PendingRecord {
   savedAt: number;
   /** The one-time "you are offline" notice has been shown for this project. */
   warned?: boolean;
+  /** When the user deleted this copy. It is kept, greyed out and recoverable,
+   *  for 24 hours — the same grace a deleted project gets. */
+  deletedAt?: number;
   /** When the server confirmed it has this work. The copy is then kept for a
    *  further 24 hours as a safety net before being removed. */
   uploadedAt?: number;
@@ -339,11 +342,16 @@ export async function sweepUploaded(): Promise<void> {
     // Newest copy per project first, so it can be given the longer window.
     const byProject = new Map<string, PendingRecord[]>();
     for (const r of recs) {
-      if (!r.uploadedAt) continue;
+      if (!r.uploadedAt || r.deletedAt) continue;
       const base = r.key.replace(/^archive:/, '').replace(/:\d+$/, '');
       const list = byProject.get(base) ?? [];
       list.push(r);
       byProject.set(base, list);
+    }
+
+    // Deleted copies go for good once their 24 hours are up.
+    for (const r of recs) {
+      if (r.deletedAt && now - r.deletedAt > UPLOADED_GRACE_MS) await clearPending(r.key);
     }
 
     for (const list of byProject.values()) {
@@ -407,9 +415,31 @@ export async function loadProjectListCache<T>(): Promise<T[]> {
   }
 }
 
-/** Remove one offline copy the user no longer wants. */
+/**
+ * Delete an offline copy — but keep it for 24 hours so it can be recovered,
+ * exactly as a deleted project can. Only the sweep removes it for good.
+ */
 export async function deletePending(key: string): Promise<void> {
-  await clearPending(key);
+  const rec = await getPending(key);
+  if (!rec) return;
+  rec.deletedAt = Date.now();
+  await withStore('readwrite', (s) => s.put(rec, key), PENDING_STORE);
+}
+
+/** Undo a deletion made within the last 24 hours. */
+export async function recoverPending(key: string): Promise<void> {
+  const rec = await getPending(key);
+  if (!rec?.deletedAt) return;
+  delete rec.deletedAt;
+  // Give it its window back. Its clock kept running while it sat deleted, so
+  // a copy recovered late would otherwise be swept moments later.
+  if (rec.uploadedAt) rec.uploadedAt = Date.now();
+  await withStore('readwrite', (s) => s.put(rec, key), PENDING_STORE);
+}
+
+/** True for a copy the user deleted. Hidden unless the list is in Edit mode. */
+export function isDeletedCopy(rec: PendingRecord): boolean {
+  return !!rec.deletedAt;
 }
 
 /**

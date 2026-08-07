@@ -22,7 +22,10 @@ projects.use("*", requireUser);
 // ---------------------------------------------------------------------------
 projects.get("/", async (c) => {
   const me = c.get("user");
-  const cutoff = Date.now() - 24 * 60 * 60 * 1000; // 24 hours ago
+  // Deleted projects stay listed — greyed out and recoverable — for the whole
+  // week they exist on the server. Showing them for one day while keeping them
+  // for seven meant six days of storage nobody could reach.
+  const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
   const result = await c.env.DB
     .prepare(
       `SELECT id, name, created_at, updated_at, deleted_at

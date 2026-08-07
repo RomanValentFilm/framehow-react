@@ -43,7 +43,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { useStore } from '../store/state';
-import { clearSnapshot, saveSnapshot, snapshotFromStore, savePending, clearPending, listPending, markPendingWarned, markPendingUploaded, sweepUploaded, isArchived } from './persistence';
+import { clearSnapshot, saveSnapshot, snapshotFromStore, savePending, clearPending, listPending, markPendingWarned, markPendingUploaded, sweepUploaded, isArchived, storageEstimate } from './persistence';
 import { isLoggedIn } from './session';
 
 interface CurrentProject {
@@ -515,9 +515,52 @@ async function runAutosave(): Promise<void> {
     await saveSnapshot(snap);
   } catch (e) {
     console.warn('[currentProject] autosave failed', e);
+    // A local save failing is the one way work can disappear without anyone
+    // noticing — almost always because the device has no room left. Say so.
+    void reportStorageFailure(e);
   } finally {
     _autosaveInFlight = false;
   }
+}
+
+let _storageWarned = false;
+
+/** Tell the user once that saving on this device has stopped working. */
+async function reportStorageFailure(e: unknown): Promise<void> {
+  if (_storageWarned) return;
+  _storageWarned = true;
+  const quotaish = e instanceof DOMException &&
+    (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED');
+  const { showImportantNote } = await import('./modals');
+  void showImportantNote(
+    'COULD NOT SAVE ON THIS DEVICE',
+    quotaish
+      ? 'This iPad has no room left for Framehow, so your latest changes are ' +
+        'NOT saved. Connect to the internet so your work can upload, or free ' +
+        'up space on the device before carrying on.'
+      : 'Your latest changes could not be saved on this device. Connect to the ' +
+        'internet so your work can upload to the cloud.',
+  );
+}
+
+/**
+ * Warn while there is still room, rather than at the moment a save fails.
+ * Checked at startup and whenever the connection drops — the points where a
+ * long offline stretch is about to begin.
+ */
+export async function checkStorageHeadroom(): Promise<void> {
+  if (_storageWarned) return;
+  const est = await storageEstimate();
+  if (!est || !est.quota) return;
+  if (est.usage / est.quota < 0.8) return;
+  _storageWarned = true;
+  const leftMb = Math.max(0, Math.round((est.quota - est.usage) / 1024 / 1024));
+  const { showImportantNote } = await import('./modals');
+  void showImportantNote(
+    'RUNNING OUT OF SPACE',
+    `Framehow has used 80% of the space this iPad allows — about ${leftMb} MB left. ` +
+    'Connect to internet so your work can upload, or free up space on the iPad.',
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -668,13 +711,14 @@ export function startAutosave(): void {
   // Listen for browser online/offline events. The browser saying "online" only
   // means a network exists — hotel wifi and captive portals claim it while
   // nothing gets through — so it is a hint to try, never proof of success.
-  window.addEventListener('offline', showOfflineBanner);
+  window.addEventListener('offline', () => { showOfflineBanner(); void checkStorageHeadroom(); });
   window.addEventListener('online', () => { void retryPendingSyncs(); });
 
   // Anything the server has not confirmed is retried on startup and then at
   // intervals, because the browser's online event may never arrive (the app
   // can simply be reopened later, already connected).
   void restorePendingFromDevice();
+  void checkStorageHeadroom();
   window.setInterval(() => { void retryPendingSyncs(); }, RETRY_INTERVAL_MS);
 
 }

@@ -49,7 +49,7 @@ import {
   endSystemAction,
   pendingOnDevice,
 } from './currentProject';
-import { applySnapshotToStore, loadSnapshot, snapshotFromStore, listPending, isArchived, getPending, markPendingUploaded, saveProjectListCache, loadProjectListCache, deletePending, requestDurableStorage } from './persistence';
+import { applySnapshotToStore, loadSnapshot, snapshotFromStore, listPending, isArchived, getPending, markPendingUploaded, saveProjectListCache, loadProjectListCache, deletePending, recoverPending, isDeletedCopy, requestDurableStorage } from './persistence';
 import type { PendingRecord } from './persistence';
 import { showConfirm, showToast, showFrameConflictPicker } from './modals';
 import type { FrameConflict } from './modals';
@@ -530,7 +530,7 @@ export async function openProjectList(): Promise<void> {
     function renderList(): void {
       renderProjectList(projects, editMode, onPick, onEdit, onDelete, onRecover,
                         deviceOnly, onPickDevice, archived, onPickArchived,
-                        offlineListing, onDeleteLocal);
+                        offlineListing, onDeleteLocal, deletedCopies, onRecoverLocal);
     }
 
     function onPick(p: CloudProject): void {
@@ -587,7 +587,16 @@ export async function openProjectList(): Promise<void> {
 
     let deviceOnly: PendingRecord[] = [];
     let archived: PendingRecord[] = [];
+    let deletedCopies: PendingRecord[] = [];
     let offlineListing = false;
+
+    /** Put a deleted copy back within its 24 hours. */
+    async function onRecoverLocal(rec: PendingRecord): Promise<void> {
+      await recoverPending(rec.key);
+      deletedCopies = deletedCopies.filter((r) => r.key !== rec.key);
+      if (isArchived(rec)) archived = [...archived, rec]; else deviceOnly = [...deviceOnly, rec];
+      renderList();
+    }
 
     /** Remove an offline copy the user does not want to keep. */
     async function onDeleteLocal(rec: PendingRecord): Promise<void> {
@@ -615,8 +624,11 @@ export async function openProjectList(): Promise<void> {
         // used to appear only as a note on the cloud row, which offline is
         // dimmed and refuses to open: the work was on the device with no way
         // to reach it.
-        deviceOnly = allLocal.filter((r) => !isArchived(r));
-        archived = allLocal.filter((r) => isArchived(r));
+        // Deleted copies stay recoverable for 24 hours, so they are kept but
+        // only shown while the list is in Edit mode — same as a deleted project.
+        deviceOnly = allLocal.filter((r) => !isArchived(r) && !isDeletedCopy(r));
+        archived = allLocal.filter((r) => isArchived(r) && !isDeletedCopy(r));
+        deletedCopies = allLocal.filter((r) => isDeletedCopy(r));
         const res = await api.get<{ projects: CloudProject[] }>('/projects', getToken());
         projects = res.projects;
         void saveProjectListCache(projects);   // so the list is not empty offline
@@ -650,6 +662,10 @@ function renderProjectList(
    *  last one we saw. Those rows can be read but not opened. */
   offlineListing = false,
   onDeleteLocal?: (rec: PendingRecord) => void,
+  /** Copies deleted within the last 24 hours — shown greyed in Edit mode with
+   *  a Recover option, exactly as a deleted project is. */
+  deletedCopies: PendingRecord[] = [],
+  onRecoverLocal?: (rec: PendingRecord) => void,
 ): void {
   const content = el('projectListContent');
   content.innerHTML = '';
@@ -692,6 +708,32 @@ function renderProjectList(
   };
 
   for (const rec of archived) rows.push({ at: rec.savedAt, render: () => localRow(rec, true) });
+  if (editMode) {
+    for (const rec of deletedCopies) rows.push({
+      at: rec.savedAt,
+      render: () => {
+        const row = document.createElement('button');
+        row.type = 'button';
+        row.className = 'project-list-row';
+        row.style.opacity = '0.35';
+        const name = document.createElement('span');
+        name.className = 'project-list-name';
+        name.textContent = rec.name || 'Unnamed project';
+        name.style.fontStyle = 'italic';
+        row.appendChild(name);
+        const tag = document.createElement('span');
+        tag.textContent = `deleted copy from ${formatClockTime(rec.savedAt)}`;
+        tag.style.cssText = 'color:#888;font-size:11px;margin-left:8px;';
+        row.appendChild(tag);
+        const rec2 = document.createElement('span');
+        rec2.textContent = 'Recover';
+        rec2.style.cssText = 'color:#6b9aff;font-size:12px;margin-left:auto;cursor:pointer;';
+        rec2.onclick = (e) => { e.stopPropagation(); onRecoverLocal?.(rec); };
+        row.appendChild(rec2);
+        return row;
+      },
+    });
+  }
   for (const rec of deviceOnly) rows.push({ at: rec.savedAt, render: () => localRow(rec, false) });
 
   if (projects.length === 0 && deviceOnly.length === 0 && archived.length === 0) {

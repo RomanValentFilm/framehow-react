@@ -155,10 +155,10 @@ export function AccountModals() {
         </div>
       </div>
 
-      {/* Delete notice (24h) */}
+      {/* Delete notice — recoverable for 7 days */}
       <div className="account-modal hidden" id="deleteNoticeModal">
         <div className="account-card">
-          <p className="account-hint" style={{margin:'16px 0'}}>This project will be deleted after 24 hours.</p>
+          <p className="account-hint" style={{margin:'16px 0'}}>This project will be permanently deleted after 7 days. Until then you can recover it from the project list.</p>
           <div className="account-btns">
             <button className="btn" id="deleteNoticeCancel" type="button">Cancel</button>
             <button className="btn btn-accent" id="deleteNoticeOk" type="button">OK</button>
