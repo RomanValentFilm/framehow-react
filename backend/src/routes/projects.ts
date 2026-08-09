@@ -220,16 +220,60 @@ projects.post("/:id/sync", async (c) => {
   const clientDevice = payload.project.device_id;
   const baseUpdatedAt = payload.project.base_updated_at;
 
-  if (baseUpdatedAt !== undefined && baseUpdatedAt < project.updated_at
-      && serverDevice && clientDevice && serverDevice !== clientDevice) {
-    const remote = await loadProjectTree(c.env.DB, project.id);
-    return c.json({ conflict: true, remote }, 409);
-  }
+  // ---------------------------------------------------------------------
+  // PER-FRAME conflict detection.
+  //
+  // Used when the client tells us, for each frame, what it believed that
+  // frame's server timestamp was. Only frames that actually moved underneath
+  // it are refused; everything else is applied. Two people working on
+  // different frames never block each other, and an offline device coming
+  // back can land all its untouched frames in one go.
+  //
+  // A client that sends no per-frame base falls through to the old
+  // whole-project check below, so nothing breaks while the app catches up.
+  // ---------------------------------------------------------------------
+  const perFrame = payload.frames.some((f) => f.base_updated_at !== undefined);
+  let rejectedFrames: Array<{ id: string; server_updated_at: number; server_offline: boolean }> = [];
 
-  // Fallback: server is newer (same-device case or no base_updated_at).
-  if (payload.project.updated_at < project.updated_at) {
-    const remote = await loadProjectTree(c.env.DB, project.id);
-    return c.json({ conflict: true, remote }, 409);
+  if (perFrame) {
+    const ids = payload.frames.map((f) => f.id);
+    const placeholders = ids.map(() => "?").join(",");
+    const existing = ids.length
+      ? await c.env.DB.prepare(
+          `SELECT id, updated_at, changed_offline FROM frames WHERE id IN (${placeholders})`,
+        ).bind(...ids).all<{ id: string; updated_at: number; changed_offline: number }>()
+      : { results: [] as Array<{ id: string; updated_at: number; changed_offline: number }> };
+
+    const serverFrame = new Map(existing.results.map((r) => [r.id, r]));
+    const accepted: typeof payload.frames = [];
+    for (const f of payload.frames) {
+      const sf = serverFrame.get(f.id);
+      // Unknown to the server = a frame created on this device. Always accepted.
+      if (!sf || f.base_updated_at === undefined || sf.updated_at <= f.base_updated_at) {
+        accepted.push(f);
+        continue;
+      }
+      rejectedFrames.push({ id: f.id, server_updated_at: sf.updated_at, server_offline: !!sf.changed_offline });
+    }
+    payload.frames = accepted;
+
+    // Everything refused and nothing else to write: tell the client plainly.
+    if (accepted.length === 0 && rejectedFrames.length > 0) {
+      const remote = await loadProjectTree(c.env.DB, project.id);
+      return c.json({ conflict: true, per_frame: true, rejected: rejectedFrames, remote }, 409);
+    }
+  } else {
+    if (baseUpdatedAt !== undefined && baseUpdatedAt < project.updated_at
+        && serverDevice && clientDevice && serverDevice !== clientDevice) {
+      const remote = await loadProjectTree(c.env.DB, project.id);
+      return c.json({ conflict: true, remote }, 409);
+    }
+
+    // Fallback: server is newer (same-device case or no base_updated_at).
+    if (payload.project.updated_at < project.updated_at) {
+      const remote = await loadProjectTree(c.env.DB, project.id);
+      return c.json({ conflict: true, remote }, 409);
+    }
   }
 
   // Storage quota: total of new images + existing images on this user's other
@@ -270,7 +314,13 @@ projects.post("/:id/sync", async (c) => {
 
   await applySync(c.env.DB, project.id, payload, now);
 
-  return c.json(await loadProjectTree(c.env.DB, project.id));
+  const tree = await loadProjectTree(c.env.DB, project.id);
+  // Some frames were refused because they moved underneath this device. The
+  // rest went in. The client shows the picker for these and nothing else.
+  if (rejectedFrames.length > 0) {
+    return c.json({ ...tree, rejected_frames: rejectedFrames });
+  }
+  return c.json(tree);
 });
 
 // ---------------------------------------------------------------------------
@@ -536,7 +586,13 @@ interface SyncPayload {
   /** When true, only dirty frames are included — server UPSERTs instead of full replace. */
   partial: boolean;
   strips: Array<{ id: string; label: string | null; sort_order: number; updated_at: number }>;
-  frames: Array<{ id: string; strip_id: string; label: string | null; sort_order: number; crop_w: number | null; crop_h: number | null; text_content: string | null; table_data: string | null; version_label: string | null; strip_labels: string | null; hidden: boolean; note: string | null; scribbles: string | null; updated_at: number }>;
+  frames: Array<{ id: string; strip_id: string; label: string | null; sort_order: number; crop_w: number | null; crop_h: number | null; text_content: string | null; table_data: string | null; version_label: string | null; strip_labels: string | null; hidden: boolean; note: string | null; scribbles: string | null; updated_at: number;
+    /** What this device believed the frame's server timestamp was when it
+     *  started changing it. Present only from clients that do per-frame sync;
+     *  absent means fall back to the whole-project check. */
+    base_updated_at?: number;
+    /** The change was made with no connection. */
+    changed_offline?: boolean }>;
   versions: Array<{ id: string; frame_id: string; label: string | null; type: string; hidden: boolean; starred: number; note: string | null; updated_at: number }>;
   images: Array<{
     id: string;
@@ -617,7 +673,10 @@ function parseSyncPayload(body: unknown): Parsed<SyncPayload> {
     const scribbles = r.scribbles === null || r.scribbles === undefined ? null : asStr(r.scribbles);
     if (!id || !strip_id || sort_order === null || updated_at === null || label === undefined || version_label === undefined) return err("frames[]");
     if (!stripIdSet.has(strip_id)) return err("frames[].strip_id (unknown)");
-    frames.push({ id, strip_id, label, sort_order, crop_w, crop_h, text_content, table_data, version_label: version_label ?? null, strip_labels, hidden, note, scribbles, updated_at });
+    const base_updated_at = typeof r.base_updated_at === "number" && Number.isFinite(r.base_updated_at)
+      ? r.base_updated_at : undefined;
+    const changed_offline = r.changed_offline === true || r.changed_offline === 1;
+    frames.push({ id, strip_id, label, sort_order, crop_w, crop_h, text_content, table_data, version_label: version_label ?? null, strip_labels, hidden, note, scribbles, updated_at, base_updated_at, changed_offline });
   }
 
   const frameIdSet = new Set(frames.map((f) => f.id));
@@ -898,9 +957,9 @@ function appendFrameInserts(db: D1Database, stmts: D1PreparedStatement[], payloa
   for (const f of payload.frames) {
     stmts.push(
       db.prepare(
-        `INSERT INTO frames (id, strip_id, label, sort_order, crop_w, crop_h, text_content, table_data, version_label, strip_labels, hidden, note, scribbles, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).bind(f.id, f.strip_id, f.label, f.sort_order, f.crop_w, f.crop_h, f.text_content, f.table_data, f.version_label, f.strip_labels, f.hidden ? 1 : 0, f.note ?? null, f.scribbles ?? null, f.updated_at),
+        `INSERT INTO frames (id, strip_id, label, sort_order, crop_w, crop_h, text_content, table_data, version_label, strip_labels, hidden, note, scribbles, updated_at, changed_offline)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(f.id, f.strip_id, f.label, f.sort_order, f.crop_w, f.crop_h, f.text_content, f.table_data, f.version_label, f.strip_labels, f.hidden ? 1 : 0, f.note ?? null, f.scribbles ?? null, f.updated_at, f.changed_offline ? 1 : 0),
     );
   }
   for (const v of payload.versions) {
