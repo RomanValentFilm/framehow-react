@@ -257,11 +257,11 @@ projects.post("/:id/sync", async (c) => {
     }
     payload.frames = accepted;
 
-    // Everything refused and nothing else to write: tell the client plainly.
-    if (accepted.length === 0 && rejectedFrames.length > 0) {
-      const remote = await loadProjectTree(c.env.DB, project.id);
-      return c.json({ conflict: true, per_frame: true, rejected: rejectedFrames, remote }, 409);
-    }
+    // NOTE: no 409 here, even when every frame is refused. A blanket conflict
+    // sends the client down the old whole-project path, which resolves by
+    // pulling — and a client that is holding unsent work refuses to pull, so
+    // the two deadlock and the push retries for ever. A per-frame client gets
+    // the tree plus the list of refusals and settles them itself.
   } else {
     if (baseUpdatedAt !== undefined && baseUpdatedAt < project.updated_at
         && serverDevice && clientDevice && serverDevice !== clientDevice) {
@@ -836,7 +836,7 @@ async function applySyncFull(db: D1Database, projectId: string, payload: SyncPay
   // Tombstones: INSERT OR IGNORE — idempotent, same tombstone may arrive multiple times
   appendTombstoneInserts(db, stmts, payload, projectId);
 
-  await db.batch(stmts);
+  if (stmts.length > 0) await db.batch(stmts);
 }
 
 // ---------------------------------------------------------------------------
@@ -947,7 +947,7 @@ async function applySyncPartial(db: D1Database, projectId: string, payload: Sync
     ),
   );
 
-  await db.batch(stmts);
+  if (stmts.length > 0) await db.batch(stmts);
 }
 
 // ---------------------------------------------------------------------------
@@ -1140,5 +1140,5 @@ async function thinSnapshots(db: D1Database, projectId: string, now: number): Pr
   const stmts = toDelete.map((s) =>
     db.prepare("DELETE FROM project_snapshots WHERE id = ?").bind(s.id),
   );
-  await db.batch(stmts);
+  if (stmts.length > 0) await db.batch(stmts);
 }
