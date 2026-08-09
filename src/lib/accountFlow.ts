@@ -26,6 +26,9 @@ import {
   isDirty,
   getDirtyFrameIds,
   claimStoreAsLocalWork,
+  markSyncContended,
+  isFlushingBeforePull,
+  flushForPullGuard,
   clearDirtyState,
   markSaved,
   isLoadInFlight,
@@ -2092,6 +2095,30 @@ async function applyCloudTreeToStore(
   let restoredStoryFlowBreaks: import('../store/state').SortBreak[] = [];
   let restoredCamAspectRatio: import('../store/state').CamRatioKey = 'canvas';
   let restoredExportMeta: import('../store/state').ExportMeta | null = null;
+  // Frames created on THIS device that the server has never seen have no server
+  // id, so they are not in the cloud tree and the loop above never touched them.
+  // Without this they are simply dropped — which is every frame added offline.
+  // Keep them, with their versions, and let the next push create them.
+  if (keepLocalFrameIds) {
+    for (const lf of prev.frames) {
+      if (lf.serverFrameId) continue;          // already handled via the cloud tree
+      const localId = nextId++;
+      newFrames.push({ ...lf, id: localId });
+      for (const stripId of Object.keys(prev.stripVersions)) {
+        const map = prev.stripVersions[stripId];
+        if (!map || !map[lf.id]) continue;
+        const target = stripId === 'ver' ? verVersions
+          : stripId === 'floor' ? floorVersions
+          : stripId === 'refs' ? refsVersions : null;
+        if (target) target[localId] = map[lf.id].map((v, i) => ({ ...v, id: i + 1 }));
+        const tabTarget = stripId === 'ver' ? verActiveTab
+          : stripId === 'floor' ? floorActiveTab
+          : stripId === 'refs' ? refsActiveTab : null;
+        if (tabTarget) tabTarget[localId] = 0;
+      }
+    }
+  }
+
   let isPortrait = newFrames.length > 0 && newFrames[0].cropH > newFrames[0].cropW;
   // Project kind: falls back to the shape inference above for legacy projects
   let restoredProjectType: ProjectType = isPortrait ? 'portrait' : 'landscape';
@@ -2511,7 +2538,9 @@ async function openRestoreModal(projectId: string): Promise<void> {
 
   // Offline copies of THIS project sitting on the device.
   const localCopies = (await listPending())
-    .filter((r) => isArchived(r) && r.projectId === projectId)
+    // A copy the user deleted must not still be offered here — the project
+    // list hides it, and this list was showing it.
+    .filter((r) => isArchived(r) && !isDeletedCopy(r) && r.projectId === projectId)
     .sort((a, b) => b.savedAt - a.savedAt);   // most recent first
 
   // One plain list of the actual restore points, oldest at the top, each with
@@ -2550,7 +2579,26 @@ async function openRestoreModal(projectId: string): Promise<void> {
       continuedAt: sn.continued_at ? formatClockTime(sn.continued_at) : null,
     }));
 
-  if (matched.length === 0) {
+  // Copies held on this device belong in the same time order as everything
+  // else — a copy from 14:00 sits between the 13:50 and 14:10 points, not
+  // parked at the bottom because it came from a different place.
+  type RestoreEntry = typeof matched[number] & { local?: PendingRecord; at: number };
+  const entries: RestoreEntry[] = matched.map((m) => ({ ...m, at: m.snapshot.created_at }));
+  for (const rec of localCopies) {
+    entries.push({
+      snapshot: { id: rec.key, created_at: rec.savedAt },
+      clockTime: formatClockTime(rec.savedAt),
+      timeAgo: formatTimeAgo(now - rec.savedAt),
+      isLeftOff: false,
+      isCurrent: false,
+      continuedAt: null,
+      local: rec,
+      at: rec.savedAt,
+    });
+  }
+  entries.sort((a, b) => b.at - a.at);
+
+  if (entries.length === 0) {
     showToast('No restore points available yet — they are created automatically every 10 minutes.');
     return;
   }
@@ -2578,8 +2626,41 @@ async function openRestoreModal(projectId: string): Promise<void> {
     subtitle.style.cssText = 'font-size:13px;color:#aaa;margin-bottom:16px;';
     modal.appendChild(subtitle);
 
-    for (const m of matched) {
+    for (const m of entries) {
       const btn = document.createElement('button');
+      if (m.local) {
+        // A copy held on this device — italic grey, but in its right place.
+        const rec = m.local;
+        btn.style.cssText =
+          'display:block;width:100%;padding:12px 16px;margin-bottom:8px;' +
+          'background:#232323;border:1px solid #3a3a3a;border-radius:8px;' +
+          'color:#888;font-size:14px;font-style:italic;cursor:pointer;text-align:left;';
+        btn.innerHTML = `<span>${m.clockTime}</span>` +
+          `<span style="margin-left:8px;font-size:11px;">offline copy on this device</span>` +
+          `<span style="float:right;font-size:12px;">${m.timeAgo}</span>`;
+        btn.addEventListener('click', async () => {
+          overlay.style.display = 'none';
+          const ok = await showConfirm(
+            `Open the offline copy from ${m.clockTime}?\n\n` +
+            `It replaces what is currently open. The cloud version is updated ` +
+            `only when this is saved.`,
+          );
+          if (!ok) { overlay.style.display = 'flex'; return; }
+          overlay.remove();
+          if (!rec.snapshot?.frames?.length) { showToast('That copy is empty — nothing to open.'); resolve(); return; }
+          beginSystemAction();
+          try {
+            applySnapshotToStore(rec.snapshot);
+            setCurrentProject({ projectId: rec.projectId, name: rec.name });
+          } finally { endSystemAction(); }
+          claimStoreAsLocalWork();
+          (window as any).__fh_renderAll?.();
+          setViewMode(state().currentViewMode);
+          resolve();
+        });
+        modal.appendChild(btn);
+        continue;
+      }
       btn.style.cssText =
         'display:block;width:100%;padding:12px 16px;margin-bottom:8px;' +
         `background:${m.isCurrent ? '#3a2a2b' : '#2a2a2a'};` +
@@ -2605,47 +2686,6 @@ async function openRestoreModal(projectId: string): Promise<void> {
         if (!ok) { overlay.style.display = 'flex'; return; }
         overlay.remove();
         await performRestore(projectId, m.snapshot.id);
-        resolve();
-      });
-      modal.appendChild(btn);
-    }
-
-    // Offline copies held on this device for this project. Italic and grey —
-    // they come from the device, not the cloud, and are kept 24 hours.
-    for (const rec of localCopies) {
-      const btn = document.createElement('button');
-      btn.style.cssText =
-        'display:block;width:100%;padding:12px 16px;margin-bottom:8px;' +
-        'background:#232323;border:1px solid #3a3a3a;border-radius:8px;' +
-        'color:#888;font-size:14px;font-style:italic;cursor:pointer;text-align:left;';
-      btn.innerHTML = `<span>${formatClockTime(rec.savedAt)}</span>` +
-        `<span style="margin-left:8px;font-size:11px;">offline copy on this device</span>`;
-      btn.addEventListener('click', async () => {
-        overlay.style.display = 'none';
-        const ok = await showConfirm(
-          `Open the offline copy from ${formatClockTime(rec.savedAt)}?\n\n` +
-          `It replaces what is currently open. The cloud version is updated ` +
-          `only when this is saved.`,
-        );
-        if (!ok) { overlay.style.display = 'flex'; return; }
-        overlay.remove();
-        if (!rec.snapshot || !rec.snapshot.frames || rec.snapshot.frames.length === 0) {
-          showToast('That copy is empty — nothing to open.');
-          resolve();
-          return;
-        }
-        beginSystemAction();
-        try {
-          applySnapshotToStore(rec.snapshot);
-          setCurrentProject({ projectId: rec.projectId, name: rec.name });
-        } finally {
-          endSystemAction();
-        }
-        claimStoreAsLocalWork();
-        (window as any).__fh_renderAll?.();
-        // Same as after a cloud restore: the view has to be re-applied AFTER
-        // the rebuild, or the columns come back empty and the page looks dead.
-        setViewMode(state().currentViewMode);
         resolve();
       });
       modal.appendChild(btn);
@@ -2900,6 +2940,7 @@ function showDeviceLockOverlay(deviceName: string): void {
     document.body.appendChild(el);
     _deviceLockOverlay = el;
   }
+  markSyncContended();   // two devices are in play — the status panel matters now
   _deviceLockOverlay.style.display = 'flex';
   // Prevent body scrolling while overlay is visible
   document.body.style.overflow = 'hidden';
@@ -3292,12 +3333,24 @@ async function tryPullFromCloud(): Promise<void> {
   const cp = getCurrentProject();
   if (!cp.projectId) return;
 
-  // Never pull on top of work the server has not taken yet. Try to send it
-  // first; if that cannot get through, skip the pull entirely rather than
-  // letting the older cloud copy replace it.
-  if (getDirtyFrameIds().size > 0) {
-    await flushSyncNow();
-    if (getDirtyFrameIds().size > 0) return;
+  // Never pull on top of work the server has not taken yet.
+  //
+  // Asking the DEVICE, not just memory: the in-memory list of changed frames is
+  // cleared during a conflict merge, and after that the guard was blind — the
+  // pull went ahead and replaced unsent work on screen, even though the device
+  // was still holding it. The stored record is the honest answer.
+  // Skipped when the guard is already pushing: the conflict handler pulls from
+  // inside that push, and re-running the guard there would loop.
+  if (!isFlushingBeforePull()) {
+    const unsent = await getPending(cp.projectId);
+    const holdingWork = getDirtyFrameIds().size > 0
+      || (!!unsent && !isArchived(unsent) && !isDeletedCopy(unsent));
+    if (holdingWork) {
+      await flushForPullGuard();
+      const still = await getPending(cp.projectId);
+      if (getDirtyFrameIds().size > 0
+          || (!!still && !isArchived(still) && !isDeletedCopy(still))) return;
+    }
   }
 
   pullInFlight = true;

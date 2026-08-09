@@ -79,6 +79,7 @@ export function newLocalProjectIdentity(): void {
 const listeners = new Set<() => void>();
 
 function emit(): void {
+  updateUploadStatus();
   for (const l of listeners) {
     try { l(); } catch (e) { console.error('[currentProject] listener', e); }
   }
@@ -281,6 +282,21 @@ function scheduleSyncSafetyNet(): void {
   }, SYNC_SAFETY_NET_MS);
 }
 
+/**
+ * True while the pull guard is pushing first. The conflict handler pulls from
+ * inside that push, and without this the nested pull hits the guard again and
+ * pushes again — a loop with nothing to advance it.
+ */
+let _flushingBeforePull = false;
+export function isFlushingBeforePull(): boolean { return _flushingBeforePull; }
+
+/** Push before a pull, once, without letting the conflict path re-enter. */
+export async function flushForPullGuard(): Promise<void> {
+  if (_flushingBeforePull) return;
+  _flushingBeforePull = true;
+  try { await flushSyncNow(); } finally { _flushingBeforePull = false; }
+}
+
 /** Immediately push if dirty (used on blur and before project switch). */
 export async function flushSyncNow(): Promise<void> {
   // Cancel any pending debounce
@@ -318,6 +334,7 @@ export async function flushSyncNow(): Promise<void> {
     // filed under its device-only id until it had a cloud id. Deleting a key
     // that is not there is harmless, and this only runs after confirmation.
     _unsentSince = null;                       // the run of failures is over
+    _contended = false;                        // nothing left to contend over
     void markPendingUploaded(pid);
     void markPendingUploaded(_localId);
     hideOfflineBanner();
@@ -325,16 +342,23 @@ export async function flushSyncNow(): Promise<void> {
   } catch (e: unknown) {
     const err = e as { status?: number };
     if (err?.status === 409 && _pullFn) {
+      _contended = true;   // another device pushed since our last sync
       // 409 conflict: another device pushed since our last sync.
       // Pull to merge (our _dirtyFrameIds protect local changes),
       // then schedule a retry push with updated base_updated_at.
       cloudSyncInFlight = false; // release lock so pull can proceed
+      // The pull ends by clearing this list. Our frames survive the merge in
+      // the store, but with an empty list the retry push would send nothing at
+      // all — the work would sit here for ever. Carry the list across.
+      const keepDirty = [..._dirtyFrameIds];
       try {
         await _pullFn();
-        // tryPullFromCloud calls clearDirtyState() after merge, but our
-        // kept-local frames still need to be pushed. Re-mark dirty and
-        // retry push quickly — base_updated_at is now up-to-date.
+        for (const id of keepDirty) _dirtyFrameIds.add(id);
         _dirty = true;
+        // Also put it in the pending list. The 500ms retry below is refused if
+        // a pull is still in flight, and nothing reschedules it — which left
+        // the device holding work for ever with no further attempt.
+        _pendingSyncIds.add(pid);
         setTimeout(() => void flushSyncNow(), 500);
       } catch {
         _pendingSyncIds.add(pid);
@@ -452,8 +476,10 @@ async function retryPendingSyncs(): Promise<void> {
     return;
   }
 
+  // Anything unsent for the open project, whether or not a failure put it in
+  // the pending list — a conflict never did, so those never got retried.
   const currentPid = cp.projectId;
-  if (currentPid && _pendingSyncIds.has(currentPid) && _dirty) {
+  if (currentPid && _dirty && (_pendingSyncIds.has(currentPid) || _dirtyFrameIds.size > 0)) {
     // Success below is the server's answer, not the browser's opinion.
     cloudSyncInFlight = true;
     try {
@@ -639,6 +665,79 @@ function showOfflineBanner(): void {
   window.setTimeout(() => document.addEventListener('pointerdown', onAnyTap, true), 5000);
 }
 
+// ---------------------------------------------------------------------------
+// Upload status strip. While a device is holding work the server has not taken,
+// it also stops pulling — so the user must be able to see that the process is
+// not finished, or they will assume it is safe and carry on (or close the app).
+// ---------------------------------------------------------------------------
+
+let statusBar: HTMLElement | null = null;
+
+/**
+ * True only while two devices are genuinely contending over this project — a
+ * conflict came back from the server, or another device holds the lock. Shown
+ * for every ordinary sync it was constant flicker, which is worse than useless:
+ * a panel that appears all the time tells you nothing when it matters.
+ */
+let _contended = false;
+
+export function markSyncContended(): void {
+  _contended = true;
+  updateUploadStatus();
+}
+
+function updateUploadStatus(): void {
+  const holding = _dirty || _dirtyFrameIds.size > 0 || _pendingSyncIds.size > 0;
+  const pushing = cloudSyncInFlight;
+
+  // Only the case that actually misleads: CONNECTED, and this device still has
+  // not sent its work. Being offline with work on the device is normal and can
+  // last all day — the banner at the top already says so, and a panel in the
+  // middle of the screen for a normal state would just be in the way.
+  const pulling = _pullInFlight;
+
+  if (!_contended || !navigator.onLine || (!holding && !pushing && !pulling)) {
+    if (statusBar) statusBar.style.display = 'none';
+    return;
+  }
+
+  if (!statusBar) {
+    statusBar = document.createElement('div');
+    statusBar.id = 'uploadStatusBar';
+    // Centred like the loading panel, but it never takes a tap — the user can
+    // carry on working while this is up, unlike a project load.
+    statusBar.style.cssText =
+      'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);' +
+      'z-index:99998;pointer-events:none;max-width:280px;text-align:center;' +
+      'background:rgba(20,20,20,0.92);border:1px solid #3a3a3a;border-radius:12px;' +
+      'padding:18px 22px;color:#fff;' +
+      'font-family:-apple-system,BlinkMacSystemFont,sans-serif;';
+    document.body.appendChild(statusBar);
+  }
+
+  let title: string;
+  let detail: string;
+  if (pushing) {
+    title = 'UPLOADING TO CLOUD';
+    detail = 'Sending your latest changes to the server.';
+  } else if (pulling) {
+    title = 'GETTING CHANGES';
+    detail = 'Collecting what was done on your other device. Wait until this ' +
+             'disappears before carrying on here.';
+  } else {
+    title = 'NOT IN THE CLOUD YET';
+    detail = 'Your changes are still on this device. Keep Framehow open until ' +
+             'this message disappears — your other devices will not have them ' +
+             'until then.';
+  }
+
+  statusBar.innerHTML =
+    `<div style="color:#d52632;font-weight:700;font-size:12px;letter-spacing:.06em;` +
+    `margin-bottom:8px;">${title}</div>` +
+    `<div style="font-size:12px;line-height:1.45;color:#ddd;">${detail}</div>`;
+  statusBar.style.display = 'block';
+}
+
 function dismissOfflineBanner(): void {
   offlineDismissedAt = Date.now();
   isOffline = false;
@@ -720,6 +819,7 @@ export function startAutosave(): void {
   void restorePendingFromDevice();
   void checkStorageHeadroom();
   window.setInterval(() => { void retryPendingSyncs(); }, RETRY_INTERVAL_MS);
+  window.setInterval(updateUploadStatus, 1000);   // keeps 'Uploading…' honest
 
 }
 
