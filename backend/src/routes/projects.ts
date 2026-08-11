@@ -257,6 +257,21 @@ projects.post("/:id/sync", async (c) => {
     }
     payload.frames = accepted;
 
+    // A refused frame's children must go too. Its rows on the server were not
+    // deleted (the frame was not applied), so re-inserting its versions and
+    // images collides with what is already there and the whole write fails.
+    if (rejectedFrames.length > 0) {
+      const refusedIds = new Set(rejectedFrames.map((r) => r.id));
+      const keptVersionIds = new Set<string>();
+      payload.versions = payload.versions.filter((v) => {
+        if (refusedIds.has(v.frame_id)) return false;
+        keptVersionIds.add(v.id);
+        return true;
+      });
+      payload.images = payload.images.filter((i) => keptVersionIds.has(i.version_id));
+      payload.drawings = payload.drawings.filter((d) => keptVersionIds.has(d.version_id));
+    }
+
     // NOTE: no 409 here, even when every frame is refused. A blanket conflict
     // sends the client down the old whole-project path, which resolves by
     // pulling — and a client that is holding unsent work refuses to pull, so

@@ -43,6 +43,7 @@
 // ═══════════════════════════════════════════════════════════════════════════
 
 import { useStore } from '../store/state';
+import { trace } from './syncTrace';
 import { clearSnapshot, saveSnapshot, snapshotFromStore, savePending, clearPending, listPending, markPendingWarned, markPendingUploaded, sweepUploaded, isArchived, storageEstimate } from './persistence';
 import { isLoggedIn } from './session';
 
@@ -211,6 +212,24 @@ export function isDirty(): boolean { return _dirty; }
 /** Get the set of server frame UUIDs modified locally since last push. */
 export function getDirtyFrameIds(): ReadonlySet<string> { return _dirtyFrameIds; }
 
+// The fingerprint record lives in accountFlow; these are registered at boot so
+// the snapshot can carry it without the two modules importing each other.
+let _fingerprintsOut: (() => Record<string, string>) | null = null;
+let _fingerprintsIn: ((m: Record<string, string>) => void) | null = null;
+
+export function registerFingerprintBridge(
+  out: () => Record<string, string>,
+  into: (m: Record<string, string>) => void,
+): void {
+  _fingerprintsOut = out;
+  _fingerprintsIn = into;
+}
+
+/** Restore what the server already had, saved before the app was closed. */
+export function adoptPushedFingerprints(m: Record<string, string> | undefined): void {
+  if (m && _fingerprintsIn) _fingerprintsIn(m);
+}
+
 /** Restore the unconfirmed-frame list saved before the app was closed. */
 export function adoptDirtyFrameIds(ids: string[] | undefined | null): void {
   if (!ids || ids.length === 0) return;
@@ -306,8 +325,10 @@ export async function flushSyncNow(): Promise<void> {
   if (!_dirty) return;
   const pid = cp.projectId;
   cloudSyncInFlight = true;
+  trace(`push start · online=${navigator.onLine}`);
   try {
     await _syncFn(pid);
+    trace('push OK');
 
     // The server answered. Only now is the work known to be in the cloud, so
     // only now is it safe to drop the copy held on this device.
@@ -324,6 +345,7 @@ export async function flushSyncNow(): Promise<void> {
     emit();
   } catch (e: unknown) {
     const err = e as { status?: number };
+    trace(`push FAILED status=${err?.status ?? '(no response)'}`);
     if (err?.status === 409 && _pullFn) {
       // 409 conflict: another device pushed since our last sync.
       // Pull to merge (our _dirtyFrameIds protect local changes),
@@ -456,8 +478,10 @@ async function retryPendingSyncs(): Promise<void> {
   if (currentPid && _pendingSyncIds.has(currentPid) && _dirty) {
     // Success below is the server's answer, not the browser's opinion.
     cloudSyncInFlight = true;
+    trace('retry push start');
     try {
       await _syncFn(currentPid);
+      trace('retry push OK');
       clearDirtyState();
       cp = { ...cp, lastSavedAt: Date.now(), dirty: false };
       _pendingSyncIds.delete(currentPid);
@@ -465,8 +489,8 @@ async function retryPendingSyncs(): Promise<void> {
       _pendingOnDevice = _pendingOnDevice.filter((p) => p.projectId !== currentPid);
       hideOfflineBanner();
       emit();
-    } catch {
-      // Still offline — will retry on next online event
+    } catch (e) {
+      trace(`retry push FAILED status=${(e as { status?: number })?.status ?? '(no response)'}`);
     } finally {
       cloudSyncInFlight = false;
     }
@@ -508,6 +532,9 @@ async function runAutosave(): Promise<void> {
     // Which frames are still unconfirmed. Without this a pull after a restart
     // sees everything as clean and replaces local work with the cloud copy.
     snap.dirtyFrameIds = [..._dirtyFrameIds];
+    // Remember what the server already has, so reopening the app does not push
+    // the entire project again.
+    if (_fingerprintsOut) snap.pushedFingerprints = _fingerprintsOut();
     if (snap.frames.length === 0 && cp.name === null) {
       await clearSnapshot();
       return;

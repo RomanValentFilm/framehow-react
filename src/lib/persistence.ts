@@ -30,6 +30,10 @@ export interface CurrentProjectSnapshot {
    *  overwriting local edits — and it used to live only in memory, so closing
    *  the app threw it away and the next pull replaced offline work. */
   dirtyFrameIds?: string[];
+  /** What was last successfully sent to the server, per frame. Remembering
+   *  this across a restart is what stops the app pushing the whole project
+   *  every time it opens — which made every other device pull for nothing. */
+  pushedFingerprints?: Record<string, string>;
   /** This project's identity ON THIS DEVICE. Restored on boot so a project
    *  that has never reached the cloud keeps the same key across restarts —
    *  otherwise reopening it would file the same work a second time. */

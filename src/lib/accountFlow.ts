@@ -37,6 +37,8 @@ import {
   localProjectId,
   adoptLocalProjectId,
   adoptDirtyFrameIds,
+  adoptPushedFingerprints,
+  registerFingerprintBridge,
   registerPullFn,
   setCurrentProject,
   setProjectName,
@@ -49,6 +51,7 @@ import {
   endSystemAction,
   pendingOnDevice,
 } from './currentProject';
+import { trace } from './syncTrace';
 import { applySnapshotToStore, loadSnapshot, snapshotFromStore, listPending, isArchived, getPending, markPendingUploaded, saveProjectListCache, loadProjectListCache, deletePending, recoverPending, isDeletedCopy, requestDurableStorage } from './persistence';
 import type { PendingRecord } from './persistence';
 import { showConfirm, showToast, showFrameConflictPicker } from './modals';
@@ -1401,6 +1404,85 @@ function countCurrentImages(): number {
   return count;
 }
 
+/**
+ * Settle the frames the server would not take.
+ *
+ * Everything else in that push is already stored, so this only has to deal
+ * with the named frames: show each one side by side and let the user choose.
+ * Keeping theirs means re-basing on what the server holds now, so the next
+ * push is accepted rather than refused again.
+ */
+async function settleRefusedFrames(
+  tree: CloudProjectTree,
+  rejected: Array<{ id: string; server_updated_at: number; server_offline: boolean }>,
+): Promise<void> {
+  const prev = state();
+  const localByServerId = new Map(
+    prev.frames.filter((f) => f.serverFrameId).map((f) => [f.serverFrameId!, f]),
+  );
+
+  const versionsByFrame = new Map<string, typeof tree.versions>();
+  for (const v of tree.versions) {
+    if (!versionsByFrame.has(v.frame_id)) versionsByFrame.set(v.frame_id, []);
+    versionsByFrame.get(v.frame_id)!.push(v);
+  }
+  const r2ByVersion = new Map<string, string>();
+  for (const img of tree.images) r2ByVersion.set(img.version_id, img.r2_key);
+
+  const conflicts: FrameConflict[] = [];
+  for (const r of rejected) {
+    const local = localByServerId.get(r.id);
+    const mainV = (versionsByFrame.get(r.id) ?? []).find((v) => v.type === 'main');
+    const key = mainV ? r2ByVersion.get(mainV.id) : undefined;
+    let cloudSrc = '';
+    if (key) {
+      try { cloudSrc = await fetchImageFromR2(key, getToken()!); } catch { /* blank is fine */ }
+    }
+    conflicts.push({
+      serverFrameId: r.id,
+      label: local?.label || tree.frames.find((f) => f.id === r.id)?.label || '?',
+      localSrc: local?.src || '',
+      cloudSrc,
+      localDeviceName: getDeviceName(),
+      // The project's "last device" is US — we just pushed. So it never names
+      // whoever actually changed this frame, and both sides read the same.
+      cloudDeviceName:
+        tree.project.last_device_name && tree.project.last_device_name !== getDeviceName()
+          ? tree.project.last_device_name
+          : 'your other device',
+    });
+  }
+
+  const choices = await showFrameConflictPicker(conflicts);
+  const keepMine = new Set<string>();
+  for (const [id, choice] of choices) if (choice === 'local') keepMine.add(id);
+  trace(`  picker: keeping mine for ${keepMine.size}, taking theirs for ${rejected.length - keepMine.size}`);
+
+  // Apply the tree, holding on to the frames the user chose to keep.
+  beginSystemAction();
+  try {
+    await applyCloudTreeToStore(tree, keepMine);
+  } finally {
+    endSystemAction();
+  }
+  // The merge wipes the record of what the server has. Rebuild it from the
+  // store — which now matches the server for every frame EXCEPT the ones the
+  // user chose to keep — then remove those, so they read as still needing to
+  // go up. Without this the kept frame sat unsent, the server kept the other
+  // device's version, and the next pull overwrote the user's choice.
+  adoptFingerprintsFromStore();
+  for (const r of rejected) {
+    if (!keepMine.has(r.id)) continue;
+    _serverFrameTimes.set(r.id, r.server_updated_at);  // re-base so the retry is accepted
+    _lastPushedFingerprints.delete(r.id);              // and mark it as unsent
+  }
+  trace(`  after merge: ${_lastPushedFingerprints.size} fingerprints held, ` +
+        `${framesNeedingPush().size} frames still to send`);
+
+  if (keepMine.size > 0) setTimeout(() => void flushSyncNow(), 300);
+  (window as any).__fh_renderAll?.();
+}
+
 async function syncCurrentToServer(projectId: string): Promise<void> {
   // Safety net: refuse to push zero frames — prevents wiping a project on the server
   if (state().frames.length === 0) {
@@ -1460,6 +1542,16 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   // push with 0 dirty frames is cheap — it just updates the project row.
 
   console.log(`[sync] Delta push: ${dirtyLocalIds.size}/${s.frames.length} frames dirty, partial=${isPartial}`);
+  trace(`  delta: ${dirtyLocalIds.size}/${s.frames.length} frames changed · partial=${isPartial}`);
+
+  // A partial push with nothing in it still moves the project's timestamp on
+  // the server, which makes every other device think there is something new
+  // and pull. Each side's empty push provokes the other. If there is nothing
+  // to say, say nothing.
+  if (isPartial && dirtyLocalIds.size === 0 && _pendingTombstones.length === 0) {
+    trace('  nothing changed — not sending');
+    return;
+  }
 
   // Debug: trace scribble data in push
   for (const f of s.frames) {
@@ -1473,7 +1565,7 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   const stripId = uuid();
   const strips = [{ id: stripId, label: 'Main', sort_order: 0, updated_at: now }];
 
-  const frames: Array<{ id: string; strip_id: string; label: string | null; sort_order: number; crop_w: number | null; crop_h: number | null; text_content: string | null; table_data: string | null; version_label: string | null; strip_labels: string | null; hidden: boolean; note: string | null; scribbles: string | null; updated_at: number }> = [];
+  const frames: Array<{ id: string; strip_id: string; label: string | null; sort_order: number; crop_w: number | null; crop_h: number | null; text_content: string | null; table_data: string | null; version_label: string | null; strip_labels: string | null; hidden: boolean; note: string | null; scribbles: string | null; updated_at: number; base_updated_at?: number }> = [];
   const versions: Array<{ id: string; frame_id: string; label: string | null; type: string; hidden: boolean; starred: boolean; note: string | null; updated_at: number }> = [];
   const drawings: Array<{ id: string; version_id: string; drawing_data: string; updated_at: number }> = [];
   const imageUploads: Array<{
@@ -1528,6 +1620,9 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
       note: f.note || null,
       scribbles: f.scribbles && f.scribbles.length > 0 ? JSON.stringify(f.scribbles) : null,
       updated_at: now,
+      // What we believe this frame's server timestamp is. The server refuses
+      // only frames that have moved since — not the whole push.
+      base_updated_at: f.serverFrameId ? _serverFrameTimes.get(f.serverFrameId) : undefined,
     });
     if (f.scribbles && f.scribbles.length > 0) {
       console.log(`[sync][scribble] INCLUDED frame ${f.id} in push payload with ${f.scribbles.length} scribbles (${JSON.stringify(f.scribbles).length} bytes)`);
@@ -1753,7 +1848,13 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
       uploadedR2Keys.set(r.versionId, { r2Key: r.r2_key, task: r.task });
     }
   }
-  const res = await api.post<CloudProjectTree & { conflict?: boolean }>(
+  trace(`  sending frames: ${frames.map((f) => f.id.slice(0, 6)).join(',') || '(none)'}`);
+  const res = await api.post<CloudProjectTree & {
+    conflict?: boolean;
+    /** Frames the server would not take because they changed elsewhere.
+     *  Everything else in this push WAS applied. */
+    rejected_frames?: Array<{ id: string; server_updated_at: number; server_offline: boolean }>;
+  }>(
     `/projects/${encodeURIComponent(projectId)}/sync`,
     {
       partial: isPartial,
@@ -1783,6 +1884,17 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   // Update lastKnownUpdatedAt so that the pull-on-focus mechanism doesn't
   // see our own push as a "newer remote version" and try to apply it.
   lastKnownUpdatedAt = now;
+
+  // Learn the server's new timestamps, so the next push is judged correctly.
+  for (const sf of res.frames ?? []) _serverFrameTimes.set(sf.id, sf.updated_at);
+  const acceptedIds = frames
+    .map((f) => f.id)
+    .filter((id) => !(res.rejected_frames ?? []).some((r) => r.id === id));
+  trace(`  server accepted: ${acceptedIds.map((i) => i.slice(0, 6)).join(',') || '(none)'}`);
+  const rejected = res.rejected_frames ?? [];
+  if (rejected.length > 0) {
+    trace(`  server refused: ${rejected.map((r) => r.id.slice(0, 6)).join(',')}`);
+  }
   // Record counts after a successful push so the next guard comparisons are accurate.
   _lastKnownImageCount = countCurrentImages();
   _lastKnownFrameCount = state().frames.length;
@@ -1792,8 +1904,13 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   // Store fingerprints for all frames (including clean ones) so the next
   // push can detect what changed. We store ALL frames, not just dirty ones,
   // so that the full snapshot is available for comparison.
+  // Record what the server now has — but NOT the frames it refused. Recording
+  // those marked them as sent, which quietly undid the refusal: the frame was
+  // never pushed again and the other device never saw it.
+  const refusedIds = new Set(rejected.map((r) => r.id));
   _lastPushedFingerprints.clear();
   for (const [k, v] of currentFingerprints) {
+    if (refusedIds.has(k)) continue;
     _lastPushedFingerprints.set(k, v);
   }
 
@@ -1844,6 +1961,12 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
       refsVersions: updatedStripVersions.refs || prev.refsVersions,
     };
   });
+
+  // LAST: settle any frames the server refused. This has to come after the
+  // bookkeeping above, because that rewrites the record of what the server
+  // has — and doing it the other way round undid the settle, so the disputed
+  // frame was marked as sent and never went up.
+  if (rejected.length > 0) await settleRefusedFrames(res, rejected);
 }
 
 /**
@@ -1900,6 +2023,9 @@ async function applyCloudTreeToStore(
   const refsActiveTab: Record<number, number> = {};
 
   const stripsSorted = [...tree.strips].sort((a, b) => a.sort_order - b.sort_order);
+  // Learn what the server's timestamp is for every frame it just gave us.
+  for (const f of tree.frames) _serverFrameTimes.set(f.id, f.updated_at);
+
   const framesByStrip = new Map<string, typeof tree.frames>();
   for (const f of tree.frames) {
     if (!framesByStrip.has(f.strip_id)) framesByStrip.set(f.strip_id, []);
@@ -1954,6 +2080,7 @@ async function applyCloudTreeToStore(
       // local version entirely — image, strokes, versions. Skip cloud data.
       if (keepLocalFrameIds?.has(sf.id)) {
         const existingFrame = existingFrameByServerId.get(sf.id);
+        trace(`    keep-local ${sf.id.slice(0, 6)}: local frame ${existingFrame ? 'FOUND' : 'MISSING — falling through to cloud'}`);
         if (existingFrame) {
           newFrames.push({ ...existingFrame, id: localId });
           // Preserve local versions for all strips
@@ -3033,7 +3160,92 @@ let _lastKnownFrameCount = 0;
 // ---------------------------------------------------------------------------
 const _lastPushedFingerprints = new Map<string, string>();
 
+/**
+ * What the server's timestamp is for each frame, as far as we know.
+ *
+ * Deliberately NOT stored on the frames themselves: every push would then
+ * rewrite thirty frame objects, the change-tracker would read that as the user
+ * editing everything, and the app would push again — a loop. Keeping it beside
+ * the fingerprints touches no application state at all.
+ */
+const _serverFrameTimes = new Map<string, number>();
+
 /** Clear fingerprints (on project switch, new pull, etc.). Next push sends all. */
+/**
+ * Record the current store as "what the server has".
+ *
+ * After a pull the store IS the server's state. Clearing the record instead
+ * made every frame look changed, so the device immediately pushed the entire
+ * project back — which made the other device pull, and re-push in turn. Two
+ * devices bouncing the same frames between them, visible in the log as a pull
+ * followed seconds later by a 30/30 push.
+ *
+ * Frames the user changed while the pull was being applied are NOT covered by
+ * this: those are kept local by the merge and stay different from the server's
+ * version, so they still show as changed on the next push.
+ */
+/**
+ * Server ids of frames that differ from what the server last received.
+ *
+ * This is the honest answer to "what have I changed". The reference-based
+ * tracker misses almost everything, because drawing, notes and photos modify a
+ * frame in place and its identity never changes — so a merge asking that
+ * tracker sees nothing to protect and lets the cloud overwrite real work.
+ */
+export function framesNeedingPush(): Set<string> {
+  const s = state();
+  const out = new Set<string>();
+  s.frames.forEach((f, i) => {
+    if (!f.serverFrameId) return;                       // new frames are handled separately
+    if (_lastPushedFingerprints.size === 0) return;     // nothing to compare against yet
+    if (_lastPushedFingerprints.get(f.serverFrameId) !== frameFingerprint(f, i, s)) {
+      out.add(f.serverFrameId);
+    }
+  });
+  return out;
+}
+
+export function adoptFingerprintsFromStore(): void {
+  const s = state();
+  _lastPushedFingerprints.clear();
+  s.frames.forEach((f, i) => {
+    if (!f.serverFrameId) return;      // never sent — must still go up
+    _lastPushedFingerprints.set(f.serverFrameId, frameFingerprint(f, i, s));
+  });
+  trace(`  recorded ${_lastPushedFingerprints.size} frames as matching the server`);
+}
+
+/** Hand the last-sent record to the local snapshot, and take it back on boot. */
+export function exportPushedFingerprints(): Record<string, string> {
+  const out: Record<string, string> = Object.fromEntries(_lastPushedFingerprints);
+  // The server timestamps ride along under a reserved key, so a restart does
+  // not lose them and fall back to whole-project conflict checking.
+  out['__serverTimes'] = JSON.stringify(Object.fromEntries(_serverFrameTimes));
+  return out;
+}
+export function importPushedFingerprints(m: Record<string, string>): void {
+  _lastPushedFingerprints.clear();
+  _serverFrameTimes.clear();
+  for (const [k, v] of Object.entries(m)) {
+    if (k === '__serverTimes') {
+      try {
+        for (const [id, t] of Object.entries(JSON.parse(v) as Record<string, number>)) {
+          _serverFrameTimes.set(id, t);
+        }
+      } catch { /* start without them; the next pull refills */ }
+      continue;
+    }
+    _lastPushedFingerprints.set(k, v);
+  }
+  trace(`  restored ${_lastPushedFingerprints.size} frames known to be on the server` +
+        ` · ${_serverFrameTimes.size} with a timestamp`);
+}
+
+/** Mark one frame as no longer known to match the server. */
+export function forgetPushedFingerprint(serverFrameId: string): void {
+  _lastPushedFingerprints.delete(serverFrameId);
+}
+
 export function clearPushedFingerprints(): void {
   _lastPushedFingerprints.clear();
 }
@@ -3322,12 +3534,15 @@ async function tryPullFromCloud(): Promise<void> {
         return;
       }
 
+      trace(`pull: remote is newer (${remoteDeviceName})`);
       // Different device has newer data — smart per-frame merge:
       //  - Frames only edited locally → keep local
       //  - Frames only edited on cloud → take cloud
       //  - Same frame edited on BOTH → show side-by-side picker
-      const dirtyIds = getDirtyFrameIds();
-      const hasDirtyFrames = isDirty() && dirtyIds.size > 0;
+      // Ask the fingerprints, not the reference tracker — see framesNeedingPush.
+      const dirtyIds: ReadonlySet<string> = framesNeedingPush();
+      const hasDirtyFrames = dirtyIds.size > 0;
+      trace(`  local frames not yet on the server: ${dirtyIds.size}`);
 
       // Show loading bar
       const progressEl = document.getElementById('progressOverlay');
@@ -3414,6 +3629,7 @@ async function tryPullFromCloud(): Promise<void> {
           if (progressEl) progressEl.classList.add('hidden');
 
           // Show picker — user taps one thumbnail per conflict
+          trace(`  same-frame conflicts: ${conflicts.length} — asking the user`);
           const choices = await showFrameConflictPicker(conflicts);
 
           // Re-show progress
@@ -3475,6 +3691,19 @@ async function tryPullFromCloud(): Promise<void> {
 
       lastKnownUpdatedAt = remoteUpdatedAt;
       markSaved(cp.projectId!);
+
+      // The store now matches the server for every frame EXCEPT the ones the
+      // merge deliberately kept local — those are still unsent. Recording them
+      // as matching told the app its own work was already in the cloud, so it
+      // never pushed them: no conflict, no picker, and the two devices quietly
+      // diverged. Keep them marked as outstanding.
+      adoptFingerprintsFromStore();
+      if (keepLocalIds && keepLocalIds.size > 0) {
+        for (const id of keepLocalIds) forgetPushedFingerprint(id);
+        trace(`  ${keepLocalIds.size} kept-local frame(s) still to send`);
+        setTimeout(() => void flushSyncNow(), 400);
+      }
+
       clearDirtyState(); // Pull is not a user change — prevent stale push
       if (progressBar) progressBar.style.width = '100%';
       setTimeout(() => {
@@ -3505,6 +3734,7 @@ function updateLastKnownTimestamp(ts: number): void {
 export async function bootstrapAccountSystem(): Promise<void> {
   // 0. Register cloud sync and pull-on-focus.
   registerCloudSync(syncCurrentToServer);
+  registerFingerprintBridge(exportPushedFingerprints, importPushedFingerprints);
   // Ask iOS not to clear our storage after a week of not opening the app —
   // that would take offline projects with it.
   void requestDurableStorage();
@@ -3540,6 +3770,7 @@ export async function bootstrapAccountSystem(): Promise<void> {
       try {
         adoptLocalProjectId(snap.localId);   // keep the same key across restarts
         adoptDirtyFrameIds(snap.dirtyFrameIds);  // protect them from the first pull
+        adoptPushedFingerprints(snap.pushedFingerprints);  // no needless full push
         applySnapshotToStore(snap);
         // renderAll + autoPhoneMainView call setState — keep them inside
         // the system action so their setState calls don't mark dirty.
