@@ -10,7 +10,7 @@ import { APP_VERSION } from '../store/state';
 
 /** Bumped with each change while the per-frame sync is in flight, so the log
  *  says which build is on screen. */
-export const SYNC_BUILD_TAG = '#210';
+export const SYNC_BUILD_TAG = '#216';
 
 let box: HTMLElement | null = null;
 

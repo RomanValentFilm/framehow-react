@@ -169,7 +169,17 @@ projects.post("/:id/heartbeat", async (c) => {
     .bind(now, body.device_id, body.device_name, id, me.id)
     .run();
   if (!result.meta.changes) return jsonError(c, 404, "not_found", "Project not found.");
-  return c.json({ ok: true, heartbeat_at: now });
+
+  // The heartbeat already runs every few seconds while someone is working, and
+  // already talks to us — so it is the cheapest place to say "a decision is
+  // waiting". No extra polling, no timer, and the user finds out within a few
+  // seconds even while only scrolling or presenting.
+  const open = await c.env.DB
+    .prepare("SELECT COUNT(*) AS n FROM frame_conflicts WHERE project_id = ? AND resolved_at IS NULL")
+    .bind(id)
+    .first<{ n: number }>();
+
+  return c.json({ ok: true, heartbeat_at: now, open_conflicts: open?.n ?? 0 });
 });
 
 // ---------------------------------------------------------------------------
@@ -232,8 +242,18 @@ projects.post("/:id/sync", async (c) => {
   // A client that sends no per-frame base falls through to the old
   // whole-project check below, so nothing breaks while the app catches up.
   // ---------------------------------------------------------------------
+  // Who put the current version there — read BEFORE the write, which sets the
+  // project's last device to whoever is pushing now. Reading it afterwards gave
+  // both sides of the picker the same name.
+  const winnerRow = await c.env.DB
+    .prepare("SELECT last_device_name FROM projects WHERE id = ?")
+    .bind(project.id)
+    .first<{ last_device_name: string | null }>();
+  const winnerDevice = winnerRow?.last_device_name ?? null;
+
   const perFrame = payload.frames.some((f) => f.base_updated_at !== undefined);
   let rejectedFrames: Array<{ id: string; server_updated_at: number; server_offline: boolean }> = [];
+  const refusedPayloads: Array<{ frame: unknown; versions: unknown[]; images: unknown[]; drawings: unknown[] }> = [];
 
   if (perFrame) {
     const ids = payload.frames.map((f) => f.id);
@@ -254,6 +274,15 @@ projects.post("/:id/sync", async (c) => {
         continue;
       }
       rejectedFrames.push({ id: f.id, server_updated_at: sf.updated_at, server_offline: !!sf.changed_offline });
+
+      // Keep the version we would not take, with everything needed to show and
+      // apply it later. Without this it exists only on the device that made it.
+      refusedPayloads.push({
+        frame: f,
+        versions: payload.versions.filter((v) => v.frame_id === f.id),
+        images: payload.images,
+        drawings: payload.drawings,
+      });
     }
     payload.frames = accepted;
 
@@ -329,6 +358,34 @@ projects.post("/:id/sync", async (c) => {
 
   await applySync(c.env.DB, project.id, payload, now);
 
+  // Record the refused versions so the question can be answered from any
+  // device, and so the losing work is not stranded on the device that made it.
+  if (rejectedFrames.length > 0) {
+    const nowTs = Date.now();
+    await c.env.DB.batch(rejectedFrames.map((r, i) => {
+      const p = refusedPayloads[i];
+      const versionIds = new Set((p.versions as Array<{ id: string }>).map((v) => v.id));
+      const body = JSON.stringify({
+        frame: p.frame,
+        versions: p.versions,
+        images: (p.images as Array<{ version_id: string }>).filter((im) => versionIds.has(im.version_id)),
+        drawings: (p.drawings as Array<{ version_id: string }>).filter((d) => versionIds.has(d.version_id)),
+      });
+      return c.env.DB.prepare(
+        `INSERT INTO frame_conflicts
+           (id, project_id, frame_id, losing_json, device_name, made_at,
+            winner_device, winner_made_at, made_offline, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(newId(), project.id, r.id, body,
+             payload.project.device_name ?? null,
+             (p.frame as { updated_at?: number }).updated_at ?? nowTs,
+             winnerDevice,
+             r.server_updated_at,
+             (p.frame as { changed_offline?: boolean }).changed_offline ? 1 : 0,
+             nowTs);
+    }));
+  }
+
   const tree = await loadProjectTree(c.env.DB, project.id);
   // Some frames were refused because they moved underneath this device. The
   // rest went in. The client shows the picker for these and nothing else.
@@ -337,6 +394,158 @@ projects.post("/:id/sync", async (c) => {
   }
   return c.json(tree);
 });
+
+// ---------------------------------------------------------------------------
+// GET /projects/:id/conflicts — frames with a decision still open
+//
+// Any device can ask, and any device can answer. The losing version is stored
+// with the conflict, so it is not stranded on the device that made it.
+// ---------------------------------------------------------------------------
+projects.get("/:id/conflicts", async (c) => {
+  const me = c.get("user");
+  const project = await loadOwnedProject(c.env.DB, me.id, c.req.param("id"));
+  if (!project) return jsonError(c, 404, "not_found", "Project not found.");
+
+  const rows = await c.env.DB.prepare(
+    `SELECT id, frame_id, losing_json, device_name, made_at,
+            winner_device, winner_made_at, made_offline, created_at
+       FROM frame_conflicts
+      WHERE project_id = ? AND resolved_at IS NULL
+      ORDER BY created_at ASC`,
+  ).bind(project.id).all<{
+    id: string; frame_id: string; losing_json: string;
+    device_name: string | null; made_at: number | null;
+    winner_device: string | null; winner_made_at: number | null;
+    made_offline: number; created_at: number;
+  }>();
+
+  return c.json({ conflicts: rows.results });
+});
+
+// ---------------------------------------------------------------------------
+// POST /projects/:id/conflicts/:conflictId — answer one
+//
+// choice: 'mine'   — keep what the server already has, discard the losing side
+//         'theirs' — replace the frame with the losing side
+//         'both'   — keep the server's frame AND add the losing side as an
+//                    extra version on it
+//
+// First answer wins. A later one is TOLD what was already decided rather than
+// silently doing nothing.
+// ---------------------------------------------------------------------------
+projects.post("/:id/conflicts/:conflictId", async (c) => {
+  const me = c.get("user");
+  const project = await loadOwnedProject(c.env.DB, me.id, c.req.param("id"));
+  if (!project) return jsonError(c, 404, "not_found", "Project not found.");
+
+  let choice = "";
+  try {
+    const b = (await c.req.json()) as { choice?: string };
+    choice = b?.choice ?? "";
+  } catch { /* handled below */ }
+  if (choice !== "mine" && choice !== "theirs" && choice !== "both") {
+    return jsonError(c, 400, "invalid_choice", "choice must be mine, theirs or both.");
+  }
+
+  const row = await c.env.DB.prepare(
+    `SELECT id, frame_id, losing_json, resolved_at, resolution
+       FROM frame_conflicts WHERE id = ? AND project_id = ?`,
+  ).bind(c.req.param("conflictId"), project.id).first<{
+    id: string; frame_id: string; losing_json: string;
+    resolved_at: number | null; resolution: string | null;
+  }>();
+  if (!row) return jsonError(c, 404, "not_found", "No such conflict.");
+
+  if (row.resolved_at !== null) {
+    // Someone answered first. Say so plainly instead of pretending.
+    return c.json({ already_resolved: true, resolution: row.resolution });
+  }
+
+  const now = Date.now();
+  const losing = JSON.parse(row.losing_json) as {
+    frame: Record<string, unknown>;
+    versions: Array<Record<string, unknown>>;
+    images: Array<Record<string, unknown>>;
+    drawings: Array<Record<string, unknown>>;
+  };
+
+  const stmts: D1PreparedStatement[] = [];
+
+  if (choice === "theirs") {
+    // Replace the frame's contents with the version that was refused.
+    stmts.push(
+      c.env.DB.prepare(`DELETE FROM drawings WHERE version_id IN (SELECT id FROM versions WHERE frame_id = ?)`).bind(row.frame_id),
+      c.env.DB.prepare(`DELETE FROM images   WHERE version_id IN (SELECT id FROM versions WHERE frame_id = ?)`).bind(row.frame_id),
+      c.env.DB.prepare(`DELETE FROM versions WHERE frame_id = ?`).bind(row.frame_id),
+    );
+    appendLosingVersions(c.env.DB, stmts, losing, now);
+  } else if (choice === "both") {
+    // Keep what is there and add the refused version alongside it, with fresh
+    // ids so it cannot collide with what already exists.
+    appendLosingVersions(c.env.DB, stmts, losing, now, true);
+  }
+  // 'mine' writes nothing — the server already holds the winning version.
+
+  stmts.push(
+    c.env.DB.prepare(
+      `UPDATE frame_conflicts SET resolved_at = ?, resolution = ? WHERE id = ?`,
+    ).bind(now, choice, row.id),
+    c.env.DB.prepare(`UPDATE projects SET updated_at = ? WHERE id = ?`).bind(now, project.id),
+  );
+
+  if (stmts.length > 0) await c.env.DB.batch(stmts);
+  return c.json(await loadProjectTree(c.env.DB, project.id));
+});
+
+/** Write the refused version's rows. With `asExtra`, give them new ids so they
+ *  sit alongside what is already on the frame instead of replacing it. */
+function appendLosingVersions(
+  db: D1Database,
+  stmts: D1PreparedStatement[],
+  losing: {
+    versions: Array<Record<string, unknown>>;
+    images: Array<Record<string, unknown>>;
+    drawings: Array<Record<string, unknown>>;
+  },
+  now: number,
+  asExtra = false,
+): void {
+  const idMap = new Map<string, string>();
+  for (const v of losing.versions) {
+    const oldId = v.id as string;
+    const id = asExtra ? newId() : oldId;
+    idMap.set(oldId, id);
+    stmts.push(
+      db.prepare(
+        `INSERT OR REPLACE INTO versions (id, frame_id, label, type, hidden, starred, note, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(id, v.frame_id as string, (v.label as string) ?? null,
+             asExtra && v.type === "main" ? "upload" : (v.type as string),
+             v.hidden ? 1 : 0, Number(v.starred) || 0, (v.note as string) ?? null, now),
+    );
+  }
+  for (const im of losing.images) {
+    const vid = idMap.get(im.version_id as string);
+    if (!vid) continue;
+    stmts.push(
+      db.prepare(
+        `INSERT OR REPLACE INTO images (id, version_id, r2_key, size_bytes, updated_at)
+         VALUES (?, ?, ?, ?, ?)`,
+      ).bind(asExtra ? newId() : (im.id as string), vid, im.r2_key as string,
+             (im.size_bytes as number) ?? 0, now),
+    );
+  }
+  for (const d of losing.drawings) {
+    const vid = idMap.get(d.version_id as string);
+    if (!vid) continue;
+    stmts.push(
+      db.prepare(
+        `INSERT OR REPLACE INTO drawings (id, version_id, drawing_data, updated_at)
+         VALUES (?, ?, ?, ?)`,
+      ).bind(asExtra ? newId() : (d.id as string), vid, d.drawing_data as string, now),
+    );
+  }
+}
 
 // ---------------------------------------------------------------------------
 // GET /projects/:id/snapshots — list available restore points

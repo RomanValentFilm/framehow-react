@@ -54,7 +54,7 @@ import {
 import { trace } from './syncTrace';
 import { applySnapshotToStore, loadSnapshot, snapshotFromStore, listPending, isArchived, getPending, markPendingUploaded, saveProjectListCache, loadProjectListCache, deletePending, recoverPending, isDeletedCopy, requestDurableStorage } from './persistence';
 import type { PendingRecord } from './persistence';
-import { showConfirm, showToast, showFrameConflictPicker } from './modals';
+import { showThreeWayConflict, showConfirm, showToast, showFrameConflictPicker } from './modals';
 import type { FrameConflict } from './modals';
 import { saveOpenTextEdits, saveOpenTableEdits, versionStars } from './helpers';
 import { closeSortMode } from './sortOrder';
@@ -1404,83 +1404,110 @@ function countCurrentImages(): number {
   return count;
 }
 
+// ---------------------------------------------------------------------------
+// Conflicts held by the server
+//
+// A disagreement about a frame is the project's business, not one device's.
+// The server keeps the version it would not take, so the question can be asked
+// and answered from any device — and the losing work is never stranded on a
+// machine that happens to be closed.
+// ---------------------------------------------------------------------------
+
+interface OpenConflict {
+  id: string;
+  frame_id: string;
+  losing_json: string;
+  device_name: string | null;
+  made_at: number | null;
+  winner_device: string | null;
+  winner_made_at: number | null;
+  made_offline: number;
+  created_at: number;
+}
+
+/** Name a side the way the user would: by device and when it was made. */
+function sideLabel(device: string | null, madeAt: number | null, isThisDevice: boolean,
+                   fallback = 'another device'): string {
+  const who = device || fallback;
+  const when = madeAt ? ` — made ${formatClockTime(madeAt)}` : '';
+  return `${who}${isThisDevice ? ' (this one)' : ''}${when}`;
+}
+
 /**
- * Settle the frames the server would not take.
+ * Ask about every frame the server is holding a decision on.
  *
- * Everything else in that push is already stored, so this only has to deal
- * with the named frames: show each one side by side and let the user choose.
- * Keeping theirs means re-basing on what the server holds now, so the next
- * push is accepted rather than refused again.
+ * Runs one question at a time. While a question is on screen the device checks
+ * every few seconds whether someone answered it elsewhere — if so it closes
+ * itself rather than leaving live buttons on a settled question.
  */
-async function settleRefusedFrames(
-  tree: CloudProjectTree,
-  rejected: Array<{ id: string; server_updated_at: number; server_offline: boolean }>,
-): Promise<void> {
-  const prev = state();
-  const localByServerId = new Map(
-    prev.frames.filter((f) => f.serverFrameId).map((f) => [f.serverFrameId!, f]),
-  );
-
-  const versionsByFrame = new Map<string, typeof tree.versions>();
-  for (const v of tree.versions) {
-    if (!versionsByFrame.has(v.frame_id)) versionsByFrame.set(v.frame_id, []);
-    versionsByFrame.get(v.frame_id)!.push(v);
-  }
-  const r2ByVersion = new Map<string, string>();
-  for (const img of tree.images) r2ByVersion.set(img.version_id, img.r2_key);
-
-  const conflicts: FrameConflict[] = [];
-  for (const r of rejected) {
-    const local = localByServerId.get(r.id);
-    const mainV = (versionsByFrame.get(r.id) ?? []).find((v) => v.type === 'main');
-    const key = mainV ? r2ByVersion.get(mainV.id) : undefined;
-    let cloudSrc = '';
-    if (key) {
-      try { cloudSrc = await fetchImageFromR2(key, getToken()!); } catch { /* blank is fine */ }
-    }
-    conflicts.push({
-      serverFrameId: r.id,
-      label: local?.label || tree.frames.find((f) => f.id === r.id)?.label || '?',
-      localSrc: local?.src || '',
-      cloudSrc,
-      localDeviceName: getDeviceName(),
-      // The project's "last device" is US — we just pushed. So it never names
-      // whoever actually changed this frame, and both sides read the same.
-      cloudDeviceName:
-        tree.project.last_device_name && tree.project.last_device_name !== getDeviceName()
-          ? tree.project.last_device_name
-          : 'your other device',
-    });
-  }
-
-  const choices = await showFrameConflictPicker(conflicts);
-  const keepMine = new Set<string>();
-  for (const [id, choice] of choices) if (choice === 'local') keepMine.add(id);
-  trace(`  picker: keeping mine for ${keepMine.size}, taking theirs for ${rejected.length - keepMine.size}`);
-
-  // Apply the tree, holding on to the frames the user chose to keep.
-  beginSystemAction();
+async function askAboutOpenConflicts(projectId: string): Promise<void> {
+  let list: OpenConflict[];
   try {
-    await applyCloudTreeToStore(tree, keepMine);
-  } finally {
-    endSystemAction();
+    const res = await api.get<{ conflicts: OpenConflict[] }>(
+      `/projects/${encodeURIComponent(projectId)}/conflicts`, getToken());
+    list = res.conflicts ?? [];
+  } catch {
+    return;   // ask again next time; nothing is lost by not asking now
   }
-  // The merge wipes the record of what the server has. Rebuild it from the
-  // store — which now matches the server for every frame EXCEPT the ones the
-  // user chose to keep — then remove those, so they read as still needing to
-  // go up. Without this the kept frame sat unsent, the server kept the other
-  // device's version, and the next pull overwrote the user's choice.
-  adoptFingerprintsFromStore();
-  for (const r of rejected) {
-    if (!keepMine.has(r.id)) continue;
-    _serverFrameTimes.set(r.id, r.server_updated_at);  // re-base so the retry is accepted
-    _lastPushedFingerprints.delete(r.id);              // and mark it as unsent
-  }
-  trace(`  after merge: ${_lastPushedFingerprints.size} fingerprints held, ` +
-        `${framesNeedingPush().size} frames still to send`);
+  if (list.length === 0) return;
+  trace(`  ${list.length} frame decision(s) waiting`);
 
-  if (keepMine.size > 0) setTimeout(() => void flushSyncNow(), 300);
-  (window as any).__fh_renderAll?.();
+  for (const c of list) {
+    const losing = JSON.parse(c.losing_json) as {
+      frame: { label?: string | null };
+      versions: Array<{ id: string; type: string }>;
+      images: Array<{ version_id: string; r2_key: string }>;
+    };
+    const mainV = losing.versions.find((v) => v.type === 'main');
+    const key = mainV ? losing.images.find((i) => i.version_id === mainV.id)?.r2_key : undefined;
+    let losingSrc = '';
+    if (key) { try { losingSrc = await fetchImageFromR2(key, getToken()!); } catch { /* blank */ } }
+
+    const localFrame = state().frames.find((f) => f.serverFrameId === c.frame_id);
+    const here = getDeviceName();
+
+    const choice = await showThreeWayConflict({
+      frameLabel: localFrame?.label || losing.frame.label || '?',
+      keepLabel:  sideLabel(c.winner_device, c.winner_made_at, c.winner_device === here,
+                            'the version in the cloud'),
+      otherLabel: sideLabel(c.device_name, c.made_at, c.device_name === here,
+                            'the version on this device'),
+      keepSrc: localFrame?.src || '',
+      otherSrc: losingSrc,
+      madeOffline: !!c.made_offline,
+      stillOpen: async () => {
+        try {
+          const r = await api.get<{ conflicts: OpenConflict[] }>(
+            `/projects/${encodeURIComponent(projectId)}/conflicts`, getToken());
+          return (r.conflicts ?? []).some((x) => x.id === c.id);
+        } catch { return true; }   // can't tell — leave it up
+      },
+    });
+
+    if (!choice) { trace('  decision was answered on another device'); continue; }
+
+    try {
+      const res = await api.post<{ already_resolved?: boolean; resolution?: string } & CloudProjectTree>(
+        `/projects/${encodeURIComponent(projectId)}/conflicts/${encodeURIComponent(c.id)}`,
+        { choice }, getToken());
+      if (res.already_resolved) {
+        trace(`  already decided elsewhere: ${res.resolution}`);
+        showToast(`Already decided on another device — kept ${res.resolution === 'both' ? 'both' : res.resolution}.`);
+        continue;
+      }
+      trace(`  decided: ${choice}`);
+      beginSystemAction();
+      try {
+        await applyCloudTreeToStore(res as CloudProjectTree);
+      } finally {
+        endSystemAction();
+      }
+      adoptFingerprintsFromStore();
+      (window as any).__fh_renderAll?.();
+    } catch {
+      showToast('Could not save that choice — it will be asked again.');
+    }
+  }
 }
 
 async function syncCurrentToServer(projectId: string): Promise<void> {
@@ -1962,11 +1989,10 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
     };
   });
 
-  // LAST: settle any frames the server refused. This has to come after the
-  // bookkeeping above, because that rewrites the record of what the server
-  // has — and doing it the other way round undid the settle, so the disputed
-  // frame was marked as sent and never went up.
-  if (rejected.length > 0) await settleRefusedFrames(res, rejected);
+  // LAST: ask about anything the server is holding a decision on. The server
+  // kept the refused version, so this asks from its list rather than from this
+  // one response — which means any device can answer, not only this one.
+  if (rejected.length > 0) await askAboutOpenConflicts(projectId);
 }
 
 /**
@@ -2936,15 +2962,31 @@ export function signalActivity(): void {
 }
 
 /** Send a heartbeat to the server — "this device is actively working". */
+/** Guards against a second heartbeat opening the question again while the
+ *  first one is still on screen. */
+let _askingAboutConflicts = false;
+
 async function sendHeartbeat(): Promise<void> {
   const cp = getCurrentProject();
   if (!cp.projectId || !isLoggedIn()) return;
   try {
-    await api.post(
+    const beat = await api.post<{ ok: boolean; open_conflicts?: number }>(
       `/projects/${encodeURIComponent(cp.projectId)}/heartbeat`,
       { device_id: getDeviceId(), device_name: getDeviceName() },
       getToken(),
     );
+
+    // The heartbeat is the only thing that runs while someone is simply
+    // working — scrolling, presenting, not switching windows. So it is where a
+    // waiting decision gets noticed, on whichever device the user is at.
+    if ((beat?.open_conflicts ?? 0) > 0 && !_askingAboutConflicts) {
+      _askingAboutConflicts = true;
+      try {
+        await askAboutOpenConflicts(cp.projectId);
+      } finally {
+        _askingAboutConflicts = false;
+      }
+    }
   } catch { /* silent */ }
 }
 
@@ -3207,6 +3249,9 @@ export function framesNeedingPush(): Set<string> {
 
 export function adoptFingerprintsFromStore(): void {
   const s = state();
+  // Forget timestamps for frames that are gone, so the counts stay honest.
+  const alive = new Set(s.frames.map((f) => f.serverFrameId).filter(Boolean) as string[]);
+  for (const id of [..._serverFrameTimes.keys()]) if (!alive.has(id)) _serverFrameTimes.delete(id);
   _lastPushedFingerprints.clear();
   s.frames.forEach((f, i) => {
     if (!f.serverFrameId) return;      // never sent — must still go up
@@ -3237,6 +3282,10 @@ export function importPushedFingerprints(m: Record<string, string>): void {
     }
     _lastPushedFingerprints.set(k, v);
   }
+  // Drop anything for frames that no longer exist, so the counts are honest and
+  // two devices with the same project report the same numbers.
+  const known = new Set(Object.keys(m).filter((k) => k !== '__serverTimes'));
+  for (const id of [..._serverFrameTimes.keys()]) if (!known.has(id)) _serverFrameTimes.delete(id);
   trace(`  restored ${_lastPushedFingerprints.size} frames known to be on the server` +
         ` · ${_serverFrameTimes.size} with a timestamp`);
 }

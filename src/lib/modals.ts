@@ -744,3 +744,110 @@ export function showImportantNote(headline: string, body: string): Promise<void>
     document.body.appendChild(overlay);
   });
 }
+
+/**
+ * Three-way question about one frame: keep what is on the server, keep the
+ * version that was refused, or keep both.
+ *
+ * Sides are named by device and time — never "mine" and "theirs", which read
+ * differently depending on which machine is looking at the question.
+ *
+ * Resolves with null if `stillOpen` reports the question was answered
+ * elsewhere: the dialog closes itself rather than leaving live buttons on a
+ * decision that has already been made.
+ */
+export function showThreeWayConflict(info: {
+  frameLabel: string;
+  keepLabel: string;
+  otherLabel: string;
+  keepSrc: string;
+  otherSrc: string;
+  madeOffline: boolean;
+  stillOpen: () => Promise<boolean>;
+}): Promise<'mine' | 'theirs' | 'both' | null> {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText =
+      'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,0.82);' +
+      'display:flex;align-items:center;justify-content:center;padding:16px;' +
+      'font-family:-apple-system,BlinkMacSystemFont,sans-serif;';
+
+    const card = document.createElement('div');
+    card.style.cssText =
+      'background:#1a1a1a;border-radius:12px;padding:20px;max-width:640px;width:100%;' +
+      'color:#fff;max-height:90vh;overflow-y:auto;';
+
+    const title = document.createElement('div');
+    title.textContent = `Frame ${info.frameLabel} was changed in two places`;
+    title.style.cssText = 'font-size:15px;font-weight:600;margin-bottom:4px;';
+    card.appendChild(title);
+
+    const sub = document.createElement('div');
+    sub.textContent = info.madeOffline
+      ? 'One of these was made while offline. Nothing is lost — keep both if you are unsure.'
+      : 'Nothing is lost — keep both if you are unsure.';
+    sub.style.cssText = 'font-size:12px;color:#aaa;margin-bottom:14px;';
+    card.appendChild(sub);
+
+    let poll = 0;
+    function finish(v: 'mine' | 'theirs' | 'both' | null) {
+      window.clearInterval(poll);
+      overlay.remove();
+      resolve(v);
+    }
+
+    // Each choice sits directly UNDER the picture it applies to — a list of
+    // buttons below both images makes you work out which is which.
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:12px;margin-bottom:12px;';
+    for (const side of [
+      { label: info.keepLabel, src: info.keepSrc, value: 'mine' as const },
+      { label: info.otherLabel, src: info.otherSrc, value: 'theirs' as const },
+    ]) {
+      const col = document.createElement('div');
+      col.style.cssText = 'flex:1;min-width:0;display:flex;flex-direction:column;';
+
+      const img = document.createElement('div');
+      img.style.cssText =
+        'width:100%;aspect-ratio:16/9;background:#111 center/contain no-repeat;' +
+        'border:1px solid #3a3a3a;border-radius:6px;' +
+        (side.src ? `background-image:url("${side.src}");` : '');
+      col.appendChild(img);
+
+      const cap = document.createElement('div');
+      cap.textContent = side.label;
+      cap.style.cssText =
+        'font-size:11px;color:#bbb;margin:6px 0 8px;line-height:1.35;min-height:30px;';
+      col.appendChild(cap);
+
+      const pick = document.createElement('button');
+      pick.textContent = 'KEEP THIS ONE';
+      pick.style.cssText =
+        'width:100%;padding:10px;background:#2a2a2a;border:1px solid #555;' +
+        'border-radius:8px;color:#fff;font-size:12px;letter-spacing:.04em;cursor:pointer;';
+      pick.onmouseenter = () => { pick.style.background = '#3a3a3a'; };
+      pick.onmouseleave = () => { pick.style.background = '#2a2a2a'; };
+      pick.onclick = () => finish(side.value);
+      col.appendChild(pick);
+
+      row.appendChild(col);
+    }
+    card.appendChild(row);
+
+    const both = document.createElement('button');
+    both.textContent = 'KEEP BOTH — the other becomes an extra version';
+    both.style.cssText =
+      'display:block;width:100%;padding:12px;background:#d52632;border:none;' +
+      'border-radius:8px;color:#fff;font-size:13px;cursor:pointer;';
+    both.onclick = () => finish('both');
+    card.appendChild(both);
+
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+
+    // While this is on screen, check whether someone answered it elsewhere.
+    poll = window.setInterval(() => {
+      void info.stillOpen().then((open) => { if (!open) finish(null); });
+    }, 4000);
+  });
+}
