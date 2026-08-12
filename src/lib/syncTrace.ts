@@ -10,7 +10,7 @@ import { APP_VERSION } from '../store/state';
 
 /** Bumped with each change while the per-frame sync is in flight, so the log
  *  says which build is on screen. */
-export const SYNC_BUILD_TAG = '#216';
+export const SYNC_BUILD_TAG = '#228';
 
 let box: HTMLElement | null = null;
 
@@ -24,7 +24,10 @@ function ensureBox(): HTMLElement | null {
 
   box = document.createElement('div');
   box.style.cssText =
-    'position:fixed;left:0;right:0;bottom:0;max-height:42vh;overflow:auto;' +
+    // A FIXED height, not a share of the screen: at 42vh the log grew until it
+    // covered the controls and the page could not be worked. It stays a strip
+    // along the bottom and scrolls inside itself.
+    'position:fixed;left:0;right:0;bottom:0;height:112px;overflow:auto;' +
     'z-index:2147483647;background:rgba(0,0,0,0.88);color:#6f6;' +
     'font:10px/1.35 ui-monospace,monospace;padding:24px 6px 6px;' +
     'white-space:pre-wrap;-webkit-user-select:text;user-select:text;';
@@ -65,4 +68,9 @@ export function trace(msg: string): void {
   // Newest first, but always below the version tag and the copy button.
   const first = el.querySelector('[data-line]');
   el.insertBefore(line, first ?? null);
+
+  // Keep the oldest lines from piling up forever. COPY LOG still takes
+  // everything that is here.
+  const lines = el.querySelectorAll('[data-line]');
+  for (let i = 300; i < lines.length; i++) lines[i].remove();
 }

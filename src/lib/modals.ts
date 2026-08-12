@@ -758,8 +758,12 @@ export function showImportantNote(headline: string, body: string): Promise<void>
  */
 export function showThreeWayConflict(info: {
   frameLabel: string;
-  keepLabel: string;
-  otherLabel: string;
+  /** Who made this side — frame number + device, shown above the picture. */
+  keepWho: string;
+  otherWho: string;
+  /** When it was changed, shown under the who-line. */
+  keepWhen: string;
+  otherWhen: string;
   keepSrc: string;
   otherSrc: string;
   madeOffline: boolean;
@@ -778,14 +782,14 @@ export function showThreeWayConflict(info: {
       'color:#fff;max-height:90vh;overflow-y:auto;';
 
     const title = document.createElement('div');
-    title.textContent = `Frame ${info.frameLabel} was changed in two places`;
+    title.textContent = `Frame ${info.frameLabel} was changed in two devices`;
     title.style.cssText = 'font-size:15px;font-weight:600;margin-bottom:4px;';
     card.appendChild(title);
 
     const sub = document.createElement('div');
     sub.textContent = info.madeOffline
-      ? 'One of these was made while offline. Nothing is lost — keep both if you are unsure.'
-      : 'Nothing is lost — keep both if you are unsure.';
+      ? 'One of these was made while offline. Please decide on versions to keep'
+      : 'Please decide on versions to keep';
     sub.style.cssText = 'font-size:12px;color:#aaa;margin-bottom:14px;';
     card.appendChild(sub);
 
@@ -801,11 +805,25 @@ export function showThreeWayConflict(info: {
     const row = document.createElement('div');
     row.style.cssText = 'display:flex;gap:12px;margin-bottom:12px;';
     for (const side of [
-      { label: info.keepLabel, src: info.keepSrc, value: 'mine' as const },
-      { label: info.otherLabel, src: info.otherSrc, value: 'theirs' as const },
+      { who: info.keepWho, when: info.keepWhen, src: info.keepSrc, value: 'mine' as const },
+      { who: info.otherWho, when: info.otherWhen, src: info.otherSrc, value: 'theirs' as const },
     ]) {
       const col = document.createElement('div');
       col.style.cssText = 'flex:1;min-width:0;display:flex;flex-direction:column;';
+
+      // Frame number + device sits ABOVE the picture, with the time under it —
+      // you read who made it before you look at what they made.
+      const who = document.createElement('div');
+      who.textContent = side.who;
+      who.style.cssText =
+        'font-size:12px;color:#fff;font-weight:600;margin-bottom:2px;' +
+        'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+      col.appendChild(who);
+
+      const when = document.createElement('div');
+      when.textContent = side.when;
+      when.style.cssText = 'font-size:11px;color:#aaa;margin-bottom:6px;min-height:14px;';
+      col.appendChild(when);
 
       const img = document.createElement('div');
       img.style.cssText =
@@ -814,16 +832,10 @@ export function showThreeWayConflict(info: {
         (side.src ? `background-image:url("${side.src}");` : '');
       col.appendChild(img);
 
-      const cap = document.createElement('div');
-      cap.textContent = side.label;
-      cap.style.cssText =
-        'font-size:11px;color:#bbb;margin:6px 0 8px;line-height:1.35;min-height:30px;';
-      col.appendChild(cap);
-
       const pick = document.createElement('button');
-      pick.textContent = 'KEEP THIS ONE';
+      pick.textContent = 'KEEP THIS VERSION';
       pick.style.cssText =
-        'width:100%;padding:10px;background:#2a2a2a;border:1px solid #555;' +
+        'width:100%;margin-top:8px;padding:10px;background:#2a2a2a;border:1px solid #555;' +
         'border-radius:8px;color:#fff;font-size:12px;letter-spacing:.04em;cursor:pointer;';
       pick.onmouseenter = () => { pick.style.background = '#3a3a3a'; };
       pick.onmouseleave = () => { pick.style.background = '#2a2a2a'; };
@@ -835,7 +847,7 @@ export function showThreeWayConflict(info: {
     card.appendChild(row);
 
     const both = document.createElement('button');
-    both.textContent = 'KEEP BOTH — the other becomes an extra version';
+    both.textContent = 'KEEP BOTH';
     both.style.cssText =
       'display:block;width:100%;padding:12px;background:#d52632;border:none;' +
       'border-radius:8px;color:#fff;font-size:13px;cursor:pointer;';

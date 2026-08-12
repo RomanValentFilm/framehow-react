@@ -439,20 +439,27 @@ projects.post("/:id/conflicts/:conflictId", async (c) => {
   if (!project) return jsonError(c, 404, "not_found", "Project not found.");
 
   let choice = "";
+  let deviceId: string | null = null;
+  let deviceName: string | null = null;
   try {
-    const b = (await c.req.json()) as { choice?: string };
+    const b = (await c.req.json()) as {
+      choice?: string; device_id?: string; device_name?: string;
+    };
     choice = b?.choice ?? "";
+    deviceId = b?.device_id ?? null;
+    deviceName = b?.device_name ?? null;
   } catch { /* handled below */ }
   if (choice !== "mine" && choice !== "theirs" && choice !== "both") {
     return jsonError(c, 400, "invalid_choice", "choice must be mine, theirs or both.");
   }
 
   const row = await c.env.DB.prepare(
-    `SELECT id, frame_id, losing_json, resolved_at, resolution
+    `SELECT id, frame_id, losing_json, resolved_at, resolution, device_name, made_at, winner_made_at
        FROM frame_conflicts WHERE id = ? AND project_id = ?`,
   ).bind(c.req.param("conflictId"), project.id).first<{
     id: string; frame_id: string; losing_json: string;
     resolved_at: number | null; resolution: string | null;
+    device_name: string | null; made_at: number | null; winner_made_at: number | null;
   }>();
   if (!row) return jsonError(c, 404, "not_found", "No such conflict.");
 
@@ -480,9 +487,95 @@ projects.post("/:id/conflicts/:conflictId", async (c) => {
     );
     appendLosingVersions(c.env.DB, stmts, losing, now);
   } else if (choice === "both") {
-    // Keep what is there and add the refused version alongside it, with fresh
-    // ids so it cannot collide with what already exists.
-    appendLosingVersions(c.env.DB, stmts, losing, now, true);
+    // KEEP BOTH puts the refused frame in the MAIN strip beside the one that
+    // is already there — frame 2 becomes 2#1 and 2#2 — each carrying its own
+    // versions, notes, tags and strips. It is not an extra version inside one
+    // frame: the two are whole frames, and you delete the one you don't want.
+    const orig = await c.env.DB.prepare(
+      `SELECT id, strip_id, label, sort_order FROM frames WHERE id = ?`,
+    ).bind(row.frame_id).first<{
+      id: string; strip_id: string; label: string | null; sort_order: number;
+    }>();
+
+    if (orig) {
+      const lf = losing.frame as Record<string, unknown>;
+      const newFrameId = newId();
+
+      // Oldest first, by when the change was MADE — so a morning edit made
+      // offline keeps its place ahead of an afternoon one that arrived first.
+      const losingIsOlder = (row.made_at ?? 0) < (row.winner_made_at ?? row.made_at ?? 0);
+
+      // Strip any #n already on the label so deciding twice cannot give 2#1#1.
+      const base = (orig.label ?? "").replace(/#\d+$/, "");
+      const newSort = losingIsOlder ? orig.sort_order : orig.sort_order + 1;
+
+      stmts.push(
+        // Make room. Only sort_order moves; nobody's LABEL changes, so frame 3
+        // is still called 3.
+        c.env.DB.prepare(
+          `UPDATE frames SET sort_order = sort_order + 1
+             WHERE strip_id = ? AND sort_order >= ?`,
+        ).bind(orig.strip_id, newSort),
+        c.env.DB.prepare(
+          `UPDATE frames SET label = ?, updated_at = ? WHERE id = ?`,
+        ).bind(`${base}#${losingIsOlder ? 2 : 1}`, now, orig.id),
+        c.env.DB.prepare(
+          `INSERT INTO frames (id, strip_id, label, sort_order, crop_w, crop_h,
+                               text_content, table_data, version_label, strip_labels,
+                               hidden, note, scribbles, updated_at, changed_offline)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+        ).bind(
+          newFrameId, orig.strip_id, `${base}#${losingIsOlder ? 1 : 2}`, newSort,
+          (lf.crop_w as number) ?? 16, (lf.crop_h as number) ?? 9,
+          (lf.text_content as string) ?? null, (lf.table_data as string) ?? null,
+          (lf.version_label as string) ?? null, (lf.strip_labels as string) ?? null,
+          lf.hidden ? 1 : 0, (lf.note as string) ?? null,
+          (lf.scribbles as string) ?? null, now,
+        ),
+      );
+
+      const idMap = appendLosingVersions(c.env.DB, stmts, losing, now, newFrameId);
+
+      // Needs, notes, setups and version tags are not stored on the frame —
+      // they live in a project-wide list keyed by the frame's (or version's)
+      // id. A brand new frame has no entry in any of them, which is why the
+      // copy arrived with its picture but nothing else. Give the new ids the
+      // same entries as the ones they were copied from.
+      const metaRow = await c.env.DB.prepare(
+        `SELECT metadata FROM projects WHERE id = ?`,
+      ).bind(project.id).first<{ metadata: string | null }>();
+      if (metaRow?.metadata) {
+        try {
+          const meta = JSON.parse(metaRow.metadata) as Record<string, unknown>;
+          let touched = false;
+
+          for (const key of ["frameNeeds", "frameNotes", "frameSetups"]) {
+            const map = meta[key] as Record<string, unknown> | undefined;
+            if (map && map[row.frame_id] !== undefined) {
+              map[newFrameId] = JSON.parse(JSON.stringify(map[row.frame_id]));
+              touched = true;
+            }
+          }
+
+          const tags = meta.versionTags as Record<string, unknown> | undefined;
+          if (tags) {
+            for (const [oldVid, newVid] of idMap) {
+              if (tags[oldVid] !== undefined) {
+                tags[newVid] = JSON.parse(JSON.stringify(tags[oldVid]));
+                touched = true;
+              }
+            }
+          }
+
+          if (touched) {
+            stmts.push(
+              c.env.DB.prepare(`UPDATE projects SET metadata = ? WHERE id = ?`)
+                .bind(JSON.stringify(meta), project.id),
+            );
+          }
+        } catch { /* unreadable metadata is not worth failing the decision for */ }
+      }
+    }
   }
   // 'mine' writes nothing — the server already holds the winning version.
 
@@ -490,15 +583,23 @@ projects.post("/:id/conflicts/:conflictId", async (c) => {
     c.env.DB.prepare(
       `UPDATE frame_conflicts SET resolved_at = ?, resolution = ? WHERE id = ?`,
     ).bind(now, choice, row.id),
-    c.env.DB.prepare(`UPDATE projects SET updated_at = ? WHERE id = ?`).bind(now, project.id),
+    // Record WHO settled it. Left unset, the project still named the device
+    // that pushed last — so that device pulled, saw its own name against the
+    // change, concluded "this is my own data coming back" and threw the
+    // decision away. That is why the losing side never showed the result.
+    c.env.DB.prepare(
+      `UPDATE projects SET updated_at = ?,
+              last_device_id = COALESCE(?, last_device_id),
+              last_device_name = COALESCE(?, last_device_name)
+         WHERE id = ?`,
+    ).bind(now, deviceId, deviceName, project.id),
   );
 
   if (stmts.length > 0) await c.env.DB.batch(stmts);
   return c.json(await loadProjectTree(c.env.DB, project.id));
 });
 
-/** Write the refused version's rows. With `asExtra`, give them new ids so they
- *  sit alongside what is already on the frame instead of replacing it. */
+/** Write the refused side's versions, images and drawings. */
 function appendLosingVersions(
   db: D1Database,
   stmts: D1PreparedStatement[],
@@ -508,19 +609,23 @@ function appendLosingVersions(
     drawings: Array<Record<string, unknown>>;
   },
   now: number,
-  asExtra = false,
-): void {
+  /** Given, the rows are copied onto that NEW frame with fresh ids — keep both.
+   *  Omitted, they replace the frame's own rows in place — keep theirs. */
+  ontoFrameId?: string,
+): Map<string, string> {
+  const copy = !!ontoFrameId;
   const idMap = new Map<string, string>();
   for (const v of losing.versions) {
     const oldId = v.id as string;
-    const id = asExtra ? newId() : oldId;
+    const id = copy ? newId() : oldId;
     idMap.set(oldId, id);
     stmts.push(
       db.prepare(
         `INSERT OR REPLACE INTO versions (id, frame_id, label, type, hidden, starred, note, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).bind(id, v.frame_id as string, (v.label as string) ?? null,
-             asExtra && v.type === "main" ? "upload" : (v.type as string),
+      ).bind(id, ontoFrameId ?? (v.frame_id as string),
+             (v.label as string) ?? null,
+             v.type as string,
              v.hidden ? 1 : 0, Number(v.starred) || 0, (v.note as string) ?? null, now),
     );
   }
@@ -531,7 +636,7 @@ function appendLosingVersions(
       db.prepare(
         `INSERT OR REPLACE INTO images (id, version_id, r2_key, size_bytes, updated_at)
          VALUES (?, ?, ?, ?, ?)`,
-      ).bind(asExtra ? newId() : (im.id as string), vid, im.r2_key as string,
+      ).bind(copy ? newId() : (im.id as string), vid, im.r2_key as string,
              (im.size_bytes as number) ?? 0, now),
     );
   }
@@ -542,9 +647,10 @@ function appendLosingVersions(
       db.prepare(
         `INSERT OR REPLACE INTO drawings (id, version_id, drawing_data, updated_at)
          VALUES (?, ?, ?, ?)`,
-      ).bind(asExtra ? newId() : (d.id as string), vid, d.drawing_data as string, now),
+      ).bind(copy ? newId() : (d.id as string), vid, d.drawing_data as string, now),
     );
   }
+  return idMap;
 }
 
 // ---------------------------------------------------------------------------

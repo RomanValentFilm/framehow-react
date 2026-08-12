@@ -1426,11 +1426,30 @@ interface OpenConflict {
 }
 
 /** Name a side the way the user would: by device and when it was made. */
-function sideLabel(device: string | null, madeAt: number | null, isThisDevice: boolean,
-                   fallback = 'another device'): string {
+/** Say what the frame actually holds after a decision — names, not just a
+ *  count, so "it is not in the layout" can be told apart from "it is not in
+ *  the data". */
+function traceFrameVersions(serverFrameId: string): void {
+  const st = state();
+  const f = st.frames.find((x) => x.serverFrameId === serverFrameId);
+  if (!f) { trace('  that frame is not in the store'); return; }
+  // After KEEP BOTH there should be a PAIR of frames in the main strip, so
+  // report the neighbours by name, not a version count.
+  const base = (f.label || '').replace(/#\d+$/, '');
+  const pair = st.frames
+    .filter((x) => (x.label || '').replace(/#\d+$/, '') === base)
+    .map((x) => `${x.label || '·'}:${(st.versions[x.id] ?? []).length}v${x.src ? '' : '(no image)'}`);
+  trace(`  ${st.frames.length} frames · matching "${base}": [${pair.join(', ')}]`);
+}
+
+function sideWho(frameLabel: string, device: string | null, isThisDevice: boolean,
+                 fallback = 'another device'): string {
   const who = device || fallback;
-  const when = madeAt ? ` — made ${formatClockTime(madeAt)}` : '';
-  return `${who}${isThisDevice ? ' (this one)' : ''}${when}`;
+  return `${frameLabel} · ${who}${isThisDevice ? ' (this one)' : ''}`;
+}
+
+function sideWhen(madeAt: number | null): string {
+  return madeAt ? `changed ${formatClockTime(madeAt)}` : '';
 }
 
 /**
@@ -1440,7 +1459,23 @@ function sideLabel(device: string | null, madeAt: number | null, isThisDevice: b
  * every few seconds whether someone answered it elsewhere — if so it closes
  * itself rather than leaving live buttons on a settled question.
  */
+/** One asker at a time. The question is raised from two places — the tail of a
+ *  push and the heartbeat — and both can fire within a second of each other.
+ *  Without this the same conflict got two pickers, and answering one left the
+ *  device taking the same result twice. */
+let askingAboutConflicts = false;
+
 async function askAboutOpenConflicts(projectId: string): Promise<void> {
+  if (askingAboutConflicts) return;
+  askingAboutConflicts = true;
+  try {
+    await askAboutOpenConflictsInner(projectId);
+  } finally {
+    askingAboutConflicts = false;
+  }
+}
+
+async function askAboutOpenConflictsInner(projectId: string): Promise<void> {
   let list: OpenConflict[];
   try {
     const res = await api.get<{ conflicts: OpenConflict[] }>(
@@ -1466,12 +1501,13 @@ async function askAboutOpenConflicts(projectId: string): Promise<void> {
     const localFrame = state().frames.find((f) => f.serverFrameId === c.frame_id);
     const here = getDeviceName();
 
+    const label = localFrame?.label || losing.frame.label || '?';
     const choice = await showThreeWayConflict({
-      frameLabel: localFrame?.label || losing.frame.label || '?',
-      keepLabel:  sideLabel(c.winner_device, c.winner_made_at, c.winner_device === here,
-                            'the version in the cloud'),
-      otherLabel: sideLabel(c.device_name, c.made_at, c.device_name === here,
-                            'the version on this device'),
+      frameLabel: label,
+      keepWho:  sideWho(label, c.winner_device, c.winner_device === here, 'the cloud'),
+      keepWhen: sideWhen(c.winner_made_at),
+      otherWho:  sideWho(label, c.device_name, c.device_name === here, 'this device'),
+      otherWhen: sideWhen(c.made_at),
       keepSrc: localFrame?.src || '',
       otherSrc: losingSrc,
       madeOffline: !!c.made_offline,
@@ -1484,18 +1520,54 @@ async function askAboutOpenConflicts(projectId: string): Promise<void> {
       },
     });
 
-    if (!choice) { trace('  decision was answered on another device'); continue; }
+    if (!choice) {
+      // The picker closed itself because the question was settled elsewhere.
+      // Closing the window is not enough: this device is now out of date and
+      // must take the decided result, or the two devices sit there each
+      // showing its own version. This was the real cause of "keep both did
+      // nothing" — the answering device was fine, this one never looked.
+      trace('  decision was answered on another device — taking that result');
+      markFrameAsMatchingServer(c.frame_id);
+      lastKnownUpdatedAt = 0;         // force the pull to apply
+      await tryPullFromCloud(true);
+      traceFrameVersions(c.frame_id);
+      continue;
+    }
 
     try {
       const res = await api.post<{ already_resolved?: boolean; resolution?: string } & CloudProjectTree>(
         `/projects/${encodeURIComponent(projectId)}/conflicts/${encodeURIComponent(c.id)}`,
-        { choice }, getToken());
+        {
+          choice,
+          device_id: getDeviceId(),
+          device_name: getDeviceName(),
+        }, getToken());
       if (res.already_resolved) {
-        trace(`  already decided elsewhere: ${res.resolution}`);
+        // Someone answered first — so this device is now out of date and must
+        // take what was decided. Doing nothing here left the two devices
+        // showing different things, each convinced it was right.
+        trace(`  already decided elsewhere: ${res.resolution} — taking that result`);
         showToast(`Already decided on another device — kept ${res.resolution === 'both' ? 'both' : res.resolution}.`);
+        markFrameAsMatchingServer(c.frame_id);
+        lastKnownUpdatedAt = 0;         // force the pull to apply
+        await tryPullFromCloud(true);
         continue;
       }
       trace(`  decided: ${choice}`);
+
+      // Applying the result rebuilds the project from the server, which resets
+      // the view to the default. Answering a question should not move you: if
+      // you were in 3x2, you stay in 3x2.
+      const before = state();
+      const viewBefore = {
+        currentViewMode: before.currentViewMode,
+        activeStrips: [...before.activeStrips],
+        notesStripVisible: before.notesStripVisible,
+        needsStripVisible: before.needsStripVisible,
+        activeGroupId: before.activeGroupId,
+        centerFid: before.centerFid,
+      };
+
       beginSystemAction();
       try {
         await applyCloudTreeToStore(res as CloudProjectTree);
@@ -1503,7 +1575,29 @@ async function askAboutOpenConflicts(projectId: string): Promise<void> {
         endSystemAction();
       }
       adoptFingerprintsFromStore();
+
+      traceFrameVersions(c.frame_id);
+
+      const after = state();
+      const groupStillThere =
+        viewBefore.activeGroupId !== null &&
+        after.groups.some((g) => g.id === viewBefore.activeGroupId);
+      useStore.setState({
+        currentViewMode: viewBefore.currentViewMode,
+        activeStrips: viewBefore.activeStrips,
+        notesStripVisible: viewBefore.notesStripVisible,
+        needsStripVisible: viewBefore.needsStripVisible,
+        activeGroupId: groupStillThere ? viewBefore.activeGroupId : null,
+      });
+
       (window as any).__fh_renderAll?.();
+      // After the rebuild, not before — otherwise the rebuild has the last word.
+      setViewMode(viewBefore.currentViewMode);
+
+      const frameStillThere =
+        viewBefore.centerFid != null &&
+        state().frames.some((f) => String(f.id) === String(viewBefore.centerFid));
+      if (frameStillThere) requestAnimationFrame(() => scrollAnchorTo(viewBefore.centerFid));
     } catch {
       showToast('Could not save that choice — it will be asked again.');
     }
@@ -3295,6 +3389,19 @@ export function forgetPushedFingerprint(serverFrameId: string): void {
   _lastPushedFingerprints.delete(serverFrameId);
 }
 
+/** Stop treating one frame as having unsent local work.
+ *
+ *  Used after a conflict is decided: the server now holds the answer for that
+ *  frame, so the local copy must not be defended as "mine". Left dirty, the
+ *  pull keeps the local version instead of the decided one and then pushes it
+ *  back up, which is how a settled conflict came undone. */
+export function markFrameAsMatchingServer(serverFrameId: string): void {
+  const s = state();
+  const i = s.frames.findIndex((f) => f.serverFrameId === serverFrameId);
+  if (i < 0) return;
+  _lastPushedFingerprints.set(serverFrameId, frameFingerprint(s.frames[i], i, s));
+}
+
 export function clearPushedFingerprints(): void {
   _lastPushedFingerprints.clear();
 }
@@ -3545,18 +3652,25 @@ function mergeFrames(
   return { frames: merged, versions: mergedVersions };
 }
 
-async function tryPullFromCloud(): Promise<void> {
-  if (pullInFlight) return;
-  if (isPushInFlight()) return;
-  if (Date.now() - lastPullAt < PULL_COOLDOWN_MS) return;
-  if (!isLoggedIn()) return;
+async function tryPullFromCloud(force = false): Promise<void> {
+  // `force` is for taking the result of a decided conflict. That call happens
+  // at the TAIL of a push, so the ordinary "never pull during a push" guard
+  // turned it into a silent no-op — the device asked the question, heard the
+  // answer, and then skipped the one pull that would have applied it. Every
+  // early exit is traced here, so a pull can never again vanish unseen.
+  if (pullInFlight) { if (force) trace('  pull skipped: another pull is running'); return; }
+  if (!force && isPushInFlight()) return;
+  if (!force && Date.now() - lastPullAt < PULL_COOLDOWN_MS) return;
+  if (!isLoggedIn()) { if (force) trace('  pull skipped: not signed in'); return; }
   const cp = getCurrentProject();
-  if (!cp.projectId) return;
+  if (!cp.projectId) { if (force) trace('  pull skipped: no project open'); return; }
 
   // Never pull on top of work the server has not taken yet. Try to send it
   // first; if that cannot get through, skip the pull entirely rather than
   // letting the older cloud copy replace it.
-  if (getDirtyFrameIds().size > 0) {
+  // Not on the forced path: the push just ran, and the frame being decided is
+  // exactly the one the server refused — waiting for it to send is a deadlock.
+  if (!force && getDirtyFrameIds().size > 0) {
     await flushSyncNow();
     if (getDirtyFrameIds().size > 0) return;
   }
@@ -3572,6 +3686,9 @@ async function tryPullFromCloud(): Promise<void> {
     const remoteUpdatedAt = tree.project.updated_at;
     const localUpdatedAt = lastKnownUpdatedAt ?? cp.lastSavedAt ?? 0;
 
+    if (force && remoteUpdatedAt <= localUpdatedAt) {
+      trace(`  pull found nothing newer (remote ${remoteUpdatedAt} vs local ${localUpdatedAt})`);
+    }
     if (remoteUpdatedAt > localUpdatedAt) {
       const remoteDeviceId = tree.project.last_device_id;
       const remoteDeviceName = tree.project.last_device_name || 'another device';
@@ -3579,6 +3696,7 @@ async function tryPullFromCloud(): Promise<void> {
 
       // Same device pushed — our own data reflecting back. Just update timestamp.
       if (remoteDeviceId === localDeviceId) {
+        if (force) trace('  pull skipped: the change is recorded as this device');
         lastKnownUpdatedAt = remoteUpdatedAt;
         return;
       }
