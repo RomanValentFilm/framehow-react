@@ -52,7 +52,7 @@ import {
   pendingOnDevice,
 } from './currentProject';
 import { trace } from './syncTrace';
-import { settingsForPush, adoptSettingsFromServer, applySettingsToStore, importSettingStamps, stampChangedSettings, type SettingItem } from './projectSettings';
+import { settingsForPush, adoptSettingsFromServer, applySettingsToStore, importSettingStamps, stampChangedSettings, markSettingsUnknown, settingsNeedPush, type SettingItem } from './projectSettings';
 import { applySnapshotToStore, loadSnapshot, snapshotFromStore, listPending, isArchived, getPending, markPendingUploaded, saveProjectListCache, loadProjectListCache, deletePending, recoverPending, isDeletedCopy, requestDurableStorage } from './persistence';
 import type { PendingRecord } from './persistence';
 import { showThreeWayConflict, showConfirm, showToast, showFrameConflictPicker } from './modals';
@@ -1464,6 +1464,96 @@ function sideWhen(madeAt: number | null): string {
  * every few seconds whether someone answered it elsewhere — if so it closes
  * itself rather than leaving live buttons on a settled question.
  */
+interface OpenSettingConflict {
+  id: string;
+  kind: string;
+  item_id: string;
+  losing_json: string;
+  device_name: string | null;
+  made_at: number | null;
+  winner_device: string | null;
+  winner_made_at: number | null;
+}
+
+/** Ask about every sort order the server is holding a decision on. */
+let askingAboutSettings = false;
+
+async function askAboutOpenSettingConflicts(projectId: string): Promise<void> {
+  if (askingAboutSettings) return;
+  askingAboutSettings = true;
+  try {
+    let list: OpenSettingConflict[];
+    try {
+      const res = await api.get<{ conflicts: OpenSettingConflict[] }>(
+        `/projects/${encodeURIComponent(projectId)}/setting-conflicts`, getToken());
+      list = res.conflicts ?? [];
+    } catch {
+      return;   // ask again next time; nothing is lost by not asking now
+    }
+    if (list.length === 0) return;
+    trace(`  ${list.length} sort order decision(s) waiting`);
+
+    const { showSortOrderConflict } = await import('./modals');
+
+    for (const c of list) {
+      const here = getDeviceName();
+      let name = '?';
+      try {
+        const parsed = JSON.parse(c.losing_json) as { data?: { name?: string } };
+        name = parsed.data?.name || '?';
+      } catch { /* fall back to '?' */ }
+      const mine = state().sortOrders.find((o) => o.id === c.item_id);
+      if (mine?.name) name = mine.name;
+
+      const choice = await showSortOrderConflict({
+        orderName: name,
+        keepLabel:  sideWho(name, c.winner_device, c.winner_device === here, 'the cloud')
+                    + (c.winner_made_at ? ` · ${sideWhen(c.winner_made_at)}` : ''),
+        otherLabel: sideWho(name, c.device_name, c.device_name === here, 'this device')
+                    + (c.made_at ? ` · ${sideWhen(c.made_at)}` : ''),
+        stillOpen: async () => {
+          try {
+            const r = await api.get<{ conflicts: OpenSettingConflict[] }>(
+              `/projects/${encodeURIComponent(projectId)}/setting-conflicts`, getToken());
+            return (r.conflicts ?? []).some((x) => x.id === c.id);
+          } catch { return true; }   // can't tell — leave it up
+        },
+      });
+
+      const take = async () => {
+        markSettingsUnknown();
+        lastKnownUpdatedAt = 0;
+        await tryPullFromCloud(true);
+      };
+
+      if (!choice) {
+        trace('  sort order decision was answered on another device — taking that result');
+        await take();
+        continue;
+      }
+
+      try {
+        const res = await api.post<{ already_resolved?: boolean; resolution?: string } & CloudProjectTree>(
+          `/projects/${encodeURIComponent(projectId)}/setting-conflicts/${encodeURIComponent(c.id)}`,
+          { choice, device_id: getDeviceId(), device_name: getDeviceName() }, getToken());
+        if (res.already_resolved) {
+          trace(`  already decided elsewhere: ${res.resolution} — taking that result`);
+          await take();
+          continue;
+        }
+        trace(`  sort order decided: ${choice}`);
+        applySettingsToStore(res.settings);
+        adoptSettingsFromServer(res.settings);
+        (window as any).__fh_renderAll?.();
+      } catch {
+        trace('  could not send the sort order decision — will ask again');
+      }
+    }
+  } finally {
+    askingAboutSettings = false;
+  }
+}
+
 /** One asker at a time. The question is raised from two places — the tail of a
  *  push and the heartbeat — and both can fire within a second of each other.
  *  Without this the same conflict got two pickers, and answering one left the
@@ -1677,7 +1767,13 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   // Project settings are not on any frame, so they need their own answer to
   // "is there anything to say". Without this they only ever travelled when a
   // frame happened to change at the same time.
-  const metaChanged = _lastPushedMeta !== '' && projectMetaFingerprint(s) !== _lastPushedMeta;
+  // Stamp first, so a change made a moment ago counts. Then ask the settings
+  // themselves — they know what the server has confirmed, which the
+  // whole-project fingerprint could not answer until after a first push.
+  stampChangedSettings();
+  const metaChanged =
+    settingsNeedPush() ||
+    (_lastPushedMeta !== '' && projectMetaFingerprint(s) !== _lastPushedMeta);
   if (metaChanged) trace('  project settings changed — sending');
 
   if (isPartial && dirtyLocalIds.size === 0 && _pendingTombstones.length === 0 && !metaChanged) {
@@ -1992,6 +2088,15 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
     }
   }
   trace(`  sending frames: ${frames.map((f) => f.id.slice(0, 6)).join(',') || '(none)'}`);
+
+  // Say exactly what is going up, so "the sort order did not sync" can be told
+  // apart from "the app never had one to send".
+  stampChangedSettings();
+  const settingsOut = settingsForPush();
+  const orderBits = settingsOut
+    .filter((i) => i.kind === 'sortOrder')
+    .map((i) => `${i.item_id.slice(0, 8)} at ${i.changed_at} base ${i.base_changed_at ?? 0}`);
+  trace(`  settings: ${settingsOut.length} item(s) · orders [${orderBits.join(' | ') || 'none'}]`);
   const res = await api.post<CloudProjectTree & {
     conflict?: boolean;
     /** Frames the server would not take because they changed elsewhere.
@@ -2030,7 +2135,7 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
       // the edit snapping back in front of the user. This is not "stamping at
       // push time": anything made offline was already stamped by an autosave
       // long before, so only a change the autosave has not seen yet is caught.
-      settings: (stampChangedSettings(), settingsForPush()),
+      settings: settingsOut,
     },
     getToken(),
   );
@@ -3138,15 +3243,41 @@ async function sendHeartbeat(): Promise<void> {
   const cp = getCurrentProject();
   if (!cp.projectId || !isLoggedIn()) return;
   try {
-    const beat = await api.post<{ ok: boolean; open_conflicts?: number }>(
+    const beat = await api.post<{
+      ok: boolean;
+      open_conflicts?: number;
+      open_setting_conflicts?: number;
+      project_updated_at?: number | null;
+      project_last_device_id?: string | null;
+    }>(
       `/projects/${encodeURIComponent(cp.projectId)}/heartbeat`,
       { device_id: getDeviceId(), device_name: getDeviceName() },
       getToken(),
     );
 
+    // Pulls used to happen only on focus, visibility or boot. Sit in front of
+    // an open window and scroll, and the other device's work never arrived —
+    // the app had no way of hearing about it. The heartbeat already runs every
+    // few seconds while someone is working and already talks to the server, so
+    // it says when the project last changed. Newer than what we hold, and by
+    // someone else, means fetch it — no new timer and no polling loop.
+    const remoteAt = beat?.project_updated_at ?? null;
+    const remoteBy = beat?.project_last_device_id ?? null;
+    if (remoteAt !== null && remoteBy !== getDeviceId()) {
+      const localAt = lastKnownUpdatedAt ?? getCurrentProject().lastSavedAt ?? 0;
+      if (remoteAt > localAt) {
+        trace(`heartbeat: the project changed elsewhere — pulling`);
+        await tryPullFromCloud();
+      }
+    }
+
     // The heartbeat is the only thing that runs while someone is simply
     // working — scrolling, presenting, not switching windows. So it is where a
     // waiting decision gets noticed, on whichever device the user is at.
+    if ((beat?.open_setting_conflicts ?? 0) > 0) {
+      await askAboutOpenSettingConflicts(cp.projectId);
+    }
+
     if ((beat?.open_conflicts ?? 0) > 0 && !_askingAboutConflicts) {
       _askingAboutConflicts = true;
       try {
@@ -3434,6 +3565,7 @@ let _lastPushedMeta = '';
 /** True when the project's settings have changed since the last successful
  *  push. Empty means "we do not know yet", which must not count as unsent. */
 export function projectSettingsUnsent(): boolean {
+  if (settingsNeedPush()) return true;
   if (_lastPushedMeta === '') return false;
   return projectMetaFingerprint(state()) !== _lastPushedMeta;
 }
@@ -3751,6 +3883,8 @@ function mergeFrames(
   return { frames: merged, versions: mergedVersions };
 }
 
+let _lastHeldBackTrace = 0;
+
 async function tryPullFromCloud(force = false): Promise<void> {
   // `force` is for taking the result of a decided conflict. That call happens
   // at the TAIL of a push, so the ordinary "never pull during a push" guard
@@ -3778,7 +3912,12 @@ async function tryPullFromCloud(force = false): Promise<void> {
   if (!force && (getDirtyFrameIds().size > 0 || projectSettingsUnsent())) {
     await flushSyncNow();
     if (getDirtyFrameIds().size > 0 || projectSettingsUnsent()) {
-      trace('  pull held back: local work is not on the server yet');
+      // Say it once, not once per attempt. A stuck push retries hard enough to
+      // write this line hundreds of times a second and bury everything else.
+      if (Date.now() - _lastHeldBackTrace > 5000) {
+        _lastHeldBackTrace = Date.now();
+        trace('  pull held back: local work is not on the server yet');
+      }
       return;
     }
   }

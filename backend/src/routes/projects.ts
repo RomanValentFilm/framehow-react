@@ -178,8 +178,29 @@ projects.post("/:id/heartbeat", async (c) => {
     .prepare("SELECT COUNT(*) AS n FROM frame_conflicts WHERE project_id = ? AND resolved_at IS NULL")
     .bind(id)
     .first<{ n: number }>();
+  const openSettings = await c.env.DB
+    .prepare("SELECT COUNT(*) AS n FROM setting_conflicts WHERE project_id = ? AND resolved_at IS NULL")
+    .bind(id)
+    .first<{ n: number }>();
 
-  return c.json({ ok: true, heartbeat_at: now, open_conflicts: open?.n ?? 0 });
+  // For the same reason, say WHEN the project last changed and WHO changed it.
+  // Without this a device only finds out on focus, visibility or boot — so
+  // someone sitting in front of an open window, scrolling, never learns that
+  // the other device saved anything. No new request, no timer: the heartbeat
+  // is already here.
+  const proj = await c.env.DB
+    .prepare("SELECT updated_at, last_device_id FROM projects WHERE id = ?")
+    .bind(id)
+    .first<{ updated_at: number; last_device_id: string | null }>();
+
+  return c.json({
+    ok: true,
+    heartbeat_at: now,
+    open_conflicts: open?.n ?? 0,
+    open_setting_conflicts: openSettings?.n ?? 0,
+    project_updated_at: proj?.updated_at ?? null,
+    project_last_device_id: proj?.last_device_id ?? null,
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -251,7 +272,14 @@ projects.post("/:id/sync", async (c) => {
     .first<{ last_device_name: string | null }>();
   const winnerDevice = winnerRow?.last_device_name ?? null;
 
-  const perFrame = payload.frames.some((f) => f.base_updated_at !== undefined);
+  // A push carrying NO frames has nothing the whole-project check can protect —
+  // and taking that path 409s it, which sends the device off to pull, which it
+  // refuses to do while holding unsent work. Push, refuse, retry, for ever.
+  // That is exactly the deadlock described below, reached by a settings-only
+  // push instead of a frame one. Settings merge item by item and need no
+  // blanket conflict.
+  const perFrame = payload.frames.length === 0
+    || payload.frames.some((f) => f.base_updated_at !== undefined);
   let rejectedFrames: Array<{ id: string; server_updated_at: number; server_offline: boolean }> = [];
   const refusedPayloads: Array<{ frame: unknown; versions: unknown[]; images: unknown[]; drawings: unknown[] }> = [];
 
@@ -401,17 +429,59 @@ projects.post("/:id/sync", async (c) => {
   // alone — that is the whole point: an offline device pushing an old group
   // name must not undo a newer rename it never saw.
   if (payload.settings && payload.settings.length > 0) {
-    await c.env.DB.batch(payload.settings.map((it) =>
-      c.env.DB.prepare(
-        `INSERT INTO project_settings (project_id, kind, item_id, value, changed_at, deleted_at)
-         VALUES (?, ?, ?, ?, ?, ?)
-         ON CONFLICT(project_id, kind, item_id) DO UPDATE SET
-           value      = excluded.value,
-           changed_at = excluded.changed_at,
-           deleted_at = excluded.deleted_at
-         WHERE excluded.changed_at > project_settings.changed_at`,
-      ).bind(project.id, it.kind, it.item_id, it.value ?? null,
-             it.changed_at, it.deleted_at ?? null)));
+    // A SORT ORDER is not a value, it is an arrangement somebody made by hand.
+    // If both devices changed the same one without either having seen the
+    // other's, taking the newer throws away real work — so that one is kept
+    // and asked about, exactly like a frame's drawing. Everything else merges
+    // on time of change and never asks.
+    const orders = payload.settings.filter((it) => it.kind === "sortOrder" && it.value);
+    const held = new Map<string, { value: string | null; changed_at: number }>();
+    if (orders.length > 0) {
+      const ph = orders.map(() => "?").join(",");
+      const rows = await c.env.DB.prepare(
+        `SELECT item_id, value, changed_at FROM project_settings
+          WHERE project_id = ? AND kind = 'sortOrder' AND item_id IN (${ph})`,
+      ).bind(project.id, ...orders.map((o) => o.item_id))
+        .all<{ item_id: string; value: string | null; changed_at: number }>();
+      for (const r of rows.results) held.set(r.item_id, { value: r.value, changed_at: r.changed_at });
+    }
+
+    const contestedOrders = new Set<string>();
+    const conflictStmts: D1PreparedStatement[] = [];
+    for (const it of orders) {
+      const mine = held.get(it.item_id);
+      if (!mine || it.base_changed_at === undefined) continue;   // new, or an older client
+      if (mine.changed_at <= it.base_changed_at) continue;       // built on top of theirs
+      if (mine.value === it.value) continue;                     // same arrangement, nothing to argue
+      contestedOrders.add(it.item_id);
+      conflictStmts.push(
+        c.env.DB.prepare(
+          `INSERT INTO setting_conflicts
+             (id, project_id, kind, item_id, losing_json, device_name, made_at,
+              winner_device, winner_made_at, created_at)
+           VALUES (?, ?, 'sortOrder', ?, ?, ?, ?, ?, ?, ?)`,
+        ).bind(newId(), project.id, it.item_id, it.value ?? "",
+               payload.project.device_name ?? null, it.changed_at,
+               winnerDevice, mine.changed_at, now),
+      );
+    }
+
+    await c.env.DB.batch([
+      ...payload.settings
+        .filter((it) => !contestedOrders.has(it.item_id) || it.kind !== "sortOrder")
+        .map((it) =>
+          c.env.DB.prepare(
+            `INSERT INTO project_settings (project_id, kind, item_id, value, changed_at, deleted_at)
+             VALUES (?, ?, ?, ?, ?, ?)
+             ON CONFLICT(project_id, kind, item_id) DO UPDATE SET
+               value      = excluded.value,
+               changed_at = excluded.changed_at,
+               deleted_at = excluded.deleted_at
+             WHERE excluded.changed_at > project_settings.changed_at`,
+          ).bind(project.id, it.kind, it.item_id, it.value ?? null,
+                 it.changed_at, it.deleted_at ?? null)),
+      ...conflictStmts,
+    ]);
   }
 
   // Record the refused versions so the question can be answered from any
@@ -715,6 +785,108 @@ function appendLosingVersions(
 }
 
 // ---------------------------------------------------------------------------
+// GET /projects/:id/setting-conflicts — sort orders with a decision still open
+// ---------------------------------------------------------------------------
+projects.get("/:id/setting-conflicts", async (c) => {
+  const me = c.get("user");
+  const project = await loadOwnedProject(c.env.DB, me.id, c.req.param("id"));
+  if (!project) return jsonError(c, 404, "not_found", "Project not found.");
+
+  const rows = await c.env.DB.prepare(
+    `SELECT id, kind, item_id, losing_json, device_name, made_at,
+            winner_device, winner_made_at, created_at
+       FROM setting_conflicts
+      WHERE project_id = ? AND resolved_at IS NULL
+      ORDER BY created_at`,
+  ).bind(project.id).all();
+
+  return c.json({ conflicts: rows.results ?? [] });
+});
+
+// ---------------------------------------------------------------------------
+// POST /projects/:id/setting-conflicts/:conflictId — answer one
+//
+// mine   → keep what the server holds; the losing side stays recorded
+// theirs → take the losing side
+// both   → keep the server's AND add the other as a copy called NAME#2
+// ---------------------------------------------------------------------------
+projects.post("/:id/setting-conflicts/:conflictId", async (c) => {
+  const me = c.get("user");
+  const project = await loadOwnedProject(c.env.DB, me.id, c.req.param("id"));
+  if (!project) return jsonError(c, 404, "not_found", "Project not found.");
+
+  let choice = "";
+  let deviceId: string | null = null;
+  let deviceName: string | null = null;
+  try {
+    const b = (await c.req.json()) as { choice?: string; device_id?: string; device_name?: string };
+    choice = b?.choice ?? "";
+    deviceId = b?.device_id ?? null;
+    deviceName = b?.device_name ?? null;
+  } catch { /* handled below */ }
+  if (choice !== "mine" && choice !== "theirs" && choice !== "both") {
+    return jsonError(c, 400, "invalid_choice", "choice must be mine, theirs or both.");
+  }
+
+  const row = await c.env.DB.prepare(
+    `SELECT id, kind, item_id, losing_json, resolved_at, resolution
+       FROM setting_conflicts WHERE id = ? AND project_id = ?`,
+  ).bind(c.req.param("conflictId"), project.id).first<{
+    id: string; kind: string; item_id: string; losing_json: string;
+    resolved_at: number | null; resolution: string | null;
+  }>();
+  if (!row) return jsonError(c, 404, "not_found", "No such conflict.");
+  if (row.resolved_at !== null) {
+    return c.json({ already_resolved: true, resolution: row.resolution });
+  }
+
+  const now = Date.now();
+  const stmts: D1PreparedStatement[] = [];
+
+  if (choice === "theirs") {
+    stmts.push(
+      c.env.DB.prepare(
+        `UPDATE project_settings SET value = ?, changed_at = ?, deleted_at = NULL
+          WHERE project_id = ? AND kind = ? AND item_id = ?`,
+      ).bind(row.losing_json, now, project.id, row.kind, row.item_id),
+    );
+  } else if (choice === "both") {
+    // The losing arrangement survives as its own order, named NAME#2, so the
+    // user can look at both and delete the one they do not want.
+    try {
+      const parsed = JSON.parse(row.losing_json) as { idx: number; data: Record<string, unknown> };
+      const copyId = newId();
+      const name = String(parsed.data.name ?? "");
+      parsed.data.id = copyId;
+      parsed.data.name = `${name.replace(/#\d+$/, "")}#2`;
+      stmts.push(
+        c.env.DB.prepare(
+          `INSERT INTO project_settings (project_id, kind, item_id, value, changed_at, deleted_at)
+           VALUES (?, ?, ?, ?, ?, NULL)`,
+        ).bind(project.id, row.kind, copyId,
+               JSON.stringify({ idx: (parsed.idx ?? 0) + 1, data: parsed.data }), now),
+      );
+    } catch { /* unreadable losing side — the decision still gets recorded */ }
+  }
+  // 'mine' writes nothing: the server already holds the winning arrangement.
+
+  stmts.push(
+    c.env.DB.prepare(
+      `UPDATE setting_conflicts SET resolved_at = ?, resolution = ? WHERE id = ?`,
+    ).bind(now, choice, row.id),
+    c.env.DB.prepare(
+      `UPDATE projects SET updated_at = ?,
+              last_device_id = COALESCE(?, last_device_id),
+              last_device_name = COALESCE(?, last_device_name)
+         WHERE id = ?`,
+    ).bind(now, deviceId, deviceName, project.id),
+  );
+
+  if (stmts.length > 0) await c.env.DB.batch(stmts);
+  return c.json(await loadProjectTree(c.env.DB, project.id));
+});
+
+// ---------------------------------------------------------------------------
 // GET /projects/:id/snapshots — list available restore points
 // ---------------------------------------------------------------------------
 projects.get("/:id/snapshots", async (c) => {
@@ -1009,7 +1181,10 @@ interface SyncPayload {
   deletions: Array<{ id: string; entity_type: string; entity_id: string; deleted_at: number; device_id: string | null }>;
   /** Project settings, one entry per item, each with the time IT changed.
    *  Absent from older clients, which still send everything in metadata. */
-  settings?: Array<{ kind: string; item_id: string; value: string | null; changed_at: number; deleted_at?: number | null }>;
+  settings?: Array<{ kind: string; item_id: string; value: string | null; changed_at: number; deleted_at?: number | null;
+    /** What this device believed the server's stamp for this item was. Lets the
+     *  server tell "I edited on top of theirs" from "we both edited blind". */
+    base_changed_at?: number }>;
 }
 
 type Parsed<T> = { value: T } | { error: { code: string; message: string } };
@@ -1175,6 +1350,7 @@ function parseSyncPayload(body: unknown): Parsed<SyncPayload> {
       value: typeof r.value === "string" ? r.value : null,
       changed_at,
       deleted_at: typeof r.deleted_at === "number" ? r.deleted_at : null,
+      base_changed_at: typeof r.base_changed_at === "number" ? r.base_changed_at : undefined,
     });
   }
 

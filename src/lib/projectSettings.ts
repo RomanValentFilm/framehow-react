@@ -20,10 +20,19 @@ export interface SettingItem {
   value: string | null;      // JSON: { idx, data } — idx keeps the user's order
   changed_at: number;
   deleted_at: number | null;
+  /** What the server's stamp was when this device last heard from it. Lets the
+   *  server tell "I rearranged on top of theirs" from "we both rearranged
+   *  blind" — only the second is worth asking about. */
+  base_changed_at?: number;
 }
 
 /** What we last saw locally, per item, with the time we first saw it that way. */
-const _known = new Map<string, { json: string; changed_at: number; deleted_at: number | null }>();
+const _known = new Map<string, {
+  json: string; changed_at: number; deleted_at: number | null;
+  /** The server's stamp as of the last time we heard from it. Survives a local
+   *  edit — the local stamp moves, this does not. */
+  serverAt: number;
+}>();
 
 /** Seeding (first look, or after taking the server's copy) must NOT stamp
  *  anything as "changed now" — a device that merely opened the project would
@@ -69,9 +78,9 @@ export function stampChangedSettings(): void {
     if (!prev) {
       // First sight. Seeding a fresh load is not a change; a genuinely new
       // group or sort order is.
-      _known.set(k, { json: it.json, changed_at: seeding ? UNKNOWN : now, deleted_at: null });
+      _known.set(k, { json: it.json, changed_at: seeding ? UNKNOWN : now, deleted_at: null, serverAt: UNKNOWN });
     } else if (prev.json !== it.json || prev.deleted_at !== null) {
-      _known.set(k, { json: it.json, changed_at: now, deleted_at: null });
+      _known.set(k, { json: it.json, changed_at: now, deleted_at: null, serverAt: prev.serverAt });
     }
   }
 
@@ -79,7 +88,7 @@ export function stampChangedSettings(): void {
   // that never saw the deletion pushes the item back and it returns.
   for (const [k, v] of _known) {
     if (seen.has(k) || v.deleted_at !== null) continue;
-    _known.set(k, { json: v.json, changed_at: v.changed_at, deleted_at: now });
+    _known.set(k, { json: v.json, changed_at: v.changed_at, deleted_at: now, serverAt: v.serverAt });
   }
 }
 
@@ -94,6 +103,7 @@ export function settingsForPush(): SettingItem[] {
       value: v.deleted_at !== null ? null : v.json,
       changed_at: v.changed_at,
       deleted_at: v.deleted_at,
+      base_changed_at: v.serverAt,
     });
   }
   return out;
@@ -108,6 +118,7 @@ export function adoptSettingsFromServer(items: SettingItem[] | undefined): void 
       json: it.value ?? '',
       changed_at: it.changed_at,
       deleted_at: it.deleted_at ?? null,
+      serverAt: it.changed_at,
     });
   }
 }
@@ -196,6 +207,27 @@ export function applySettingsToStore(items: SettingItem[] | undefined): void {
   if (breaks) patch.storyFlowBreaks = breaks.data as SortBreak[];
 
   if (Object.keys(patch).length > 0) useStore.setState(patch as never);
+}
+
+/** Does this device hold a settings change the server has not confirmed?
+ *
+ *  Asked instead of comparing a whole-project fingerprint, which could not
+ *  answer until a push had already succeeded once — so on a project that had
+ *  not pushed yet, creating or rearranging a sort order changed no frame, and
+ *  the push was skipped as "nothing changed". */
+export function settingsNeedPush(): boolean {
+  for (const v of _known.values()) {
+    if (v.deleted_at !== null && v.deleted_at > v.serverAt) return true;
+    if (v.changed_at > v.serverAt) return true;
+  }
+  return false;
+}
+
+/** Forget what we believe the server holds, so the next pull is applied in
+ *  full. Used after a decision is settled elsewhere: this device's idea of the
+ *  server is out of date by definition. */
+export function markSettingsUnknown(): void {
+  for (const [k, v] of _known) _known.set(k, { ...v, serverAt: UNKNOWN });
 }
 
 /** Carried in the local snapshot so a restart does not forget when things

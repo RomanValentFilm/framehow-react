@@ -863,3 +863,82 @@ export function showThreeWayConflict(info: {
     }, 4000);
   });
 }
+
+/**
+ * Two devices rearranged the same SORT ORDER without either seeing the other's
+ * version. There is nothing to eyeball — an order is a long list of frames —
+ * so the decision is made on the ORDER'S NAME, WHEN it was changed and WHICH
+ * DEVICE changed it. No preview.
+ *
+ * Closes itself if the question is answered on another device.
+ */
+export function showSortOrderConflict(info: {
+  orderName: string;
+  keepLabel: string;
+  otherLabel: string;
+  stillOpen: () => Promise<boolean>;
+}): Promise<'mine' | 'theirs' | 'both' | null> {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText =
+      'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,0.82);' +
+      'display:flex;align-items:center;justify-content:center;padding:16px;' +
+      'font-family:-apple-system,BlinkMacSystemFont,sans-serif;';
+
+    const card = document.createElement('div');
+    card.style.cssText =
+      'background:#1a1a1a;border-radius:12px;padding:20px;max-width:520px;width:100%;color:#fff;';
+
+    const title = document.createElement('div');
+    title.textContent = `Sort order "${info.orderName}" was changed on two devices`;
+    title.style.cssText = 'font-size:15px;font-weight:600;margin-bottom:4px;';
+    card.appendChild(title);
+
+    const sub = document.createElement('div');
+    sub.textContent = 'Please decide which order to keep';
+    sub.style.cssText = 'font-size:12px;color:#aaa;margin-bottom:14px;';
+    card.appendChild(sub);
+
+    let poll = 0;
+    function finish(v: 'mine' | 'theirs' | 'both' | null) {
+      window.clearInterval(poll);
+      overlay.remove();
+      resolve(v);
+    }
+
+    for (const side of [
+      { label: info.keepLabel, value: 'mine' as const },
+      { label: info.otherLabel, value: 'theirs' as const },
+    ]) {
+      const who = document.createElement('div');
+      who.textContent = side.label;
+      who.style.cssText = 'font-size:12px;color:#fff;margin-bottom:6px;';
+      card.appendChild(who);
+
+      const pick = document.createElement('button');
+      pick.textContent = 'KEEP THIS ORDER';
+      pick.style.cssText =
+        'width:100%;margin-bottom:14px;padding:10px;background:#2a2a2a;border:1px solid #555;' +
+        'border-radius:8px;color:#fff;font-size:12px;letter-spacing:.04em;cursor:pointer;';
+      pick.onmouseenter = () => { pick.style.background = '#3a3a3a'; };
+      pick.onmouseleave = () => { pick.style.background = '#2a2a2a'; };
+      pick.onclick = () => finish(side.value);
+      card.appendChild(pick);
+    }
+
+    const both = document.createElement('button');
+    both.textContent = 'KEEP BOTH';
+    both.style.cssText =
+      'display:block;width:100%;padding:12px;background:#d52632;border:none;' +
+      'border-radius:8px;color:#fff;font-size:13px;cursor:pointer;';
+    both.onclick = () => finish('both');
+    card.appendChild(both);
+
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+
+    poll = window.setInterval(() => {
+      void info.stillOpen().then((open) => { if (!open) finish(null); });
+    }, 4000);
+  });
+}
