@@ -52,6 +52,7 @@ import {
   pendingOnDevice,
 } from './currentProject';
 import { trace } from './syncTrace';
+import { settingsForPush, adoptSettingsFromServer, applySettingsToStore, importSettingStamps, stampChangedSettings, type SettingItem } from './projectSettings';
 import { applySnapshotToStore, loadSnapshot, snapshotFromStore, listPending, isArchived, getPending, markPendingUploaded, saveProjectListCache, loadProjectListCache, deletePending, recoverPending, isDeletedCopy, requestDurableStorage } from './persistence';
 import type { PendingRecord } from './persistence';
 import { showThreeWayConflict, showConfirm, showToast, showFrameConflictPicker } from './modals';
@@ -1372,11 +1373,15 @@ async function fetchImageFromR2(r2Key: string, token: string): Promise<string> {
 interface CloudProjectTree {
   project: { id: string; name: string; created_at: number; updated_at: number; last_device_id: string | null; last_device_name: string | null; metadata: string | null };
   strips: Array<{ id: string; project_id: string; label: string | null; sort_order: number; updated_at: number }>;
-  frames: Array<{ id: string; strip_id: string; label: string | null; sort_order: number; crop_w: number | null; crop_h: number | null; text_content: string | null; table_data: string | null; version_label: string | null; strip_labels: string | null; hidden: number; note: string | null; scribbles: string | null; updated_at: number }>;
-  versions: Array<{ id: string; frame_id: string; label: string | null; type: string; hidden: number; starred: number; note: string | null; updated_at: number }>;
+  frames: Array<{ id: string; strip_id: string; label: string | null; sort_order: number; crop_w: number | null; crop_h: number | null; text_content: string | null; table_data: string | null; version_label: string | null; strip_labels: string | null; hidden: number; note: string | null; scribbles: string | null; updated_at: number;
+    /** Owned by the frame. Older rows have none — the metadata list covers those. */
+    needs?: string | null; notes?: string | null; setup_id?: string | null }>;
+  versions: Array<{ id: string; frame_id: string; label: string | null; type: string; hidden: number; starred: number; note: string | null; updated_at: number; tags?: string | null }>;
   images: Array<{ id: string; version_id: string; r2_key: string; width: number | null; height: number | null; size_bytes: number | null; content_type: string | null; updated_at: number }>;
   drawings: Array<{ id: string; version_id: string; drawing_data: string; updated_at: number }>;
   deletions?: Array<{ id: string; entity_type: string; entity_id: string; deleted_at: number; device_id: string | null }>;
+  /** Project settings, one entry per item. Absent from an older server. */
+  settings?: SettingItem[];
 }
 
 function uuid(): string {
@@ -1669,7 +1674,13 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   // the server, which makes every other device think there is something new
   // and pull. Each side's empty push provokes the other. If there is nothing
   // to say, say nothing.
-  if (isPartial && dirtyLocalIds.size === 0 && _pendingTombstones.length === 0) {
+  // Project settings are not on any frame, so they need their own answer to
+  // "is there anything to say". Without this they only ever travelled when a
+  // frame happened to change at the same time.
+  const metaChanged = _lastPushedMeta !== '' && projectMetaFingerprint(s) !== _lastPushedMeta;
+  if (metaChanged) trace('  project settings changed — sending');
+
+  if (isPartial && dirtyLocalIds.size === 0 && _pendingTombstones.length === 0 && !metaChanged) {
     trace('  nothing changed — not sending');
     return;
   }
@@ -1686,8 +1697,9 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   const stripId = uuid();
   const strips = [{ id: stripId, label: 'Main', sort_order: 0, updated_at: now }];
 
-  const frames: Array<{ id: string; strip_id: string; label: string | null; sort_order: number; crop_w: number | null; crop_h: number | null; text_content: string | null; table_data: string | null; version_label: string | null; strip_labels: string | null; hidden: boolean; note: string | null; scribbles: string | null; updated_at: number; base_updated_at?: number }> = [];
-  const versions: Array<{ id: string; frame_id: string; label: string | null; type: string; hidden: boolean; starred: boolean; note: string | null; updated_at: number }> = [];
+  const frames: Array<{ id: string; strip_id: string; label: string | null; sort_order: number; crop_w: number | null; crop_h: number | null; text_content: string | null; table_data: string | null; version_label: string | null; strip_labels: string | null; hidden: boolean; note: string | null; scribbles: string | null; updated_at: number; base_updated_at?: number;
+    needs: string | null; notes: string | null; setup_id: string | null }> = [];
+  const versions: Array<{ id: string; frame_id: string; label: string | null; type: string; hidden: boolean; starred: boolean; note: string | null; updated_at: number; tags?: string | null }> = [];
   const drawings: Array<{ id: string; version_id: string; drawing_data: string; updated_at: number }> = [];
   const imageUploads: Array<{
     versionId: string; src: string;
@@ -1744,6 +1756,14 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
       // What we believe this frame's server timestamp is. The server refuses
       // only frames that have moved since — not the whole push.
       base_updated_at: f.serverFrameId ? _serverFrameTimes.get(f.serverFrameId) : undefined,
+      // Needs, notes and setup belong to the frame. They used to ride in the
+      // project's metadata, which every push replaced whole — so the last
+      // device to push owned every frame's needs, and a different push owned
+      // every frame's notes. They still go in the metadata as well for now, so
+      // nothing is lost while both are in use.
+      needs: s.frameNeeds[f.id] ? JSON.stringify(s.frameNeeds[f.id]) : null,
+      notes: s.frameNotes[f.id] ? JSON.stringify(s.frameNotes[f.id]) : null,
+      setup_id: f.setupId ?? null,
     });
     if (f.scribbles && f.scribbles.length > 0) {
       console.log(`[sync][scribble] INCLUDED frame ${f.id} in push payload with ${f.scribbles.length} scribbles (${JSON.stringify(f.scribbles).length} bytes)`);
@@ -1779,6 +1799,8 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
         versions.push({
           id: vid, frame_id: frameId, label: lv.label || null, type: fullType,
           hidden: !!lv.hidden, starred: versionStars(lv) as unknown as boolean, note: lv.note || null, updated_at: now,
+          // The tag belongs to the version, same reasoning as needs and notes.
+          tags: lv.setupTagged ?? null,
         });
         if (lv.strokes && lv.strokes.length > 0) {
           drawings.push({ id: uuid(), version_id: vid, drawing_data: JSON.stringify(lv.strokes), updated_at: now });
@@ -1999,6 +2021,16 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
         deleted_at: t.deleted_at,
         device_id: t.device_id,
       })),
+      // Each settings item with the time IT changed. The server keeps the newer
+      // per item, so it stops mattering who pushed last.
+      //
+      // Stamped again HERE because a push can beat the autosave: renaming a
+      // NEEDS category sends straight away, so the item went up unstamped, the
+      // server refused it as not newer, and the reply put the old name back —
+      // the edit snapping back in front of the user. This is not "stamping at
+      // push time": anything made offline was already stamped by an autosave
+      // long before, so only a change the autosave has not seen yet is caught.
+      settings: (stampChangedSettings(), settingsForPush()),
     },
     getToken(),
   );
@@ -2008,6 +2040,13 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
 
   // Learn the server's new timestamps, so the next push is judged correctly.
   for (const sf of res.frames ?? []) _serverFrameTimes.set(sf.id, sf.updated_at);
+  // The reply carries the MERGED settings — ours where ours were newer, the
+  // server's where they were not. Take both the values and their stamps, or
+  // this device would keep pushing its older copy for ever.
+  if (res.settings) {
+    applySettingsToStore(res.settings);
+    adoptSettingsFromServer(res.settings);
+  }
   const acceptedIds = frames
     .map((f) => f.id)
     .filter((id) => !(res.rejected_frames ?? []).some((r) => r.id === id));
@@ -2034,6 +2073,8 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
     if (refusedIds.has(k)) continue;
     _lastPushedFingerprints.set(k, v);
   }
+  // The project's settings went up with it.
+  _lastPushedMeta = projectMetaFingerprint(state());
 
   // ---------------------------------------------------------------------------
   // Persist server IDs + r2Keys back to the Zustand store so the next push
@@ -2478,6 +2519,32 @@ async function applyCloudTreeToStore(
     }
   }
 
+  // The frame's OWN needs, notes and setup win over the project-wide list.
+  // The list is still read first so nothing written by an older build is lost;
+  // whatever is on the frame then overrides it. Once every device has pushed
+  // once, the list is dead weight and comes out.
+  // Same for tags: the version's own tag wins over the project-wide list.
+  for (const cv of tree.versions) {
+    if (!cv.tags) continue;
+    const localVer = serverVidToLocalVer.get(cv.id);
+    if (localVer && (cv.tags === 'origin' || cv.tags === 'copy')) localVer.setupTagged = cv.tags;
+  }
+
+  for (const cf of tree.frames) {
+    const localId = serverToLocalFrame.get(cf.id);
+    if (localId == null) continue;
+    if (cf.needs) {
+      try { localFrameNeeds[localId] = JSON.parse(cf.needs) as FrameNeedState; } catch { /* keep the list's copy */ }
+    }
+    if (cf.notes) {
+      try { localFrameNotes[localId] = JSON.parse(cf.notes) as FrameNoteState; } catch { /* keep the list's copy */ }
+    }
+    if (cf.setup_id) {
+      const nf = newFrames.find((x) => x.serverFrameId === cf.id);
+      if (nf) nf.setupId = cf.setup_id;
+    }
+  }
+
   // Remap sort order frameOrder arrays from server UUIDs → local IDs
   const localSortOrders: import('../store/state').SortOrder[] = restoredSortOrders.map((o: any) => {
     const mapped: import('../store/state').SortOrder = {
@@ -2566,6 +2633,13 @@ async function applyCloudTreeToStore(
     sortEditingId: null,
     renderTick: prev.renderTick + 1,
   }));
+
+  // The settings the server holds per item override what came out of the
+  // metadata blob above. Items the server has never heard of are left alone,
+  // so a project whose settings only exist in metadata is untouched.
+  applySettingsToStore(tree.settings);
+  adoptSettingsFromServer(tree.settings);
+
   (window as any).__fh_renderAll?.();
 
   // Now fetch images from R2 in parallel and patch them into the store.
@@ -3341,8 +3415,32 @@ export function framesNeedingPush(): Set<string> {
   return out;
 }
 
+/** The project's own settings — need definitions, setups, groups, sort orders
+ *  and so on. None of them belong to a frame, so no frame fingerprint moves
+ *  when they change, and the "nothing changed" check threw the push away.
+ *  Renaming a needs category on the iPad never reached the desktop because of
+ *  it. */
+function projectMetaFingerprint(s: ReturnType<typeof state>): string {
+  return JSON.stringify([
+    s.needDefinitions, s.setups, s.nextSetupId, s.groups,
+    s.sortOrders, s.nextSortOrderId, s.activeSortOrderId,
+    s.storyFlowBreaks, s.camAspectRatio, s.exportMeta,
+    s.portraitMode, s.projectType, s.stripTagInfoDismissed,
+  ]);
+}
+
+let _lastPushedMeta = '';
+
+/** True when the project's settings have changed since the last successful
+ *  push. Empty means "we do not know yet", which must not count as unsent. */
+export function projectSettingsUnsent(): boolean {
+  if (_lastPushedMeta === '') return false;
+  return projectMetaFingerprint(state()) !== _lastPushedMeta;
+}
+
 export function adoptFingerprintsFromStore(): void {
   const s = state();
+  _lastPushedMeta = projectMetaFingerprint(s);
   // Forget timestamps for frames that are gone, so the counts stay honest.
   const alive = new Set(s.frames.map((f) => f.serverFrameId).filter(Boolean) as string[]);
   for (const id of [..._serverFrameTimes.keys()]) if (!alive.has(id)) _serverFrameTimes.delete(id);
@@ -3404,6 +3502,7 @@ export function markFrameAsMatchingServer(serverFrameId: string): void {
 
 export function clearPushedFingerprints(): void {
   _lastPushedFingerprints.clear();
+  _lastPushedMeta = '';
 }
 
 /**
@@ -3670,9 +3769,18 @@ async function tryPullFromCloud(force = false): Promise<void> {
   // letting the older cloud copy replace it.
   // Not on the forced path: the push just ran, and the frame being decided is
   // exactly the one the server refused — waiting for it to send is a deadlock.
-  if (!force && getDirtyFrameIds().size > 0) {
+  //
+  // This used to ask about FRAMES only. A change to the project's settings —
+  // a group, a sort order, a needs category, the setup palette — touches no
+  // frame, so the answer was "nothing pending" and the pull went ahead and
+  // replaced those settings with the server's. Unsent work, wiped without a
+  // word. Settings now count as pending work too.
+  if (!force && (getDirtyFrameIds().size > 0 || projectSettingsUnsent())) {
     await flushSyncNow();
-    if (getDirtyFrameIds().size > 0) return;
+    if (getDirtyFrameIds().size > 0 || projectSettingsUnsent()) {
+      trace('  pull held back: local work is not on the server yet');
+      return;
+    }
   }
 
   pullInFlight = true;
@@ -3938,6 +4046,7 @@ export async function bootstrapAccountSystem(): Promise<void> {
         adoptLocalProjectId(snap.localId);   // keep the same key across restarts
         adoptDirtyFrameIds(snap.dirtyFrameIds);  // protect them from the first pull
         adoptPushedFingerprints(snap.pushedFingerprints);  // no needless full push
+        importSettingStamps(snap.settingStamps);   // remember when settings changed
         applySnapshotToStore(snap);
         // renderAll + autoPhoneMainView call setState — keep them inside
         // the system action so their setState calls don't mark dirty.

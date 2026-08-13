@@ -258,11 +258,42 @@ projects.post("/:id/sync", async (c) => {
   if (perFrame) {
     const ids = payload.frames.map((f) => f.id);
     const placeholders = ids.map(() => "?").join(",");
+    type ServerFrame = { id: string; updated_at: number; changed_offline: number; text_content: string | null; table_data: string | null };
     const existing = ids.length
       ? await c.env.DB.prepare(
-          `SELECT id, updated_at, changed_offline FROM frames WHERE id IN (${placeholders})`,
-        ).bind(...ids).all<{ id: string; updated_at: number; changed_offline: number }>()
-      : { results: [] as Array<{ id: string; updated_at: number; changed_offline: number }> };
+          `SELECT id, updated_at, changed_offline, text_content, table_data FROM frames WHERE id IN (${placeholders})`,
+        ).bind(...ids).all<ServerFrame>()
+      : { results: [] as ServerFrame[] };
+
+    // What the frame's MAIN version holds on the server: its picture and its
+    // strokes. Only these — with the text — can be contested. Needs, notes,
+    // setups and tags settle by time and must never raise the picker.
+    const serverMain = new Map<string, { r2_key: string | null; drawing: string | null }>();
+    if (ids.length) {
+      const mains = await c.env.DB.prepare(
+        `SELECT v.frame_id AS fid, i.r2_key AS r2_key, d.drawing_data AS drawing
+           FROM versions v
+           LEFT JOIN images   i ON i.version_id = v.id
+           LEFT JOIN drawings d ON d.version_id = v.id
+          WHERE v.frame_id IN (${placeholders}) AND v.type = 'main'`,
+      ).bind(...ids).all<{ fid: string; r2_key: string | null; drawing: string | null }>();
+      for (const m of mains.results) serverMain.set(m.fid, { r2_key: m.r2_key, drawing: m.drawing });
+    }
+
+    /** Does this push actually change the frame's picture, strokes or text?
+     *  If not, there is nothing to argue about — whatever else moved (needs,
+     *  notes, setup, a tag, the label) simply takes the newer value. */
+    const touchesContested = (f: typeof payload.frames[number], sf: ServerFrame): boolean => {
+      if ((f.text_content ?? null) !== (sf.text_content ?? null)) return true;
+      if ((f.table_data ?? null) !== (sf.table_data ?? null)) return true;
+      const mainV = payload.versions.find((v) => v.frame_id === f.id && v.type === "main");
+      const here = serverMain.get(f.id) ?? { r2_key: null, drawing: null };
+      const inR2 = mainV ? (payload.images.find((i) => i.version_id === mainV.id)?.r2_key ?? null) : null;
+      const inDraw = mainV ? (payload.drawings.find((d) => d.version_id === mainV.id)?.drawing_data ?? null) : null;
+      if (inR2 !== (here.r2_key ?? null)) return true;
+      if (inDraw !== (here.drawing ?? null)) return true;
+      return false;
+    };
 
     const serverFrame = new Map(existing.results.map((r) => [r.id, r]));
     const accepted: typeof payload.frames = [];
@@ -270,6 +301,12 @@ projects.post("/:id/sync", async (c) => {
       const sf = serverFrame.get(f.id);
       // Unknown to the server = a frame created on this device. Always accepted.
       if (!sf || f.base_updated_at === undefined || sf.updated_at <= f.base_updated_at) {
+        accepted.push(f);
+        continue;
+      }
+      // The frame moved underneath this device — but only the picture, the
+      // strokes and the text are worth asking about.
+      if (!touchesContested(f, sf)) {
         accepted.push(f);
         continue;
       }
@@ -357,6 +394,25 @@ projects.post("/:id/sync", async (c) => {
   await maybeCreateSnapshot(c.env.DB, project.id, now);
 
   await applySync(c.env.DB, project.id, payload, now);
+
+  // Project settings merge ITEM BY ITEM on time of change, so it stops
+  // mattering who pushed last. An item that is older here than what the server
+  // already holds is refused by the WHERE clause and leaves the server's copy
+  // alone — that is the whole point: an offline device pushing an old group
+  // name must not undo a newer rename it never saw.
+  if (payload.settings && payload.settings.length > 0) {
+    await c.env.DB.batch(payload.settings.map((it) =>
+      c.env.DB.prepare(
+        `INSERT INTO project_settings (project_id, kind, item_id, value, changed_at, deleted_at)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(project_id, kind, item_id) DO UPDATE SET
+           value      = excluded.value,
+           changed_at = excluded.changed_at,
+           deleted_at = excluded.deleted_at
+         WHERE excluded.changed_at > project_settings.changed_at`,
+      ).bind(project.id, it.kind, it.item_id, it.value ?? null,
+             it.changed_at, it.deleted_at ?? null)));
+  }
 
   // Record the refused versions so the question can be answered from any
   // device, and so the losing work is not stranded on the device that made it.
@@ -522,8 +578,9 @@ projects.post("/:id/conflicts/:conflictId", async (c) => {
         c.env.DB.prepare(
           `INSERT INTO frames (id, strip_id, label, sort_order, crop_w, crop_h,
                                text_content, table_data, version_label, strip_labels,
-                               hidden, note, scribbles, updated_at, changed_offline)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+                               hidden, note, scribbles, updated_at, changed_offline,
+                               needs, notes, setup_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`,
         ).bind(
           newFrameId, orig.strip_id, `${base}#${losingIsOlder ? 1 : 2}`, newSort,
           (lf.crop_w as number) ?? 16, (lf.crop_h as number) ?? 9,
@@ -531,6 +588,9 @@ projects.post("/:id/conflicts/:conflictId", async (c) => {
           (lf.version_label as string) ?? null, (lf.strip_labels as string) ?? null,
           lf.hidden ? 1 : 0, (lf.note as string) ?? null,
           (lf.scribbles as string) ?? null, now,
+          // The refused side brings its OWN package with it.
+          (lf.needs as string) ?? null, (lf.notes as string) ?? null,
+          (lf.setup_id as string) ?? null,
         ),
       );
 
@@ -621,12 +681,13 @@ function appendLosingVersions(
     idMap.set(oldId, id);
     stmts.push(
       db.prepare(
-        `INSERT OR REPLACE INTO versions (id, frame_id, label, type, hidden, starred, note, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT OR REPLACE INTO versions (id, frame_id, label, type, hidden, starred, note, updated_at, tags)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).bind(id, ontoFrameId ?? (v.frame_id as string),
              (v.label as string) ?? null,
              v.type as string,
-             v.hidden ? 1 : 0, Number(v.starred) || 0, (v.note as string) ?? null, now),
+             v.hidden ? 1 : 0, Number(v.starred) || 0, (v.note as string) ?? null, now,
+             (v.tags as string) ?? null),
     );
   }
   for (const im of losing.images) {
@@ -752,16 +813,16 @@ projects.post("/:id/restore/:snapshotId", async (c) => {
   for (const f of tree.frames) {
     stmts.push(
       c.env.DB.prepare(
-        `INSERT INTO frames (id, strip_id, label, sort_order, crop_w, crop_h, text_content, table_data, version_label, strip_labels, hidden, note, scribbles, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).bind(f.id, f.strip_id, f.label, f.sort_order, f.crop_w, f.crop_h, f.text_content, f.table_data, f.version_label, f.strip_labels, f.hidden, f.note ?? null, f.scribbles ?? null, now),
+        `INSERT INTO frames (id, strip_id, label, sort_order, crop_w, crop_h, text_content, table_data, version_label, strip_labels, hidden, note, scribbles, updated_at, needs, notes, setup_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(f.id, f.strip_id, f.label, f.sort_order, f.crop_w, f.crop_h, f.text_content, f.table_data, f.version_label, f.strip_labels, f.hidden, f.note ?? null, f.scribbles ?? null, now, f.needs ?? null, f.notes ?? null, f.setup_id ?? null),
     );
   }
   for (const v of tree.versions) {
     stmts.push(
       c.env.DB.prepare(
-        "INSERT INTO versions (id, frame_id, label, type, hidden, starred, note, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-      ).bind(v.id, v.frame_id, v.label, v.type, v.hidden, v.starred, v.note ?? null, now),
+        "INSERT INTO versions (id, frame_id, label, type, hidden, starred, note, updated_at, tags) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      ).bind(v.id, v.frame_id, v.label, v.type, v.hidden, v.starred, v.note ?? null, now, v.tags ?? null),
     );
   }
   for (const img of tree.images) {
@@ -809,8 +870,10 @@ export default projects;
 interface ProjectTree {
   project: { id: string; name: string; created_at: number; updated_at: number; last_device_id: string | null; last_device_name: string | null; metadata: string | null };
   strips: Array<{ id: string; project_id: string; label: string | null; sort_order: number; updated_at: number }>;
-  frames: Array<{ id: string; strip_id: string; label: string | null; sort_order: number; crop_w: number | null; crop_h: number | null; text_content: string | null; table_data: string | null; version_label: string | null; strip_labels: string | null; hidden: number; note: string | null; scribbles: string | null; updated_at: number }>;
-  versions: Array<{ id: string; frame_id: string; label: string | null; type: string; hidden: number; starred: number; note: string | null; updated_at: number }>;
+  frames: Array<{ id: string; strip_id: string; label: string | null; sort_order: number; crop_w: number | null; crop_h: number | null; text_content: string | null; table_data: string | null; version_label: string | null; strip_labels: string | null; hidden: number; note: string | null; scribbles: string | null; updated_at: number;
+    /** Owned by the frame, not by a project-wide list. */
+    needs: string | null; notes: string | null; setup_id: string | null }>;
+  versions: Array<{ id: string; frame_id: string; label: string | null; type: string; hidden: number; starred: number; note: string | null; updated_at: number; tags: string | null }>;
   images: Array<{
     id: string;
     version_id: string;
@@ -823,12 +886,13 @@ interface ProjectTree {
   }>;
   drawings: Array<{ id: string; version_id: string; drawing_data: string; updated_at: number }>;
   deletions: Array<{ id: string; entity_type: string; entity_id: string; deleted_at: number; device_id: string | null }>;
+  settings: Array<{ kind: string; item_id: string; value: string | null; changed_at: number; deleted_at: number | null }>;
 }
 
 async function loadProjectTree(db: D1Database, projectId: string): Promise<ProjectTree> {
   // Use subqueries instead of IN (?, ?, ...) to avoid D1's 100-variable limit.
   // All queries filter through project_id, so only 1 bind param each.
-  const [projectResult, stripsResult, framesResult, versionsResult, imagesResult, drawingsResult, deletionsResult] = await db.batch([
+  const [projectResult, stripsResult, framesResult, versionsResult, imagesResult, drawingsResult, deletionsResult, settingsResult] = await db.batch([
     db.prepare(
       "SELECT id, name, created_at, updated_at, last_device_id, last_device_name, metadata FROM projects WHERE id = ?",
     ).bind(projectId),
@@ -837,12 +901,12 @@ async function loadProjectTree(db: D1Database, projectId: string): Promise<Proje
          FROM strips WHERE project_id = ? ORDER BY sort_order`,
     ).bind(projectId),
     db.prepare(
-      `SELECT id, strip_id, label, sort_order, crop_w, crop_h, text_content, table_data, version_label, strip_labels, hidden, note, scribbles, updated_at
+      `SELECT id, strip_id, label, sort_order, crop_w, crop_h, text_content, table_data, version_label, strip_labels, hidden, note, scribbles, updated_at, needs, notes, setup_id
          FROM frames WHERE strip_id IN (SELECT id FROM strips WHERE project_id = ?)
         ORDER BY sort_order`,
     ).bind(projectId),
     db.prepare(
-      `SELECT id, frame_id, label, type, hidden, starred, note, updated_at
+      `SELECT id, frame_id, label, type, hidden, starred, note, updated_at, tags
          FROM versions WHERE frame_id IN (
            SELECT f.id FROM frames f JOIN strips s ON s.id = f.strip_id WHERE s.project_id = ?
          ) ORDER BY updated_at`,
@@ -871,6 +935,10 @@ async function loadProjectTree(db: D1Database, projectId: string): Promise<Proje
          FROM project_deletions
         WHERE project_id = ? AND deleted_at > ?`,
     ).bind(projectId, Date.now() - 30 * 24 * 60 * 60 * 1000),
+    db.prepare(
+      `SELECT kind, item_id, value, changed_at, deleted_at
+         FROM project_settings WHERE project_id = ?`,
+    ).bind(projectId),
   ]);
 
   const project = (projectResult.results as any[])[0] as ProjectTree["project"];
@@ -882,6 +950,7 @@ async function loadProjectTree(db: D1Database, projectId: string): Promise<Proje
     images: imagesResult.results as ProjectTree["images"],
     drawings: drawingsResult.results as ProjectTree["drawings"],
     deletions: deletionsResult.results as ProjectTree["deletions"],
+    settings: settingsResult.results as ProjectTree["settings"],
   };
 }
 
@@ -922,8 +991,10 @@ interface SyncPayload {
      *  absent means fall back to the whole-project check. */
     base_updated_at?: number;
     /** The change was made with no connection. */
-    changed_offline?: boolean }>;
-  versions: Array<{ id: string; frame_id: string; label: string | null; type: string; hidden: boolean; starred: number; note: string | null; updated_at: number }>;
+    changed_offline?: boolean;
+    /** Owned by the frame now, not by the project's metadata blob. */
+    needs?: string | null; notes?: string | null; setup_id?: string | null }>;
+  versions: Array<{ id: string; frame_id: string; label: string | null; type: string; hidden: boolean; starred: number; note: string | null; updated_at: number; tags?: string | null }>;
   images: Array<{
     id: string;
     version_id: string;
@@ -936,6 +1007,9 @@ interface SyncPayload {
   }>;
   drawings: Array<{ id: string; version_id: string; drawing_data: string; updated_at: number }>;
   deletions: Array<{ id: string; entity_type: string; entity_id: string; deleted_at: number; device_id: string | null }>;
+  /** Project settings, one entry per item, each with the time IT changed.
+   *  Absent from older clients, which still send everything in metadata. */
+  settings?: Array<{ kind: string; item_id: string; value: string | null; changed_at: number; deleted_at?: number | null }>;
 }
 
 type Parsed<T> = { value: T } | { error: { code: string; message: string } };
@@ -1006,7 +1080,14 @@ function parseSyncPayload(body: unknown): Parsed<SyncPayload> {
     const base_updated_at = typeof r.base_updated_at === "number" && Number.isFinite(r.base_updated_at)
       ? r.base_updated_at : undefined;
     const changed_offline = r.changed_offline === true || r.changed_offline === 1;
-    frames.push({ id, strip_id, label, sort_order, crop_w, crop_h, text_content, table_data, version_label: version_label ?? null, strip_labels, hidden, note, scribbles, updated_at, base_updated_at, changed_offline });
+    // The frame's own package. This parser rebuilds the payload field by
+    // field, so anything not named here is silently dropped — which is exactly
+    // what happened to needs, notes and setup: the columns existed, the client
+    // sent them, and they never arrived.
+    const needs = r.needs === null || r.needs === undefined ? null : asStr(r.needs);
+    const notes = r.notes === null || r.notes === undefined ? null : asStr(r.notes);
+    const setup_id = r.setup_id === null || r.setup_id === undefined ? null : asStr(r.setup_id);
+    frames.push({ id, strip_id, label, sort_order, crop_w, crop_h, text_content, table_data, version_label: version_label ?? null, strip_labels, hidden, note, scribbles, updated_at, base_updated_at, changed_offline, needs, notes, setup_id });
   }
 
   const frameIdSet = new Set(frames.map((f) => f.id));
@@ -1027,7 +1108,8 @@ function parseSyncPayload(body: unknown): Parsed<SyncPayload> {
       return err("versions[]");
     }
     if (!frameIdSet.has(frame_id)) return err("versions[].frame_id (unknown)");
-    versions.push({ id, frame_id, label, type, hidden, starred, note, updated_at });
+    const tags = r.tags === null || r.tags === undefined ? null : asStr(r.tags);
+    versions.push({ id, frame_id, label, type, hidden, starred, note, updated_at, tags });
   }
 
   const versionIdSet = new Set(versions.map((v) => v.id));
@@ -1080,6 +1162,22 @@ function parseSyncPayload(body: unknown): Parsed<SyncPayload> {
     deletions.push({ id, entity_type, entity_id, deleted_at, device_id });
   }
 
+  const settings: NonNullable<SyncPayload["settings"]> = [];
+  for (const raw of asArray(b.settings)) {
+    const r = raw as Record<string, unknown>;
+    const kind = asStr(r.kind);
+    const item_id = asStr(r.item_id);
+    const changed_at = asInt(r.changed_at);
+    if (!kind || !item_id || changed_at === null) return err("settings[]");
+    settings.push({
+      kind: kind.slice(0, 40),
+      item_id: item_id.slice(0, 100),
+      value: typeof r.value === "string" ? r.value : null,
+      changed_at,
+      deleted_at: typeof r.deleted_at === "number" ? r.deleted_at : null,
+    });
+  }
+
   return {
     value: {
       project: { name: projName, updated_at: projUpdated, base_updated_at: baseUpdatedAt, device_id: deviceId, device_name: deviceName, metadata },
@@ -1090,6 +1188,7 @@ function parseSyncPayload(body: unknown): Parsed<SyncPayload> {
       images,
       drawings,
       deletions,
+      settings,
     },
   };
 
@@ -1287,17 +1386,17 @@ function appendFrameInserts(db: D1Database, stmts: D1PreparedStatement[], payloa
   for (const f of payload.frames) {
     stmts.push(
       db.prepare(
-        `INSERT INTO frames (id, strip_id, label, sort_order, crop_w, crop_h, text_content, table_data, version_label, strip_labels, hidden, note, scribbles, updated_at, changed_offline)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).bind(f.id, f.strip_id, f.label, f.sort_order, f.crop_w, f.crop_h, f.text_content, f.table_data, f.version_label, f.strip_labels, f.hidden ? 1 : 0, f.note ?? null, f.scribbles ?? null, f.updated_at, f.changed_offline ? 1 : 0),
+        `INSERT INTO frames (id, strip_id, label, sort_order, crop_w, crop_h, text_content, table_data, version_label, strip_labels, hidden, note, scribbles, updated_at, changed_offline, needs, notes, setup_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(f.id, f.strip_id, f.label, f.sort_order, f.crop_w, f.crop_h, f.text_content, f.table_data, f.version_label, f.strip_labels, f.hidden ? 1 : 0, f.note ?? null, f.scribbles ?? null, f.updated_at, f.changed_offline ? 1 : 0, f.needs ?? null, f.notes ?? null, f.setup_id ?? null),
     );
   }
   for (const v of payload.versions) {
     stmts.push(
       db.prepare(
-        `INSERT INTO versions (id, frame_id, label, type, hidden, starred, note, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).bind(v.id, v.frame_id, v.label, v.type, v.hidden ? 1 : 0, Number(v.starred) || 0, v.note ?? null, v.updated_at),
+        `INSERT INTO versions (id, frame_id, label, type, hidden, starred, note, updated_at, tags)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(v.id, v.frame_id, v.label, v.type, v.hidden ? 1 : 0, Number(v.starred) || 0, v.note ?? null, v.updated_at, v.tags ?? null),
     );
   }
   for (const img of payload.images) {

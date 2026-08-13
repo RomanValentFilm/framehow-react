@@ -34,6 +34,9 @@ export interface CurrentProjectSnapshot {
    *  this across a restart is what stops the app pushing the whole project
    *  every time it opens — which made every other device pull for nothing. */
   pushedFingerprints?: Record<string, string>;
+  /** When each project setting last changed, so a restart does not forget and
+   *  start claiming every setting is new. */
+  settingStamps?: Array<{ kind: string; item_id: string; value: string | null; changed_at: number; deleted_at: number | null }>;
   /** This project's identity ON THIS DEVICE. Restored on boot so a project
    *  that has never reached the cloud keeps the same key across restarts —
    *  otherwise reopening it would file the same work a second time. */

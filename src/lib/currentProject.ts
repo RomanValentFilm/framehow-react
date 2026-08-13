@@ -46,6 +46,7 @@ import { useStore } from '../store/state';
 import { trace } from './syncTrace';
 import { clearSnapshot, saveSnapshot, snapshotFromStore, savePending, clearPending, listPending, markPendingWarned, markPendingUploaded, sweepUploaded, isArchived, storageEstimate } from './persistence';
 import { isLoggedIn } from './session';
+import { stampChangedSettings, exportSettingStamps } from './projectSettings';
 
 interface CurrentProject {
   /** Server-side UUID once the project has been saved. Null = local-only. */
@@ -527,6 +528,10 @@ async function runAutosave(): Promise<void> {
   }
   _autosaveInFlight = true;
   try {
+    // Stamp any settings that changed since the last look. Done HERE, on the
+    // local save, so the stamp is the time of the change — stamping at push
+    // time would make every offline change look newest and win everything.
+    stampChangedSettings();
     const snap = snapshotFromStore(cp.projectId, cp.name);
     snap.localId = _localId;   // survives restarts, so the key stays the same
     // Which frames are still unconfirmed. Without this a pull after a restart
@@ -535,6 +540,9 @@ async function runAutosave(): Promise<void> {
     // Remember what the server already has, so reopening the app does not push
     // the entire project again.
     if (_fingerprintsOut) snap.pushedFingerprints = _fingerprintsOut();
+    // When each setting last changed, so a restart does not forget and start
+    // claiming everything is new.
+    snap.settingStamps = exportSettingStamps();
     if (snap.frames.length === 0 && cp.name === null) {
       await clearSnapshot();
       return;
