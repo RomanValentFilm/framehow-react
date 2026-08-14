@@ -56,7 +56,11 @@ function currentItems(): Array<{ kind: string; item_id: string; json: string }> 
   // at the same moment.
   push('needLocations', 'needLocations', 0, s.needDefinitions?.locations ?? []);
   push('setupPalette', 'setupPalette', 0, { setups: s.setups, nextSetupId: s.nextSetupId });
-  push('storyFlowBreaks', 'storyFlowBreaks', 0, s.storyFlowBreaks ?? []);
+  // One item PER BREAK, not one item for all of them. A break the other device
+  // added is then simply added here, instead of losing to a newer copy of "the
+  // breaks" that never knew about it. Two devices moving the SAME break still
+  // settle by time.
+  (s.storyFlowBreaks ?? []).forEach((b, i) => push('storyFlowBreak', b.id, i, b));
 
   return out;
 }
@@ -66,7 +70,17 @@ function currentItems(): Array<{ kind: string; item_id: string; json: string }> 
  * differs with the time we noticed. Called from the local autosave, so the
  * stamp is the time of the change and not the time of the connection.
  */
-export function stampChangedSettings(): void {
+let _projectId: string | null | undefined;
+
+export function stampChangedSettings(projectId?: string | null): void {
+  // Everything here is remembered for ONE project. Opening another one must
+  // start empty, or its settings get pushed into the new project — which is
+  // how a brand new project arrived holding ten sort orders that belonged to
+  // the last one, conflicts and all.
+  if (projectId !== undefined && projectId !== _projectId) {
+    _known.clear();
+    _projectId = projectId;
+  }
   const now = Date.now();
   const seeding = _known.size === 0;
   const seen = new Set<string>();
@@ -203,8 +217,11 @@ export function applySettingsToStore(items: SettingItem[] | undefined): void {
     patch.nextSetupId = p.nextSetupId ?? 1;
   }
 
-  const breaks = rows.find((r) => r.kind === 'storyFlowBreaks' && !r.deleted && r.changed_at > UNKNOWN);
-  if (breaks) patch.storyFlowBreaks = breaks.data as SortBreak[];
+  // Story-flow breaks merge one by one, like groups and orders. A break only
+  // this device has stays; one only the other device has is added; one both
+  // know at different positions takes the newer.
+  const breaks = mergeList('storyFlowBreak', s.storyFlowBreaks ?? [], (b) => b.id);
+  if (breaks) patch.storyFlowBreaks = breaks;
 
   if (Object.keys(patch).length > 0) useStore.setState(patch as never);
 }
@@ -221,13 +238,6 @@ export function settingsNeedPush(): boolean {
     if (v.changed_at > v.serverAt) return true;
   }
   return false;
-}
-
-/** Forget what we believe the server holds, so the next pull is applied in
- *  full. Used after a decision is settled elsewhere: this device's idea of the
- *  server is out of date by definition. */
-export function markSettingsUnknown(): void {
-  for (const [k, v] of _known) _known.set(k, { ...v, serverAt: UNKNOWN });
 }
 
 /** Carried in the local snapshot so a restart does not forget when things

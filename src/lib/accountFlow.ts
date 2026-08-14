@@ -52,7 +52,7 @@ import {
   pendingOnDevice,
 } from './currentProject';
 import { trace } from './syncTrace';
-import { settingsForPush, adoptSettingsFromServer, applySettingsToStore, importSettingStamps, stampChangedSettings, markSettingsUnknown, settingsNeedPush, type SettingItem } from './projectSettings';
+import { settingsForPush, adoptSettingsFromServer, applySettingsToStore, importSettingStamps, stampChangedSettings, settingsNeedPush, type SettingItem } from './projectSettings';
 import { applySnapshotToStore, loadSnapshot, snapshotFromStore, listPending, isArchived, getPending, markPendingUploaded, saveProjectListCache, loadProjectListCache, deletePending, recoverPending, isDeletedCopy, requestDurableStorage } from './persistence';
 import type { PendingRecord } from './persistence';
 import { showThreeWayConflict, showConfirm, showToast, showFrameConflictPicker } from './modals';
@@ -1511,6 +1511,8 @@ async function askAboutOpenSettingConflicts(projectId: string): Promise<void> {
                     + (c.winner_made_at ? ` · ${sideWhen(c.winner_made_at)}` : ''),
         otherLabel: sideWho(name, c.device_name, c.device_name === here, 'this device')
                     + (c.made_at ? ` · ${sideWhen(c.made_at)}` : ''),
+        keepDevice: c.winner_device,
+        otherDevice: c.device_name,
         stillOpen: async () => {
           try {
             const r = await api.get<{ conflicts: OpenSettingConflict[] }>(
@@ -1521,7 +1523,13 @@ async function askAboutOpenSettingConflicts(projectId: string): Promise<void> {
       });
 
       const take = async () => {
-        markSettingsUnknown();
+        // Just pull. Do NOT wipe what we believe the server holds: that made
+        // every setting look unsent, so ordinary pulls were held back and the
+        // next push claimed base 0 on every order — which reads as "I changed
+        // this blind" and had the server file a fresh conflict for each one.
+        // Answering those produced the same state again, for ever.
+        // The forced pull already bypasses the unsent guards, and applying the
+        // server's settings sets every base correctly.
         lastKnownUpdatedAt = 0;
         await tryPullFromCloud(true);
       };
@@ -1770,7 +1778,7 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   // Stamp first, so a change made a moment ago counts. Then ask the settings
   // themselves — they know what the server has confirmed, which the
   // whole-project fingerprint could not answer until after a first push.
-  stampChangedSettings();
+  stampChangedSettings(cp.projectId);
   const metaChanged =
     settingsNeedPush() ||
     (_lastPushedMeta !== '' && projectMetaFingerprint(s) !== _lastPushedMeta);
@@ -2091,7 +2099,7 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
 
   // Say exactly what is going up, so "the sort order did not sync" can be told
   // apart from "the app never had one to send".
-  stampChangedSettings();
+  stampChangedSettings(cp.projectId);
   const settingsOut = settingsForPush();
   const orderBits = settingsOut
     .filter((i) => i.kind === 'sortOrder')

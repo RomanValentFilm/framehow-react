@@ -876,6 +876,10 @@ export function showSortOrderConflict(info: {
   orderName: string;
   keepLabel: string;
   otherLabel: string;
+  /** Device each side came from, so the BUTTON says whose it is — two buttons
+   *  reading the same thing makes you re-read the line above to be sure. */
+  keepDevice: string | null;
+  otherDevice: string | null;
   stillOpen: () => Promise<boolean>;
 }): Promise<'mine' | 'theirs' | 'both' | null> {
   return new Promise((resolve) => {
@@ -907,8 +911,8 @@ export function showSortOrderConflict(info: {
     }
 
     for (const side of [
-      { label: info.keepLabel, value: 'mine' as const },
-      { label: info.otherLabel, value: 'theirs' as const },
+      { label: info.keepLabel, device: info.keepDevice, value: 'mine' as const },
+      { label: info.otherLabel, device: info.otherDevice, value: 'theirs' as const },
     ]) {
       const who = document.createElement('div');
       who.textContent = side.label;
@@ -916,7 +920,9 @@ export function showSortOrderConflict(info: {
       card.appendChild(who);
 
       const pick = document.createElement('button');
-      pick.textContent = 'KEEP THIS ORDER';
+      pick.textContent = side.device
+        ? `KEEP ${side.device.toUpperCase()}'S ORDER`
+        : 'KEEP THIS ORDER';
       pick.style.cssText =
         'width:100%;margin-bottom:14px;padding:10px;background:#2a2a2a;border:1px solid #555;' +
         'border-radius:8px;color:#fff;font-size:12px;letter-spacing:.04em;cursor:pointer;';

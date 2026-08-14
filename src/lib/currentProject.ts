@@ -149,7 +149,7 @@ let _createAndSyncFn: (() => Promise<void>) | null = null;
 export function registerCreateAndSync(fn: () => Promise<void>): void {
   _createAndSyncFn = fn;
 }
-let _pullFn: (() => Promise<void>) | null = null;
+let _pullFn: ((force?: boolean) => Promise<void>) | null = null;
 let _pullInFlight = false;
 
 /**
@@ -164,7 +164,7 @@ export function registerCloudSync(fn: (projectId: string) => Promise<void>): voi
  * Called once from accountFlow.ts at boot to hand us the pull function
  * so we can trigger a pull when a push gets a 409 conflict.
  */
-export function registerPullFn(fn: () => Promise<void>): void {
+export function registerPullFn(fn: (force?: boolean) => Promise<void>): void {
   _pullFn = fn;
 }
 
@@ -353,7 +353,11 @@ export async function flushSyncNow(): Promise<void> {
       // then schedule a retry push with updated base_updated_at.
       cloudSyncInFlight = false; // release lock so pull can proceed
       try {
-        await _pullFn();
+        // FORCED. An ordinary pull refuses while this device holds unsent
+        // work — and after a 409 it always does, because the push that just
+        // failed is that work. Push, refuse, retry, for ever. The 409 already
+        // says the server is ahead, so taking its copy is the whole point.
+        await _pullFn(true);
         // tryPullFromCloud calls clearDirtyState() after merge, but our
         // kept-local frames still need to be pushed. Re-mark dirty and
         // retry push quickly — base_updated_at is now up-to-date.
@@ -531,7 +535,7 @@ async function runAutosave(): Promise<void> {
     // Stamp any settings that changed since the last look. Done HERE, on the
     // local save, so the stamp is the time of the change — stamping at push
     // time would make every offline change look newest and win everything.
-    stampChangedSettings();
+    stampChangedSettings(cp.projectId);
     const snap = snapshotFromStore(cp.projectId, cp.name);
     snap.localId = _localId;   // survives restarts, so the key stays the same
     // Which frames are still unconfirmed. Without this a pull after a restart
@@ -623,7 +627,7 @@ async function runCloudSync(): Promise<void> {
     console.warn('[sync] push failed', e);
     if (e?.status === 409 && _pullFn) {
       // Conflict (409) — pull first, then user can push
-      try { await _pullFn(); } catch { /* pull handles its own errors */ }
+      try { await _pullFn(true); } catch { /* pull handles its own errors */ }
     } else if (!navigator.onLine || (e instanceof TypeError)) {
       showOfflineBanner();
     }

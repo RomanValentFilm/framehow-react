@@ -859,6 +859,13 @@ projects.post("/:id/setting-conflicts/:conflictId", async (c) => {
       const name = String(parsed.data.name ?? "");
       parsed.data.id = copyId;
       parsed.data.name = `${name.replace(/#\d+$/, "")}#2`;
+      // Fresh ids for the copy's breaks. They live inside their own order and
+      // must never be mistakable for the original's — moving a break in #2 has
+      // nothing to do with #1.
+      if (Array.isArray(parsed.data.breaks)) {
+        parsed.data.breaks = (parsed.data.breaks as Array<Record<string, unknown>>)
+          .map((b) => ({ ...b, id: newId() }));
+      }
       stmts.push(
         c.env.DB.prepare(
           `INSERT INTO project_settings (project_id, kind, item_id, value, changed_at, deleted_at)
