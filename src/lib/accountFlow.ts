@@ -52,7 +52,9 @@ import {
   pendingOnDevice,
 } from './currentProject';
 import { trace } from './syncTrace';
-import { settingsForPush, adoptSettingsFromServer, applySettingsToStore, importSettingStamps, stampChangedSettings, settingsNeedPush, type SettingItem } from './projectSettings';
+import { frameChangedAt, versionChangedAt, importChangeStamps, stampChangedContent } from './changeStamps';
+import { shouldSendOnlyChanges } from './pushMode';
+import { settingsForPush, adoptSettingsFromServer, applySettingsToStore, importSettingStamps, stampChangedSettings, seedSettings, settingsNeedPush, type SettingItem } from './projectSettings';
 import { applySnapshotToStore, loadSnapshot, snapshotFromStore, listPending, isArchived, getPending, markPendingUploaded, saveProjectListCache, loadProjectListCache, deletePending, recoverPending, isDeletedCopy, requestDurableStorage } from './persistence';
 import type { PendingRecord } from './persistence';
 import { showThreeWayConflict, showConfirm, showToast, showFrameConflictPicker } from './modals';
@@ -1375,8 +1377,10 @@ interface CloudProjectTree {
   strips: Array<{ id: string; project_id: string; label: string | null; sort_order: number; updated_at: number }>;
   frames: Array<{ id: string; strip_id: string; label: string | null; sort_order: number; crop_w: number | null; crop_h: number | null; text_content: string | null; table_data: string | null; version_label: string | null; strip_labels: string | null; hidden: number; note: string | null; scribbles: string | null; updated_at: number;
     /** Owned by the frame. Older rows have none — the metadata list covers those. */
-    needs?: string | null; notes?: string | null; setup_id?: string | null }>;
-  versions: Array<{ id: string; frame_id: string; label: string | null; type: string; hidden: number; starred: number; note: string | null; updated_at: number; tags?: string | null }>;
+    needs?: string | null; notes?: string | null; setup_id?: string | null;
+    /** When the change was MADE, not when it was sent. Absent on older rows. */
+    content_changed_at?: number | null }>;
+  versions: Array<{ id: string; frame_id: string; label: string | null; type: string; hidden: number; starred: number; note: string | null; updated_at: number; tags?: string | null; content_changed_at?: number | null }>;
   images: Array<{ id: string; version_id: string; r2_key: string; width: number | null; height: number | null; size_bytes: number | null; content_type: string | null; updated_at: number }>;
   drawings: Array<{ id: string; version_id: string; drawing_data: string; updated_at: number }>;
   deletions?: Array<{ id: string; entity_type: string; entity_id: string; deleted_at: number; device_id: string | null }>;
@@ -1551,7 +1555,7 @@ async function askAboutOpenSettingConflicts(projectId: string): Promise<void> {
         }
         trace(`  sort order decided: ${choice}`);
         applySettingsToStore(res.settings);
-        adoptSettingsFromServer(res.settings);
+        adoptSettingsFromServer(res.settings, projectId);
         (window as any).__fh_renderAll?.();
       } catch {
         trace('  could not send the sort order decision — will ask again');
@@ -1757,7 +1761,20 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   // Check for deleted frames (in fingerprint store but not in current state).
   // These are handled by tombstones — no need to include them as dirty frames.
 
-  const isPartial = _lastPushedFingerprints.size > 0 && dirtyLocalIds.size < s.frames.length;
+  // Partial means "the server already has this project, send it changes".
+  // It used to also require that SOME frame was unchanged — so a device that
+  // had been offline long enough to touch every frame sent a FULL push, and
+  // full mode DELETES the whole project on the server and writes only what
+  // that device holds. One device coming back from a day away erased the
+  // other's work entirely. How many frames changed says nothing about whether
+  // the server's copy should be thrown away.
+  // A full replace is for ONE case only: a project the server has never seen.
+  // Not for "this device has forgotten what the server holds", which is what a
+  // pull that keeps every local frame leaves behind (#268).
+  const isPartial = shouldSendOnlyChanges({
+    confirmedFrames: _lastPushedFingerprints.size,
+    framesTheServerHas: _serverFrameTimes.size,
+  });
   const hasDirtyFrames = dirtyLocalIds.size > 0;
 
   // NOTE: we do NOT skip when hasDirtyFrames is false. Metadata changes
@@ -1779,6 +1796,10 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   // themselves — they know what the server has confirmed, which the
   // whole-project fingerprint could not answer until after a first push.
   stampChangedSettings(cp.projectId);
+  // Also stamp frames and versions here, before the payload is built: a change
+  // made a second ago pushes immediately, so waiting for the next autosave
+  // would send it with no change time at all.
+  stampChangedContent(cp.projectId);
   const metaChanged =
     settingsNeedPush() ||
     (_lastPushedMeta !== '' && projectMetaFingerprint(s) !== _lastPushedMeta);
@@ -1802,8 +1823,9 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   const strips = [{ id: stripId, label: 'Main', sort_order: 0, updated_at: now }];
 
   const frames: Array<{ id: string; strip_id: string; label: string | null; sort_order: number; crop_w: number | null; crop_h: number | null; text_content: string | null; table_data: string | null; version_label: string | null; strip_labels: string | null; hidden: boolean; note: string | null; scribbles: string | null; updated_at: number; base_updated_at?: number;
-    needs: string | null; notes: string | null; setup_id: string | null }> = [];
-  const versions: Array<{ id: string; frame_id: string; label: string | null; type: string; hidden: boolean; starred: boolean; note: string | null; updated_at: number; tags?: string | null }> = [];
+    needs: string | null; notes: string | null; setup_id: string | null;
+    content_changed_at?: number }> = [];
+  const versions: Array<{ id: string; frame_id: string; label: string | null; type: string; hidden: boolean; starred: boolean; note: string | null; updated_at: number; tags?: string | null; content_changed_at?: number }> = [];
   const drawings: Array<{ id: string; version_id: string; drawing_data: string; updated_at: number }> = [];
   const imageUploads: Array<{
     versionId: string; src: string;
@@ -1868,6 +1890,9 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
       needs: s.frameNeeds[f.id] ? JSON.stringify(s.frameNeeds[f.id]) : null,
       notes: s.frameNotes[f.id] ? JSON.stringify(s.frameNotes[f.id]) : null,
       setup_id: f.setupId ?? null,
+      // WHEN it was changed, so the server can prefer the newer edit instead of
+      // the later push. `updated_at` above is the push time.
+      content_changed_at: frameChangedAt(f.serverFrameId),
     });
     if (f.scribbles && f.scribbles.length > 0) {
       console.log(`[sync][scribble] INCLUDED frame ${f.id} in push payload with ${f.scribbles.length} scribbles (${JSON.stringify(f.scribbles).length} bytes)`);
@@ -1905,6 +1930,7 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
           hidden: !!lv.hidden, starred: versionStars(lv) as unknown as boolean, note: lv.note || null, updated_at: now,
           // The tag belongs to the version, same reasoning as needs and notes.
           tags: lv.setupTagged ?? null,
+          content_changed_at: versionChangedAt(lv.serverVersionId),
         });
         if (lv.strokes && lv.strokes.length > 0) {
           drawings.push({ id: uuid(), version_id: vid, drawing_data: JSON.stringify(lv.strokes), updated_at: now });
@@ -2101,6 +2127,12 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   // apart from "the app never had one to send".
   stampChangedSettings(cp.projectId);
   const settingsOut = settingsForPush();
+  // Say which frames carry a change time, so "newer wins did nothing" can be
+  // told apart from "nobody knew when they changed".
+  const stampBits = frames.map((f) =>
+    `${f.id.slice(0, 6)}${f.content_changed_at ? '@' + f.content_changed_at : '@none'}`);
+  if (frames.length > 0) trace(`  change times: ${stampBits.join(' ')}`);
+
   const orderBits = settingsOut
     .filter((i) => i.kind === 'sortOrder')
     .map((i) => `${i.item_id.slice(0, 8)} at ${i.changed_at} base ${i.base_changed_at ?? 0}`);
@@ -2110,6 +2142,9 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
     /** Frames the server would not take because they changed elsewhere.
      *  Everything else in this push WAS applied. */
     rejected_frames?: Array<{ id: string; server_updated_at: number; server_offline: boolean }>;
+    /** Sent, but not written: the server's copy was changed more recently. */
+    stale_frames?: string[];
+    stale_versions?: string[];
   }>(
     `/projects/${encodeURIComponent(projectId)}/sync`,
     {
@@ -2151,6 +2186,14 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   // see our own push as a "newer remote version" and try to apply it.
   lastKnownUpdatedAt = now;
 
+  // Some of what we just sent was older than the server's copy, so it was not
+  // written. Take the server's version — otherwise this device keeps its own
+  // and, worse, records itself as matching the server, so it never asks again.
+  const staleCount = (res.stale_frames?.length ?? 0) + (res.stale_versions?.length ?? 0);
+  if (staleCount > 0) {
+    trace(`  ${staleCount} sent item(s) were older than the server — taking its copy`);
+  }
+
   // Learn the server's new timestamps, so the next push is judged correctly.
   for (const sf of res.frames ?? []) _serverFrameTimes.set(sf.id, sf.updated_at);
   // The reply carries the MERGED settings — ours where ours were newer, the
@@ -2158,11 +2201,13 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   // this device would keep pushing its older copy for ever.
   if (res.settings) {
     applySettingsToStore(res.settings);
-    adoptSettingsFromServer(res.settings);
+    adoptSettingsFromServer(res.settings, cp.projectId);
   }
+  const staleFrameIds = new Set(res.stale_frames ?? []);
   const acceptedIds = frames
     .map((f) => f.id)
-    .filter((id) => !(res.rejected_frames ?? []).some((r) => r.id === id));
+    .filter((id) => !(res.rejected_frames ?? []).some((r) => r.id === id))
+    .filter((id) => !staleFrameIds.has(id));   // sent, but the server's was newer
   trace(`  server accepted: ${acceptedIds.map((i) => i.slice(0, 6)).join(',') || '(none)'}`);
   const rejected = res.rejected_frames ?? [];
   if (rejected.length > 0) {
@@ -2184,6 +2229,10 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   _lastPushedFingerprints.clear();
   for (const [k, v] of currentFingerprints) {
     if (refusedIds.has(k)) continue;
+    // A frame the server would not take because ours was older is NOT what the
+    // server holds, so recording it as such would make this device believe it
+    // is in sync while showing something else.
+    if (staleFrameIds.has(k)) continue;
     _lastPushedFingerprints.set(k, v);
   }
   // The project's settings went up with it.
@@ -2240,6 +2289,15 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   // LAST: ask about anything the server is holding a decision on. The server
   // kept the refused version, so this asks from its list rather than from this
   // one response — which means any device can answer, not only this one.
+  // Anything the server would not take because ours was older: fetch its copy
+  // now. Without this the device sits on a stale frame with nothing to trigger
+  // a pull — its own push moved the project's timestamp, so it believes it is
+  // up to date, and even reloading restores the same stale copy.
+  if (staleCount > 0) {
+    lastKnownUpdatedAt = 0;
+    await tryPullFromCloud(true);
+  }
+
   if (rejected.length > 0) await askAboutOpenConflicts(projectId);
 }
 
@@ -2373,7 +2431,52 @@ async function applyCloudTreeToStore(
               if (tabTarget) tabTarget[localId] = 0;
             }
           }
-          continue; // Skip cloud processing for this frame
+
+          // ...but ADD versions the cloud has and this device does not.
+          //
+          // Keeping the local frame used to mean ignoring the cloud copy of it
+          // entirely, so a LOOK made on the other device never arrived: the
+          // frame came back with only this device's own versions. Keeping our
+          // own work does not mean refusing theirs — a version we have never
+          // seen is not in competition with anything.
+          {
+            const cloudVs = (versionsByFrame.get(sf.id) ?? [])
+              .filter((v) => v.type !== 'main' && !tombstonedIds.has(v.id));
+            for (const sv of cloudVs) {
+              const stripId = sv.type.startsWith('floor:') ? 'floor'
+                : sv.type.startsWith('refs:') ? 'refs' : 'ver';
+              const target = stripId === 'ver' ? verVersions
+                : stripId === 'floor' ? floorVersions : refsVersions;
+              const list = target[localId] ?? (target[localId] = []);
+              if (list.some((v) => v.serverVersionId === sv.id)) continue;   // already here
+
+              const colonIdx = sv.type.indexOf(':');
+              const rawType = colonIdx === -1 ? sv.type : sv.type.slice(colonIdx + 1);
+              const r2Key = imageByVersion.get(sv.id);
+              const localVer: import('../store/state').Version = {
+                id: list.length + 1,
+                label: sv.label ?? '',
+                type: (rawType === 'drawing' || rawType === 'upload' || rawType === 'empty')
+                  ? rawType as 'drawing' | 'upload' | 'empty' : 'empty' as const,
+                strokes: parseStrokes(drawingByVersion.get(sv.id)),
+                bgImage: null,
+                hidden: !!sv.hidden,
+                starred: !!sv.starred,
+                stars: Number(sv.starred) || 0,
+                note: sv.note ?? '',
+                serverVersionId: sv.id,
+                r2Key: r2Key || undefined,
+              };
+              list.push(localVer);
+              serverVidToLocalVer.set(sv.id, localVer);
+              if (r2Key) versionImageTasks.push({ strip: stripId, localId, versionIdx: list.length - 1, r2Key });
+            }
+            // Renumber so the tabs read 1,2,3 after the additions.
+            for (const target of [verVersions, floorVersions, refsVersions]) {
+              if (target[localId]) target[localId] = target[localId].map((v, i) => ({ ...v, id: i + 1 }));
+            }
+          }
+          continue; // the frame itself stays local — its picture and strokes are ours
         }
         // If no existing local frame (shouldn't happen), fall through to cloud
       }
@@ -2751,7 +2854,28 @@ async function applyCloudTreeToStore(
   // metadata blob above. Items the server has never heard of are left alone,
   // so a project whose settings only exist in metadata is untouched.
   applySettingsToStore(tree.settings);
-  adoptSettingsFromServer(tree.settings);
+  adoptSettingsFromServer(tree.settings, tree.project.id);
+  // A project the server holds no settings for has nothing to adopt, so take
+  // the first look now with the project's creation time (#263, #264). Without
+  // it the next change would be swallowed into a first look and never travel.
+  if (!tree.settings || tree.settings.length === 0) {
+    seedSettings(tree.project.id, tree.project.created_at);
+  }
+
+  // What arrived is not what this device changed (#265): record every frame and
+  // version taken from the cloud with the time the OTHER device changed it, so
+  // this device does not claim the newest edit of work it was merely handed.
+  {
+    const receivedTimes = new Map<string, number>();
+    for (const sf of tree.frames) {
+      if (keepLocalFrameIds?.has(sf.id)) continue;      // kept ours — our own stamp stands
+      receivedTimes.set(`f/${sf.id}`, sf.content_changed_at ?? sf.updated_at);
+    }
+    for (const sv of tree.versions) {
+      receivedTimes.set(`v/${sv.id}`, sv.content_changed_at ?? sv.updated_at);
+    }
+    stampChangedContent(undefined, receivedTimes);
+  }
 
   (window as any).__fh_renderAll?.();
 
@@ -3950,8 +4074,11 @@ async function tryPullFromCloud(force = false): Promise<void> {
       const localDeviceId = getDeviceId();
 
       // Same device pushed — our own data reflecting back. Just update timestamp.
-      if (remoteDeviceId === localDeviceId) {
-        if (force) trace('  pull skipped: the change is recorded as this device');
+      // NOT on a forced pull: the reason we force one is that the server told
+      // us it did NOT take something we sent. Our own push had just stamped the
+      // project with our name, so this shortcut skipped the very fetch that
+      // would have corrected us, and the device sat on its stale copy.
+      if (!force && remoteDeviceId === localDeviceId) {
         lastKnownUpdatedAt = remoteUpdatedAt;
         return;
       }
@@ -4194,7 +4321,15 @@ export async function bootstrapAccountSystem(): Promise<void> {
         adoptDirtyFrameIds(snap.dirtyFrameIds);  // protect them from the first pull
         adoptPushedFingerprints(snap.pushedFingerprints);  // no needless full push
         importSettingStamps(snap.settingStamps);   // remember when settings changed
+        importChangeStamps(snap.contentStamps);    // ...and when frames/versions did
         applySnapshotToStore(snap);
+        // An older snapshot has no settings stamps. Take the first look right
+        // here (#264) rather than let the first save do it, or whatever the user
+        // changes in the meantime is recorded as having always been that way and
+        // can never travel.
+        if (!snap.settingStamps || snap.settingStamps.length === 0) {
+          seedSettings(snap.projectId ?? null, snap.lastModified);
+        }
         // renderAll + autoPhoneMainView call setState — keep them inside
         // the system action so their setState calls don't mark dirty.
         (window as any).__fh_renderAll?.();

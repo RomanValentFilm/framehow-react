@@ -34,10 +34,23 @@ const _known = new Map<string, {
   serverAt: number;
 }>();
 
-/** Seeding (first look, or after taking the server's copy) must NOT stamp
- *  anything as "changed now" — a device that merely opened the project would
- *  then out-rank real work done elsewhere. Unknown means oldest. */
+/** Older rows, and anything written before change times existed, have no time
+ *  at all. Nothing here creates one of these any more (#263) — but the server
+ *  still holds some, and they must never out-rank a real change. */
 const UNKNOWN = 0;
+
+/** The first look at a project stamps everything with the project's CREATION
+ *  time, not "now" and not zero (#263). Both devices reach the same number, so
+ *  neither wins merely by opening the project — and every comparison afterwards
+ *  has two real times instead of a blank. */
+let _baseline = UNKNOWN;
+
+/** Has the first look happened for this project? Taken when the project LOADS
+ *  (#264), not inferred from the memory being empty — inferring it meant a
+ *  rename made in the two seconds before the first save was swallowed into the
+ *  first look and recorded as "it was always called that", so it could never
+ *  travel. */
+let _seeded = false;
 
 function key(kind: string, id: string): string { return `${kind}/${id}`; }
 
@@ -72,6 +85,27 @@ function currentItems(): Array<{ kind: string; item_id: string; json: string }> 
  */
 let _projectId: string | null | undefined;
 
+/**
+ * The first look, taken the moment a project LOADS (#264).
+ *
+ * Everything currently in the store is written down as being as old as the
+ * project itself, so opening a project is never mistaken for editing it — and
+ * anything you do afterwards is a change against a real time.
+ *
+ * @param createdAt the project's creation time. For a project the server has
+ *   never seen there is nothing to agree with, so now is as good as anything.
+ */
+export function seedSettings(projectId: string | null, createdAt?: number): void {
+  _projectId = projectId;
+  _baseline = createdAt && createdAt > 0 ? createdAt : Date.now();
+  _known.clear();
+  for (const it of currentItems()) {
+    _known.set(key(it.kind, it.item_id),
+      { json: it.json, changed_at: _baseline, deleted_at: null, serverAt: UNKNOWN });
+  }
+  _seeded = true;
+}
+
 export function stampChangedSettings(projectId?: string | null): void {
   // Everything here is remembered for ONE project. Opening another one must
   // start empty, or its settings get pushed into the new project — which is
@@ -80,9 +114,16 @@ export function stampChangedSettings(projectId?: string | null): void {
   if (projectId !== undefined && projectId !== _projectId) {
     _known.clear();
     _projectId = projectId;
+    _seeded = false;
   }
+  // Backstop only. Every path that loads a project calls seedSettings() or
+  // adoptSettingsFromServer() first, so this should not be reached — and if it
+  // is, there is genuinely nothing to compare against: whatever the store holds
+  // is all we know. Recorded as project-old, because the alternative (calling
+  // it all a change made now) would let merely opening a project overwrite real
+  // work on the other device.
+  if (!_seeded) seedSettings(_projectId ?? null, _baseline);
   const now = Date.now();
-  const seeding = _known.size === 0;
   const seen = new Set<string>();
 
   for (const it of currentItems()) {
@@ -90,9 +131,9 @@ export function stampChangedSettings(projectId?: string | null): void {
     seen.add(k);
     const prev = _known.get(k);
     if (!prev) {
-      // First sight. Seeding a fresh load is not a change; a genuinely new
-      // group or sort order is.
-      _known.set(k, { json: it.json, changed_at: seeding ? UNKNOWN : now, deleted_at: null, serverAt: UNKNOWN });
+      // Something the first look did not have: a genuinely new group, sort
+      // order or category. That is a change, and it happened now.
+      _known.set(k, { json: it.json, changed_at: now, deleted_at: null, serverAt: UNKNOWN });
     } else if (prev.json !== it.json || prev.deleted_at !== null) {
       _known.set(k, { json: it.json, changed_at: now, deleted_at: null, serverAt: prev.serverAt });
     }
@@ -123,18 +164,60 @@ export function settingsForPush(): SettingItem[] {
   return out;
 }
 
-/** Take the server's merged copy as what we now know, without stamping it. */
-export function adoptSettingsFromServer(items: SettingItem[] | undefined): void {
-  if (!items) return;
-  _known.clear();
+/**
+ * Take the server's copy as what we now know, keeping the times it came with —
+ * never re-stamping received work as changed here (#265).
+ *
+ * Two things this must NOT do:
+ *
+ * - empty the memory when the server had nothing to say (#263). It used to, and
+ *   then the next rename was treated as a first look, so it carried no time and
+ *   the server refused it silently, for ever.
+ * - forget a change this device has made and not yet sent (#262). It used to
+ *   overwrite it with the server's older copy, and the rename snapped back in
+ *   front of the user with nothing left wanting to push.
+ */
+export function adoptSettingsFromServer(items: SettingItem[] | undefined, projectId?: string | null): void {
+  // A different project must not inherit this one's memory.
+  if (projectId !== undefined && projectId !== _projectId) {
+    _known.clear();
+    _projectId = projectId;
+    _seeded = false;
+  }
+  if (!items || items.length === 0) return;   // nothing said — leave the memory alone
   for (const it of items) {
-    _known.set(key(it.kind, it.item_id), {
+    const k = key(it.kind, it.item_id);
+    const prev = _known.get(k);
+    const unsentAndNewer = prev
+      && prev.changed_at > prev.serverAt      // we have not sent it
+      && prev.changed_at > it.changed_at;     // and ours is the later change
+    if (unsentAndNewer) {
+      // Keep our value and our time; only learn what the server holds, so the
+      // next push is judged against the right base.
+      _known.set(k, { ...prev, serverAt: it.changed_at });
+      continue;
+    }
+    _known.set(k, {
       json: it.value ?? '',
       changed_at: it.changed_at,
       deleted_at: it.deleted_at ?? null,
       serverAt: it.changed_at,
     });
   }
+  // The server's copy, with real times, is a first look in its own right.
+  _seeded = true;
+}
+
+/**
+ * Is this device holding a later change to that item which it has not sent yet?
+ * Then an arriving copy must not paint over it (#262) — the whole point of a
+ * change time is that the later change wins, and it cannot lose just because it
+ * has not reached the server yet.
+ */
+function localIsNewerAndUnsent(kind: string, itemId: string, arrivingChangedAt: number): boolean {
+  const v = _known.get(key(kind, itemId));
+  if (!v || v.deleted_at !== null) return false;
+  return v.changed_at > v.serverAt && v.changed_at > arrivingChangedAt;
 }
 
 /** Write the server's settings into the store. Items the server has never
@@ -171,6 +254,9 @@ export function applySettingsToStore(items: SettingItem[] | undefined): void {
    *   how a device catches up, and how anything already lost comes back
    * - an unstamped item never overwrites one that is already here: it is only
    *   what some device happened to hold, not a change anyone made
+   * - an item this device changed LATER and has not sent yet is left alone
+   *   (#262) — otherwise a pull landing a second after a rename put the old
+   *   name straight back on screen
    * - a deletion removes it, and is applied last so it wins over a stale copy
    */
   function mergeList<T>(kind: string, current: T[], idOf: (x: T) => string): T[] | null {
@@ -182,7 +268,7 @@ export function applySettingsToStore(items: SettingItem[] | undefined): void {
     for (const r of mine.filter((x) => !x.deleted).sort((a, b) => a.changed_at - b.changed_at)) {
       const i = at(r.item_id);
       if (i >= 0) {
-        if (r.changed_at > UNKNOWN) out[i] = r.data as T;
+        if (r.changed_at > UNKNOWN && !localIsNewerAndUnsent(kind, r.item_id, r.changed_at)) out[i] = r.data as T;
       } else {
         out.splice(Math.min(r.idx, out.length), 0, r.data as T);
       }
@@ -201,7 +287,8 @@ export function applySettingsToStore(items: SettingItem[] | undefined): void {
   if (orders) patch.sortOrders = orders;
 
   const tabs = mergeList('needCategory', s.needDefinitions.tabs, (t) => t.id);
-  const locRow = rows.find((r) => r.kind === 'needLocations' && !r.deleted && r.changed_at > UNKNOWN);
+  const locRow = rows.find((r) => r.kind === 'needLocations' && !r.deleted && r.changed_at > UNKNOWN
+    && !localIsNewerAndUnsent('needLocations', 'needLocations', r.changed_at));
   if (tabs || locRow) {
     patch.needDefinitions = {
       tabs: tabs ?? s.needDefinitions.tabs,
@@ -210,7 +297,8 @@ export function applySettingsToStore(items: SettingItem[] | undefined): void {
   }
 
   // Single items: only a real change is worth taking.
-  const palette = rows.find((r) => r.kind === 'setupPalette' && !r.deleted && r.changed_at > UNKNOWN);
+  const palette = rows.find((r) => r.kind === 'setupPalette' && !r.deleted && r.changed_at > UNKNOWN
+    && !localIsNewerAndUnsent('setupPalette', 'setupPalette', r.changed_at));
   if (palette) {
     const p = palette.data as { setups: Setup[]; nextSetupId: number };
     patch.setups = p.setups ?? [];
@@ -243,6 +331,28 @@ export function settingsNeedPush(): boolean {
 /** Carried in the local snapshot so a restart does not forget when things
  *  changed and start claiming everything is new. */
 export function exportSettingStamps(): SettingItem[] { return settingsForPush(); }
+
+/**
+ * Restore the memory after a restart — including WHICH items are still unsent.
+ *
+ * This used to hand the list to adoptSettingsFromServer, which records every
+ * item as confirmed by the server. So a category renamed while offline was
+ * remembered with its time, but no longer remembered as unsent: after closing
+ * and reopening the app it never pushed. (#267)
+ */
 export function importSettingStamps(items: SettingItem[] | undefined): void {
-  adoptSettingsFromServer(items);
+  if (!items || items.length === 0) return;
+  _known.clear();
+  for (const it of items) {
+    _known.set(key(it.kind, it.item_id), {
+      json: it.value ?? '',
+      changed_at: it.changed_at,
+      deleted_at: it.deleted_at ?? null,
+      // What the server had confirmed when we saved. Missing in older snapshots,
+      // where assuming "confirmed" is the safer of two guesses: claiming unsent
+      // would push the whole project's settings on every restart.
+      serverAt: it.base_changed_at ?? it.changed_at,
+    });
+  }
+  _seeded = true;
 }

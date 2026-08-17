@@ -36,7 +36,14 @@ export interface CurrentProjectSnapshot {
   pushedFingerprints?: Record<string, string>;
   /** When each project setting last changed, so a restart does not forget and
    *  start claiming every setting is new. */
-  settingStamps?: Array<{ kind: string; item_id: string; value: string | null; changed_at: number; deleted_at: number | null }>;
+  settingStamps?: Array<{ kind: string; item_id: string; value: string | null; changed_at: number; deleted_at: number | null;
+    /** What the server had confirmed when this was saved. Without it, a restart
+     *  forgets WHICH settings are still unsent and an offline rename never
+     *  travels (#267). */
+    base_changed_at?: number }>;
+  /** When each frame and version was last changed on this device, so being
+   *  offline across a restart still orders edits honestly. */
+  contentStamps?: Record<string, { fp: string; at: number }>;
   /** This project's identity ON THIS DEVICE. Restored on boot so a project
    *  that has never reached the cloud keeps the same key across restarts —
    *  otherwise reopening it would file the same work a second time. */

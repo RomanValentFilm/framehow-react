@@ -26,6 +26,7 @@ import {
   setVersionStars,
 } from './helpers';
 import type { StripType } from '../store/state';
+import { isDebugDevice } from './syncTrace';
 import { snapshotFrame } from './drawing';
 import { drawFit } from './drawing';
 import { setupDrawing } from './drawing';
@@ -1237,9 +1238,17 @@ export function initFramehow(): void {
   // Telemetry
   startHeartbeat();
 
-  // Service worker — skip in dev mode AND on dev subdomain
+  // Service worker — the offline cache.
+  //
+  // On the dev address it is normally torn down on every load, so dev always
+  // runs the newest code. That also makes the dev address impossible to test
+  // offline on — the app asks for the internet and there is nothing cached to
+  // fall back to, which cost an evening. So debug mode (the three taps on the
+  // version number that show the sync log) now keeps it (#274).
   if ('serviceWorker' in navigator) {
-    const isDev = import.meta.env.DEV || window.location.hostname.startsWith('dev.');
+    const onDevAddress = window.location.hostname.startsWith('dev.');
+    const debug = isDebugDevice();
+    const isDev = import.meta.env.DEV || (onDevAddress && !debug);
     if (isDev) {
       // Unregister any existing SW so it never blocks fresh code
       navigator.serviceWorker.getRegistrations().then(regs => {

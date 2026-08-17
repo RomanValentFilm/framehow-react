@@ -4,6 +4,20 @@ import type { AppVariables, Env } from "../types";
 import { loadOwnedProject, requireUser } from "../lib/auth";
 import { newId } from "../lib/crypto";
 import { isNonEmptyString, jsonError } from "../lib/response";
+import { decideFrame, decideVersion } from "../lib/syncDecide";
+
+/**
+ * D1 refuses a query with more than 100 bound values ("too many SQL variables").
+ * A push of 45 frames carries well over 100 versions, so asking about them in
+ * one `WHERE id IN (...)` threw — and the whole push came back as a bare 500,
+ * for ever, with the device retrying every few seconds. Ask in batches. (#276)
+ */
+const SQL_VARS = 90;
+function inChunks<T>(items: T[]): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += SQL_VARS) out.push(items.slice(i, i + SQL_VARS));
+  return out;
+}
 
 // Per-account storage limit (beta), see ACCOUNT_SYNC_SPEC.md.
 const ACCOUNT_STORAGE_LIMIT_BYTES = 350 * 1024 * 1024;
@@ -280,31 +294,42 @@ projects.post("/:id/sync", async (c) => {
   // blanket conflict.
   const perFrame = payload.frames.length === 0
     || payload.frames.some((f) => f.base_updated_at !== undefined);
-  let rejectedFrames: Array<{ id: string; server_updated_at: number; server_offline: boolean }> = [];
+  let rejectedFrames: Array<{ id: string; server_updated_at: number; server_offline: boolean;
+    /** When the WINNING side was actually changed, so the picker can show the
+     *  time of the edit instead of the time of the connection (#266). */
+    server_changed_at: number }> = [];
   const refusedPayloads: Array<{ frame: unknown; versions: unknown[]; images: unknown[]; drawings: unknown[] }> = [];
+  // Frames and versions this push carried that were OLDER than the server's
+  // copy, so they were not written. The pusher must be told, or it records
+  // itself as matching the server and keeps a stale copy for ever — a reload
+  // does not help, because it restores its own copy and pushes it again.
+  const staleFrames: string[] = [];
+  const staleVersions: string[] = [];
 
   if (perFrame) {
     const ids = payload.frames.map((f) => f.id);
-    const placeholders = ids.map(() => "?").join(",");
-    type ServerFrame = { id: string; updated_at: number; changed_offline: number; text_content: string | null; table_data: string | null };
-    const existing = ids.length
-      ? await c.env.DB.prepare(
-          `SELECT id, updated_at, changed_offline, text_content, table_data FROM frames WHERE id IN (${placeholders})`,
-        ).bind(...ids).all<ServerFrame>()
-      : { results: [] as ServerFrame[] };
+    type ServerFrame = { id: string; updated_at: number; changed_offline: number; text_content: string | null; table_data: string | null; content_changed_at: number | null };
+    const existingResults: ServerFrame[] = [];
+    for (const part of inChunks(ids)) {
+      const r = await c.env.DB.prepare(
+        `SELECT id, updated_at, changed_offline, text_content, table_data, content_changed_at FROM frames WHERE id IN (${part.map(() => "?").join(",")})`,
+      ).bind(...part).all<ServerFrame>();
+      existingResults.push(...r.results);
+    }
+    const existing = { results: existingResults };
 
     // What the frame's MAIN version holds on the server: its picture and its
     // strokes. Only these — with the text — can be contested. Needs, notes,
     // setups and tags settle by time and must never raise the picker.
     const serverMain = new Map<string, { r2_key: string | null; drawing: string | null }>();
-    if (ids.length) {
+    for (const part of inChunks(ids)) {
       const mains = await c.env.DB.prepare(
         `SELECT v.frame_id AS fid, i.r2_key AS r2_key, d.drawing_data AS drawing
            FROM versions v
            LEFT JOIN images   i ON i.version_id = v.id
            LEFT JOIN drawings d ON d.version_id = v.id
-          WHERE v.frame_id IN (${placeholders}) AND v.type = 'main'`,
-      ).bind(...ids).all<{ fid: string; r2_key: string | null; drawing: string | null }>();
+          WHERE v.frame_id IN (${part.map(() => "?").join(",")}) AND v.type = 'main'`,
+      ).bind(...part).all<{ fid: string; r2_key: string | null; drawing: string | null }>();
       for (const m of mains.results) serverMain.set(m.fid, { r2_key: m.r2_key, drawing: m.drawing });
     }
 
@@ -327,29 +352,62 @@ projects.post("/:id/sync", async (c) => {
     const accepted: typeof payload.frames = [];
     for (const f of payload.frames) {
       const sf = serverFrame.get(f.id);
-      // Unknown to the server = a frame created on this device. Always accepted.
-      if (!sf || f.base_updated_at === undefined || sf.updated_at <= f.base_updated_at) {
-        accepted.push(f);
-        continue;
-      }
-      // The frame moved underneath this device — but only the picture, the
-      // strokes and the text are worth asking about.
-      if (!touchesContested(f, sf)) {
-        accepted.push(f);
-        continue;
-      }
-      rejectedFrames.push({ id: f.id, server_updated_at: sf.updated_at, server_offline: !!sf.changed_offline });
+      // The rule itself lives in lib/syncDecide.ts so it can be tested on a
+      // bench instead of on two devices. Only the consequences are here.
+      const outcome = decideFrame(f, sf, () => touchesContested(f, sf as ServerFrame));
 
-      // Keep the version we would not take, with everything needed to show and
-      // apply it later. Without this it exists only on the device that made it.
-      refusedPayloads.push({
-        frame: f,
-        versions: payload.versions.filter((v) => v.frame_id === f.id),
-        images: payload.images,
-        drawings: payload.drawings,
-      });
+      if (outcome === 'ask') {
+        rejectedFrames.push({
+          id: f.id,
+          server_updated_at: sf!.updated_at,
+          server_offline: !!sf!.changed_offline,
+          server_changed_at: sf!.content_changed_at ?? sf!.updated_at,
+        });
+        // Keep the version we would not take, with everything needed to show
+        // and apply it later. Without this it exists only on the device that
+        // made it.
+        refusedPayloads.push({
+          frame: f,
+          versions: payload.versions.filter((v) => v.frame_id === f.id),
+          images: payload.images,
+          drawings: payload.drawings,
+        });
+        continue;
+      }
+      // Only the frame's own row is refused when it is stale. Its versions
+      // still go in, so a LOOK made here is still added.
+      if (outcome === 'stale') { staleFrames.push(f.id); continue; }
+
+      accepted.push(f);
     }
     payload.frames = accepted;
+
+    // Same rule for versions, one at a time. A version this push carries is
+    // only written if it is not older than the server's copy of THAT version.
+    // Versions the server has never seen are added — keeping work from either
+    // device is the whole point — and its images and drawings follow whatever
+    // its version did, so a newer picture cannot end up under an older row.
+    if (payload.versions.length > 0) {
+      const vids = payload.versions.map((v) => v.id);
+      const heldById = new Map<string, { id: string; updated_at: number; content_changed_at: number | null }>();
+      for (const part of inChunks(vids)) {
+        const held = await c.env.DB.prepare(
+          `SELECT id, updated_at, content_changed_at FROM versions WHERE id IN (${part.map(() => "?").join(",")})`,
+        ).bind(...part).all<{ id: string; updated_at: number; content_changed_at: number | null }>();
+        for (const r of held.results) heldById.set(r.id, r);
+      }
+
+      const staleVersionIds = new Set<string>();
+      for (const v of payload.versions) {
+        if (decideVersion(v, heldById.get(v.id)) === 'stale') staleVersionIds.add(v.id);
+      }
+      if (staleVersionIds.size > 0) {
+        staleVersions.push(...staleVersionIds);
+        payload.versions = payload.versions.filter((v) => !staleVersionIds.has(v.id));
+        payload.images = payload.images.filter((i) => !staleVersionIds.has(i.version_id));
+        payload.drawings = payload.drawings.filter((d) => !staleVersionIds.has(d.version_id));
+      }
+    }
 
     // A refused frame's children must go too. Its rows on the server were not
     // deleted (the frame was not applied), so re-inserting its versions and
@@ -421,6 +479,16 @@ projects.post("/:id/sync", async (c) => {
 
   await maybeCreateSnapshot(c.env.DB, project.id, now);
 
+  // If ANY per-frame decision was made — a frame refused, or skipped as older —
+  // this push must not be treated as "replace the project". Full mode deletes
+  // every frame and re-inserts only what survived, leaving the dropped frames'
+  // versions pointing at nothing: FOREIGN KEY constraint failed, on every
+  // retry, for ever. A push that merges parts cannot also be a wholesale
+  // replacement.
+  if (rejectedFrames.length > 0 || staleFrames.length > 0) {
+    payload.partial = true;
+  }
+
   await applySync(c.env.DB, project.id, payload, now);
 
   // Project settings merge ITEM BY ITEM on time of change, so it stops
@@ -436,12 +504,13 @@ projects.post("/:id/sync", async (c) => {
     // on time of change and never asks.
     const orders = payload.settings.filter((it) => it.kind === "sortOrder" && it.value);
     const held = new Map<string, { value: string | null; changed_at: number }>();
-    if (orders.length > 0) {
-      const ph = orders.map(() => "?").join(",");
+    // Batched for the same reason as the frames and versions above (#276): one
+    // project_id plus one value per sort order, and D1 stops at 100.
+    for (const part of inChunks(orders.map((o) => o.item_id))) {
       const rows = await c.env.DB.prepare(
         `SELECT item_id, value, changed_at FROM project_settings
-          WHERE project_id = ? AND kind = 'sortOrder' AND item_id IN (${ph})`,
-      ).bind(project.id, ...orders.map((o) => o.item_id))
+          WHERE project_id = ? AND kind = 'sortOrder' AND item_id IN (${part.map(() => "?").join(",")})`,
+      ).bind(project.id, ...part)
         .all<{ item_id: string; value: string | null; changed_at: number }>();
       for (const r of rows.results) held.set(r.item_id, { value: r.value, changed_at: r.changed_at });
     }
@@ -504,9 +573,13 @@ projects.post("/:id/sync", async (c) => {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).bind(newId(), project.id, r.id, body,
              payload.project.device_name ?? null,
-             (p.frame as { updated_at?: number }).updated_at ?? nowTs,
+             // WHEN it was changed, not when it was sent. Both sides used to
+             // carry the push time, so the picker could offer you "iPad 14:32"
+             // for a drawing you made at 09:10 on a plane (#266).
+             (p.frame as { content_changed_at?: number | null }).content_changed_at
+               ?? (p.frame as { updated_at?: number }).updated_at ?? nowTs,
              winnerDevice,
-             r.server_updated_at,
+             r.server_changed_at,
              (p.frame as { changed_offline?: boolean }).changed_offline ? 1 : 0,
              nowTs);
     }));
@@ -516,7 +589,10 @@ projects.post("/:id/sync", async (c) => {
   // Some frames were refused because they moved underneath this device. The
   // rest went in. The client shows the picker for these and nothing else.
   if (rejectedFrames.length > 0) {
-    return c.json({ ...tree, rejected_frames: rejectedFrames });
+    return c.json({ ...tree, rejected_frames: rejectedFrames, stale_frames: staleFrames, stale_versions: staleVersions });
+  }
+  if (staleFrames.length > 0 || staleVersions.length > 0) {
+    return c.json({ ...tree, stale_frames: staleFrames, stale_versions: staleVersions });
   }
   return c.json(tree);
 });
@@ -1051,8 +1127,9 @@ interface ProjectTree {
   strips: Array<{ id: string; project_id: string; label: string | null; sort_order: number; updated_at: number }>;
   frames: Array<{ id: string; strip_id: string; label: string | null; sort_order: number; crop_w: number | null; crop_h: number | null; text_content: string | null; table_data: string | null; version_label: string | null; strip_labels: string | null; hidden: number; note: string | null; scribbles: string | null; updated_at: number;
     /** Owned by the frame, not by a project-wide list. */
-    needs: string | null; notes: string | null; setup_id: string | null }>;
-  versions: Array<{ id: string; frame_id: string; label: string | null; type: string; hidden: number; starred: number; note: string | null; updated_at: number; tags: string | null }>;
+    needs: string | null; notes: string | null; setup_id: string | null;
+    content_changed_at: number | null }>;
+  versions: Array<{ id: string; frame_id: string; label: string | null; type: string; hidden: number; starred: number; note: string | null; updated_at: number; tags: string | null; content_changed_at: number | null }>;
   images: Array<{
     id: string;
     version_id: string;
@@ -1080,12 +1157,12 @@ async function loadProjectTree(db: D1Database, projectId: string): Promise<Proje
          FROM strips WHERE project_id = ? ORDER BY sort_order`,
     ).bind(projectId),
     db.prepare(
-      `SELECT id, strip_id, label, sort_order, crop_w, crop_h, text_content, table_data, version_label, strip_labels, hidden, note, scribbles, updated_at, needs, notes, setup_id
+      `SELECT id, strip_id, label, sort_order, crop_w, crop_h, text_content, table_data, version_label, strip_labels, hidden, note, scribbles, updated_at, needs, notes, setup_id, content_changed_at
          FROM frames WHERE strip_id IN (SELECT id FROM strips WHERE project_id = ?)
         ORDER BY sort_order`,
     ).bind(projectId),
     db.prepare(
-      `SELECT id, frame_id, label, type, hidden, starred, note, updated_at, tags
+      `SELECT id, frame_id, label, type, hidden, starred, note, updated_at, tags, content_changed_at
          FROM versions WHERE frame_id IN (
            SELECT f.id FROM frames f JOIN strips s ON s.id = f.strip_id WHERE s.project_id = ?
          ) ORDER BY updated_at`,
@@ -1172,8 +1249,11 @@ interface SyncPayload {
     /** The change was made with no connection. */
     changed_offline?: boolean;
     /** Owned by the frame now, not by the project's metadata blob. */
-    needs?: string | null; notes?: string | null; setup_id?: string | null }>;
-  versions: Array<{ id: string; frame_id: string; label: string | null; type: string; hidden: boolean; starred: number; note: string | null; updated_at: number; tags?: string | null }>;
+    needs?: string | null; notes?: string | null; setup_id?: string | null;
+    /** When this device CHANGED the frame, not when it sent it. `updated_at` is
+     *  stamped at push time, so it orders reconnections, not edits. */
+    content_changed_at?: number | null }>;
+  versions: Array<{ id: string; frame_id: string; label: string | null; type: string; hidden: boolean; starred: number; note: string | null; updated_at: number; tags?: string | null; content_changed_at?: number | null }>;
   images: Array<{
     id: string;
     version_id: string;
@@ -1269,7 +1349,8 @@ function parseSyncPayload(body: unknown): Parsed<SyncPayload> {
     const needs = r.needs === null || r.needs === undefined ? null : asStr(r.needs);
     const notes = r.notes === null || r.notes === undefined ? null : asStr(r.notes);
     const setup_id = r.setup_id === null || r.setup_id === undefined ? null : asStr(r.setup_id);
-    frames.push({ id, strip_id, label, sort_order, crop_w, crop_h, text_content, table_data, version_label: version_label ?? null, strip_labels, hidden, note, scribbles, updated_at, base_updated_at, changed_offline, needs, notes, setup_id });
+    const frameChangedAt = typeof r.content_changed_at === "number" ? r.content_changed_at : null;
+    frames.push({ id, strip_id, label, sort_order, crop_w, crop_h, text_content, table_data, version_label: version_label ?? null, strip_labels, hidden, note, scribbles, updated_at, base_updated_at, changed_offline, needs, notes, setup_id, content_changed_at: frameChangedAt });
   }
 
   const frameIdSet = new Set(frames.map((f) => f.id));
@@ -1291,7 +1372,8 @@ function parseSyncPayload(body: unknown): Parsed<SyncPayload> {
     }
     if (!frameIdSet.has(frame_id)) return err("versions[].frame_id (unknown)");
     const tags = r.tags === null || r.tags === undefined ? null : asStr(r.tags);
-    versions.push({ id, frame_id, label, type, hidden, starred, note, updated_at, tags });
+    const verChangedAt = typeof r.content_changed_at === "number" ? r.content_changed_at : null;
+    versions.push({ id, frame_id, label, type, hidden, starred, note, updated_at, tags, content_changed_at: verChangedAt });
   }
 
   const versionIdSet = new Set(versions.map((v) => v.id));
@@ -1484,25 +1566,18 @@ async function applySyncPartial(db: D1Database, projectId: string, payload: Sync
     }
   }
 
-  // For each dirty frame: delete its children (bottom-up), then delete the frame.
-  for (const f of payload.frames) {
-    stmts.push(
-      db.prepare(
-        `DELETE FROM drawings WHERE version_id IN (SELECT id FROM versions WHERE frame_id = ?)`,
-      ).bind(f.id),
-    );
-    stmts.push(
-      db.prepare(
-        `DELETE FROM images WHERE version_id IN (SELECT id FROM versions WHERE frame_id = ?)`,
-      ).bind(f.id),
-    );
-    stmts.push(
-      db.prepare("DELETE FROM versions WHERE frame_id = ?").bind(f.id),
-    );
-    stmts.push(
-      db.prepare("DELETE FROM frames WHERE id = ?").bind(f.id),
-    );
-  }
+  // NOTHING is deleted here any more.
+  //
+  // This used to wipe every version, image and drawing of each frame in the
+  // push and re-insert only what the pushing device sent. A device that had
+  // never heard of the other one's new LOOK therefore ERASED it — the SKETCH
+  // and REFS versions made on the desktop vanished the moment the iPad pushed
+  // that frame. Absence from a push is not a deletion: it means "I do not know
+  // about this", which is the normal state of a device that was away.
+  //
+  // Real deletions travel as TOMBSTONES, which the app already records for
+  // frames and for versions, and which are applied a few lines below. The rows
+  // the push does describe are updated in place by appendFrameInserts.
 
   // Apply tombstones: actively delete the entities they reference.
   // In full mode this isn't needed (everything is deleted). In partial mode
@@ -1569,17 +1644,32 @@ function appendFrameInserts(db: D1Database, stmts: D1PreparedStatement[], payloa
   for (const f of payload.frames) {
     stmts.push(
       db.prepare(
-        `INSERT INTO frames (id, strip_id, label, sort_order, crop_w, crop_h, text_content, table_data, version_label, strip_labels, hidden, note, scribbles, updated_at, changed_offline, needs, notes, setup_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).bind(f.id, f.strip_id, f.label, f.sort_order, f.crop_w, f.crop_h, f.text_content, f.table_data, f.version_label, f.strip_labels, f.hidden ? 1 : 0, f.note ?? null, f.scribbles ?? null, f.updated_at, f.changed_offline ? 1 : 0, f.needs ?? null, f.notes ?? null, f.setup_id ?? null),
+        `INSERT INTO frames (id, strip_id, label, sort_order, crop_w, crop_h, text_content, table_data, version_label, strip_labels, hidden, note, scribbles, updated_at, changed_offline, needs, notes, setup_id, content_changed_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           content_changed_at = excluded.content_changed_at,
+           strip_id = excluded.strip_id, label = excluded.label,
+           sort_order = excluded.sort_order, crop_w = excluded.crop_w,
+           crop_h = excluded.crop_h, text_content = excluded.text_content,
+           table_data = excluded.table_data, version_label = excluded.version_label,
+           strip_labels = excluded.strip_labels, hidden = excluded.hidden,
+           note = excluded.note, scribbles = excluded.scribbles,
+           updated_at = excluded.updated_at, changed_offline = excluded.changed_offline,
+           needs = excluded.needs, notes = excluded.notes, setup_id = excluded.setup_id`,
+      ).bind(f.id, f.strip_id, f.label, f.sort_order, f.crop_w, f.crop_h, f.text_content, f.table_data, f.version_label, f.strip_labels, f.hidden ? 1 : 0, f.note ?? null, f.scribbles ?? null, f.updated_at, f.changed_offline ? 1 : 0, f.needs ?? null, f.notes ?? null, f.setup_id ?? null, f.content_changed_at ?? null),
     );
   }
   for (const v of payload.versions) {
     stmts.push(
       db.prepare(
-        `INSERT INTO versions (id, frame_id, label, type, hidden, starred, note, updated_at, tags)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).bind(v.id, v.frame_id, v.label, v.type, v.hidden ? 1 : 0, Number(v.starred) || 0, v.note ?? null, v.updated_at, v.tags ?? null),
+        `INSERT INTO versions (id, frame_id, label, type, hidden, starred, note, updated_at, tags, content_changed_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           content_changed_at = excluded.content_changed_at,
+           frame_id = excluded.frame_id, label = excluded.label, type = excluded.type,
+           hidden = excluded.hidden, starred = excluded.starred, note = excluded.note,
+           updated_at = excluded.updated_at, tags = excluded.tags`,
+      ).bind(v.id, v.frame_id, v.label, v.type, v.hidden ? 1 : 0, Number(v.starred) || 0, v.note ?? null, v.updated_at, v.tags ?? null, v.content_changed_at ?? null),
     );
   }
   for (const img of payload.images) {
@@ -1587,7 +1677,11 @@ function appendFrameInserts(db: D1Database, stmts: D1PreparedStatement[], payloa
       db.prepare(
         `INSERT INTO images
            (id, version_id, r2_key, width, height, size_bytes, content_type, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(version_id) DO UPDATE SET
+           r2_key = excluded.r2_key, width = excluded.width, height = excluded.height,
+           size_bytes = excluded.size_bytes, content_type = excluded.content_type,
+           updated_at = excluded.updated_at`,
       ).bind(
         img.id, img.version_id, img.r2_key, img.width, img.height,
         img.size_bytes, img.content_type, now, img.updated_at,
@@ -1598,7 +1692,9 @@ function appendFrameInserts(db: D1Database, stmts: D1PreparedStatement[], payloa
     stmts.push(
       db.prepare(
         `INSERT INTO drawings (id, version_id, drawing_data, updated_at)
-         VALUES (?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(version_id) DO UPDATE SET
+           drawing_data = excluded.drawing_data, updated_at = excluded.updated_at`,
       ).bind(d.id, d.version_id, d.drawing_data, d.updated_at),
     );
   }

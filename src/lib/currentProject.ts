@@ -47,6 +47,7 @@ import { trace } from './syncTrace';
 import { clearSnapshot, saveSnapshot, snapshotFromStore, savePending, clearPending, listPending, markPendingWarned, markPendingUploaded, sweepUploaded, isArchived, storageEstimate } from './persistence';
 import { isLoggedIn } from './session';
 import { stampChangedSettings, exportSettingStamps } from './projectSettings';
+import { stampChangedContent, exportChangeStamps } from './changeStamps';
 
 interface CurrentProject {
   /** Server-side UUID once the project has been saved. Null = local-only. */
@@ -522,6 +523,20 @@ function scheduleAutosave(): void {
   autosaveTimer = window.setTimeout(runAutosave, AUTOSAVE_DEBOUNCE_MS);
 }
 
+/**
+ * Save to this device NOW, without waiting out the two-second pause (#269).
+ *
+ * The local save is debounced, and the timer is restarted by every change — so
+ * anything done in the last couple of seconds exists only in memory. Putting the
+ * app away then threw it out: rename a NEEDS category on an offline iPad, swipe
+ * the app closed, and the rename was never written anywhere. The only copy went
+ * with it.
+ */
+export async function saveLocalNow(): Promise<void> {
+  if (autosaveTimer !== null) { clearTimeout(autosaveTimer); autosaveTimer = null; }
+  await runAutosave();
+}
+
 let _autosaveInFlight = false;
 async function runAutosave(): Promise<void> {
   autosaveTimer = null;
@@ -536,6 +551,7 @@ async function runAutosave(): Promise<void> {
     // local save, so the stamp is the time of the change — stamping at push
     // time would make every offline change look newest and win everything.
     stampChangedSettings(cp.projectId);
+    stampChangedContent(cp.projectId);
     const snap = snapshotFromStore(cp.projectId, cp.name);
     snap.localId = _localId;   // survives restarts, so the key stays the same
     // Which frames are still unconfirmed. Without this a pull after a restart
@@ -547,6 +563,7 @@ async function runAutosave(): Promise<void> {
     // When each setting last changed, so a restart does not forget and start
     // claiming everything is new.
     snap.settingStamps = exportSettingStamps();
+    snap.contentStamps = exportChangeStamps();
     if (snap.frames.length === 0 && cp.name === null) {
       await clearSnapshot();
       return;
@@ -740,12 +757,19 @@ export function startAutosave(): void {
     } catch { /* best-effort */ }
   });
 
-  // Push immediately when tab loses focus (user switching to another device)
+  // The app is being put away. Two different things have to happen, in this
+  // order, and only the first one works without a network:
+  //   1. write to this device, so nothing is lost if it is closed or swiped away
+  //   2. send to the server, so the other device can see it
+  // Only the second used to happen. Offline, that meant losing the work (#269).
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden' && _dirty && cp.projectId) {
-      void flushSyncNow();
-    }
+    if (document.visibilityState !== 'hidden') return;
+    void saveLocalNow();
+    if (_dirty && cp.projectId) void flushSyncNow();
   });
+  // On iOS a home-screen app is hidden before it can be swiped away, so the
+  // handler above usually runs first. pagehide is the belt to that braces.
+  window.addEventListener('pagehide', () => { void saveLocalNow(); });
 
   // Listen for browser online/offline events. The browser saying "online" only
   // means a network exists — hotel wifi and captive portals claim it while
