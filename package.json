@@ -9,7 +9,13 @@
     "preview": "vite preview",
     "bench": "npm run bench:app && npm run bench:delta",
     "bench:app": "tsc test/needs-bench.ts test/delta-bench.ts --module commonjs --moduleResolution node --target es2022 --esModuleInterop --skipLibCheck --outDir .bench --types node && node -e \"require('fs').writeFileSync('.bench/package.json','{\\\"type\\\":\\\"commonjs\\\"}')\" && node -r ./test/shim.cjs .bench/test/needs-bench.js",
-    "bench:delta": "tsc test/needs-bench.ts test/delta-bench.ts --module commonjs --moduleResolution node --target es2022 --esModuleInterop --skipLibCheck --outDir .bench --types node && node -e \"require('fs').writeFileSync('.bench/package.json','{\\\"type\\\":\\\"commonjs\\\"}')\" && node -r ./test/shim.cjs .bench/test/delta-bench.js"
+    "bench:delta": "tsc test/needs-bench.ts test/delta-bench.ts --module commonjs --moduleResolution node --target es2022 --esModuleInterop --skipLibCheck --outDir .bench --types node && node -e \"require('fs').writeFileSync('.bench/package.json','{\\\"type\\\":\\\"commonjs\\\"}')\" && node -r ./test/shim.cjs .bench/test/delta-bench.js",
+    "e2e": "playwright test",
+    "e2e:webkit": "playwright test --project=webkit",
+    "e2e:watch": "playwright test --project=chromium --debug",
+    "e2e:go": "playwright test --project=webkit 2>&1 | tee /tmp/e2e.log | grep -v WebServer; grep -v WebServer /tmp/e2e.log | tail -60 | pbcopy; npm run ping --silent; echo; echo '--- done. the last 60 lines are on your clipboard, just paste ---'",
+    "ping": "afplay /System/Library/Sounds/Glass.aiff & osascript -e 'display notification \"Framehow: done \u2014 ready for you\" with title \"Framehow\" sound name \"Glass\"'",
+    "t": "sh scripts/e2e.sh"
   },
   "dependencies": {
     "jspdf": "^2.5.2",
@@ -26,6 +32,7 @@
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
     "typescript": "^5.6.3",
-    "vite": "^5.4.11"
+    "vite": "^5.4.11",
+    "@playwright/test": "^1.49.0"
   }
 }

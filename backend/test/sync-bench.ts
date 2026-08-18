@@ -164,6 +164,25 @@ const cases: Case[] = [
     },
   },
   {
+    // THE HOLE THAT LET #311 THROUGH.
+    //
+    // The case above has the server's unstamped copy arriving EARLY, so the
+    // fallback to updated_at happened to give the right answer and the bench
+    // stayed green while real work was being thrown away.
+    //
+    // This is the shape that actually happens: a device that changed nothing
+    // re-sends a frame, so the server's copy carries a FRESH arrival time and
+    // still no change time — and it must not beat an edit genuinely made
+    // earlier, offline, on another device.
+    what: 'server copy is unstamped but arrived LATE; incoming was really changed earlier',
+    want: 'desktop',
+    run: (s) => {
+      s.frame = { updated_at: t(40), content_changed_at: null, body: 'iPad' };  // merely re-sent
+      s.pushFrame('desktop', { body: 'desktop', changedAt: t(10), pushedAt: t(50) });
+      return s.frame!.body;
+    },
+  },
+  {
     what: 'neither is stamped — falls back to push time (accepted by decision)',
     want: 'desktop',
     run: (s) => {

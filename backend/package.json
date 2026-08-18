@@ -13,7 +13,10 @@
     "bench": "npm run bench:rules && npm run bench:server && npm run bench:session",
     "bench:rules": "node --experimental-strip-types test/sync-bench.ts",
     "bench:server": "node --experimental-strip-types --import ./test/register.mjs test/server-bench.ts",
-    "bench:session": "node --experimental-strip-types --import ./test/register.mjs test/session-bench.ts"
+    "bench:session": "node --experimental-strip-types --import ./test/register.mjs test/session-bench.ts",
+    "dev:local": "npm run e2e:db && wrangler dev --local --port 8787 --persist-to .wrangler-e2e",
+    "e2e:db": "npm run e2e:schema && rm -rf .wrangler-e2e && wrangler d1 execute framehow-db --local --persist-to .wrangler-e2e --file=test/e2e-schema.sql",
+    "e2e:schema": "node --experimental-strip-types test/make-schema.ts"
   },
   "dependencies": {
     "hono": "^4.12.33"

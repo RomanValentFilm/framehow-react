@@ -64,6 +64,24 @@ export function decideFrame(
   // copy would win just by reconnecting later.
   if (held.content_changed_at !== null && incoming.content_changed_at == null) return 'stale';
 
+  // ...AND THE SAME RULE THE OTHER WAY ROUND (#311).
+  //
+  // Without this, the fallback below reads the held row's `updated_at` — which
+  // is when the row last ARRIVED here, not when anyone changed it. Arrival time
+  // is always fresh, so a frame NOBODY edited would beat a real edit simply
+  // because some device re-sent it more recently:
+  //
+  //   09:55  the tablet, offline, writes a note on frame 2
+  //   10:00  the desktop pushes all its frames, frame 2 untouched and unstamped
+  //          — the server records it as arriving at 10:00
+  //   10:05  the tablet reconnects and sends its note, made at 09:55
+  //          → 09:55 is "older than 10:00", refused, the note is gone
+  //
+  // The server's copy does not know when it changed. The tablet's does. The one
+  // that knows wins — which is what the check above already says, and this is
+  // only the mirror of it.
+  if (held.content_changed_at == null && incoming.content_changed_at != null) return 'accept';
+
   const mineAt   = held.content_changed_at ?? held.updated_at;
   const theirsAt = incoming.content_changed_at ?? incoming.updated_at;
   if (mineAt > theirsAt) return 'stale';
@@ -84,6 +102,7 @@ export function decideVersion(
 ): VersionOutcome {
   if (!held) return 'accept';                 // new to the server — take it
   if (held.content_changed_at !== null && incoming.content_changed_at == null) return 'stale';
+  if (held.content_changed_at == null && incoming.content_changed_at != null) return 'accept';  // #311
   const mineAt   = held.content_changed_at ?? held.updated_at;
   const theirsAt = incoming.content_changed_at ?? incoming.updated_at;
   return mineAt > theirsAt ? 'stale' : 'accept';

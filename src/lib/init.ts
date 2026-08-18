@@ -34,6 +34,7 @@ import { showToast, showNewProjectModal, isNewProjectModalOpen, showOrphanChoice
 import type { NewProjectChoice } from './modals';
 import { handlePDF } from './pdf';
 import { handleFolderImages, startFromScratch, startPortrait, startFitting } from './files';
+import { installTestDoor } from './testHooks';
 import { openExportModal, openPptxModal, runExport, runPptxExport, openImageExportModal, runImageExport, openPortraitExportModal, runPortraitExport, openPortraitImageExportModal, runPortraitImageExport, updateExportVisibility, buildVersionPicker, buildPptxVersionPicker, lockPageScroll, unlockPageScroll } from './exports';
 import { wireCameraEvents } from './camera';
 // openFullscreen is now triggered by DRAW button (actions.ts), not the fs-btn
@@ -61,6 +62,8 @@ export function initFramehow(): void {
 
   // Cross-module render shims (avoid circular imports)
   (window as any).__fh_renderAll = renderAll;
+  // The browser tests' one small door, only when ?fhtest=1 (#309).
+  installTestDoor();
   (window as any).__fh_renderMainFrame = renderMainFrame;
   (window as any).__fh_renderVersionFrame = renderVersionFrame;
   (window as any).__fh_renderOverview = renderOverview;

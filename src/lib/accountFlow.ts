@@ -898,6 +898,16 @@ function formatRelative(ts: number): string {
   return new Date(ts).toLocaleDateString();
 }
 
+/** Open a project the server holds, by its id — the same path the project list
+ *  takes when you tap one. Used by the browser tests, which have no list to tap
+ *  (#309). */
+export async function openCloudProjectById(id: string): Promise<void> {
+  const list = await api.get<{ projects: CloudProject[] }>('/projects', getToken());
+  const p = (list.projects ?? []).find((x) => x.id === id);
+  if (!p) throw new Error(`no project ${id} on the server`);
+  await loadCloudProject(p);
+}
+
 async function loadCloudProject(p: CloudProject): Promise<void> {
   const cp = getCurrentProject();
   // Spec: "Only One Unsaved Project" — if there's local unsaved work, warn.
@@ -4389,6 +4399,9 @@ async function tryPullFromCloud(force = false): Promise<void> {
       // of date and should take the server's copy (#307)
       // ---------------------------------------------------------------
       let keepLocalIds: ReadonlySet<string> | undefined;
+      /** Frames this device has decided to take from the other side. Nothing
+       *  further down may protect them again (#310). */
+      const givenUp = new Set<string>();
       // Frames the answer left out are kept exactly as they are here (#283).
 
       if (hasDirtyFrames) {
@@ -4410,9 +4423,20 @@ async function tryPullFromCloud(force = false): Promise<void> {
         //
         // No modal, no choosing in the dark, and the two devices end up showing
         // the same thing — which is the whole point.
+        // WHEN THEY CHANGED IT — never when it ARRIVED (#310).
+        //
+        // `updated_at` is the moment the server wrote the row, which is the time
+        // of the CONNECTION, not of the edit. Comparing my edit time against
+        // their arrival time makes every frame on the server look freshly
+        // changed, so a device coming back from offline gives up work on frames
+        // nobody else ever touched. A note made on a plane, discarded by a
+        // desktop that had merely pushed something else.
+        //
+        // No content time means we do not know when they changed it — and a copy
+        // that knows beats one that does not, exactly as the server decides it.
         const cloudChangedAt = new Map<string, number>();
         for (const cf of tree.frames) {
-          cloudChangedAt.set(cf.id, cf.content_changed_at ?? cf.updated_at);
+          if (cf.content_changed_at != null) cloudChangedAt.set(cf.id, cf.content_changed_at);
         }
 
         const keepMine = new Set<string>();
@@ -4427,7 +4451,7 @@ async function tryPullFromCloud(force = false): Promise<void> {
         }
         if (takeTheirs.length > 0) {
           trace(`  ${takeTheirs.length} frame(s) changed later elsewhere — taking theirs`);
-          for (const id of takeTheirs) dropDirtyFrame(id);
+          for (const id of takeTheirs) { dropDirtyFrame(id); givenUp.add(id); }
         }
         keepLocalIds = keepMine;
       }
@@ -4487,9 +4511,32 @@ async function tryPullFromCloud(force = false): Promise<void> {
       //     They are not on the server, so they still need sending.
       //   - untouched: the delta simply did not mention them (#285). They match
       //     the server already — sending them again would undo the whole point.
-      const keepAsIs = new Set([...(untouched ?? []), ...rescued]);
+      // ...EXCEPT ANYTHING ALREADY GIVEN UP (#310).
+      //
+      // A frame this device decided to take from the other side must not be put
+      // back into the protected set two lines later. "The answer did not mention
+      // it" means "it matches the server" — which is exactly what is NOT true of
+      // a frame we have just lost, and the reason the two devices could sit
+      // there for ever showing different storyboards, both convinced they were
+      // finished. The decision made above is final; nothing below may quietly
+      // reverse it.
+      const keepAsIs = new Set(
+        [...(untouched ?? []), ...rescued].filter((id) => !givenUp.has(id)));
       if (keepAsIs.size > 0) {
         keepLocalIds = new Set([...(keepLocalIds ?? []), ...keepAsIs]);
+      }
+      // WHY EACH FRAME IS BEING KEPT (#310).
+      //
+      // Three different pieces of code add to this set, and the last one wins by
+      // accident rather than by decision. That is how a device can say "taking
+      // theirs" and then protect its own copy in the next breath — and the two
+      // devices end up showing different storyboards, both convinced they are
+      // finished. Say which set each frame came from, or this is unarguable.
+      if ((keepLocalIds?.size ?? 0) > 0) {
+        trace(`  keeping ${keepLocalIds!.size} frame(s) local — `
+          + `mine(newer): ${[...(keepLocalIds ?? [])].filter((id) => !keepAsIs.has(id)).length}, `
+          + `untouched by the answer: ${untouched?.size ?? 0}, `
+          + `rescued (answer left them out): ${rescued.size}`);
       }
 
       // WHERE THE USER IS STANDING (#288).

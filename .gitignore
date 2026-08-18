@@ -9,3 +9,7 @@ dist-ssr
 .probe/
 .probe*/
 test/_probe*.ts
+e2e-report/
+e2e-log/
+test-results/
+backend/.wrangler-e2e/

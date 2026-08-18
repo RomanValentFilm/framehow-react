@@ -1,0 +1,23 @@
+#!/bin/sh
+# ONE COMMAND FOR THE SIMULATOR (#309).
+#
+#   npm run t                         every scenario
+#   npm run t -- -g "stop listening"  just the ones whose name matches
+#
+# Always does the same three things, so there is nothing to remember:
+#   1. runs the tests, printing progress as they go
+#   2. writes the WHOLE run to e2e-log/last-run.log, which Claude reads
+#      directly — nothing to copy, nothing to paste, nothing cut off
+#   3. pings, so you can look away while it runs
+#
+# When it beeps, say "zzz". That is the whole workflow.
+#
+# The log lives in its OWN folder, NOT in e2e-report: playwright's html reporter
+# empties e2e-report before it writes, so the first version of this script
+# carefully saved the log and then watched playwright delete it.
+mkdir -p e2e-log
+npx playwright test --project=webkit "$@" 2>&1 | tee e2e-log/last-run.log | grep -v WebServer
+afplay /System/Library/Sounds/Glass.aiff 2>/dev/null &
+osascript -e 'display notification "Tests finished — say zzz" with title "Framehow"' 2>/dev/null
+echo
+echo "--- finished. say  zzz  ---"

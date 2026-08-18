@@ -455,7 +455,11 @@ async function run() {
     pad.memory = { ...pad.memory, unsentFrames: 0, settingsUnsent: true };
     check('an unsent setting does NOT hold the pull back', pullIsHeldBack(pad.memory), false);
 
-    // meanwhile the desktop writes something the iPad has never seen
+    // meanwhile the desktop writes something the iPad has never seen.
+    // The wait is not decoration: the server stamps its own clock, and two
+    // pushes inside one millisecond cannot be told apart by "newer" — which
+    // made this case pass nine times out of ten and lie the tenth.
+    await new Promise((r) => setTimeout(r, 5));
     desktop.write('f2', 'made on the desktop', 2000);
     await desktop.push(2000);
 
