@@ -41,6 +41,7 @@ import {
   registerFingerprintBridge,
   registerHeardAtBridge,
   registerPullFn,
+  registerConnectionWatch,
   setCurrentProject,
   setProjectName,
   setPullInFlight,
@@ -53,10 +54,11 @@ import {
   pendingOnDevice,
 } from './currentProject';
 import { trace } from './syncTrace';
-import { frameChangedAt, versionChangedAt, importChangeStamps, stampChangedContent } from './changeStamps';
+import { frameChangedAt, versionChangedAt, importChangeStamps, stampChangedContent, seedContentStamps } from './changeStamps';
 import { shouldSendOnlyChanges } from './pushMode';
+import { serverHasSomethingNew, type DeviceMemory } from './sessionRules';
 import { mergeDelta, lastMergeRefusal, answerIsSafeToApply, skeletonFromDevice, untouchedByDelta, type MergeableTree } from './deltaMerge';
-import { settingsForPush, adoptSettingsFromServer, applySettingsToStore, importSettingStamps, stampChangedSettings, seedSettings, settingsNeedPush, type SettingItem } from './projectSettings';
+import { settingsForPush, adoptSettingsFromServer, applySettingsToStore, importSettingStamps, stampChangedSettings, seedSettings, settingsNeedPush, reconcileRestoredSettings, type SettingItem } from './projectSettings';
 import { applySnapshotToStore, loadSnapshot, snapshotFromStore, listPending, isArchived, getPending, markPendingUploaded, saveProjectListCache, loadProjectListCache, deletePending, recoverPending, isDeletedCopy, requestDurableStorage } from './persistence';
 import type { PendingRecord } from './persistence';
 import { showThreeWayConflict, showConfirm, showToast, showFrameConflictPicker } from './modals';
@@ -940,6 +942,7 @@ async function loadCloudProject(p: CloudProject): Promise<void> {
     }
     if (progressBar) progressBar.style.width = '85%';
     updateLastKnownTimestamp(tree.project.updated_at);
+    takenFromServerAt = tree.project.updated_at;   // opening a project IS taking (#299)
     setCurrentProject({ projectId: p.id, name: p.name, lastSavedAt: tree.project.updated_at });
     clearDirtyState(); // Fresh project load — nothing dirty
     fhTrack('project_opened', { name: p.name });
@@ -1282,6 +1285,7 @@ async function startNewProject(): Promise<void> {
   // Clear stale timestamp from previous project so the first sync for the new
   // project doesn't carry an old base_updated_at that could trigger a 409.
   lastKnownUpdatedAt = null;
+  takenFromServerAt = null;        // a different project — nothing taken yet (#299)
   // Refresh DOM
   (window as any).__fh_renderAll?.();
   // Show Signpost modal so the user can pick what to do next
@@ -1622,6 +1626,8 @@ async function askAboutOpenConflictsInner(projectId: string): Promise<void> {
       keepWhen: sideWhen(c.winner_made_at),
       otherWho:  sideWho(label, c.device_name, c.device_name === here, 'this device'),
       otherWhen: sideWhen(c.made_at),
+      keepDevice:  c.winner_device,
+      otherDevice: c.device_name,
       keepSrc: localFrame?.src || '',
       otherSrc: losingSrc,
       madeOffline: !!c.made_offline,
@@ -1779,6 +1785,7 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   // Not for "this device has forgotten what the server holds", which is what a
   // pull that keeps every local frame leaves behind (#268).
   const isPartial = shouldSendOnlyChanges({
+    hasCloudId: Boolean(cp.projectId),
     confirmedFrames: _lastPushedFingerprints.size,
     framesTheServerHas: _serverFrameTimes.size,
   });
@@ -1789,6 +1796,9 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   // must still push to update the project metadata on the server. A partial
   // push with 0 dirty frames is cheap — it just updates the project row.
 
+  if (!isPartial) {
+    trace('  FULL REPLACE — this device believes the server has never seen this project');
+  }
   console.log(`[sync] Delta push: ${dirtyLocalIds.size}/${s.frames.length} frames dirty, partial=${isPartial}`);
   trace(`  delta: ${dirtyLocalIds.size}/${s.frames.length} frames changed · partial=${isPartial}`);
 
@@ -2143,7 +2153,26 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   const orderBits = settingsOut
     .filter((i) => i.kind === 'sortOrder')
     .map((i) => `${i.item_id.slice(0, 8)} at ${i.changed_at} base ${i.base_changed_at ?? 0}`);
-  trace(`  settings: ${settingsOut.length} item(s) · orders [${orderBits.join(' | ') || 'none'}]`);
+  trace(`  settings: ${settingsOut.length} item(s) · shooting orders [${orderBits.join(' | ') || 'none'}]`);
+
+  // THE ARRANGEMENT, said out loud (#296).
+  //
+  // The line above lists SHOOTING orders only, so the story flow — the one item
+  // that now carries the whole arrangement — did not appear in the log at all.
+  // A re-order that travelled and a re-order that never left looked identical.
+  const arrangement = settingsOut.find((i) => i.kind === 'frameOrder');
+  if (arrangement) {
+    let howMany = '?';
+    try {
+      const parsed = JSON.parse(arrangement.value ?? '{}') as { data?: string[] };
+      howMany = String(parsed.data?.length ?? '?');
+    } catch { /* leave it unknown */ }
+    trace(`  story flow: ${howMany} frames · changed ${arrangement.changed_at}` +
+          ` · server has ${arrangement.base_changed_at ?? 0}` +
+          `${(arrangement.base_changed_at ?? 0) === arrangement.changed_at ? ' (already up there)' : ' — SENDING'}`);
+  } else {
+    trace('  story flow: not being sent');
+  }
   const res = await api.post<CloudProjectTree & {
     conflict?: boolean;
     /** Frames the server would not take because they changed elsewhere.
@@ -3406,8 +3435,7 @@ async function sendHeartbeat(): Promise<void> {
     const remoteAt = beat?.project_updated_at ?? null;
     const remoteBy = beat?.project_last_device_id ?? null;
     if (remoteAt !== null && remoteBy !== getDeviceId()) {
-      const localAt = lastKnownUpdatedAt ?? getCurrentProject().lastSavedAt ?? 0;
-      if (remoteAt > localAt) {
+      if (serverHasSomethingNew({ takenFromServerAt: takenFromServerAt ?? 0 } as DeviceMemory, remoteAt)) {
         trace(`heartbeat: the project changed elsewhere — pulling`);
         await tryPullFromCloud();
       }
@@ -3429,6 +3457,78 @@ async function sendHeartbeat(): Promise<void> {
       }
     }
   } catch { /* silent */ }
+}
+
+// ---------------------------------------------------------------------------
+// THE MOMENT THE CONNECTION COMES BACK (#298)
+//
+// Every other way of hearing about the other device needs something from you:
+// the heartbeat needs the window in front AND a finger on it within the last
+// ten seconds; the push retry needs unsent work and waits forty seconds.
+//
+// Put the wifi back on and sit still, and nothing asks the server. That is the
+// one moment where none of the rules fit — the device knows something changed
+// (its own connection), and it is the cheapest possible question to ask.
+//
+// The browser's `online` event is not trusted on its own: after an airplane
+// mode toggle it often never arrives at all. So the connection is watched, and
+// either the event or the watch triggers ONE check.
+// ---------------------------------------------------------------------------
+let _wasOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
+let _lastReconnectCheck = 0;
+
+async function checkServerAfterReconnect(): Promise<void> {
+  const cp = getCurrentProject();
+  if (!cp.projectId || !isLoggedIn() || !navigator.onLine) return;
+  if (Date.now() - _lastReconnectCheck < 3000) return;   // event AND watch fired
+  _lastReconnectCheck = Date.now();
+
+  trace('back online — asking the server what it has');
+  // Send first. Anything made offline goes up now rather than in forty seconds,
+  // and the pull that follows is not held back by our own unsent work.
+  try { await flushSyncNow(); } catch { /* still unreachable */ }
+  try {
+    const status = await api.get<ProjectStatus>(
+      `/projects/${encodeURIComponent(cp.projectId)}/status`, getToken());
+    const remoteAt = status.updated_at ?? 0;
+    if (serverHasSomethingNew({ takenFromServerAt: takenFromServerAt ?? 0 } as DeviceMemory, remoteAt)) {
+      trace(`  the project changed elsewhere (${status.last_device_name || 'another device'}) — pulling`);
+      await tryPullFromCloud();
+    } else {
+      trace('  the server has nothing newer');
+    }
+  } catch {
+    trace('  could not reach the server — will try again');
+  }
+}
+
+/**
+ * The watch, for when the `online` event never comes. It only runs WHILE THE
+ * DEVICE IS OFF — there is nothing to watch for otherwise — and stops itself
+ * the moment the connection returns. So the normal, connected case carries no
+ * timer at all, and the watching case reads one boolean every three seconds and
+ * makes no request until the answer changes.
+ */
+let _offlineWatch: number | null = null;
+
+export function watchForTheConnectionComingBack(): void {
+  if (_offlineWatch !== null) return;
+  _offlineWatch = window.setInterval(() => {
+    if (!navigator.onLine) return;              // still off — keep watching
+    window.clearInterval(_offlineWatch!);
+    _offlineWatch = null;
+    _wasOnline = true;
+    void checkServerAfterReconnect();
+  }, 3000);
+}
+
+function watchTheConnection(): void {
+  window.addEventListener('online', () => { void checkServerAfterReconnect(); });
+  // Three ways of learning we are off, because no single one is reliable: the
+  // browser's event, the state at startup, and — the only one that never lies —
+  // a push that came back with no answer at all.
+  window.addEventListener('offline', () => { _wasOnline = false; watchForTheConnectionComingBack(); });
+  if (!navigator.onLine) { _wasOnline = false; watchForTheConnectionComingBack(); }
 }
 
 /** Start sending heartbeats while the user is active. */
@@ -3619,6 +3719,26 @@ async function waitForDeviceLock(): Promise<void> {
 
 let pullOnFocusActive = false;
 let lastKnownUpdatedAt: number | null = null;
+
+/**
+ * WHEN THIS DEVICE LAST *TOOK* SOMETHING FROM THE SERVER (#299).
+ *
+ * "Is there anything new for me?" used to be answered against the last time
+ * this device SPOKE to the server — and a push counts as speaking. So a device
+ * could push, mark itself current, and never have fetched what the server was
+ * already holding.
+ *
+ * That is exactly how an iPad lost two drawings: its pull was held back by an
+ * unsent setting, the desktop's work landed, the iPad then pushed, declared
+ * itself up to date, and from that moment the newest change on the server was
+ * its own — so it never asked again.
+ *
+ * Speaking is not listening. Only a pull moves this. `lastKnownUpdatedAt` keeps
+ * its own, different job: it is the "what I had seen when I made this change"
+ * mark that a push sends up, and the server uses it to tell a change made on
+ * top of someone else's from two made blind.
+ */
+let takenFromServerAt: number | null = null;
 let pullInFlight = false;
 let lastPullAt = 0;
 const PULL_COOLDOWN_MS = 3_000; // Don't check more often than every 3s
@@ -3885,10 +4005,16 @@ export function resetProjectSyncGuards(): void {
  * (fingerprint same but data changed) is extremely unlikely. A false negative
  * (fingerprint changed but data identical) just means we send an extra frame.
  */
-function frameFingerprint(f: Frame, sortOrder: number, s: { stripVersions: Record<string, Record<number, Version[]>>; frameNeeds: Record<number, FrameNeedState>; frameNotes: Record<number, FrameNoteState> }): string {
+/**
+ * What is IN a frame — deliberately not WHERE it is (#294).
+ *
+ * With the position in here, dragging one frame made all forty-five look
+ * changed: forty-five rows written, and every one of them able to overwrite a
+ * newer note from the other device. The arrangement travels as its own item now.
+ */
+function frameFingerprint(f: Frame, _sortOrder: number, s: { stripVersions: Record<string, Record<number, Version[]>>; frameNeeds: Record<number, FrameNeedState>; frameNotes: Record<number, FrameNoteState> }): string {
   const parts: string[] = [
     f.label,
-    String(sortOrder),
     String(f.cropW),
     String(f.cropH),
     f.hidden ? '1' : '0',
@@ -3958,6 +4084,7 @@ function startPullOnFocus(): void {
 
   // Start the heartbeat sender
   startHeartbeatSender();
+  watchTheConnection();          // and the one check when the wifi returns (#298)
 
   const safePull = async () => {
     // CRITICAL: cancel any pending push and block new pushes FIRST.
@@ -4183,7 +4310,8 @@ async function tryPullFromCloud(force = false): Promise<void> {
     }
     holdTree(cp.projectId, tree);
     const remoteUpdatedAt = tree.project.updated_at;
-    const localUpdatedAt = lastKnownUpdatedAt ?? cp.lastSavedAt ?? 0;
+    // What I last TOOK, not what I last said (#299).
+    const localUpdatedAt = takenFromServerAt ?? 0;
 
     if (force && remoteUpdatedAt <= localUpdatedAt) {
       trace(`  pull found nothing newer (remote ${remoteUpdatedAt} vs local ${localUpdatedAt})`);
@@ -4193,15 +4321,11 @@ async function tryPullFromCloud(force = false): Promise<void> {
       const remoteDeviceName = tree.project.last_device_name || 'another device';
       const localDeviceId = getDeviceId();
 
-      // Same device pushed — our own data reflecting back. Just update timestamp.
-      // NOT on a forced pull: the reason we force one is that the server told
-      // us it did NOT take something we sent. Our own push had just stamped the
-      // project with our name, so this shortcut skipped the very fetch that
-      // would have corrected us, and the device sat on its stale copy.
-      if (!force && remoteDeviceId === localDeviceId) {
-        lastKnownUpdatedAt = remoteUpdatedAt;
-        return;
-      }
+      // The "it was my own push, nothing to fetch" shortcut used to live here
+      // and is gone (#299). Being the last device to write says nothing about
+      // what the server was holding BEFORE that write — which is precisely the
+      // work this device had not taken yet.
+      void remoteDeviceId; void localDeviceId;
 
       trace(`pull: remote is newer (${remoteDeviceName})`);
       // Different device has newer data — smart per-frame merge:
@@ -4213,15 +4337,31 @@ async function tryPullFromCloud(force = false): Promise<void> {
       const hasDirtyFrames = dirtyIds.size > 0;
       trace(`  local frames not yet on the server: ${dirtyIds.size}`);
 
-      // Show loading bar
+      // THE BAR ONLY WHEN THERE IS SOMETHING TO WAIT FOR (#290).
+      //
+      // It used to appear the moment a pull began — before anything was known
+      // about how much work it was. Since a pull now brings a handful of rows
+      // and finishes instantly, and a device pulls its own change back after
+      // every photo, that was a white panel flashing over the work all day.
+      //
+      // So: nothing is shown until something actually takes time — pictures to
+      // fetch, or a question to ask. `showBar` is called at those points; a pull
+      // that has neither passes silently.
       const progressEl = document.getElementById('progressOverlay');
       const progressBar = document.getElementById('progressBar') as HTMLElement | null;
       const progressLabel = document.getElementById('progressLabel') as HTMLElement | null;
-      if (progressEl) progressEl.classList.remove('hidden');
-      if (progressBar) progressBar.style.width = '10%';
-      if (progressLabel) progressLabel.textContent = hasDirtyFrames
+      let barShown = false;
+      const showBar = (label: string) => {
+        if (!barShown) {
+          barShown = true;
+          if (progressEl) progressEl.classList.remove('hidden');
+        }
+        if (progressLabel) progressLabel.textContent = label;
+      };
+      const syncingLabel = hasDirtyFrames
         ? `Merging changes from ${remoteDeviceName}…`
         : `Syncing from ${remoteDeviceName}…`;
+      if (progressBar) progressBar.style.width = '10%';
 
       // ---------------------------------------------------------------
       // Detect same-frame conflicts: dirty locally AND changed in cloud
@@ -4273,7 +4413,7 @@ async function tryPullFromCloud(force = false): Promise<void> {
         if (conflictingIds.length > 0) {
           // Fetch cloud thumbnails for the conflict picker
           if (progressBar) progressBar.style.width = '30%';
-          if (progressLabel) progressLabel.textContent = 'Loading previews for conflict…';
+          showBar('Loading previews for conflict…');
 
           const token = getToken();
           const conflicts: FrameConflict[] = [];
@@ -4302,8 +4442,8 @@ async function tryPullFromCloud(force = false): Promise<void> {
           trace(`  same-frame conflicts: ${conflicts.length} — asking the user`);
           const choices = await showFrameConflictPicker(conflicts);
 
-          // Re-show progress
-          if (progressEl) progressEl.classList.remove('hidden');
+          // Re-show progress — the answer has to be applied and pictures fetched
+          showBar(syncingLabel);
           if (progressBar) progressBar.style.width = '50%';
 
           // Build final keep-local set: safe locals + user-chose-local conflicts
@@ -4379,14 +4519,32 @@ async function tryPullFromCloud(force = false): Promise<void> {
         keepLocalIds = new Set([...(keepLocalIds ?? []), ...keepAsIs]);
       }
 
+      // WHERE THE USER IS STANDING (#288).
+      //
+      // Applying a project rebuilds the screen and drops the view back to the
+      // default. That is right when a project is opened and wrong every other
+      // time: take a photo in a strip, the device pushes, pulls its own change
+      // back a second later, and throws you into 3x2. The restore path has
+      // remembered this for a while; the pull never did.
+      const viewBefore = {
+        currentViewMode: state().currentViewMode,
+        activeStrips: [...state().activeStrips],
+        notesStripVisible: state().notesStripVisible,
+        needsStripVisible: state().needsStripVisible,
+        activeGroupId: state().activeGroupId,
+        centerFid: state().centerFid,
+      };
+
       // Close sort-edit view before applying cloud tree
       if (state().sortEditingId) closeSortMode();
       // System action: all setState calls inside are NOT user changes
       beginSystemAction();
       try {
+        // The first picture that needs fetching is what makes a pull worth
+        // showing a bar for (#290).
         const syncImageProgress = (loaded: number, total: number) => {
           if (total === 0) return;
-          if (progressLabel) progressLabel.textContent = `Loading image ${loaded} of ${total}…`;
+          showBar(`Loading image ${loaded} of ${total}…`);
         };
         if (keepLocalIds && keepLocalIds.size > 0) {
           // Per-frame merge: keep selected local frames, take cloud for the rest
@@ -4398,7 +4556,14 @@ async function tryPullFromCloud(force = false): Promise<void> {
             if (progressBar) progressBar.style.width = pct + '%';
           });
           if (progressBar) progressBar.style.width = '90%';
-          showToast(`Synced — kept ${keepLocalIds.size} local frame${keepLocalIds.size > 1 ? 's' : ''}`);
+          // Only worth telling the user about frames kept because they had work
+          // of their own. Frames kept merely because the answer did not mention
+          // them are the normal case now — saying "kept 44 local frames" after
+          // every pull would be noise, and untrue in spirit (#290).
+          const keptWithWork = [...keepLocalIds].filter((id) => !untouched?.has(id)).length;
+          if (keptWithWork > 0) {
+            showToast(`Synced — kept ${keptWithWork} local frame${keptWithWork > 1 ? 's' : ''}`);
+          }
         } else {
           // No local changes (or user chose cloud for everything) — take cloud fully
           if (progressBar) progressBar.style.width = '40%';
@@ -4419,7 +4584,39 @@ async function tryPullFromCloud(force = false): Promise<void> {
         endSystemAction();
       }
 
+      // Put the user back where they were (#288). A group or frame the answer
+      // no longer contains is simply skipped.
+      //
+      // Wrapped, because this is decoration and what follows is not: marking
+      // frames as synced, recording what the server holds, sending what is
+      // still outstanding. If restoring a view ever threw, all of that would be
+      // skipped and the device would go quiet — the worst possible trade for a
+      // cosmetic feature.
+      try {
+        const after = state();
+        const groupStillThere = viewBefore.activeGroupId !== null
+          && after.groups.some((g) => g.id === viewBefore.activeGroupId);
+        useStore.setState({
+          currentViewMode: viewBefore.currentViewMode,
+          activeStrips: viewBefore.activeStrips,
+          notesStripVisible: viewBefore.notesStripVisible,
+          needsStripVisible: viewBefore.needsStripVisible,
+          activeGroupId: groupStillThere ? viewBefore.activeGroupId : null,
+        } as never);
+        (window as any).__fh_renderAll?.();
+        // After the rebuild, not before — otherwise the render has the last
+        // word and drops the user into the default view anyway.
+        setViewMode(viewBefore.currentViewMode);
+        const frameStillThere = viewBefore.centerFid != null
+          && state().frames.some((f) => String(f.id) === String(viewBefore.centerFid));
+        if (frameStillThere) requestAnimationFrame(() => scrollAnchorTo(viewBefore.centerFid));
+      } catch (e) {
+        console.warn('[sync] could not restore the view after a pull', e);
+        trace('  could not put the view back — carrying on');
+      }
+
       lastKnownUpdatedAt = remoteUpdatedAt;
+      takenFromServerAt = remoteUpdatedAt;      // TAKEN — the only thing that counts (#299)
       markSaved(cp.projectId!);
 
       // The store now matches the server for every frame EXCEPT the ones the
@@ -4492,6 +4689,7 @@ export async function bootstrapAccountSystem(): Promise<void> {
   // be created first. saveNow() does exactly that, then uploads.
   registerCreateAndSync(saveNow);
   registerPullFn(tryPullFromCloud);
+  registerConnectionWatch(watchForTheConnectionComingBack);   // #298
   startPullOnFocus();
 
   // 1. Validate any saved session.
@@ -4517,6 +4715,27 @@ export async function bootstrapAccountSystem(): Promise<void> {
         // can never travel.
         if (!snap.settingStamps || snap.settingStamps.length === 0) {
           seedSettings(snap.projectId ?? null, snap.lastModified);
+          // Seeded fresh means the device has NO memory of when its settings
+          // changed, so the first save stamps them all "now" and they fight the
+          // other device for no reason. Say which of the two happened, or we
+          // are reading tea leaves again.
+          trace('  settings memory: SEEDED FRESH (the save carried none)');
+        } else {
+          trace(`  settings memory: restored, ${snap.settingStamps.length} item(s)`);
+        }
+        // ...and the same for the frames' own memory (#289). With stamps in the
+        // snapshot there is nothing to seed — they say when each frame changed,
+        // including changes made offline before the app was closed.
+        if (!snap.contentStamps || Object.keys(snap.contentStamps).length === 0) {
+          seedContentStamps(snap.projectId ?? null);
+        }
+        // MEMORY WRITTEN BY AN OLDER APP (#297). Anything this build knows about
+        // that the saved memory has never heard of is written down as age
+        // unknown — here, with the project in the store, and before the first
+        // autosave can call it a change made just now.
+        const unknownToMemory = reconcileRestoredSettings();
+        if (unknownToMemory > 0) {
+          trace(`  ${unknownToMemory} setting(s) unknown to the saved memory — recorded as age unknown, not as changed now`);
         }
         // renderAll + autoPhoneMainView call setState — keep them inside
         // the system action so their setState calls don't mark dirty.
@@ -4530,6 +4749,15 @@ export async function bootstrapAccountSystem(): Promise<void> {
         name: snap.name,
         lastSavedAt: snap.projectId ? snap.lastModified : null,
       });
+      // SAY WHICH PROJECT THIS IS (#291).
+      //
+      // Without a cloud id the app cannot push or pull anything — every attempt
+      // skips silently, and the only visible sign is the "you'll need to save it
+      // first" note, which reads like a nag rather than a diagnosis. Now it is
+      // stated at every start, next to the frame count.
+      trace(snap.projectId
+        ? `project: ${snap.name ?? 'unnamed'} · cloud id ${snap.projectId.slice(0, 8)} · signed in: ${isLoggedIn() ? 'yes' : 'NO'}`
+        : `project: ${snap.name ?? 'unnamed'} · NOT ON THE SERVER — nothing can sync until it is saved`);
       clearDirtyState(); // IDB restore is not a user change
 
       // Kick off a cloud pull now that projectId is set.

@@ -1,0 +1,143 @@
+// WHAT A DEVICE DOES ACROSS A WHOLE SESSION — the plumbing, not the rules.
+//
+// Five days of device testing, and not one failure was a merge rule. Every one
+// was here: what a device remembers when it starts, what it may send, when it
+// may listen, and what makes it believe it is up to date.
+//
+//   #297  it could not read memory written by an older version of itself
+//   #298  nothing asked the server when the connection came back
+//   #299  it called itself up to date because it PUSHED
+//   #300  a device that had forgotten everything sent a full replace
+//
+// Each cost an afternoon on two real devices, and each is one line of thought.
+// They lived buried in a four-thousand-line file that no test can load, so they
+// could only be found by living through them.
+//
+// So they live here instead: plain functions, no store, no browser, no imports.
+// The session bench drives them against the real server, and a fault like the
+// four above fails in one second instead of one day.
+
+/**
+ * Everything a device knows about its relationship with the server. This is
+ * exactly what has to survive a restart — and every fault above was a piece of
+ * it going missing, or meaning something it did not mean.
+ */
+export interface DeviceMemory {
+  /** The project's id on the server. Its mere existence is proof the server has
+   *  seen this project — the fact #300 turned on. */
+  cloudId: string | null;
+  /** Frames whose exact content the server has confirmed. */
+  confirmedFrames: number;
+  /** Frames the server has told us about. Hearing about a frame is not the same
+   *  as agreeing with it, so these two are counted separately. */
+  framesTheServerHas: number;
+  /** The server's clock as of the last time this device TOOK something.
+   *  Zero means "I have never taken anything", which is true of a device that
+   *  has only ever pushed. */
+  takenFromServerAt: number;
+  /** Work made here that the server has not accepted yet. */
+  unsentFrames: number;
+  settingsUnsent: boolean;
+}
+
+export const emptyMemory = (cloudId: string | null = null): DeviceMemory => ({
+  cloudId,
+  confirmedFrames: 0,
+  framesTheServerHas: 0,
+  takenFromServerAt: 0,
+  unsentFrames: 0,
+  settingsUnsent: false,
+});
+
+/**
+ * MAY THIS PUSH REPLACE THE WHOLE PROJECT? (#300)
+ *
+ * A full replace deletes the project's rows on the server and writes this
+ * device's copy in their place. Right exactly once — a project made here that
+ * the server has never seen. Every other time it can only destroy.
+ *
+ * The old test counted what the device remembered, which is a guess at the
+ * question. An iPad that restarted with an empty memory answered "the server
+ * has never seen this" about a project both devices had been working on all
+ * afternoon — while holding that project's cloud id the whole time.
+ */
+export function pushIsPartial(m: DeviceMemory): boolean {
+  if (m.cloudId) return true;                       // the server made this id
+  return m.confirmedFrames > 0 || m.framesTheServerHas > 0;
+}
+
+/**
+ * MAY THIS DEVICE LISTEN RIGHT NOW?
+ *
+ * Not while it is holding work the server has not got: applying the server's
+ * copy over unsent work is how offline work disappears. The push comes first,
+ * then the pull.
+ */
+export function pullIsHeldBack(m: DeviceMemory, force = false): boolean {
+  if (force) return false;
+  return m.unsentFrames > 0 || m.settingsUnsent;
+}
+
+/**
+ * IS THERE ANYTHING NEW FOR ME? (#299)
+ *
+ * Against what this device last TOOK — never against what it last said.
+ *
+ * Pushing used to count. So a device could be held back from pulling (unsent
+ * work), push, mark itself current, and never fetch what the server had been
+ * holding before that push. From then on the newest thing on the server was its
+ * own, and it never asked again. That is how two drawings sat on a server for
+ * ten minutes while an iPad three feet away printed "nothing changed".
+ *
+ * Speaking is not listening.
+ */
+export function serverHasSomethingNew(m: DeviceMemory, serverUpdatedAt: number): boolean {
+  return serverUpdatedAt > m.takenFromServerAt;
+}
+
+/**
+ * After a push the server accepted. Note what does NOT move: `takenFromServerAt`.
+ * The push told this device nothing about what the server was already holding.
+ */
+export function afterPush(m: DeviceMemory, accepted: number): DeviceMemory {
+  return {
+    ...m,
+    confirmedFrames: m.confirmedFrames + accepted,
+    framesTheServerHas: Math.max(m.framesTheServerHas, m.confirmedFrames + accepted),
+    unsentFrames: 0,
+    settingsUnsent: false,
+  };
+}
+
+/** After a pull that was applied. This is the only thing that makes a device
+ *  up to date. */
+export function afterPull(
+  m: DeviceMemory,
+  { serverUpdatedAt, framesReceived }: { serverUpdatedAt: number; framesReceived: number },
+): DeviceMemory {
+  return {
+    ...m,
+    takenFromServerAt: serverUpdatedAt,
+    framesTheServerHas: Math.max(m.framesTheServerHas, framesReceived),
+  };
+}
+
+/**
+ * THE RESTART.
+ *
+ * What a device carries back is whatever its last save wrote down. A save that
+ * lost a piece is indistinguishable, at boot, from a device that never had it —
+ * which is why an empty memory must never be read as "this project is new".
+ *
+ * Anything missing is restored as ZERO, never guessed at: zero confirmed frames
+ * means "send everything again", which is wasteful and safe. Guessing the other
+ * way means "assume the server agrees with me", which loses work.
+ */
+export function afterRestart(saved: Partial<DeviceMemory> | null | undefined,
+                             cloudId: string | null): DeviceMemory {
+  return {
+    ...emptyMemory(cloudId),
+    ...(saved ?? {}),
+    cloudId,                       // the project being opened, not the saved one
+  };
+}

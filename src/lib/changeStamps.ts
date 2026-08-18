@@ -20,8 +20,16 @@ import type { Frame, Version } from '../store/state';
 const _seen = new Map<string, { fp: string; at: number }>();
 let _projectId: string | null | undefined;
 
-/** A frame's OWN content — not its versions, which are stamped separately. */
-function frameFp(f: Frame, sortOrder: number, needs: string, notes: string): string {
+/**
+ * A frame's OWN content — not its versions, which are stamped separately, and
+ * NOT its position (#294).
+ *
+ * Position used to be in here, which made moving a frame count as changing it.
+ * A device that only rearranged therefore sent every frame's whole row stamped
+ * "now", and could carry its own older notes over someone else's newer ones.
+ * The arrangement is one item of its own now; this is only what is IN the frame.
+ */
+function frameFp(f: Frame, _sortOrder: number, needs: string, notes: string): string {
   return [
     f.label, f.cropW, f.cropH, f.textContent,
     f.tableData ? JSON.stringify(f.tableData) : '',
@@ -30,7 +38,6 @@ function frameFp(f: Frame, sortOrder: number, needs: string, notes: string): str
     f.setupId ?? '', needs, notes,
     f.r2Key || (f.src ? f.src.substring(0, 40) : ''),
     f.strokes?.length ?? 0,
-    sortOrder,
   ].join('|');
 }
 
@@ -44,10 +51,28 @@ function versionFp(v: Version): string {
 }
 
 /**
+ * THE FIRST LOOK, taken when a project LOADS (#289).
+ *
+ * Everything on the device is written down as it currently stands, aged zero —
+ * unknown, so merely opening a project cannot out-rank work done elsewhere.
+ *
+ * It has to happen at LOAD. It used to happen on the first save afterwards, and
+ * that save waits two seconds after your last action — so a frame re-ordered in
+ * the first moments was swallowed into the first look and recorded as "it was
+ * always in that place". It then went up with no time on it, the server kept
+ * its own order, and the re-order was lost without a word. Exactly the fault
+ * fixed for the NEEDS categories in #264, in the frames' memory instead.
+ */
+export function seedContentStamps(projectId: string | null): void {
+  _projectId = projectId;
+  _seen.clear();
+  stampChangedContent(projectId);      // first sight of everything = age unknown
+}
+
+/**
  * Note anything that changed since the last look, with the time we noticed.
  * Called from the local autosave.
- */
-/**
+ *
  * @param received  For work that has just arrived from the server: the time the
  *   OTHER device changed it, per `f/<id>` or `v/<id>`. Receiving is not
  *   changing (#265) — without this, a device that merely pulled stamped

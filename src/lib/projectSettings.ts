@@ -61,6 +61,21 @@ function currentItems(): Array<{ kind: string; item_id: string; json: string }> 
   const push = (kind: string, id: string, idx: number, data: unknown) =>
     out.push({ kind, item_id: id, json: JSON.stringify({ idx, data }) });
 
+  // THE STORY FLOW IS ONE THING (#294).
+  //
+  // A frame's place used to live on the frame, so an arrangement was forty-five
+  // separate facts merged one by one — and two people rearranging offline ended
+  // up with an order neither had made. Worse, moving frames counted as changing
+  // them, so a re-order sent every frame's whole row and could carry an older
+  // note over a newer one.
+  //
+  // It is a list of frame ids, with one time. The later arrangement wins whole.
+  // Notes, needs and versions need no special care: they belong to the frame, so
+  // they travel with it wherever it lands. An id in the list with no frame
+  // behind it is simply skipped, so a deleted frame needs no place-holder.
+  const orderedIds = s.frames.map((f) => f.serverFrameId).filter(Boolean) as string[];
+  if (orderedIds.length > 0) push('frameOrder', 'main', 0, orderedIds);
+
   s.groups.forEach((g, i) => push('group', String(g.id), i, g));
   s.sortOrders.forEach((o, i) => push('sortOrder', o.id, i, o));
   (s.needDefinitions?.tabs ?? []).forEach((t, i) => push('needCategory', t.id, i, t));
@@ -209,6 +224,51 @@ export function adoptSettingsFromServer(items: SettingItem[] | undefined, projec
 }
 
 /**
+ * Put the frames in the arrangement's order — and keep a frame the arrangement
+ * has never heard of NEXT TO THE FRAME IT WAS PUT AFTER (#294).
+ *
+ * A frame made here while the other device was rearranging is not in their list.
+ * Dropping it at the end would move it away from the moment it belongs to: a
+ * frame drawn between 12 and 13 belongs between 12 and 13, not at the bottom of
+ * the storyboard.
+ *
+ * Nothing extra has to be stored to do this. THIS device knows where the frame
+ * sits in its own list, so it knows which frame it follows; the new frame is
+ * placed straight after that one wherever it has landed. A new frame at the very
+ * top, following nothing, stays at the top.
+ */
+export function applyArrangement<T extends { serverFrameId?: string }>(
+  here: T[],
+  arrangement: readonly string[],
+): T[] {
+  const listed = new Set(arrangement);
+
+  // Which frames follow which, as this device currently has them. `null` means
+  // "at the very front".
+  const followers = new Map<string | null, T[]>();
+  let anchor: string | null = null;
+  for (const f of here) {
+    if (f.serverFrameId && listed.has(f.serverFrameId)) {
+      anchor = f.serverFrameId;                     // a frame both sides know
+      continue;
+    }
+    const group = followers.get(anchor) ?? [];
+    group.push(f);
+    followers.set(anchor, group);
+  }
+
+  const byId = new Map(here.filter((f) => f.serverFrameId).map((f) => [f.serverFrameId!, f]));
+  const out: T[] = [...(followers.get(null) ?? [])];
+  for (const id of arrangement) {
+    const f = byId.get(id);
+    if (f) out.push(f);                             // an id with no frame is skipped
+    const after = followers.get(id);
+    if (after) out.push(...after);
+  }
+  return out;
+}
+
+/**
  * Is this device holding a later change to that item which it has not sent yet?
  * Then an arriving copy must not paint over it (#262) — the whole point of a
  * change time is that the later change wins, and it cannot lose just because it
@@ -305,6 +365,13 @@ export function applySettingsToStore(items: SettingItem[] | undefined): void {
     patch.nextSetupId = p.nextSetupId ?? 1;
   }
 
+  // The story flow: one arrangement, the later one wins whole (#294).
+  const orderRow = rows.find((r) => r.kind === 'frameOrder' && !r.deleted && r.changed_at > UNKNOWN
+    && !localIsNewerAndUnsent('frameOrder', 'main', r.changed_at));
+  if (orderRow) {
+    patch.frames = applyArrangement(s.frames, orderRow.data as string[]);
+  }
+
   // Story-flow breaks merge one by one, like groups and orders. A break only
   // this device has stays; one only the other device has is added; one both
   // know at different positions takes the newer.
@@ -355,4 +422,41 @@ export function importSettingStamps(items: SettingItem[] | undefined): void {
     });
   }
   _seeded = true;
+}
+
+/**
+ * THE RECONCILING LOOK (#297) — how the app reads memory written by an older
+ * version of itself.
+ *
+ * Restored memory says when each item was changed. But an app that has just
+ * been updated holds KINDS of item that memory has never heard of: `frameOrder`
+ * was born in #294, so every device's saved memory pre-dates it.
+ *
+ * The ordinary rule says an item nobody remembers is a new group or category
+ * the user just made — a change, and it happened now. That is right while the
+ * app is running and wrong the moment it starts, because then EVERY device
+ * claims to have changed the item at its own boot, and the one that booted last
+ * wins. That is precisely what happened: two devices each said they had
+ * rearranged the storyboard three seconds after starting, and the real re-order
+ * lost to a clock.
+ *
+ * So: anything present in the app but absent from restored memory is written
+ * down as AGE UNKNOWN. It still travels — the server learns it exists — but it
+ * cannot outrank work somebody actually did. The next real edit stamps it
+ * properly.
+ *
+ * Must run AFTER the project is in the store, or there is nothing to look at.
+ *
+ * @returns how many items were unknown, for the log.
+ */
+export function reconcileRestoredSettings(): number {
+  if (!_seeded) return 0;
+  let unknown = 0;
+  for (const it of currentItems()) {
+    const k = key(it.kind, it.item_id);
+    if (_known.has(k)) continue;
+    _known.set(k, { json: it.json, changed_at: UNKNOWN, deleted_at: null, serverAt: UNKNOWN });
+    unknown++;
+  }
+  return unknown;
 }

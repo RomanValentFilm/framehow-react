@@ -26,7 +26,7 @@ import {
   setVersionStars,
 } from './helpers';
 import type { StripType } from '../store/state';
-import { isDebugDevice } from './syncTrace';
+import { isDebugDevice, trace } from './syncTrace';
 import { snapshotFrame } from './drawing';
 import { drawFit } from './drawing';
 import { setupDrawing } from './drawing';
@@ -1249,6 +1249,21 @@ export function initFramehow(): void {
     const onDevAddress = window.location.hostname.startsWith('dev.');
     const debug = isDebugDevice();
     const isDev = import.meta.env.DEV || (onDevAddress && !debug);
+    // SAY IT OUT LOUD (#287).
+    //
+    // "Will this app open with no signal?" was unanswerable from the outside:
+    // the log said nothing, and on iOS a home-screen app keeps its own storage,
+    // so debug mode turned on in Safari does NOT reach the installed app. An
+    // evening went into guessing at that. Now the app states it at every start.
+    //
+    // `controller` is the honest signal: it is set only when this page is being
+    // served BY the cache. Registered but not controlling means the cache is
+    // installed and will take over on the next launch — not this one.
+    const controlled = !!navigator.serviceWorker.controller;
+    trace(`offline cache: ${isDev ? 'OFF' : 'on'}` +
+          `${onDevAddress ? ' · dev address' : ''}` +
+          `${isDev && onDevAddress ? ' · three taps on the version, then reload, to turn it on' : ''}` +
+          ` · serving this launch: ${controlled ? 'yes' : 'no'}`);
     if (isDev) {
       // Unregister any existing SW so it never blocks fresh code
       navigator.serviceWorker.getRegistrations().then(regs => {

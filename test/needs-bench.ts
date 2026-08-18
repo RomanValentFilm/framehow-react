@@ -12,9 +12,10 @@ import type { NeedTab } from '../src/store/state';
 import {
   stampChangedSettings, settingsForPush, adoptSettingsFromServer,
   applySettingsToStore, settingsNeedPush, seedSettings, importSettingStamps,
+  reconcileRestoredSettings,
   exportSettingStamps, type SettingItem,
 } from '../src/lib/projectSettings';
-import { stampChangedContent, frameChangedAt } from '../src/lib/changeStamps';
+import { stampChangedContent, frameChangedAt, seedContentStamps } from '../src/lib/changeStamps';
 import { shouldSendOnlyChanges } from '../src/lib/pushMode';
 
 // ---------------------------------------------------------------------------
@@ -279,8 +280,9 @@ const check = (what: string, got: unknown, want: unknown) =>
 // 11. A full replace is for a brand new project and nothing else (#268)
 // ---------------------------------------------------------------------------
 {
-  const mode = (confirmedFrames: number, framesTheServerHas: number) =>
-    shouldSendOnlyChanges({ confirmedFrames, framesTheServerHas }) ? 'changes only' : 'full replace';
+  const mode = (confirmedFrames: number, framesTheServerHas: number, hasCloudId = false) =>
+    shouldSendOnlyChanges({ hasCloudId, confirmedFrames, framesTheServerHas })
+      ? 'changes only' : 'full replace';
 
   check('a project made here that the server has never seen', mode(0, 0), 'full replace');
   check('a project this device has already pushed', mode(45, 45), 'changes only');
@@ -288,6 +290,281 @@ const check = (what: string, got: unknown, want: unknown) =>
   // forgot what the server had confirmed — but it had still HEARD about them.
   check('after a pull that kept every local frame', mode(0, 45), 'changes only');
   check('after a restart, frames known to the server', mode(0, 45), 'changes only');
+
+  // THE ONE THAT ACTUALLY HAPPENED (#300). An iPad restarted having forgotten
+  // everything about the server — no confirmed frames, no known times — and by
+  // the old rule that reads as "brand new project", so it sent a full replace
+  // over a project both devices had been working on all afternoon.
+  check('a device that forgot everything but still holds the cloud id',
+    mode(0, 0, true), 'changes only');
+  check('...and a project with no cloud id is still the one real full replace',
+    mode(0, 0, false), 'full replace');
+}
+
+// ---------------------------------------------------------------------------
+// 12. A change in the first seconds after opening still carries a time (#289)
+// ---------------------------------------------------------------------------
+{
+  const three = [
+    { id: 1, serverFrameId: 'a', label: '1' },
+    { id: 2, serverFrameId: 'b', label: '2' },
+    { id: 3, serverFrameId: 'c', label: '3' },
+  ] as never[];
+  useStore.setState({ frames: three, stripVersions: {}, frameNeeds: {}, frameNotes: {} } as never);
+
+  // the project loads — the first look happens HERE, not on the first save
+  seedContentStamps('p9');
+  seedSettings('p9', CREATED);
+  check('opening a project stamps nothing as changed', frameChangedAt('c'), 'undefined');
+
+  // ...and the user immediately writes on a frame, before any save
+  later();
+  useStore.setState({
+    frames: [{ ...(three[0] as object), textContent: 'written at once' }, three[1], three[2]],
+  } as never);
+  stampChangedContent();
+  check('an edit made straight after opening carries a time',
+    typeof frameChangedAt('a') === 'number' && frameChangedAt('a')! > 0, true);
+  check('...and the frames not touched carry none', frameChangedAt('b'), 'undefined');
+
+  // ...and a re-order made straight after opening carries a time too — on the
+  // ARRANGEMENT, which is where a re-order belongs now (#294), not on the frames
+  later();
+  useStore.setState({ frames: [three[2], three[0], three[1]] } as never);
+  stampChangedSettings('p9');
+  const order = settingsForPush().find((i) => i.kind === 'frameOrder');
+  check('a re-order made straight after opening carries a time',
+    Boolean(order && order.changed_at > CREATED), true);
+}
+
+// ---------------------------------------------------------------------------
+// 13. THE STORY FLOW IS ONE THING (#294)
+// ---------------------------------------------------------------------------
+{
+  const threeFrames = [
+    { id: 1, serverFrameId: 'a', label: '1' },
+    { id: 2, serverFrameId: 'b', label: '2' },
+    { id: 3, serverFrameId: 'c', label: '3' },
+  ] as never[];
+  const load = () => {
+    useStore.setState({ frames: threeFrames, stripVersions: {}, frameNeeds: {}, frameNotes: {},
+      needDefinitions: { tabs: clone(TABS), locations: [] },
+      groups: [], sortOrders: [], setups: [], nextSetupId: 1, storyFlowBreaks: [] } as never);
+    seedSettings('p10', CREATED);
+    seedContentStamps('p10');
+  };
+
+  load();
+  const orderItem = () => settingsForPush().find((i) => i.kind === 'frameOrder');
+  check('the arrangement travels as ONE item', Boolean(orderItem()), true);
+  check('...holding the frames in order',
+    JSON.parse(String(orderItem()!.value)).data.join(','), 'a,b,c');
+
+  // drag the last frame to the front
+  later();
+  useStore.setState({ frames: [threeFrames[2], threeFrames[0], threeFrames[1]] } as never);
+  stampChangedSettings('p10');
+  stampChangedContent();
+
+  check('a re-order changes the arrangement',
+    JSON.parse(String(orderItem()!.value)).data.join(','), 'c,a,b');
+  check('...with a real change time', orderItem()!.changed_at > CREATED, true);
+  check('...and it wants to be sent', settingsNeedPush(), true);
+
+  // THE POINT: moving frames is not editing them
+  check('moving a frame does not mark the frame as changed', frameChangedAt('c'), 'undefined');
+  check('...nor the ones it moved past', frameChangedAt('a'), 'undefined');
+}
+{
+  // The other device receives an arrangement it has never seen
+  const four = [
+    { id: 1, serverFrameId: 'a', label: '1' },
+    { id: 2, serverFrameId: 'b', label: '2' },
+    { id: 3, serverFrameId: 'c', label: '3' },
+    { id: 4, serverFrameId: 'mine', label: '4' },   // made here, unknown to them
+  ] as never[];
+  useStore.setState({ frames: four, stripVersions: {}, frameNeeds: {}, frameNotes: {},
+    needDefinitions: { tabs: clone(TABS), locations: [] },
+    groups: [], sortOrders: [], setups: [], nextSetupId: 1, storyFlowBreaks: [] } as never);
+  seedSettings('p11', CREATED);
+
+  applySettingsToStore([{
+    kind: 'frameOrder', item_id: 'main',
+    value: JSON.stringify({ idx: 0, data: ['c', 'a', 'b'] }),
+    changed_at: NOW + 60_000, deleted_at: null,
+  }]);
+  const order = useStore.getState().frames.map((f) => f.serverFrameId).join(',');
+  // 'mine' was made after 'c' here, so it travels with 'c' — which the
+  // arrangement puts first. Staying with its neighbour is the point (#294).
+  check('a later arrangement is taken whole', order, 'c,mine,a,b');
+  check('...and a frame it never heard of is kept', order.includes('mine'), true);
+}
+{
+  // A NEW FRAME STAYS WITH ITS NEIGHBOUR (#294).
+  //
+  // While the other device was rearranging, a frame was drawn here between 2
+  // and 3. It belongs there — not at the bottom of the storyboard.
+  const withNew = [
+    { id: 1, serverFrameId: 'a', label: '1' },
+    { id: 2, serverFrameId: 'b', label: '2' },
+    { id: 9, serverFrameId: 'new', label: 'NEW' },   // drawn here, after b
+    { id: 3, serverFrameId: 'c', label: '3' },
+  ] as never[];
+  useStore.setState({ frames: withNew } as never);
+  seedSettings('p13', CREATED);
+
+  // their arrangement knows nothing of the new frame, and puts c first
+  applySettingsToStore([{
+    kind: 'frameOrder', item_id: 'main',
+    value: JSON.stringify({ idx: 0, data: ['c', 'a', 'b'] }),
+    changed_at: NOW + 60_000, deleted_at: null,
+  }]);
+  check('a new frame follows the frame it was put after',
+    useStore.getState().frames.map((f) => f.serverFrameId).join(','), 'c,a,b,new');
+
+  // ...and one drawn at the very top stays at the top
+  useStore.setState({ frames: [
+    { id: 9, serverFrameId: 'first', label: 'NEW' },
+    { id: 1, serverFrameId: 'a', label: '1' },
+    { id: 2, serverFrameId: 'b', label: '2' },
+  ] as never[] } as never);
+  seedSettings('p14', CREATED);
+  applySettingsToStore([{
+    kind: 'frameOrder', item_id: 'main',
+    value: JSON.stringify({ idx: 0, data: ['b', 'a'] }),
+    changed_at: NOW + 60_000, deleted_at: null,
+  }]);
+  check('a new frame drawn at the very top stays at the top',
+    useStore.getState().frames.map((f) => f.serverFrameId).join(','), 'first,b,a');
+
+  // ...and two frames drawn in the same gap keep their own order
+  useStore.setState({ frames: [
+    { id: 1, serverFrameId: 'a', label: '1' },
+    { id: 8, serverFrameId: 'n1', label: 'N1' },
+    { id: 9, serverFrameId: 'n2', label: 'N2' },
+    { id: 2, serverFrameId: 'b', label: '2' },
+  ] as never[] } as never);
+  seedSettings('p15', CREATED);
+  applySettingsToStore([{
+    kind: 'frameOrder', item_id: 'main',
+    value: JSON.stringify({ idx: 0, data: ['b', 'a'] }),
+    changed_at: NOW + 60_000, deleted_at: null,
+  }]);
+  check('two frames drawn in the same gap stay together, in order',
+    useStore.getState().frames.map((f) => f.serverFrameId).join(','), 'b,a,n1,n2');
+}
+{
+  // An arrangement naming a frame that no longer exists just skips it — a
+  // deleted frame needs no place-holder in the list.
+  useStore.setState({ frames: [
+    { id: 1, serverFrameId: 'a', label: '1' },
+    { id: 2, serverFrameId: 'b', label: '2' },
+  ] as never[] } as never);
+  seedSettings('p12', CREATED);
+  applySettingsToStore([{
+    kind: 'frameOrder', item_id: 'main',
+    value: JSON.stringify({ idx: 0, data: ['b', 'DELETED-FRAME', 'a'] }),
+    changed_at: NOW + 60_000, deleted_at: null,
+  }]);
+  check('an arrangement naming a deleted frame simply skips it',
+    useStore.getState().frames.map((f) => f.serverFrameId).join(','), 'b,a');
+}
+
+// ---------------------------------------------------------------------------
+// 18. THE APP HAS JUST BEEN UPDATED (#297)
+//
+// The fault that cost a whole afternoon, and the one shape of fault this bench
+// had no case for at all: memory written by YESTERDAY's app, read by today's.
+//
+// #294 invented the arrangement as an item of its own. Every device's saved
+// memory pre-dates it, so on the first start after the update the app found an
+// item nobody remembered and applied the ordinary rule — a new item is a change,
+// and it happened now. Both devices therefore claimed to have rearranged the
+// storyboard three seconds after booting, and the arrangement was settled by
+// which device started last.
+// ---------------------------------------------------------------------------
+{
+  const three = [
+    { id: 1, serverFrameId: 'a', label: '1' },
+    { id: 2, serverFrameId: 'b', label: '2' },
+    { id: 3, serverFrameId: 'c', label: '3' },
+  ] as never[];
+
+  // YESTERDAY: the app saves its memory. It has no idea arrangements exist.
+  useStore.setState({
+    needDefinitions: { tabs: clone(TABS), locations: [] },
+    groups: [], sortOrders: [], setups: [], nextSetupId: 1, storyFlowBreaks: [],
+    frames: [], stripVersions: {}, frameNeeds: {}, frameNotes: {},
+  } as never);
+  seedSettings('p16', CREATED);
+  const yesterday = clone(exportSettingStamps());
+  check('yesterday\'s memory knows nothing of an arrangement',
+    yesterday.some((i) => i.kind === 'frameOrder'), false);
+
+  // TODAY: the updated app starts. Store first, then the restored memory, then
+  // the reconciling look — the order the app itself uses.
+  later(120);
+  useStore.setState({
+    needDefinitions: { tabs: clone(TABS), locations: [] },
+    groups: [], sortOrders: [], setups: [], nextSetupId: 1, storyFlowBreaks: [],
+    frames: three, stripVersions: {}, frameNeeds: {}, frameNotes: {},
+  } as never);
+  importSettingStamps(yesterday);
+  const unknown = reconcileRestoredSettings();
+  check('the update finds one item the memory never heard of', unknown, 1);
+
+  // The first autosave now runs, as it does three seconds after every start.
+  later();
+  stampChangedSettings('p16');
+  const order = settingsForPush().find((i) => i.kind === 'frameOrder');
+  check('starting an updated app does not claim the storyboard was rearranged',
+    order?.changed_at, 0);
+  check('...and the arrangement is not pretending to be unsent work',
+    (order?.changed_at ?? 0) > (order?.base_changed_at ?? 0), false);
+
+  // ...and a real re-order, after all that, still travels normally.
+  later();
+  useStore.setState({ frames: [three[2], three[0], three[1]] } as never);
+  stampChangedSettings('p16');
+  const real = settingsForPush().find((i) => i.kind === 'frameOrder');
+  check('a re-order made afterwards still carries a real time',
+    Boolean(real && real.changed_at > CREATED), true);
+  check('...and wants to be sent', settingsNeedPush(), true);
+}
+
+// ---------------------------------------------------------------------------
+// 19. AN UPDATE MUST NOT BEAT REAL WORK ON THE OTHER DEVICE (#297)
+//
+// The other half: the updated device meets a device that genuinely rearranged.
+// Age unknown must lose to a real time, whichever device started last.
+// ---------------------------------------------------------------------------
+{
+  const three = [
+    { id: 1, serverFrameId: 'a', label: '1' },
+    { id: 2, serverFrameId: 'b', label: '2' },
+    { id: 3, serverFrameId: 'c', label: '3' },
+  ] as never[];
+  useStore.setState({
+    needDefinitions: { tabs: clone(TABS), locations: [] },
+    groups: [], sortOrders: [], setups: [], nextSetupId: 1, storyFlowBreaks: [],
+    frames: three, stripVersions: {}, frameNeeds: {}, frameNotes: {},
+  } as never);
+  seedSettings('p17', CREATED);
+  const memoryWithoutArrangements = clone(exportSettingStamps())
+    .filter((i) => i.kind !== 'frameOrder');
+  importSettingStamps(memoryWithoutArrangements);
+  reconcileRestoredSettings();
+  later();
+  stampChangedSettings('p17');
+
+  // the other device really did rearrange, an hour ago
+  applySettingsToStore([{
+    kind: 'frameOrder', item_id: 'main',
+    value: JSON.stringify({ idx: 0, data: ['c', 'b', 'a'] }),
+    changed_at: NOW - 60 * 60_000, deleted_at: null,
+  }]);
+  check('a real re-order beats a freshly updated app that changed nothing',
+    useStore.getState().frames.map((f) => f.serverFrameId).join(','), 'c,b,a');
 }
 
 // ---------------------------------------------------------------------------

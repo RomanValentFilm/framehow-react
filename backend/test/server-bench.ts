@@ -512,6 +512,235 @@ async function run() {
       got.frames.some((f) => f.id === 'f15'), false);
   }
 
+  // ==========================================================================
+  // BOTH DEVICES OFFLINE, THEN BOTH COME BACK (#292)
+  //
+  // The case that has never been tested and keeps costing work. "Offline" here
+  // means simply not talking to the server: each device keeps editing, stamping
+  // its changes with the time they were made, and sends the lot when it
+  // reconnects. The order they reconnect in must not decide anything.
+  // ==========================================================================
+  {
+    const db = await freshServer();
+    const iPad = new Device(db, 'iPad');
+    const desktop = new Device(db, 'desktop');
+    await iPad.send(framesNamed(6));
+    await desktop.pull();
+    const t = Date.now();
+
+    // ...both go offline. Each edits a DIFFERENT frame.
+    // iPad at 10:00, desktop at 10:05. The iPad reconnects first.
+    await iPad.send([{ id: 'f0', notes: 'iPad note', changedAt: t }]);
+    await desktop.send([{ id: 'f1', notes: 'desktop note', changedAt: t + 300_000 }]);
+
+    check('both offline, different frames: the iPad edit is there',
+      db.one<{ table_data: string }>("SELECT table_data FROM frames WHERE id = 'f0'")?.table_data, 'iPad note');
+    check('...and the desktop edit is there too',
+      db.one<{ table_data: string }>("SELECT table_data FROM frames WHERE id = 'f1'")?.table_data, 'desktop note');
+  }
+  {
+    const db = await freshServer();
+    const iPad = new Device(db, 'iPad');
+    const desktop = new Device(db, 'desktop');
+    await iPad.send(framesNamed(6));
+    await desktop.pull();
+    const t = Date.now();
+
+    // Both offline, SAME frame's notes. The desktop's edit is later, but the
+    // iPad reconnects first — the classic way "newer wins" turns into "last to
+    // reconnect wins" if the times are not honest.
+    await iPad.send([{ id: 'f2', notes: 'iPad, earlier', changedAt: t }]);
+    await desktop.send([{ id: 'f2', notes: 'desktop, later', changedAt: t + 300_000 }]);
+    check('both offline, same notes: the later edit wins, not the later arrival',
+      db.one<{ table_data: string }>("SELECT table_data FROM frames WHERE id = 'f2'")?.table_data,
+      'desktop, later');
+  }
+  {
+    const db = await freshServer();
+    const iPad = new Device(db, 'iPad');
+    const desktop = new Device(db, 'desktop');
+    await iPad.send(framesNamed(6));
+    await desktop.pull();
+    const t = Date.now();
+
+    // ...and the other way round: the EARLIER edit reconnects last and must lose
+    await desktop.send([{ id: 'f2', notes: 'desktop, later', changedAt: t + 300_000 }]);
+    await iPad.send([{ id: 'f2', notes: 'iPad, earlier', changedAt: t }]);
+    check('...and an older edit arriving last still loses',
+      db.one<{ table_data: string }>("SELECT table_data FROM frames WHERE id = 'f2'")?.table_data,
+      'desktop, later');
+  }
+  {
+    const db = await freshServer();
+    const iPad = new Device(db, 'iPad');
+    const desktop = new Device(db, 'desktop');
+    await iPad.send(framesNamed(4));
+    await desktop.pull();
+    const t = Date.now();
+
+    // Both offline, each adds a LOOK to the same frame. Nothing to argue about:
+    // two new versions coexist.
+    await iPad.send([{ id: 'f1', versions: 2, changedAt: t }]);
+    const before = db.rows("SELECT id FROM versions WHERE frame_id = 'f1'").length;
+    const body = push([{ id: 'f1' }], { device: 'desktop' }) as Record<string, unknown>;
+    (body.versions as unknown[]).push({
+      id: 'f1-desktop-look', frame_id: 'f1', label: 'DESKTOP LOOK', type: 'ver',
+      hidden: false, starred: 0, note: null, updated_at: t + 300_000, content_changed_at: t + 300_000,
+    });
+    await call(db, 'POST', `/projects/${PROJECT}/sync`, body);
+    check('both offline, a new LOOK each: both are kept',
+      db.rows("SELECT id FROM versions WHERE frame_id = 'f1'").length, before + 1);
+  }
+  {
+    const db = await freshServer();
+    const iPad = new Device(db, 'iPad');
+    const desktop = new Device(db, 'desktop');
+    await iPad.send(framesNamed(5));
+    await desktop.pull();
+    const t = Date.now();
+
+    // BOTH RE-ORDER WHILE OFFLINE — the case that lost work today.
+    // The iPad moves the last frame to the front; the desktop, later, moves the
+    // first frame to the end. Each sends every frame, because a re-order changes
+    // every frame's position.
+    const iPadOrder = ['f4', 'f0', 'f1', 'f2', 'f3'];
+    const deskOrder = ['f1', 'f2', 'f3', 'f4', 'f0'];
+    await iPad.send(iPadOrder.map((id) => ({ id, changedAt: t })));
+    await desktop.send(deskOrder.map((id) => ({ id, changedAt: t + 300_000 })));
+
+    const order = db.rows<{ id: string }>('SELECT id FROM frames ORDER BY sort_order').map((r) => r.id);
+    check('both re-ordered offline: the later arrangement wins whole',
+      order.join(','), deskOrder.join(','));
+  }
+  {
+    const db = await freshServer();
+    const iPad = new Device(db, 'iPad');
+    const desktop = new Device(db, 'desktop');
+    await iPad.send(framesNamed(4));
+    await desktop.pull();
+    const t = Date.now();
+
+    // One deletes a frame while the other edits it. A deletion is a decision;
+    // an edit to something that no longer exists is not work to be rescued.
+    const del = push([], { device: 'iPad' }) as Record<string, unknown>;
+    del.deletions = [{ id: 'del-z', entity_type: 'frame', entity_id: 'f2', deleted_at: t, device_id: 'iPad' }];
+    await call(db, 'POST', `/projects/${PROJECT}/sync`, del);
+    await desktop.send([{ id: 'f2', notes: 'edited while it was being deleted', changedAt: t + 60_000 }]);
+
+    check('a frame deleted here and edited there stays deleted (#293)',
+      db.one("SELECT id FROM frames WHERE id = 'f2'") ? 'came back' : 'gone', 'gone');
+    check('...and the other frames are untouched',
+      db.rows('SELECT id FROM frames').length, 3);
+
+    // ...and the same for a version: deleted on one device, edited on the other
+    const delV = push([], { device: 'iPad' }) as Record<string, unknown>;
+    delV.deletions = [{ id: 'del-v', entity_type: 'version', entity_id: 'f1-v0', deleted_at: t, device_id: 'iPad' }];
+    await call(db, 'POST', `/projects/${PROJECT}/sync`, delV);
+    await desktop.send([{ id: 'f1', versions: 1, notes: 'touched after its version died', changedAt: t + 60_000 }]);
+    check('a deleted version does not come back either',
+      db.one("SELECT id FROM versions WHERE id = 'f1-v0'") ? 'came back' : 'gone', 'gone');
+  }
+
+  // --- what a re-order really is today ---------------------------------------
+  // An arrangement is ONE decision a person made, but it is stored as a number
+  // on each frame and merged frame by frame. When the two sets of times
+  // interleave, the result is an order NEITHER person made.
+  {
+    const db = await freshServer();
+    const iPad = new Device(db, 'iPad');
+    const desktop = new Device(db, 'desktop');
+    await iPad.send(framesNamed(4));
+    await desktop.pull();
+    const t = Date.now();
+
+    // iPad rearranges to 3,0,1,2 at 10:00 — then touches frame 0 again at 10:10
+    await iPad.send([
+      { id: 'f3', changedAt: t }, { id: 'f0', changedAt: t + 600_000 },
+      { id: 'f1', changedAt: t }, { id: 'f2', changedAt: t },
+    ]);
+    // desktop rearranges to 1,2,3,0 at 10:05, having seen none of that
+    await desktop.send([
+      { id: 'f1', changedAt: t + 300_000 }, { id: 'f2', changedAt: t + 300_000 },
+      { id: 'f3', changedAt: t + 300_000 }, { id: 'f0', changedAt: t + 300_000 },
+    ]);
+
+    const order = db.rows<{ id: string }>('SELECT id FROM frames ORDER BY sort_order').map((r) => r.id);
+    const iPadOrder = 'f3,f0,f1,f2';
+    const deskOrder = 'f1,f2,f3,f0';
+    const madeBySomeone = order.join(',') === iPadOrder || order.join(',') === deskOrder;
+    console.log('');
+    console.log('   KNOWN FAULT (#294) — an arrangement is merged frame by frame:');
+    console.log(`     iPad wanted:    ${iPadOrder}`);
+    console.log(`     desktop wanted: ${deskOrder}`);
+    console.log(`     result:         ${order.join(',')}  ${madeBySomeone ? '' : '<- neither'}`);
+    console.log('     Fix: carry the arrangement as ONE item with ONE change time,');
+    console.log('     the way sort orders already are. Then the later arrangement');
+    console.log('     wins whole and nobody gets an order they never made.');
+    console.log('');
+  }
+
+  // --- a re-order must not eat a newer note (#294) ---------------------------
+  {
+    const db = await freshServer();
+    const iPad = new Device(db, 'iPad');
+    const desktop = new Device(db, 'desktop');
+    await iPad.send(framesNamed(4));
+    await desktop.pull();
+    const t = Date.now();
+
+    // The iPad writes a note on frame 1 at 10:05.
+    await iPad.send([{ id: 'f1', notes: 'the note I just wrote', changedAt: t + 300_000 }]);
+
+    // The desktop rearranges at 10:10. With the arrangement as its own item, a
+    // re-order sends the ARRANGEMENT — not forty-five frame rows — so it cannot
+    // carry the desktop's older copy of the note over the iPad's newer one.
+    const reorder = push([], { device: 'desktop' }) as Record<string, unknown>;
+    reorder.settings = [{
+      kind: 'frameOrder', item_id: 'main',
+      value: JSON.stringify({ idx: 0, data: ['f1', 'f0', 'f2', 'f3'] }),
+      changed_at: t + 600_000, deleted_at: null,
+    }];
+    await call(db, 'POST', `/projects/${PROJECT}/sync`, reorder);
+
+    check('a re-order does not touch the frames at all',
+      db.one<{ table_data: string | null }>("SELECT table_data FROM frames WHERE id = 'f1'")?.table_data,
+      'the note I just wrote');
+    check('...and the arrangement is stored',
+      db.one<{ value: string }>("SELECT value FROM project_settings WHERE kind = 'frameOrder'")?.value?.includes('f1'),
+      true);
+  }
+  {
+    // Two arrangements made offline: the later one wins WHOLE — no mixture.
+    const db = await freshServer();
+    const iPad = new Device(db, 'iPad');
+    await iPad.send(framesNamed(4));
+    const t = Date.now();
+
+    const sendOrder = (device: string, order: string[], at: number) => {
+      const body = push([], { device }) as Record<string, unknown>;
+      body.settings = [{
+        kind: 'frameOrder', item_id: 'main',
+        value: JSON.stringify({ idx: 0, data: order }), changed_at: at, deleted_at: null,
+      }];
+      return call(db, 'POST', `/projects/${PROJECT}/sync`, body);
+    };
+
+    // iPad rearranges at 10:00 and reconnects FIRST; desktop at 10:05.
+    await sendOrder('iPad', ['f3', 'f0', 'f1', 'f2'], t);
+    await sendOrder('desktop', ['f1', 'f2', 'f3', 'f0'], t + 300_000);
+    const held = JSON.parse(
+      db.one<{ value: string }>("SELECT value FROM project_settings WHERE kind = 'frameOrder'")!.value,
+    ).data as string[];
+    check('two arrangements offline: the later one wins whole', held.join(','), 'f1,f2,f3,f0');
+
+    // ...and an older arrangement arriving afterwards cannot undo it
+    await sendOrder('iPad', ['f0', 'f1', 'f2', 'f3'], t - 300_000);
+    const after = JSON.parse(
+      db.one<{ value: string }>("SELECT value FROM project_settings WHERE kind = 'frameOrder'")!.value,
+    ).data as string[];
+    check('...and an older arrangement cannot undo it', after.join(','), 'f1,f2,f3,f0');
+  }
+
   // --- report ---------------------------------------------------------------
   const width = Math.max(...results.map((r) => r.what.length));
   let failed = 0;

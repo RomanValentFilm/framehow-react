@@ -219,6 +219,13 @@ export function getDirtyFrameIds(): ReadonlySet<string> { return _dirtyFrameIds;
 let _fingerprintsOut: (() => Record<string, string>) | null = null;
 let _fingerprintsIn: ((m: Record<string, string>) => void) | null = null;
 
+/** Told about a push that got no answer, so the connection can be watched.
+ *  Registered from accountFlow at boot — the two modules must not import each
+ *  other. */
+let _lastRememberedTraced = -1;
+let _watchForConnection: (() => void) | null = null;
+export function registerConnectionWatch(fn: () => void): void { _watchForConnection = fn; }
+
 export function registerFingerprintBridge(
   out: () => Record<string, string>,
   into: (m: Record<string, string>) => void,
@@ -352,6 +359,10 @@ export async function flushSyncNow(): Promise<void> {
   } catch (e: unknown) {
     const err = e as { status?: number };
     trace(`push FAILED status=${err?.status ?? '(no response)'}`);
+    // No answer at all is the one honest sign of being off — the browser's own
+    // opinion is often wrong. Start watching for the connection to come back
+    // (#298), so the check happens the moment it does.
+    if (!err?.status) _watchForConnection?.();
     if (err?.status === 409 && _pullFn) {
       // 409 conflict: another device pushed since our last sync.
       // Pull to merge (our _dirtyFrameIds protect local changes),
@@ -564,6 +575,15 @@ async function runAutosave(): Promise<void> {
     // Remember what the server already has, so reopening the app does not push
     // the entire project again.
     if (_fingerprintsOut) snap.pushedFingerprints = _fingerprintsOut();
+    // Say how much memory is going into the save. An iPad came back from a
+    // restart with NOTHING remembered about the server and, by the old rule,
+    // read that as a brand new project (#300). Whether the save was empty or
+    // the load lost it, this line and the one at boot tell us which.
+    const remembered = Object.keys(snap.pushedFingerprints ?? {}).length;
+    if (remembered !== _lastRememberedTraced) {
+      _lastRememberedTraced = remembered;
+      trace(`  saving: ${remembered} frame(s) remembered as matching the server`);
+    }
     // When each setting last changed, so a restart does not forget and start
     // claiming everything is new.
     snap.settingStamps = exportSettingStamps();

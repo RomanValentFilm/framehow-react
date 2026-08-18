@@ -359,6 +359,40 @@ projects.post("/:id/sync", async (c) => {
       return false;
     };
 
+    // THE DEAD STAY DEAD (#293).
+    //
+    // A frame deleted on one device, and edited on another that had not heard
+    // yet, used to come back: the tombstone was applied, then the other push
+    // wrote the row again. The edit is real work, but it is work on something
+    // that no longer exists — and a frame reappearing after being deleted is
+    // worse than an edit being dropped, because nobody can tell why it is there.
+    const tombstoned = new Set<string>();
+    for (const part of inChunks(payload.frames.map((f) => f.id))) {
+      const rows = await c.env.DB.prepare(
+        `SELECT entity_id FROM project_deletions
+          WHERE project_id = ? AND entity_type = 'frame'
+            AND entity_id IN (${part.map(() => "?").join(",")})`,
+      ).bind(project.id, ...part).all<{ entity_id: string }>();
+      for (const r of rows.results) tombstoned.add(r.entity_id);
+    }
+    const deadVersions = new Set<string>();
+    for (const part of inChunks(payload.versions.map((v) => v.id))) {
+      const rows = await c.env.DB.prepare(
+        `SELECT entity_id FROM project_deletions
+          WHERE project_id = ? AND entity_type = 'version'
+            AND entity_id IN (${part.map(() => "?").join(",")})`,
+      ).bind(project.id, ...part).all<{ entity_id: string }>();
+      for (const r of rows.results) deadVersions.add(r.entity_id);
+    }
+    if (tombstoned.size > 0 || deadVersions.size > 0) {
+      payload.frames = payload.frames.filter((f) => !tombstoned.has(f.id));
+      payload.versions = payload.versions.filter(
+        (v) => !deadVersions.has(v.id) && !tombstoned.has(v.frame_id));
+      const liveVersionIds = new Set(payload.versions.map((v) => v.id));
+      payload.images = payload.images.filter((i) => liveVersionIds.has(i.version_id));
+      payload.drawings = payload.drawings.filter((d) => liveVersionIds.has(d.version_id));
+    }
+
     const serverFrame = new Map(existing.results.map((r) => [r.id, r]));
     const accepted: typeof payload.frames = [];
     for (const f of payload.frames) {

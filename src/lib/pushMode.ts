@@ -14,7 +14,15 @@
 //
 // Kept in its own file so it can be tested on the bench.
 
+import { pushIsPartial, type DeviceMemory } from './sessionRules';
+
 export interface WhatWeKnow {
+  /** Does the app hold a cloud id for this project? This is the fact that
+   *  settles it. An id exists only because the server created the project, so
+   *  the server HAS seen it — whatever this device does or does not remember
+   *  about individual frames. Counting frames was a guess about the same
+   *  question; this is the answer (#300). */
+  hasCloudId: boolean;
   /** Frames whose exact content the server has confirmed. Emptied per frame
    *  when a pull keeps the local copy, because that copy still has to be sent. */
   confirmedFrames: number;
@@ -26,7 +34,14 @@ export interface WhatWeKnow {
 
 /** Has the server ever held any part of this project? */
 export function serverHasSeenProject(k: WhatWeKnow): boolean {
-  return k.confirmedFrames > 0 || k.framesTheServerHas > 0;
+  // ONE copy of this decision, in sessionRules, where the session bench drives
+  // it against the real server. A second copy here would drift from it, and the
+  // drift would show up as a wiped project months later.
+  return pushIsPartial({
+    cloudId: k.hasCloudId ? 'yes' : null,
+    confirmedFrames: k.confirmedFrames,
+    framesTheServerHas: k.framesTheServerHas,
+  } as DeviceMemory);
 }
 
 /** true = send only what changed. false = full replace. */

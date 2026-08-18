@@ -764,6 +764,10 @@ export function showThreeWayConflict(info: {
   /** When it was changed, shown under the who-line. */
   keepWhen: string;
   otherWhen: string;
+  /** The device alone, for the button (#296). "KEEP THIS VERSION" made you
+   *  work out which picture "this" meant; the button now says whose it is. */
+  keepDevice: string | null;
+  otherDevice: string | null;
   keepSrc: string;
   otherSrc: string;
   madeOffline: boolean;
@@ -805,8 +809,10 @@ export function showThreeWayConflict(info: {
     const row = document.createElement('div');
     row.style.cssText = 'display:flex;gap:12px;margin-bottom:12px;';
     for (const side of [
-      { who: info.keepWho, when: info.keepWhen, src: info.keepSrc, value: 'mine' as const },
-      { who: info.otherWho, when: info.otherWhen, src: info.otherSrc, value: 'theirs' as const },
+      { who: info.keepWho, when: info.keepWhen, src: info.keepSrc,
+        device: info.keepDevice, value: 'mine' as const },
+      { who: info.otherWho, when: info.otherWhen, src: info.otherSrc,
+        device: info.otherDevice, value: 'theirs' as const },
     ]) {
       const col = document.createElement('div');
       col.style.cssText = 'flex:1;min-width:0;display:flex;flex-direction:column;';
@@ -833,7 +839,9 @@ export function showThreeWayConflict(info: {
       col.appendChild(img);
 
       const pick = document.createElement('button');
-      pick.textContent = 'KEEP THIS VERSION';
+      pick.textContent = side.device
+        ? `KEEP ${side.device.toUpperCase()}'S VERSION`
+        : 'KEEP THIS VERSION';
       pick.style.cssText =
         'width:100%;margin-top:8px;padding:10px;background:#2a2a2a;border:1px solid #555;' +
         'border-radius:8px;color:#fff;font-size:12px;letter-spacing:.04em;cursor:pointer;';
