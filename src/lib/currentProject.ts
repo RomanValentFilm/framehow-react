@@ -227,6 +227,10 @@ export function registerFingerprintBridge(
   _fingerprintsIn = into;
 }
 
+/** The server's clock at the last answer, read the same indirect way (#284). */
+let _heardAtOut: (() => number) | null = null;
+export function registerHeardAtBridge(out: () => number): void { _heardAtOut = out; }
+
 /** Restore what the server already had, saved before the app was closed. */
 export function adoptPushedFingerprints(m: Record<string, string> | undefined): void {
   if (m && _fingerprintsIn) _fingerprintsIn(m);
@@ -564,6 +568,9 @@ async function runAutosave(): Promise<void> {
     // claiming everything is new.
     snap.settingStamps = exportSettingStamps();
     snap.contentStamps = exportChangeStamps();
+    // When the server last answered. Saved so that reopening the app can ask
+    // for changes only, instead of the whole project (#284).
+    if (_heardAtOut) snap.heardAt = _heardAtOut();
     if (snap.frames.length === 0 && cp.name === null) {
       await clearSnapshot();
       return;

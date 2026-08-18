@@ -225,7 +225,11 @@ projects.get("/:id/sync", async (c) => {
   const id = c.req.param("id");
   const project = await loadOwnedProject(c.env.DB, me.id, id);
   if (!project) return jsonError(c, 404, "not_found", "Project not found.");
-  return c.json(await loadProjectTree(c.env.DB, project.id));
+  // ?since=<server time> — only what has reached the server after that moment.
+  // Without it, the whole project, exactly as before (#280).
+  const raw = c.req.query("since");
+  const since = raw !== undefined && /^\d+$/.test(raw) ? Number(raw) : undefined;
+  return c.json(await loadProjectTree(c.env.DB, project.id, since));
 });
 
 // ---------------------------------------------------------------------------
@@ -333,12 +337,19 @@ projects.post("/:id/sync", async (c) => {
       for (const m of mains.results) serverMain.set(m.fid, { r2_key: m.r2_key, drawing: m.drawing });
     }
 
-    /** Does this push actually change the frame's picture, strokes or text?
-     *  If not, there is nothing to argue about — whatever else moved (needs,
-     *  notes, setup, a tag, the label) simply takes the newer value. */
-    const touchesContested = (f: typeof payload.frames[number], sf: ServerFrame): boolean => {
-      if ((f.text_content ?? null) !== (sf.text_content ?? null)) return true;
-      if ((f.table_data ?? null) !== (sf.table_data ?? null)) return true;
+    /**
+     * Is this a change worth STOPPING the user for?
+     *
+     * Only two things are: the frame's picture, and the strokes drawn on it.
+     * Those cannot be merged and cannot be judged by a clock — losing either
+     * one loses work that was drawn by hand.
+     *
+     * Everything else settles by time, including all the writing (#282): the
+     * text under the frame and the notes card. Text used to raise the picker
+     * too, which meant being interrupted over a typo fixed in two places. The
+     * later wording wins, as it does for needs, labels and tags.
+     */
+    const touchesContested = (f: typeof payload.frames[number]): boolean => {
       const mainV = payload.versions.find((v) => v.frame_id === f.id && v.type === "main");
       const here = serverMain.get(f.id) ?? { r2_key: null, drawing: null };
       const inR2 = mainV ? (payload.images.find((i) => i.version_id === mainV.id)?.r2_key ?? null) : null;
@@ -354,7 +365,7 @@ projects.post("/:id/sync", async (c) => {
       const sf = serverFrame.get(f.id);
       // The rule itself lives in lib/syncDecide.ts so it can be tested on a
       // bench instead of on two devices. Only the consequences are here.
-      const outcome = decideFrame(f, sf, () => touchesContested(f, sf as ServerFrame));
+      const outcome = decideFrame(f, sf, () => touchesContested(f));
 
       if (outcome === 'ask') {
         rejectedFrames.push({
@@ -1143,9 +1154,39 @@ interface ProjectTree {
   drawings: Array<{ id: string; version_id: string; drawing_data: string; updated_at: number }>;
   deletions: Array<{ id: string; entity_type: string; entity_id: string; deleted_at: number; device_id: string | null }>;
   settings: Array<{ kind: string; item_id: string; value: string | null; changed_at: number; deleted_at: number | null }>;
+  /** The server's own clock at the moment it answered. A device stores this and
+   *  sends it back as `since` next time — never its own clock, which may be
+   *  minutes out and would silently skip changes (#280). */
+  server_now: number;
+  /** false = only what changed since `since`. true = the whole project. */
+  full: boolean;
 }
 
-async function loadProjectTree(db: D1Database, projectId: string): Promise<ProjectTree> {
+/** Deletions are swept after 30 days, so beyond that we can no longer tell
+ *  "deleted while you were away" from "never existed". A device that has been
+ *  gone longer has to take the whole project again. */
+const TOMBSTONE_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * @param since  Only rows that reached the server AFTER this moment. Undefined,
+ *   zero, or older than the tombstone window means the whole project.
+ *
+ * The filter is on ARRIVAL, not on when the change was made — deliberately. A
+ * frame edited on an offline iPad on Monday and delivered on Wednesday must
+ * still reach a device that pulled on Tuesday. Filtering on the edit time would
+ * leave that work sitting on the server, visible to nobody.
+ */
+async function loadProjectTree(db: D1Database, projectId: string, since?: number): Promise<ProjectTree> {
+  const usable = typeof since === 'number' && since > 0 && since > Date.now() - TOMBSTONE_WINDOW_MS;
+  const from = usable ? since : 0;
+  // AT or later, not later. A row written in the very millisecond the last
+  // answer was given would otherwise fall between the two and never be
+  // delivered — rare, silent, and impossible to reproduce on demand. The cost
+  // of >= is that a row on the boundary can arrive twice, which changes
+  // nothing: applying the same row again leaves the same result.
+  const only = (column: string) => (usable ? ` AND ${column} >= ?` : '');
+  const arg = usable ? [from] : [];
+
   // Use subqueries instead of IN (?, ?, ...) to avoid D1's 100-variable limit.
   // All queries filter through project_id, so only 1 bind param each.
   const [projectResult, stripsResult, framesResult, versionsResult, imagesResult, drawingsResult, deletionsResult, settingsResult] = await db.batch([
@@ -1158,15 +1199,15 @@ async function loadProjectTree(db: D1Database, projectId: string): Promise<Proje
     ).bind(projectId),
     db.prepare(
       `SELECT id, strip_id, label, sort_order, crop_w, crop_h, text_content, table_data, version_label, strip_labels, hidden, note, scribbles, updated_at, needs, notes, setup_id, content_changed_at
-         FROM frames WHERE strip_id IN (SELECT id FROM strips WHERE project_id = ?)
+         FROM frames WHERE strip_id IN (SELECT id FROM strips WHERE project_id = ?)${only('updated_at')}
         ORDER BY sort_order`,
-    ).bind(projectId),
+    ).bind(projectId, ...arg),
     db.prepare(
       `SELECT id, frame_id, label, type, hidden, starred, note, updated_at, tags, content_changed_at
          FROM versions WHERE frame_id IN (
            SELECT f.id FROM frames f JOIN strips s ON s.id = f.strip_id WHERE s.project_id = ?
-         ) ORDER BY updated_at`,
-    ).bind(projectId),
+         )${only('updated_at')} ORDER BY updated_at`,
+    ).bind(projectId, ...arg),
     db.prepare(
       `SELECT id, version_id, r2_key, width, height, size_bytes, content_type, updated_at
          FROM images WHERE version_id IN (
@@ -1174,8 +1215,8 @@ async function loadProjectTree(db: D1Database, projectId: string): Promise<Proje
            JOIN frames f ON f.id = v.frame_id
            JOIN strips s ON s.id = f.strip_id
            WHERE s.project_id = ?
-         )`,
-    ).bind(projectId),
+         )${only('updated_at')}`,
+    ).bind(projectId, ...arg),
     db.prepare(
       `SELECT id, version_id, drawing_data, updated_at
          FROM drawings WHERE version_id IN (
@@ -1183,18 +1224,18 @@ async function loadProjectTree(db: D1Database, projectId: string): Promise<Proje
            JOIN frames f ON f.id = v.frame_id
            JOIN strips s ON s.id = f.strip_id
            WHERE s.project_id = ?
-         )`,
-    ).bind(projectId),
+         )${only('updated_at')}`,
+    ).bind(projectId, ...arg),
     // Tombstones: only return deletions from the last 30 days
     db.prepare(
       `SELECT id, entity_type, entity_id, deleted_at, device_id
          FROM project_deletions
         WHERE project_id = ? AND deleted_at > ?`,
-    ).bind(projectId, Date.now() - 30 * 24 * 60 * 60 * 1000),
+    ).bind(projectId, Math.max(from - 1, Date.now() - TOMBSTONE_WINDOW_MS)),
     db.prepare(
       `SELECT kind, item_id, value, changed_at, deleted_at
-         FROM project_settings WHERE project_id = ?`,
-    ).bind(projectId),
+         FROM project_settings WHERE project_id = ?${only('changed_at')}`,
+    ).bind(projectId, ...arg),
   ]);
 
   const project = (projectResult.results as any[])[0] as ProjectTree["project"];
@@ -1207,6 +1248,8 @@ async function loadProjectTree(db: D1Database, projectId: string): Promise<Proje
     drawings: drawingsResult.results as ProjectTree["drawings"],
     deletions: deletionsResult.results as ProjectTree["deletions"],
     settings: settingsResult.results as ProjectTree["settings"],
+    server_now: Date.now(),
+    full: !usable,
   };
 }
 

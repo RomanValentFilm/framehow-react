@@ -39,6 +39,7 @@ import {
   adoptDirtyFrameIds,
   adoptPushedFingerprints,
   registerFingerprintBridge,
+  registerHeardAtBridge,
   registerPullFn,
   setCurrentProject,
   setProjectName,
@@ -54,6 +55,7 @@ import {
 import { trace } from './syncTrace';
 import { frameChangedAt, versionChangedAt, importChangeStamps, stampChangedContent } from './changeStamps';
 import { shouldSendOnlyChanges } from './pushMode';
+import { mergeDelta, lastMergeRefusal, answerIsSafeToApply, skeletonFromDevice, untouchedByDelta, type MergeableTree } from './deltaMerge';
 import { settingsForPush, adoptSettingsFromServer, applySettingsToStore, importSettingStamps, stampChangedSettings, seedSettings, settingsNeedPush, type SettingItem } from './projectSettings';
 import { applySnapshotToStore, loadSnapshot, snapshotFromStore, listPending, isArchived, getPending, markPendingUploaded, saveProjectListCache, loadProjectListCache, deletePending, recoverPending, isDeletedCopy, requestDurableStorage } from './persistence';
 import type { PendingRecord } from './persistence';
@@ -1386,6 +1388,11 @@ interface CloudProjectTree {
   deletions?: Array<{ id: string; entity_type: string; entity_id: string; deleted_at: number; device_id: string | null }>;
   /** Project settings, one entry per item. Absent from an older server. */
   settings?: SettingItem[];
+  /** The server's clock when it answered. Sent back as `since` next time — the
+   *  device's own clock is never used for this (#280). */
+  server_now?: number;
+  /** false = only what changed since `since`. Absent or true = the whole thing. */
+  full?: boolean;
 }
 
 function uuid(): string {
@@ -2196,6 +2203,9 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
 
   // Learn the server's new timestamps, so the next push is judged correctly.
   for (const sf of res.frames ?? []) _serverFrameTimes.set(sf.id, sf.updated_at);
+  // The reply is the whole project as the server now holds it. Standing on it
+  // means the next pull can ask only for what changed after this moment (#280).
+  if (cp.projectId && res.frames) holdTree(cp.projectId, res as CloudProjectTree);
   // The reply carries the MERGED settings — ours where ours were newer, the
   // server's where they were not. Take both the values and their stamps, or
   // this device would keep pushing its older copy for ever.
@@ -3613,6 +3623,84 @@ let pullInFlight = false;
 let lastPullAt = 0;
 const PULL_COOLDOWN_MS = 3_000; // Don't check more often than every 3s
 
+// ---------------------------------------------------------------------------
+// ASK ONLY FOR WHAT CHANGED (#280)
+//
+// A pull used to fetch the whole project — every frame, version, image and
+// drawing — to answer "has anything happened?". On a 45-frame project that is
+// 500+ rows read, on every pull, for a one-word edit somewhere.
+//
+// Now the device says when it last heard, and the server sends only what has
+// arrived since. The delta is folded into the copy held here, which produces a
+// whole project again, and everything downstream — the conflict check, the
+// keep-local merge, the rebuild — runs on that, unchanged.
+//
+// Held in memory only, on purpose. After a restart there is nothing to fold
+// into, so the first pull asks for everything, once. That is the safe way to be
+// wrong: a full pull always works.
+// ---------------------------------------------------------------------------
+
+/** Turn deltas off in one line if a device ever misbehaves. */
+const DELTA_PULL = true;
+
+let _heldTree: CloudProjectTree | null = null;
+let _heldTreeProjectId: string | null = null;
+/** The SERVER's clock as of its last answer. Never this device's. */
+let _heardAt = 0;
+
+/** Remember a whole project as the ground this device stands on. */
+function holdTree(projectId: string, tree: CloudProjectTree): void {
+  _heldTree = tree;
+  _heldTreeProjectId = projectId;
+  if (tree.server_now) _heardAt = tree.server_now;
+}
+
+/** The server's clock at our last answer — saved with the project (#284). */
+export function getHeardAt(): number { return _heardAt; }
+export function adoptHeardAt(at: number | undefined): void {
+  if (typeof at === 'number' && at > 0) _heardAt = at;
+}
+
+export function forgetHeldTree(): void {
+  _heldTree = null;
+  _heldTreeProjectId = null;
+  _heardAt = 0;
+}
+
+/**
+ * Can this pull ask for changes only?
+ *
+ * Two ways to have ground to stand on: the copy held since the last answer, or
+ * — after a restart, when that copy is gone but the project is still on the
+ * device — the frames themselves (#285). Either way the one thing that cannot
+ * be guessed is WHEN we last heard, which is why it is saved (#284).
+ */
+function deltaIsSafe(projectId: string): boolean {
+  if (!DELTA_PULL || _heardAt <= 0) return false;
+  if (_heldTree !== null && _heldTreeProjectId === projectId) return true;
+  return useStore.getState().frames.some((f) => f.serverFrameId);
+}
+
+/** The device's own frames, named and placed, for a delta to fold into. */
+function skeletonOfWhatIsHere(stripId: string): MergeableTree {
+  const s = useStore.getState();
+  const rows = s.frames.map((f) => {
+    const versionIds: string[] = [];
+    for (const stripKey of Object.keys(s.stripVersions)) {
+      for (const v of s.stripVersions[stripKey]?.[f.id] ?? []) {
+        if (v.serverVersionId) versionIds.push(v.serverVersionId);
+      }
+    }
+    return {
+      serverFrameId: f.serverFrameId,
+      label: f.label,
+      mainVersionId: f.serverMainVersionId,
+      versionIds,
+    };
+  });
+  return skeletonFromDevice(rows, stripId, _heardAt);
+}
+
 // Image-count safeguard: tracks how many images the project had after the last
 // successful sync or pull. If the count drops to 0 unexpectedly, we refuse to
 // push — this prevents a corrupt (imageless) state from overwriting good cloud data.
@@ -3782,6 +3870,9 @@ export function resetProjectSyncGuards(): void {
   _lastKnownImageCount = 0;
   _lastKnownFrameCount = 0;
   _lastPushedFingerprints.clear();
+  // ...including the copy the delta pull folds into. Keeping it would let one
+  // project's frames be merged into another's (#280).
+  forgetHeldTree();
 }
 
 /**
@@ -4058,10 +4149,39 @@ async function tryPullFromCloud(force = false): Promise<void> {
   setPullInFlight(true);
   lastPullAt = Date.now();
   try {
-    const tree = await api.get<CloudProjectTree>(
-      `/projects/${encodeURIComponent(cp.projectId)}/sync`,
+    // Ask for everything, or only for what has changed since we last heard —
+    // and fold the answer into what we already hold, so the rest of this
+    // function always works on a whole project (#280).
+    const asDelta = deltaIsSafe(cp.projectId);
+    const raw = await api.get<CloudProjectTree>(
+      `/projects/${encodeURIComponent(cp.projectId)}/sync${asDelta ? `?since=${_heardAt}` : ''}`,
       getToken(),
     );
+    let tree = raw;
+    // Frames the answer did not mention. Their copy on this device is kept
+    // exactly as it is — nothing about them is re-read or re-mapped (#285).
+    let untouched: ReadonlySet<string> | undefined;
+    if (asDelta && raw.full === false) {
+      const held = (_heldTree && _heldTreeProjectId === cp.projectId)
+        ? (_heldTree as unknown as MergeableTree)
+        : skeletonOfWhatIsHere(raw.strips[0]?.id ?? '');
+      const folded = mergeDelta(held, raw as unknown as MergeableTree);
+      const refusal = lastMergeRefusal();
+      if (refusal) {
+        // The fold would have lost something. Do not show it; ask for the whole
+        // project next time instead of folding onto ground we do not trust.
+        trace(`  REFUSED a delta: ${refusal}`);
+        forgetHeldTree();
+        return;
+      }
+      untouched = untouchedByDelta(folded, raw as unknown as MergeableTree);
+      tree = folded as unknown as CloudProjectTree;
+    }
+    if (asDelta && raw.full === false) {
+      const changed = raw.frames.length + raw.versions.length + (raw.settings?.length ?? 0) + (raw.deletions?.length ?? 0);
+      if (changed > 0) trace(`  asked for changes only: ${changed} row(s) instead of the whole project`);
+    }
+    holdTree(cp.projectId, tree);
     const remoteUpdatedAt = tree.project.updated_at;
     const localUpdatedAt = lastKnownUpdatedAt ?? cp.lastSavedAt ?? 0;
 
@@ -4107,6 +4227,7 @@ async function tryPullFromCloud(force = false): Promise<void> {
       // Detect same-frame conflicts: dirty locally AND changed in cloud
       // ---------------------------------------------------------------
       let keepLocalIds: ReadonlySet<string> | undefined;
+      // Frames the answer left out are kept exactly as they are here (#283).
 
       if (hasDirtyFrames) {
         if (progressBar) progressBar.style.width = '20%';
@@ -4198,6 +4319,66 @@ async function tryPullFromCloud(force = false): Promise<void> {
         }
       }
 
+      // ---------------------------------------------------------------
+      // NOTHING VANISHES (#283)
+      //
+      // The rebuild below takes this answer as the truth, so a frame missing
+      // from it comes off the screen — and off the device at the next save.
+      //
+      // A frame may only disappear because something deleted it and SAID SO.
+      // If the answer is missing a frame nothing deleted, that frame is put
+      // back into the answer and marked keep-local, so this device's copy of it
+      // survives untouched. Everything else in the answer still applies: new
+      // frames from the other device still arrive, changes still land. Refusing
+      // the whole answer would have thrown away good work to protect the rest.
+      //
+      // This is checked on EVERY pull, whole or delta. The wipes that cost days
+      // came through whole pulls.
+      // ---------------------------------------------------------------
+      let rescued = new Set<string>();
+      {
+        const here = state().frames;
+        const onScreen = here.map((f) => f.serverFrameId).filter(Boolean) as string[];
+        const verdict = answerIsSafeToApply(
+          onScreen,
+          tree.frames.map((f) => f.id),
+          (tree.deletions ?? []).filter((d) => d.entity_type === 'frame').map((d) => d.entity_id),
+        );
+        if (!verdict.safe) {
+          trace(`  KEEPING ${verdict.missing.length} frame(s) the answer left out and nothing deleted`);
+          trace(`  kept: ${verdict.missing.slice(0, 6).join(', ')}`);
+          console.warn('[sync] answer was missing frames nothing deleted — keeping them', verdict.missing);
+          rescued = new Set(verdict.missing);
+          const stripId = tree.strips[0]?.id ?? '';
+          for (const id of verdict.missing) {
+            const local = here.find((f) => f.serverFrameId === id);
+            if (!local) continue;
+            // A place-holder row, just enough for the rebuild to walk past it.
+            // Its content is never read: keep-local means this device's own copy
+            // of the frame is the one that is kept.
+            tree.frames.push({
+              id, strip_id: stripId, label: local.label ?? '', sort_order: here.indexOf(local),
+              crop_w: local.cropW ?? null, crop_h: local.cropH ?? null,
+              text_content: null, table_data: null, version_label: null, strip_labels: null,
+              hidden: 0, note: null, scribbles: null, updated_at: 0, content_changed_at: null,
+            } as unknown as CloudProjectTree['frames'][number]);
+          }
+          // Whatever we were standing on was wrong. Ask for the whole project
+          // next time rather than folding onto bad ground.
+          forgetHeldTree();
+        }
+      }
+
+      // Frames to keep exactly as this device has them:
+      //   - rescued: the answer left them out and nothing deleted them (#283).
+      //     They are not on the server, so they still need sending.
+      //   - untouched: the delta simply did not mention them (#285). They match
+      //     the server already — sending them again would undo the whole point.
+      const keepAsIs = new Set([...(untouched ?? []), ...rescued]);
+      if (keepAsIs.size > 0) {
+        keepLocalIds = new Set([...(keepLocalIds ?? []), ...keepAsIs]);
+      }
+
       // Close sort-edit view before applying cloud tree
       if (state().sortEditingId) closeSortMode();
       // System action: all setState calls inside are NOT user changes
@@ -4247,9 +4428,14 @@ async function tryPullFromCloud(force = false): Promise<void> {
       // never pushed them: no conflict, no picker, and the two devices quietly
       // diverged. Keep them marked as outstanding.
       adoptFingerprintsFromStore();
-      if (keepLocalIds && keepLocalIds.size > 0) {
-        for (const id of keepLocalIds) forgetPushedFingerprint(id);
-        trace(`  ${keepLocalIds.size} kept-local frame(s) still to send`);
+      // Only the frames that really are unsent get marked as outstanding. A
+      // frame kept because the delta did not mention it MATCHES the server —
+      // marking it would push the whole project back up on every pull and undo
+      // the saving entirely (#285).
+      const stillToSend = [...(keepLocalIds ?? [])].filter((id) => !untouched?.has(id));
+      if (stillToSend.length > 0) {
+        for (const id of stillToSend) forgetPushedFingerprint(id);
+        trace(`  ${stillToSend.length} kept-local frame(s) still to send`);
         setTimeout(() => void flushSyncNow(), 400);
       }
 
@@ -4284,6 +4470,7 @@ export async function bootstrapAccountSystem(): Promise<void> {
   // 0. Register cloud sync and pull-on-focus.
   registerCloudSync(syncCurrentToServer);
   registerFingerprintBridge(exportPushedFingerprints, importPushedFingerprints);
+  registerHeardAtBridge(getHeardAt);
   // Ask iOS not to clear our storage after a week of not opening the app —
   // that would take offline projects with it.
   void requestDurableStorage();
@@ -4322,6 +4509,7 @@ export async function bootstrapAccountSystem(): Promise<void> {
         adoptPushedFingerprints(snap.pushedFingerprints);  // no needless full push
         importSettingStamps(snap.settingStamps);   // remember when settings changed
         importChangeStamps(snap.contentStamps);    // ...and when frames/versions did
+        adoptHeardAt(snap.heardAt);                // ...and when we last heard (#284)
         applySnapshotToStore(snap);
         // An older snapshot has no settings stamps. Take the first look right
         // here (#264) rather than let the first save do it, or whatever the user

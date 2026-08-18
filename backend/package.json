@@ -10,7 +10,9 @@
     "db:migrate:local": "wrangler d1 migrations apply framehow-db --local",
     "db:migrate:remote": "wrangler d1 migrations apply framehow-db --remote",
     "db:reset:local": "rm -rf .wrangler/state/v3/d1 && npm run db:migrate:local",
-    "bench": "node --experimental-strip-types test/sync-bench.ts"
+    "bench": "npm run bench:rules && npm run bench:server",
+    "bench:rules": "node --experimental-strip-types test/sync-bench.ts",
+    "bench:server": "node --experimental-strip-types --import ./test/register.mjs test/server-bench.ts"
   },
   "dependencies": {
     "hono": "^4.12.33"

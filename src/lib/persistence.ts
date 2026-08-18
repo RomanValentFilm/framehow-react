@@ -44,6 +44,13 @@ export interface CurrentProjectSnapshot {
   /** When each frame and version was last changed on this device, so being
    *  offline across a restart still orders edits honestly. */
   contentStamps?: Record<string, { fp: string; at: number }>;
+  /** The SERVER's clock as of the last answer this device received (#284).
+   *
+   *  Saved with the project so that reopening the app does not throw away the
+   *  one fact needed to ask "what changed since?". Without it the first pull
+   *  after every restart asked for the whole project — every frame, version and
+   *  picture — to learn that nothing had happened. */
+  heardAt?: number;
   /** This project's identity ON THIS DEVICE. Restored on boot so a project
    *  that has never reached the cloud keeps the same key across restarts —
    *  otherwise reopening it would file the same work a second time. */

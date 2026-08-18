@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc -b && vite build && node scripts/postbuild.mjs",
     "preview": "vite preview",
-    "bench": "tsc test/needs-bench.ts --module commonjs --moduleResolution node --target es2022 --esModuleInterop --skipLibCheck --outDir .bench --types node && node -e \"require('fs').writeFileSync('.bench/package.json','{\\\"type\\\":\\\"commonjs\\\"}')\" && node -r ./test/shim.cjs .bench/test/needs-bench.js"
+    "bench": "npm run bench:app && npm run bench:delta",
+    "bench:app": "tsc test/needs-bench.ts test/delta-bench.ts --module commonjs --moduleResolution node --target es2022 --esModuleInterop --skipLibCheck --outDir .bench --types node && node -e \"require('fs').writeFileSync('.bench/package.json','{\\\"type\\\":\\\"commonjs\\\"}')\" && node -r ./test/shim.cjs .bench/test/needs-bench.js",
+    "bench:delta": "tsc test/needs-bench.ts test/delta-bench.ts --module commonjs --moduleResolution node --target es2022 --esModuleInterop --skipLibCheck --outDir .bench --types node && node -e \"require('fs').writeFileSync('.bench/package.json','{\\\"type\\\":\\\"commonjs\\\"}')\" && node -r ./test/shim.cjs .bench/test/delta-bench.js"
   },
   "dependencies": {
     "jspdf": "^2.5.2",
