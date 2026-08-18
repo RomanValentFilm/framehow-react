@@ -5,17 +5,30 @@
 // find out what it does was to pick up the iPad. Four attempts at the same rule
 // (#256, #257, #259, #261) went out untested because of that. Same code, moved.
 //
-// Three answers, and nothing else:
+// TWO answers, and nothing else (#303):
 //   accept — write what arrived
 //   stale  — the server's copy is newer; keep it and tell the pusher
-//   ask    — both sides changed the same picture/strokes/text blind; picker
+//
+// There used to be a third, `ask`: two devices changing the same picture blind
+// put a picker on screen and made the user choose. It is gone, by decision.
+//
+// A main frame now settles by time like everything else. The reason is not that
+// the picker was wrong — it is that answering "did you see my copy before you
+// changed yours?" costs a number per frame, carried through every push, every
+// pull, every restart. That number was lost or invented on reload again and
+// again, and each time the server answered honestly and asked a question nobody
+// could make sense of: one device, no other device switched on, choose between
+// two pictures. The machinery cost more than it protected.
+//
+// The shooting-order picker stays: an order is a long list nobody can eyeball,
+// and two people rearranging one blind is a real decision, not a collision.
 
-export type FrameOutcome = 'accept' | 'stale' | 'ask';
+export type FrameOutcome = 'accept' | 'stale';
 
 /** The frame as it arrived in the push. */
 export interface IncomingFrame {
-  /** What the pusher believed the server's `updated_at` was. Undefined = an
-   *  older app that does not send it. */
+  /** What the pusher believed the server's `updated_at` was. Nothing reads it
+   *  any more (#303) — kept only so an older app's push still parses. */
   base_updated_at?: number;
   /** When the change was actually MADE on that device. Null/undefined = not
    *  known (older app, or a row written before this existed). */
@@ -32,25 +45,14 @@ export interface HeldFrame {
 }
 
 /**
- * @param held         the server's row, or undefined if it has never seen this frame
- * @param touchesContested  does this push change the frame's picture, strokes or
- *                          text? Passed in as a function because answering it
- *                          needs the main version, its image and its drawing —
- *                          none of which belong in this decision.
+ * @param held  the server's row, or undefined if it has never seen this frame
  */
 export function decideFrame(
   incoming: IncomingFrame,
   held: HeldFrame | undefined,
-  touchesContested: () => boolean,
 ): FrameOutcome {
   // Unknown to the server = a frame created on this device. Always taken.
   if (!held) return 'accept';
-
-  // Did the frame move under this device since it last heard about it? That is
-  // the only thing worth ASKING about, and only for the picture, the strokes
-  // and the text.
-  const moved = incoming.base_updated_at !== undefined && held.updated_at > incoming.base_updated_at;
-  if (moved && touchesContested()) return 'ask';
 
   // NEWER WINS, checked ALWAYS — not only when the frame moved. It used to sit
   // inside the "moved" branch, so once a device had learned the server's

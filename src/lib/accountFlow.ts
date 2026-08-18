@@ -57,7 +57,7 @@ import { trace } from './syncTrace';
 import { frameChangedAt, versionChangedAt, importChangeStamps, stampChangedContent, seedContentStamps } from './changeStamps';
 import { shouldSendOnlyChanges } from './pushMode';
 import { serverHasSomethingNew, type DeviceMemory } from './sessionRules';
-import { mergeDelta, lastMergeRefusal, answerIsSafeToApply, skeletonFromDevice, untouchedByDelta, type MergeableTree } from './deltaMerge';
+import { mergeDelta, lastMergeRefusal, answerIsSafeToApply, untouchedByDelta, type MergeableTree } from './deltaMerge';
 import { settingsForPush, adoptSettingsFromServer, applySettingsToStore, importSettingStamps, stampChangedSettings, seedSettings, settingsNeedPush, reconcileRestoredSettings, type SettingItem } from './projectSettings';
 import { applySnapshotToStore, loadSnapshot, snapshotFromStore, listPending, isArchived, getPending, markPendingUploaded, saveProjectListCache, loadProjectListCache, deletePending, recoverPending, isDeletedCopy, requestDurableStorage } from './persistence';
 import type { PendingRecord } from './persistence';
@@ -3479,11 +3479,20 @@ let _lastReconnectCheck = 0;
 
 async function checkServerAfterReconnect(): Promise<void> {
   const cp = getCurrentProject();
-  if (!cp.projectId || !isLoggedIn() || !navigator.onLine) return;
+  // NOT gated on being signed in — that is one of the things this repairs (#304).
+  if (!cp.projectId || !navigator.onLine || !getToken()) return;
   if (Date.now() - _lastReconnectCheck < 3000) return;   // event AND watch fired
   _lastReconnectCheck = Date.now();
 
   trace('back online — asking the server what it has');
+  // A device that STARTED offline never learned who it was, and everything that
+  // syncs asks that first. Ask again now, or it stays a stranger to its own
+  // account until somebody reloads it (#304).
+  if (!isLoggedIn()) {
+    await loadCurrentUser();
+    trace(`  who am I: ${isLoggedIn() ? 'signed in now' : 'still unknown'}`);
+  }
+  if (!isLoggedIn()) return;
   // Send first. Anything made offline goes up now rather than in forty seconds,
   // and the pull that follows is not held back by our own unsent work.
   try { await flushSyncNow(); } catch { /* still unreachable */ }
@@ -3797,29 +3806,26 @@ export function forgetHeldTree(): void {
  */
 function deltaIsSafe(projectId: string): boolean {
   if (!DELTA_PULL || _heardAt <= 0) return false;
-  if (_heldTree !== null && _heldTreeProjectId === projectId) return true;
-  return useStore.getState().frames.some((f) => f.serverFrameId);
+  // ONE WAY ONLY: the copy held since the last answer (#306).
+  //
+  // There used to be a second — after a restart, when that copy is gone, a
+  // SKELETON built from the frames on the device (#285). It cost two days. A
+  // skeleton has names and places but not content, and the fold keeps its rows
+  // for everything the delta does not mention, so whatever the skeleton leaves
+  // out becomes the truth:
+  //
+  //   #302  it left out the server's times, and every push then claimed to have
+  //         seen nothing, so the server raised a picker against the same device
+  //   #306  it left out each version's TYPE, so the apply crashed on
+  //         `type.startsWith` — every pull, on every reload, on both devices
+  //
+  // Both are the same mistake: a partial copy standing in for a real one. The
+  // next missing field would be the third. So after a restart the first pull
+  // asks for the whole project — one honest answer — and delta pulls resume
+  // from there, folded onto something real.
+  return _heldTree !== null && _heldTreeProjectId === projectId;
 }
 
-/** The device's own frames, named and placed, for a delta to fold into. */
-function skeletonOfWhatIsHere(stripId: string): MergeableTree {
-  const s = useStore.getState();
-  const rows = s.frames.map((f) => {
-    const versionIds: string[] = [];
-    for (const stripKey of Object.keys(s.stripVersions)) {
-      for (const v of s.stripVersions[stripKey]?.[f.id] ?? []) {
-        if (v.serverVersionId) versionIds.push(v.serverVersionId);
-      }
-    }
-    return {
-      serverFrameId: f.serverFrameId,
-      label: f.label,
-      mainVersionId: f.serverMainVersionId,
-      versionIds,
-    };
-  });
-  return skeletonFromDevice(rows, stripId, _heardAt);
-}
 
 // Image-count safeguard: tracks how many images the project had after the last
 // successful sync or pull. If the count drops to 0 unexpectedly, we refuse to
@@ -4259,9 +4265,12 @@ async function tryPullFromCloud(force = false): Promise<void> {
   // frame, so the answer was "nothing pending" and the pull went ahead and
   // replaced those settings with the server's. Unsent work, wiped without a
   // word. Settings now count as pending work too.
-  if (!force && (getDirtyFrameIds().size > 0 || projectSettingsUnsent())) {
+  // Unsent FRAMES hold a pull back. Unsent settings do not (#305) — see
+  // pullIsHeldBack in sessionRules for why holding them back protected nothing
+  // and deadlocked a reloaded device.
+  if (!force && getDirtyFrameIds().size > 0) {
     await flushSyncNow();
-    if (getDirtyFrameIds().size > 0 || projectSettingsUnsent()) {
+    if (getDirtyFrameIds().size > 0) {
       // Say it once, not once per attempt. A stuck push retries hard enough to
       // write this line hundreds of times a second and bury everything else.
       if (Date.now() - _lastHeldBackTrace > 5000) {
@@ -4289,9 +4298,9 @@ async function tryPullFromCloud(force = false): Promise<void> {
     // exactly as it is — nothing about them is re-read or re-mapped (#285).
     let untouched: ReadonlySet<string> | undefined;
     if (asDelta && raw.full === false) {
-      const held = (_heldTree && _heldTreeProjectId === cp.projectId)
-        ? (_heldTree as unknown as MergeableTree)
-        : skeletonOfWhatIsHere(raw.strips[0]?.id ?? '');
+      // deltaIsSafe guarantees the held copy is here; a delta is never asked for
+      // without it (#306).
+      const held = _heldTree as unknown as MergeableTree;
       const folded = mergeDelta(held, raw as unknown as MergeableTree);
       const refusal = lastMergeRefusal();
       if (refusal) {
@@ -4645,7 +4654,20 @@ async function tryPullFromCloud(force = false): Promise<void> {
         else hideIncompleteLoadOverlay();
       }, 300);
     }
-  } catch {
+  } catch (e) {
+    // NEVER SILENT AGAIN (#306).
+    //
+    // This used to swallow everything. A pull that threw half way through left
+    // the device having cleared what it knew about the server and never
+    // recorded it again — so its next push sent every frame with no change
+    // times, and the server refused most of them. From the outside it looked
+    // like a rule misbehaving. From in here it was invisible.
+    const msg = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
+    console.error('[sync] pull failed', e);
+    trace(`  PULL FAILED — ${msg}`);
+    // What the device knows about the server was cleared on the way in. Put it
+    // back from what is on screen, or the next push resends the whole project.
+    try { adoptFingerprintsFromStore(); } catch { /* nothing more to be done */ }
     const pEl = document.getElementById('progressOverlay');
     if (pEl) pEl.classList.add('hidden');
   } finally {

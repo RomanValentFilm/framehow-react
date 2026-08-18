@@ -29,6 +29,7 @@ import {
   type DeviceMemory, emptyMemory, afterRestart, afterPush, afterPull,
   pushIsPartial, pullIsHeldBack, serverHasSomethingNew,
 } from '../../src/lib/sessionRules.ts';
+import { mergeDelta } from '../../src/lib/deltaMerge.ts';
 
 const TOKEN = 'bench-token';
 const USER = 'user-1';
@@ -83,7 +84,7 @@ async function call(db: FakeD1, method: string, path: string, body?: unknown) {
 // A device: what it holds on screen, what it remembers, and nothing else.
 // ---------------------------------------------------------------------------
 
-interface Held { id: string; text: string; changedAt: number | null }
+interface Held { id: string; text: string; changedAt: number | null; picture?: string }
 
 class Device {
   name: string;
@@ -102,8 +103,8 @@ class Device {
   }
 
   /** The user changes a frame here. */
-  write(id: string, text: string, at: number): void {
-    this.frames.set(id, { id, text, changedAt: at });
+  write(id: string, text: string, at: number, picture?: string): void {
+    this.frames.set(id, { id, text, changedAt: at, picture: picture ?? this.frames.get(id)?.picture });
     this.memory = { ...this.memory, unsentFrames: this.memory.unsentFrames + 1 };
   }
 
@@ -144,7 +145,12 @@ class Device {
         hidden: false, starred: 0, note: null,
         updated_at: at, content_changed_at: f.changedAt,
       })),
-      images: [], drawings: [], deletions: [], settings: [],
+      images: frames.filter((f) => f.picture).map((f) => ({
+        id: `${f.id}-img`, version_id: `${f.id}-v0`, r2_key: f.picture!,
+        width: 1920, height: 1080, size_bytes: 1000,
+        content_type: 'image/jpeg', updated_at: at,
+      })),
+      drawings: [], deletions: [], settings: [],
     });
     if (process.env.BENCH_DEBUG) console.log('PUSH', this.name, r.status, r.text.slice(0, 300));
     this.learn(r.body);
@@ -179,6 +185,32 @@ class Device {
       framesReceived: body.frames.length,
     });
     return r;
+  }
+
+  /**
+   * THE PULL A DEVICE DOES AT BOOT (#306).
+   *
+   * There is no copy of the server's answer in memory after a restart, so the
+   * first pull asks for the WHOLE project. It used to fold a delta onto a
+   * skeleton built from the device instead, and the fields the skeleton left out
+   * became the truth — twice, expensively. `withKnownTimes` is kept as a switch
+   * so the old, broken shape can still be described by a test.
+   */
+  async takeChangesAfterRestart(_heardAt: number, wholeProject = true) {
+    if (wholeProject) return this.take();
+    // The old shape: a delta folded onto a base that is missing what the device
+    // could not reconstruct. Kept only to prove it is worse.
+    const r = await call(this.db, 'GET', `/projects/${PROJECT}/sync?since=${_heardAt}`);
+    const bare = {
+      project: null, strips: [{ id: STRIP }],
+      frames: [...this.frames.values()].map((f) => ({ id: f.id, updated_at: 0 })),
+      versions: [], images: [], drawings: [], deletions: [], settings: [],
+      server_now: _heardAt, full: true,
+    };
+    const folded = mergeDelta(bare as never, r.body as never);
+    this.serverTimes.clear();
+    for (const f of folded.frames) this.serverTimes.set(f.id, f.updated_at);
+    return folded;
   }
 
   private learn(body: unknown) {
@@ -221,9 +253,10 @@ async function run() {
     await pad.take();
     check('both devices start with the same three frames', pad.sees('f2'), 'two');
 
-    // the iPad is holding something unsent, so it may not listen
-    pad.memory = { ...pad.memory, settingsUnsent: true };
-    check('a device with unsent work does not pull', pullIsHeldBack(pad.memory), true);
+    // the iPad is holding an unsent FRAME, so it may not listen: a pull rebuilds
+    // frames, and applying the server's copy over unsent frame work loses it
+    pad.memory = { ...pad.memory, unsentFrames: 1 };
+    check('a device with unsent frame work does not pull', pullIsHeldBack(pad.memory), true);
 
     // meanwhile the desktop draws on two frames
     desktop.write('f1', 'DRAWING on 10', 2000);
@@ -234,7 +267,7 @@ async function run() {
     // the iPad now pushes its own work — this is the moment that used to make it
     // believe it was up to date
     const takenBeforeItsPush = pad.memory.takenFromServerAt;
-    await pad.push(3000);
+    await pad.push(3000);        // afterPush clears unsentFrames
     check('pushing does not move what the iPad has TAKEN',
       pad.memory.takenFromServerAt, takenBeforeItsPush);
 
@@ -347,6 +380,93 @@ async function run() {
 
     await pad.pullIfThereIsSomething();
     check('and the iPad receives the desktop\'s', pad.sees('f1'), 'written offline on the desktop');
+  }
+
+  // =========================================================================
+  // 6. THE PICKER A DEVICE OPENED WITH ITSELF (#302)
+  //
+  // One device. No other device switched on. It restarts, asks for changes
+  // only, gets none, changes one frame, and pushes — and the server refuses it.
+  // =========================================================================
+  {
+    const db = await freshServer();
+    const desktop = new Device(db, 'Desktop');
+    desktop.write('f1', 'one', 1000, 'photo-1.jpg');
+    desktop.write('f2', 'two', 1000, 'photo-2.jpg');
+    await desktop.push(1000);
+    const heardAt = Date.now();
+
+    // it restarts and asks for what changed — nothing did
+    await desktop.takeChangesAfterRestart(heardAt);
+    // ...and the user draws on a frame, which is the one thing that CAN raise
+    // a picker, so this is the real shape of what happened
+    desktop.write('f1', 'changed after the restart', 2000, 'photo-1-drawn-on.jpg');
+    const r = await desktop.push(2000);
+    const refused = ((r.body as { rejected_frames?: unknown[] }).rejected_frames ?? []).length;
+    check('one device, one change, after a restart: nothing is refused', refused, 0);
+    check('...and the change is on the server',
+      (db.rows('SELECT text_content FROM frames WHERE id = ?', 'f1')[0] as { text_content: string })
+        .text_content, 'changed after the restart');
+
+    // THE FAULT ITSELF — and since #303 it has no consequence at all. A device
+    // that forgot what it had seen used to be refused and asked a question;
+    // now nothing reads that number, so the same run simply works. This case
+    // stays as the record of a whole class of fault being deleted rather than
+    // patched.
+    const db2 = await freshServer();
+    const d2 = new Device(db2, 'Desktop');
+    d2.write('f1', 'one', 1000, 'photo-1.jpg');
+    await d2.push(1000);
+    await d2.takeChangesAfterRestart(Date.now(), false);     // times forgotten
+    d2.write('f1', 'drawn on', 2000, 'photo-1-drawn-on.jpg');
+    const bad = await d2.push(2000);
+    const badRefused = ((bad.body as { rejected_frames?: unknown[] }).rejected_frames ?? []).length;
+    check('a device that forgot the times is not refused either, since #303',
+      badRefused, 0);
+    check('...and its drawing is what the server holds',
+      (db2.rows('SELECT r2_key FROM images')[0] as { r2_key: string }).r2_key,
+      'photo-1-drawn-on.jpg');
+  }
+
+  // =========================================================================
+  // 7. THE CIRCLE A RELOADED DESKTOP SAT IN (#305)
+  //
+  // Nothing dirty, one unsent setting — and the device stopped listening. The
+  // pull waited for a push; the push declined because nothing was dirty; so the
+  // setting was never sent and the pull never happened. Seen on a desktop that
+  // had just been reloaded: one pull, then `pull held back` for ever.
+  //
+  // The cure is not to force the push. It is that a setting never had any
+  // business holding a pull back: a pull merges settings item by item and keeps
+  // any local copy that is newer and unsent (#262). Nothing dirty, nothing
+  // sent — and listening carries on regardless.
+  // =========================================================================
+  {
+    const db = await freshServer();
+    const desktop = new Device(db, 'Desktop');
+    const pad = new Device(db, 'Tablet');
+    desktop.write('f1', 'one', 1000);
+    await desktop.push(1000);
+    await pad.take();
+
+    // the iPad now holds an unsent setting and NOTHING else
+    pad.memory = { ...pad.memory, unsentFrames: 0, settingsUnsent: true };
+    check('an unsent setting does NOT hold the pull back', pullIsHeldBack(pad.memory), false);
+
+    // meanwhile the desktop writes something the iPad has never seen
+    desktop.write('f2', 'made on the desktop', 2000);
+    await desktop.push(2000);
+
+    // so the iPad hears about it straight away, with nothing forced
+    const listened = await pad.pullIfThereIsSomething();
+    check('...so the desktop\'s work arrives with nothing forced', listened.took, true);
+    check('...by name', pad.sees('f2'), 'made on the desktop');
+    check('...and the setting is still unsent, waiting for the next push',
+      pad.memory.settingsUnsent, true);
+
+    // an unsent FRAME still holds it back — that is the case that matters
+    check('an unsent frame still holds the pull back',
+      pullIsHeldBack({ ...pad.memory, unsentFrames: 1 }), true);
   }
 
   // =========================================================================

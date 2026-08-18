@@ -166,43 +166,24 @@ export function answerIsSafeToApply(
   };
 }
 
-/**
- * WHAT THIS DEVICE ALREADY HAS, in the shape a delta folds into (#285).
- *
- * Only names and places — an id, which strip, which position. NOT the content:
- * no text, no notes, no strokes, no pictures.
- *
- * That is deliberate, and it is what makes this safe. Copying content out of
- * the store and back again would be a second mapping between the cloud shape
- * and the app's shape, and the day the two disagree is the day a field is
- * quietly dropped from every frame in a project.
- *
- * Instead: every frame the delta does NOT mention is applied as "keep what is
- * here". Its skeleton row is never read for content. The frames the delta DOES
- * mention arrive whole and are applied normally, as they always were.
- *
- * The result is that reopening the app can ask for changes only, with nothing
- * extra stored and nothing that can rot.
- */
-export function skeletonFromDevice(
-  frames: ReadonlyArray<{ serverFrameId?: string; label?: string; mainVersionId?: string; versionIds?: string[] }>,
-  stripId: string,
-  serverNow: number,
-): MergeableTree {
-  const out: MergeableTree = {
-    project: null, strips: stripId ? [{ id: stripId }] : [],
-    frames: [], versions: [], images: [], drawings: [],
-    deletions: [], settings: [], server_now: serverNow, full: true,
-  };
-  frames.forEach((f, i) => {
-    if (!f.serverFrameId) return;                  // never sent — nothing to fold onto
-    out.frames.push({ id: f.serverFrameId, updated_at: 0, strip_id: stripId, sort_order: i, label: f.label ?? '' } as never);
-    for (const vid of [f.mainVersionId, ...(f.versionIds ?? [])]) {
-      if (vid) out.versions.push({ id: vid, frame_id: f.serverFrameId, updated_at: 0 } as never);
-    }
-  });
-  return out;
-}
+// THE SKELETON IS GONE (#306).
+//
+// It built a stand-in copy of the project from what was on the device — names
+// and places, no content — so that a delta pull could fold onto something after
+// a restart, when the real copy is no longer in memory (#285).
+//
+// It cost two days. The fold keeps the base's rows for everything the delta does
+// not mention, so whatever the skeleton left out became the truth:
+//
+//   #302  no server times → every push claimed to have seen nothing, and the
+//         server raised a picker between one device and itself
+//   #306  no version TYPE → the apply died on `type.startsWith`, every pull,
+//         every reload, on both devices, silently
+//
+// The next missing field would have been the third. A delta is now folded only
+// onto a copy that came from a real answer; after a restart the first pull asks
+// for the whole project. One honest answer costs a few hundred rows once.
+
 
 /** Which frames in a folded tree came from the device's own copy rather than
  *  from the answer — those must be kept exactly as they are. */

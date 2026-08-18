@@ -75,7 +75,20 @@ export function pushIsPartial(m: DeviceMemory): boolean {
  */
 export function pullIsHeldBack(m: DeviceMemory, force = false): boolean {
   if (force) return false;
-  return m.unsentFrames > 0 || m.settingsUnsent;
+  // FRAMES ONLY (#305).
+  //
+  // Settings used to hold a pull back too, and that made a circle no device
+  // could leave: the pull waits for a push; the push declines because nothing
+  // is dirty (settings are not part of the dirty flag); so the setting is never
+  // sent and the pull never happens. A desktop that had just been reloaded sat
+  // in it — one pull, then "pull held back" for ever, with no push in between.
+  //
+  // Nothing needed forcing. Settings are safe in a pull already: it merges them
+  // one item at a time and deliberately keeps any local copy that is newer and
+  // unsent (#262). So holding the pull hostage to them protected nothing. They
+  // travel with the next push, which is what "nothing dirty, nothing to send"
+  // means.
+  return m.unsentFrames > 0;
 }
 
 /**

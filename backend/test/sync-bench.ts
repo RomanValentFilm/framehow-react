@@ -34,7 +34,7 @@ class Server {
    *  which is what the app puts in updated_at. */
   pushFrame(device: string, o: {
     body: string; changedAt: number | null; pushedAt: number; contested?: boolean;
-  }): 'accept' | 'stale' | 'ask' {
+  }): 'accept' | 'stale' {
     const incoming = {
       base_updated_at: this.told.get(device),
       content_changed_at: o.changedAt,
@@ -43,7 +43,10 @@ class Server {
     const held = this.frame
       ? { updated_at: this.frame.updated_at, content_changed_at: this.frame.content_changed_at }
       : undefined;
-    const outcome = decideFrame(incoming, held, () => o.contested === true);
+    // `contested` is still accepted by the callers below and deliberately
+    // ignored: a picture is no longer special (#303).
+    void o.contested;
+    const outcome = decideFrame(incoming, held);
     if (outcome === 'accept') {
       this.frame = { updated_at: o.pushedAt, content_changed_at: o.changedAt, body: o.body };
     }
@@ -170,16 +173,16 @@ const cases: Case[] = [
     },
   },
 
-  // --- the picker -----------------------------------------------------------
+  // --- pictures settle by time too, now (#303) ------------------------------
   {
-    what: 'both changed the PICTURE blind → asks',
-    want: 'ASK',
+    what: 'both changed the PICTURE blind → the later one wins, no question',
+    want: 'desktop',
     run: (s) => {
       s.frame = { updated_at: t(0), content_changed_at: t(0), body: 'start' };
       s.told.set('desktop', t(0));
       s.pushFrame('iPad', { body: 'iPad', changedAt: t(10), pushedAt: t(20), contested: true });
       const r = s.pushFrame('desktop', { body: 'desktop', changedAt: t(15), pushedAt: t(21), contested: true });
-      return r === 'ask' ? 'ASK' : s.frame!.body;
+      return r === ('ask' as string) ? 'ASK' : s.frame!.body;
     },
   },
   {
@@ -190,7 +193,7 @@ const cases: Case[] = [
       s.told.set('desktop', t(0));
       s.pushFrame('iPad', { body: 'iPad', changedAt: t(10), pushedAt: t(20) });
       const r = s.pushFrame('desktop', { body: 'desktop', changedAt: t(15), pushedAt: t(21) });
-      return r === 'ask' ? 'ASK' : s.frame!.body;
+      return r === ('ask' as string) ? 'ASK' : s.frame!.body;
     },
   },
   {

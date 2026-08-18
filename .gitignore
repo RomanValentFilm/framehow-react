@@ -6,3 +6,4 @@ dist-ssr
 .vite
 *.tsbuildinfo
 .bench/
+.probe/

@@ -20,7 +20,7 @@ const constants_1 = require("../lib/constants");
 Object.defineProperty(exports, "COLORS", { enumerable: true, get: function () { return constants_1.COLORS; } });
 /** 12-colour palette for setups. */
 /** App version — bump before every deploy. */
-exports.APP_VERSION = 'v4.9.060';
+exports.APP_VERSION = 'v4.9.061';
 function createDefaultExportMeta() {
     return { shootingOrder: '', userName: '', version: '', date: '' };
 }

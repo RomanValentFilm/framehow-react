@@ -335,7 +335,7 @@ export async function flushSyncNow(): Promise<void> {
   if (cloudSyncInFlight) return;
   if (_pullInFlight) return;
   if (_projectSwitchInFlight) return;
-  if (!_dirty) return;
+  if (!_dirty) return;              // nothing dirty, nothing to send
   const pid = cp.projectId;
   cloudSyncInFlight = true;
   trace(`push start · online=${navigator.onLine}`);

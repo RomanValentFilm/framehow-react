@@ -9,7 +9,7 @@
 
 import {
   mergeDelta, lastMergeRefusal, answerIsSafeToApply,
-  skeletonFromDevice, untouchedByDelta, type MergeableTree,
+  untouchedByDelta, type MergeableTree,
 } from '../src/lib/deltaMerge';
 
 const results: Array<{ what: string; got: string; want: string }> = [];
@@ -207,37 +207,54 @@ const ids = (rows: Array<{ id: string }>) => rows.map((r) => r.id).sort().join('
 }
 
 // ---------------------------------------------------------------------------
-// 11. After a restart: fold onto the frames that are on the device (#285)
+// (The case that used to sit here tested folding a delta onto a SKELETON built
+// from the device after a restart — #285. Both the skeleton and its cases are
+// gone: see #306 below and the note in deltaMerge.ts. A restart now asks for the
+// whole project once, and folds only onto real answers after that.)
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// 12. A FOLD KEEPS EVERYTHING THE DELTA DID NOT MENTION — ALL OF IT (#306)
+//
+// The two faults that cost two days were both a base that was missing a field:
+// no server time (#302), then no version type (#306) — and the fold faithfully
+// carried the gap through, so the app read the gap as the truth. The base must
+// be a real answer, whole. This is that, stated as a test.
 // ---------------------------------------------------------------------------
 {
-  // The app has just reopened. The project is on the device; the copy of what
-  // the server holds is not. All it needs is the frames' names and places.
-  const onDevice = Array.from({ length: 45 }, (_, i) => ({
-    serverFrameId: `f${i}`, label: String(i + 1),
-    mainVersionId: `f${i}-v0`, versionIds: [`f${i}-v1`],
-  }));
-  const skeleton = skeletonFromDevice(onDevice, 'strip-1', 5000);
-  check('the skeleton names every frame on the device', skeleton.frames.length, 45);
-  check('...and their versions', skeleton.versions.length, 90);
-  check('...but carries no content to go stale',
-    JSON.stringify(skeleton.frames[0]).includes('text_content'), false);
-
-  const delta = emptyDelta({
+  const held: MergeableTree = {
+    project: { id: 'p', name: 'Bench' },
     strips: [{ id: 'strip-1' }],
-    frames: [frame('f7', 6000, { text_content: 'changed while away' })],
+    frames: [frame('a', 5000), frame('b', 6000)],
+    versions: [
+      { id: 'a-v0', frame_id: 'a', updated_at: 5000, type: 'main' } as never,
+      { id: 'a-v1', frame_id: 'a', updated_at: 5000, type: 'floor:PLAN' } as never,
+      { id: 'b-v0', frame_id: 'b', updated_at: 6000, type: 'main' } as never,
+    ],
+    images: [], drawings: [], deletions: [], settings: [],
+    server_now: 6000, full: true,
+  };
+
+  const folded = mergeDelta(held, {
+    project: { id: 'p' }, strips: [], frames: [frame('a', 7000)],
+    versions: [], images: [], drawings: [], deletions: [], settings: [],
+    server_now: 9000, full: false,
   });
-  const folded = mergeDelta(skeleton, delta);
-  check('folding onto it keeps all 45 frames', folded.frames.length, 45);
 
-  const keep = untouchedByDelta(folded, delta);
-  check('44 frames are kept exactly as the device has them', keep.size, 44);
-  check('...and the changed one is NOT kept — it takes the answer', keep.has('f7'), false);
+  check('the frame the delta mentioned takes the new time',
+    folded.frames.find((f) => f.id === 'a')!.updated_at, 7000);
+  check('...the one it did not keeps its time', folded.frames.find((f) => f.id === 'b')!.updated_at, 6000);
+  check('...and every version still knows which strip it belongs to',
+    folded.versions.every((v) => typeof (v as unknown as { type: string }).type === 'string'), true);
+  check('...including the one the delta never mentioned',
+    (folded.versions.find((v) => v.id === 'a-v1') as unknown as { type: string }).type, 'floor:PLAN');
 
-  // A frame the device has never sent has no server id, so there is nothing to
-  // fold onto — it must not appear in the skeleton and claim to be known.
-  const withUnsent = skeletonFromDevice(
-    [...onDevice, { serverFrameId: undefined, label: '46' }], 'strip-1', 5000);
-  check('a frame never sent to the server is left out of the skeleton', withUnsent.frames.length, 45);
+  // And which frames must be kept exactly as the device has them, for the push
+  // that follows — still live code, still tested.
+  const delta = emptyDelta({ frames: [frame('a', 7000)] });
+  const keep = untouchedByDelta(mergeDelta(held, delta), delta);
+  check('the frame the delta mentioned is not "kept local"', keep.has('a'), false);
+  check('...and the untouched one is', keep.has('b'), true);
 }
 
 // ---------------------------------------------------------------------------

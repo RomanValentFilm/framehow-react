@@ -298,11 +298,11 @@ projects.post("/:id/sync", async (c) => {
   // blanket conflict.
   const perFrame = payload.frames.length === 0
     || payload.frames.some((f) => f.base_updated_at !== undefined);
+  // ALWAYS EMPTY since #303. Kept so the answer still carries the field an
+  // older app looks for, and so the "a merging push cannot also be a wholesale
+  // replace" guard below reads exactly as it did.
   let rejectedFrames: Array<{ id: string; server_updated_at: number; server_offline: boolean;
-    /** When the WINNING side was actually changed, so the picker can show the
-     *  time of the edit instead of the time of the connection (#266). */
     server_changed_at: number }> = [];
-  const refusedPayloads: Array<{ frame: unknown; versions: unknown[]; images: unknown[]; drawings: unknown[] }> = [];
   // Frames and versions this push carried that were OLDER than the server's
   // copy, so they were not written. The pusher must be told, or it records
   // itself as matching the server and keeps a stale copy for ever — a reload
@@ -322,42 +322,11 @@ projects.post("/:id/sync", async (c) => {
     }
     const existing = { results: existingResults };
 
-    // What the frame's MAIN version holds on the server: its picture and its
-    // strokes. Only these — with the text — can be contested. Needs, notes,
-    // setups and tags settle by time and must never raise the picker.
-    const serverMain = new Map<string, { r2_key: string | null; drawing: string | null }>();
-    for (const part of inChunks(ids)) {
-      const mains = await c.env.DB.prepare(
-        `SELECT v.frame_id AS fid, i.r2_key AS r2_key, d.drawing_data AS drawing
-           FROM versions v
-           LEFT JOIN images   i ON i.version_id = v.id
-           LEFT JOIN drawings d ON d.version_id = v.id
-          WHERE v.frame_id IN (${part.map(() => "?").join(",")}) AND v.type = 'main'`,
-      ).bind(...part).all<{ fid: string; r2_key: string | null; drawing: string | null }>();
-      for (const m of mains.results) serverMain.set(m.fid, { r2_key: m.r2_key, drawing: m.drawing });
-    }
-
-    /**
-     * Is this a change worth STOPPING the user for?
-     *
-     * Only two things are: the frame's picture, and the strokes drawn on it.
-     * Those cannot be merged and cannot be judged by a clock — losing either
-     * one loses work that was drawn by hand.
-     *
-     * Everything else settles by time, including all the writing (#282): the
-     * text under the frame and the notes card. Text used to raise the picker
-     * too, which meant being interrupted over a typo fixed in two places. The
-     * later wording wins, as it does for needs, labels and tags.
-     */
-    const touchesContested = (f: typeof payload.frames[number]): boolean => {
-      const mainV = payload.versions.find((v) => v.frame_id === f.id && v.type === "main");
-      const here = serverMain.get(f.id) ?? { r2_key: null, drawing: null };
-      const inR2 = mainV ? (payload.images.find((i) => i.version_id === mainV.id)?.r2_key ?? null) : null;
-      const inDraw = mainV ? (payload.drawings.find((d) => d.version_id === mainV.id)?.drawing_data ?? null) : null;
-      if (inR2 !== (here.r2_key ?? null)) return true;
-      if (inDraw !== (here.drawing ?? null)) return true;
-      return false;
-    };
+    // The "is this worth STOPPING the user for?" test used to live here: a
+    // picture or strokes changed on both sides blind put a picker on screen.
+    // Gone by decision (#303) — a main frame now settles by time like
+    // everything else, and with it goes the per-frame "what had you seen"
+    // bookkeeping that was lost or invented on every reload.
 
     // THE DEAD STAY DEAD (#293).
     //
@@ -399,26 +368,8 @@ projects.post("/:id/sync", async (c) => {
       const sf = serverFrame.get(f.id);
       // The rule itself lives in lib/syncDecide.ts so it can be tested on a
       // bench instead of on two devices. Only the consequences are here.
-      const outcome = decideFrame(f, sf, () => touchesContested(f));
+      const outcome = decideFrame(f, sf);
 
-      if (outcome === 'ask') {
-        rejectedFrames.push({
-          id: f.id,
-          server_updated_at: sf!.updated_at,
-          server_offline: !!sf!.changed_offline,
-          server_changed_at: sf!.content_changed_at ?? sf!.updated_at,
-        });
-        // Keep the version we would not take, with everything needed to show
-        // and apply it later. Without this it exists only on the device that
-        // made it.
-        refusedPayloads.push({
-          frame: f,
-          versions: payload.versions.filter((v) => v.frame_id === f.id),
-          images: payload.images,
-          drawings: payload.drawings,
-        });
-        continue;
-      }
       // Only the frame's own row is refused when it is stale. Its versions
       // still go in, so a LOOK made here is still added.
       if (outcome === 'stale') { staleFrames.push(f.id); continue; }
@@ -598,37 +549,11 @@ projects.post("/:id/sync", async (c) => {
     ]);
   }
 
-  // Record the refused versions so the question can be answered from any
-  // device, and so the losing work is not stranded on the device that made it.
-  if (rejectedFrames.length > 0) {
-    const nowTs = Date.now();
-    await c.env.DB.batch(rejectedFrames.map((r, i) => {
-      const p = refusedPayloads[i];
-      const versionIds = new Set((p.versions as Array<{ id: string }>).map((v) => v.id));
-      const body = JSON.stringify({
-        frame: p.frame,
-        versions: p.versions,
-        images: (p.images as Array<{ version_id: string }>).filter((im) => versionIds.has(im.version_id)),
-        drawings: (p.drawings as Array<{ version_id: string }>).filter((d) => versionIds.has(d.version_id)),
-      });
-      return c.env.DB.prepare(
-        `INSERT INTO frame_conflicts
-           (id, project_id, frame_id, losing_json, device_name, made_at,
-            winner_device, winner_made_at, made_offline, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).bind(newId(), project.id, r.id, body,
-             payload.project.device_name ?? null,
-             // WHEN it was changed, not when it was sent. Both sides used to
-             // carry the push time, so the picker could offer you "iPad 14:32"
-             // for a drawing you made at 09:10 on a plane (#266).
-             (p.frame as { content_changed_at?: number | null }).content_changed_at
-               ?? (p.frame as { updated_at?: number }).updated_at ?? nowTs,
-             winnerDevice,
-             r.server_changed_at,
-             (p.frame as { changed_offline?: boolean }).changed_offline ? 1 : 0,
-             nowTs);
-    }));
-  }
+  // Nothing is written to frame_conflicts any more (#303): a main frame is
+  // never refused for a question. The table and the routes that READ it stay,
+  // so a device still running an older build can finish answering anything it
+  // already has.
+
 
   const tree = await loadProjectTree(c.env.DB, project.id);
   // Some frames were refused because they moved underneath this device. The

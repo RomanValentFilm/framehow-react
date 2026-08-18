@@ -223,6 +223,7 @@ async function run() {
     await iPad.send([{ id: 'f1', text: 'from the iPad', changedAt: t + 60_000 }]);
     const older = await desktop.send([{ id: 'f1', text: 'from the desktop', changedAt: t }]);
     const answer = older.body as { stale_frames?: string[]; rejected_frames?: Array<{ id: string }> };
+    if (process.env.BENCH_DEBUG) console.log('DBG stale case:', JSON.stringify({ stale: answer.stale_frames, rej: answer.rejected_frames }), older.text.slice(0,120));
     check('text edited on both, blind: the older one is simply refused',
       answer.stale_frames?.[0], 'f1');
     check('...and nobody is asked a question (#282)', answer.rejected_frames?.length ?? 0, 0);
@@ -256,13 +257,21 @@ async function run() {
     await iPad.send([{ id: 'f2', picture: 'r2/original.jpg' }]);
     await desktop.pull();
 
-    // a new photo on the main frame, on both, blind — this must still ask
-    await iPad.send([{ id: 'f2', picture: 'r2/from-the-ipad.jpg' }]);
-    const r = await desktop.send([{ id: 'f2', picture: 'r2/from-the-desktop.jpg' }]);
-    check('a picture changed on both, blind: the picker still appears',
-      (r.body as { rejected_frames?: Array<{ id: string }> }).rejected_frames?.[0]?.id, 'f2');
-    check('...and the losing side is kept, not thrown away',
-      db.rows('SELECT id FROM frame_conflicts').length, 1);
+    // A new photo on the main frame, on both, blind. This used to raise the
+    // picker; by decision (#303) it settles by time like everything else, and
+    // nobody is stopped mid-work.
+    const madeEarlier = Date.now() + 10_000;
+    const madeLater = madeEarlier + 10_000;
+    await iPad.send([{ id: 'f2', picture: 'r2/from-the-ipad.jpg', changedAt: madeEarlier }], madeEarlier);
+    const r = await desktop.send(
+      [{ id: 'f2', picture: 'r2/from-the-desktop.jpg', changedAt: madeLater }], madeLater);
+    check('a picture changed on both, blind: nobody is asked anything',
+      (r.body as { rejected_frames?: Array<{ id: string }> }).rejected_frames?.length ?? 0, 0);
+    check('...and no question is filed anywhere',
+      db.rows('SELECT id FROM frame_conflicts').length, 0);
+    check('...the later picture is the one on the server',
+      (db.rows('SELECT r2_key FROM images')[0] as { r2_key: string }).r2_key,
+      'r2/from-the-desktop.jpg');
   }
 
   // --- a push must not delete what it does not mention (#253) ---------------
