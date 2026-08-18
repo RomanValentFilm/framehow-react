@@ -109,6 +109,33 @@ export function serverHasSomethingNew(m: DeviceMemory, serverUpdatedAt: number):
 }
 
 /**
+ * MY UNSENT FRAME, OR THEIRS? (#307)
+ *
+ * Asked on the device, about a frame with work here that the server has not
+ * taken, when the answer contains a copy of that same frame.
+ *
+ * It used to be asked of the USER: two thumbnails, choose. That picker lived in
+ * the app on top of the one the server raised, and it outlived it — the server
+ * stopped asking in #303 and this one carried on into #307.
+ *
+ * It is the same question the server answers in decideFrame, so it must give the
+ * same answer, or the two devices settle differently and never converge. The
+ * session bench checks the two rules against each other case by case.
+ *
+ * @param mine    when this device changed it; undefined = we do not know
+ * @param theirs  when the other side changed it; undefined = the server has no
+ *                copy, so there is nothing to lose to
+ */
+export function whoseFrameWins(mine: number | undefined,
+                               theirs: number | undefined): 'mine' | 'theirs' {
+  if (theirs === undefined) return 'mine';     // nothing on the other side
+  if (mine === undefined) return 'theirs';     // a copy that knows when it
+                                               // changed beats one that does not
+  return mine >= theirs ? 'mine' : 'theirs';   // a tie keeps local, and the
+                                               // server accepts it — same result
+}
+
+/**
  * After a push the server accepted. Note what does NOT move: `takenFromServerAt`.
  * The push told this device nothing about what the server was already holding.
  */

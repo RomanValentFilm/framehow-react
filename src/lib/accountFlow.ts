@@ -42,6 +42,7 @@ import {
   registerHeardAtBridge,
   registerPullFn,
   registerConnectionWatch,
+  dropDirtyFrame,
   setCurrentProject,
   setProjectName,
   setPullInFlight,
@@ -56,13 +57,12 @@ import {
 import { trace } from './syncTrace';
 import { frameChangedAt, versionChangedAt, importChangeStamps, stampChangedContent, seedContentStamps } from './changeStamps';
 import { shouldSendOnlyChanges } from './pushMode';
-import { serverHasSomethingNew, type DeviceMemory } from './sessionRules';
+import { serverHasSomethingNew, whoseFrameWins, type DeviceMemory } from './sessionRules';
 import { mergeDelta, lastMergeRefusal, answerIsSafeToApply, untouchedByDelta, type MergeableTree } from './deltaMerge';
 import { settingsForPush, adoptSettingsFromServer, applySettingsToStore, importSettingStamps, stampChangedSettings, seedSettings, settingsNeedPush, reconcileRestoredSettings, type SettingItem } from './projectSettings';
 import { applySnapshotToStore, loadSnapshot, snapshotFromStore, listPending, isArchived, getPending, markPendingUploaded, saveProjectListCache, loadProjectListCache, deletePending, recoverPending, isDeletedCopy, requestDurableStorage } from './persistence';
 import type { PendingRecord } from './persistence';
-import { showThreeWayConflict, showConfirm, showToast, showFrameConflictPicker } from './modals';
-import type { FrameConflict } from './modals';
+import { showThreeWayConflict, showConfirm, showToast } from './modals';
 import { saveOpenTextEdits, saveOpenTableEdits, versionStars } from './helpers';
 import { closeSortMode } from './sortOrder';
 import { resetStoryboardState, state, useStore, DEFAULT_NEED_DEFINITIONS, DEFAULT_STRIP_DEFS, migrateNeedDefinitions, createDefaultExportMeta } from '../store/state';
@@ -2228,6 +2228,18 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   const staleCount = (res.stale_frames?.length ?? 0) + (res.stale_versions?.length ?? 0);
   if (staleCount > 0) {
     trace(`  ${staleCount} sent item(s) were older than the server — taking its copy`);
+    // AND MEAN IT (#307). A frame that lost must stop counting as unsent work,
+    // or the pull that follows protects it and the server's newer copy never
+    // lands: both devices keep their own drawing and neither ever finds out.
+    for (const id of res.stale_frames ?? []) {
+      dropDirtyFrame(id);
+      forgetPushedFingerprint(id);   // ours does NOT match the server
+    }
+    // ...and go and get it, past the "is there anything newer" test — the
+    // server's copy is newer than ours whatever its clock says about the push
+    // we just made.
+    lastKnownUpdatedAt = 0;
+    takenFromServerAt = 0;
   }
 
   // Learn the server's new timestamps, so the next push is judged correctly.
@@ -4373,7 +4385,8 @@ async function tryPullFromCloud(force = false): Promise<void> {
       if (progressBar) progressBar.style.width = '10%';
 
       // ---------------------------------------------------------------
-      // Detect same-frame conflicts: dirty locally AND changed in cloud
+      // Which unsent frames are protected from this pull, and which are out
+      // of date and should take the server's copy (#307)
       // ---------------------------------------------------------------
       let keepLocalIds: ReadonlySet<string> | undefined;
       // Frames the answer left out are kept exactly as they are here (#283).
@@ -4381,91 +4394,42 @@ async function tryPullFromCloud(force = false): Promise<void> {
       if (hasDirtyFrames) {
         if (progressBar) progressBar.style.width = '20%';
 
-        // Build cloud r2Key map: serverFrameId → mainR2Key
-        const cloudR2Keys = new Map<string, string | undefined>();
-        const versionsByFrame = new Map<string, typeof tree.versions>();
-        for (const v of tree.versions) {
-          if (!versionsByFrame.has(v.frame_id)) versionsByFrame.set(v.frame_id, []);
-          versionsByFrame.get(v.frame_id)!.push(v);
-        }
-        const imageByVersion = new Map<string, string>();
-        for (const img of tree.images) imageByVersion.set(img.version_id, img.r2_key);
-
+        // WHICH OF MY UNSENT FRAMES DO I KEEP? (#307)
+        //
+        // A pull rebuilds the storyboard from the answer, so a frame with unsent
+        // work here has to be protected from being overwritten — unless the
+        // other device changed it LATER, in which case ours is simply out of
+        // date and theirs is the one to show.
+        //
+        // This used to ask the user: any dirty frame whose cloud picture
+        // differed put up a picker with two thumbnails. That was a second picker
+        // living in the app, on top of the one the server used to raise, and it
+        // outlived it — the server stopped asking in #303 and this one carried
+        // on. A main frame settles by TIME now, and this is the same rule
+        // applied here: compare when each side was changed and take the later.
+        //
+        // No modal, no choosing in the dark, and the two devices end up showing
+        // the same thing — which is the whole point.
+        const cloudChangedAt = new Map<string, number>();
         for (const cf of tree.frames) {
-          const mainV = (versionsByFrame.get(cf.id) ?? []).find((v) => v.type === 'main');
-          cloudR2Keys.set(cf.id, mainV ? imageByVersion.get(mainV.id) : undefined);
+          cloudChangedAt.set(cf.id, cf.content_changed_at ?? cf.updated_at);
         }
 
-        // Build cloud label map for conflict picker
-        const cloudLabelMap = new Map<string, string>();
-        for (const cf of tree.frames) cloudLabelMap.set(cf.id, cf.label ?? '');
-
-        // Separate dirty frames into conflicting vs. safe-local
-        const prev = useStore.getState();
-        const conflictingIds: string[] = [];
-        const safeLocalIds = new Set<string>();
-
+        const keepMine = new Set<string>();
+        const takeTheirs: string[] = [];
         for (const sfId of dirtyIds) {
-          const cloudR2 = cloudR2Keys.get(sfId);
-          const localFrame = prev.frames.find((f) => f.serverFrameId === sfId);
-          const localR2 = localFrame?.r2Key;
-
-          // Conflict: cloud has a DIFFERENT image than what we last synced
-          if (cloudR2 && cloudR2 !== localR2) {
-            conflictingIds.push(sfId);
-          } else {
-            // Only modified locally — safe to keep
-            safeLocalIds.add(sfId);
-          }
+          const mine = frameChangedAt(sfId);            // undefined = age unknown
+          const theirs = cloudChangedAt.get(sfId);
+          // Nothing on the server for it, or we cannot tell when theirs changed:
+          // keep ours. Unsent work is never dropped on a guess.
+          if (whoseFrameWins(mine, theirs) === 'mine') keepMine.add(sfId);
+          else takeTheirs.push(sfId);
         }
-
-        if (conflictingIds.length > 0) {
-          // Fetch cloud thumbnails for the conflict picker
-          if (progressBar) progressBar.style.width = '30%';
-          showBar('Loading previews for conflict…');
-
-          const token = getToken();
-          const conflicts: FrameConflict[] = [];
-
-          for (const sfId of conflictingIds) {
-            const localFrame = prev.frames.find((f) => f.serverFrameId === sfId);
-            const cloudR2 = cloudR2Keys.get(sfId);
-            let cloudSrc = '';
-            if (cloudR2 && token) {
-              try { cloudSrc = await fetchImageFromR2(cloudR2, token); } catch { /* empty */ }
-            }
-            conflicts.push({
-              serverFrameId: sfId,
-              label: localFrame?.label || cloudLabelMap.get(sfId) || '?',
-              localSrc: localFrame?.src || '',
-              cloudSrc,
-              localDeviceName: getDeviceName(),
-              cloudDeviceName: remoteDeviceName,
-            });
-          }
-
-          // Hide progress while picker is shown
-          if (progressEl) progressEl.classList.add('hidden');
-
-          // Show picker — user taps one thumbnail per conflict
-          trace(`  same-frame conflicts: ${conflicts.length} — asking the user`);
-          const choices = await showFrameConflictPicker(conflicts);
-
-          // Re-show progress — the answer has to be applied and pictures fetched
-          showBar(syncingLabel);
-          if (progressBar) progressBar.style.width = '50%';
-
-          // Build final keep-local set: safe locals + user-chose-local conflicts
-          const finalKeep = new Set(safeLocalIds);
-          for (const [sfId, choice] of choices) {
-            if (choice === 'local') finalKeep.add(sfId);
-            // 'cloud' → not in keepLocal → applyCloudTreeToStore takes cloud version
-          }
-          keepLocalIds = finalKeep;
-        } else {
-          // All dirty frames are safe (no cloud changes to them)
-          keepLocalIds = dirtyIds;
+        if (takeTheirs.length > 0) {
+          trace(`  ${takeTheirs.length} frame(s) changed later elsewhere — taking theirs`);
+          for (const id of takeTheirs) dropDirtyFrame(id);
         }
+        keepLocalIds = keepMine;
       }
 
       // ---------------------------------------------------------------
@@ -4662,9 +4626,29 @@ async function tryPullFromCloud(force = false): Promise<void> {
     // recorded it again — so its next push sent every frame with no change
     // times, and the server refused most of them. From the outside it looked
     // like a rule misbehaving. From in here it was invisible.
-    const msg = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
-    console.error('[sync] pull failed', e);
-    trace(`  PULL FAILED — ${msg}`);
+    // WHAT KIND OF FAILURE, IN WORDS (#308).
+    //
+    // The first version of this only knew how to describe a real Error, so
+    // everything the api throws — a plain object with a status and a code —
+    // printed as "[object Object]". Two of those in a log, and we are back to
+    // guessing.
+    //
+    // And most of them are not failures at all: a pull that runs as the wifi
+    // drops has nothing wrong with it. Say so quietly, and keep FAILED for
+    // things that deserve the word.
+    const api_err = e as { status?: number; code?: string; message?: string };
+    const offline = api_err?.status === 0 || api_err?.code === 'network' || !navigator.onLine;
+    const msg = e instanceof Error
+      ? `${e.name}: ${e.message}`
+      : api_err?.code || api_err?.message
+        ? `${api_err.code ?? 'error'} ${api_err.status ?? ''} — ${api_err.message ?? ''}`.trim()
+        : JSON.stringify(e)?.slice(0, 200) ?? String(e);
+    if (offline) {
+      trace('  pull stopped — no connection. Nothing lost, it will ask again.');
+    } else {
+      console.error('[sync] pull failed', e);
+      trace(`  PULL FAILED — ${msg}`);
+    }
     // What the device knows about the server was cleared on the way in. Put it
     // back from what is on screen, or the next push resends the whole project.
     try { adoptFingerprintsFromStore(); } catch { /* nothing more to be done */ }

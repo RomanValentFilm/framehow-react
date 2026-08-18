@@ -259,6 +259,21 @@ export function markFrameDirty(serverFrameId: string): void {
 }
 
 /**
+ * THE FRAME LOST — LET IT GO (#307).
+ *
+ * The server refused this frame because its own copy was changed later. Ours is
+ * not work to protect any more; it is simply out of date.
+ *
+ * Without this it stayed marked as unsent, so the very next pull PROTECTED it —
+ * `keep-local <id>: local frame FOUND` — and the server's newer copy could never
+ * land. Two devices each sat on their own drawing, for ever, each believing it
+ * had the last word. Exactly what "newer wins" is supposed to prevent.
+ */
+export function dropDirtyFrame(serverFrameId: string): void {
+  _dirtyFrameIds.delete(serverFrameId);
+}
+
+/**
  * Treat everything currently in the store as local work the server does not
  * have. Used when the user deliberately opens a copy held on this device: they
  * chose that version, so it must win over the cloud and be uploaded — without

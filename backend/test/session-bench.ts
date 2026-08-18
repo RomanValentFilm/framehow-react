@@ -27,8 +27,10 @@ import { FakeD1 } from './fake-d1.ts';
 import { hashToken, newId } from '../src/lib/crypto.ts';
 import {
   type DeviceMemory, emptyMemory, afterRestart, afterPush, afterPull,
-  pushIsPartial, pullIsHeldBack, serverHasSomethingNew,
+  pushIsPartial, pullIsHeldBack, serverHasSomethingNew, whoseFrameWins,
 } from '../../src/lib/sessionRules.ts';
+// The server's own rule, so the two can be held against each other (#307).
+import { decideFrame } from '../src/lib/syncDecide.ts';
 import { mergeDelta } from '../../src/lib/deltaMerge.ts';
 
 const TOKEN = 'bench-token';
@@ -484,6 +486,41 @@ async function run() {
     check('taking does', serverHasSomethingNew(took, 5000), false);
     check('...and anything after that is new again',
       serverHasSomethingNew(took, 5001), true);
+  }
+
+  // =========================================================================
+  // 8. THE DEVICE AND THE SERVER MUST AGREE (#307)
+  //
+  // When a pull arrives carrying a frame this device has unsent work on, the
+  // device decides whether to keep its own copy or take the answer's. The server
+  // decides the same thing when that copy is finally pushed. If the two rules
+  // ever disagree, the devices settle differently and never converge — one shows
+  // its drawing for ever while the other shows the other one.
+  //
+  // Both rules, over the same cases, side by side.
+  // =========================================================================
+  {
+    const cases: Array<{ mine: number | undefined; theirs: number | undefined; what: string }> = [
+      { mine: 2000, theirs: 1000, what: 'mine is later' },
+      { mine: 1000, theirs: 2000, what: 'theirs is later' },
+      { mine: 1500, theirs: 1500, what: 'the same millisecond' },
+      { mine: undefined, theirs: 1000, what: 'mine has no time' },
+      { mine: 1000, theirs: undefined, what: 'the server has no copy' },
+      { mine: undefined, theirs: undefined, what: 'neither has a time' },
+    ];
+    for (const c of cases) {
+      const device = whoseFrameWins(c.mine, c.theirs);
+      // The server sees this device's copy as the INCOMING one.
+      const server = c.theirs === undefined
+        ? 'accept'
+        : decideFrame(
+            { content_changed_at: c.mine ?? null, updated_at: 9_000 },
+            { content_changed_at: c.theirs ?? null, updated_at: 9_000 },
+          );
+      const serverSays = server === 'accept' ? 'mine' : 'theirs';
+      check(`device and server agree — ${c.what}`, `${device}/${serverSays}`,
+        `${serverSays}/${serverSays}`);
+    }
   }
 
   // ---------------------------------------------------------------------------
