@@ -190,6 +190,48 @@ export class Device {
         .__fh_test.renameCategory(i as number, n as string), [index, name]);
   }
 
+  // --- shooting orders -----------------------------------------------------
+
+  newSortOrder(name?: string): Promise<string> {
+    return this.page.evaluate((n) =>
+      (window as never as { __fh_test: { newSortOrder(n?: string): string } })
+        .__fh_test.newSortOrder(n as string | undefined), name);
+  }
+
+  moveInOrder(orderIndex: number, from: number, to: number): Promise<void> {
+    return this.page.evaluate(([o, f, t]) =>
+      (window as never as { __fh_test: { moveInOrder(o: number, f: number, t: number): void } })
+        .__fh_test.moveInOrder(o as number, f as number, t as number), [orderIndex, from, to]);
+  }
+
+  addBreak(orderIndex: number, position: number, text: string): Promise<string> {
+    return this.page.evaluate(([o, p, t]) =>
+      (window as never as { __fh_test: { addBreak(o: number, p: number, t: string): string } })
+        .__fh_test.addBreak(o as number, p as number, t as string),
+      [orderIndex, position, text] as [number, number, string]);
+  }
+
+  moveBreak(orderIndex: number, breakIndex: number, toPosition: number): Promise<void> {
+    return this.page.evaluate(([o, b, p]) =>
+      (window as never as { __fh_test: { moveBreak(o: number, b: number, p: number): void } })
+        .__fh_test.moveBreak(o as number, b as number, p as number), [orderIndex, breakIndex, toPosition]);
+  }
+
+  /** One shooting order written out flat: the frames in order with the breaks
+   *  sitting between them, exactly as the sort view shows it. The simplest
+   *  thing to hold two devices against. */
+  async orderAsText(orderIndex = 0): Promise<string> {
+    const s = await this.read();
+    const o = s.orders[orderIndex];
+    if (!o) return '(no order)';
+    const out: string[] = [];
+    for (let i = 0; i <= o.frames.length; i++) {
+      for (const b of o.breaks.filter((x) => x.position === i)) out.push(`[${b.text}]`);
+      if (i < o.frames.length) out.push(o.frames[i]);
+    }
+    return `${o.name}: ${out.join(' ')}`;
+  }
+
   push(): Promise<void> {
     return this.page.evaluate(() =>
       (window as never as { __fh_test: { push(): Promise<void> } }).__fh_test.push());
@@ -200,6 +242,10 @@ export class Device {
     frames: Array<{ id: string; serverFrameId?: string; label: string; text: string }>;
     categories: string[];
     unsent: string[];
+    orders: Array<{
+      id: string; name: string; frames: string[];
+      breaks: Array<{ id: string; text: string; position: number }>;
+    }>;
   }> {
     return this.page.evaluate(() =>
       (window as never as { __fh_test: { read(): never } }).__fh_test.read());
@@ -235,6 +281,69 @@ export class Device {
     }
   }
 
+  /**
+   * WAIT FOR A LINE THAT IS NOT THERE YET.
+   *
+   * `waitForLog` matches ANY line, including one written minutes ago — the log
+   * is cumulative. So `push(); waitForLog('push OK')` returns instantly on the
+   * strength of the PREVIOUS push, and the test carries on before the thing it
+   * is waiting for has happened. It waits for nothing and reports success.
+   *
+   * That is how #312 first "failed": the test ran its checks 0.1 seconds after
+   * asking for a push, because a 'push OK' from six seconds earlier was still
+   * in the log.
+   *
+   * This one remembers what the log already said, and only counts a line that
+   * appears afterwards.
+   */
+  /**
+   * Everything the log says RIGHT NOW, to be handed to `waitForLogAfter`.
+   *
+   * Take this BEFORE the thing you are about to do. `waitForFreshLog` takes its
+   * own snapshot when it is called, which is a moment too late: reconnecting a
+   * device can produce "back online" before the next line of the test runs, and
+   * the line it is waiting for is then already in the "before" picture and
+   * ignored. The test waits thirty seconds for something that has happened.
+   */
+  async mark(): Promise<Set<string>> {
+    return new Set(await this.log());
+  }
+
+  /** Wait for a line that was not in `before`. */
+  async waitForLogAfter(before: Set<string>, needle: string,
+                        timeoutMs = 30_000): Promise<void> {
+    say(`${this.name}: waiting for a NEW line saying "${needle}"`);
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      const lines = await this.log();
+      if (lines.some((l) => l.includes(needle) && !before.has(l))) {
+        say(`${this.name}: …said it`); return;
+      }
+      if (Date.now() > deadline) {
+        throw new Error(`[${this.name}] waited ${timeoutMs}ms for a NEW "${needle}".\nLog was:\n`
+          + lines.slice(0, 40).map((l) => '  ' + l).join('\n'));
+      }
+      await this.page.waitForTimeout(250);
+    }
+  }
+
+  async waitForFreshLog(needle: string, timeoutMs = 30_000): Promise<void> {
+    const before = new Set(await this.log());
+    say(`${this.name}: waiting for a NEW line saying "${needle}"`);
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      const lines = await this.log();
+      if (lines.some((l) => l.includes(needle) && !before.has(l))) {
+        say(`${this.name}: …said it`); return;
+      }
+      if (Date.now() > deadline) {
+        throw new Error(`[${this.name}] waited ${timeoutMs}ms for a NEW "${needle}".\nLog was:\n`
+          + lines.slice(0, 40).map((l) => '  ' + l).join('\n'));
+      }
+      await this.page.waitForTimeout(250);
+    }
+  }
+
   /** Nothing in the log may say this. Used for the faults that were silent for
    *  days — a crash inside a pull, a device stuck holding a pull back. */
   async expectNeverInLog(needle: string): Promise<void> {
@@ -264,6 +373,26 @@ export class Device {
       last = `\n  ${a.name}: ${x}\n  ${b.name}: ${y}`;
       if (Date.now() > deadline) {
         throw new Error(`the two devices never agreed within ${timeoutMs}ms:${last}\n\n`
+          + `${a.name} log:\n${(await a.log()).slice(0, 25).map((l) => '  ' + l).join('\n')}\n\n`
+          + `${b.name} log:\n${(await b.log()).slice(0, 25).map((l) => '  ' + l).join('\n')}`);
+      }
+      await a.page.waitForTimeout(500);
+    }
+  }
+
+  /** The same question as waitUntilTheyAgree, asked about a shooting order:
+   *  the frames in order with the breaks between them. */
+  static async waitUntilOrdersAgree(a: Device, b: Device, orderIndex = 0,
+                                    timeoutMs = 60_000): Promise<string> {
+    say(`waiting for ${a.name} and ${b.name} to show the same shooting order…`);
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      await a.nudge(); await b.nudge();
+      const [x, y] = [await a.orderAsText(orderIndex), await b.orderAsText(orderIndex)];
+      if (x === y && x !== '(no order)') { say(`they agree: ${x.slice(0, 80)}`); return x; }
+      if (Date.now() > deadline) {
+        throw new Error(`the two devices never agreed on the shooting order within `
+          + `${timeoutMs}ms:\n  ${a.name}: ${x}\n  ${b.name}: ${y}\n\n`
           + `${a.name} log:\n${(await a.log()).slice(0, 25).map((l) => '  ' + l).join('\n')}\n\n`
           + `${b.name} log:\n${(await b.log()).slice(0, 25).map((l) => '  ' + l).join('\n')}`);
       }

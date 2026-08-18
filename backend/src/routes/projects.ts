@@ -1642,6 +1642,30 @@ async function applySyncPartial(db: D1Database, projectId: string, payload: Sync
 // ---------------------------------------------------------------------------
 // Shared helpers for both full and partial sync
 // ---------------------------------------------------------------------------
+/**
+ * ONE CLOCK FOR `updated_at` — THE SERVER'S (#313).
+ *
+ * `updated_at` on a row is not "when someone changed this". It is "when this
+ * reached the server", and it exists for exactly one purpose: the delta window.
+ * A device asks `?since=X` and gets everything with `updated_at >= X`, where X
+ * is the `project.updated_at` it was last given.
+ *
+ * `project.updated_at` has always been stamped by the server. These rows were
+ * stamped by the DEVICE — whatever `f.updated_at` the push happened to carry.
+ * So the window compared a server clock against a device clock, and an iPad
+ * running a few seconds behind wrote frames stamped EARLIER than the project
+ * they belong to. The next device asked for everything since the project's
+ * time, and those frames fell underneath the question. Not delayed — invisible,
+ * and permanently, because the project's time only ever climbs.
+ *
+ * That is what test 02 caught: a note pushed, accepted, and then never handed
+ * to the other device, with both sides quietly certain they were finished.
+ *
+ * When a change was MADE is a different question and a different column:
+ * `content_changed_at`, sent by the device, which is the only thing that should
+ * be — and now is — device time. That one decides who wins. This one only
+ * decides who gets told.
+ */
 function appendFrameInserts(db: D1Database, stmts: D1PreparedStatement[], payload: SyncPayload, now: number) {
   for (const f of payload.frames) {
     stmts.push(
@@ -1658,7 +1682,7 @@ function appendFrameInserts(db: D1Database, stmts: D1PreparedStatement[], payloa
            note = excluded.note, scribbles = excluded.scribbles,
            updated_at = excluded.updated_at, changed_offline = excluded.changed_offline,
            needs = excluded.needs, notes = excluded.notes, setup_id = excluded.setup_id`,
-      ).bind(f.id, f.strip_id, f.label, f.sort_order, f.crop_w, f.crop_h, f.text_content, f.table_data, f.version_label, f.strip_labels, f.hidden ? 1 : 0, f.note ?? null, f.scribbles ?? null, f.updated_at, f.changed_offline ? 1 : 0, f.needs ?? null, f.notes ?? null, f.setup_id ?? null, f.content_changed_at ?? null),
+      ).bind(f.id, f.strip_id, f.label, f.sort_order, f.crop_w, f.crop_h, f.text_content, f.table_data, f.version_label, f.strip_labels, f.hidden ? 1 : 0, f.note ?? null, f.scribbles ?? null, now, f.changed_offline ? 1 : 0, f.needs ?? null, f.notes ?? null, f.setup_id ?? null, f.content_changed_at ?? null),
     );
   }
   for (const v of payload.versions) {
@@ -1671,7 +1695,7 @@ function appendFrameInserts(db: D1Database, stmts: D1PreparedStatement[], payloa
            frame_id = excluded.frame_id, label = excluded.label, type = excluded.type,
            hidden = excluded.hidden, starred = excluded.starred, note = excluded.note,
            updated_at = excluded.updated_at, tags = excluded.tags`,
-      ).bind(v.id, v.frame_id, v.label, v.type, v.hidden ? 1 : 0, Number(v.starred) || 0, v.note ?? null, v.updated_at, v.tags ?? null, v.content_changed_at ?? null),
+      ).bind(v.id, v.frame_id, v.label, v.type, v.hidden ? 1 : 0, Number(v.starred) || 0, v.note ?? null, now, v.tags ?? null, v.content_changed_at ?? null),
     );
   }
   for (const img of payload.images) {
@@ -1686,7 +1710,7 @@ function appendFrameInserts(db: D1Database, stmts: D1PreparedStatement[], payloa
            updated_at = excluded.updated_at`,
       ).bind(
         img.id, img.version_id, img.r2_key, img.width, img.height,
-        img.size_bytes, img.content_type, now, img.updated_at,
+        img.size_bytes, img.content_type, now, now,
       ),
     );
   }
@@ -1697,7 +1721,7 @@ function appendFrameInserts(db: D1Database, stmts: D1PreparedStatement[], payloa
          VALUES (?, ?, ?, ?)
          ON CONFLICT(version_id) DO UPDATE SET
            drawing_data = excluded.drawing_data, updated_at = excluded.updated_at`,
-      ).bind(d.id, d.version_id, d.drawing_data, d.updated_at),
+      ).bind(d.id, d.version_id, d.drawing_data, now),
     );
   }
 }

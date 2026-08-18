@@ -408,6 +408,27 @@ async function run() {
         frames.some((f) => f.text_content === 'made on the boundary'), true);
     }
 
+    // A DEVICE WHOSE CLOCK IS BEHIND (#313).
+    //
+    // The row's `updated_at` used to be whatever the pushing device said, while
+    // `project.updated_at` was stamped by the server — and the delta window
+    // compared the two. An iPad running a minute slow therefore wrote frames
+    // stamped EARLIER than the project they belonged to, and the next device,
+    // asking for everything since the project's time, was never shown them.
+    // Not late. Invisible, and for good, because the project's time only climbs.
+    //
+    // This is the one that let a note be pushed, accepted, and never delivered,
+    // with both devices quietly certain they were finished.
+    {
+      const slow = new Date().getTime() - 60_000;      // an iPad a minute behind
+      await iPad.send([{ id: 'f9', text: 'written on a slow iPad' }], slow);
+      const askedFor = desktop.heardAt;
+      const r = await call(db, 'GET', `/projects/${PROJECT}/sync?since=${askedFor}`);
+      const frames = (r.body as { frames: Array<{ id: string; text_content: string }> }).frames;
+      check('a frame from a device with a slow clock is still delivered',
+        frames.some((f) => f.text_content === 'written on a slow iPad'), true);
+    }
+
     // settings travel in a delta too
     const withSetting = push([], { device: 'iPad' }) as Record<string, unknown>;
     withSetting.settings = [{ kind: 'needCategory', item_id: 'tab_1', value: '{"idx":0,"data":{"name":"GEAR"}}', changed_at: Date.now(), deleted_at: null }];

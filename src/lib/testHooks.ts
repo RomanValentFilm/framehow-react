@@ -15,6 +15,8 @@
 // decision of its own belongs in the app, where the app's own tests can see it.
 
 import { useStore } from '../store/state';
+import type { SortOrder } from '../store/state';
+import { getVisibleFrames } from './groups';
 import { startFromScratch } from './files';
 import { saveNow, openCloudProjectById } from './accountFlow';
 import { flushSyncNow, markFrameDirty, getDirtyFrameIds } from './currentProject';
@@ -46,6 +48,23 @@ export interface TestDoor {
   moveFrame(from: number, to: number): void;
   /** Rename a NEEDS category by its place in the list. */
   renameCategory(index: number, name: string): void;
+
+  // --- shooting orders -----------------------------------------------------
+  // An order is ONE settings item, breaks and all (see projectSettings, where
+  // each order is pushed whole under `sortOrder:<id>`). So two devices editing
+  // the same order do not merge — the later one wins entire. These doors exist
+  // to prove that is what actually happens, and that nothing else is dragged
+  // down with it.
+
+  /** Make a shooting order holding every visible frame, as the SHOOTING ORDER
+   *  button does the first time it is pressed. Returns its id. */
+  newSortOrder(name?: string): string;
+  /** Move a frame inside an order — the drag in the sort edit view. */
+  moveInOrder(orderIndex: number, from: number, to: number): void;
+  /** ADD BREAK, at a place in the order. Returns the break's id. */
+  addBreak(orderIndex: number, position: number, text: string): string;
+  /** Drag a break to a different place. */
+  moveBreak(orderIndex: number, breakIndex: number, toPosition: number): void;
   /** Send whatever is unsent, now, without waiting for the debounce. */
   push(): Promise<void>;
   /** What is on screen, in order, as plain facts a test can compare. */
@@ -54,7 +73,28 @@ export interface TestDoor {
     frames: Array<{ id: string; serverFrameId?: string; label: string; text: string }>;
     categories: string[];
     unsent: string[];
+    orders: Array<{
+      id: string;
+      name: string;
+      /** The frame LABELS in this order, not the internal numbers — a test that
+       *  compares numbers compares things the two devices never agreed on. */
+      frames: string[];
+      breaks: Array<{ id: string; text: string; position: number }>;
+    }>;
   };
+}
+
+/** Change one shooting order in place, then stamp it — every order door goes
+ *  through here so none of them can forget the "when". */
+function editOrder(orderIndex: number, change: (o: SortOrder) => SortOrder): void {
+  const s = useStore.getState();
+  const target = s.sortOrders[orderIndex];
+  if (!target) throw new Error(`no shooting order at ${orderIndex}`);
+  useStore.setState({
+    sortOrders: s.sortOrders.map((o, i) => (i === orderIndex ? change(o) : o)),
+  } as never);
+  stampChangedSettings(getCurrentProject().projectId);
+  (window as never as { __fh_renderAll?: () => void }).__fh_renderAll?.();
 }
 
 export function installTestDoor(): void {
@@ -115,6 +155,50 @@ export function installTestDoor(): void {
       stampChangedSettings(getCurrentProject().projectId);
     },
 
+    newSortOrder(name) {
+      const s = useStore.getState();
+      const id = `sort_${s.nextSortOrderId}`;
+      useStore.setState({
+        sortOrders: [...s.sortOrders, {
+          id,
+          name: name ?? `SHOOTING ORDER ${s.sortOrders.length + 1}`,
+          description: 'Your custom frame order',
+          frameOrder: getVisibleFrames().map((f) => f.id),
+          breaks: [],
+        }],
+        activeSortOrderId: id,
+        nextSortOrderId: s.nextSortOrderId + 1,
+      } as never);
+      stampChangedSettings(getCurrentProject().projectId);
+      return id;
+    },
+
+    moveInOrder(orderIndex, from, to) {
+      editOrder(orderIndex, (o) => {
+        const frameOrder = [...o.frameOrder];
+        const [moved] = frameOrder.splice(from, 1);
+        if (moved === undefined) throw new Error(`no frame at ${from} in order ${orderIndex}`);
+        frameOrder.splice(to, 0, moved);
+        return { ...o, frameOrder };
+      });
+    },
+
+    addBreak(orderIndex, position, text) {
+      const id = `brk_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      editOrder(orderIndex, (o) => ({ ...o, breaks: [...o.breaks, { id, text, position }] }));
+      return id;
+    },
+
+    moveBreak(orderIndex, breakIndex, toPosition) {
+      editOrder(orderIndex, (o) => {
+        if (!o.breaks[breakIndex]) throw new Error(`no break at ${breakIndex}`);
+        return {
+          ...o,
+          breaks: o.breaks.map((b, i) => (i === breakIndex ? { ...b, position: toPosition } : b)),
+        };
+      });
+    },
+
     async push() { await flushSyncNow(); },
 
     read() {
@@ -129,6 +213,15 @@ export function installTestDoor(): void {
         })),
         categories: (s.needDefinitions?.tabs ?? []).map((t) => t.name),
         unsent: [...getDirtyFrameIds()],
+        orders: s.sortOrders.map((o) => ({
+          id: o.id,
+          name: o.name,
+          // frameOrder holds this device's internal frame numbers, which mean
+          // nothing on the other device. Turn them into the labels a person
+          // reads, so a test compares what is actually on the two screens.
+          frames: o.frameOrder.map((n) => s.frames.find((f) => f.id === n)?.label ?? `?${n}`),
+          breaks: o.breaks.map((b) => ({ id: b.id, text: b.text, position: b.position })),
+        })),
       };
     },
   };

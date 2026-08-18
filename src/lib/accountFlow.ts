@@ -2927,13 +2927,22 @@ async function applyCloudTreeToStore(
   // version taken from the cloud with the time the OTHER device changed it, so
   // this device does not claim the newest edit of work it was merely handed.
   {
+    // A row whose content_changed_at is null carries no honest answer to "when
+    // was this changed" — nobody ever recorded one. Falling back to updated_at
+    // invented one, and the invented time was the moment the row reached the
+    // SERVER, which is always recent. This device would then believe it held
+    // the newest edit of work it had merely been handed, and would beat a
+    // genuine older edit coming from the other side. Same mistake as #310 and
+    // #311; here it is simply left unknown, because it is (#313).
     const receivedTimes = new Map<string, number>();
     for (const sf of tree.frames) {
       if (keepLocalFrameIds?.has(sf.id)) continue;      // kept ours — our own stamp stands
-      receivedTimes.set(`f/${sf.id}`, sf.content_changed_at ?? sf.updated_at);
+      if (sf.content_changed_at == null) continue;      // not known — do not invent it
+      receivedTimes.set(`f/${sf.id}`, sf.content_changed_at);
     }
     for (const sv of tree.versions) {
-      receivedTimes.set(`v/${sv.id}`, sv.content_changed_at ?? sv.updated_at);
+      if (sv.content_changed_at == null) continue;
+      receivedTimes.set(`v/${sv.id}`, sv.content_changed_at);
     }
     stampChangedContent(undefined, receivedTimes);
   }
