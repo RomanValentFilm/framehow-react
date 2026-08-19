@@ -2414,6 +2414,11 @@ async function applyCloudTreeToStore(
       drawActive: st.drawActive,
       drawWidth: st.drawWidth,
       drawEraser: st.drawEraser,
+      reorderFid: st.reorderFid,
+      verReorderFid: st.verReorderFid,
+      verReorderStrip: st.verReorderStrip,
+      stripClipboard: st.stripClipboard,
+      activeSortOrderId: st.activeSortOrderId,
       activeStrips: st.activeStrips,
     };
   })();
@@ -3004,12 +3009,16 @@ async function applyCloudTreeToStore(
     crossCompare: verCC,
     prevFrameState: verPFS,
     nextId,
-    reorderFid: null,
-    verReorderFid: null,
-    verReorderStrip: null,
+    // NOR DOES IT CANCEL WHAT YOU ARE IN THE MIDDLE OF (#355). Reorder mode is
+    // a thing you switched on a moment ago and are working in.
+    reorderFid: prevView.reorderFid,
+    verReorderFid: prevView.verReorderFid,
+    verReorderStrip: prevView.verReorderStrip,
     verSlideDir: null,
     swipeHighlightFid: null,
-    stripClipboard: null,
+    // ...and it does not empty your clipboard (#355). Copy a frame, wait a
+    // moment, and there was nothing left to paste.
+    stripClipboard: prevView.stripClipboard,
     imgTarget: null,
     mainImgTarget: null,
     // WHAT YOU ARE LOOKING AT IS NOT THE PROJECT (#347).
@@ -3037,7 +3046,14 @@ async function applyCloudTreeToStore(
     frameNotes: localFrameNotes,
     sortOrders: localSortOrders,
     nextSortOrderId: restoredNextSortOrderId,
-    activeSortOrderId: restoredActiveSortOrderId,
+    // WHICH shooting order you are looking at is yours, not the project's
+    // (#355). It travelled in the metadata, so the other device could change
+    // what was on your screen. It is only taken from the cloud if this device
+    // has no opinion, or if the order it was showing is gone.
+    activeSortOrderId: (prevView.activeSortOrderId
+      && localSortOrders.some((o: { id: string }) => o.id === prevView.activeSortOrderId))
+      ? prevView.activeSortOrderId
+      : restoredActiveSortOrderId,
     storyFlowBreaks: restoredStoryFlowBreaks,
     camAspectRatio: restoredCamAspectRatio,
     exportMeta: restoredExportMeta ?? createDefaultExportMeta(),

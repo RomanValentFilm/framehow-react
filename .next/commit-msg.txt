@@ -20,3 +20,13 @@ The rule that chooses 3x2 when a project OPENS is untouched.
      mode right now" - was cleared on every pull, so finishing a stroke ended
      the drawing: the stroke pushes, the pull comes back, and the card drops out
      of draw mode into the plain grid. Pen width and eraser go with it.
+
+#355 The rest of the same list, swept in one pass rather than one at a time:
+     reorder mode is no longer cancelled by a sync, the clipboard is no longer
+     emptied, and WHICH shooting order you are looking at is yours rather than
+     something that travels in the project's metadata from the other device.
+
+The whole family is one mistake: the pull rebuilt the SCREEN along with the
+PROJECT. A sync brings work from elsewhere. What is in front of you - the view,
+the open panel, the selected setup, the pen, the card you expanded, the order
+you are reading - was decided by the person holding the device a second ago.
