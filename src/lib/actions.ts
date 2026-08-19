@@ -246,12 +246,13 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
     fhTrack('write_used', { strip: 'main' });
     f.strokes = f.strokes || [];
     const existing = f.strokes.find((st: any) => st.type === 'text');
-    const curColor = existing ? existing.color : s.drawColor[fid] || '#fff';
+    const curColor = existing ? existing.color : s.penColor || '#fff';
     openTextModal(existing ? existing.text || '' : '', curColor || '#fff').then((result) => {
       if (result !== null) {
         snapshotFrame(fid, 'main');
         const { text, color } = result;
         s.drawColor[fid] = color;
+        useStore.setState({ penColor: color });   // one pen (#336)
         if (existing) {
           if (text) {
             existing.text = text;
@@ -453,13 +454,14 @@ export function handleAction(action: string, fid: number, div: HTMLElement, from
     fhTrack('write_used', { strip });
     ver.strokes = ver.strokes || [];
     const existing = ver.strokes.find((st: any) => st.type === 'text');
-    const curColor = existing ? existing.color : s.drawColor[fid] || '#fff';
+    const curColor = existing ? existing.color : s.penColor || '#fff';
     const wasOverview = s.overviewAction;
     openTextModal(existing ? existing.text || '' : '', curColor || '#fff').then((result) => {
       if (result !== null) {
         snapshotFrame(fid, strip);
         const { text, color } = result;
         s.drawColor[fid] = color;
+        useStore.setState({ penColor: color });   // one pen (#336)
         if (existing) {
           if (text) {
             existing.text = text;

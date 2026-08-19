@@ -135,6 +135,7 @@ export function renderOverviewRow(row: HTMLElement, fid: number): void {
     d.addEventListener('click', () => {
       const c = (d as HTMLElement).dataset.color!;
       s.drawColor[fid] = c;
+      useStore.setState({ penColor: c });   // one pen (#336)
       s.drawEraser[fid] = false;
       const txt = f.strokes && f.strokes.find((stk: any) => stk.type === 'text');
       if (txt) txt.color = c;
@@ -303,6 +304,7 @@ export function renderOverviewRow(row: HTMLElement, fid: number): void {
       d.addEventListener('click', () => {
         const c = (d as HTMLElement).dataset.color!;
         s.drawColor[fid] = c;
+        useStore.setState({ penColor: c });   // one pen (#336)
         s.drawEraser[fid] = false;
         const txt = ver.strokes && ver.strokes.find((stk: any) => stk.type === 'text');
         if (txt) txt.color = c;
@@ -510,6 +512,7 @@ export function renderGrid4Row(row: HTMLElement, fid: number): void {
   mainCard.querySelectorAll('.color-dot[data-omfid]').forEach((d) =>
     d.addEventListener('click', () => {
       s.drawColor[fid] = (d as HTMLElement).dataset.color!;
+      useStore.setState({ penColor: (d as HTMLElement).dataset.color! });   // one pen (#336)
       s.drawEraser[fid] = false;
       renderGrid4Row(row, fid);
     })
@@ -642,6 +645,7 @@ export function renderGrid4Row(row: HTMLElement, fid: number): void {
     fc.querySelectorAll('.color-dot[data-ovfid]').forEach((d) =>
       d.addEventListener('click', () => {
         s.drawColor[fid] = (d as HTMLElement).dataset.color!;
+        useStore.setState({ penColor: (d as HTMLElement).dataset.color! });   // one pen (#336)
         s.drawEraser[fid] = false;
         renderGrid4Row(row, fid);
       })
@@ -944,6 +948,7 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
     wrap.querySelectorAll('.color-dot[data-g3vfid]').forEach((d) =>
       d.addEventListener('click', () => {
         s.drawColor[fid] = (d as HTMLElement).dataset.color!;
+        useStore.setState({ penColor: (d as HTMLElement).dataset.color! });   // one pen (#336)
         s.drawEraser[fid] = false;
         renderGrid3x2Card(wrap, fid);
       })
@@ -1081,6 +1086,7 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
     card.querySelectorAll('.color-dot[data-g3mfid]').forEach((d) =>
       d.addEventListener('click', () => {
         s.drawColor[fid] = (d as HTMLElement).dataset.color!;
+        useStore.setState({ penColor: (d as HTMLElement).dataset.color! });   // one pen (#336)
         s.drawEraser[fid] = false;
         renderGrid3x2Card(wrap, fid);
       })

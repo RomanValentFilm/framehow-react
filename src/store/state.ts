@@ -63,7 +63,7 @@ export interface Setup {
 
 /** 12-colour palette for setups. */
 /** App version — bump before every deploy. */
-export const APP_VERSION = 'v4.9.068';
+export const APP_VERSION = 'v4.9.069';
 
 /** Free-text fields printed in the header of every exported page. */
 export interface ExportMeta {
@@ -465,6 +465,18 @@ export interface FrameHowState {
   /** Layout mode from the right buttons */
   layoutMode: LayoutMode;
   drawColor: Record<number, string>;
+  /** THE PEN COLOUR — one for the whole app (#336).
+   *
+   *  It used to be per frame, with a SECOND copy of its own inside the
+   *  fullscreen view, and the two never told each other. Pick red on a card,
+   *  open fullscreen, and it silently went back to whatever fullscreen last
+   *  had; pick red in fullscreen and every card still showed its own old
+   *  colour. A sync arriving in the background emptied the per-frame list
+   *  altogether, so everything went back to white in the middle of working.
+   *
+   *  One colour, chosen last, used everywhere, kept across a sync and a
+   *  restart, until the user picks another. */
+  penColor: string;
   drawWidth: Record<number, number>;
   drawEraser: Record<number, boolean>;
   drawActive: Record<number, DrawActiveOrigin>;
@@ -589,6 +601,7 @@ const initial: FrameHowState = {
   activeStrips: ['main', 'ver'],
   layoutMode: 'auto',
   drawColor: {},
+  penColor: COLORS[0],
   drawWidth: {},
   drawEraser: {},
   drawActive: {},

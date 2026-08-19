@@ -2883,6 +2883,9 @@ async function applyCloudTreeToStore(
     activeSetupId: null,
     setupMode: false,
     nextSetupId: restoredNextSetupId,
+    // The per-frame list is rebuilt, but the PEN keeps its colour — a sync
+    // arriving in the background used to put everything back to white in the
+    // middle of working (#336).
     drawColor: {},
     drawWidth: {},
     drawEraser: {},

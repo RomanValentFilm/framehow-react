@@ -5,6 +5,8 @@
 import { COLORS, state, useStore } from '../store/state';
 import type { Frame, Stroke, Version, StripType, FrameSnapshot } from '../store/state';
 import { getStripVersions, getStripActiveTab, getStripCrossCompare, setStripPrevFrameState } from './helpers';
+import { markFrameDirty } from './currentProject';
+import { stampChangedContent } from './changeStamps';
 
 export function _drawStrokeItem(tctx: CanvasRenderingContext2D, st: Stroke, cH: number): void {
   if (st.type === 'text') {
@@ -193,7 +195,34 @@ export function updateUndoButtons(fid: number): void {
   document.querySelectorAll(`[data-fid="${fid}"][data-action="undo"]`).forEach((b) => b.classList.toggle('disabled', !verOK));
 }
 
+/**
+ * ONE PEN, LISTENED TO ONCE (#334).
+ *
+ * Both setup functions below simply start listening to the canvas, and nothing
+ * ever stopped listening. Two places re-run them on a canvas that is still the
+ * same one: the fullscreen undo button, after every press, and the resize
+ * handler, on every rotation of an iPad or drag of a window.
+ *
+ * So the listening piled up. After five undos the app heard every stroke five
+ * times and wrote it into the frame five times: the line came out thicker and
+ * rougher, one press of undo removed one of the five copies so it looked like
+ * undo did nothing, and every pointer movement did five times the work, so it
+ * grew laggier the longer it was used. Exactly the "sloppy, does not delete
+ * when there are more strokes" that Roman described — and self-feeding, since
+ * undoing is what added another listener.
+ *
+ * A canvas now says whether it has already been wired, and a second attempt is
+ * simply ignored.
+ */
+function alreadyListening(cvs: HTMLCanvasElement, which: string): boolean {
+  const key = `fhWired${which}`;
+  if ((cvs.dataset as Record<string, string | undefined>)[key] === '1') return true;
+  (cvs.dataset as Record<string, string | undefined>)[key] = '1';
+  return false;
+}
+
 export function setupMainDrawing(cvs: HTMLCanvasElement, fid: number): void {
+  if (alreadyListening(cvs, 'Main')) return;
   let isDrawing = false,
     isErasing = false,
     cur: Stroke | null = null;
@@ -225,7 +254,7 @@ export function setupMainDrawing(cvs: HTMLCanvasElement, fid: number): void {
     }
     isDrawing = true;
     useStore.setState({ drawingInProgress: true });
-    cur = { color: s.drawColor[fid] || COLORS[0], width: s.drawWidth[fid] || 6, points: [getPos(e)] };
+    cur = { color: s.penColor || COLORS[0], width: s.drawWidth[fid] || 6, points: [getPos(e)] };
   }
   function move(e: MouseEvent | TouchEvent): void {
     // Eraser drag: erase any stroke the pointer passes over
@@ -258,6 +287,17 @@ export function setupMainDrawing(cvs: HTMLCanvasElement, fid: number): void {
     }
     if (isDrawing || isErasing) {
       useStore.setState({ drawSuppressClick: true });
+      // A DRAWING IS WORK, AND HAS TO SAY SO (#335).
+      //
+      // Strokes are added to the array in place, and the watcher that spots
+      // changes looks for an object being REPLACED — so a drawing was never
+      // counted as unsent. The scribble layer says so explicitly and has done
+      // for a while; the drawing layer never did. A pull arriving before the
+      // next push could therefore bring back strokes that had been rubbed out,
+      // or take away ones just drawn.
+      const drawn = state().frames.find((x) => x.id === fid);
+      if (drawn?.serverFrameId) markFrameDirty(drawn.serverFrameId);
+      stampChangedContent();
     }
     useStore.setState({ drawingInProgress: false });
     isDrawing = false;
@@ -274,6 +314,7 @@ export function setupMainDrawing(cvs: HTMLCanvasElement, fid: number): void {
 }
 
 export function setupDrawing(cvs: HTMLCanvasElement, fid: number, ai: number, strip: StripType = 'ver'): void {
+  if (alreadyListening(cvs, 'Strip')) return;
   let isDrawing = false,
     isErasing = false,
     cur: Stroke | null = null;
@@ -305,7 +346,7 @@ export function setupDrawing(cvs: HTMLCanvasElement, fid: number, ai: number, st
     }
     isDrawing = true;
     useStore.setState({ drawingInProgress: true });
-    cur = { color: s.drawColor[fid] || COLORS[0], width: s.drawWidth[fid] || 6, points: [getPos(e)] };
+    cur = { color: s.penColor || COLORS[0], width: s.drawWidth[fid] || 6, points: [getPos(e)] };
   }
   function move(e: MouseEvent | TouchEvent): void {
     // Eraser drag: erase any stroke the pointer passes over
@@ -339,6 +380,17 @@ export function setupDrawing(cvs: HTMLCanvasElement, fid: number, ai: number, st
     }
     if (isDrawing || isErasing) {
       useStore.setState({ drawSuppressClick: true });
+      // A DRAWING IS WORK, AND HAS TO SAY SO (#335).
+      //
+      // Strokes are added to the array in place, and the watcher that spots
+      // changes looks for an object being REPLACED — so a drawing was never
+      // counted as unsent. The scribble layer says so explicitly and has done
+      // for a while; the drawing layer never did. A pull arriving before the
+      // next push could therefore bring back strokes that had been rubbed out,
+      // or take away ones just drawn.
+      const drawn = state().frames.find((x) => x.id === fid);
+      if (drawn?.serverFrameId) markFrameDirty(drawn.serverFrameId);
+      stampChangedContent();
     }
     useStore.setState({ drawingInProgress: false });
     isDrawing = false;

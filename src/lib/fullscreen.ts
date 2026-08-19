@@ -6,7 +6,8 @@ import type { StripType } from '../store/state';
 import { drawToolbarHTML, starHTML, toggleStar, getStripVersions, stripTabPrefix, stripScrollId, ensureStripVersions, getStripActiveTab, setStripActiveTab, addNewStripVersion, relabelStripVersions, revealActiveVersionTab } from './helpers';
 import { restoreCanvas, restoreMainCanvas, setupDrawing, setupMainDrawing, snapshotFrame } from './drawing';
 import { resetToolbarState } from './view';
-import { flushSyncNow } from './currentProject';
+import { stampChangedContent } from './changeStamps';
+import { flushSyncNow, markFrameDirty } from './currentProject';
 import { openCamera } from './camera';
 import { openTextModal, showVersionChoice } from './modals';
 import { stripTagHTML, handleStripTagClick } from './setups';
@@ -16,7 +17,9 @@ const DEFAULT_DRAW_COLOR = COLORS[4]; // #3080e0 blue
 const DEFAULT_DRAW_WIDTH = 12;        // middle thickness
 
 // Global "last used" — persists across frames within the session
-let _lastColor: string = DEFAULT_DRAW_COLOR;
+// Fullscreen used to keep a colour of its own here, which nothing else knew
+// about — that was half of why the pen kept changing (#336). The one pen
+// colour now lives in the store, with everything else.
 let _lastWidth: number = DEFAULT_DRAW_WIDTH;
 
 const fsCollapseSVG = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M4 14h6v6M20 10h-6V4M10 14l-7 7M14 10l7-7"/></svg>';
@@ -81,7 +84,6 @@ export function openFullscreen(
   let fsReorder = false;
 
   // Apply last-used color/width (carries across frames), eraser always off
-  s.drawColor[fid] = _lastColor;
   s.drawWidth[fid] = _lastWidth;
   s.drawEraser[fid] = false;
 
@@ -244,12 +246,13 @@ export function openFullscreen(
     if (!ver) return;
     ver.strokes = ver.strokes || [];
     const existing = ver.strokes.find((st: any) => st.type === 'text');
-    const curColor = existing ? existing.color : s.drawColor[fid] || '#fff';
+    const curColor = existing ? existing.color : s.penColor || '#fff';
     openTextModal(existing ? existing.text || '' : '', curColor || '#fff').then((result) => {
       if (result !== null) {
         snapshotFrame(fid, strip);
         const { text, color } = result;
         s.drawColor[fid] = color;
+        useStore.setState({ penColor: color });   // one pen (#336)
         if (existing) {
           if (text) {
             existing.text = text;
@@ -505,8 +508,8 @@ export function openFullscreen(
       d.addEventListener('click', () => {
         const c = (d as HTMLElement).dataset.color!;
         state().drawColor[fid] = c;
+        useStore.setState({ penColor: c });   // one pen (#336)
         state().drawEraser[fid] = false;
-        _lastColor = c; // remember globally
         overlay.querySelectorAll('.color-dot').forEach((dd) =>
           dd.classList.toggle('selected', (dd as HTMLElement).dataset.color === c)
         );
@@ -529,7 +532,7 @@ export function openFullscreen(
         );
         overlay.querySelectorAll('.eraser-btn').forEach((dd) => dd.classList.remove('selected'));
         // re-highlight active color
-        const cc = state().drawColor[fid] || _lastColor;
+        const cc = state().penColor;                 // one pen (#336)
         overlay.querySelectorAll('.color-dot').forEach((dd) =>
           dd.classList.toggle('selected', (dd as HTMLElement).dataset.color === cc)
         );
@@ -556,14 +559,19 @@ export function openFullscreen(
             break;
           }
         }
-        // Re-render canvas
+        // Draw what is left. The canvas is the same one and is already being
+        // listened to — asking again is what made every stroke be recorded
+        // twice, then three times, then four (#334).
         const cvs = overlay.querySelector('canvas') as HTMLCanvasElement | null;
         if (cvs) {
           if (isMain) restoreMainCanvas(cvs, f);
           else if (ver) restoreCanvas(cvs, ver);
-          if (isMain) setupMainDrawing(cvs, fid);
-          else setupDrawing(cvs, fid, vi, strip);
         }
+        // Undoing is a change to the drawing like any other, and the app has to
+        // know there is something to send (#335). Strokes are changed in place,
+        // which the usual watcher cannot see.
+        if (f.serverFrameId) markFrameDirty(f.serverFrameId);
+        stampChangedContent();
         bumpRenderTick();
       })
     );

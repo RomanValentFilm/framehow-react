@@ -496,6 +496,7 @@ export function renderMainFrame(div: HTMLElement, fid: number): void {
       d.addEventListener('click', () => {
         const c = (d as HTMLElement).dataset.color!;
         s.drawColor[fid] = c;
+        useStore.setState({ penColor: c });   // one pen (#336)
         s.drawEraser[fid] = false;
         renderMainFrame(div, fid);
       })
@@ -594,6 +595,7 @@ export function renderMainFrame(div: HTMLElement, fid: number): void {
     d.addEventListener('click', () => {
       const c = (d as HTMLElement).dataset.color!;
       s.drawColor[fid] = c;
+      useStore.setState({ penColor: c });   // one pen (#336)
       s.drawEraser[fid] = false;
       renderMainFrame(div, fid);
     })
@@ -761,6 +763,7 @@ export function renderVersionFrame(div: HTMLElement, fid: number, strip: StripTy
       d.addEventListener('click', () => {
         const c = (d as HTMLElement).dataset.color!;
         s.drawColor[fid] = c;
+        useStore.setState({ penColor: c });   // one pen (#336)
         s.drawEraser[fid] = false;
         renderVersionFrame(div, fid);
         const md = document.querySelector(`#mainScroll .frame-card[data-mfid="${fid}"]`) as HTMLElement | null;
@@ -986,6 +989,7 @@ export function renderVersionFrame(div: HTMLElement, fid: number, strip: StripTy
     d.addEventListener('click', () => {
       const c = (d as HTMLElement).dataset.color!;
       s.drawColor[fid] = c;
+      useStore.setState({ penColor: c });   // one pen (#336)
       s.drawEraser[fid] = false;
       renderVersionFrame(div, fid, strip);
     })

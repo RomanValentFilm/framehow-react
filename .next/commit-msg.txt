@@ -1,19 +1,19 @@
-v4.9.068 - setups travel one by one, needs start fresh, and a retaken photo is noticed
+v4.9.069 - the pen: one colour, honest undo, and drawings that count as work
 
-#331 The whole setup palette travelled as ONE item, so two people each adding a
-     setup while apart meant one list beat the other and one setup was simply
-     gone. Every setup now has its own row, which also means deleting one still
-     travels. The CREATE button's body existed twice and is now one function.
-#332 The NEEDS defaults were handed out by reference and edited in place, so
-     renaming a category changed the TEMPLATE for the rest of the session and
-     the next new project opened holding the last project's categories - then
-     pushed them up as though they had been typed there. Every new project now
-     starts from the plain defaults, by decision.
-#333 Change detection summarised a picture by its first 40 characters, which is
-     about thirty bytes, and image formats spend their first thirty bytes on a
-     fixed header - so two photos from the same camera looked identical.
-     Retaking a shot offline could read as no change, never upload, and be
-     replaced by the old one on the next pull. Drawings were judged on the
-     NUMBER of strokes, so erasing one and drawing another was invisible.
-
-Twelve tests now, including both devices making their own setup while apart.
+#334 The app was listening to the pen several times over. The fullscreen undo
+     button re-attached the listening after every press, and so did the resize
+     handler on every rotation or window drag, with nothing ever detaching. So
+     after five undos each stroke was recorded five times: thicker rougher
+     lines, undo removing one copy of five and looking like it did nothing, and
+     growing lag. Self-feeding, since undoing was what added another listener.
+     A canvas is now listened to once.
+#335 A drawing counts as unsent work. Strokes change in place and the watcher
+     looks for a replaced object, so a drawing was never flagged - a pull
+     arriving before the next push could bring back rubbed-out strokes or lose
+     new ones. The scribble layer had said so for a while; the drawing layer
+     never did.
+#336 One pen colour for the whole app. It was per frame, with a second copy of
+     its own inside fullscreen that nothing else knew about, two different
+     defaults, and a sync in the background emptied the whole list back to
+     white mid-session. Now: pick red, draw red everywhere, across a sync and
+     across a restart, until you pick something else.

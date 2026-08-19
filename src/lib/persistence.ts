@@ -44,6 +44,8 @@ export interface CurrentProjectSnapshot {
   /** When each frame and version was last changed on this device, so being
    *  offline across a restart still orders edits honestly. */
   contentStamps?: Record<string, { fp: string; at: number }>;
+  /** The pen colour, so red is still red after a restart (#336). */
+  penColor?: string;
   /** Deletions made here that the server has not taken yet (#327).
    *
    *  These lived only in memory. Delete a frame while offline, close the app
@@ -173,6 +175,7 @@ export function snapshotFromStore(projectId: string | null, name: string | null)
     name,
     lastModified: Date.now(),
     frames: s.frames,
+    penColor: s.penColor,          // red stays red across a restart (#336)
     versions: s.stripVersions.ver || {},
     activeTab: s.stripActiveTab.ver || {},
     nextId: s.nextId,
@@ -266,6 +269,7 @@ export function applySnapshotToStore(snap: CurrentProjectSnapshot): void {
     stripTagInfoDismissed: snap.stripTagInfoDismissed ?? false,
     stripUntagInfoDismissed: snap.stripUntagInfoDismissed ?? false,
     needDefinitions: migrateNeedDefinitions(snap.needDefinitions ?? freshNeedDefinitions()),
+    ...(snap.penColor ? { penColor: snap.penColor } : {}),
     frameNeeds: snap.frameNeeds ?? {},
     frameNotes: snap.frameNotes ?? {},
     sortOrders: snap.sortOrders ?? [],

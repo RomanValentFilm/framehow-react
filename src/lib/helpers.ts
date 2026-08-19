@@ -193,7 +193,7 @@ export function starHTML(fid: number, vi: number, strip: StripType = 'ver'): str
 
 export function drawToolbarHTML(fid: number, attrName: string, attrVal: string | number): string {
   const s = state();
-  const chosenColor = s.drawColor[fid] || COLORS[0];
+  const chosenColor = s.penColor || COLORS[0];   // one pen (#336)
   const chosenWidth = s.drawWidth[fid] || 6;
   const isEraser = s.drawEraser[fid] || false;
   const dots = COLORS.map(
