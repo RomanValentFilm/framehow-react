@@ -232,6 +232,12 @@ export class Device {
     return `${o.name}: ${out.join(' ')}`;
   }
 
+  newSetup(name: string): Promise<string> {
+    return this.page.evaluate((n) =>
+      (window as never as { __fh_test: { newSetup(n: string): string } })
+        .__fh_test.newSetup(n as string), name);
+  }
+
   deleteFrame(index: number): Promise<void> {
     return this.page.evaluate((i) =>
       (window as never as { __fh_test: { deleteFrame(i: number): void } })
@@ -247,6 +253,7 @@ export class Device {
     projectId: string | null;
     frames: Array<{ id: string; serverFrameId?: string; label: string; text: string }>;
     categories: string[];
+    setups: string[];
     unsent: string[];
     orders: Array<{
       id: string; name: string; frames: string[];

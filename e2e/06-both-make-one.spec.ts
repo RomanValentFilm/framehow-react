@@ -76,3 +76,51 @@ test('two devices each make their first shooting order, and both survive', async
   await desktop.close();
   await tablet.close();
 });
+
+test('two devices each make their first setup, and both survive', async ({ browser }) => {
+  const { token } = await freshAccount();
+  const desktop = await Device.open(browser, 'desktop', token);
+  const tablet = await Device.open(browser, 'tablet', token, true);
+
+  const madeId = await desktop.newProject('Both make a setup', 3);
+  await tablet.openProject(madeId!);
+  await Device.waitUntilTheyAgree(desktop, tablet);
+  await desktop.settle();
+  await tablet.settle();
+
+  await desktop.offline(true);
+  await tablet.offline(true);
+  await desktop.page.waitForTimeout(4000);
+
+  // The whole palette used to travel as ONE item, so this lost one of them
+  // whatever the ids were — the later list simply replaced the earlier.
+  await desktop.newSetup('DAY');
+  await tablet.newSetup('NIGHT');
+  await desktop.settle();
+  await tablet.settle();
+
+  const d = await desktop.mark();
+  await desktop.offline(false);
+  await desktop.waitForLogAfter(d, 'back online');
+  const t = await tablet.mark();
+  await tablet.offline(false);
+  await tablet.waitForLogAfter(t, 'back online');
+
+  const deadline = Date.now() + 60_000;
+  for (;;) {
+    await desktop.nudge(); await tablet.nudge();
+    const dS = (await desktop.read()).setups.sort();
+    const tS = (await tablet.read()).setups.sort();
+    if (dS.includes('DAY') && dS.includes('NIGHT')
+      && tS.includes('DAY') && tS.includes('NIGHT')) break;
+    if (Date.now() > deadline) {
+      throw new Error(`one of the two setups was lost.\n`
+        + `  desktop has: ${dS.join(', ') || '(none)'}\n`
+        + `  tablet has:  ${tS.join(', ') || '(none)'}`);
+    }
+    await desktop.page.waitForTimeout(500);
+  }
+
+  await desktop.close();
+  await tablet.close();
+});

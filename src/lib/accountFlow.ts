@@ -57,7 +57,7 @@ import {
   registerTombstoneBridge,
 } from './currentProject';
 import { trace } from './syncTrace';
-import { frameChangedAt, versionChangedAt, importChangeStamps, stampChangedContent, seedContentStamps } from './changeStamps';
+import { frameChangedAt, versionChangedAt, importChangeStamps, stampChangedContent, seedContentStamps, pictureFp, strokesFp } from './changeStamps';
 import { shouldSendOnlyChanges } from './pushMode';
 import { serverHasSomethingNew, whoseFrameWins, type DeviceMemory } from './sessionRules';
 import { mergeDelta, lastMergeRefusal, answerIsSafeToApply, untouchedByDelta, type MergeableTree } from './deltaMerge';
@@ -67,7 +67,7 @@ import type { PendingRecord } from './persistence';
 import { showThreeWayConflict, showConfirm, showToast } from './modals';
 import { saveOpenTextEdits, saveOpenTableEdits, versionStars } from './helpers';
 import { closeSortMode } from './sortOrder';
-import { resetStoryboardState, state, useStore, DEFAULT_NEED_DEFINITIONS, DEFAULT_STRIP_DEFS, migrateNeedDefinitions, createDefaultExportMeta } from '../store/state';
+import { resetStoryboardState, state, useStore, freshNeedDefinitions, DEFAULT_STRIP_DEFS, migrateNeedDefinitions, createDefaultExportMeta } from '../store/state';
 import type { Frame, Stroke, Version, FrameNeedState, FrameNoteState, NeedDefinitions, BracketNodeData, ProjectType } from '../store/state';
 import { clearRectsForProject } from './pdfAdjust';
 
@@ -2908,7 +2908,7 @@ async function applyCloudTreeToStore(
     portraitMode: isPortrait,
     projectType: restoredProjectType,
     stripTagInfoDismissed: restoredStripTagInfoDismissed,
-    needDefinitions: migrateNeedDefinitions(restoredNeedDefinitions ?? DEFAULT_NEED_DEFINITIONS),
+    needDefinitions: migrateNeedDefinitions(restoredNeedDefinitions ?? freshNeedDefinitions()),
     frameNeeds: localFrameNeeds,
     frameNotes: localFrameNotes,
     sortOrders: localSortOrders,
@@ -4111,8 +4111,8 @@ function frameFingerprint(f: Frame, _sortOrder: number, s: { stripVersions: Reco
     f.hidden ? '1' : '0',
     f.textContent || '',
     f.tableData ? JSON.stringify(f.tableData) : '',
-    String(f.strokes?.length || 0),
-    f.r2Key || (f.src ? f.src.substring(0, 40) : ''),
+    strokesFp(f.strokes),
+    pictureFp(f.r2Key, f.src),
     f.setupId || '',
     f.stripLabels ? JSON.stringify(f.stripLabels) : '',
     f.note || '',
@@ -4124,7 +4124,7 @@ function frameFingerprint(f: Frame, _sortOrder: number, s: { stripVersions: Reco
     if (vers) {
       for (const v of vers) {
         parts.push(
-          `${stripType}:${v.label}|${v.type}|${v.hidden ? 1 : 0}|${versionStars(v)}|${v.setupTagged || ''}|${v.r2Key || (v.bgImage ? v.bgImage.substring(0, 40) : '')}|${v.strokes?.length || 0}|${v.note || ''}`,
+          `${stripType}:${v.label}|${v.type}|${v.hidden ? 1 : 0}|${versionStars(v)}|${v.setupTagged || ''}|${pictureFp(v.r2Key, v.bgImage)}|${strokesFp(v.strokes)}|${v.note || ''}`,
         );
       }
     }

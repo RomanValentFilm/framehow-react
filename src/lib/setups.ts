@@ -12,6 +12,25 @@ import { flushSyncNow } from './currentProject';
 // ─── Setup bar rendering ───────────────────────────────────────────────
 
 /** Toggle setup mode on/off. */
+/**
+ * Make a setup and select it — the body of both CREATE buttons, lifted out so
+ * there is one of it and the browser tests can reach it (#331).
+ *
+ * The id is unique across devices (#322) and every setup now travels as its own
+ * settings row (#331), so two people each adding one while apart end up with
+ * two setups rather than whichever list was pushed later.
+ */
+export function createSetup(name: string, colorIndex: number): string {
+  const id = uniqueId('setup');
+  const newSetup: Setup = { id, name, colorIndex };
+  useStore.setState((prev) => ({
+    setups: [...prev.setups, newSetup],
+    activeSetupId: id,
+    nextSetupId: prev.nextSetupId + 1,
+  }));
+  return id;
+}
+
 export function toggleSetupMode(): void {
   const s = state();
   const bar = document.getElementById('setupBar');
@@ -181,13 +200,7 @@ function _showInlineCreateForm(bar: HTMLElement): void {
     const latest = state();
     if (latest.setups.some((su) => su.name === name)) { showToast('Name already used'); return; }
 
-    const id = uniqueId('setup');            // never a per-device count (#322)
-    const newSetup: Setup = { id, name, colorIndex: selectedCI };
-    useStore.setState((prev) => ({
-      setups: [...prev.setups, newSetup],
-      activeSetupId: id,
-      nextSetupId: prev.nextSetupId + 1,
-    }));
+    createSetup(name, selectedCI);
 
     renderSetupBarEdit(bar);
     void flushSyncNow(); // STP-1: create setup → CREATE
@@ -402,13 +415,7 @@ function renderSetupCreateForm(bar: HTMLElement): void {
     const latest = state();
     if (latest.setups.some((su) => su.name === name)) { showToast('Name already used'); return; }
 
-    const id = uniqueId('setup');            // never a per-device count (#322)
-    const newSetup: Setup = { id, name, colorIndex: selectedCI };
-    useStore.setState((prev) => ({
-      setups: [...prev.setups, newSetup],
-      activeSetupId: id,
-      nextSetupId: prev.nextSetupId + 1,
-    }));
+    createSetup(name, selectedCI);
 
     // Go straight into edit/assign mode
     renderSetupBarEdit(bar);

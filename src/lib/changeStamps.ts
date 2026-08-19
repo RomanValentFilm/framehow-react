@@ -13,7 +13,7 @@
 // forget and start claiming everything changed just now.
 
 import { useStore } from '../store/state';
-import type { Frame, Version } from '../store/state';
+import type { Frame, Version, Stroke } from '../store/state';
 
 /** What the row looked like last time we looked, and when we first saw it that
  *  way. */
@@ -29,6 +29,48 @@ let _projectId: string | null | undefined;
  * "now", and could carry its own older notes over someone else's newer ones.
  * The arrangement is one item of its own now; this is only what is IN the frame.
  */
+/**
+ * WHAT A PICTURE LOOKS LIKE, SHORTLY (#333).
+ *
+ * A picture already in the cloud is known by its storage key, and that is
+ * exact. One that is not yet uploaded was summarised by the first 40 characters
+ * of its data — which is about thirty bytes, and image formats spend their
+ * first thirty bytes on a fixed header. Two photographs from the same camera,
+ * or two drawings exported at the same size, therefore looked identical.
+ *
+ * What that cost: retake a shot on the same frame while offline, and the frame
+ * could read as unchanged, never upload, and be replaced by the old picture on
+ * the next pull.
+ *
+ * The length plus a piece from the middle and a piece from the end costs
+ * nothing to compute and cannot be fooled by a shared header.
+ */
+export function pictureFp(r2Key: string | undefined, src: string | undefined | null): string {
+  if (r2Key) return r2Key;
+  if (!src) return '';
+  return `${src.length}:${src.slice(40, 64)}:${src.slice(-24)}`;
+}
+
+/**
+ * WHAT A DRAWING LOOKS LIKE, SHORTLY (#333).
+ *
+ * It was the NUMBER of strokes. Erase one and draw another and the number is
+ * the same, so the drawing read as unchanged and was never sent.
+ *
+ * Counting the points as well as the strokes, and taking the tail of the last
+ * one, catches that without walking every point of every stroke twice.
+ */
+export function strokesFp(strokes: Stroke[] | undefined | null): string {
+  if (!strokes || strokes.length === 0) return '0';
+  let points = 0;
+  for (const st of strokes) points += st.points?.length ?? (st.text ? st.text.length : 0);
+  const last = strokes[strokes.length - 1];
+  const tail = last?.points?.length
+    ? `${last.points[last.points.length - 1]?.x},${last.points[last.points.length - 1]?.y}`
+    : (last?.text ?? '');
+  return `${strokes.length}:${points}:${tail}`;
+}
+
 function frameFp(f: Frame, _sortOrder: number, needs: string, notes: string): string {
   return [
     f.label, f.cropW, f.cropH, f.textContent,
@@ -36,8 +78,8 @@ function frameFp(f: Frame, _sortOrder: number, needs: string, notes: string): st
     f.hidden ? 1 : 0, f.note ?? '', (f.scribbles?.length ?? 0),
     f.stripLabels ? JSON.stringify(f.stripLabels) : '',
     f.setupId ?? '', needs, notes,
-    f.r2Key || (f.src ? f.src.substring(0, 40) : ''),
-    f.strokes?.length ?? 0,
+    pictureFp(f.r2Key, f.src),
+    strokesFp(f.strokes),
   ].join('|');
 }
 
@@ -45,8 +87,8 @@ function versionFp(v: Version): string {
   return [
     v.label, v.type, v.hidden ? 1 : 0, Number(v.stars ?? 0), v.note ?? '',
     v.setupTagged ?? '',
-    v.r2Key || (v.bgImage ? v.bgImage.substring(0, 40) : ''),
-    v.strokes?.length ?? 0,
+    pictureFp(v.r2Key, v.bgImage),
+    strokesFp(v.strokes),
   ].join('|');
 }
 

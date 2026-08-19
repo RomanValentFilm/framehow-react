@@ -83,7 +83,19 @@ function currentItems(): Array<{ kind: string; item_id: string; json: string }> 
   // Agreed as one item each: short shared lists, rarely edited on two devices
   // at the same moment.
   push('needLocations', 'needLocations', 0, s.needDefinitions?.locations ?? []);
-  push('setupPalette', 'setupPalette', 0, { setups: s.setups, nextSetupId: s.nextSetupId });
+  // ONE ITEM PER SETUP, NOT ONE ITEM FOR ALL OF THEM (#331).
+  //
+  // The whole palette used to travel as a single item, so two people each
+  // adding a setup while apart meant one list beating the other and one setup
+  // simply gone — the same fault the shooting orders had before they were split
+  // up, and the same answer.
+  //
+  // A setup removed here gets a deleted row of its own, so deleting still
+  // travels, which is what a plain merge could not have given us.
+  //
+  // nextSetupId no longer rides along: since #322 an id is not a count, so
+  // there is nothing to agree about.
+  s.setups.forEach((su, i) => push('setup', su.id, i, su));
   // One item PER BREAK, not one item for all of them. A break the other device
   // added is then simply added here, instead of losing to a newer copy of "the
   // breaks" that never knew about it. Two devices moving the SAME break still
@@ -356,14 +368,20 @@ export function applySettingsToStore(items: SettingItem[] | undefined): void {
     };
   }
 
-  // Single items: only a real change is worth taking.
+  // Setups. The old whole-palette row is still read, because the server holds
+  // them and devices on older builds still send them — but it is applied FIRST,
+  // so the per-setup rows below have the last word (#331).
   const palette = rows.find((r) => r.kind === 'setupPalette' && !r.deleted && r.changed_at > UNKNOWN
     && !localIsNewerAndUnsent('setupPalette', 'setupPalette', r.changed_at));
+  let setupsNow = s.setups;
   if (palette) {
     const p = palette.data as { setups: Setup[]; nextSetupId: number };
-    patch.setups = p.setups ?? [];
+    setupsNow = p.setups ?? [];
+    patch.setups = setupsNow;
     patch.nextSetupId = p.nextSetupId ?? 1;
   }
+  const setups = mergeList('setup', setupsNow, (su: Setup) => su.id);
+  if (setups) patch.setups = setups;
 
   // The story flow: one arrangement, the later one wins whole (#294).
   const orderRow = rows.find((r) => r.kind === 'frameOrder' && !r.deleted && r.changed_at > UNKNOWN
@@ -568,7 +586,12 @@ export function keepMyUnsentSettings(before: MySettings): void {
     };
   }
 
-  // The palette is one item by agreement, so it comes back whole or not at all.
+  // Setups, one row each since #331 — so a setup made here and not yet sent
+  // comes back on its own, without dragging the whole palette with it.
+  const setups = restore('setup', before.setups as { id: string }[],
+    s.setups as { id: string }[], (su) => su.id);
+  if (setups) patch.setups = setups;
+  // The old whole-palette row, for anything still travelling that way.
   if (iHoldUnsent('setupPalette', 'setupPalette')) {
     patch.setups = before.setups;
     patch.nextSetupId = before.nextSetupId;

@@ -1,15 +1,19 @@
-v4.9.067 - a restore point can no longer cost you the project
+v4.9.068 - setups travel one by one, needs start fresh, and a retaken photo is noticed
 
-#328 The terminal makes one sound when it needs an answer and another when it
-     has finished, so you can tell them apart without looking.
-#329 Every push wrote the whole project - drawings and all - into a single
-     database value as a restore point. Past the size limit for one value that
-     threw, and the push threw with it, so nothing at all was written: not the
-     snapshot, not the frames, not the work. Every retry did the same and the
-     project became permanently unsyncable, with a bare 500 as the only sign.
-     An oversized project now goes without a restore point and says so, and the
-     whole call is wrapped besides. A restore point is a courtesy; the work is
-     not.
-#330 A new index on images.r2_key. Looking up an image was reading every image
-     row belonging to every user, on every single fetch - so opening a
-     forty-frame storyboard did forty full scans, and it got slower every day.
+#331 The whole setup palette travelled as ONE item, so two people each adding a
+     setup while apart meant one list beat the other and one setup was simply
+     gone. Every setup now has its own row, which also means deleting one still
+     travels. The CREATE button's body existed twice and is now one function.
+#332 The NEEDS defaults were handed out by reference and edited in place, so
+     renaming a category changed the TEMPLATE for the rest of the session and
+     the next new project opened holding the last project's categories - then
+     pushed them up as though they had been typed there. Every new project now
+     starts from the plain defaults, by decision.
+#333 Change detection summarised a picture by its first 40 characters, which is
+     about thirty bytes, and image formats spend their first thirty bytes on a
+     fixed header - so two photos from the same camera looked identical.
+     Retaking a shot offline could read as no change, never upload, and be
+     replaced by the old one on the next pull. Drawings were judged on the
+     NUMBER of strokes, so erasing one and drawing another was invisible.
+
+Twelve tests now, including both devices making their own setup while apart.

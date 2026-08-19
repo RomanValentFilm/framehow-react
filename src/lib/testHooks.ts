@@ -20,6 +20,7 @@ import { getVisibleFrames } from './groups';
 import { uniqueId } from './ids';
 import { startFromScratch } from './files';
 import { deleteFrameForGood } from './actions';
+import { createSetup } from './setups';
 import { saveNow, openCloudProjectById } from './accountFlow';
 import { flushSyncNow, markFrameDirty, getDirtyFrameIds } from './currentProject';
 import { stampChangedContent } from './changeStamps';
@@ -53,6 +54,8 @@ export interface TestDoor {
   /** Delete a frame for good, by its place on screen. The same function the
    *  DELETE choice calls, tombstones and all — not a copy of it. */
   deleteFrame(index: number): void;
+  /** Make a setup, exactly as the CREATE button does. Returns its id. */
+  newSetup(name: string, colorIndex?: number): string;
 
   // --- shooting orders -----------------------------------------------------
   // An order is ONE settings item, breaks and all (see projectSettings, where
@@ -77,6 +80,7 @@ export interface TestDoor {
     projectId: string | null;
     frames: Array<{ id: string; serverFrameId?: string; label: string; text: string }>;
     categories: string[];
+    setups: string[];
     unsent: string[];
     orders: Array<{
       id: string;
@@ -210,6 +214,8 @@ export function installTestDoor(): void {
       deleteFrameForGood(f.id);
     },
 
+    newSetup(name, colorIndex = 0) { return createSetup(name, colorIndex); },
+
     async push() { await flushSyncNow(); },
 
     read() {
@@ -223,6 +229,7 @@ export function installTestDoor(): void {
           text: f.textContent ?? '',
         })),
         categories: (s.needDefinitions?.tabs ?? []).map((t) => t.name),
+        setups: s.setups.map((su) => su.name),
         unsent: [...getDirtyFrameIds()],
         orders: s.sortOrders.map((o) => ({
           id: o.id,

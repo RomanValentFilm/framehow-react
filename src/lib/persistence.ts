@@ -7,7 +7,7 @@
 // restore we merge the payload back into the live store.
 
 import type { Frame, Version, FrameGroup, StripDef, Setup, NeedDefinitions, FrameNeedState, FrameNoteState, SortOrder, SortBreak, ProjectType } from '../store/state';
-import { useStore, DEFAULT_STRIP_DEFS, DEFAULT_NEED_DEFINITIONS, migrateNeedDefinitions, createDefaultExportMeta } from '../store/state';
+import { useStore, DEFAULT_STRIP_DEFS, freshNeedDefinitions, migrateNeedDefinitions, createDefaultExportMeta } from '../store/state';
 
 const DB_NAME = 'framehow';
 const DB_VERSION = 2;
@@ -265,7 +265,7 @@ export function applySnapshotToStore(snap: CurrentProjectSnapshot): void {
     nextSetupId: snap.nextSetupId ?? 1,
     stripTagInfoDismissed: snap.stripTagInfoDismissed ?? false,
     stripUntagInfoDismissed: snap.stripUntagInfoDismissed ?? false,
-    needDefinitions: migrateNeedDefinitions(snap.needDefinitions ?? DEFAULT_NEED_DEFINITIONS),
+    needDefinitions: migrateNeedDefinitions(snap.needDefinitions ?? freshNeedDefinitions()),
     frameNeeds: snap.frameNeeds ?? {},
     frameNotes: snap.frameNotes ?? {},
     sortOrders: snap.sortOrders ?? [],

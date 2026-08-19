@@ -63,7 +63,7 @@ export interface Setup {
 
 /** 12-colour palette for setups. */
 /** App version — bump before every deploy. */
-export const APP_VERSION = 'v4.9.067';
+export const APP_VERSION = 'v4.9.068';
 
 /** Free-text fields printed in the header of every exported page. */
 export interface ExportMeta {
@@ -267,10 +267,30 @@ export const DEFAULT_NEED_DEFINITIONS: NeedDefinitions = {
   locations: [],
 };
 
+/**
+ * A FRESH COPY OF THE DEFAULTS, EVERY TIME (#332).
+ *
+ * DEFAULT_NEED_DEFINITIONS was handed out by reference, and every NEEDS edit
+ * writes into the object it is given rather than replacing it. So renaming a
+ * category did not change the project — it changed the TEMPLATE, for the rest
+ * of the session. Start From Scratch after that and the new project opened
+ * holding the last project's categories, and then pushed them to the server as
+ * though they had been typed there.
+ *
+ * It half looked like a feature, which is worse than looking like a bug: it
+ * only survived while the app stayed open, so the same action carried over
+ * sometimes and not others.
+ *
+ * Every new project now starts from the plain defaults, by decision.
+ */
+export function freshNeedDefinitions(): NeedDefinitions {
+  return structuredClone(DEFAULT_NEED_DEFINITIONS);
+}
+
 /** Merge saved needDefinitions with DEFAULT_NEED_DEFINITIONS.
  *  Tab order follows defaults; new tabs/tables added; user customizations preserved. */
 export function migrateNeedDefinitions(saved: NeedDefinitions): NeedDefinitions {
-  const defaults = DEFAULT_NEED_DEFINITIONS;
+  const defaults = freshNeedDefinitions();   // never the shared one (#332)
   const savedTabMap = new Map(saved.tabs.map(t => [t.id, t]));
   const resultTabs: NeedTab[] = [];
 
@@ -605,7 +625,7 @@ const initial: FrameHowState = {
   nextSetupId: 1,
   stripTagInfoDismissed: false,
   stripUntagInfoDismissed: false,
-  needDefinitions: DEFAULT_NEED_DEFINITIONS,
+  needDefinitions: freshNeedDefinitions(),
   frameNeeds: {},
   needsStripVisible: false,
   frameNotes: {},
@@ -665,7 +685,7 @@ export function resetStoryboardState(): void {
     nextSetupId: 1,
     stripTagInfoDismissed: false,
     stripUntagInfoDismissed: false,
-    needDefinitions: DEFAULT_NEED_DEFINITIONS,
+    needDefinitions: freshNeedDefinitions(),
     frameNeeds: {},
     needsStripVisible: false,
     frameNotes: {},
