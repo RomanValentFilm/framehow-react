@@ -2407,9 +2407,14 @@ async function applyCloudTreeToStore(
       fsOverlayActive: st.fsOverlayActive,
       ovExpandedFid: st.ovExpandedFid,
       showText: st.showText,
+      sortMode: st.sortMode,
       activeStrips: st.activeStrips,
     };
   })();
+
+  /** What a given server frame was showing before the pull (#352). */
+  const wasViewingByServerId = (sid: string | undefined) =>
+    (sid ? viewedBefore.get(sid) : undefined);
 
   const viewedBefore = (() => {
     const st = state();
@@ -2550,7 +2555,28 @@ async function applyCloudTreeToStore(
               const tabTarget = stripId === 'ver' ? verActiveTab
                 : stripId === 'floor' ? floorActiveTab
                 : stripId === 'refs' ? refsActiveTab : null;
-              if (tabTarget) tabTarget[localId] = 0;
+              // KEEP SHOWING WHAT IT WAS SHOWING (#352).
+              //
+              // This forced the card back to its FIRST version. And the frame
+              // taking this branch is, by definition, one holding work that has
+              // not been sent — which is exactly the frame you photographed a
+              // second ago. So: take a photo, the card switches to it, the push
+              // goes, the pull comes back, and the card is on version one again.
+              // Then the crossCompare below is missing too, so it falls all the
+              // way back to the main frame.
+              //
+              // That is the whole "the photo does not stay" report, and why it
+              // happens EVERY time on a photo and only sometimes elsewhere.
+              if (tabTarget) {
+                const was = wasViewingByServerId(sf.id);
+                const want = was ? was.tab[stripId] ?? 0 : 0;
+                const have = target?.[localId]?.length ?? 0;
+                tabTarget[localId] = (want > 0 && want < have) ? want : 0;
+                const cc = was ? was.cc[stripId] ?? -1 : -1;
+                if (cc >= 0 && cc < have) {
+                  wantedCC[stripId as 'ver' | 'floor' | 'refs'][localId] = cc;
+                }
+              }
             }
           }
 
@@ -2993,7 +3019,10 @@ async function applyCloudTreeToStore(
     storyFlowBreaks: restoredStoryFlowBreaks,
     camAspectRatio: restoredCamAspectRatio,
     exportMeta: restoredExportMeta ?? createDefaultExportMeta(),
-    sortMode: false,
+    // A SYNC DOES NOT CLOSE THE SHOOTING ORDER (#352). This turned the sort
+    // view off on every pull, which is the other half of "I go to shooting
+    // order and it jumps back to 3x2".
+    sortMode: prevView.sortMode,
     sortEditingId: null,
     renderTick: prev.renderTick + 1,
   }));

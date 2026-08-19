@@ -1,16 +1,16 @@
-v4.9.075 - the deletion that could never land (#350)
+v4.9.076 - the photo stays (#352)
 
-Roman's log named it: every push said
+Two lines in the pull, both in the branch that protects frames holding unsent
+work - which is, by definition, the frame you just photographed.
 
-    project settings changed - sending: setupPalette/setupPalette (deleted)
+That branch reset the card back to its FIRST version and then skipped the code
+that restores which version each card was showing. So: take a photo, the card
+switches to it, the push goes, the pull comes straight back, and the card is on
+version one - and with no crossCompare it falls all the way to the main frame.
+Every time on a photo, because a photo always leaves unsent work; only sometimes
+elsewhere, because an empty pull no longer rebuilds anything at all (#349).
 
-A deleted settings item was sent carrying its OLD change time. The server only
-takes an item newer than the one it holds, and the old time is not newer than
-itself - so the deletion was refused, silently, every single time. The device
-then had a row it could never be rid of: it pushed on every pass, which moved
-the project's clock, which made the heartbeat pull, which pushed again.
+The same rebuild also set sortMode: false, which is the other half - going to a
+shooting order and being dropped back into 3x2.
 
-That is the churn. One row, retired by #331, unable to die.
-
-A deletion now travels with the time it was DELETED. Bench case added so it
-cannot come back.
+The rule that chooses 3x2 when a project OPENS is untouched, as asked.
