@@ -394,11 +394,14 @@ export function deleteFrameForGood(fid: number): void {
     if (!vers) continue;
     for (const v of vers) recordTombstone('version', v.serverVersionId);
   }
+  // BEFORE the frame leaves the list, not after (#338). The story flow's breaks
+  // are placed by position, so working out which ones sit below this frame needs
+  // the frame still to be in it.
+  removeFrameFromSortOrders(fid);
   s.frames.splice(idx, 1);
   delete s.versions[fid];
   delete s.activeTab[fid];
   delete s.drawColor[fid];
-  removeFrameFromSortOrders(fid);
   updateFrameBadge();
   renderAll();
   void flushSyncNow(); // FRM-3: delete frame (tombstone recorded)

@@ -13,6 +13,7 @@
 
 import { useStore } from '../store/state';
 import type { NeedItem, Setup, SortBreak } from '../store/state';
+import { trace } from './syncTrace';
 
 export interface SettingItem {
   kind: string;
@@ -74,7 +75,18 @@ function currentItems(): Array<{ kind: string; item_id: string; json: string }> 
   // they travel with it wherever it lands. An id in the list with no frame
   // behind it is simply skipped, so a deleted frame needs no place-holder.
   const orderedIds = s.frames.map((f) => f.serverFrameId).filter(Boolean) as string[];
-  if (orderedIds.length > 0) push('frameOrder', 'main', 0, orderedIds);
+  // THE ARRANGEMENT IS THE FRAMES AND THE BREAKS TOGETHER (#337).
+  //
+  // The breaks used to be items of their own, merged separately from the order
+  // they belong to. So the other device rearranged, the frames moved and the
+  // breaks did not, and LUNCH ended up two frames from where anybody put it.
+  //
+  // They are one thought — this is the order of the day — so they travel as one
+  // thing and the later one wins whole, exactly as a shooting order already
+  // does. A break stays where the user put it, and nothing slides underneath it.
+  if (orderedIds.length > 0) {
+    push('frameOrder', 'main', 0, { frames: orderedIds, breaks: s.storyFlowBreaks ?? [] });
+  }
 
   s.groups.forEach((g, i) => push('group', String(g.id), i, g));
   s.sortOrders.forEach((o, i) => push('sortOrder', o.id, i, o));
@@ -100,7 +112,9 @@ function currentItems(): Array<{ kind: string; item_id: string; json: string }> 
   // added is then simply added here, instead of losing to a newer copy of "the
   // breaks" that never knew about it. Two devices moving the SAME break still
   // settle by time.
-  (s.storyFlowBreaks ?? []).forEach((b, i) => push('storyFlowBreak', b.id, i, b));
+  // Breaks are no longer pushed separately (#337) — they ride inside the
+  // arrangement above. The old rows are still READ, for what the server holds
+  // and for devices on older builds.
 
   return out;
 }
@@ -383,18 +397,35 @@ export function applySettingsToStore(items: SettingItem[] | undefined): void {
   const setups = mergeList('setup', setupsNow, (su: Setup) => su.id);
   if (setups) patch.setups = setups;
 
-  // The story flow: one arrangement, the later one wins whole (#294).
+  // The OLD separate break rows, read first so the arrangement below has the
+  // last word (#337). Still here for what the server holds and for devices on
+  // older builds; nothing writes them any more.
+  const oldBreaks = mergeList('storyFlowBreak', s.storyFlowBreaks ?? [], (b) => b.id);
+  if (oldBreaks) patch.storyFlowBreaks = oldBreaks;
+
+  // THE STORY FLOW: the frames AND their breaks, one thing, later wins whole
+  // (#294, #337). An older row carries just the list of frames; a newer one
+  // carries the breaks with it.
   const orderRow = rows.find((r) => r.kind === 'frameOrder' && !r.deleted && r.changed_at > UNKNOWN
     && !localIsNewerAndUnsent('frameOrder', 'main', r.changed_at));
   if (orderRow) {
-    patch.frames = applyArrangement(s.frames, orderRow.data as string[]);
+    const d = orderRow.data as string[] | { frames: string[]; breaks?: SortBreak[] };
+    if (Array.isArray(d)) {
+      patch.frames = applyArrangement(s.frames, d);
+      trace(`  arrangement arrived: ${d.length} frames (old form, no breaks)`);
+    } else {
+      patch.frames = applyArrangement(s.frames, d.frames ?? []);
+      patch.storyFlowBreaks = d.breaks ?? [];
+      trace(`  arrangement arrived: ${(d.frames ?? []).length} frames · `
+        + `${(d.breaks ?? []).length} break(s)`);
+    }
+  } else {
+    const any = rows.find((r) => r.kind === 'frameOrder');
+    if (any) {
+      trace(`  arrangement NOT taken: changed_at=${any.changed_at}`
+        + `${any.changed_at <= UNKNOWN ? ' (age unknown)' : ' (mine is newer and unsent)'}`);
+    }
   }
-
-  // Story-flow breaks merge one by one, like groups and orders. A break only
-  // this device has stays; one only the other device has is added; one both
-  // know at different positions takes the newer.
-  const breaks = mergeList('storyFlowBreak', s.storyFlowBreaks ?? [], (b) => b.id);
-  if (breaks) patch.storyFlowBreaks = breaks;
 
   if (Object.keys(patch).length > 0) useStore.setState(patch as never);
 }
@@ -532,11 +563,25 @@ export function captureMySettings(): MySettings {
   };
 }
 
-/** Has this device changed that item without the server having taken it yet? */
-function iHoldUnsent(kind: string, itemId: string): boolean {
+/**
+ * Has this device changed that item, not sent it, AND is its change later than
+ * the one that just arrived?
+ *
+ * The first version of this asked only the first two (#323), which was too
+ * eager: merely OPENING a project stamps its items as changed-and-unsent, so a
+ * device that had done nothing at all still put its own copy back over whatever
+ * the pull had just brought — and the other device's break disappeared the
+ * moment after arriving (#340).
+ *
+ * "Mine is unsent" is not a reason to win. "Mine is unsent AND later" is.
+ */
+function iHoldUnsent(kind: string, itemId: string, arrived?: Map<string, number>): boolean {
   const v = _known.get(key(kind, itemId));
   if (!v || v.deleted_at !== null) return false;
-  return v.changed_at > v.serverAt;
+  if (v.changed_at <= v.serverAt) return false;          // nothing of mine to protect
+  const theirs = arrived?.get(key(kind, itemId));
+  if (theirs === undefined) return true;                 // they said nothing about it
+  return v.changed_at > theirs;                          // mine really is later
 }
 
 /**
@@ -546,8 +591,12 @@ function iHoldUnsent(kind: string, itemId: string): boolean {
  * Item by item, and only the ones actually held. An item the server knows more
  * about than we do is left exactly as the merge left it.
  */
-export function keepMyUnsentSettings(before: MySettings): void {
+export function keepMyUnsentSettings(before: MySettings, arrivedItems?: SettingItem[]): void {
   const s = useStore.getState();
+  // When each arriving item said it was changed, so "mine is later" can be a
+  // real comparison rather than a guess (#340).
+  const arrived = new Map<string, number>();
+  for (const it of arrivedItems ?? []) arrived.set(key(it.kind, it.item_id), it.changed_at);
   const patch: Record<string, unknown> = {};
 
   /** Put my copy back into a list, by id, adding it if the pull removed it. */
@@ -555,7 +604,7 @@ export function keepMyUnsentSettings(before: MySettings): void {
     let changed = false;
     const out = [...now];
     for (const item of mine) {
-      if (!iHoldUnsent(kind, idOf(item))) continue;
+      if (!iHoldUnsent(kind, idOf(item), arrived)) continue;
       const i = out.findIndex((x) => idOf(x) === idOf(item));
       if (i >= 0) { out[i] = item; } else { out.push(item); }
       changed = true;
@@ -577,7 +626,7 @@ export function keepMyUnsentSettings(before: MySettings): void {
 
   const tabs = restore('needCategory', before.tabs as { id: string }[],
     (s.needDefinitions?.tabs ?? []) as { id: string }[], (t) => t.id);
-  const locsMine = iHoldUnsent('needLocations', 'needLocations');
+  const locsMine = iHoldUnsent('needLocations', 'needLocations', arrived);
   if (tabs || locsMine) {
     patch.needDefinitions = {
       ...s.needDefinitions,
@@ -592,7 +641,7 @@ export function keepMyUnsentSettings(before: MySettings): void {
     s.setups as { id: string }[], (su) => su.id);
   if (setups) patch.setups = setups;
   // The old whole-palette row, for anything still travelling that way.
-  if (iHoldUnsent('setupPalette', 'setupPalette')) {
+  if (iHoldUnsent('setupPalette', 'setupPalette', arrived)) {
     patch.setups = before.setups;
     patch.nextSetupId = before.nextSetupId;
   }
@@ -601,8 +650,10 @@ export function keepMyUnsentSettings(before: MySettings): void {
   // the pull may have brought frames this device had never seen, and they must
   // not be dropped just because my arrangement predates them. applyArrangement
   // keeps anything the list does not mention.
-  if (iHoldUnsent('frameOrder', 'main') && before.frameOrder.length > 0) {
+  if (iHoldUnsent('frameOrder', 'main', arrived) && before.frameOrder.length > 0) {
     patch.frames = applyArrangement(s.frames, before.frameOrder);
+    // The breaks belong to that arrangement and come back with it (#337).
+    patch.storyFlowBreaks = before.storyFlowBreaks;
   }
 
   if (Object.keys(patch).length > 0) useStore.setState(patch as never);

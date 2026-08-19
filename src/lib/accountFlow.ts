@@ -2386,6 +2386,41 @@ async function applyCloudTreeToStore(
   // already been overwritten. This is what makes putting it back possible (#323).
   const mySettingsBefore = captureMySettings();
 
+  // WHICH VERSION EACH CARD WAS SHOWING (#341).
+  //
+  // A pull rebuilt these from nothing: every card went back to its first tab and
+  // stopped showing the version inline. So taking a photograph in 3x2 — which
+  // deliberately switches the card to show what you just took — looked fine for
+  // a second and then flicked back to the main frame the moment it synced. The
+  // photograph was never in danger; the view simply changed under the user.
+  //
+  // Which version you are looking at is not the project. It belongs to this
+  // screen, this minute, and a sync has no business touching it.
+  const viewedBefore = (() => {
+    const st = state();
+    const byServerId = new Map<string, { tab: Record<string, number>; cc: Record<string, number> }>();
+    for (const f of st.frames) {
+      if (!f.serverFrameId) continue;
+      byServerId.set(f.serverFrameId, {
+        tab: {
+          ver: st.stripActiveTab.ver?.[f.id] ?? 0,
+          floor: st.stripActiveTab.floor?.[f.id] ?? 0,
+          refs: st.stripActiveTab.refs?.[f.id] ?? 0,
+        },
+        cc: {
+          ver: st.stripCrossCompare.ver?.[f.id] ?? -1,
+          floor: st.stripCrossCompare.floor?.[f.id] ?? -1,
+          refs: st.stripCrossCompare.refs?.[f.id] ?? -1,
+        },
+      });
+    }
+    return byServerId;
+  })();
+  /** Which version each card should go back to showing, once the new lists
+   *  exist to measure against (#341). */
+  const wantedCC: Record<'ver' | 'floor' | 'refs', Record<number, number | undefined>> =
+    { ver: {}, floor: {}, refs: {} };
+
   // After pulling cloud data, clear fingerprints so the next push
   // recomputes from scratch (the state changed underneath us).
   clearPushedFingerprints();
@@ -2645,9 +2680,17 @@ async function applyCloudTreeToStore(
       verVersions[localId] = mapVersions(verVers, 'ver');
       floorVersions[localId] = mapVersions(floorVers, 'floor');
       refsVersions[localId] = mapVersions(refsVers, 'refs');
-      verActiveTab[localId] = 0;
-      floorActiveTab[localId] = 0;
-      refsActiveTab[localId] = 0;
+      // Put back what this card was showing, if it is still there (#341).
+      const wasViewing = sf.id ? viewedBefore.get(sf.id) : undefined;
+      const clamp = (want: number, have: number) =>
+        (want > 0 && want < have ? want : 0);
+      verActiveTab[localId] = clamp(wasViewing?.tab.ver ?? 0, verVersions[localId].length);
+      floorActiveTab[localId] = clamp(wasViewing?.tab.floor ?? 0, floorVersions[localId].length);
+      refsActiveTab[localId] = clamp(wasViewing?.tab.refs ?? 0, refsVersions[localId].length);
+      const keepCC = (want: number, have: number) => (want >= 0 && want < have ? want : undefined);
+      wantedCC.ver[localId] = keepCC(wasViewing?.cc.ver ?? -1, verVersions[localId].length);
+      wantedCC.floor[localId] = keepCC(wasViewing?.cc.floor ?? -1, floorVersions[localId].length);
+      wantedCC.refs[localId] = keepCC(wasViewing?.cc.refs ?? -1, refsVersions[localId].length);
     }
   }
 
@@ -2853,6 +2896,10 @@ async function applyCloudTreeToStore(
   const verCC: Record<number, number> = {};
   const floorCC: Record<number, number> = {};
   const refsCC: Record<number, number> = {};
+  // ...and what each card was showing before the pull, where it still exists.
+  for (const [k, v] of Object.entries(wantedCC.ver)) if (v !== undefined) verCC[+k] = v;
+  for (const [k, v] of Object.entries(wantedCC.floor)) if (v !== undefined) floorCC[+k] = v;
+  for (const [k, v] of Object.entries(wantedCC.refs)) if (v !== undefined) refsCC[+k] = v;
   const verPFS: Record<number, any> = {};
   const floorPFS: Record<number, any> = {};
   const refsPFS: Record<number, any> = {};
@@ -2931,7 +2978,7 @@ async function applyCloudTreeToStore(
   applySettingsToStore(tree.settings);
   // ...and then put back anything this device changed and has not sent, which
   // the metadata blob above overwrote before the per-item merge ever ran (#323).
-  keepMyUnsentSettings(mySettingsBefore);
+  keepMyUnsentSettings(mySettingsBefore, tree.settings);
   adoptSettingsFromServer(tree.settings, tree.project.id);
   // A project the server holds no settings for has nothing to adopt, so take
   // the first look now with the project's creation time (#263, #264). Without

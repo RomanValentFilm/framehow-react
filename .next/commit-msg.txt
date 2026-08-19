@@ -1,19 +1,19 @@
-v4.9.069 - the pen: one colour, honest undo, and drawings that count as work
+v4.9.070 - a sync stops moving the furniture
 
-#334 The app was listening to the pen several times over. The fullscreen undo
-     button re-attached the listening after every press, and so did the resize
-     handler on every rotation or window drag, with nothing ever detaching. So
-     after five undos each stroke was recorded five times: thicker rougher
-     lines, undo removing one copy of five and looking like it did nothing, and
-     growing lag. Self-feeding, since undoing was what added another listener.
-     A canvas is now listened to once.
-#335 A drawing counts as unsent work. Strokes change in place and the watcher
-     looks for a replaced object, so a drawing was never flagged - a pull
-     arriving before the next push could bring back rubbed-out strokes or lose
-     new ones. The scribble layer had said so for a while; the drawing layer
-     never did.
-#336 One pen colour for the whole app. It was per frame, with a second copy of
-     its own inside fullscreen that nothing else knew about, two different
-     defaults, and a sync in the background emptied the whole list back to
-     white mid-session. Now: pick red, draw red everywhere, across a sync and
-     across a restart, until you pick something else.
+#337 The story flow travels as one thing: the frame order and its breaks
+     together, later wins whole, exactly as a shooting order already does. They
+     were two separate items merged separately. Old projects still read.
+#338 Deleting or inserting a frame above a break moves the break with it, in
+     the story flow as well as in a shooting order, so it stays where it was put.
+#340 Fixes my own #323. It put back any settings item this device had "not
+     sent" - but merely OPENING a project marks everything as unsent, so a
+     device that had done nothing put its own copy back over work that had just
+     arrived from the other one. A break added on the iPad reached the desk and
+     vanished a second later. Mine now only wins if mine is genuinely later.
+#341 A sync no longer changes which version each card is showing. The pull
+     rebuilt that from nothing, so every card snapped back to its first tab -
+     which is why a photo taken in 3x2 flicked back to the main frame the moment
+     it synced. The photo was never in danger; the view was being reset.
+     Which version you are looking at belongs to the screen, not to the project.
+
+Thirteen tests.

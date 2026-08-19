@@ -1126,6 +1126,21 @@ function genId(prefix: string, _n: number): string {
 /** Add a newly created frame to all existing sort orders (appended at end). */
 export function addFrameToSortOrders(frameId: number, afterFrameId?: number): void {
   const s = state();
+
+  // The story flow's breaks move down when a frame is put in above them (#338),
+  // for the same reason they move up when one is deleted: the break stays in the
+  // same place on screen. A shooting order needs none of this — a new frame is
+  // appended at its end, below everything.
+  if (afterFrameId !== undefined && (s.storyFlowBreaks?.length ?? 0) > 0) {
+    const afterIdx = s.frames.findIndex((f) => f.id === afterFrameId);
+    if (afterIdx >= 0) {
+      useStore.setState({
+        storyFlowBreaks: s.storyFlowBreaks.map((b) =>
+          (b.position > afterIdx ? { ...b, position: b.position + 1 } : b)),
+      });
+    }
+  }
+
   if (!s.sortOrders.length) return;
   const updated = s.sortOrders.map((o) => {
     if (o.frameOrder.includes(frameId)) return o; // already present
@@ -1148,6 +1163,24 @@ export function addFrameToSortOrders(frameId: number, afterFrameId?: number): vo
 /** Remove a deleted frame from all sort orders. */
 export function removeFrameFromSortOrders(frameId: number): void {
   const s = state();
+
+  // THE STORY FLOW'S BREAKS SHIFT TOO (#338).
+  //
+  // A shooting order's breaks have always been moved up when a frame above them
+  // was deleted. The story flow's were not — so deleting a frame above LUNCH
+  // slid LUNCH down by one, and deleting enough of them left it hanging past the
+  // last frame with nothing under it.
+  //
+  // A break sits where the user put it. If the frame above it goes, the break
+  // has to come with it to stay in the same place on screen.
+  const flowIdx = s.frames.findIndex((f) => f.id === frameId);
+  if (flowIdx >= 0 && (s.storyFlowBreaks?.length ?? 0) > 0) {
+    useStore.setState({
+      storyFlowBreaks: s.storyFlowBreaks.map((b) =>
+        (b.position > flowIdx ? { ...b, position: b.position - 1 } : b)),
+    });
+  }
+
   if (!s.sortOrders.length) return;
   const updated = s.sortOrders.map((o) => {
     if (!o.frameOrder.includes(frameId)) return o;

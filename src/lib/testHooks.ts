@@ -56,6 +56,8 @@ export interface TestDoor {
   deleteFrame(index: number): void;
   /** Make a setup, exactly as the CREATE button does. Returns its id. */
   newSetup(name: string, colorIndex?: number): string;
+  /** Put a break in the STORY FLOW at a place in the frame order (#337). */
+  addStoryBreak(position: number, text: string): string;
 
   // --- shooting orders -----------------------------------------------------
   // An order is ONE settings item, breaks and all (see projectSettings, where
@@ -81,6 +83,7 @@ export interface TestDoor {
     frames: Array<{ id: string; serverFrameId?: string; label: string; text: string }>;
     categories: string[];
     setups: string[];
+    storyBreaks: Array<{ id: string; text: string; position: number }>;
     unsent: string[];
     orders: Array<{
       id: string;
@@ -216,6 +219,16 @@ export function installTestDoor(): void {
 
     newSetup(name, colorIndex = 0) { return createSetup(name, colorIndex); },
 
+    addStoryBreak(position, text) {
+      const id = `brk_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      const s = useStore.getState();
+      useStore.setState({
+        storyFlowBreaks: [...(s.storyFlowBreaks ?? []), { id, text, position }],
+      } as never);
+      stampChangedSettings(getCurrentProject().projectId);
+      return id;
+    },
+
     async push() { await flushSyncNow(); },
 
     read() {
@@ -230,6 +243,7 @@ export function installTestDoor(): void {
         })),
         categories: (s.needDefinitions?.tabs ?? []).map((t) => t.name),
         setups: s.setups.map((su) => su.name),
+        storyBreaks: (s.storyFlowBreaks ?? []).map((b) => ({ id: b.id, text: b.text, position: b.position })),
         unsent: [...getDirtyFrameIds()],
         orders: s.sortOrders.map((o) => ({
           id: o.id,

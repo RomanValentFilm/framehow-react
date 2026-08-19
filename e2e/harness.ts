@@ -232,6 +232,26 @@ export class Device {
     return `${o.name}: ${out.join(' ')}`;
   }
 
+  addStoryBreak(position: number, text: string): Promise<string> {
+    return this.page.evaluate(([p, t]) =>
+      (window as never as { __fh_test: { addStoryBreak(p: number, t: string): string } })
+        .__fh_test.addStoryBreak(p as number, t as string),
+      [position, text] as [number, string]);
+  }
+
+  /** The story flow written out flat: frames in order with the breaks between
+   *  them, exactly as the screen shows it. */
+  async storyFlowAsText(): Promise<string> {
+    const s = await this.read();
+    const labels = s.frames.map((f) => f.label);
+    const out: string[] = [];
+    for (let i = 0; i <= labels.length; i++) {
+      for (const b of s.storyBreaks.filter((x) => x.position === i)) out.push(`[${b.text}]`);
+      if (i < labels.length) out.push(labels[i]);
+    }
+    return out.join(' ');
+  }
+
   newSetup(name: string): Promise<string> {
     return this.page.evaluate((n) =>
       (window as never as { __fh_test: { newSetup(n: string): string } })
@@ -254,6 +274,7 @@ export class Device {
     frames: Array<{ id: string; serverFrameId?: string; label: string; text: string }>;
     categories: string[];
     setups: string[];
+    storyBreaks: Array<{ id: string; text: string; position: number }>;
     unsent: string[];
     orders: Array<{
       id: string; name: string; frames: string[];
