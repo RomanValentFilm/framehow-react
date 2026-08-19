@@ -18,6 +18,7 @@ import { useStore } from '../store/state';
 import type { SortOrder } from '../store/state';
 import { getVisibleFrames } from './groups';
 import { startFromScratch } from './files';
+import { deleteFrameForGood } from './actions';
 import { saveNow, openCloudProjectById } from './accountFlow';
 import { flushSyncNow, markFrameDirty, getDirtyFrameIds } from './currentProject';
 import { stampChangedContent } from './changeStamps';
@@ -48,6 +49,9 @@ export interface TestDoor {
   moveFrame(from: number, to: number): void;
   /** Rename a NEEDS category by its place in the list. */
   renameCategory(index: number, name: string): void;
+  /** Delete a frame for good, by its place on screen. The same function the
+   *  DELETE choice calls, tombstones and all — not a copy of it. */
+  deleteFrame(index: number): void;
 
   // --- shooting orders -----------------------------------------------------
   // An order is ONE settings item, breaks and all (see projectSettings, where
@@ -197,6 +201,12 @@ export function installTestDoor(): void {
           breaks: o.breaks.map((b, i) => (i === breakIndex ? { ...b, position: toPosition } : b)),
         };
       });
+    },
+
+    deleteFrame(index) {
+      const f = useStore.getState().frames[index];
+      if (!f) throw new Error(`no frame at ${index}`);
+      deleteFrameForGood(f.id);
     },
 
     async push() { await flushSyncNow(); },

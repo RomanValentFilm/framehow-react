@@ -15,8 +15,12 @@
 import { APP_VERSION } from '../store/state';
 
 /** Bumped with each change while the per-frame sync is in flight, so the log
- *  says which build is on screen. */
-export const SYNC_BUILD_TAG = '#309';
+ *  says which build is on screen.
+ *
+ *  It is bumped BY HAND, which is why it sat at #309 through #310, #311, #312
+ *  and #313 — telling the screen a version of events that was four changes out
+ *  of date. Worth remembering the next time it is trusted in a log. */
+export const SYNC_BUILD_TAG = '#313';
 
 let box: HTMLElement | null = null;
 

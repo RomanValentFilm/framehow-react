@@ -485,7 +485,21 @@ projects.post("/:id/sync", async (c) => {
     payload.partial = true;
   }
 
-  await applySync(c.env.DB, project.id, payload, now);
+  // STAMP AT THE LAST POSSIBLE MOMENT (#318).
+  //
+  // `now` was read at the very top of this handler, and a great deal has
+  // happened since: the restored-snapshot bookkeeping, and above all
+  // maybeCreateSnapshot, which loads the whole project and serialises it. On a
+  // big project that is not milliseconds.
+  //
+  // Every row below is stamped with the time the push STARTED but only becomes
+  // visible when this batch commits. Another device pulling inside that gap is
+  // handed a watermark later than stamps it was never shown — and those rows are
+  // then beneath its question for ever. The same fault as #313 and #316, arrived
+  // at from the other direction: not a wrong clock, but a right clock read too
+  // early.
+  const writeNow = Date.now();
+  await applySync(c.env.DB, project.id, payload, writeNow);
 
   // Project settings merge ITEM BY ITEM on time of change, so it stops
   // mattering who pushed last. An item that is older here than what the server
@@ -536,15 +550,20 @@ projects.post("/:id/sync", async (c) => {
         .filter((it) => !contestedOrders.has(it.item_id) || it.kind !== "sortOrder")
         .map((it) =>
           c.env.DB.prepare(
-            `INSERT INTO project_settings (project_id, kind, item_id, value, changed_at, deleted_at)
-             VALUES (?, ?, ?, ?, ?, ?)
+            // arrived_at is stamped HERE, by this machine's clock (#316). It is
+            // what the delta filters on. changed_at stays the device's own
+            // answer to "when did a person do this", and still decides who wins
+            // — the WHERE below is unchanged.
+            `INSERT INTO project_settings (project_id, kind, item_id, value, changed_at, deleted_at, arrived_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(project_id, kind, item_id) DO UPDATE SET
                value      = excluded.value,
                changed_at = excluded.changed_at,
-               deleted_at = excluded.deleted_at
+               deleted_at = excluded.deleted_at,
+               arrived_at = excluded.arrived_at
              WHERE excluded.changed_at > project_settings.changed_at`,
           ).bind(project.id, it.kind, it.item_id, it.value ?? null,
-                 it.changed_at, it.deleted_at ?? null)),
+                 it.changed_at, it.deleted_at ?? null, writeNow)),
       ...conflictStmts,
     ]);
   }
@@ -1136,6 +1155,16 @@ const TOMBSTONE_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
  * leave that work sitting on the server, visible to nobody.
  */
 async function loadProjectTree(db: D1Database, projectId: string, since?: number): Promise<ProjectTree> {
+  // READ THE CLOCK BEFORE THE ROWS, NEVER AFTER (#318).
+  //
+  // This value goes back as `server_now` and the device keeps it as "I have been
+  // told everything up to here". Read after the query, it would be later than
+  // the moment the query actually looked — and anything committed in between
+  // would sit beneath the device's next question for ever.
+  //
+  // Read first, it can only ever be too early, which costs one row delivered
+  // twice. Applying the same row twice changes nothing.
+  const answeredAt = Date.now();
   const usable = typeof since === 'number' && since > 0 && since > Date.now() - TOMBSTONE_WINDOW_MS;
   const from = usable ? since : 0;
   // AT or later, not later. A row written in the very millisecond the last
@@ -1185,15 +1214,25 @@ async function loadProjectTree(db: D1Database, projectId: string, since?: number
            WHERE s.project_id = ?
          )${only('updated_at')}`,
     ).bind(projectId, ...arg),
-    // Tombstones: only return deletions from the last 30 days
+    // Tombstones: only return deletions from the last 30 days.
+    //
+    // Filtered on arrived_at — WHEN IT REACHED HERE — not deleted_at, which is
+    // the deleting device's own clock (#316). A frame deleted offline on Monday
+    // and pushed on Wednesday used to be invisible to a device that had pulled
+    // on Tuesday, so the frame lived on there for ever, silently refusing every
+    // edit. Rows written before #316 have no arrived_at, so they fall back to
+    // deleted_at and behave exactly as they did.
     db.prepare(
       `SELECT id, entity_type, entity_id, deleted_at, device_id
          FROM project_deletions
-        WHERE project_id = ? AND deleted_at > ?`,
+        WHERE project_id = ? AND COALESCE(arrived_at, deleted_at) > ?`,
     ).bind(projectId, Math.max(from - 1, Date.now() - TOMBSTONE_WINDOW_MS)),
+    // Settings: the same correction. changed_at is the device's time of the
+    // change and still decides who wins; arrived_at is this machine's time and
+    // is the only thing the catch-up question may be asked against.
     db.prepare(
       `SELECT kind, item_id, value, changed_at, deleted_at
-         FROM project_settings WHERE project_id = ?${only('changed_at')}`,
+         FROM project_settings WHERE project_id = ?${only('COALESCE(arrived_at, changed_at)')}`,
     ).bind(projectId, ...arg),
   ]);
 
@@ -1207,7 +1246,7 @@ async function loadProjectTree(db: D1Database, projectId: string, since?: number
     drawings: drawingsResult.results as ProjectTree["drawings"],
     deletions: deletionsResult.results as ProjectTree["deletions"],
     settings: settingsResult.results as ProjectTree["settings"],
-    server_now: Date.now(),
+    server_now: answeredAt,
     full: !usable,
   };
 }
@@ -1530,7 +1569,7 @@ async function applySyncFull(db: D1Database, projectId: string, payload: SyncPay
   appendFrameInserts(db, stmts, payload, now);
 
   // Tombstones: INSERT OR IGNORE — idempotent, same tombstone may arrive multiple times
-  appendTombstoneInserts(db, stmts, payload, projectId);
+  appendTombstoneInserts(db, stmts, payload, projectId, now);
 
   if (stmts.length > 0) await db.batch(stmts);
 }
@@ -1620,7 +1659,7 @@ async function applySyncPartial(db: D1Database, projectId: string, payload: Sync
   appendFrameInserts(db, stmts, payload, now);
 
   // Record tombstones for future pulls by other devices
-  appendTombstoneInserts(db, stmts, payload, projectId);
+  appendTombstoneInserts(db, stmts, payload, projectId, now);
 
   // Update project metadata
   stmts.push(
@@ -1726,13 +1765,20 @@ function appendFrameInserts(db: D1Database, stmts: D1PreparedStatement[], payloa
   }
 }
 
-function appendTombstoneInserts(db: D1Database, stmts: D1PreparedStatement[], payload: SyncPayload, projectId: string) {
+function appendTombstoneInserts(db: D1Database, stmts: D1PreparedStatement[], payload: SyncPayload,
+                               projectId: string, now: number) {
   for (const del of payload.deletions) {
     stmts.push(
       db.prepare(
-        `INSERT OR IGNORE INTO project_deletions (id, project_id, entity_type, entity_id, deleted_at, device_id)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-      ).bind(del.id, projectId, del.entity_type, del.entity_id, del.deleted_at, del.device_id),
+        // arrived_at, by this machine's clock, is what the delta filters on
+        // (#316). deleted_at stays the device's own time of the deletion.
+        // Before this, a frame deleted on Monday and pushed on Wednesday was
+        // never handed to a device that had pulled on Tuesday — so the frame
+        // lived on there, and every edit made to it was silently discarded by
+        // the "dead stay dead" filter.
+        `INSERT OR IGNORE INTO project_deletions (id, project_id, entity_type, entity_id, deleted_at, device_id, arrived_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(del.id, projectId, del.entity_type, del.entity_id, del.deleted_at, del.device_id, now),
     );
   }
 }

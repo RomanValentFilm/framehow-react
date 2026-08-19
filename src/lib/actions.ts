@@ -360,27 +360,47 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
           renderAll();
           void flushSyncNow(); // FRM-4: hide frame
         } else {
-          // Record tombstones BEFORE removing from state
-          recordTombstone('frame', f.serverFrameId);
-          // Also tombstone all synced versions across all strips
-          for (const stripId of Object.keys(s.stripVersions)) {
-            const vers = s.stripVersions[stripId]?.[fid];
-            if (!vers) continue;
-            for (const v of vers) recordTombstone('version', v.serverVersionId);
-          }
-          s.frames.splice(idx, 1);
-          delete s.versions[fid];
-          delete s.activeTab[fid];
-          delete s.drawColor[fid];
-          removeFrameFromSortOrders(fid);
-          updateFrameBadge();
-          renderAll();
-          void flushSyncNow(); // FRM-3: delete frame (tombstone recorded)
+          deleteFrameForGood(fid);
         }
       });
     }
     return;
   }
+}
+
+/**
+ * DELETE A FRAME FOR GOOD — the body of the DELETE choice, lifted out so the
+ * browser tests can reach it (#316).
+ *
+ * It used to live inside the modal's callback, which meant the only way to
+ * delete a frame in a test was to write a second copy of it — and a copy drifts
+ * from the original, so the test would go on passing after the real thing
+ * changed. Same code, moved, one caller more.
+ *
+ * The order matters and is why this is worth keeping in one place: the
+ * tombstones are recorded BEFORE the frame leaves the store, because once it is
+ * gone there is nothing left to read its server id from.
+ */
+export function deleteFrameForGood(fid: number): void {
+  const s = state();
+  const idx = s.frames.findIndex((x) => x.id === fid);
+  if (idx < 0) return;
+  const f = s.frames[idx];
+  recordTombstone('frame', f.serverFrameId);
+  // Every synced version of it, across every strip, goes too.
+  for (const stripId of Object.keys(s.stripVersions)) {
+    const vers = s.stripVersions[stripId]?.[fid];
+    if (!vers) continue;
+    for (const v of vers) recordTombstone('version', v.serverVersionId);
+  }
+  s.frames.splice(idx, 1);
+  delete s.versions[fid];
+  delete s.activeTab[fid];
+  delete s.drawColor[fid];
+  removeFrameFromSortOrders(fid);
+  updateFrameBadge();
+  renderAll();
+  void flushSyncNow(); // FRM-3: delete frame (tombstone recorded)
 }
 
 export function handleAction(action: string, fid: number, div: HTMLElement, fromCompare?: boolean, strip: StripType = 'ver'): void {

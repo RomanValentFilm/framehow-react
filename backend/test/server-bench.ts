@@ -429,6 +429,45 @@ async function run() {
         frames.some((f) => f.text_content === 'written on a slow iPad'), true);
     }
 
+    // WORK MADE WHILE AWAY, PUSHED LATE (#316).
+    //
+    // The two tables #313 missed. A setting and a deletion both carry the time
+    // the PERSON acted, on their own device — Monday. They are pushed on
+    // Wednesday. The other device last pulled on Tuesday, so it asks for
+    // everything since Tuesday, and Monday is not after Tuesday.
+    //
+    // Before #316 both fell beneath the question and were never delivered. Not
+    // late: invisible, permanently, because the watermark only climbs. For the
+    // deletion that meant the frame lived on for ever on the other device AND
+    // silently refused every edit made to it, since the server discards writes
+    // to something it knows is dead.
+    {
+      const monday = Date.now() - 2 * 24 * 60 * 60 * 1000;
+      const askedFor = desktop.heardAt;              // the desktop's Tuesday
+
+      const late = push([], { device: 'iPad' }) as Record<string, unknown>;
+      late.settings = [{
+        kind: 'needCategory', item_id: 'tab_away',
+        value: '{"idx":0,"data":{"name":"RENAMED WHILE AWAY"}}',
+        changed_at: monday, deleted_at: null,
+      }];
+      late.deletions = [{
+        id: 'tomb-away', entity_type: 'frame', entity_id: 'f0',
+        deleted_at: monday, device_id: 'iPad',
+      }];
+      await call(db, 'POST', `/projects/${PROJECT}/sync`, late);
+
+      const r = await call(db, 'GET', `/projects/${PROJECT}/sync?since=${askedFor}`);
+      const body = r.body as {
+        settings: Array<{ item_id: string }>;
+        deletions: Array<{ entity_id: string }>;
+      };
+      check('a setting changed while away is still delivered when it arrives late',
+        body.settings.some((x) => x.item_id === 'tab_away'), true);
+      check('a deletion made while away is still delivered when it arrives late',
+        body.deletions.some((x) => x.entity_id === 'f0'), true);
+    }
+
     // settings travel in a delta too
     const withSetting = push([], { device: 'iPad' }) as Record<string, unknown>;
     withSetting.settings = [{ kind: 'needCategory', item_id: 'tab_1', value: '{"idx":0,"data":{"name":"GEAR"}}', changed_at: Date.now(), deleted_at: null }];

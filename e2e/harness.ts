@@ -232,6 +232,12 @@ export class Device {
     return `${o.name}: ${out.join(' ')}`;
   }
 
+  deleteFrame(index: number): Promise<void> {
+    return this.page.evaluate((i) =>
+      (window as never as { __fh_test: { deleteFrame(i: number): void } })
+        .__fh_test.deleteFrame(i as number), index);
+  }
+
   push(): Promise<void> {
     return this.page.evaluate(() =>
       (window as never as { __fh_test: { push(): Promise<void> } }).__fh_test.push());
@@ -305,18 +311,27 @@ export class Device {
    * the line it is waiting for is then already in the "before" picture and
    * ignored. The test waits thirty seconds for something that has happened.
    */
-  async mark(): Promise<Set<string>> {
-    return new Set(await this.log());
+  async mark(): Promise<string[]> {
+    return this.log();
   }
 
-  /** Wait for a line that was not in `before`. */
-  async waitForLogAfter(before: Set<string>, needle: string,
+  /**
+   * Wait until there is one MORE line saying this than there was at `before`.
+   *
+   * Counting, not matching. The first version asked "is there a line saying
+   * this that I had not seen?" — and the log stamps lines to the second, so two
+   * pushes inside the same second produce two lines with identical text. The
+   * second one looked like the first and did not count, and the test waited
+   * thirty seconds for something that had already happened twice.
+   */
+  async waitForLogAfter(before: string[], needle: string,
                         timeoutMs = 30_000): Promise<void> {
+    const had = before.filter((l) => l.includes(needle)).length;
     say(`${this.name}: waiting for a NEW line saying "${needle}"`);
     const deadline = Date.now() + timeoutMs;
     for (;;) {
       const lines = await this.log();
-      if (lines.some((l) => l.includes(needle) && !before.has(l))) {
+      if (lines.filter((l) => l.includes(needle)).length > had) {
         say(`${this.name}: …said it`); return;
       }
       if (Date.now() > deadline) {

@@ -53,6 +53,7 @@ import {
   beginSystemAction,
   endSystemAction,
   pendingOnDevice,
+  markSomethingToSend,
 } from './currentProject';
 import { trace } from './syncTrace';
 import { frameChangedAt, versionChangedAt, importChangeStamps, stampChangedContent, seedContentStamps } from './changeStamps';
@@ -2256,7 +2257,9 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   for (const sf of res.frames ?? []) _serverFrameTimes.set(sf.id, sf.updated_at);
   // The reply is the whole project as the server now holds it. Standing on it
   // means the next pull can ask only for what changed after this moment (#280).
-  if (cp.projectId && res.frames) holdTree(cp.projectId, res as CloudProjectTree);
+  // Good ground, but NOT proof of having heard — the frames in this reply are
+  // not applied to the store, so the mark must not move (#320).
+  if (cp.projectId && res.frames) holdTree(cp.projectId, res as CloudProjectTree, false);
   // The reply carries the MERGED settings — ours where ours were newer, the
   // server's where they were not. Take both the values and their stamps, or
   // this device would keep pushing its older copy for ever.
@@ -3463,9 +3466,23 @@ async function sendHeartbeat(): Promise<void> {
     // few seconds while someone is working and already talks to the server, so
     // it says when the project last changed. Newer than what we hold, and by
     // someone else, means fetch it — no new timer and no polling loop.
+    // BEING THE LAST TO SPEAK IS NOT THE SAME AS HAVING HEARD (#319).
+    //
+    // This used to skip the pull whenever the last device to write was this one
+    // — the exact shortcut #299 removed from the pull path, still living here.
+    //
+    // It is wrong for the same reason: whoever wrote last says nothing about
+    // what the server was holding BEFORE that write. A device that pushes after
+    // someone else's work has landed becomes the last writer and then stops
+    // asking — for ever, because only another device writing can lift the
+    // condition. In the test the tablet reconnected, pushed, and went deaf to a
+    // sentence the desktop had put up three seconds earlier.
+    //
+    // Nothing is lost by removing it. serverHasSomethingNew already compares
+    // against what this device has actually TAKEN, so a device that really is
+    // up to date still does not pull.
     const remoteAt = beat?.project_updated_at ?? null;
-    const remoteBy = beat?.project_last_device_id ?? null;
-    if (remoteAt !== null && remoteBy !== getDeviceId()) {
+    if (remoteAt !== null) {
       if (serverHasSomethingNew({ takenFromServerAt: takenFromServerAt ?? 0 } as DeviceMemory, remoteAt)) {
         trace(`heartbeat: the project changed elsewhere — pulling`);
         await tryPullFromCloud();
@@ -3808,11 +3825,29 @@ let _heldTreeProjectId: string | null = null;
 /** The SERVER's clock as of its last answer. Never this device's. */
 let _heardAt = 0;
 
-/** Remember a whole project as the ground this device stands on. */
-function holdTree(projectId: string, tree: CloudProjectTree): void {
+/**
+ * Remember a whole project as the ground this device stands on.
+ *
+ * PUSHING IS NOT HEARING (#320).
+ *
+ * The reply to a push is the whole project as the server now holds it, so it is
+ * good ground to stand on and is kept. But it was also moving `_heardAt` — the
+ * mark that says "I have been told everything up to here" — and that is a lie,
+ * because the push path keeps the reply's SETTINGS and throws its FRAMES away.
+ *
+ * So a device would push, quietly record itself as current as of that moment,
+ * and never ask for the frames it had just been handed and discarded. In the
+ * test the tablet reconnected, pushed, and never saw a sentence the desktop had
+ * written seconds earlier — not slowly, never.
+ *
+ * The same rule as #299 and #319, in the last place it was still broken: only a
+ * PULL may move the mark. Standing on the tree is fine; claiming to have heard
+ * it is not.
+ */
+function holdTree(projectId: string, tree: CloudProjectTree, heard: boolean): void {
   _heldTree = tree;
   _heldTreeProjectId = projectId;
-  if (tree.server_now) _heardAt = tree.server_now;
+  if (heard && tree.server_now) _heardAt = tree.server_now;
 }
 
 /** The server's clock at our last answer — saved with the project (#284). */
@@ -4112,6 +4147,10 @@ export function recordTombstone(entityType: 'frame' | 'version', serverEntityId:
     deleted_at: Date.now(),
     device_id: getDeviceId(),
   });
+  // Say out loud that there is something to send (#317). Without this the
+  // tombstone sat in memory waiting for some unrelated change to carry it, and
+  // a deletion made offline never travelled at all.
+  markSomethingToSend();
 }
 
 
@@ -4348,7 +4387,7 @@ async function tryPullFromCloud(force = false): Promise<void> {
       const changed = raw.frames.length + raw.versions.length + (raw.settings?.length ?? 0) + (raw.deletions?.length ?? 0);
       if (changed > 0) trace(`  asked for changes only: ${changed} row(s) instead of the whole project`);
     }
-    holdTree(cp.projectId, tree);
+    holdTree(cp.projectId, tree, true);      // a real pull — the mark may move
     const remoteUpdatedAt = tree.project.updated_at;
     // What I last TOOK, not what I last said (#299).
     const localUpdatedAt = takenFromServerAt ?? 0;

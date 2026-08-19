@@ -288,6 +288,29 @@ export function claimStoreAsLocalWork(): void {
   emit();
 }
 
+/**
+ * A DELETION IS WORK TOO (#317).
+ *
+ * Deleting a frame recorded a tombstone and then relied on something else to
+ * cause a push. Nothing did. `flushSyncNow` returns immediately when nothing is
+ * dirty, and a deletion marked nothing — there is no frame left to mark.
+ *
+ * So a frame deleted while offline never left the device. On the other device it
+ * lived on, and every edit made to it there was thrown away in silence, because
+ * the server discards writes to something it has been told is dead. Close the
+ * app before the tombstone happened to ride along with some other change and it
+ * was gone for good.
+ *
+ * This says only "there is something to send". It deliberately does NOT add a
+ * frame to the unsent set: unsent FRAMES hold a pull back (#305), and a
+ * deletion has no reason to.
+ */
+export function markSomethingToSend(): void {
+  _dirty = true;
+  cp = { ...cp, dirty: true };
+  emit();
+}
+
 /** Called after a successful push to clear dirty state. */
 export function clearDirtyState(): void {
   _dirty = false;
@@ -594,7 +617,13 @@ async function runAutosave(): Promise<void> {
     // restart with NOTHING remembered about the server and, by the old rule,
     // read that as a brand new project (#300). Whether the save was empty or
     // the load lost it, this line and the one at boot tell us which.
-    const remembered = Object.keys(snap.pushedFingerprints ?? {}).length;
+    // Count FRAMES, not entries. The server's timestamps ride along in the same
+    // record under a reserved name (see exportPushedFingerprints), so counting
+    // keys reported one frame more than the project has — a six-frame project
+    // saying "7 frame(s) remembered", every time, for no reason. The line is
+    // read to decide whether a restart lost its memory, so it has to be exact.
+    const remembered = Object.keys(snap.pushedFingerprints ?? {})
+      .filter((k) => k !== '__serverTimes').length;
     if (remembered !== _lastRememberedTraced) {
       _lastRememberedTraced = remembered;
       trace(`  saving: ${remembered} frame(s) remembered as matching the server`);
