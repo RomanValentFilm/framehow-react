@@ -61,7 +61,7 @@ import { frameChangedAt, versionChangedAt, importChangeStamps, stampChangedConte
 import { shouldSendOnlyChanges } from './pushMode';
 import { serverHasSomethingNew, whoseFrameWins, type DeviceMemory } from './sessionRules';
 import { mergeDelta, lastMergeRefusal, answerIsSafeToApply, untouchedByDelta, type MergeableTree } from './deltaMerge';
-import { settingsForPush, adoptSettingsFromServer, applySettingsToStore, importSettingStamps, stampChangedSettings, seedSettings, settingsNeedPush, reconcileRestoredSettings, captureMySettings, keepMyUnsentSettings, type SettingItem } from './projectSettings';
+import { settingsForPush, adoptSettingsFromServer, applySettingsToStore, importSettingStamps, stampChangedSettings, seedSettings, settingsNeedPush, reconcileRestoredSettings, captureMySettings, keepMyUnsentSettings, unsentSettingNames, type SettingItem } from './projectSettings';
 import { applySnapshotToStore, loadSnapshot, snapshotFromStore, listPending, isArchived, getPending, markPendingUploaded, saveProjectListCache, loadProjectListCache, deletePending, recoverPending, isDeletedCopy, requestDurableStorage } from './persistence';
 import type { PendingRecord } from './persistence';
 import { showThreeWayConflict, showConfirm, showToast } from './modals';
@@ -1832,7 +1832,10 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   const metaChanged =
     settingsNeedPush() ||
     (_lastPushedMeta !== '' && projectMetaFingerprint(s) !== _lastPushedMeta);
-  if (metaChanged) trace('  project settings changed — sending');
+  if (metaChanged) {
+    const names = unsentSettingNames();
+    trace(`  project settings changed — sending${names.length ? ': ' + names.join(', ') : ' (the metadata blob)'}`);
+  }
 
   if (isPartial && dirtyLocalIds.size === 0 && _pendingTombstones.length === 0 && !metaChanged) {
     trace('  nothing changed — not sending');
@@ -4505,8 +4508,30 @@ async function tryPullFromCloud(force = false): Promise<void> {
       tree = folded as unknown as CloudProjectTree;
     }
     if (asDelta && raw.full === false) {
-      const changed = raw.frames.length + raw.versions.length + (raw.settings?.length ?? 0) + (raw.deletions?.length ?? 0);
+      const changed = raw.frames.length + raw.versions.length + (raw.settings?.length ?? 0) + (raw.deletions?.length ?? 0)
+        + (raw.images?.length ?? 0) + (raw.drawings?.length ?? 0);
       if (changed > 0) trace(`  asked for changes only: ${changed} row(s) instead of the whole project`);
+
+      // AN EMPTY ANSWER IS NOT WORTH REDRAWING THE SCREEN FOR (#349).
+      //
+      // The answer brought nothing — no frame, no version, no picture, no
+      // setting, no deletion. Applying it means rebuilding the whole storyboard
+      // and redrawing the page, which tears down whatever the user has on top of
+      // it: an expanded card, a photograph they just took, the story-flow view.
+      //
+      // Roman's iPad was doing this every few seconds, so nothing he opened
+      // stayed open. Every one of those pulls said "untouched by the answer: 11"
+      // — it had been handed nothing at all and redrew everything anyway.
+      //
+      // Take the new watermark, so the device counts as up to date and stops
+      // asking, and leave the screen alone.
+      if (changed === 0) {
+        trace('  nothing new — leaving the screen alone');
+        holdTree(cp.projectId, tree, true);
+        takenFromServerAt = tree.project.updated_at;
+        lastKnownUpdatedAt = tree.project.updated_at;
+        return;
+      }
     }
     holdTree(cp.projectId, tree, true);      // a real pull — the mark may move
     const remoteUpdatedAt = tree.project.updated_at;
@@ -4750,9 +4775,20 @@ async function tryPullFromCloud(force = false): Promise<void> {
           // of their own. Frames kept merely because the answer did not mention
           // them are the normal case now — saying "kept 44 local frames" after
           // every pull would be noise, and untrue in spirit (#290).
+          // NO POPUP FOR A SYNC DOING ITS JOB (#348).
+          //
+          // This said "Synced — kept 2 local frames" every time a pull kept
+          // work of yours. Fine when a pull was a rare event; since #320 made a
+          // pull follow every push it became a message every few seconds, on
+          // top of the screen you were working on. Roman: "it shows constantly
+          // modals of things being synced... we eliminated these modals
+          // already".
+          //
+          // Keeping your work is the normal case and the whole point. It is not
+          // news. It goes to the log, where it can be read when it matters.
           const keptWithWork = [...keepLocalIds].filter((id) => !untouched?.has(id)).length;
           if (keptWithWork > 0) {
-            showToast(`Synced — kept ${keptWithWork} local frame${keptWithWork > 1 ? 's' : ''}`);
+            trace(`  kept ${keptWithWork} frame(s) of your own work through this pull`);
           }
         } else {
           // No local changes (or user chose cloud for everything) — take cloud fully

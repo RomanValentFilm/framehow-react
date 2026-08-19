@@ -427,6 +427,18 @@ export function applySettingsToStore(items: SettingItem[] | undefined): void {
  *  answer until a push had already succeeded once — so on a project that had
  *  not pushed yet, creating or rearranging a sort order changed no frame, and
  *  the push was skipped as "nothing changed". */
+/** WHICH settings are unsent, by name (#349). "project settings changed" on
+ *  every push with nothing else changing means one item never gets confirmed,
+ *  and the device pushes for ever. This says which one. */
+export function unsentSettingNames(): string[] {
+  const out: string[] = [];
+  for (const [k, v] of _known) {
+    if (v.deleted_at !== null && v.deleted_at > v.serverAt) out.push(`${k} (deleted)`);
+    else if (v.changed_at > v.serverAt) out.push(k);
+  }
+  return out;
+}
+
 export function settingsNeedPush(): boolean {
   for (const v of _known.values()) {
     if (v.deleted_at !== null && v.deleted_at > v.serverAt) return true;

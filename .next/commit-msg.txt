@@ -1,19 +1,18 @@
-v4.9.073 - a sync leaves the screen alone (#347)
+v4.9.074 - an empty answer no longer redraws the screen (#349)
 
-Two halves, both in the pull, both found by reading rather than guessing.
+The log showed it plainly: every pull said "untouched by the answer: 11" - it
+had been handed nothing at all - and then rebuilt the whole storyboard and
+redrew the page anyway. That is what tore down whatever was on top: an expanded
+card, a photograph just taken, the story-flow view. The view MODE never changed,
+which is why #342 and #347 did not stop it.
 
-The rebuild set currentViewMode: 'both', fsOverlayActive: null, ovExpandedFid:
-null and showText: {} on EVERY pull. A sync reset the view to a default, forgot
-fullscreen was open, collapsed an expanded card and shut open text panels. Until
-#342 the default was then turned into 3x2 by the "which view does this project
-open in" rule, which is why it always looked like a march back to the grid.
+A delta with no frames, versions, pictures, settings or deletions now takes the
+new watermark, so the device counts as up to date, and leaves the screen alone.
 
-And the pull's own "put the view back" called setViewMode every time, even when
-the mode had not changed. setViewMode does more than set a mode - it collapses
-an expanded card and tears down the scribble layer, because those belong to the
-view being left. So expanding a card in 3x2 and waiting for a sync put you back
-at the plain grid. It now only runs when the view actually moved.
+Also #348: the "Synced - kept 2 local frames" popup is gone. Fine when a pull
+was rare; since #320 made a pull follow every push it became a message every few
+seconds on top of the work. It goes to the log instead.
 
-Also in: #346 the app writes a line when its view changes and what caused it;
-#344 nothing may happen when nothing is happening; #345 the ledger and a random
-day, so the simulator stops only finding what I thought to script.
+And the push now NAMES the settings it considers unsent. "project settings
+changed - sending" appears on every push with nothing else changing, which means
+one item is never confirmed and the device pushes for ever. This says which.
