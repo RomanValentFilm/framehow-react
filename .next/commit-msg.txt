@@ -1,16 +1,19 @@
-v4.9.072 - #337 reverted (#343)
+v4.9.073 - a sync leaves the screen alone (#347)
 
-#337 put the story-flow breaks inside the arrangement so the whole thing
-travelled as one item. It also changed the SHAPE of a stored settings value that
-had been a plain list since #294 - and the app then decided its settings had
-changed on every pass. It pushed; that bumped the project's time on the server;
-the heartbeat saw something newer and pulled; the pull redrew the screen; and it
-pushed again. The iPad churned every few seconds and nothing the user opened
-stayed open.
+Two halves, both in the pull, both found by reading rather than guessing.
 
-Roman had already said the old behaviour was the wanted one: a break sits where
-you put it, by position, and the later change wins. So it goes back to that, and
-the breaks are their own items again. A value written in the hour #337 was live
-is still read, so nothing from that window is stranded.
+The rebuild set currentViewMode: 'both', fsOverlayActive: null, ovExpandedFid:
+null and showText: {} on EVERY pull. A sync reset the view to a default, forgot
+fullscreen was open, collapsed an expanded card and shut open text panels. Until
+#342 the default was then turned into 3x2 by the "which view does this project
+open in" rule, which is why it always looked like a march back to the grid.
 
-#338, #340, #341 and #342 stay.
+And the pull's own "put the view back" called setViewMode every time, even when
+the mode had not changed. setViewMode does more than set a mode - it collapses
+an expanded card and tears down the scribble layer, because those belong to the
+view being left. So expanding a card in 3x2 and waiting for a sync put you back
+at the plain grid. It now only runs when the view actually moved.
+
+Also in: #346 the app writes a line when its view changes and what caused it;
+#344 nothing may happen when nothing is happening; #345 the ledger and a random
+day, so the simulator stops only finding what I thought to script.

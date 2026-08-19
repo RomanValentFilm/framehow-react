@@ -6,6 +6,7 @@ import type { ViewMode, StripType } from '../store/state';
 
 import { hasVisibleVer, nextVisibleVer, ovCollapseExpanded, clearAllDrawActive, clearReorder, relabelVersions, saveOpenTextEdits, saveOpenTableEdits, _actionAnchorTimers, getStripVersions, getStripActiveTab, setStripActiveTab, getStripCrossCompare, setStripCrossCompare, relabelStripVersions, stripScrollId } from './helpers';
 import { fhTrack } from './tracking';
+import { trace } from './syncTrace';
 import { resetGrid3x2Zoom } from './overview';
 import { cleanupScribble } from './scribble';
 
@@ -539,6 +540,16 @@ export function scrollAnchorTo(fid: string | number | null): void {
 export function setViewMode(mode: ViewMode, keepCompare?: boolean, forceAnchorFid?: string | null): void {
   fhTrack('view_' + mode);
   const s = state();
+  // SAY WHO MOVED THE VIEW (#346).
+  //
+  // Roman reports being returned to 3x2 after almost anything, and three
+  // readings of the code have each blamed the wrong thing. So the app now says
+  // it out loud, with the two lines above and below in the log naming what was
+  // happening at the time — a pull, a push, a rotation, or a button.
+  if (s.currentViewMode !== mode) {
+    const why = new Error().stack?.split('\n')[2]?.trim().replace(/^at /, '') ?? '?';
+    trace(`view: ${s.currentViewMode} → ${mode}   (${why.slice(0, 60)})`);
+  }
   // Reset pinch-zoom when leaving 3x2 grid view
   if (s.currentViewMode === 'grid3x2' && mode !== 'grid3x2') { resetGrid3x2Zoom(); cleanupScribble(); }
   ovCollapseExpanded();

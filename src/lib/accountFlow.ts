@@ -2396,6 +2396,18 @@ async function applyCloudTreeToStore(
   //
   // Which version you are looking at is not the project. It belongs to this
   // screen, this minute, and a sync has no business touching it.
+  /** The screen as the user has it, so a pull cannot rearrange it (#347). */
+  const prevView = (() => {
+    const st = state();
+    return {
+      currentViewMode: st.currentViewMode,
+      fsOverlayActive: st.fsOverlayActive,
+      ovExpandedFid: st.ovExpandedFid,
+      showText: st.showText,
+      activeStrips: st.activeStrips,
+    };
+  })();
+
   const viewedBefore = (() => {
     const st = state();
     const byServerId = new Map<string, { tab: Record<string, number>; cc: Record<string, number> }>();
@@ -2937,7 +2949,7 @@ async function applyCloudTreeToStore(
     drawWidth: {},
     drawEraser: {},
     drawActive: {},
-    showText: {},
+    showText: prevView.showText,
     crossCompare: verCC,
     prevFrameState: verPFS,
     nextId,
@@ -2949,12 +2961,23 @@ async function applyCloudTreeToStore(
     stripClipboard: null,
     imgTarget: null,
     mainImgTarget: null,
-    ovExpandedFid: null,
+    // WHAT YOU ARE LOOKING AT IS NOT THE PROJECT (#347).
+    //
+    // These four were being reset on EVERY pull. The view went back to a
+    // default, an expanded card collapsed, open text panels shut, and the app
+    // forgot fullscreen was open — so a sync landing while you worked threw you
+    // out of whatever you had in front of you. Until #342, the default was then
+    // turned into 3x2 by the "which view does this project open in" rule, which
+    // is why it always looked like a march back to the grid.
+    //
+    // A sync brings work from the other device. It has no business deciding
+    // what is on screen. These stay exactly as the user left them.
+    ovExpandedFid: prevView.ovExpandedFid,
     drawingInProgress: false,
     drawSuppressClick: false,
     overviewAction: false,
-    fsOverlayActive: null,
-    currentViewMode: 'both',
+    fsOverlayActive: prevView.fsOverlayActive,
+    currentViewMode: prevView.currentViewMode,
     portraitMode: isPortrait,
     projectType: restoredProjectType,
     stripTagInfoDismissed: restoredStripTagInfoDismissed,
@@ -4785,7 +4808,16 @@ async function tryPullFromCloud(force = false): Promise<void> {
         (window as any).__fh_renderAll?.();
         // After the rebuild, not before — otherwise the render has the last
         // word and drops the user into the default view anyway.
-        setViewMode(viewBefore.currentViewMode);
+        //
+        // ONLY IF IT ACTUALLY MOVED (#347). setViewMode does more than set a
+        // mode: it collapses an expanded card and tears down the scribble
+        // layer, because those belong to the view being left. Calling it on
+        // every pull with the SAME mode therefore closed whatever the user had
+        // open — expand a card in 3x2, wait for a sync, and you were back at
+        // the plain grid. Which is exactly what Roman kept describing.
+        if (state().currentViewMode !== viewBefore.currentViewMode) {
+          setViewMode(viewBefore.currentViewMode);
+        }
         const frameStillThere = viewBefore.centerFid != null
           && state().frames.some((f) => String(f.id) === String(viewBefore.centerFid));
         if (frameStillThere) requestAnimationFrame(() => scrollAnchorTo(viewBefore.centerFid));
