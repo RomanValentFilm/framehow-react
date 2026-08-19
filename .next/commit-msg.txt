@@ -1,11 +1,16 @@
-v4.9.071 - a sync does not choose your view (#342)
+v4.9.072 - #337 reverted (#343)
 
-Every pull called autoPhoneMainView - the "what should this project open in"
-rule. On a landscape project that forces 3x2. So a sync marched the user back
-to the grid no matter where they were or what they had open, and the photo just
-taken appeared to jump away.
+#337 put the story-flow breaks inside the arrangement so the whole thing
+travelled as one item. It also changed the SHAPE of a stored settings value that
+had been a plain list since #294 - and the app then decided its settings had
+changed on every pass. It pushed; that bumped the project's time on the server;
+the heartbeat saw something newer and pulled; the pull redrew the screen; and it
+pushed again. The iPad churned every few seconds and nothing the user opened
+stayed open.
 
-It was always wrong and merely rare, because a pull used to happen seldom.
-#320 made a pull follow every push and then it was constant.
+Roman had already said the old behaviour was the wanted one: a break sits where
+you put it, by position, and the later change wins. So it goes back to that, and
+the breaks are their own items again. A value written in the hour #337 was live
+is still read, so nothing from that window is stranded.
 
-Opening a project still chooses the view. A sync no longer does.
+#338, #340, #341 and #342 stay.

@@ -75,18 +75,17 @@ function currentItems(): Array<{ kind: string; item_id: string; json: string }> 
   // they travel with it wherever it lands. An id in the list with no frame
   // behind it is simply skipped, so a deleted frame needs no place-holder.
   const orderedIds = s.frames.map((f) => f.serverFrameId).filter(Boolean) as string[];
-  // THE ARRANGEMENT IS THE FRAMES AND THE BREAKS TOGETHER (#337).
+  // REVERTED (#343). #337 put the breaks inside this item so the whole
+  // arrangement travelled as one thing. It also changed the SHAPE of a settings
+  // value that had been a plain list since #294 — and the app then decided its
+  // settings had changed on every single pass, pushing, which bumped the
+  // project's time, which made the heartbeat pull, which pushed again. The iPad
+  // churned in a loop and every pull redrew the screen.
   //
-  // The breaks used to be items of their own, merged separately from the order
-  // they belong to. So the other device rearranged, the frames moved and the
-  // breaks did not, and LUNCH ended up two frames from where anybody put it.
-  //
-  // They are one thought — this is the order of the day — so they travel as one
-  // thing and the later one wins whole, exactly as a shooting order already
-  // does. A break stays where the user put it, and nothing slides underneath it.
-  if (orderedIds.length > 0) {
-    push('frameOrder', 'main', 0, { frames: orderedIds, breaks: s.storyFlowBreaks ?? [] });
-  }
+  // Roman had already said the old behaviour was what he wanted: a break sits
+  // where you put it, by position, and the later change wins. So this goes back
+  // to what it was, and the breaks stay items of their own.
+  if (orderedIds.length > 0) push('frameOrder', 'main', 0, orderedIds);
 
   s.groups.forEach((g, i) => push('group', String(g.id), i, g));
   s.sortOrders.forEach((o, i) => push('sortOrder', o.id, i, o));
@@ -112,9 +111,7 @@ function currentItems(): Array<{ kind: string; item_id: string; json: string }> 
   // added is then simply added here, instead of losing to a newer copy of "the
   // breaks" that never knew about it. Two devices moving the SAME break still
   // settle by time.
-  // Breaks are no longer pushed separately (#337) — they ride inside the
-  // arrangement above. The old rows are still READ, for what the server holds
-  // and for devices on older builds.
+  (s.storyFlowBreaks ?? []).forEach((b, i) => push('storyFlowBreak', b.id, i, b));
 
   return out;
 }
@@ -397,28 +394,22 @@ export function applySettingsToStore(items: SettingItem[] | undefined): void {
   const setups = mergeList('setup', setupsNow, (su: Setup) => su.id);
   if (setups) patch.setups = setups;
 
-  // The OLD separate break rows, read first so the arrangement below has the
-  // last word (#337). Still here for what the server holds and for devices on
-  // older builds; nothing writes them any more.
-  const oldBreaks = mergeList('storyFlowBreak', s.storyFlowBreaks ?? [], (b) => b.id);
-  if (oldBreaks) patch.storyFlowBreaks = oldBreaks;
+  // Story-flow breaks merge one by one, like groups and orders (#343, back to
+  // how it was). A break only this device has stays; one only the other device
+  // has is added; one both know at different positions takes the newer.
+  const breaks = mergeList('storyFlowBreak', s.storyFlowBreaks ?? [], (b) => b.id);
+  if (breaks) patch.storyFlowBreaks = breaks;
 
-  // THE STORY FLOW: the frames AND their breaks, one thing, later wins whole
-  // (#294, #337). An older row carries just the list of frames; a newer one
-  // carries the breaks with it.
+  // The story flow: one arrangement, the later one wins whole (#294). A value
+  // written by #337 was an object; anything of that shape is read for its
+  // frames so nothing written in that hour is stranded.
   const orderRow = rows.find((r) => r.kind === 'frameOrder' && !r.deleted && r.changed_at > UNKNOWN
     && !localIsNewerAndUnsent('frameOrder', 'main', r.changed_at));
   if (orderRow) {
-    const d = orderRow.data as string[] | { frames: string[]; breaks?: SortBreak[] };
-    if (Array.isArray(d)) {
-      patch.frames = applyArrangement(s.frames, d);
-      trace(`  arrangement arrived: ${d.length} frames (old form, no breaks)`);
-    } else {
-      patch.frames = applyArrangement(s.frames, d.frames ?? []);
-      patch.storyFlowBreaks = d.breaks ?? [];
-      trace(`  arrangement arrived: ${(d.frames ?? []).length} frames · `
-        + `${(d.breaks ?? []).length} break(s)`);
-    }
+    const d = orderRow.data as string[] | { frames?: string[] };
+    const list = Array.isArray(d) ? d : (d.frames ?? []);
+    patch.frames = applyArrangement(s.frames, list);
+    trace(`  arrangement arrived: ${list.length} frames`);
   } else {
     const any = rows.find((r) => r.kind === 'frameOrder');
     if (any) {
@@ -652,8 +643,6 @@ export function keepMyUnsentSettings(before: MySettings, arrivedItems?: SettingI
   // keeps anything the list does not mention.
   if (iHoldUnsent('frameOrder', 'main', arrived) && before.frameOrder.length > 0) {
     patch.frames = applyArrangement(s.frames, before.frameOrder);
-    // The breaks belong to that arrangement and come back with it (#337).
-    patch.storyFlowBreaks = before.storyFlowBreaks;
   }
 
   if (Object.keys(patch).length > 0) useStore.setState(patch as never);
