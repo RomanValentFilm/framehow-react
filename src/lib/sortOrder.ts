@@ -3,6 +3,7 @@
 
 import { state, useStore, bumpRenderTick, SETUP_COLORS } from '../store/state';
 import type { SortOrder, SortBreak, Frame, NeedTable, BracketNodeData } from '../store/state';
+import { uniqueId } from './ids';
 
 // ─── Sort Bracket Types ──────────────────────────────────────────────
 
@@ -1112,8 +1113,14 @@ import { rasterizeMain, rasterizeVersion, versionHasContent } from './rasterize'
 
 // ─── Helpers ──────────────────────────────────────────────────────────
 
-function genId(prefix: string, n: number): string {
-  return `${prefix}_${n}`;
+/**
+ * A counter here was the fault, not a detail of it (#322). Two devices apart
+ * both counted from 1, so both called their first shooting order `sort_1` — and
+ * the server holds one row per id, so one of the two orders simply stopped
+ * existing. The number is kept only for the NAME the user reads.
+ */
+function genId(prefix: string, _n: number): string {
+  return uniqueId(prefix);
 }
 
 /** Add a newly created frame to all existing sort orders (appended at end). */

@@ -17,6 +17,7 @@
 import { useStore } from '../store/state';
 import type { SortOrder } from '../store/state';
 import { getVisibleFrames } from './groups';
+import { uniqueId } from './ids';
 import { startFromScratch } from './files';
 import { deleteFrameForGood } from './actions';
 import { saveNow, openCloudProjectById } from './accountFlow';
@@ -161,7 +162,7 @@ export function installTestDoor(): void {
 
     newSortOrder(name) {
       const s = useStore.getState();
-      const id = `sort_${s.nextSortOrderId}`;
+      const id = uniqueId('sort');          // the same way the app does it (#322)
       useStore.setState({
         sortOrders: [...s.sortOrders, {
           id,

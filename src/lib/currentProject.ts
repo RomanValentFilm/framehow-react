@@ -217,6 +217,12 @@ export function getDirtyFrameIds(): ReadonlySet<string> { return _dirtyFrameIds;
 // The fingerprint record lives in accountFlow; these are registered at boot so
 // the snapshot can carry it without the two modules importing each other.
 let _fingerprintsOut: (() => Record<string, string>) | null = null;
+/** Deletions still to send, for the local save (#327). */
+let _tombstonesOut: (() => Array<{ id: string; entity_type: 'frame' | 'version';
+  entity_id: string; deleted_at: number; device_id: string }>) | null = null;
+export function registerTombstoneBridge(out: typeof _tombstonesOut): void {
+  _tombstonesOut = out;
+}
 let _fingerprintsIn: ((m: Record<string, string>) => void) | null = null;
 
 /** Told about a push that got no answer, so the connection can be watched.
@@ -632,6 +638,9 @@ async function runAutosave(): Promise<void> {
     // claiming everything is new.
     snap.settingStamps = exportSettingStamps();
     snap.contentStamps = exportChangeStamps();
+    // Deletions this device has made and not yet sent. Without these a frame
+    // deleted offline came back on the next pull (#327).
+    if (_tombstonesOut) snap.pendingTombstones = _tombstonesOut();
     // When the server last answered. Saved so that reopening the app can ask
     // for changes only, instead of the whole project (#284).
     if (_heardAtOut) snap.heardAt = _heardAtOut();

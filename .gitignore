@@ -13,3 +13,6 @@ e2e-report/
 e2e-log/
 test-results/
 backend/.wrangler-e2e/
+.next/last-run
+.next/run
+.next/plan

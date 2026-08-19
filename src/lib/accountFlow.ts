@@ -54,13 +54,14 @@ import {
   endSystemAction,
   pendingOnDevice,
   markSomethingToSend,
+  registerTombstoneBridge,
 } from './currentProject';
 import { trace } from './syncTrace';
 import { frameChangedAt, versionChangedAt, importChangeStamps, stampChangedContent, seedContentStamps } from './changeStamps';
 import { shouldSendOnlyChanges } from './pushMode';
 import { serverHasSomethingNew, whoseFrameWins, type DeviceMemory } from './sessionRules';
 import { mergeDelta, lastMergeRefusal, answerIsSafeToApply, untouchedByDelta, type MergeableTree } from './deltaMerge';
-import { settingsForPush, adoptSettingsFromServer, applySettingsToStore, importSettingStamps, stampChangedSettings, seedSettings, settingsNeedPush, reconcileRestoredSettings, type SettingItem } from './projectSettings';
+import { settingsForPush, adoptSettingsFromServer, applySettingsToStore, importSettingStamps, stampChangedSettings, seedSettings, settingsNeedPush, reconcileRestoredSettings, captureMySettings, keepMyUnsentSettings, type SettingItem } from './projectSettings';
 import { applySnapshotToStore, loadSnapshot, snapshotFromStore, listPending, isArchived, getPending, markPendingUploaded, saveProjectListCache, loadProjectListCache, deletePending, recoverPending, isDeletedCopy, requestDurableStorage } from './persistence';
 import type { PendingRecord } from './persistence';
 import { showThreeWayConflict, showConfirm, showToast } from './modals';
@@ -2378,6 +2379,13 @@ async function applyCloudTreeToStore(
   keepLocalFrameIds?: ReadonlySet<string>,
   onImageProgress?: (loaded: number, total: number) => void,
 ): Promise<void> {
+  // What this device is holding BEFORE any of this runs. The rebuild below
+  // takes groups, setups, needs, shooting orders and the arrangement straight
+  // from the project's metadata blob — the old whole-project layer — and the
+  // per-item merge that follows can then only decline to overwrite what has
+  // already been overwritten. This is what makes putting it back possible (#323).
+  const mySettingsBefore = captureMySettings();
+
   // After pulling cloud data, clear fingerprints so the next push
   // recomputes from scratch (the state changed underneath us).
   clearPushedFingerprints();
@@ -2918,6 +2926,9 @@ async function applyCloudTreeToStore(
   // metadata blob above. Items the server has never heard of are left alone,
   // so a project whose settings only exist in metadata is untouched.
   applySettingsToStore(tree.settings);
+  // ...and then put back anything this device changed and has not sent, which
+  // the metadata blob above overwrote before the per-item merge ever ran (#323).
+  keepMyUnsentSettings(mySettingsBefore);
   adoptSettingsFromServer(tree.settings, tree.project.id);
   // A project the server holds no settings for has nothing to adopt, so take
   // the first look now with the project's creation time (#263, #264). Without
@@ -4065,6 +4076,14 @@ export function resetProjectSyncGuards(): void {
   // ...including the copy the delta pull folds into. Keeping it would let one
   // project's frames be merged into another's (#280).
   forgetHeldTree();
+  // Deletions belong to the project they were made in (#327). Carried over,
+  // they were sent up under the NEXT project's id — telling the server to
+  // delete frames it had never heard of, and weakening the guard that refuses
+  // a push which loses frames.
+  if (_pendingTombstones.length > 0) {
+    trace(`  ${_pendingTombstones.length} unsent deletion(s) belonged to the last project — dropped`);
+    _pendingTombstones = [];
+  }
 }
 
 /**
@@ -4132,6 +4151,32 @@ interface Tombstone {
 }
 
 let _pendingTombstones: Tombstone[] = [];
+
+/** Deletions this device has made that the server has not taken yet, so the
+ *  local save can hold on to them across a restart (#327). */
+export function exportPendingTombstones(): Tombstone[] {
+  return [..._pendingTombstones];
+}
+
+/**
+ * Take them back on boot. Anything already here is kept — this only adds — and
+ * the same deletion arriving twice is harmless, because the server ignores a
+ * tombstone it already holds.
+ */
+export function adoptPendingTombstones(list: Tombstone[] | undefined): void {
+  if (!list || list.length === 0) return;
+  const known = new Set(_pendingTombstones.map((t) => t.id));
+  let added = 0;
+  for (const t of list) {
+    if (known.has(t.id)) continue;
+    _pendingTombstones.push(t);
+    added++;
+  }
+  if (added > 0) {
+    trace(`  ${added} deletion(s) still to send, remembered from before`);
+    markSomethingToSend();
+  }
+}
 
 /**
  * Record a tombstone for an explicit user deletion.
@@ -4312,6 +4357,9 @@ function mergeFrames(
 let _lastHeldBackTrace = 0;
 
 async function tryPullFromCloud(force = false): Promise<void> {
+  // Did the rebuild actually begin? A pull that dies on the way to the server
+  // has touched nothing, and must not be tidied up as though it had (#325).
+  let storeWasRebuilt = false;
   // `force` is for taking the result of a decided conflict. That call happens
   // at the TAIL of a push, so the ordinary "never pull during a push" guard
   // turned it into a silent no-op — the device asked the question, heard the
@@ -4490,7 +4538,7 @@ async function tryPullFromCloud(force = false): Promise<void> {
         const keepMine = new Set<string>();
         const takeTheirs: string[] = [];
         for (const sfId of dirtyIds) {
-          const mine = frameChangedAt(sfId);            // undefined = age unknown
+          const mine = myWorkChangedAt(sfId);           // undefined = age unknown
           const theirs = cloudChangedAt.get(sfId);
           // Nothing on the server for it, or we cannot tell when theirs changed:
           // keep ours. Unsent work is never dropped on a guess.
@@ -4617,6 +4665,7 @@ async function tryPullFromCloud(force = false): Promise<void> {
         if (keepLocalIds && keepLocalIds.size > 0) {
           // Per-frame merge: keep selected local frames, take cloud for the rest
           if (progressBar) progressBar.style.width = '70%';
+          storeWasRebuilt = true;
           await applyCloudTreeToStore(tree, keepLocalIds, (loaded, total) => {
             syncImageProgress(loaded, total);
             if (total === 0) return;
@@ -4635,6 +4684,7 @@ async function tryPullFromCloud(force = false): Promise<void> {
         } else {
           // No local changes (or user chose cloud for everything) — take cloud fully
           if (progressBar) progressBar.style.width = '40%';
+          storeWasRebuilt = true;
           await applyCloudTreeToStore(tree, undefined, (loaded, total) => {
             syncImageProgress(loaded, total);
             if (total === 0) return;
@@ -4705,6 +4755,16 @@ async function tryPullFromCloud(force = false): Promise<void> {
       }
 
       clearDirtyState(); // Pull is not a user change — prevent stale push
+      // ...but a SETTINGS change this device is still holding is a user change,
+      // and clearing the flag above was leaving it with nothing to carry it
+      // (#324). A frame keeps its own record of being unsent; a shooting order,
+      // a group, a renamed category has none — so the break rescued a moment
+      // ago by #323 survived the pull and then sat on screen for ever, on this
+      // device only, waiting for some unrelated edit to take it along.
+      if (settingsNeedPush()) {
+        trace('  settings still unsent — will send them');
+        markSomethingToSend();
+      }
       if (progressBar) progressBar.style.width = '100%';
       setTimeout(() => {
         if (progressEl) progressEl.classList.add('hidden');
@@ -4746,13 +4806,64 @@ async function tryPullFromCloud(force = false): Promise<void> {
     }
     // What the device knows about the server was cleared on the way in. Put it
     // back from what is on screen, or the next push resends the whole project.
-    try { adoptFingerprintsFromStore(); } catch { /* nothing more to be done */ }
+    //
+    // ONLY IF THE STORE WAS ACTUALLY REBUILT (#325). This ran for ANY failure,
+    // including one that happened before the store was touched at all — a
+    // timeout, a dropped connection. It then recorded every frame on screen as
+    // already matching the server, INCLUDING ones holding work that had never
+    // been sent. The next push found nothing to do and called itself a success,
+    // the unsent list was cleared, and a drawing made just before the signal
+    // went was never uploaded — and was written over by the next pull.
+    //
+    // Nothing was cleared on the way in unless the rebuild began, so there is
+    // nothing to put back unless it did.
+    if (storeWasRebuilt) {
+      try { adoptFingerprintsFromStore(); } catch { /* nothing more to be done */ }
+    }
     const pEl = document.getElementById('progressOverlay');
     if (pEl) pEl.classList.add('hidden');
   } finally {
     pullInFlight = false;
     setPullInFlight(false);
   }
+}
+
+/**
+ * WHEN DID MY WORK ON THIS FRAME CHANGE — the frame AND its versions (#326).
+ *
+ * The app has two ideas of "this frame changed", and they are both right for
+ * their own job. The unsent list counts a frame as changed if any of its
+ * versions changed — a new LOOK, a drawing, a note on a version. The change
+ * stamp deliberately does not: it is the frame's OWN content, because versions
+ * carry stamps of their own.
+ *
+ * The pull was using the first to decide WHICH frames to judge and the second to
+ * judge them. A frame dirty only because of a new version therefore had no time
+ * at all, lost to anything the server could put a time on, and was handed over —
+ * and the rebuild then made its versions afresh from the cloud, where the unsent
+ * one by definition was not. The drawing went, silently.
+ *
+ * The answer is not to keep every frame whose age is unknown: an unstamped frame
+ * kept here is pushed and, being unstamped on both sides, WINS — which quietly
+ * overwrote the other device's writing. That was the first attempt and the suite
+ * caught it.
+ *
+ * The answer is to ask the right question. My work on this frame is as new as
+ * the newest thing I have done to it, whether that is the frame or one of its
+ * looks.
+ */
+function myWorkChangedAt(serverFrameId: string): number | undefined {
+  let latest = frameChangedAt(serverFrameId);
+  const s = state();
+  const frame = s.frames.find((f) => f.serverFrameId === serverFrameId);
+  if (!frame) return latest;
+  for (const stripId of Object.keys(s.stripVersions)) {
+    for (const v of s.stripVersions[stripId]?.[frame.id] ?? []) {
+      const at = versionChangedAt(v.serverVersionId);
+      if (at !== undefined && (latest === undefined || at > latest)) latest = at;
+    }
+  }
+  return latest;
 }
 
 /** Called after a successful save/load so we know what "current" means. */
@@ -4768,6 +4879,7 @@ export async function bootstrapAccountSystem(): Promise<void> {
   // 0. Register cloud sync and pull-on-focus.
   registerCloudSync(syncCurrentToServer);
   registerFingerprintBridge(exportPushedFingerprints, importPushedFingerprints);
+  registerTombstoneBridge(exportPendingTombstones);   // deleting is final (#327)
   registerHeardAtBridge(getHeardAt);
   // Ask iOS not to clear our storage after a week of not opening the app —
   // that would take offline projects with it.
@@ -4809,6 +4921,7 @@ export async function bootstrapAccountSystem(): Promise<void> {
         importSettingStamps(snap.settingStamps);   // remember when settings changed
         importChangeStamps(snap.contentStamps);    // ...and when frames/versions did
         adoptHeardAt(snap.heardAt);                // ...and when we last heard (#284)
+        adoptPendingTombstones(snap.pendingTombstones);  // deleting is final (#327)
         applySnapshotToStore(snap);
         // An older snapshot has no settings stamps. Take the first look right
         // here (#264) rather than let the first save do it, or whatever the user

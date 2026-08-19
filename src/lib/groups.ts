@@ -2,6 +2,7 @@
 // v3.8: Group frames by locations, scenes, or cutdowns.
 
 import { state, useStore } from '../store/state';
+import { uniqueNumericId } from './ids';
 import type { Frame, FrameGroup } from '../store/state';
 import { rasterizeMain } from './rasterize';
 import { escH } from './helpers';
@@ -441,7 +442,7 @@ function openGroupEditor(existing: FrameGroup | null): void {
     } else {
       // Create new
       const newGroup: FrameGroup = {
-        id: s.nextGroupId,
+        id: uniqueNumericId(),               // never a per-device count (#322)
         name,
         frameIds: checkedIds,
         hiddenFrameIds: [],

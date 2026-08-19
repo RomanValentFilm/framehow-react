@@ -44,6 +44,19 @@ export interface CurrentProjectSnapshot {
   /** When each frame and version was last changed on this device, so being
    *  offline across a restart still orders edits honestly. */
   contentStamps?: Record<string, { fp: string; at: number }>;
+  /** Deletions made here that the server has not taken yet (#327).
+   *
+   *  These lived only in memory. Delete a frame while offline, close the app
+   *  before it reached the server, and the frame was gone from this device AND
+   *  the record of the deletion was gone with it — so the next pull brought it
+   *  back from the cloud, and nothing objected, because the safety checks only
+   *  guard frames going missing, never frames returning.
+   *
+   *  "Deleting is final" cannot survive a restart without this. */
+  pendingTombstones?: Array<{
+    id: string; entity_type: 'frame' | 'version'; entity_id: string;
+    deleted_at: number; device_id: string;
+  }>;
   /** The SERVER's clock as of the last answer this device received (#284).
    *
    *  Saved with the project so that reopening the app does not throw away the

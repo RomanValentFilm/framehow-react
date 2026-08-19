@@ -1,0 +1,27 @@
+v4.9.066 - the audit's work-eating list, done
+
+#321 ./go: the terminal waits and asks; nothing long is pasted into a shell.
+#322 Shooting orders, setups and groups were numbered per device from 1, so two
+     people apart both made "sort_1" and the server saw one thing, not two. One
+     person's order vanished; setups went further and mislabelled frames.
+#323 On a pull the store was rebuilt from the old whole-project blob FIRST and
+     the per-item settings merged on top, so the protection for unsent changes
+     could only decline to overwrite what had already been overwritten. This is
+     the vanishing break. What this device holds is now remembered before the
+     rebuild and put back after it.
+#324 ...and a settings change that survives a pull now says it still needs
+     sending. A frame keeps its own record of being unsent; a shooting order has
+     none, so the rescued break sat on one device for ever.
+#325 A pull that died before touching anything was tidying up as though it had,
+     recording every frame as safe in the cloud including unsent work. A drawing
+     made just before the signal dropped was never uploaded and was overwritten.
+#326 A frame's age now counts the newest thing done to it, the frame or any of
+     its looks. It was judged on the frame alone while being CHOSEN on both, so
+     a frame dirty only because of a new drawing had no time, lost by default,
+     and its unsent look was rebuilt out of existence.
+#327 A deletion survives closing the app, and no longer follows you into the
+     next project where it was sent under the wrong project's name.
+
+Two new tests (both devices making their first shooting order; a change made
+while a pull is in the air), eleven in all, and a written audit of the sync
+layer, the store, the schema and the migrations.

@@ -3,6 +3,7 @@
 // Frames can belong to at most one setup. A colour tag shows on the canvas in all views.
 
 import { state, useStore, SETUP_COLORS, bumpRenderTick } from '../store/state';
+import { uniqueId } from './ids';
 import type { Setup, StripType } from '../store/state';
 import { getStripVersions, ensureStripVersions, stripTabPrefix, relabelStripVersions, reorderByStars, getStripActiveTab, setStripActiveTab } from './helpers';
 import { showToast, showConfirm } from './modals';
@@ -180,7 +181,7 @@ function _showInlineCreateForm(bar: HTMLElement): void {
     const latest = state();
     if (latest.setups.some((su) => su.name === name)) { showToast('Name already used'); return; }
 
-    const id = 'setup_' + latest.nextSetupId;
+    const id = uniqueId('setup');            // never a per-device count (#322)
     const newSetup: Setup = { id, name, colorIndex: selectedCI };
     useStore.setState((prev) => ({
       setups: [...prev.setups, newSetup],
@@ -401,7 +402,7 @@ function renderSetupCreateForm(bar: HTMLElement): void {
     const latest = state();
     if (latest.setups.some((su) => su.name === name)) { showToast('Name already used'); return; }
 
-    const id = 'setup_' + latest.nextSetupId;
+    const id = uniqueId('setup');            // never a per-device count (#322)
     const newSetup: Setup = { id, name, colorIndex: selectedCI };
     useStore.setState((prev) => ({
       setups: [...prev.setups, newSetup],

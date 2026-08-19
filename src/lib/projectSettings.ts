@@ -460,3 +460,127 @@ export function reconcileRestoredSettings(): number {
   }
   return unknown;
 }
+
+// ---------------------------------------------------------------------------
+// THE OLD LAYER STILL WON (#323)
+// ---------------------------------------------------------------------------
+//
+// Settings live in two places at once. The new one is a row per item, each with
+// its own time of change, which is what `applySettingsToStore` above merges. The
+// old one is a single blob of the whole project, written whole and read whole.
+// Migration 0021 exists to end the blob; the pull never got the message.
+//
+// On a pull the store is rebuilt from the BLOB first — groups, setups, needs,
+// shooting orders, story-flow breaks, all replaced wholesale — and only then are
+// the per-item rows merged on top. By that point `mergeList` is reading a store
+// that already holds the server's copy, so the protection at the heart of it,
+// "an item I changed later and have not sent is left alone", can only decline to
+// overwrite something that has already been overwritten. It never puts anything
+// back.
+//
+// That is why a break added a second before a pull vanished, and why "the later
+// arrangement wins whole" failed in the direction that lost yours.
+//
+// The answer is not to reorder the two — the blob still carries things the rows
+// do not. It is to remember what this device held before the rebuild, and
+// afterwards put back the items it had changed and not yet sent. Those, and only
+// those: everything else is the server's to say.
+
+export interface MySettings {
+  groups: unknown[];
+  sortOrders: unknown[];
+  tabs: unknown[];
+  locations: unknown;
+  setups: unknown[];
+  nextSetupId: number;
+  storyFlowBreaks: unknown[];
+  /** The frame arrangement as server ids, so it can be re-applied to whatever
+   *  frames the pull ends up with. */
+  frameOrder: string[];
+}
+
+/** What this device is holding right now, before a pull rebuilds the store. */
+export function captureMySettings(): MySettings {
+  const s = useStore.getState();
+  return {
+    groups: [...s.groups],
+    sortOrders: [...s.sortOrders],
+    tabs: [...(s.needDefinitions?.tabs ?? [])],
+    locations: s.needDefinitions?.locations ?? [],
+    setups: [...s.setups],
+    nextSetupId: s.nextSetupId,
+    storyFlowBreaks: [...(s.storyFlowBreaks ?? [])],
+    frameOrder: s.frames.map((f) => f.serverFrameId).filter(Boolean) as string[],
+  };
+}
+
+/** Has this device changed that item without the server having taken it yet? */
+function iHoldUnsent(kind: string, itemId: string): boolean {
+  const v = _known.get(key(kind, itemId));
+  if (!v || v.deleted_at !== null) return false;
+  return v.changed_at > v.serverAt;
+}
+
+/**
+ * Put back the settings this device changed and has not sent, after a pull has
+ * rebuilt the store over the top of them (#323).
+ *
+ * Item by item, and only the ones actually held. An item the server knows more
+ * about than we do is left exactly as the merge left it.
+ */
+export function keepMyUnsentSettings(before: MySettings): void {
+  const s = useStore.getState();
+  const patch: Record<string, unknown> = {};
+
+  /** Put my copy back into a list, by id, adding it if the pull removed it. */
+  function restore<T>(kind: string, mine: T[], now: T[], idOf: (x: T) => string): T[] | null {
+    let changed = false;
+    const out = [...now];
+    for (const item of mine) {
+      if (!iHoldUnsent(kind, idOf(item))) continue;
+      const i = out.findIndex((x) => idOf(x) === idOf(item));
+      if (i >= 0) { out[i] = item; } else { out.push(item); }
+      changed = true;
+    }
+    return changed ? out : null;
+  }
+
+  const groups = restore('group', before.groups as { id: number }[],
+    s.groups as { id: number }[], (g) => String(g.id));
+  if (groups) patch.groups = groups;
+
+  const orders = restore('sortOrder', before.sortOrders as { id: string }[],
+    s.sortOrders as { id: string }[], (o) => o.id);
+  if (orders) patch.sortOrders = orders;
+
+  const breaks = restore('storyFlowBreak', before.storyFlowBreaks as { id: string }[],
+    (s.storyFlowBreaks ?? []) as { id: string }[], (b) => b.id);
+  if (breaks) patch.storyFlowBreaks = breaks;
+
+  const tabs = restore('needCategory', before.tabs as { id: string }[],
+    (s.needDefinitions?.tabs ?? []) as { id: string }[], (t) => t.id);
+  const locsMine = iHoldUnsent('needLocations', 'needLocations');
+  if (tabs || locsMine) {
+    patch.needDefinitions = {
+      ...s.needDefinitions,
+      tabs: tabs ?? s.needDefinitions?.tabs ?? [],
+      locations: locsMine ? before.locations : s.needDefinitions?.locations ?? [],
+    };
+  }
+
+  // The palette is one item by agreement, so it comes back whole or not at all.
+  if (iHoldUnsent('setupPalette', 'setupPalette')) {
+    patch.setups = before.setups;
+    patch.nextSetupId = before.nextSetupId;
+  }
+
+  // The arrangement is one item too, and it is re-applied rather than restored:
+  // the pull may have brought frames this device had never seen, and they must
+  // not be dropped just because my arrangement predates them. applyArrangement
+  // keeps anything the list does not mention.
+  if (iHoldUnsent('frameOrder', 'main') && before.frameOrder.length > 0) {
+    patch.frames = applyArrangement(s.frames, before.frameOrder);
+  }
+
+  if (Object.keys(patch).length > 0) useStore.setState(patch as never);
+}
