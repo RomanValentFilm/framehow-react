@@ -1,16 +1,17 @@
-v4.9.076 - the photo stays (#352)
+v4.9.076 - a sync stops closing what you have open (#352, #353)
 
-Two lines in the pull, both in the branch that protects frames holding unsent
-work - which is, by definition, the frame you just photographed.
+#352 The pull's branch that protects frames holding unsent work - which is, by
+     definition, the frame you just photographed - reset the card to its FIRST
+     version and skipped the code that restores what each card was showing. So
+     the photo appeared, the push went, the pull came back, and the card fell to
+     the main frame. Every time on a photo; only sometimes elsewhere, because an
+     empty pull no longer rebuilds anything (#349). Also stopped the pull
+     switching the shooting-order view off.
 
-That branch reset the card back to its FIRST version and then skipped the code
-that restores which version each card was showing. So: take a photo, the card
-switches to it, the push goes, the pull comes straight back, and the card is on
-version one - and with no crossCompare it falls all the way to the main frame.
-Every time on a photo, because a photo always leaves unsent work; only sometimes
-elsewhere, because an empty pull no longer rebuilds anything at all (#349).
+#353 The same rebuild also turned SETUPS off, cleared which setup was selected,
+     and dropped the group you were filtered to. Open SETUPS, tag a frame, and
+     the sync that followed closed it. Those three are what the person decided a
+     second ago; a sync has nothing to say about them. The group is still
+     dropped if it no longer exists after the merge.
 
-The same rebuild also set sortMode: false, which is the other half - going to a
-shooting order and being dropped back into 3x2.
-
-The rule that chooses 3x2 when a project OPENS is untouched, as asked.
+The rule that chooses 3x2 when a project OPENS is untouched.

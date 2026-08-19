@@ -2408,6 +2408,9 @@ async function applyCloudTreeToStore(
       ovExpandedFid: st.ovExpandedFid,
       showText: st.showText,
       sortMode: st.sortMode,
+      setupMode: st.setupMode,
+      activeSetupId: st.activeSetupId,
+      activeGroupId: st.activeGroupId,
       activeStrips: st.activeStrips,
     };
   })();
@@ -2965,11 +2968,20 @@ async function applyCloudTreeToStore(
     // StripDefs & groups from metadata (or defaults)
     ...(restoredStripDefs ? { stripDefs: restoredStripDefs } : {}),
     groups: restoredGroups,
-    activeGroupId: null,
+    // ...and which group you are looking at (#353). It is put back below only
+    // if the group still exists after the merge.
+    activeGroupId: prevView.activeGroupId,
     nextGroupId: restoredNextGroupId,
     setups: restoredSetups,
-    activeSetupId: null,
-    setupMode: false,
+    // A SYNC DOES NOT CLOSE THE SETUPS EITHER (#353).
+    //
+    // Same family as the shooting order: open SETUPS, tag a frame, and the push
+    // that follows brings a pull that turned the setup bar off and dropped you
+    // back into the grid. Which setup is selected, and whether the setup bar is
+    // open, are things the person on the iPad decided a second ago. A sync has
+    // nothing to say about either.
+    activeSetupId: prevView.activeSetupId,
+    setupMode: prevView.setupMode,
     nextSetupId: restoredNextSetupId,
     // The per-frame list is rebuilt, but the PEN keeps its colour — a sync
     // arriving in the background used to put everything back to white in the
