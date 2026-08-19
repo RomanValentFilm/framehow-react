@@ -42,11 +42,17 @@ while true; do
   # YOUR TURN (#328). A different sound from the finished one, so you can
   # tell "it needs you" from "it is done" without looking at the screen.
   afplay /System/Library/Sounds/Submarine.aiff 2>/dev/null &
-  echo "────────────────────────────────────────────────────────────"
+  # A RUNNING NUMBER (#351). "Say y" is not something to answer blind; a job
+  # you can name is. Roman: "can we give these y's some number, so i know what
+  # i'm doing?"
+  N=$(cat .next/counter 2>/dev/null || echo 0)
+  N=$((N + 1))
+  echo "$N" > .next/counter
+  echo "────────────────────────  JOB $N  ────────────────────────"
   cat "$PLAN" 2>/dev/null || echo "  (no description — ask Claude what this is)"
   echo "────────────────────────────────────────────────────────────"
   echo
-  printf "  y to run, n to skip: "
+  printf "  JOB %s — y to run, n to skip: " "$N"
   read -r answer </dev/tty
 
   # Used up either way. A plan that has been answered must never be answered
@@ -61,7 +67,7 @@ while true; do
       sh .next/last-run 2>&1 | tee "$LOG"
       afplay /System/Library/Sounds/Glass.aiff 2>/dev/null &
       echo
-      echo "  ────────────  finished. say  zzz  ────────────"
+      echo "  ────────────  JOB $N finished. say  zzz  ────────────"
       echo
       ;;
     *)

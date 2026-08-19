@@ -194,7 +194,18 @@ export function settingsForPush(): SettingItem[] {
       kind: k.slice(0, slash),
       item_id: k.slice(slash + 1),
       value: v.deleted_at !== null ? null : v.json,
-      changed_at: v.changed_at,
+      // A DELETION IS A CHANGE, AND ITS TIME IS WHEN IT WAS DELETED (#350).
+      //
+      // A deleted item was sent carrying its OLD change time. The server only
+      // takes an item that is newer than the one it holds — and the old time is
+      // not newer than itself, so the deletion was refused. Every time. In
+      // silence. The device then had an item it could never get rid of: it
+      // pushed on every pass, which moved the project's clock, which made the
+      // other side's heartbeat pull, which pushed again.
+      //
+      // Roman's iPad churned like this all afternoon over one row —
+      // setupPalette, retired by #331 and never able to die.
+      changed_at: v.deleted_at !== null ? Math.max(v.changed_at, v.deleted_at) : v.changed_at,
       deleted_at: v.deleted_at,
       base_changed_at: v.serverAt,
     });

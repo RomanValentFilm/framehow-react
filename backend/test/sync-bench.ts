@@ -192,6 +192,24 @@ const cases: Case[] = [
     },
   },
 
+  {
+    // A DELETION THAT CAN NEVER LAND (#350).
+    //
+    // A deleted settings item used to be sent with its OLD change time, and the
+    // server only takes what is newer than it holds — so the deletion was
+    // refused for ever, in silence, and the device pushed it again on every
+    // pass. That is a loop with a person's iPad in it.
+    what: 'a deleted setting is taken, because it carries the time it was deleted',
+    want: 'accept',
+    run: (s) => {
+      void s;
+      const held = { changed_at: t(10) };
+      // The item was last changed at t(10) and deleted at t(20). What travels
+      // must be t(20), or the server sees nothing new.
+      return decideSetting({ changed_at: Math.max(t(10), t(20)) }, held);
+    },
+  },
+
   // --- pictures settle by time too, now (#303) ------------------------------
   {
     what: 'both changed the PICTURE blind → the later one wins, no question',

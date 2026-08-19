@@ -1,18 +1,16 @@
-v4.9.074 - an empty answer no longer redraws the screen (#349)
+v4.9.075 - the deletion that could never land (#350)
 
-The log showed it plainly: every pull said "untouched by the answer: 11" - it
-had been handed nothing at all - and then rebuilt the whole storyboard and
-redrew the page anyway. That is what tore down whatever was on top: an expanded
-card, a photograph just taken, the story-flow view. The view MODE never changed,
-which is why #342 and #347 did not stop it.
+Roman's log named it: every push said
 
-A delta with no frames, versions, pictures, settings or deletions now takes the
-new watermark, so the device counts as up to date, and leaves the screen alone.
+    project settings changed - sending: setupPalette/setupPalette (deleted)
 
-Also #348: the "Synced - kept 2 local frames" popup is gone. Fine when a pull
-was rare; since #320 made a pull follow every push it became a message every few
-seconds on top of the work. It goes to the log instead.
+A deleted settings item was sent carrying its OLD change time. The server only
+takes an item newer than the one it holds, and the old time is not newer than
+itself - so the deletion was refused, silently, every single time. The device
+then had a row it could never be rid of: it pushed on every pass, which moved
+the project's clock, which made the heartbeat pull, which pushed again.
 
-And the push now NAMES the settings it considers unsent. "project settings
-changed - sending" appears on every push with nothing else changing, which means
-one item is never confirmed and the device pushes for ever. This says which.
+That is the churn. One row, retired by #331, unable to die.
+
+A deletion now travels with the time it was DELETED. Bench case added so it
+cannot come back.
