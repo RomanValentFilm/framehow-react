@@ -1,19 +1,11 @@
-v4.9.070 - a sync stops moving the furniture
+v4.9.071 - a sync does not choose your view (#342)
 
-#337 The story flow travels as one thing: the frame order and its breaks
-     together, later wins whole, exactly as a shooting order already does. They
-     were two separate items merged separately. Old projects still read.
-#338 Deleting or inserting a frame above a break moves the break with it, in
-     the story flow as well as in a shooting order, so it stays where it was put.
-#340 Fixes my own #323. It put back any settings item this device had "not
-     sent" - but merely OPENING a project marks everything as unsent, so a
-     device that had done nothing put its own copy back over work that had just
-     arrived from the other one. A break added on the iPad reached the desk and
-     vanished a second later. Mine now only wins if mine is genuinely later.
-#341 A sync no longer changes which version each card is showing. The pull
-     rebuilt that from nothing, so every card snapped back to its first tab -
-     which is why a photo taken in 3x2 flicked back to the main frame the moment
-     it synced. The photo was never in danger; the view was being reset.
-     Which version you are looking at belongs to the screen, not to the project.
+Every pull called autoPhoneMainView - the "what should this project open in"
+rule. On a landscape project that forces 3x2. So a sync marched the user back
+to the grid no matter where they were or what they had open, and the photo just
+taken appeared to jump away.
 
-Thirteen tests.
+It was always wrong and merely rare, because a pull used to happen seldom.
+#320 made a pull follow every push and then it was constant.
+
+Opening a project still chooses the view. A sync no longer does.

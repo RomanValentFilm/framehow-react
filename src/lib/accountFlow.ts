@@ -4743,11 +4743,22 @@ async function tryPullFromCloud(force = false): Promise<void> {
           });
           if (progressBar) progressBar.style.width = '90%';
         }
-        // renderAll + autoPhoneMainView call setState — keep them inside
-        // the system action so their setState calls don't mark dirty
-        // and trigger a push of stale data.
+        // renderAll calls setState — keep it inside the system action so it
+        // does not mark dirty and trigger a push of stale data.
+        //
+        // A SYNC DOES NOT CHOOSE YOUR VIEW (#342).
+        //
+        // autoPhoneMainView used to run here too. It is the "what should this
+        // project open in" rule — iPhone portrait goes to MAIN, a fitting goes
+        // to LOOKS, and a landscape project goes to 3x2 — and it is right when
+        // you OPEN a project. Running it on every pull meant a sync marched you
+        // back to 3x2 no matter where you were or what you had open.
+        //
+        // It was always wrong; it was merely rare, because a pull used to
+        // happen seldom. #320 made a pull follow every push, and then it was
+        // constant. Opening a project still sets the view — that call is
+        // elsewhere and stays.
         (window as any).__fh_renderAll?.();
-        autoPhoneMainView();
       } finally {
         endSystemAction();
       }
