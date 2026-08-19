@@ -2411,6 +2411,9 @@ async function applyCloudTreeToStore(
       setupMode: st.setupMode,
       activeSetupId: st.activeSetupId,
       activeGroupId: st.activeGroupId,
+      drawActive: st.drawActive,
+      drawWidth: st.drawWidth,
+      drawEraser: st.drawEraser,
       activeStrips: st.activeStrips,
     };
   })();
@@ -2987,9 +2990,16 @@ async function applyCloudTreeToStore(
     // arriving in the background used to put everything back to white in the
     // middle of working (#336).
     drawColor: {},
-    drawWidth: {},
-    drawEraser: {},
-    drawActive: {},
+    // AND IT DOES NOT PUT YOUR PEN DOWN (#354).
+    //
+    // drawActive is "this card is in drawing mode right now". Clearing it on
+    // every pull meant finishing a stroke ended the drawing: the stroke pushes,
+    // the pull comes back, and the card drops out of draw mode to the plain
+    // grid. Which pen and which width are the same kind of thing — chosen by
+    // the person, not by the server.
+    drawWidth: prevView.drawWidth,
+    drawEraser: prevView.drawEraser,
+    drawActive: prevView.drawActive,
     showText: prevView.showText,
     crossCompare: verCC,
     prevFrameState: verPFS,

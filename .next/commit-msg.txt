@@ -15,3 +15,8 @@ v4.9.076 - a sync stops closing what you have open (#352, #353)
      dropped if it no longer exists after the merge.
 
 The rule that chooses 3x2 when a project OPENS is untouched.
+
+#354 And it does not put your pen down. drawActive - "this card is in drawing
+     mode right now" - was cleared on every pull, so finishing a stroke ended
+     the drawing: the stroke pushes, the pull comes back, and the card drops out
+     of draw mode into the plain grid. Pen width and eraser go with it.
