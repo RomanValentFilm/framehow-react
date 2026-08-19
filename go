@@ -39,6 +39,9 @@ while true; do
   # this could otherwise catch the run before its description exists.
   sleep 1
 
+  # YOUR TURN (#328). A different sound from the finished one, so you can
+  # tell "it needs you" from "it is done" without looking at the screen.
+  afplay /System/Library/Sounds/Submarine.aiff 2>/dev/null &
   echo "────────────────────────────────────────────────────────────"
   cat "$PLAN" 2>/dev/null || echo "  (no description — ask Claude what this is)"
   echo "────────────────────────────────────────────────────────────"

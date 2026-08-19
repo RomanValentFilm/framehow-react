@@ -473,7 +473,14 @@ projects.post("/:id/sync", async (c) => {
     ]);
   }
 
-  await maybeCreateSnapshot(c.env.DB, project.id, now);
+  // Belt as well as braces (#329): whatever goes wrong in there — a size, a
+  // timeout, a database hiccup — it is a restore point, and a restore point is
+  // never worth losing the push for.
+  try {
+    await maybeCreateSnapshot(c.env.DB, project.id, now);
+  } catch (e) {
+    console.warn('[snapshot] could not make a restore point; carrying on', e);
+  }
 
   // If ANY per-frame decision was made — a frame refused, or skipped as older —
   // this push must not be treated as "replace the project". Full mode deletes
@@ -1789,6 +1796,11 @@ function appendTombstoneInserts(db: D1Database, stmts: D1PreparedStatement[], pa
 
 const SNAPSHOT_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
 
+/** How big the whole-project JSON may be and still be kept as a restore point
+ *  (#329). D1 refuses a single value beyond roughly a megabyte or two; this
+ *  sits well under it, because being wrong here used to cost the project. */
+const MAX_SNAPSHOT_BYTES = 900_000;
+
 /**
  * Save a snapshot of the current project state if 10+ minutes since last snapshot.
  * Called before each sync push so the pre-push state is preserved.
@@ -1820,6 +1832,27 @@ async function forceCreateSnapshot(
   if (tree.frames.length === 0) return;
 
   const json = JSON.stringify(tree);
+
+  // A RESTORE POINT MUST NEVER COST YOU THE PROJECT (#329).
+  //
+  // This is the whole project as one database value — every frame, every note,
+  // and every drawing's strokes. Drawings are capped at a megabyte each and the
+  // total at nothing, so a project with a handful of real drawings crosses the
+  // limit on a single value.
+  //
+  // What used to happen then: this threw, the push that called it threw with
+  // it, and NOTHING was written — not the snapshot, not the frames, not the
+  // work. Every retry did the same. The project became permanently unsyncable
+  // and the only sign of it was a 500.
+  //
+  // A restore point is a courtesy. The work is not. So an oversized project
+  // simply goes without one, and says so in the log, rather than taking the
+  // push down with it.
+  if (json.length > MAX_SNAPSHOT_BYTES) {
+    console.warn(`[snapshot] project ${projectId} is ${Math.round(json.length / 1024)}KB `
+      + `— too large for a restore point. The push itself is unaffected.`);
+    return;
+  }
 
   // Don't stack up identical "where you left off" points. Opening the restore
   // list and then restoring from it happens seconds apart with nothing changed

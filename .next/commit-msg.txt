@@ -1,27 +1,15 @@
-v4.9.066 - the audit's work-eating list, done
+v4.9.067 - a restore point can no longer cost you the project
 
-#321 ./go: the terminal waits and asks; nothing long is pasted into a shell.
-#322 Shooting orders, setups and groups were numbered per device from 1, so two
-     people apart both made "sort_1" and the server saw one thing, not two. One
-     person's order vanished; setups went further and mislabelled frames.
-#323 On a pull the store was rebuilt from the old whole-project blob FIRST and
-     the per-item settings merged on top, so the protection for unsent changes
-     could only decline to overwrite what had already been overwritten. This is
-     the vanishing break. What this device holds is now remembered before the
-     rebuild and put back after it.
-#324 ...and a settings change that survives a pull now says it still needs
-     sending. A frame keeps its own record of being unsent; a shooting order has
-     none, so the rescued break sat on one device for ever.
-#325 A pull that died before touching anything was tidying up as though it had,
-     recording every frame as safe in the cloud including unsent work. A drawing
-     made just before the signal dropped was never uploaded and was overwritten.
-#326 A frame's age now counts the newest thing done to it, the frame or any of
-     its looks. It was judged on the frame alone while being CHOSEN on both, so
-     a frame dirty only because of a new drawing had no time, lost by default,
-     and its unsent look was rebuilt out of existence.
-#327 A deletion survives closing the app, and no longer follows you into the
-     next project where it was sent under the wrong project's name.
-
-Two new tests (both devices making their first shooting order; a change made
-while a pull is in the air), eleven in all, and a written audit of the sync
-layer, the store, the schema and the migrations.
+#328 The terminal makes one sound when it needs an answer and another when it
+     has finished, so you can tell them apart without looking.
+#329 Every push wrote the whole project - drawings and all - into a single
+     database value as a restore point. Past the size limit for one value that
+     threw, and the push threw with it, so nothing at all was written: not the
+     snapshot, not the frames, not the work. Every retry did the same and the
+     project became permanently unsyncable, with a bare 500 as the only sign.
+     An oversized project now goes without a restore point and says so, and the
+     whole call is wrapped besides. A restore point is a courtesy; the work is
+     not.
+#330 A new index on images.r2_key. Looking up an image was reading every image
+     row belonging to every user, on every single fetch - so opening a
+     forty-frame storyboard did forty full scans, and it got slower every day.
