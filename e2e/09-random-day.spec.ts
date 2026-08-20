@@ -154,8 +154,21 @@ test('a random day', async ({ browser }) => {
 
     await who.settle().catch(() => {});
     // Nothing this device made may have gone missing on this device.
-    mustNotShrink({ ...before, frames: Math.max(before.frames, floor) },
-      { ...(await snapshot(who)), frames: Math.max((await snapshot(who)).frames, floor) },
+    //
+    // THE ARITHMETIC USED TO BE WRONG, and it hid behind the dice: it compared
+    // the count before the step with the count after, so any step that deleted
+    // a frame failed itself. Deleting only happens about one step in eight, so
+    // the test looked fine for days.
+    //
+    // The honest rule: the count may never fall below the number of frames the
+    // day is entitled to — six, less every frame somebody deliberately deleted.
+    // And when a frame goes, whatever was written under it goes with it, so the
+    // writing count is not held to anything in that one step.
+    const now = await snapshot(who);
+    const aFrameWent = now.frames < before.frames;
+    mustNotShrink(
+      { ...before, frames: floor, pictures: aFrameWent ? 0 : before.pictures },
+      now,
       `${name} after ${action}`);
     await mustNotHaveSaid(who);
     await mustNotHaveSaid(other);

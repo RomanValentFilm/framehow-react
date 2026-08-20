@@ -15,8 +15,11 @@
 // decision of its own belongs in the app, where the app's own tests can see it.
 
 import { useStore } from '../store/state';
-import type { SortOrder } from '../store/state';
+import type { SortOrder, StripType } from '../store/state';
 import { getVisibleFrames } from './groups';
+import { ensureStripVersions, getStripVersions } from './helpers';
+import { openFullscreen, closeFullscreen } from './fullscreen';
+import { setViewMode } from './view';
 import { uniqueId } from './ids';
 import { startFromScratch } from './files';
 import { deleteFrameForGood } from './actions';
@@ -75,6 +78,40 @@ export interface TestDoor {
   addBreak(orderIndex: number, position: number, text: string): string;
   /** Drag a break to a different place. */
   moveBreak(orderIndex: number, breakIndex: number, toPosition: number): void;
+  // --- the pen (#356) ------------------------------------------------------
+  // Roman's report: "the moment you draw it disappears". Every guess I made
+  // about it was a guess, because nothing in the simulator could hold a pencil.
+  // These two doors are what let a test draw a real stroke on the real canvas,
+  // through the app's own drawing code, and then ask the PROJECT whether the
+  // stroke is actually in it.
+  //
+  // Nothing here decides anything. It opens the version the way the DRAW button
+  // does, and it moves a finger across the canvas the way a finger does. Every
+  // rule about what a stroke is, where it is kept and when it counts as unsent
+  // belongs to the app.
+
+  /** Draw one stroke on a version, and say how many strokes that version then
+   *  holds. Opens the real fullscreen drawing view, dispatches real pointer
+   *  events on the real canvas, and closes it again. */
+  drawOnVersion(frameIndex: number, strip?: StripType, versionIndex?: number): Promise<number>;
+
+  /** How many strokes the PROJECT holds for that version — read from the store,
+   *  not from the screen, so a test cannot be fooled by a stale picture. */
+  strokeCount(frameIndex: number, strip?: StripType, versionIndex?: number): number;
+
+  /** WHAT THE CARD IS SHOWING (#356). The other half of the question, and the
+   *  half every test so far was blind to: 'main', or 'ver 2' and so on. Roman's
+   *  drawings were never lost — the card simply stopped showing the version they
+   *  were on, which to the person holding the iPad is the same thing. */
+  cardShowing(frameIndex: number): string;
+
+  /** Which view the app is in: 'grid3x2', 'main', 'overview'… */
+  viewMode(): string;
+
+  /** Press one of the view buttons. The app's own function, so the rule about
+   *  what a view change does to the screen is the app's, not a copy. */
+  setView(mode: string): void;
+
   /** Send whatever is unsent, now, without waiting for the debounce. */
   push(): Promise<void>;
   /** What is on screen, in order, as plain facts a test can compare. */
@@ -228,6 +265,67 @@ export function installTestDoor(): void {
       stampChangedSettings(getCurrentProject().projectId);
       return id;
     },
+
+    async drawOnVersion(frameIndex, strip = 'ver', versionIndex = 0) {
+      const f = useStore.getState().frames[frameIndex];
+      if (!f) throw new Error(`no frame at ${frameIndex}`);
+      ensureStripVersions(f.id, strip);
+      closeFullscreen();                       // in case one is already up
+      openFullscreen(f.id, versionIndex, strip, 'draw');
+
+      const cvs = document.getElementById(`fs_cvs_${f.id}_${versionIndex}`) as HTMLCanvasElement | null;
+      if (!cvs) throw new Error(
+        `the drawing canvas never appeared for frame ${frameIndex} (${strip} ${versionIndex + 1}). `
+        + `On screen: ${Array.from(document.querySelectorAll('canvas')).map((c) => c.id).join(', ') || 'no canvas at all'}`);
+
+      const r = cvs.getBoundingClientRect();
+      if (r.width < 2 || r.height < 2) throw new Error('the drawing canvas has no size on screen');
+      const at = (dx: number, dy: number) => ({
+        clientX: r.left + r.width * dx,
+        clientY: r.top + r.height * dy,
+        bubbles: true,
+      });
+      // A stroke is a press, a few movements and a release — one short line.
+      cvs.dispatchEvent(new MouseEvent('mousedown', at(0.2, 0.2)));
+      cvs.dispatchEvent(new MouseEvent('mousemove', at(0.4, 0.4)));
+      cvs.dispatchEvent(new MouseEvent('mousemove', at(0.6, 0.6)));
+      cvs.dispatchEvent(new MouseEvent('mousemove', at(0.8, 0.7)));
+      cvs.dispatchEvent(new MouseEvent('mouseup', at(0.8, 0.7)));
+
+      // CLOSING TAKES A MOMENT, AND THE TEST MUST NOT READ THROUGH IT.
+      //
+      // The big view zooms back into the card over about a fifth of a second,
+      // and everything that happens on closing — including which version the
+      // card is left showing — happens at the END of that. Reading straight
+      // after the call caught the screen mid-animation and reported the state
+      // from before, which looked exactly like the fix having failed.
+      closeFullscreen();
+      const until = Date.now() + 3000;
+      while (document.querySelector('.fs-overlay') && Date.now() < until) {
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      if (document.querySelector('.fs-overlay')) throw new Error('the big view would not close');
+
+      return getStripVersions(f.id, strip)[versionIndex]?.strokes?.length ?? 0;
+    },
+
+    strokeCount(frameIndex, strip = 'ver', versionIndex = 0) {
+      const f = useStore.getState().frames[frameIndex];
+      if (!f) throw new Error(`no frame at ${frameIndex}`);
+      return getStripVersions(f.id, strip)[versionIndex]?.strokes?.length ?? 0;
+    },
+
+    cardShowing(frameIndex) {
+      const s = useStore.getState();
+      const f = s.frames[frameIndex];
+      if (!f) throw new Error(`no frame at ${frameIndex}`);
+      const cc = s.crossCompare[f.id] ?? -1;
+      return cc < 0 ? 'main' : `${s.crossCompareStrip[f.id] ?? 'ver'} ${cc + 1}`;
+    },
+
+    viewMode() { return String(useStore.getState().currentViewMode); },
+
+    setView(mode) { setViewMode(mode as never); },
 
     async push() { await flushSyncNow(); },
 

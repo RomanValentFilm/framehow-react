@@ -1,32 +1,34 @@
-v4.9.076 - a sync stops closing what you have open (#352, #353)
+v4.9.075 - the drawing stays in front of you (#356)
 
-#352 The pull's branch that protects frames holding unsent work - which is, by
-     definition, the frame you just photographed - reset the card to its FIRST
-     version and skipped the code that restores what each card was showing. So
-     the photo appeared, the push went, the pull came back, and the card fell to
-     the main frame. Every time on a photo; only sometimes elsewhere, because an
-     empty pull no longer rebuilds anything (#349). Also stopped the pull
-     switching the shooting-order view off.
+#356 "The moment you draw it disappears." It never disappeared. In 3x2 you press
+     DRAW, the big view opens, you draw, you close it - and closing put the card
+     back to the MAIN frame. The drawing was safe in the version the whole time;
+     it just was not on the screen any more, which to the person holding the iPad
+     is the same thing.
 
-#353 The same rebuild also turned SETUPS off, cleared which setup was selected,
-     and dropped the group you were filtered to. Open SETUPS, tag a frame, and
-     the sync that followed closed it. Those three are what the person decided a
-     second ago; a sync has nothing to say about them. The group is still
-     dropped if it no longer exists after the merge.
+     One line in closeFullscreen, written on purpose a long time ago, and it had
+     always disagreed with the camera: photograph a card in 3x2 and the app
+     deliberately switches the card to the new version so the picture stays
+     visible. Two rules, opposite answers, and which one won depended on whether
+     the big view happened to be involved.
 
-The rule that chooses 3x2 when a project OPENS is untouched.
+     Now, in 3x2 only, the card keeps showing the version you were just on. The
+     strip views are unchanged - they always kept it - and 4-up and the overview
+     are unchanged too.
 
-#354 And it does not put your pen down. drawActive - "this card is in drawing
-     mode right now" - was cleared on every pull, so finishing a stroke ended
-     the drawing: the stroke pushes, the pull comes back, and the card drops out
-     of draw mode into the plain grid. Pen width and eraser go with it.
+     Not the sync. Not this week's work. It predates all of it.
 
-#355 The rest of the same list, swept in one pass rather than one at a time:
-     reorder mode is no longer cancelled by a sync, the clipboard is no longer
-     emptied, and WHICH shooting order you are looking at is yours rather than
-     something that travels in the project's metadata from the other device.
+THE SIMULATOR CAN NOW HOLD A PENCIL, AND CAN SEE THE SCREEN
 
-The whole family is one mistake: the pull rebuilt the SCREEN along with the
-PROJECT. A sync brings work from elsewhere. What is in front of you - the view,
-the open panel, the selected setup, the pen, the card you expanded, the order
-you are reading - was decided by the person holding the device a second ago.
+Every guess I made about this was a guess, because nothing in the simulator could
+draw. There is now a door that opens the drawing view the way the DRAW button
+does, moves a finger across the real canvas, and asks the project what it holds.
+
+And - this is the part that mattered - a door that asks what the CARD IS SHOWING.
+Every test written so far asked the project and was blind to the screen. That is
+the same blindness that let the photo, the setups and the shooting order go
+missing in front of Roman for two days while thirteen tests said green.
+
+Three new tests: a stroke survives its own push and pull; a stroke survives the
+other device's work arriving; and the card still shows the version you drew on.
+The first two passed BEFORE this change, which is how the real cause was found.

@@ -756,14 +756,37 @@ export function closeFullscreen(): void {
   const fsInfo = s.fsOverlayActive;
 
   const doRemove = () => {
-    // Reset crossCompare so the 3x2 / gallery card shows the main frame again.
-    // In the strip views the user cross-swiped to that version deliberately —
-    // dropping it there would throw them back to the main picture straight
-    // after they finished working on the version.
+    // THE CARD KEEPS SHOWING WHAT YOU JUST WORKED ON (#356).
+    //
+    // This used to put the card back to the MAIN frame whenever the big view was
+    // closed in a grid. So: in 3x2 you press DRAW, the big view opens, you draw,
+    // you close it — and the card shows the main frame again. The drawing is
+    // safe in the version, but it is not in front of you, which is the same
+    // thing to the person holding the iPad. That is Roman's "the moment you draw
+    // it disappears", and it was never the sync.
+    //
+    // The camera already disagreed with this line: photograph a card in 3x2 and
+    // the app deliberately switches the card to the new version so the picture
+    // stays visible. Two rules, opposite answers, and which one won depended on
+    // whether the big view happened to be involved. Now there is one rule: the
+    // card shows the version you were just on.
+    //
+    // 3x2 ONLY. The strip views were never part of this — they always kept the
+    // version — and 4-up and the overview stay exactly as they are. Roman asked
+    // for the change where he works.
+    //
+    // Two exceptions even in 3x2, both because there is nothing sensible to show:
+    //   - the big view was opened on the MAIN frame, so there is no version
+    //   - it was opened on a strip the 3x2 card does not show, so the number
+    //     would point at somebody else's version
     const inGridView = s.currentViewMode === 'grid3x2'
       || s.currentViewMode === 'grid4'
       || s.currentViewMode === 'overview';
-    if (fsInfo && inGridView) s.crossCompare[fsInfo.fid] = -1;
+    if (fsInfo && inGridView) {
+      const keepIt = s.currentViewMode === 'grid3x2' && fsInfo.origin === 'ver';
+      s.crossCompare[fsInfo.fid] = keepIt ? fsInfo.vi : -1;
+      if (keepIt) s.crossCompareStrip[fsInfo.fid] = 'ver';
+    }
     document.removeEventListener('keydown', (overlay as any)._escHandler);
     if ((overlay as any)._resizeHandler) window.removeEventListener('resize', (overlay as any)._resizeHandler);
     if ((overlay as any)._fsRefreshHandler) window.removeEventListener('fs-refresh', (overlay as any)._fsRefreshHandler);

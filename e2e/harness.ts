@@ -190,6 +190,45 @@ export class Device {
         .__fh_test.renameCategory(i as number, n as string), [index, name]);
   }
 
+  // --- the pen (#356) ------------------------------------------------------
+
+  /** Draw one stroke on a version. Returns how many strokes it then holds. */
+  draw(frameIndex: number, strip = 'ver', versionIndex = 0): Promise<number> {
+    return this.page.evaluate(([i, s, v]) =>
+      (window as never as { __fh_test: { drawOnVersion(i: number, s: string, v: number): Promise<number> } })
+        .__fh_test.drawOnVersion(i as number, s as string, v as number),
+      [frameIndex, strip, versionIndex] as [number, string, number]);
+  }
+
+  /** How many strokes the project holds for that version. */
+  strokes(frameIndex: number, strip = 'ver', versionIndex = 0): Promise<number> {
+    return this.page.evaluate(([i, s, v]) =>
+      (window as never as { __fh_test: { strokeCount(i: number, s: string, v: number): number } })
+        .__fh_test.strokeCount(i as number, s as string, v as number),
+      [frameIndex, strip, versionIndex] as [number, string, number]);
+  }
+
+  /** What the card is showing: 'main', or 'ver 2' and so on. */
+  cardShowing(frameIndex: number): Promise<string> {
+    return this.page.evaluate((i) =>
+      (window as never as { __fh_test: { cardShowing(i: number): string } })
+        .__fh_test.cardShowing(i as number), frameIndex);
+  }
+
+  /** Which view the app is in. */
+  viewMode(): Promise<string> {
+    return this.page.evaluate(() =>
+      (window as never as { __fh_test: { viewMode(): string } }).__fh_test.viewMode());
+  }
+
+  /** Press a view button. */
+  async setView(mode: string): Promise<void> {
+    say(`${this.name}: switching to ${mode}`);
+    await this.page.evaluate((m) =>
+      (window as never as { __fh_test: { setView(m: string): void } })
+        .__fh_test.setView(m as string), mode);
+  }
+
   // --- shooting orders -----------------------------------------------------
 
   newSortOrder(name?: string): Promise<string> {
