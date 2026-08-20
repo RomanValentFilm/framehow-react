@@ -1515,7 +1515,7 @@ function addNewOrder(): void {
 
 // ─── Sort edit view (frame sets) ──────────────────────────────────────
 
-function openSortEditView(orderId: string): void {
+export function openSortEditView(orderId: string): void {
   const dropdown = document.getElementById('sortDropdown');
   if (dropdown) { dropdown.style.display = 'none'; dropdown.innerHTML = ''; }
 
@@ -1580,6 +1580,25 @@ function openSortEditView(orderId: string): void {
     window.addEventListener('resize', sortOrientHandler);
     (editView as any).__sortOrientHandler = sortOrientHandler;
   }
+}
+
+/**
+ * REDRAW THE OPEN SHOOTING ORDER, WITHOUT CLOSING IT (#357).
+ *
+ * A pull used to close the order you were editing before rebuilding the project,
+ * so anything that made a change — naming a break, moving one, making a group —
+ * pushed, pulled, and threw you out of the order and into 3x2. Roman reported it
+ * three times in three different words.
+ *
+ * The order does have to be redrawn after a rebuild, because the frames it lists
+ * are new objects. Redrawing it is all that was ever needed.
+ */
+export function refreshOpenSortView(): void {
+  const orderId = state().sortEditingId;
+  if (!orderId) return;
+  const el = document.getElementById('sortEditView');
+  if (!el || el.style.display === 'none') return;
+  renderSortEditView(el, orderId);
 }
 
 function renderSortEditView(el: HTMLElement, orderId: string): void {

@@ -221,6 +221,37 @@ export class Device {
       (window as never as { __fh_test: { viewMode(): string } }).__fh_test.viewMode());
   }
 
+  /** Open a shooting order for editing, as tapping its name does. */
+  async openOrder(orderIndex = 0): Promise<void> {
+    say(`${this.name}: opening shooting order ${orderIndex + 1}`);
+    await this.page.evaluate((i) =>
+      (window as never as { __fh_test: { openOrder(i: number): void } })
+        .__fh_test.openOrder(i as number), orderIndex);
+  }
+
+  /** Which shooting order is open for editing, or null. */
+  orderBeingEdited(): Promise<string | null> {
+    return this.page.evaluate(() =>
+      (window as never as { __fh_test: { orderBeingEdited(): string | null } })
+        .__fh_test.orderBeingEdited());
+  }
+
+  /** Look at a strip, as showing it on screen does. */
+  async lookAtStrip(frameIndex: number, strip: string): Promise<void> {
+    await this.page.evaluate(([i, s]) =>
+      (window as never as { __fh_test: { lookAtStrip(i: number, s: string): void } })
+        .__fh_test.lookAtStrip(i as number, s as string),
+      [frameIndex, strip] as [number, string]);
+  }
+
+  /** The version tabs on a frame, as they read on screen. */
+  versionLabels(frameIndex: number, strip = 'ver'): Promise<string[]> {
+    return this.page.evaluate(([i, s]) =>
+      (window as never as { __fh_test: { versionLabels(i: number, s: string): string[] } })
+        .__fh_test.versionLabels(i as number, s as string),
+      [frameIndex, strip] as [number, string]);
+  }
+
   /** Press a view button. */
   async setView(mode: string): Promise<void> {
     say(`${this.name}: switching to ${mode}`);

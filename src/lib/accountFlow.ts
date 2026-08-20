@@ -66,7 +66,7 @@ import { applySnapshotToStore, loadSnapshot, snapshotFromStore, listPending, isA
 import type { PendingRecord } from './persistence';
 import { showThreeWayConflict, showConfirm, showToast } from './modals';
 import { saveOpenTextEdits, saveOpenTableEdits, versionStars } from './helpers';
-import { closeSortMode } from './sortOrder';
+import { closeSortMode, refreshOpenSortView } from './sortOrder';
 import { resetStoryboardState, state, useStore, freshNeedDefinitions, DEFAULT_STRIP_DEFS, migrateNeedDefinitions, createDefaultExportMeta } from '../store/state';
 import type { Frame, Stroke, Version, FrameNeedState, FrameNoteState, NeedDefinitions, BracketNodeData, ProjectType } from '../store/state';
 import { clearRectsForProject } from './pdfAdjust';
@@ -1736,6 +1736,31 @@ async function askAboutOpenConflictsInner(projectId: string): Promise<void> {
   }
 }
 
+/**
+ * IS THIS STRIP STILL EMPTY — as in, has anyone ever put anything in it (#358).
+ *
+ * True only for the single blank version the app makes for itself when a strip
+ * is first shown, so the card has something to draw. Nobody made it. Anything at
+ * all — a stroke, a picture, a note, a star, a setup tag, a hidden flag, or a
+ * second version — makes it work, and work is both sent and kept.
+ *
+ * Deliberately narrow. A version that has ever reached the server keeps its
+ * name, so nothing that already exists anywhere can be dropped by this.
+ */
+function untouchedStrip(vs: Version[] | undefined): boolean {
+  if (!vs || vs.length !== 1) return false;
+  const v = vs[0];
+  return !v.serverVersionId
+    && v.type === 'empty'
+    && !(v.strokes && v.strokes.length > 0)
+    && !v.bgImage
+    && !v.r2Key
+    && !v.note
+    && !v.setupTagged
+    && !v.hidden
+    && !versionStars(v);
+}
+
 async function syncCurrentToServer(projectId: string): Promise<void> {
   // Safety net: refuse to push zero frames — prevents wiping a project on the server
   if (state().frames.length === 0) {
@@ -1854,6 +1879,7 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   const stripId = uuid();
   const strips = [{ id: stripId, label: 'Main', sort_order: 0, updated_at: now }];
 
+
   const frames: Array<{ id: string; strip_id: string; label: string | null; sort_order: number; crop_w: number | null; crop_h: number | null; text_content: string | null; table_data: string | null; version_label: string | null; strip_labels: string | null; hidden: boolean; note: string | null; scribbles: string | null; updated_at: number; base_updated_at?: number;
     needs: string | null; notes: string | null; setup_id: string | null;
     content_changed_at?: number }> = [];
@@ -1953,6 +1979,20 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
     // Helper: push versions for a strip type with optional type prefix
     const pushStripVersions = (stripVersions: Version[] | undefined, prefix: string, stripType: string) => {
       if (!stripVersions) return;
+      // A STRIP NOBODY HAS TOUCHED HAS NOTHING TO SEND (#358).
+      //
+      // Showing a strip makes an empty placeholder version on every frame, so
+      // the card has something to draw. It is not work — nobody made it — but it
+      // was sent to the server like any other version, with a fresh name of its
+      // own. So the desktop looked at the REFS strip and put 29 empty versions
+      // up there; the iPad looked at the same strip and put up 29 more. Both
+      // devices then showed two tabs on every card, both reading "r1", and
+      // neither had made a single one of them.
+      //
+      // Nothing is sent for a strip in that state. The moment anything is
+      // actually put in it — a drawing, a photograph, a note, a setup tag, a
+      // star, a second version from the + button — it is work, and it goes.
+      if (untouchedStrip(stripVersions)) return;
       stripVersions.forEach((lv, vi) => {
         const vid = lv.serverVersionId || uuid();
         versionIdUpdates.push({ stripType, localFrameId: f.id, versionIdx: vi, serverVersionId: vid });
@@ -2408,6 +2448,7 @@ async function applyCloudTreeToStore(
       ovExpandedFid: st.ovExpandedFid,
       showText: st.showText,
       sortMode: st.sortMode,
+      sortEditingId: st.sortEditingId,
       setupMode: st.setupMode,
       activeSetupId: st.activeSetupId,
       activeGroupId: st.activeGroupId,
@@ -2601,6 +2642,23 @@ async function applyCloudTreeToStore(
           {
             const cloudVs = (versionsByFrame.get(sf.id) ?? [])
               .filter((v) => v.type !== 'main' && !tombstonedIds.has(v.id));
+
+            // AND THE BLANK ONE STEPS ASIDE (#358).
+            //
+            // The other half of the same fault. This device may be holding the
+            // placeholder it made for itself when the strip was first shown. It
+            // has no name from the server, so nothing arriving can ever match
+            // it, and the real version was added NEXT TO it — two tabs, both
+            // reading "r1", one of them empty. It is not work and it does not
+            // compete with work.
+            for (const stripId of ['ver', 'floor', 'refs'] as const) {
+              const target = stripId === 'ver' ? verVersions
+                : stripId === 'floor' ? floorVersions : refsVersions;
+              const arriving = cloudVs.some((v) => (v.type.startsWith('floor:') ? 'floor'
+                : v.type.startsWith('refs:') ? 'refs' : 'ver') === stripId);
+              if (arriving && untouchedStrip(target[localId])) target[localId] = [];
+            }
+
             for (const sv of cloudVs) {
               const stripId = sv.type.startsWith('floor:') ? 'floor'
                 : sv.type.startsWith('refs:') ? 'refs' : 'ver';
@@ -3061,7 +3119,19 @@ async function applyCloudTreeToStore(
     // view off on every pull, which is the other half of "I go to shooting
     // order and it jumps back to 3x2".
     sortMode: prevView.sortMode,
-    sortEditingId: null,
+    // ...AND NOR DOES IT FORGET WHICH ONE (#357). #352 kept the sort view on but
+    // still cleared WHICH order was open, which leaves the same hole: the order
+    // closes and 3x2 is what is underneath.
+    //
+    // Kept without asking whether the order still exists, because at this exact
+    // moment the question cannot be answered: the shooting orders arrive as
+    // per-item settings, which are applied BELOW this. Checking here found the
+    // list before it was filled and threw the order away every time — my first
+    // attempt at this did exactly that and the test caught it.
+    //
+    // If the order really is gone, the redraw that follows the rebuild closes it
+    // properly: renderSortEditView already does that when it cannot find one.
+    sortEditingId: prevView.sortEditingId,
     renderTick: prev.renderTick + 1,
   }));
 
@@ -4816,8 +4886,20 @@ async function tryPullFromCloud(force = false): Promise<void> {
         centerFid: state().centerFid,
       };
 
-      // Close sort-edit view before applying cloud tree
-      if (state().sortEditingId) closeSortMode();
+      // A PULL DOES NOT CLOSE THE SHOOTING ORDER YOU ARE IN (#357).
+      //
+      // This used to close it before rebuilding. Being thrown out of an order
+      // leaves 3x2 underneath, so anything that made a change while you were in
+      // one — naming a break, moving a break, making a group — pushed, pulled,
+      // and dropped you into 3x2. Roman reported it three times in three
+      // different words, and it is the same one mistake as the rest of this
+      // week: the pull rebuilding the SCREEN along with the PROJECT.
+      //
+      // The order does need REDRAWING afterwards, because the frames it lists
+      // are new objects after a rebuild. That happens below, once the project is
+      // in place. The five other places that close it — opening another project,
+      // logging out, deleting the account, starting a new one, restoring a
+      // snapshot — are untouched: those really do replace the project.
       // System action: all setState calls inside are NOT user changes
       beginSystemAction();
       try {
@@ -4909,6 +4991,9 @@ async function tryPullFromCloud(force = false): Promise<void> {
           activeGroupId: groupStillThere ? viewBefore.activeGroupId : null,
         } as never);
         (window as any).__fh_renderAll?.();
+        // The shooting order you are in stays open, and is redrawn with the
+        // frames as they now are (#357).
+        refreshOpenSortView();
         // After the rebuild, not before — otherwise the render has the last
         // word and drops the user into the default view anyway.
         //

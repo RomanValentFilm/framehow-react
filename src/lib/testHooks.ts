@@ -20,6 +20,7 @@ import { getVisibleFrames } from './groups';
 import { ensureStripVersions, getStripVersions } from './helpers';
 import { openFullscreen, closeFullscreen } from './fullscreen';
 import { setViewMode } from './view';
+import { openSortEditView } from './sortOrder';
 import { uniqueId } from './ids';
 import { startFromScratch } from './files';
 import { deleteFrameForGood } from './actions';
@@ -111,6 +112,21 @@ export interface TestDoor {
   /** Press one of the view buttons. The app's own function, so the rule about
    *  what a view change does to the screen is the app's, not a copy. */
   setView(mode: string): void;
+
+  /** Open a shooting order for editing, as tapping its name does (#357). */
+  openOrder(orderIndex: number): void;
+
+  /** Which shooting order is open for editing, or null. This is the thing a
+   *  pull was quietly closing — and being thrown out of it is what put Roman
+   *  back in 3x2 while he was naming a break. */
+  orderBeingEdited(): string | null;
+
+  /** LOOK at a strip, as showing it on screen does (#358). Nothing is created
+   *  by a person here — this is only the app preparing the strip to be drawn. */
+  lookAtStrip(frameIndex: number, strip: StripType): void;
+
+  /** The version tabs on a frame, as they read on screen: ['v1', 'v2'…]. */
+  versionLabels(frameIndex: number, strip?: StripType): string[];
 
   /** Send whatever is unsent, now, without waiting for the debounce. */
   push(): Promise<void>;
@@ -326,6 +342,26 @@ export function installTestDoor(): void {
     viewMode() { return String(useStore.getState().currentViewMode); },
 
     setView(mode) { setViewMode(mode as never); },
+
+    openOrder(orderIndex) {
+      const o = useStore.getState().sortOrders[orderIndex];
+      if (!o) throw new Error(`no shooting order at ${orderIndex}`);
+      openSortEditView(o.id);
+    },
+
+    orderBeingEdited() { return useStore.getState().sortEditingId ?? null; },
+
+    lookAtStrip(frameIndex, strip) {
+      const f = useStore.getState().frames[frameIndex];
+      if (!f) throw new Error(`no frame at ${frameIndex}`);
+      ensureStripVersions(f.id, strip);
+    },
+
+    versionLabels(frameIndex, strip = 'ver') {
+      const f = useStore.getState().frames[frameIndex];
+      if (!f) throw new Error(`no frame at ${frameIndex}`);
+      return getStripVersions(f.id, strip).map((v) => v.label ?? '');
+    },
 
     async push() { await flushSyncNow(); },
 

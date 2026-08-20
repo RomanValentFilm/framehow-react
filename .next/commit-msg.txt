@@ -1,34 +1,59 @@
-v4.9.075 - the drawing stays in front of you (#356)
+v4.9.076 - a sync leaves the shooting order alone, and a strip stops breeding versions (#357, #358)
 
-#356 "The moment you draw it disappears." It never disappeared. In 3x2 you press
-     DRAW, the big view opens, you draw, you close it - and closing put the card
-     back to the MAIN frame. The drawing was safe in the version the whole time;
-     it just was not on the screen any more, which to the person holding the iPad
-     is the same thing.
+#357 A PULL DOES NOT CLOSE THE SHOOTING ORDER YOU ARE IN.
 
-     One line in closeFullscreen, written on purpose a long time ago, and it had
-     always disagreed with the camera: photograph a card in 3x2 and the app
-     deliberately switches the card to the new version so the picture stays
-     visible. Two rules, opposite answers, and which one won depended on whether
-     the big view happened to be involved.
+     Every pull that rebuilt closed the sort-edit view first, and the rebuild
+     also cleared WHICH order was open. Being thrown out of an order leaves 3x2
+     underneath - so making a group, naming a break or moving a break pushed,
+     pulled, and dropped Roman into 3x2. He reported it three times in three
+     different words and I guessed at it four times before this.
 
-     Now, in 3x2 only, the card keeps showing the version you were just on. The
-     strip views are unchanged - they always kept it - and 4-up and the overview
-     are unchanged too.
+     #352 had kept the sort view switched ON but left "which one" behind, which
+     leaves exactly the same hole.
 
-     Not the sync. Not this week's work. It predates all of it.
+     The order is now kept and REDRAWN after the rebuild, because the frames it
+     lists are new objects. The five places that really do replace the project -
+     opening another project, logging out, deleting the account, starting a new
+     one, restoring a snapshot - still close it, correctly.
 
-THE SIMULATOR CAN NOW HOLD A PENCIL, AND CAN SEE THE SCREEN
+     Two wrong attempts on the way, both caught by the test rather than by Roman:
+     removing only the close call (the rebuild still cleared which one), then
+     keeping it only if the order still existed (at that moment it cannot -
+     shooting orders arrive as per-item settings applied further down, so the
+     check read an empty list and threw the order away every time).
 
-Every guess I made about this was a guess, because nothing in the simulator could
-draw. There is now a door that opens the drawing view the way the DRAW button
-does, moves a finger across the real canvas, and asks the project what it holds.
+#358 LOOKING AT A STRIP MUST NOT MAKE A VERSION.
 
-And - this is the part that mattered - a door that asks what the CARD IS SHOWING.
-Every test written so far asked the project and was blind to the screen. That is
-the same blindness that let the photo, the setups and the shooting order go
-missing in front of Roman for two days while thirteen tests said green.
+     Showing a strip makes an empty placeholder version on every frame so the
+     card has something to draw. Nobody made it - but it was sent to the server
+     like any other version, with a name of its own. So the desktop looked at the
+     REFS strip and put 29 empty versions up there; the iPad looked at the same
+     strip and put up 29 more. Both devices then showed two tabs on every card,
+     both reading "r1", and neither had made a single one of them. Tagging frames
+     with a setup is what carried them up: a tagged frame is unsent work, and
+     unsent work takes the protective branch of the pull, which keeps the local
+     copy and adds the cloud's alongside.
 
-Three new tests: a stroke survives its own push and pull; a stroke survives the
-other device's work arriving; and the card still shows the version you drew on.
-The first two passed BEFORE this change, which is how the real cause was found.
+     Two halves, both needed:
+       - a strip nobody has touched sends nothing
+       - and when a real version arrives, the blank one steps aside instead of
+         sitting next to it
+
+     Deliberately narrow: a stroke, a picture, a note, a star, a setup tag, a
+     hidden flag or a second version all make it work, and work is always sent
+     and always kept. Anything that has ever reached the server keeps its name,
+     so nothing that exists anywhere can be dropped by this.
+
+     It stops new ones. The empty versions already on the server stay until
+     somebody removes them; the app does not delete versions on its own.
+
+THE SIMULATOR
+
+New doors: open a shooting order, ask which one is open, look at a strip, read
+the version tabs. Two new tests, both written before either fix and both failing
+first, for the right reasons.
+
+Still open and now reproducible: a random day with seed 985927 ends with the two
+devices disagreeing - one frame carrying older writing, and the frames in a
+different order - after the tablet was away while the desktop rearranged twice.
+Same ending every replay, so it is real. Next hunt.
