@@ -1,59 +1,47 @@
-v4.9.076 - a sync leaves the shooting order alone, and a strip stops breeding versions (#357, #358)
+v4.9.077 - the pictures stop blinking (#360)
 
-#357 A PULL DOES NOT CLOSE THE SHOOTING ORDER YOU ARE IN.
+#360 Roman: "a short flashing of all content after each sync… it's distracting."
+     He assumed the sync was reloading everything. The sync was innocent; it only
+     triggers the redraw that showed the fault.
 
-     Every pull that rebuilt closed the sort-edit view first, and the rebuild
-     also cleared WHICH order was open. Being thrown out of an order leaves 3x2
-     underneath - so making a group, naming a break or moving a break pushed,
-     pulled, and dropped Roman into 3x2. He reported it three times in three
-     different words and I guessed at it four times before this.
+     TWO CAUSES, and the first one is the big one:
 
-     #352 had kept the sort view switched ON but left "which one" behind, which
-     leaves exactly the same hole.
+     A main frame holding a picture is not drawn on a canvas at all - it is a
+     plain picture element, and every one of them carried loading="lazy". So the
+     browser had been told it may put off fetching that picture until it feels
+     like it. Every redraw threw those elements away and made new ones, and every
+     picture on screen was asked for again, lazily. That is the flash, in every
+     view - strips, 3x2, M+2, M+3 - and under the scribble layer too, which has
+     no pictures of its own and was simply sitting on top of one that blanked.
+     They are no longer lazy, and are decoded before being shown rather than
+     after.
 
-     The order is now kept and REDRAWN after the rebuild, because the frames it
-     lists are new objects. The five places that really do replace the project -
-     opening another project, logging out, deleting the account, starting a new
-     one, restoring a snapshot - still close it, correctly.
+     The canvases had their own version of the same mistake. Every picture was
+     decoded from scratch each time: the canvas was wiped immediately and painted
+     only once the picture had decoded. A picture is now decoded once and kept,
+     so a card is painted the instant it is built. Only a picture this device has
+     never shown still waits - and then the canvas is left alone until it is
+     ready, rather than being wiped first.
 
-     Two wrong attempts on the way, both caught by the test rather than by Roman:
-     removing only the close call (the rebuild still cleared which one), then
-     keeping it only if the order still existed (at that moment it cannot -
-     shooting orders arrive as per-item settings applied further down, so the
-     check read an empty list and threw the order away every time).
+     The store already holds every picture in the project, so what is kept here
+     is the decoded copy, not a second copy of the data. 150 of them, oldest out.
 
-#358 LOOKING AT A STRIP MUST NOT MAKE A VERSION.
+A TEST THAT CAN SEE A FLASH
 
-     Showing a strip makes an empty placeholder version on every frame so the
-     card has something to draw. Nobody made it - but it was sent to the server
-     like any other version, with a name of its own. So the desktop looked at the
-     REFS strip and put 29 empty versions up there; the iPad looked at the same
-     strip and put up 29 more. Both devices then showed two tabs on every card,
-     both reading "r1", and neither had made a single one of them. Tagging frames
-     with a setup is what carried them up: a tagged frame is unsent work, and
-     unsent work takes the protective branch of the pull, which keeps the local
-     copy and adds the cloud's alongside.
+It puts a picture on a card, then watches that card twenty-five times a second
+for twelve seconds while the other device works, and fails if the card is ever
+caught showing nothing. It handles both kinds - the canvas and the picture
+element.
 
-     Two halves, both needed:
-       - a strip nobody has touched sends nothing
-       - and when a real version arrives, the blank one steps aside instead of
-         sitting next to it
+Honest note: unlike the other new tests, this one has never failed for me, so its
+teeth are unproven. It WOULD catch the lazy pictures - a fresh lazy element
+reports itself as not loaded, which is exactly what it looks for - but I did not
+back the fix out to prove it.
 
-     Deliberately narrow: a stroke, a picture, a note, a star, a setup tag, a
-     hidden flag or a second version all make it work, and work is always sent
-     and always kept. Anything that has ever reached the server keeps its name,
-     so nothing that exists anywhere can be dropped by this.
+Three wrong turns getting there, all mine, all found by the test rather than by
+Roman: a base64 picture I typed from memory that was not a valid picture at all;
+an on-screen check that rejects anything inside a fixed container, which is how
+the grid sits; and putting the picture on a version while the card was showing
+the main frame.
 
-     It stops new ones. The empty versions already on the server stay until
-     somebody removes them; the app does not delete versions on its own.
-
-THE SIMULATOR
-
-New doors: open a shooting order, ask which one is open, look at a strip, read
-the version tabs. Two new tests, both written before either fix and both failing
-first, for the right reasons.
-
-Still open and now reproducible: a random day with seed 985927 ends with the two
-devices disagreeing - one frame carrying older writing, and the frames in a
-different order - after the tablet was away while the desktop rearranged twice.
-Same ending every replay, so it is real. Next hunt.
+20 of 20 pass.

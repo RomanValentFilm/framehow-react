@@ -128,6 +128,15 @@ export interface TestDoor {
   /** The version tabs on a frame, as they read on screen: ['v1', 'v2'…]. */
   versionLabels(frameIndex: number, strip?: StripType): string[];
 
+  // --- the flash (#360) ----------------------------------------------------
+
+  /** Put a picture on a version, as loading one from the camera roll does. */
+  putPicture(frameIndex: number, dataUrl: string): void;
+
+  /** Is the card's canvas showing NOTHING at this instant? This is how a test
+   *  sees the flash: watch it across a sync, and it must never be blank. */
+  cardIsBlank(frameIndex: number, strip?: StripType, versionIndex?: number): boolean;
+
   /** Send whatever is unsent, now, without waiting for the debounce. */
   push(): Promise<void>;
   /** What is on screen, in order, as plain facts a test can compare. */
@@ -361,6 +370,82 @@ export function installTestDoor(): void {
       const f = useStore.getState().frames[frameIndex];
       if (!f) throw new Error(`no frame at ${frameIndex}`);
       return getStripVersions(f.id, strip).map((v) => v.label ?? '');
+    },
+
+    putPicture(frameIndex, dataUrl) {
+      const s = useStore.getState();
+      const f = s.frames[frameIndex];
+      if (!f) throw new Error(`no frame at ${frameIndex}`);
+      // ON THE MAIN FRAME, which is what the card is showing.
+      //
+      // The first two attempts put it on a version, which is real but is not on
+      // screen unless the card has been cross-swiped to it — so the test watched
+      // a card that was showing the main frame and quite correctly reported
+      // nothing there. The picture goes where the eye is.
+      useStore.setState({
+        frames: s.frames.map((x, i) => (i === frameIndex
+          ? { ...x, src: dataUrl, r2Key: undefined } : x)),
+      } as never);
+      if (f.serverFrameId) markFrameDirty(f.serverFrameId);
+      stampChangedContent();
+      (window as never as { __fh_renderAll?: () => void }).__fh_renderAll?.();
+    },
+
+    cardIsBlank(frameIndex, strip = 'ver', versionIndex = 0) {
+      const f = useStore.getState().frames[frameIndex];
+      if (!f) throw new Error(`no frame at ${frameIndex}`);
+      const ids = [
+        `g3_mc_${f.id}`,
+        `g4_mc_${f.id}`,
+        `ov_mc_${f.id}`,
+        `mcvs_${f.id}`,
+        `g3_vc_${f.id}_${versionIndex}`,
+        `g4_vc_${f.id}_${versionIndex}`,
+        `ov_vc_${f.id}_${versionIndex}`,
+        `cvs_${strip}_${f.id}_${versionIndex}`,
+      ];
+      // ON SCREEN, not merely in the page. The strip columns stay in the
+      // document while 3x2 is showing, so the first attempt at this measured a
+      // hidden canvas that nothing had painted, and called it blank.
+      const showing = (el: HTMLElement) => {
+        const r = el.getBoundingClientRect();
+        return r.width > 1 && r.height > 1;
+      };
+      let cvs: HTMLCanvasElement | null = null;
+      for (const id of ids) {
+        const el = document.getElementById(id) as HTMLCanvasElement | null;
+        if (el && showing(el)) { cvs = el; break; }
+      }
+
+      // A MAIN FRAME HOLDING A PICTURE IS NOT A CANVAS AT ALL.
+      //
+      // It is a plain picture element, and there is no canvas on that card. The
+      // test looked only for canvases and reported "nothing on screen" three
+      // times before this was noticed — which is also why the flash was never
+      // going to be explained by the canvas alone.
+      if (!cvs) {
+        const holders = [
+          `[data-g3fid="${f.id}"]`, `[data-mfid="${f.id}"]`,
+          `[data-ofid="${f.id}"]`, `[data-vfid="${f.id}"]`,
+        ];
+        for (const h of holders) {
+          const img = document.querySelector(`${h} img`) as HTMLImageElement | null;
+          if (img && showing(img)) {
+            return !(img.complete && img.naturalWidth > 0);
+          }
+        }
+      }
+
+      if (!cvs) throw new Error(`no canvas visible for frame ${frameIndex}. `
+        + `Looked for: ${ids.join(', ')}. `
+        + `On the page: ${Array.from(document.querySelectorAll('canvas'))
+          .map((c) => `${c.id}${showing(c as HTMLElement) ? '' : ' (hidden)'}`)
+          .join(', ') || 'no canvas at all'}`);
+      const ctx = cvs.getContext('2d');
+      if (!ctx) throw new Error('the canvas has no drawing surface');
+      const px = ctx.getImageData(0, 0, cvs.width, cvs.height).data;
+      for (let i = 3; i < px.length; i += 4) if (px[i] !== 0) return false;
+      return true;
     },
 
     async push() { await flushSyncNow(); },

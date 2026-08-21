@@ -252,6 +252,22 @@ export class Device {
       [frameIndex, strip] as [number, string]);
   }
 
+  /** Put a picture on a version, as loading one from the camera roll does. */
+  async putPicture(frameIndex: number, dataUrl: string): Promise<void> {
+    await this.page.evaluate(([i, d]) =>
+      (window as never as { __fh_test: { putPicture(i: number, d: string): void } })
+        .__fh_test.putPicture(i as number, d as string),
+      [frameIndex, dataUrl] as [number, string]);
+  }
+
+  /** Is the card's canvas showing nothing at this instant? */
+  cardIsBlank(frameIndex: number, strip = 'ver', versionIndex = 0): Promise<boolean> {
+    return this.page.evaluate(([i, s, v]) =>
+      (window as never as { __fh_test: { cardIsBlank(i: number, s: string, v: number): boolean } })
+        .__fh_test.cardIsBlank(i as number, s as string, v as number),
+      [frameIndex, strip, versionIndex] as [number, string, number]);
+  }
+
   /** Press a view button. */
   async setView(mode: string): Promise<void> {
     say(`${this.name}: switching to ${mode}`);

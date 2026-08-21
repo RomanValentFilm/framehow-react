@@ -555,7 +555,7 @@ export function renderMainFrame(div: HTMLElement, fid: number): void {
     }" style="aspect-ratio:${f.cropW || 16}/${f.cropH || 9}">${
       (f.drawMode || !f.src)
         ? `<canvas id="${mcid}" width="${f.cropW || 960}" height="${f.cropH || 540}"></canvas>`
-        : `<img src="${f.src}" decoding="sync" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;">`
+        : `<img src="${f.src}" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;">`
     }${talentHintHTML(f)}${setupTagHTML(fid)}</div>`;
   }
   const btnLabel2 =
@@ -728,7 +728,7 @@ export function renderVersionFrame(div: HTMLElement, fid: number, strip: StripTy
       };border:2px solid var(--accent);border-radius:var(--radius-sm);">${
         f.drawMode
           ? `<canvas id="${mcid}" width="${f.cropW || 960}" height="${f.cropH || 540}"></canvas>`
-          : `<img src="${f.src}" decoding="sync" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;">`
+          : `<img src="${f.src}" loading="lazy" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;">`
       }${setupTagHTML(fid)}</div>`;
     }
     const btnLabel3 =

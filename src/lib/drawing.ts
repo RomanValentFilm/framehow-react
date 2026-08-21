@@ -106,53 +106,110 @@ export function drawVersionStrokes(ctx: CanvasRenderingContext2D, strokes: Strok
   _drawStrokesLayered(ctx, strokes);
 }
 
-export function restoreMainCanvas(cvs: HTMLCanvasElement, f: Frame): void {
-  const ctx = cvs.getContext('2d')!;
-  ctx.clearRect(0, 0, cvs.width, cvs.height);
-  if (f.src) {
-    const img = new Image();
-    img.onload = () => {
-      const s = Math.min(cvs.width / img.width, cvs.height / img.height);
-      const dw = img.width * s,
-        dh = img.height * s;
-      ctx.drawImage(img, 0, 0, img.width, img.height, (cvs.width - dw) / 2, (cvs.height - dh) / 2, dw, dh);
-      drawMainStrokes(ctx, f.strokes);
-    };
-    img.src = f.src;
-  } else {
-    drawMainStrokes(ctx, f.strokes);
+// ---------------------------------------------------------------------------
+// THE FLASH (#360)
+// ---------------------------------------------------------------------------
+//
+// Roman: "a short flashing of all content after each sync… it's distracting."
+//
+// It is not the sync. It is that every picture was decoded from scratch every
+// single time a card was drawn. The old code made a NEW Image, wiped the canvas
+// straight away, and painted only when the picture had finished decoding — so
+// every card went blank first and filled in a moment later. A sync redraws every
+// card at once, so all of them blanked together. That is the flash.
+//
+// Pictures here are whole photographs held as text, which are slow to decode, so
+// the gap is easily long enough to see.
+//
+// A picture is now decoded ONCE and kept. The second time the same picture is
+// asked for it is already there, so the card is painted in the same instant it
+// is built and nothing ever blanks. Only a picture this device has never shown
+// still has to wait — and then the canvas is left alone until it is ready,
+// rather than being wiped first.
+//
+// The store keeps every picture in the project anyway, so what is kept here is
+// the decoded copy, not a second copy of the data.
+
+const _decoded = new Map<string, HTMLImageElement>();
+/** Enough for every card on screen several times over, on the biggest project
+ *  we have. Beyond that the oldest goes, which only costs one decode. */
+const KEEP_DECODED = 150;
+
+function decodedImage(src: string): HTMLImageElement {
+  const had = _decoded.get(src);
+  if (had) {
+    // Freshen its place in the queue: what is on screen stays.
+    _decoded.delete(src);
+    _decoded.set(src, had);
+    return had;
   }
+  const img = new Image();
+  img.src = src;
+  _decoded.set(src, img);
+  while (_decoded.size > KEEP_DECODED) {
+    const oldest = _decoded.keys().next().value as string | undefined;
+    if (oldest === undefined) break;
+    _decoded.delete(oldest);
+  }
+  return img;
+}
+
+/** True once the picture can actually be painted. */
+function ready(img: HTMLImageElement): boolean {
+  return img.complete && img.naturalWidth > 0;
+}
+
+function fit(ctx: CanvasRenderingContext2D, cvs: HTMLCanvasElement, img: HTMLImageElement): void {
+  const s = Math.min(cvs.width / img.width, cvs.height / img.height);
+  const dw = img.width * s, dh = img.height * s;
+  ctx.drawImage(img, 0, 0, img.width, img.height,
+    (cvs.width - dw) / 2, (cvs.height - dh) / 2, dw, dh);
+}
+
+/**
+ * Paint a canvas: the picture if there is one, then whatever was drawn on top.
+ *
+ * The canvas is wiped at the LAST possible moment — never before a picture is
+ * ready — so it is either showing the old thing or the new thing, and never
+ * nothing.
+ */
+function paint(cvs: HTMLCanvasElement, src: string | null | undefined, strokes: Stroke[] | undefined,
+  drawStrokes: (ctx: CanvasRenderingContext2D, st: Stroke[]) => void): void {
+  const ctx = cvs.getContext('2d')!;
+  if (!src) {
+    ctx.clearRect(0, 0, cvs.width, cvs.height);
+    drawStrokes(ctx, strokes || []);
+    return;
+  }
+  const img = decodedImage(src);
+  if (ready(img)) {
+    ctx.clearRect(0, 0, cvs.width, cvs.height);
+    fit(ctx, cvs, img);
+    drawStrokes(ctx, strokes || []);
+    return;
+  }
+  // Never shown on this device before. Leave whatever is there until it can be
+  // replaced in one go.
+  img.addEventListener('load', () => {
+    // Not while a stroke is under the finger — the repaint would wipe the line
+    // being drawn. It is painted again when the stroke ends.
+    if (state().drawingInProgress) return;
+    ctx.clearRect(0, 0, cvs.width, cvs.height);
+    fit(ctx, cvs, img);
+    drawStrokes(ctx, strokes || []);
+  }, { once: true });
+}
+
+export function restoreMainCanvas(cvs: HTMLCanvasElement, f: Frame): void {
+  paint(cvs, f.src, f.strokes, drawMainStrokes);
 }
 
 export function restoreCanvas(cvs: HTMLCanvasElement, ver: Version): void {
-  const ctx = cvs.getContext('2d')!;
-  ctx.clearRect(0, 0, cvs.width, cvs.height);
-  if (ver.bgImage) {
-    const img = new Image();
-    img.onload = () => {
-      const s = Math.min(cvs.width / img.width, cvs.height / img.height);
-      const dw = img.width * s,
-        dh = img.height * s;
-      ctx.drawImage(img, 0, 0, img.width, img.height, (cvs.width - dw) / 2, (cvs.height - dh) / 2, dw, dh);
-      drawVersionStrokes(ctx, ver.strokes);
-    };
-    img.src = ver.bgImage;
-    return;
-  }
-  drawVersionStrokes(ctx, ver.strokes);
+  paint(cvs, ver.bgImage, ver.strokes, drawVersionStrokes);
 }
 
 export function drawFit(cvs: HTMLCanvasElement, src: string): void {
-  const img = new Image();
-  img.onload = () => {
-    const ctx = cvs.getContext('2d')!;
-    ctx.clearRect(0, 0, cvs.width, cvs.height);
-    const s = Math.min(cvs.width / img.width, cvs.height / img.height);
-    const dw = img.width * s,
-      dh = img.height * s;
-    ctx.drawImage(img, 0, 0, img.width, img.height, (cvs.width - dw) / 2, (cvs.height - dh) / 2, dw, dh);
-  };
-  img.src = src;
+  paint(cvs, src, [], drawVersionStrokes);
 }
 
 // snapshot + undo helpers — used by drawing setup and many action handlers.
