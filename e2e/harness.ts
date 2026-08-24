@@ -318,6 +318,34 @@ export class Device {
         .__fh_test.scribbleCount(i as number), frameIndex);
   }
 
+  /** How far down the page is, right now. */
+  scrollPosition(): Promise<number> {
+    return this.page.evaluate(() =>
+      (window as never as { __fh_test: { scrollPosition(): number } })
+        .__fh_test.scrollPosition());
+  }
+
+  /** Which thing is doing the scrolling. */
+  scrollerName(): Promise<string> {
+    return this.page.evaluate(() =>
+      (window as never as { __fh_test: { scrollerName(): string } })
+        .__fh_test.scrollerName());
+  }
+
+  /** Scroll the page, as a finger does. */
+  async scrollTo(y: number): Promise<void> {
+    await this.page.evaluate((v) =>
+      (window as never as { __fh_test: { scrollTo(v: number): void } })
+        .__fh_test.scrollTo(v as number), y);
+  }
+
+  /** Swipe across a card's picture to show its version. */
+  async swipeCard(frameIndex: number): Promise<void> {
+    await this.page.evaluate((i) =>
+      (window as never as { __fh_test: { swipeCard(i: number): void } })
+        .__fh_test.swipeCard(i as number), frameIndex);
+  }
+
   /** Press a view button. */
   async setView(mode: string): Promise<void> {
     say(`${this.name}: switching to ${mode}`);

@@ -50,6 +50,9 @@ function windowedTabIndices(tabs: any[], _activeIdx: number, _isPortrait: boolea
   return tabs.map((_, i) => i);
 }
 
+/** Timers that put the page back where it was after a redraw (#363). */
+const _scrollBackTimers: number[] = [];
+
 export function renderAll(): void {
   saveOpenTextEdits();
   saveOpenTableEdits();
@@ -205,6 +208,26 @@ export function renderAll(): void {
       refsFrag.appendChild(buildVersionFrame(f.id, 'refs'));
     }
   });
+  // KEEP THE PAGE WHERE THE PERSON PUT IT (#363).
+  //
+  // Emptying a column sets its scroll back to the top, and building it again
+  // does not put it back. So every redraw of 3x2 — after a photo, after a
+  // drawing, after anything — dropped the page by a card or so. Roman described
+  // it as the frame jumping to the middle after taking a picture; the picture
+  // had nothing to do with it, and neither did the sync, which is where I looked
+  // twice before measuring.
+  //
+  // Written down before the swap, put back after it, and again on the next frame
+  // once the heights have settled.
+  // INCLUDING THE WINDOW ITSELF, which is the one that actually scrolls in 3x2.
+  // The first attempt wrote down the columns only, restored them faithfully, and
+  // changed nothing — because none of them scroll. The test was made to say what
+  // it was measuring, and answered "html".
+  const whereEverythingWas = [
+    document.scrollingElement as HTMLElement | null,
+    mainScroll, versionsScroll, overviewScroll, floorScroll, refsScroll,
+  ].map((el) => ({ el, top: el ? el.scrollTop : 0, lastSet: null as number | null }));
+
   // Atomic swap — old children removed and new ones inserted in one operation
   mainScroll.replaceChildren(mainFrag);
   versionsScroll.replaceChildren(verFrag);
@@ -224,6 +247,40 @@ export function renderAll(): void {
     const fn = (window as any).__fh_renderGrid3x2;
     if (fn) fn();
   }
+
+  // ...and back where it was (#363).
+  //
+  // Several times, as the layout settles. Putting it back immediately is not
+  // enough: the cards do not have their final heights yet, so the page is not
+  // yet tall enough to hold the old position and the browser quietly clamps it
+  // to a smaller one. The 3x2 margins are worked out a frame later again. The
+  // app already restores in this stepped way after a rotation, for the same
+  // reason.
+  // Keeps trying until the page is tall enough to hold the old position, and
+  // stops the moment the person scrolls themselves — otherwise it would fight
+  // them for a second and a half after every sync.
+  let theyMovedItThemselves = false;
+  const putItBack = () => {
+    if (theyMovedItThemselves) return;
+    for (const rec of whereEverythingWas) {
+      const { el, top } = rec;
+      if (!el || top <= 0) continue;
+      if (rec.lastSet !== null && Math.abs(el.scrollTop - rec.lastSet) > 2) {
+        theyMovedItThemselves = true;
+        return;
+      }
+      if (el.scrollTop !== top) el.scrollTop = top;
+      rec.lastSet = el.scrollTop;
+    }
+  };
+  putItBack();
+  requestAnimationFrame(() => { putItBack(); requestAnimationFrame(putItBack); });
+  _scrollBackTimers.forEach(clearTimeout);
+  _scrollBackTimers.length = 0;
+  [60, 160, 320, 600, 1000, 1500].forEach((wait) => {
+    _scrollBackTimers.push(window.setTimeout(putItBack, wait));
+  });
+
   updateFrameBadge();
   updateGroupButtonState();
   // Wire setup toggle buttons if in setup edit mode

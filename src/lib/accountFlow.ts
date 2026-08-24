@@ -5006,9 +5006,15 @@ async function tryPullFromCloud(force = false): Promise<void> {
         if (state().currentViewMode !== viewBefore.currentViewMode) {
           setViewMode(viewBefore.currentViewMode);
         }
-        const frameStillThere = viewBefore.centerFid != null
-          && state().frames.some((f) => String(f.id) === String(viewBefore.centerFid));
-        if (frameStillThere) requestAnimationFrame(() => scrollAnchorTo(viewBefore.centerFid));
+        // THE PULL NO LONGER TOUCHES THE PAGE POSITION AT ALL (#363).
+        //
+        // It used to put you "back" by centring the frame nearest the middle,
+        // which moved the page every time. Then I made it restore the exact
+        // position instead — and it still moved, because by then the redraw had
+        // already kept the position itself, and the two were fighting: the
+        // redraw held it at 616 and this shoved it to 471.
+        //
+        // A redraw that keeps your place needs no help. Nothing here.
       } catch (e) {
         console.warn('[sync] could not restore the view after a pull', e);
         trace('  could not put the view back — carrying on');

@@ -1,57 +1,49 @@
-v4.9.078 - a quick little mark stays a mark (#361)
+v4.9.079 - the page stays where you put it (#363)
 
-#361 Roman: "when I'm in scribble mode and paint really quick, sometimes a stroke
-     I draw disappears immediately after I make it. Is it because I draw too
-     fast?" And then, better than my own guess: "could it have something to do
-     with what we introduced for drawing a dot?"
+#363 Roman: "when taking a photo in 3x2 the fullscreen returns to that frame and
+     pushes/scrolls the frame to the middle... also in the strip views. Also when
+     I draw to the pictures, then they jump/scroll to the middle."
 
-     It could, and it did.
+     Not the photo. Not the drawing. Not the sync either, which is where I looked
+     twice and "fixed" twice while the page kept moving by exactly the same 119
+     pixels.
 
-     When the pen comes up the app decides: tap, or line? A tap becomes a dot. It
-     decided with two tests - under 400ms, and never more than THIRTY pixels from
-     where it started. Not the length of the line drawn: how far it ever got from
-     its beginning. So a quick tick, a small circle, a short dash curving back on
-     itself was called a tap. The mark was thrown away and a dot put at the start
-     point. A stroke vanishing the instant it is made, and only when you are
-     quick, because a slower mark passed the time test. A finger had it worst: a
-     finger was allowed thirty pixels, a pencil eight.
+     Emptying a column to rebuild it throws the scroll position away, and nothing
+     put it back. Every redraw of 3x2 dropped the page by about a card. A photo
+     causes a redraw, so it looked as though the photo did it.
 
-     Speed says nothing about what a person meant. Movement does. A tap is now a
-     finger that did not move - eight pixels of wobble, the same for a finger as
-     for a pencil - and how long it rested there does not matter. Anything that
-     travelled is a mark and is kept whole, beginning and end.
+     The redraw now writes down where everything was before it empties anything,
+     and puts it back afterwards - repeatedly, as the layout settles, because the
+     cards do not have their final heights at first and the browser quietly
+     clamps the position to whatever the page can hold at that instant. It stops
+     the moment the person scrolls themselves, so it can never fight them.
 
-#362 NOT SHIPPED, AND DELIBERATELY SO.
+     And the pull no longer touches the page position at all. It used to put you
+     "back" by CENTRING the frame nearest the middle - which moved the page every
+     single time, even though the code carefully measured where the frame really
+     was and then threw that measurement away. A redraw that keeps your place
+     needs no help; two mechanisms only fought each other.
 
-     A second, separate fault, found while looking for the first and caught by a
-     test of its own: every time the 3x2 page is drawn the app throws the whole
-     scribble layer away and rebuilds it, so a sync arriving mid-stroke destroys
-     the canvas under the hand.
+HOW IT WAS ACTUALLY FOUND, after three wrong theories
 
-     Three attempts at the fix, three failures - holding the layer, then holding
-     the page, then holding the whole redraw - each leaving the layer not rebuilt
-     at all. Taken out rather than poked at further. The test stays in the file,
-     marked as still open, so it is not forgotten.
+  - the test was made to measure at TWO moments, before and after the local
+    redraw. 616, then 471, with no sync involved: that killed the sync theory
+  - the app was made to SAY OUT LOUD who moves the page and from where, the same
+    way it already says who changes the view
+  - and the test was made to name what it was measuring, which answered "html" -
+    the window scrolls, not the columns, so my first fix had been faithfully
+    restoring columns that never scroll
 
-     One piece kept: the scribble layer now SAYS when the pen is down. Nothing
-     acts on it for the page, but the version-drawing canvas has honoured that
-     flag for a while, so a picture finishing its decode can no longer repaint
-     over a stroke in progress.
+Roman asked, twice and fairly, whether I was guessing. The first three attempts
+were. This one is measured.
 
-THE SIMULATOR CAN SCRIBBLE
+ALSO
 
-Real pointer events on the real overlay: a stroke, a quick tick with a finger, a
-pen held down across a sync, and readers for how many strokes a frame holds and
-how far the last one travelled. Three tests, two green.
+A test that swipes across a picture is written but not running: WebKit will not
+let a test build a touch out of nothing, and the cross-swipe listens for touches
+only. The rule is right and it is left in the file for the day we can drive a
+real finger.
 
-Two wrong reproductions on the way, both found by the test rather than by Roman:
-a dozen strokes with no pause at all (they all land before a single push starts,
-so nothing is ever in flight), and the other device sitting idle (with nobody
-else working every pull comes back empty and nothing is ever rebuilt). Both are
-now guarded against in the test itself, so it cannot pass for the wrong reason.
-
-21 of 22 pass. The one failure is the random day, which now disagrees on two
-different seeds - 985927 and 511151 - in the same way: after one device is away
-while the other rearranges, they end with the frames in a different order and one
-frame carrying older writing. Repeatable, and older than any of today's work.
-That is the next hunt.
+22 of 23 pass. The one failure is the random day, which disagrees on two
+different seeds in the same way after one device is away while the other
+rearranges. Repeatable, older than any of this. Still the next hunt.

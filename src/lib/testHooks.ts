@@ -110,6 +110,20 @@ export interface TestDoor {
   /** Which view the app is in: 'grid3x2', 'main', 'overview'… */
   viewMode(): string;
 
+  /** WHERE THE PAGE IS (#363). How far down whatever is scrolling right now.
+   *  A test can watch this across an action and insist it did not move. */
+  scrollPosition(): number;
+
+  /** Scroll the page, as a finger does. */
+  scrollTo(y: number): void;
+
+  /** WHICH thing is doing the scrolling — so a test can say what it measured
+   *  instead of me assuming (#363). */
+  scrollerName(): string;
+
+  /** Cross-swipe a card to its version, as a finger across the canvas does. */
+  swipeCard(frameIndex: number): void;
+
   /** Press one of the view buttons. The app's own function, so the rule about
    *  what a view change does to the screen is the app's, not a copy. */
   setView(mode: string): void;
@@ -184,6 +198,26 @@ export interface TestDoor {
       breaks: Array<{ id: string; text: string; position: number }>;
     }>;
   };
+}
+
+/**
+ * Whichever column or page is doing the scrolling right now (#363).
+ *
+ * Asked by MEASURING rather than by guessing from the view: the first attempt
+ * named the column it thought was scrolling, set a position on it, and got
+ * nothing — because in that view the whole window scrolls, not the column. So
+ * this looks for something that is actually taller than its own frame, and
+ * settles for the window if nothing is.
+ */
+function whatIsScrolling(): HTMLElement | null {
+  const ids = ['overviewScroll', 'mainScroll', 'versionsScroll', 'floorScroll', 'refsScroll'];
+  for (const id of ids) {
+    const el = document.getElementById(id);
+    if (el && el.scrollHeight > el.clientHeight + 4) return el;
+  }
+  const doc = document.scrollingElement as HTMLElement | null;
+  if (doc && doc.scrollHeight > doc.clientHeight + 4) return doc;
+  return null;
 }
 
 /** Where to put the pen for a given frame's card, on whichever scribble layer is
@@ -406,6 +440,52 @@ export function installTestDoor(): void {
     viewMode() { return String(useStore.getState().currentViewMode); },
 
     setView(mode) { setViewMode(mode as never); },
+
+    scrollPosition() {
+      const el = whatIsScrolling();
+      return el ? el.scrollTop : Math.round(window.scrollY);
+    },
+
+    scrollTo(y) {
+      const el = whatIsScrolling();
+      if (el) el.scrollTop = y; else window.scrollTo(0, y);
+    },
+
+    scrollerName() {
+      const el = whatIsScrolling();
+      if (!el) return 'the window';
+      return el.id || el.tagName.toLowerCase();
+    },
+
+    swipeCard(frameIndex) {
+      const f = useStore.getState().frames[frameIndex];
+      if (!f) throw new Error(`no frame at ${frameIndex}`);
+      const holders = [
+        `.grid3x2-card-wrap[data-g3fid="${f.id}"] .canvas-wrap`,
+        `.frame-card[data-mfid="${f.id}"] .canvas-wrap`,
+        `.frame-card[data-vfid="${f.id}"] .canvas-wrap`,
+      ];
+      let el: HTMLElement | null = null;
+      for (const h of holders) {
+        const found = document.querySelector(h) as HTMLElement | null;
+        if (found) { el = found; break; }
+      }
+      if (!el) throw new Error(`no canvas to swipe on frame ${frameIndex}`);
+      const r = el.getBoundingClientRect();
+      const y = r.top + r.height / 2;
+      // Proper Touch objects. A plain object looks close enough to read but
+      // WebKit refuses it outright — "Type error" — which is what the first
+      // attempt at this got.
+      const touch = (x: number) => {
+        const t = new Touch({ identifier: 1, target: el as EventTarget, clientX: x, clientY: y });
+        return { bubbles: true, cancelable: true, touches: [t], changedTouches: [t], targetTouches: [t] };
+      };
+      // Right to left across the picture — the swipe that shows the version.
+      el.dispatchEvent(new TouchEvent('touchstart', touch(r.right - 20)));
+      el.dispatchEvent(new TouchEvent('touchmove', touch(r.left + r.width * 0.5)));
+      el.dispatchEvent(new TouchEvent('touchmove', touch(r.left + 20)));
+      el.dispatchEvent(new TouchEvent('touchend', touch(r.left + 20)));
+    },
 
     openOrder(orderIndex) {
       const o = useStore.getState().sortOrders[orderIndex];

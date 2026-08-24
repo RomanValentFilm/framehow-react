@@ -475,15 +475,41 @@ function anchorTargetFor(fid: string | number): HTMLElement | null {
  * whereas centring the card moves you by up to half a card, which is what
  * made switching strips feel like it jumped.
  */
+/** Who just moved the page, and from where in the code (#363). */
+function sayWhoScrolled(what: string): void {
+  const who = new Error().stack?.split('\n')[3]?.trim().replace(/^at /, '') ?? '?';
+  trace(`scroll: ${what}   (${who.slice(0, 60)})`);
+}
+
+/** Whatever actually scrolls around this element — a column, or the window. */
+function scrollerAround(el: HTMLElement): HTMLElement | null {
+  let node: HTMLElement | null = el.parentElement;
+  while (node) {
+    const how = getComputedStyle(node).overflowY;
+    if ((how === 'auto' || how === 'scroll') && node.scrollHeight > node.clientHeight + 4) {
+      return node;
+    }
+    node = node.parentElement;
+  }
+  return null;
+}
+
 export function scrollAnchorToRel(fid: string | number | null, rel: number | null): void {
   if (!fid) return;
+  sayWhoScrolled(`back to where it was, on ${fid}`);
   if (rel == null) { scrollAnchorTo(fid); return; }
   const target = anchorTargetFor(fid);
   if (!target) return;
   const rect = target.getBoundingClientRect();
-  const cardTop = rect.top + window.scrollY;
-  const y = Math.max(0, Math.round(cardTop + rel * rect.height));
-  window.scrollTo(0, y);
+  // How far the page has to move for that card to sit where it sat before.
+  // Worked out as a NUDGE from where things are now, rather than as a position
+  // from the top of the document: in 3x2 the storyboard scrolls inside a column,
+  // not in the window, so a document position moved nothing at all while the
+  // rebuild quietly shifted the column — which is precisely what was happening.
+  const move = Math.round(rect.top + rel * rect.height);
+  if (Math.abs(move) < 2) return;
+  const scroller = scrollerAround(target);
+  if (scroller) scroller.scrollTop += move; else window.scrollBy(0, move);
 }
 
 
@@ -521,14 +547,27 @@ export function captureFrameAnchor(): { fid: string; rel: number } | null {
  * height, so keeping the old position within the card lands inconsistently —
  * centring the same frame is what reads as "staying where I was".
  */
+/**
+ * PUT THE PAGE BACK WHERE IT WAS, NOT IN THE MIDDLE (#363).
+ *
+ * captureFrameAnchor carefully measures WHERE on the screen the frame was — and
+ * this then threw that measurement away and centred it. So after every sync the
+ * page jumped, and since a photo or a drawing causes a push and a pull, it
+ * looked as though photographing a card scrolled the page. Roman reported it
+ * three times in three different words before I looked here.
+ */
 export function restoreFrameAnchor(a: { fid: string; rel: number } | null): void {
   if (!a) return;
-  scrollAnchorTo(a.fid);
+  scrollAnchorToRel(a.fid, a.rel);
 }
 
 
 export function scrollAnchorTo(fid: string | number | null): void {
   if (!fid) return;
+  // SAY WHO MOVED THE PAGE (#363), the same way the app says who changed the
+  // view. Roman reports the page jumping to the middle after a photo and after
+  // a drawing; three readings of the code have each blamed the wrong caller.
+  sayWhoScrolled(`centre on ${fid}`);
   // Uses the shared lookup, which picks the column that is actually visible.
   // This used to carry its own copy that always looked in the main column, so
   // any layout without the main strip silently failed to anchor.
