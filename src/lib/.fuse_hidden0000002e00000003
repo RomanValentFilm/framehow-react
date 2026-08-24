@@ -299,23 +299,6 @@ export function injectScribbleButton(): void {
 
 // ─── Full-page canvas overlay ────────────────────────────────────────
 
-/**
- * THE PEN SAYS WHEN IT IS DOWN (#362, part of).
- *
- * Only the saying, for now. Nothing acts on it here: holding the page redraw back
- * while a stroke is in progress was tried and taken out again, because the layer
- * ended up not being rebuilt at all and the test said so. The fault is real and
- * caught — see the test marked as still open — but the fix is not, so it is not
- * shipped.
- *
- * The flag itself is worth setting: the version-drawing canvas has honoured it
- * for a while, so a picture finishing its decode no longer repaints over a
- * scribble stroke in progress.
- */
-function penIsDown(down: boolean): void {
-  useStore.setState({ drawingInProgress: down });
-}
-
 export function attachScribbleOverlays(): void {
   const container = document.querySelector('.grid3x2-container') as HTMLElement;
   if (!container) return;
@@ -700,7 +683,6 @@ function wirePageDrawing(cvs: HTMLCanvasElement): void {
         }
       }
       drawing = false;
-      penIsDown(false);
       raw = [];
       renderAllScribbles(cvs);
       return;
@@ -737,7 +719,6 @@ function wirePageDrawing(cvs: HTMLCanvasElement): void {
     }
 
     drawing = false;
-    penIsDown(false);
     committed = false;
     raw = [];
     renderAllScribbles(cvs);

@@ -21,6 +21,7 @@ import { ensureStripVersions, getStripVersions } from './helpers';
 import { openFullscreen, closeFullscreen } from './fullscreen';
 import { setViewMode } from './view';
 import { openSortEditView } from './sortOrder';
+import { toggleScribbleMode, attachScribbleOverlays } from './scribble';
 import { uniqueId } from './ids';
 import { startFromScratch } from './files';
 import { deleteFrameForGood } from './actions';
@@ -137,6 +138,33 @@ export interface TestDoor {
    *  sees the flash: watch it across a sync, and it must never be blank. */
   cardIsBlank(frameIndex: number, strip?: StripType, versionIndex?: number): boolean;
 
+  // --- scribble (#361) -----------------------------------------------------
+
+  /** Turn the pencil on or off, as the toolbar button does. */
+  setScribbleMode(on: boolean): void;
+
+  /** Draw one scribble stroke across a card, with real pointer events on the
+   *  real overlay. Returns how many scribble strokes that frame then holds. */
+  scribbleOn(frameIndex: number): number;
+
+  /** The same stroke, but held open: put the pen down and move it, and stop.
+   *  Whatever happens next — a sync, a redraw — happens with the pen down, which
+   *  is the state nothing in the app currently knows about. */
+  scribbleStart(frameIndex: number): void;
+  /** Lift the pen. Returns how many strokes the frame then holds. */
+  scribbleEnd(frameIndex: number): number;
+
+  /** How many scribble strokes a frame holds. */
+  scribbleCount(frameIndex: number): number;
+
+  /** A quick small mark — a tick, a short dash — made with a finger. Fast, and
+   *  it never gets far from where it started, which is what the app measures. */
+  scribbleQuickTick(frameIndex: number): void;
+
+  /** How far the frame's last scribble stroke travels, as a share of the card.
+   *  A real mark has a span. A dot has none. */
+  lastScribbleSpan(frameIndex: number): number;
+
   /** Send whatever is unsent, now, without waiting for the debounce. */
   push(): Promise<void>;
   /** What is on screen, in order, as plain facts a test can compare. */
@@ -155,6 +183,33 @@ export interface TestDoor {
       frames: string[];
       breaks: Array<{ id: string; text: string; position: number }>;
     }>;
+  };
+}
+
+/** Where to put the pen for a given frame's card, on whichever scribble layer is
+ *  on the page RIGHT NOW. Looked up fresh every time on purpose (#361). */
+function scribbleAim(frameIndex: number): {
+  cvs: HTMLCanvasElement;
+  at: (dx: number, dy: number) => PointerEventInit;
+} {
+  const f = useStore.getState().frames[frameIndex];
+  if (!f) throw new Error(`no frame at ${frameIndex}`);
+  const card = document.querySelector(`.grid3x2-card-wrap[data-g3fid="${f.id}"]`) as HTMLElement | null;
+  if (!card) throw new Error(`frame ${frameIndex} has no card in the 3x2 grid — `
+    + `the pencil only exists there`);
+  const cvs = document.querySelector('.scribble-page-canvas') as HTMLCanvasElement | null;
+  if (!cvs) throw new Error('the scribble layer is not on the page');
+  const r = card.getBoundingClientRect();
+  return {
+    cvs,
+    at: (dx: number, dy: number) => ({
+      clientX: r.left + r.width * dx,
+      clientY: r.top + r.height * dy,
+      bubbles: true,
+      pointerId: 1,
+      pointerType: 'pen',
+      isPrimary: true,
+    }),
   };
 }
 
@@ -446,6 +501,86 @@ export function installTestDoor(): void {
       const px = ctx.getImageData(0, 0, cvs.width, cvs.height).data;
       for (let i = 3; i < px.length; i += 4) if (px[i] !== 0) return false;
       return true;
+    },
+
+    setScribbleMode(on) {
+      if (useStore.getState().scribbleMode !== on) toggleScribbleMode();
+      attachScribbleOverlays();
+    },
+
+    scribbleOn(frameIndex) {
+      const { cvs, at } = scribbleAim(frameIndex);
+      cvs.dispatchEvent(new PointerEvent('pointerdown', at(0.3, 0.3)));
+      cvs.dispatchEvent(new PointerEvent('pointermove', at(0.4, 0.4)));
+      cvs.dispatchEvent(new PointerEvent('pointermove', at(0.55, 0.5)));
+      cvs.dispatchEvent(new PointerEvent('pointermove', at(0.7, 0.6)));
+      cvs.dispatchEvent(new PointerEvent('pointerup', at(0.7, 0.6)));
+
+      return useStore.getState().frames[frameIndex]?.scribbles?.length ?? 0;
+    },
+
+    scribbleStart(frameIndex) {
+      const { cvs, at } = scribbleAim(frameIndex);
+      cvs.dispatchEvent(new PointerEvent('pointerdown', at(0.3, 0.3)));
+      cvs.dispatchEvent(new PointerEvent('pointermove', at(0.4, 0.4)));
+      cvs.dispatchEvent(new PointerEvent('pointermove', at(0.5, 0.45)));
+    },
+
+    scribbleEnd(frameIndex) {
+      // Deliberately asks the page for the layer AGAIN, rather than remembering
+      // the one the stroke began on. If the app threw that canvas away and made
+      // a new one, this is a pen coming up on a canvas that never saw it go
+      // down — which is exactly what happens to a person's hand.
+      const { cvs, at } = scribbleAim(frameIndex);
+      cvs.dispatchEvent(new PointerEvent('pointermove', at(0.65, 0.55)));
+      cvs.dispatchEvent(new PointerEvent('pointerup', at(0.65, 0.55)));
+      return useStore.getState().frames[frameIndex]?.scribbles?.length ?? 0;
+    },
+
+    scribbleQuickTick(frameIndex) {
+      // A FINGER, on purpose: a finger is allowed 400ms and 30 pixels before the
+      // app calls it a tap. That is the generous branch, and the dangerous one.
+      const f = useStore.getState().frames[frameIndex];
+      if (!f) throw new Error(`no frame at ${frameIndex}`);
+      const card = document.querySelector(`.grid3x2-card-wrap[data-g3fid="${f.id}"]`) as HTMLElement | null;
+      if (!card) throw new Error(`frame ${frameIndex} has no card in the 3x2 grid`);
+      const cvs = document.querySelector('.scribble-page-canvas') as HTMLCanvasElement | null;
+      if (!cvs) throw new Error('the scribble layer is not on the page');
+      const r = card.getBoundingClientRect();
+      // A tick: down, across and down by about twenty pixels, back up a little.
+      // Never more than thirty from the start, and over in a few milliseconds.
+      const px = (x: number, y: number) => ({
+        clientX: r.left + r.width * 0.4 + x,
+        clientY: r.top + r.height * 0.4 + y,
+        bubbles: true, pointerId: 1, pointerType: 'touch', isPrimary: true,
+      });
+      cvs.dispatchEvent(new PointerEvent('pointerdown', px(0, 0)));
+      cvs.dispatchEvent(new PointerEvent('pointermove', px(6, 8)));
+      cvs.dispatchEvent(new PointerEvent('pointermove', px(12, 16)));
+      cvs.dispatchEvent(new PointerEvent('pointermove', px(18, 6)));
+      cvs.dispatchEvent(new PointerEvent('pointermove', px(22, -4)));
+      cvs.dispatchEvent(new PointerEvent('pointerup', px(22, -4)));
+    },
+
+    lastScribbleSpan(frameIndex) {
+      const f = useStore.getState().frames[frameIndex];
+      if (!f) throw new Error(`no frame at ${frameIndex}`);
+      const all = f.scribbles ?? [];
+      const last = all[all.length - 1];
+      if (!last || !last.points || last.points.length === 0) return 0;
+      let far = 0;
+      const a = last.points[0];
+      for (const p of last.points) {
+        const dx = p.x - a.x, dy = p.y - a.y;
+        far = Math.max(far, Math.sqrt(dx * dx + dy * dy));
+      }
+      return far;
+    },
+
+    scribbleCount(frameIndex) {
+      const f = useStore.getState().frames[frameIndex];
+      if (!f) throw new Error(`no frame at ${frameIndex}`);
+      return f.scribbles?.length ?? 0;
     },
 
     async push() { await flushSyncNow(); },

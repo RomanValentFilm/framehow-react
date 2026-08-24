@@ -268,6 +268,56 @@ export class Device {
       [frameIndex, strip, versionIndex] as [number, string, number]);
   }
 
+  /** Turn the pencil on or off. */
+  async setScribbleMode(on: boolean): Promise<void> {
+    say(`${this.name}: pencil ${on ? 'on' : 'off'}`);
+    await this.page.evaluate((o) =>
+      (window as never as { __fh_test: { setScribbleMode(o: boolean): void } })
+        .__fh_test.setScribbleMode(o as boolean), on);
+  }
+
+  /** One scribble stroke across a card. Returns how many that frame then holds. */
+  scribble(frameIndex: number): Promise<number> {
+    return this.page.evaluate((i) =>
+      (window as never as { __fh_test: { scribbleOn(i: number): number } })
+        .__fh_test.scribbleOn(i as number), frameIndex);
+  }
+
+  /** Put the pen down and leave it down. */
+  async scribbleStart(frameIndex: number): Promise<void> {
+    await this.page.evaluate((i) =>
+      (window as never as { __fh_test: { scribbleStart(i: number): void } })
+        .__fh_test.scribbleStart(i as number), frameIndex);
+  }
+
+  /** Lift the pen. Returns how many strokes the frame then holds. */
+  scribbleEnd(frameIndex: number): Promise<number> {
+    return this.page.evaluate((i) =>
+      (window as never as { __fh_test: { scribbleEnd(i: number): number } })
+        .__fh_test.scribbleEnd(i as number), frameIndex);
+  }
+
+  /** A quick small mark with a finger — a tick, a short dash. */
+  async scribbleQuickTick(frameIndex: number): Promise<void> {
+    await this.page.evaluate((i) =>
+      (window as never as { __fh_test: { scribbleQuickTick(i: number): void } })
+        .__fh_test.scribbleQuickTick(i as number), frameIndex);
+  }
+
+  /** How far the frame's last scribble stroke travels. A dot travels nowhere. */
+  lastScribbleSpan(frameIndex: number): Promise<number> {
+    return this.page.evaluate((i) =>
+      (window as never as { __fh_test: { lastScribbleSpan(i: number): number } })
+        .__fh_test.lastScribbleSpan(i as number), frameIndex);
+  }
+
+  /** How many scribble strokes a frame holds. */
+  scribbleCount(frameIndex: number): Promise<number> {
+    return this.page.evaluate((i) =>
+      (window as never as { __fh_test: { scribbleCount(i: number): number } })
+        .__fh_test.scribbleCount(i as number), frameIndex);
+  }
+
   /** Press a view button. */
   async setView(mode: string): Promise<void> {
     say(`${this.name}: switching to ${mode}`);

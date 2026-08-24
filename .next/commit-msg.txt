@@ -1,47 +1,57 @@
-v4.9.077 - the pictures stop blinking (#360)
+v4.9.078 - a quick little mark stays a mark (#361)
 
-#360 Roman: "a short flashing of all content after each sync… it's distracting."
-     He assumed the sync was reloading everything. The sync was innocent; it only
-     triggers the redraw that showed the fault.
+#361 Roman: "when I'm in scribble mode and paint really quick, sometimes a stroke
+     I draw disappears immediately after I make it. Is it because I draw too
+     fast?" And then, better than my own guess: "could it have something to do
+     with what we introduced for drawing a dot?"
 
-     TWO CAUSES, and the first one is the big one:
+     It could, and it did.
 
-     A main frame holding a picture is not drawn on a canvas at all - it is a
-     plain picture element, and every one of them carried loading="lazy". So the
-     browser had been told it may put off fetching that picture until it feels
-     like it. Every redraw threw those elements away and made new ones, and every
-     picture on screen was asked for again, lazily. That is the flash, in every
-     view - strips, 3x2, M+2, M+3 - and under the scribble layer too, which has
-     no pictures of its own and was simply sitting on top of one that blanked.
-     They are no longer lazy, and are decoded before being shown rather than
-     after.
+     When the pen comes up the app decides: tap, or line? A tap becomes a dot. It
+     decided with two tests - under 400ms, and never more than THIRTY pixels from
+     where it started. Not the length of the line drawn: how far it ever got from
+     its beginning. So a quick tick, a small circle, a short dash curving back on
+     itself was called a tap. The mark was thrown away and a dot put at the start
+     point. A stroke vanishing the instant it is made, and only when you are
+     quick, because a slower mark passed the time test. A finger had it worst: a
+     finger was allowed thirty pixels, a pencil eight.
 
-     The canvases had their own version of the same mistake. Every picture was
-     decoded from scratch each time: the canvas was wiped immediately and painted
-     only once the picture had decoded. A picture is now decoded once and kept,
-     so a card is painted the instant it is built. Only a picture this device has
-     never shown still waits - and then the canvas is left alone until it is
-     ready, rather than being wiped first.
+     Speed says nothing about what a person meant. Movement does. A tap is now a
+     finger that did not move - eight pixels of wobble, the same for a finger as
+     for a pencil - and how long it rested there does not matter. Anything that
+     travelled is a mark and is kept whole, beginning and end.
 
-     The store already holds every picture in the project, so what is kept here
-     is the decoded copy, not a second copy of the data. 150 of them, oldest out.
+#362 NOT SHIPPED, AND DELIBERATELY SO.
 
-A TEST THAT CAN SEE A FLASH
+     A second, separate fault, found while looking for the first and caught by a
+     test of its own: every time the 3x2 page is drawn the app throws the whole
+     scribble layer away and rebuilds it, so a sync arriving mid-stroke destroys
+     the canvas under the hand.
 
-It puts a picture on a card, then watches that card twenty-five times a second
-for twelve seconds while the other device works, and fails if the card is ever
-caught showing nothing. It handles both kinds - the canvas and the picture
-element.
+     Three attempts at the fix, three failures - holding the layer, then holding
+     the page, then holding the whole redraw - each leaving the layer not rebuilt
+     at all. Taken out rather than poked at further. The test stays in the file,
+     marked as still open, so it is not forgotten.
 
-Honest note: unlike the other new tests, this one has never failed for me, so its
-teeth are unproven. It WOULD catch the lazy pictures - a fresh lazy element
-reports itself as not loaded, which is exactly what it looks for - but I did not
-back the fix out to prove it.
+     One piece kept: the scribble layer now SAYS when the pen is down. Nothing
+     acts on it for the page, but the version-drawing canvas has honoured that
+     flag for a while, so a picture finishing its decode can no longer repaint
+     over a stroke in progress.
 
-Three wrong turns getting there, all mine, all found by the test rather than by
-Roman: a base64 picture I typed from memory that was not a valid picture at all;
-an on-screen check that rejects anything inside a fixed container, which is how
-the grid sits; and putting the picture on a version while the card was showing
-the main frame.
+THE SIMULATOR CAN SCRIBBLE
 
-20 of 20 pass.
+Real pointer events on the real overlay: a stroke, a quick tick with a finger, a
+pen held down across a sync, and readers for how many strokes a frame holds and
+how far the last one travelled. Three tests, two green.
+
+Two wrong reproductions on the way, both found by the test rather than by Roman:
+a dozen strokes with no pause at all (they all land before a single push starts,
+so nothing is ever in flight), and the other device sitting idle (with nobody
+else working every pull comes back empty and nothing is ever rebuilt). Both are
+now guarded against in the test itself, so it cannot pass for the wrong reason.
+
+21 of 22 pass. The one failure is the random day, which now disagrees on two
+different seeds - 985927 and 511151 - in the same way: after one device is away
+while the other rearranges, they end with the frames in a different order and one
+frame carrying older writing. Repeatable, and older than any of today's work.
+That is the next hunt.
