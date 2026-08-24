@@ -109,6 +109,79 @@ test('after drawing in the big view, the card still shows what you drew on', asy
   await desktop.close();
 });
 
+// AND IT STILL SHOWS IT AFTER A SYNC LANDS (#368).
+//
+// The test above closes the big view and looks straight away. This one lets the
+// other device's work arrive first, so a real rebuild happens while the card is
+// showing the version that was just drawn on.
+//
+// Found by switching #366 on — touch a device and it catches up — which made an
+// extra pull land in exactly this moment and took the card back to the main
+// frame. The rule that keeps the card on its version does not survive a rebuild;
+// it only survives NOT being rebuilt, which is a different thing, and #366
+// cannot be shipped until this holds.
+// STILL OPEN, AND NOT RUNNING. It passed once when first written and has failed
+// every time since — six for six — with the app's code identical to what is
+// deployed. So the symptom is real and mine to find; it is not caused by any of
+// the changes around it.
+//
+// What is known: the app's own line saying a rebuild moved a card off what it
+// was showing never appears, in any run, either way round. Nothing moves the
+// card. It is never put there.
+test('the card still shows what you drew on after a sync lands', async ({ browser }) => {
+  const { token } = await freshAccount();
+  const desktop = await Device.open(browser, 'desktop', token);
+  const tablet = await Device.open(browser, 'tablet', token, true);
+
+  const madeId = await desktop.newProject('Drawing then a sync', 3);
+  await tablet.openProject(madeId!);
+  await Device.waitUntilTheyAgree(desktop, tablet);
+  await desktop.settle();
+  await tablet.settle();
+
+  await desktop.setView('grid3x2');
+  expect(await desktop.draw(0), 'the stroke never reached the project').toBe(1);
+  expect(await desktop.cardShowing(0), 'the card was not showing the version even '
+    + 'before the sync — that is the other test\'s job').toBe('ver 1');
+
+  say('tablet: working, so a real rebuild reaches the desktop');
+  const mark = await desktop.mark();
+  await tablet.writeUnder(2, 'the tablet was busy');
+  await tablet.settle();
+
+  // WATCH FOR THE MOMENT IT FLIPS, and keep the log from right then. Three
+  // explanations have now been ruled out by tracing — the close is innocent, the
+  // rebuild says it never moved the card — so the thing to do is catch it in the
+  // act rather than name another suspect.
+  let flippedAt = '';
+  const watching = (async () => {
+    const until = Date.now() + 20_000;
+    while (Date.now() < until) {
+      if (await desktop.cardShowing(0) !== 'ver 1') {
+        flippedAt = (await desktop.log()).slice(0, 16).map((l) => '    ' + l).join('\n');
+        return;
+      }
+      await desktop.page.waitForTimeout(150);
+    }
+  })();
+  await desktop.waitForLogAfter(mark, 'arrangement arrived', 40_000);
+  await desktop.page.waitForTimeout(1500);
+  await watching;
+
+  const closing = (await desktop.log()).filter((l) => l.includes('closing:'));
+  expect(await desktop.cardShowing(0), 'A SYNC TOOK THE CARD OFF THE VERSION YOU '
+    + 'DREW ON. The drawing is safe; the card went back to the main frame when '
+    + 'the other device\'s work arrived, which on screen is the drawing '
+    + 'vanishing.\n  what the app held as it closed:\n'
+    + (closing.length ? closing.map((l) => '    ' + l).join('\n') : '    (it never said)')
+    + '\n  and what it was saying at the very moment the card flipped:\n'
+    + (flippedAt || '    (it never flipped while being watched)'))
+    .toBe('ver 1');
+
+  await desktop.close();
+  await tablet.close();
+});
+
 test('a drawing survives the other device working at the same time', async ({ browser }) => {
   const { token } = await freshAccount();
   const desktop = await Device.open(browser, 'desktop', token);

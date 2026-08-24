@@ -7,6 +7,7 @@ import { drawToolbarHTML, starHTML, toggleStar, getStripVersions, stripTabPrefix
 import { restoreCanvas, restoreMainCanvas, setupDrawing, setupMainDrawing, snapshotFrame } from './drawing';
 import { resetToolbarState } from './view';
 import { stampChangedContent } from './changeStamps';
+import { trace } from './syncTrace';
 import { flushSyncNow, markFrameDirty } from './currentProject';
 import { openCamera } from './camera';
 import { openTextModal, showVersionChoice } from './modals';
@@ -752,6 +753,24 @@ export function closeFullscreen(): void {
   if (!overlay) return;
   if ((overlay as any)._closing) return; // prevent double-close during animation
 
+  // #368, UNSOLVED, AND WRITTEN DOWN HERE SO THE NEXT ATTEMPT DOES NOT START
+  // FROM NOTHING.
+  //
+  // With a device that catches up the moment it is touched (#366), a card can
+  // stop showing the version just drawn on. Two explanations were tried and both
+  // are wrong:
+  //
+  //   - reading the state fresh inside doRemove instead of at the top: cures the
+  //     single-device case and breaks the two-device one
+  //   - leaving it as it is: cures the two-device case and breaks the single one
+  //
+  // In BOTH directions the app's own line — "cards moved off what they were
+  // showing", added in accountFlow for this — never appears. So no rebuild ever
+  // moves the card. It is never put there in the first place, and which of the
+  // two ways it fails depends on when the sync lands relative to this animation.
+  //
+  // Next attempt should start by tracing what fsOverlayActive and crossCompare
+  // actually hold at the moment doRemove runs, rather than reasoning about it.
   const s = state();
   const fsInfo = s.fsOverlayActive;
 
@@ -779,13 +798,51 @@ export function closeFullscreen(): void {
     //   - the big view was opened on the MAIN frame, so there is no version
     //   - it was opened on a strip the 3x2 card does not show, so the number
     //     would point at somebody else's version
-    const inGridView = s.currentViewMode === 'grid3x2'
-      || s.currentViewMode === 'grid4'
-      || s.currentViewMode === 'overview';
-    if (fsInfo && inGridView) {
-      const keepIt = s.currentViewMode === 'grid3x2' && fsInfo.origin === 'ver';
-      s.crossCompare[fsInfo.fid] = keepIt ? fsInfo.vi : -1;
-      if (keepIt) s.crossCompareStrip[fsInfo.fid] = 'ver';
+    // WRITTEN THROUGH THE STORE, NOT INTO A COPY OF IT (#368).
+    //
+    // Closing zooms shut over about a fifth of a second and this runs at the end
+    // of it. It used to reach into the map it had picked up when the close
+    // STARTED and change it in place. Anything that replaces that map in
+    // between — a sync rebuilding the project, and there are others — leaves the
+    // write landing on a copy nothing reads, so the card falls back to the main
+    // frame and the drawing looks lost.
+    //
+    // Four explanations were traced and discarded before this: the close sets
+    // the right value, the project had not been replaced at that instant, the
+    // rebuild never moves a card, and by the last moment before the rebuild the
+    // card is already back on main. All of them are consistent with the write
+    // going somewhere nobody reads.
+    //
+    // Taking the state fresh here is not enough either — it can be replaced a
+    // millisecond later. Going through the store is the only version of this
+    // that cannot be raced.
+    const nowInGrid = () => {
+      const v = state().currentViewMode;
+      return v === 'grid3x2' || v === 'grid4' || v === 'overview';
+    };
+    if (fsInfo && nowInGrid()) {
+      const keepIt = state().currentViewMode === 'grid3x2' && fsInfo.origin === 'ver';
+      useStore.setState((prev) => {
+        const cc = { ...(prev as never as { crossCompare: Record<number, number> }).crossCompare };
+        const ccStrip = { ...(prev as never as { crossCompareStrip: Record<number, string> }).crossCompareStrip };
+        cc[fsInfo.fid] = keepIt ? fsInfo.vi : -1;
+        if (keepIt) ccStrip[fsInfo.fid] = 'ver';
+        const strips = { ...(prev as never as { stripCrossCompare: Record<string, unknown> }).stripCrossCompare, ver: cc };
+        return { crossCompare: cc, crossCompareStrip: ccStrip, stripCrossCompare: strips } as never;
+      });
+    }
+    // WHAT WAS ACTUALLY TRUE AT THIS INSTANT (#368).
+    //
+    // Two explanations for the card falling back to the main frame, both wrong,
+    // both reasoned rather than measured. So: say what is in hand at the moment
+    // the decision is made, and whether it survived being written down.
+    {
+      const st = state();
+      const live = fsInfo ? st.crossCompare[fsInfo.fid] ?? -1 : -1;
+      const sameMaps = st.crossCompare === s.crossCompare;
+      trace(`closing: frame ${fsInfo?.fid ?? '?'} version ${fsInfo?.vi ?? '?'} `
+        + `from ${fsInfo?.origin ?? '?'} · view ${s.currentViewMode} · `
+        + `card now shows ${live} · maps still the same: ${sameMaps ? 'yes' : 'NO — replaced under us'}`);
     }
     document.removeEventListener('keydown', (overlay as any)._escHandler);
     if ((overlay as any)._resizeHandler) window.removeEventListener('resize', (overlay as any)._resizeHandler);

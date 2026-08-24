@@ -63,7 +63,7 @@ export interface Setup {
 
 /** 12-colour palette for setups. */
 /** App version — bump before every deploy. */
-export const APP_VERSION = 'v4.9.080';
+export const APP_VERSION = 'v4.9.081';
 
 /** Free-text fields printed in the header of every exported page. */
 export interface ExportMeta {

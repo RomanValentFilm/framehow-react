@@ -3010,6 +3010,57 @@ async function applyCloudTreeToStore(
   for (const [k, v] of Object.entries(wantedCC.ver)) if (v !== undefined) verCC[+k] = v;
   for (const [k, v] of Object.entries(wantedCC.floor)) if (v !== undefined) floorCC[+k] = v;
   for (const [k, v] of Object.entries(wantedCC.refs)) if (v !== undefined) refsCC[+k] = v;
+  // WHAT THE PERSON DID WHILE WE WERE REBUILDING IS NEWER THAN OUR NOTES (#368).
+  //
+  // Which version each card is showing was written down when this rebuild
+  // STARTED. Between then and now the person can have finished something — and
+  // the one that bit was closing the big view, which zooms shut over a fifth of
+  // a second and only then puts the card on the version just drawn on. The
+  // sequence was: sync starts and notes "showing the main frame" (true at that
+  // instant), the close finishes and sets the version, the rebuild lands and
+  // faithfully restores the note. The drawing was safe; the card was not.
+  //
+  // Traced rather than reasoned this time: at the moment of closing the app said
+  // "card now shows 0 · maps still the same: yes". The close was innocent.
+  //
+  // So: anything that changed while we were working is taken as it is now.
+  {
+    const live = state().stripCrossCompare;
+    const seen: string[] = [];
+    for (const [sid, was] of viewedBefore) {
+      const localId = serverToLocalFrame.get(sid);
+      if (localId == null) { seen.push(`${sid.slice(0, 6)}: no local frame`); continue; }
+      for (const strip of ['ver', 'floor', 'refs'] as const) {
+        const nowOnScreen = live[strip]?.[localId] ?? -1;
+        if (strip === 'ver') {
+          seen.push(`${sid.slice(0, 6)}→${localId}: noted ${was.cc.ver}, on screen ${nowOnScreen}`);
+        }
+        if (nowOnScreen !== was.cc[strip] && nowOnScreen >= 0) {
+          wantedCC[strip][localId] = nowOnScreen;
+        }
+      }
+    }
+    if (seen.length > 0) trace(`    cards, as noted vs as they are: ${seen.join(' | ')}`);
+  }
+
+  // SAY WHEN A REBUILD CHANGES WHAT A CARD IS SHOWING (#368).
+  //
+  // "The drawing disappeared" has meant four different things this week, and
+  // every one of them was really a card quietly going back to the main frame.
+  // The app never said so, which is why each took a day. Now it does.
+  {
+    const wentBack: string[] = [];
+    for (const [sid, was] of viewedBefore) {
+      const localId = serverToLocalFrame.get(sid);
+      if (localId == null) continue;
+      const now = verCC[localId] ?? -1;
+      if (was.cc.ver !== now) wentBack.push(`${sid.slice(0, 6)}: ${was.cc.ver} → ${now}`);
+    }
+    if (wentBack.length > 0) {
+      trace(`    cards moved off what they were showing: ${wentBack.join(', ')}`);
+    }
+  }
+
   const verPFS: Record<number, any> = {};
   const floorPFS: Record<number, any> = {};
   const refsPFS: Record<number, any> = {};
@@ -3855,12 +3906,31 @@ function startHeartbeatSender(): void {
   // scrolling showed you yesterday for a few seconds, and a desktop sitting
   // behind another window heard nothing at all until it was clicked — which is
   // exactly how a setup made on one device appeared to be lost on the other.
-  // NOT SHIPPED YET. Asking the server the instant a quiet device is touched is
-  // right, and it is what Roman asked for. But switched on, it broke two things
-  // the suite had proven: a card stopped showing the version just drawn on, and
-  // a device stopped taking the other's writing in time. The extra pull is
-  // landing in moments the app is not ready for, and that is worth understanding
-  // before it ships rather than after.
+  // TOUCH IT AND IT CATCHES UP (#366).
+  //
+  // Roman's rule: a device nobody is looking at has no reason to be kept up to
+  // date — but the moment somebody touches it, or just starts scrolling, it
+  // should catch up. No button, no particular action.
+  //
+  // It used to ask only on the next beat, up to five seconds away, and only if
+  // the window already had focus. So a desktop sitting behind another window
+  // heard nothing at all until it was clicked, which is exactly how a setup made
+  // on one device appeared to be lost on the other.
+  //
+  // STILL NOT SWITCHED ON, and now for a second reason.
+  //
+  // #368 was the first blocker and is fixed. But with this on, one test fails
+  // every single time and passes every time without it: two devices, one in a
+  // shooting order, and the desktop never takes the tablet's writing. Something
+  // about asking the instant a device is touched makes it SLOWER to hear, which
+  // is the opposite of the intent and is not understood.
+  //
+  // Runs 1, 15, 16 and 17 fail it; runs 2 and 14 pass without it. That is a
+  // clear enough signal to leave it out until the reason is known.
+  //
+  //   const wasQuietFor = Date.now() - _lastUserActivity;
+  //   _lastUserActivity = Date.now();
+  //   if (wasQuietFor > HEARTBEAT_STALE_MS) void sendHeartbeat();
   const onActivity = () => { _lastUserActivity = Date.now(); };
   document.addEventListener('mousedown', onActivity, true);
   document.addEventListener('touchstart', onActivity, true);

@@ -22,6 +22,7 @@ import { openFullscreen, closeFullscreen } from './fullscreen';
 import { setViewMode } from './view';
 import { openSortEditView } from './sortOrder';
 import { toggleScribbleMode, attachScribbleOverlays } from './scribble';
+import { trace } from './syncTrace';
 import { uniqueId } from './ids';
 import { startFromScratch } from './files';
 import { deleteFrameForGood } from './actions';
@@ -260,8 +261,50 @@ function editOrder(orderIndex: number, change: (o: SortOrder) => SortOrder): voi
   (window as never as { __fh_renderAll?: () => void }).__fh_renderAll?.();
 }
 
+/**
+ * WATCH WHO SENDS A CARD BACK TO THE MAIN FRAME (#368).
+ *
+ * Only with the test door open, so a real user never has this.
+ *
+ * Four explanations have been ruled out by tracing: the close sets the card
+ * correctly and the project has not been replaced; the rebuild says it never
+ * moved a card; and at the last instant before the rebuild the card is ALREADY
+ * back on the main frame. So the write happens somewhere nobody has looked, and
+ * naming suspects has cost four runs.
+ *
+ * This wraps the map itself and says who wrote what, from where. The map is
+ * replaced wholesale on every pull, so it is re-wrapped whenever that happens.
+ */
+function watchWhoMovesCards(): void {
+  let wrapped: object | null = null;
+  const wrap = () => {
+    const s = useStore.getState() as unknown as { crossCompare: Record<number, number> };
+    const live = s.crossCompare;
+    if (!live || live === wrapped) return;
+    const spy = new Proxy(live, {
+      set(target, prop, value) {
+        const who = new Error().stack?.split('\n')[2]?.trim().replace(/^at /, '') ?? '?';
+        trace(`card ${String(prop)} → ${String(value)}   (${who.slice(0, 70)})`);
+        return Reflect.set(target, prop, value);
+      },
+    });
+    wrapped = spy;
+    useStore.setState({ crossCompare: spy, stripCrossCompare: {
+      ...(useStore.getState() as never as { stripCrossCompare: Record<string, unknown> }).stripCrossCompare,
+      ver: spy,
+    } } as never);
+  };
+  wrap();
+  setInterval(wrap, 200);
+}
+
 export function installTestDoor(): void {
   if (!on()) return;
+  // watchWhoMovesCards() is deliberately NOT called: it replaces the map it is
+  // watching, which is the very thing being investigated, so it changes the
+  // answer. It stays for the next time a card moves for no visible reason —
+  // useful, but only with that in mind.
+  void watchWhoMovesCards;
 
   const door: TestDoor = {
     async newProject(name, count) {
