@@ -1,49 +1,65 @@
-v4.9.079 - the page stays where you put it (#363)
+v4.9.080 - the safety net, not the app (#364, #365, #366, #367)
 
-#363 Roman: "when taking a photo in 3x2 the fullscreen returns to that frame and
-     pushes/scrolls the frame to the middle... also in the strip views. Also when
-     I draw to the pictures, then they jump/scroll to the middle."
+NOTHING IN THIS CHANGES WHAT THE APP DOES. #363 - the page staying where you put
+it - is already on the devices. What follows is what was learned chasing the
+random day, the tests that now hold it, and two places where the app was too
+quiet to be diagnosed.
 
-     Not the photo. Not the drawing. Not the sync either, which is where I looked
-     twice and "fixed" twice while the page kept moving by exactly the same 119
-     pixels.
+WHAT WAS CHASED, AND WHAT IT TURNED OUT TO BE
 
-     Emptying a column to rebuild it throws the scroll position away, and nothing
-     put it back. Every redraw of 3x2 dropped the page by about a card. A photo
-     causes a redraw, so it looked as though the photo did it.
+#364 The random day had failed on three seeds, always the same shape: after one
+     device had been away, the two ended with the frames in different orders.
+     Written down small - two devices rearranging while apart, then both writing
+     AND rearranging and coming back together - it passes every time.
 
-     The redraw now writes down where everything was before it empties anything,
-     and puts it back afterwards - repeatedly, as the layout settles, because the
-     cards do not have their final heights at first and the browser quietly
-     clamps the position to whatever the page can hold at that instant. It stops
-     the moment the person scrolls themselves, so it can never fight them.
+     Then the day was given a watching mode (FH_WATCH=1) that stops at the first
+     step the two will not agree on. It stopped at step three, and a test doing
+     exactly what step three does passes on its own. The window was too short.
+     With a fair one, the frames converge at every step of the day.
 
-     And the pull no longer touches the page position at all. It used to put you
-     "back" by CENTRING the frame nearest the middle - which moved the page every
-     single time, even though the code carefully measured where the frame really
-     was and then threw that measurement away. A redraw that keeps your place
-     needs no help; two mechanisms only fought each other.
+     So the frame orders were never wrong. My watcher was.
 
-HOW IT WAS ACTUALLY FOUND, after three wrong theories
+#365 With the frames cleared, the day failed on a SETUP instead: one device had
+     two of the three made, the other had one. Written down small - one device
+     makes a setup while the other is away - it failed every time.
 
-  - the test was made to measure at TWO moments, before and after the local
-    redraw. 616, then 471, with no sync involved: that killed the sync theory
-  - the app was made to SAY OUT LOUD who moves the page and from where, the same
-    way it already says who changes the view
-  - and the test was made to name what it was measuring, which answered "html" -
-    the window scrolls, not the columns, so my first fix had been faithfully
-    restoring columns that never scroll
+     And the setup was not lost either. The device that had been away simply
+     stopped asking. The app listens only while its window is in front AND it has
+     been touched in the last ten seconds, which is deliberate and reasonable -
+     but a desktop sitting behind another window hears nothing at all, and to the
+     person that looks exactly like work disappearing.
 
-Roman asked, twice and fairly, whether I was guessing. The first three attempts
-were. This one is measured.
+     Two places were too quiet to tell these apart, and both now speak:
+       - a pull says WHICH settings arrived, by name. "It never came" and "it came
+         and was thrown away" are different faults and looked identical.
+       - a heartbeat that looks and finds nothing says so, once every twenty
+         seconds. A device that has gone deaf and a device with genuinely nothing
+         to fetch both said nothing at all. That cost an hour.
 
-ALSO
+#366 WRITTEN, NOT SHIPPED. Roman's rule: a device nobody is looking at has no
+     reason to be kept up to date, but the moment somebody touches it - or just
+     scrolls - it should catch up, with no button and no particular action.
 
-A test that swipes across a picture is written but not running: WebKit will not
-let a test build a touch out of nothing, and the cross-swipe listens for touches
-only. The rule is right and it is left in the file for the day we can drive a
-real finger.
+     Switched on, the setups test goes from failing after ninety seconds to
+     passing in twenty-two. It also broke two things the suite had proven: a card
+     stopped showing the version just drawn on, and a device was slower to take
+     the other's writing. The extra pull lands in moments the app is not ready
+     for. That is the next piece of work, and it is the same family as #352 and
+     #356 - a pull still touching what is in front of you. The rule goes in
+     behind it.
 
-22 of 23 pass. The one failure is the random day, which disagrees on two
-different seeds in the same way after one device is away while the other
-rearranges. Repeatable, older than any of this. Still the next hunt.
+#367 Every run has a number now. FH_RUN=<n> goes at the front of the command and
+     is written as the first line of the log, so a "zzz" can be matched to the
+     run that produced it instead of guessed at.
+
+THE SIMULATOR
+
+  - a nudge brings that window to the front first. Two browser windows cannot
+    both be in front, so nudging a background one left it correctly ignoring us
+    and made it look as though work had been lost.
+  - seven new tests: two devices rearranging apart; both writing and rearranging
+    and returning together; two writing seconds apart while online; a setup made
+    while the other is away; and the three scribble ones from #361.
+
+26 of 27 pass. The one failure is the setups test, which is precisely the one
+that needs #366 - so the split is clean and the next step is obvious.

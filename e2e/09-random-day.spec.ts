@@ -153,6 +153,35 @@ test('a random day', async ({ browser }) => {
     }
 
     await who.settle().catch(() => {});
+
+    // WHICH STEP DID THEY STOP AGREEING ON (FH_WATCH=1).
+    //
+    // The day fails at the END, which tells you the wreckage and not the moment.
+    // With this on, after every step where both devices are online, they are
+    // given a little while to agree — and the first time they will not, the run
+    // stops and names the step. Off by default: it makes the day much slower and
+    // a momentary disagreement is perfectly normal.
+    if (process.env.FH_WATCH === '1' && !away.desktop && !away.tablet) {
+      // Long enough not to cry wolf. The first try gave each step fifteen
+      // seconds and stopped at step three — and a test written to do exactly
+      // what step three does, on its own, passes. Fifteen seconds is simply not
+      // always enough when several changes are still in the air.
+      const until = Date.now() + 45_000;
+      let d = '', t = '';
+      for (;;) {
+        await desktop.nudge(); await tablet.nudge();
+        d = (await desktop.read()).frames.map((f) => `${f.label}:${f.text}`).join(' | ');
+        t = (await tablet.read()).frames.map((f) => `${f.label}:${f.text}`).join(' | ');
+        if (d === t) break;
+        if (Date.now() > until) {
+          throw new Error(`THEY STOPPED AGREEING AT STEP ${step} (${name} — ${action}).`
+            + `\n  desktop: ${d}\n  tablet:  ${t}`
+            + `\n\n  desktop log:\n${(await desktop.log()).slice(0, 20).map((l) => '    ' + l).join('\n')}`
+            + `\n\n  tablet log:\n${(await tablet.log()).slice(0, 20).map((l) => '    ' + l).join('\n')}`);
+        }
+        await desktop.page.waitForTimeout(500);
+      }
+    }
     // Nothing this device made may have gone missing on this device.
     //
     // THE ARITHMETIC USED TO BE WRONG, and it hid behind the dice: it compared

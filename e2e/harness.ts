@@ -562,7 +562,17 @@ export class Device {
 
   /** Touch the page, because the heartbeat only runs while a device is being
    *  used — the same reason a real iPad on the table stays quiet. */
+  /**
+   * A person turning to this device and touching it.
+   *
+   * BRINGS THE WINDOW TO THE FRONT FIRST (#366). The app deliberately listens
+   * only while its window has focus, which is right — a device nobody is looking
+   * at has no reason to be kept up to date. But two browser windows cannot both
+   * be in front, so a nudge that only moved the mouse left the other device deaf
+   * and made it look as though work had been lost. It had not: nobody was there.
+   */
   async nudge(): Promise<void> {
+    await this.page.bringToFront();
     await this.page.mouse.move(10 + Math.random() * 40, 10 + Math.random() * 40);
     await this.page.waitForTimeout(200);
   }

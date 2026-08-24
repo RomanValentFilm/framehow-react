@@ -15,8 +15,14 @@
 # The log lives in its OWN folder, NOT in e2e-report: playwright's html reporter
 # empties e2e-report before it writes, so the first version of this script
 # carefully saved the log and then watched playwright delete it.
+#
+# EVERY RUN HAS A NUMBER (#367). Claude puts FH_RUN=<n> at the front of the
+# command it gives you; the number is written as the first line of the log, so
+# when you say "zzz" Claude can say WHICH run it is reading and neither of you
+# has to guess whether a command was already posted.
 mkdir -p e2e-log
-npx playwright test --project=webkit "$@" 2>&1 | tee e2e-log/last-run.log | grep -v WebServer
+{ echo "=== RUN ${FH_RUN:-unnumbered} — $(date '+%H:%M:%S') — args: $* ==="; \
+  npx playwright test --project=webkit "$@" 2>&1; } | tee e2e-log/last-run.log | grep -v WebServer
 afplay /System/Library/Sounds/Glass.aiff 2>/dev/null &
 osascript -e 'display notification "Tests finished — say zzz" with title "Framehow"' 2>/dev/null
 echo

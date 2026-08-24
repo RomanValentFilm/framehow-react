@@ -3135,6 +3135,20 @@ async function applyCloudTreeToStore(
     renderTick: prev.renderTick + 1,
   }));
 
+  // SAY WHAT ARRIVED (#365).
+  //
+  // The app narrates frames in detail and settings barely at all, so a setup
+  // going missing between two devices left nothing in the log to read: no way to
+  // tell "it never came" from "it came and was thrown away". Both are faults,
+  // but they are different faults.
+  if (tree.settings && tree.settings.length > 0) {
+    trace(`    settings arrived: ${tree.settings.length} item(s) — `
+      + tree.settings.map((it) => `${it.kind}/${String(it.item_id).slice(0, 12)}`
+        + (it.deleted_at ? ' (deleted)' : '')).join(', '));
+  } else {
+    trace('    settings arrived: none');
+  }
+
   // The settings the server holds per item override what came out of the
   // metadata blob above. Items the server has never heard of are left alone,
   // so a project whose settings only exist in metadata is untouched.
@@ -3710,6 +3724,19 @@ async function sendHeartbeat(): Promise<void> {
       if (serverHasSomethingNew({ takenFromServerAt: takenFromServerAt ?? 0 } as DeviceMemory, remoteAt)) {
         trace(`heartbeat: the project changed elsewhere — pulling`);
         await tryPullFromCloud();
+      } else if (Date.now() - _lastQuietBeatTrace > 20_000) {
+        // SAY WHEN YOU LOOK AND SEE NOTHING (#365).
+        //
+        // A device that has gone deaf and a device with genuinely nothing to
+        // fetch look identical in the log: both say nothing at all. That cost a
+        // whole hunt — the desktop sat silent for a minute while the tablet's
+        // setup landed on the server four seconds after it stopped listening,
+        // and there was no way to tell which of the two was happening.
+        //
+        // Once every twenty seconds is enough to tell them apart without
+        // burying the log.
+        _lastQuietBeatTrace = Date.now();
+        trace(`heartbeat: nothing new (server ${remoteAt}, mine ${takenFromServerAt ?? 0})`);
       }
     }
 
@@ -3817,6 +3844,23 @@ function startHeartbeatSender(): void {
   // Track user activity — ANY interaction keeps the heartbeat alive so other
   // devices see the "10 sec wait" overlay. Includes scroll/wheel/mousemove
   // because scrolling through a storyboard without clicking is still "working".
+  // TOUCH IT AND IT CATCHES UP (#366).
+  //
+  // Roman's rule: a device nobody is looking at has no reason to be kept up to
+  // date — but the moment somebody touches it, or just starts scrolling, it
+  // should catch up. No button, no particular action.
+  //
+  // It used to only ever ask on the next beat, which is up to five seconds
+  // away, and only if the window already had focus. So picking up the iPad and
+  // scrolling showed you yesterday for a few seconds, and a desktop sitting
+  // behind another window heard nothing at all until it was clicked — which is
+  // exactly how a setup made on one device appeared to be lost on the other.
+  // NOT SHIPPED YET. Asking the server the instant a quiet device is touched is
+  // right, and it is what Roman asked for. But switched on, it broke two things
+  // the suite had proven: a card stopped showing the version just drawn on, and
+  // a device stopped taking the other's writing in time. The extra pull is
+  // landing in moments the app is not ready for, and that is worth understanding
+  // before it ships rather than after.
   const onActivity = () => { _lastUserActivity = Date.now(); };
   document.addEventListener('mousedown', onActivity, true);
   document.addEventListener('touchstart', onActivity, true);
@@ -4568,6 +4612,8 @@ function mergeFrames(
 }
 
 let _lastHeldBackTrace = 0;
+/** So a heartbeat that finds nothing says so, but only now and then (#365). */
+let _lastQuietBeatTrace = 0;
 
 async function tryPullFromCloud(force = false): Promise<void> {
   // Did the rebuild actually begin? A pull that dies on the way to the server
