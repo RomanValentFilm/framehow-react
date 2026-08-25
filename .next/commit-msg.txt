@@ -1,38 +1,48 @@
-v4.9.083 - a hand on the page holds the fetching back (#371)
+v4.9.087 - everything carries a time, so nothing wins by not having one (#378, #379)
 
-#371 Roman, after watching me fail at this three times: "a device you write on in
-     scribble does not need to pull new stuff from the server while your pen is
-     down... and maybe pause loading for five seconds after the last stroke."
+#379 THE LAST PLACE WORK COULD DISAPPEAR SILENTLY.
 
-     That is the fix, and it is better than any of mine.
+     Found by the random day, which reported three of the tablet's sentences
+     missing on the desktop and was right.
 
-     THE FAULT: fetching is what rebuilds the page, and rebuilding the 3x2 page
-     throws away the whole scribble layer and makes a new one. A sync landing
-     mid-stroke destroyed the canvas under the hand: the half-made mark went with
-     it and the finger came up on an element that no longer existed. Drawing fast
-     simply means more strokes are in progress when a sync arrives.
+     What happened: after a pull, a device forgets which frames the server
+     already has, so its next push sends EVERY frame — the log says "5/5 frames
+     changed" — including ones it never touched. An untouched frame carries no
+     change time, because nothing changed on it. And a frame with no time cannot
+     lose a comparison: when the server's own copy also had no time, the rule
+     fell back to whichever row arrived most recently. So the device that
+     reconnected LAST overwrote the other's work, without a word.
 
-     WHY MY THREE ATTEMPTS FAILED: all of them held back the REDRAW - first the
-     layer, then the page, then the whole redraw - and every one tore the screen.
-     The layer ended up not rebuilt at all, or rebuilt from notes taken before
-     the person had finished.
+     That is the shape behind every "the later change went missing" report.
 
-     Holding back the FETCH costs nothing. Nothing is torn down, nothing goes
-     stale. The work is still on the server, the heartbeat comes round every few
-     seconds, and it lands the moment the hand is off.
+     Roman's fix, and better than the two I proposed: everything carries a time.
+     A frame this device has not changed now says ZERO — the oldest time there
+     is — instead of saying nothing. It loses to any real edit, everywhere,
+     always. No new column, nothing asked of the other device, two lines at the
+     sending end.
 
-     The five seconds matter as much as the stroke: a series of quick marks has
-     gaps between them, and a rebuild landing in one of those gaps is the same
-     interruption. Applies to the scribble layer and to drawing on a version,
-     since both already say when a stroke is in progress.
+     The rule that judges this was already correct and has been since #311: a
+     copy that knows when it changed beats one that does not. It simply never
+     got the chance, because both sides were silent.
 
-     The test that describes this failed three times against my attempts and was
-     parked. It is back in, and green.
+#378 DELETING A FRAME IS FINAL — decided, not fixed.
 
-WHAT THIS CHANGES ON THE LIST
+     The same random day kept reporting a lost sentence: a frame deleted on one
+     device while offline, written on by the other a moment later. The deletion
+     won and took the writing with it.
 
-Scribble batching was only ever the cheap route to this. With the fetching held
-it is no longer a correctness question, only traffic: a fast hand still sends one
-push per stroke, but nothing comes back to disturb it. Demoted.
+     Two reasons to leave it that way. The server does not hide a deleted frame,
+     it destroys it — row, versions, drawings, pictures — so there is nothing to
+     bring back. And this is one person's app: whoever deleted the frame is the
+     same person who wrote on it from the other device a second earlier. Roman:
+     "someone deleting a frame should be aware of doing it."
 
-28 of 28 pass, with the local server staying up.
+     Two tests now hold that rule in both directions, so it stays a decision
+     rather than drifting into an accident. And the ledger no longer calls a
+     deliberate deletion "lost work" — once deleted, it stays deleted.
+
+     Hidden is untouched and stays as it is: a hidden frame keeps everything and
+     comes back only through Un-Hide.
+
+32 of 32 pass, including the day that lost the three sentences, replayed with
+the same seed.

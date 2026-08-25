@@ -58,7 +58,7 @@ import {
   handIsBusy,
 } from './currentProject';
 import { trace } from './syncTrace';
-import { frameChangedAt, versionChangedAt, importChangeStamps, stampChangedContent, seedContentStamps, pictureFp, strokesFp } from './changeStamps';
+import { frameChangedAt, versionChangedAt, frameChangedAtForSending, versionChangedAtForSending, importChangeStamps, stampChangedContent, seedContentStamps, pictureFp, strokesFp } from './changeStamps';
 import { shouldSendOnlyChanges } from './pushMode';
 import { serverHasSomethingNew, whoseFrameWins, type DeviceMemory } from './sessionRules';
 import { mergeDelta, lastMergeRefusal, answerIsSafeToApply, untouchedByDelta, type MergeableTree } from './deltaMerge';
@@ -1951,7 +1951,9 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
       setup_id: f.setupId ?? null,
       // WHEN it was changed, so the server can prefer the newer edit instead of
       // the later push. `updated_at` above is the push time.
-      content_changed_at: frameChangedAt(f.serverFrameId),
+      // Never "I don't know" (#379): a frame this device has not changed says
+      // zero, which loses to any real edit instead of slipping past unjudged.
+      content_changed_at: frameChangedAtForSending(f.serverFrameId),
     });
     if (f.scribbles && f.scribbles.length > 0) {
       console.log(`[sync][scribble] INCLUDED frame ${f.id} in push payload with ${f.scribbles.length} scribbles (${JSON.stringify(f.scribbles).length} bytes)`);
@@ -2003,7 +2005,7 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
           hidden: !!lv.hidden, starred: versionStars(lv) as unknown as boolean, note: lv.note || null, updated_at: now,
           // The tag belongs to the version, same reasoning as needs and notes.
           tags: lv.setupTagged ?? null,
-          content_changed_at: versionChangedAt(lv.serverVersionId),
+          content_changed_at: versionChangedAtForSending(lv.serverVersionId),
         });
         if (lv.strokes && lv.strokes.length > 0) {
           drawings.push({ id: uuid(), version_id: vid, drawing_data: JSON.stringify(lv.strokes), updated_at: now });

@@ -160,10 +160,38 @@ export function stampChangedContent(
 
 /** When this device last changed that frame. Undefined = we do not know, and
  *  the server falls back to the push time, which is no worse than before. */
+/**
+ * NEVER ANSWER "I DON'T KNOW" (#379).
+ *
+ * A frame this device has not changed used to report NOTHING, and nothing
+ * cannot lose a comparison. So an untouched frame, sent up merely because the
+ * device re-sends everything after a pull, could quietly overwrite a real edit
+ * made on the other device — the server had no times to compare on either side
+ * and fell back to whichever arrived last. Whoever reconnected last won, and
+ * the other person's writing was gone without a word.
+ *
+ * Roman put it plainly: everything should carry a time, so there is always
+ * something to compare. An untouched frame now says ZERO — the oldest time
+ * there is — which loses to any real edit, everywhere, always. Nothing is added
+ * to the database and nothing is asked of the other device.
+ *
+ * Note this is only about what we SEND. `frameChangedAt` is still the honest
+ * answer to "when did I change this", and callers that need to know the
+ * difference use it directly.
+ */
+export function frameChangedAtForSending(serverFrameId: string | undefined): number {
+  return frameChangedAt(serverFrameId) ?? 0;
+}
+
 export function frameChangedAt(serverFrameId: string | undefined): number | undefined {
   if (!serverFrameId) return undefined;
   const hit = _seen.get(`f/${serverFrameId}`);
   return hit && hit.at > 0 ? hit.at : undefined;
+}
+
+/** The same for a version — see frameChangedAtForSending (#379). */
+export function versionChangedAtForSending(serverVersionId: string | undefined): number {
+  return versionChangedAt(serverVersionId) ?? 0;
 }
 
 export function versionChangedAt(serverVersionId: string | undefined): number | undefined {

@@ -142,8 +142,19 @@ export class Ledger {
   private readonly gone = new Set<string>();
 
   note(c: Omit<Change, 'at'>): void {
+    // ONCE DELETED, IT STAYS DELETED (#378).
+    //
+    // This used to bring a thing back to life if something was written on it
+    // after it had been deleted — and then complained at the end that the
+    // writing was missing. But deleting a frame is final in this app, by
+    // decision: the server destroys it, and one person deleting a frame is not
+    // expecting it back because they also wrote on it from the other device a
+    // second earlier.
+    //
+    // That was the "lost sentence" the random day kept reporting. Not lost:
+    // deleted, on purpose.
+    if (this.gone.has(c.what)) return;
     this.last.set(c.what, { ...c, at: Date.now() });
-    this.gone.delete(c.what);
   }
 
   destroyed(what: string): void {
@@ -166,11 +177,20 @@ export class Ledger {
         : c.kind === 'order' ? orders.includes(c.looksLike)
         : c.kind === 'setup' ? setups.includes(c.looksLike)
         : cats.includes(c.looksLike);
-      if (!there) missing.push(`${c.kind} "${c.looksLike}" (made on the ${c.by})`);
+      // WHICH THING IT WAS MADE ON, not only what it said (#377).
+      //
+      // "tablet step 17 is missing" is not enough to judge. If BOTH devices
+      // wrote on the same frame, the later one winning is the agreed rule and
+      // there is nothing wrong — the ledger simply remembered two things where
+      // there was one. Saying which frame each belongs to settles that in one
+      // reading instead of an afternoon.
+      if (!there) missing.push(`${c.kind} "${c.looksLike}" on ${c.what} (made on the ${c.by})`);
     }
     expect(missing, `${d.name} is missing work that was made and never undone:\n`
       + missing.map((m) => '    ' + m).join('\n')
-      + `\n  It has: ${texts.filter(Boolean).join(' | ') || '(no writing)'}`
+      + `\n  It has: ${s.frames.map((f) => `${f.serverFrameId?.slice(0, 6) ?? '?'}="${f.text}"`).join(' | ')}`
+      + `\n  everything remembered: ${[...this.last.values()]
+        .map((c) => `${c.what}="${c.looksLike}"`).join(' | ')}`
       + `\n  orders: ${orders.join(', ') || '(none)'}`
       + `\n  setups: ${setups.join(', ') || '(none)'}`).toEqual([]);
 
