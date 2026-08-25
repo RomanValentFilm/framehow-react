@@ -40,35 +40,6 @@ import { markAppScroll, showBarsNow } from './view';
 import { flushSyncNow } from './currentProject';
 import { addFrameToSortOrders, removeFrameFromSortOrders } from './sortOrder';
 
-/**
- * THE NEXT NUMBER ON THE BOARD (#372).
- *
- * Roman: "when a new frame is created in a 16x9 empty project, the first is 1,
- * the next is 1#1 — make it 1, 2, 3, 4."
- *
- * A frame added at the END of the board is simply the next one, so it gets the
- * next number. Two digits, because a board of ten reads badly when 9 sits next
- * to 10 in a column.
- *
- * A frame added BETWEEN two others is a different thing: it has no number of its
- * own, and giving it one would collide with the frame that already has it. Those
- * keep the "3#1" form, which is what it was always for. FITTING keeps its names.
- *
- * Returns null when the board is not numbered — labels from an imported PDF like
- * "4a", or a fitting board of names — so those are left exactly as they were.
- */
-function nextBoardNumber(frames: { label?: string }[], afterIdx: number): string | null {
-  if (afterIdx !== frames.length - 1) return null;   // not at the end
-  let highest = 0;
-  for (const f of frames) {
-    const m = (f.label || '').match(/^0*(\d+)$/);
-    if (!m) return null;                             // something is not a number
-    highest = Math.max(highest, parseInt(m[1], 10));
-  }
-  const next = highest + 1;
-  return next < 10 ? `0${next}` : String(next);
-}
-
 export function handleMainAction(action: string, fid: number, div: HTMLElement): void {
   const s = state();
   if (s.setupMode) return; // locked while setup bar is open
@@ -166,9 +137,7 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
       const newFrame: any = {
         id: nid,
         src: '',
-        // FITTING keeps its names; a 9:16 storyboard is numbered like any other
-        // board (#372).
-        label: state().projectType === 'fitting' ? 'Name' : nextBoardNumber(s2.frames, idx2),
+        label: state().projectType === 'fitting' ? 'Name' : 'name',
         cropW: f2.cropW || 540,
         cropH: f2.cropH || 960,
         strokes: [],
@@ -199,22 +168,15 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
     // Base is the full label; # counter increments.
     const prevLabel = f.label || '';
     let newLabel: string;
-    const atTheEnd = s.frames.indexOf(f) === s.frames.length - 1;
-    const counted = atTheEnd ? nextBoardNumber(s.frames, s.frames.length - 1) : null;
-    if (counted) {
-      // A frame added at the END of the board simply gets the next number (#372).
-      newLabel = counted;
+    const hashMatch = prevLabel.match(/^(.+)#(\d+)$/);
+    if (hashMatch) {
+      // Previous is "3#2" → "3#3", or "4a#1" → "4a#2"
+      const base = hashMatch[1];
+      const counter = parseInt(hashMatch[2], 10);
+      newLabel = `${base}#${counter + 1}`;
     } else {
-      const hashMatch = prevLabel.match(/^(.+)#(\d+)$/);
-      if (hashMatch) {
-        // Previous is "3#2" → "3#3", or "4a#1" → "4a#2"
-        const base = hashMatch[1];
-        const counter = parseInt(hashMatch[2], 10);
-        newLabel = `${base}#${counter + 1}`;
-      } else {
-        // Previous is "3" or "4a" or anything → keep full label, add #1
-        newLabel = `${prevLabel}#1`;
-      }
+      // Previous is "3" or "4a" or anything → keep full label, add #1
+      newLabel = `${prevLabel}#1`;
     }
 
     {

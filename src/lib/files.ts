@@ -123,7 +123,7 @@ export function startFromScratch(): void {
   s.frames.push({
     id,
     src: '',
-    label: '01',   // boards are numbered 01, 02, 03 (#372)
+    label: '1',
     cropW: 900,
     cropH: 506,
     strokes: [],
@@ -157,9 +157,7 @@ export function startPortrait(): void {
   s.frames.push({
     id,
     src: '',
-    // A 9:16 storyboard is a board like any other, so it is numbered (#372).
-    // FITTING is the one that keeps names, and it is started elsewhere.
-    label: '01',
+    label: 'name',
     cropW: 540,
     cropH: 960,
     strokes: [],
