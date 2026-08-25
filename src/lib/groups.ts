@@ -123,6 +123,38 @@ export function reorderFrameInGroup(fid: number, direction: 'up' | 'down'): bool
   return true; // handled
 }
 
+/**
+ * GO INTO A GROUP, OR BACK TO ALL. null means ALL (#382).
+ *
+ * This was two lines inside the sidebar's click handler, reachable only by
+ * clicking. It is lifted out unchanged so the app has ONE place that switches
+ * group — the sidebar calls it, picking a group's shooting order calls it, and
+ * a test can call the same thing the person's finger calls rather than a copy
+ * of it.
+ */
+export function enterGroup(groupId: number | null): void {
+  useStore.setState({ activeGroupId: groupId });
+}
+
+/**
+ * MAKE A GROUP. Lifted out of the Save button for the same reason (#382).
+ * Returns the new group's id.
+ */
+export function createGroup(name: string, frameIds: number[]): number {
+  const s = state();
+  const newGroup: FrameGroup = {
+    id: uniqueNumericId(),               // never a per-device count (#322)
+    name,
+    frameIds: [...frameIds],
+    hiddenFrameIds: [],
+  };
+  useStore.setState({
+    groups: [...s.groups, newGroup],
+    nextGroupId: s.nextGroupId + 1,
+  });
+  return newGroup.id;
+}
+
 // ── Update GROUP button + label in ViewBar ──
 export function updateGroupButtonState(): void {
   const s = state();
@@ -231,11 +263,7 @@ function wireSidebarEvents(sidebar: HTMLElement): void {
       // Close sort mode if active (group selection exits the frame-set view)
       if (state().sortMode) closeSortMode();
       const gid = (el as HTMLElement).dataset.gid;
-      if (gid === 'all') {
-        useStore.setState({ activeGroupId: null });
-      } else {
-        useStore.setState({ activeGroupId: parseInt(gid!) });
-      }
+      enterGroup(gid === 'all' ? null : parseInt(gid!));
       closeGroupSidebar();
       triggerRerender();
     });
@@ -440,17 +468,7 @@ function openGroupEditor(existing: FrameGroup | null): void {
       );
       useStore.setState({ groups: newGroups });
     } else {
-      // Create new
-      const newGroup: FrameGroup = {
-        id: uniqueNumericId(),               // never a per-device count (#322)
-        name,
-        frameIds: checkedIds,
-        hiddenFrameIds: [],
-      };
-      useStore.setState({
-        groups: [...s.groups, newGroup],
-        nextGroupId: s.nextGroupId + 1,
-      });
+      createGroup(name, checkedIds);
     }
     closeEditor();
     refreshSidebar();

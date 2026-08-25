@@ -78,6 +78,10 @@ test('scribbling fast does not lose a stroke', async ({ browser }) => {
   // very thing that made a fast hand hammer the server. Strokes are now held
   // until the hand has been still for a second, so during a run of marks there
   // may be no push at all. That is the point of the change, not a failure.
+  //
+  // What still matters is that the page was REBUILT from the server while the
+  // hand was drawing — that is the dangerous moment, and without it this test
+  // proves nothing.
   expect(rebuilds, 'nothing was ever rebuilt from the server during the drawing, '
     + 'so the dangerous moment never happened — this test proves nothing as '
     + 'written').toBeGreaterThan(1);

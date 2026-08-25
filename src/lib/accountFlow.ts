@@ -2135,6 +2135,12 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
       frameOrder: o.frameOrder.map((fid) => localToServerFrame.get(fid) || '').filter(Boolean),
       breaks: o.breaks,
     };
+    // THE GROUP TRAVELS TOO (#382). This object is built field by field, so
+    // anything not named here is dropped on every push — the order would arrive
+    // on the other device having forgotten which group it belongs to. A group
+    // id is a plain number and groups are sent with the same ids they have
+    // here, so it needs no remapping, unlike the frame ids above.
+    if (o.groupId != null) mapped.groupId = o.groupId;
     if (o.bracketTree) mapped.bracketTree = remapBracketIds(o.bracketTree, localToServerFrame);
     if (o.sortedSnapshot) mapped.sortedSnapshot = o.sortedSnapshot.map((fid) => localToServerFrame.get(fid) || '').filter(Boolean);
     return mapped;
@@ -3014,6 +3020,9 @@ async function applyCloudTreeToStore(
       frameOrder: (o.frameOrder || []).map((uuid: string) => serverToLocalFrame.get(uuid)).filter((id: number | undefined) => id != null) as number[],
       breaks: o.breaks ?? [],
     };
+    // ...and is taken back off the wire (#382). Same reason as the sending
+    // side: this is built field by field, so an unnamed field is lost.
+    if (o.groupId != null) mapped.groupId = o.groupId;
     if (o.bracketTree) mapped.bracketTree = remapBracketIds(o.bracketTree, serverToLocalFrame) as BracketNodeData | undefined;
     if (o.sortedSnapshot) mapped.sortedSnapshot = (o.sortedSnapshot as string[]).map((uuid) => serverToLocalFrame.get(uuid)).filter((id: number | undefined) => id != null) as number[];
     return mapped;

@@ -1107,7 +1107,7 @@ function rerenderBracket(editViewEl: HTMLElement, bracketState: BracketState, or
 }
 
 import { flushSyncNow, pullNow } from './currentProject';
-import { getStripVersions } from './helpers';
+import { getStripVersions, escH } from './helpers';
 import { getVisibleFrames } from './groups';
 import { rasterizeMain, rasterizeVersion, versionHasContent } from './rasterize';
 
@@ -1336,6 +1336,31 @@ export function closeSortMode(): void {
 
 // ─── Dropdown rendering ───────────────────────────────────────────────
 
+/**
+ * THE RED GROUP NAME AFTER AN ORDER'S NAME (#382).
+ *
+ * Roman: "when a shooting order is created in a group, it should be visible in
+ * the normal SORT BY menu, marked with red text at the end of the name."
+ *
+ * Nothing at all for an order that belongs to the whole project — which is most
+ * of them, and all of the ones made before #382.
+ *
+ * An order whose group has since been deleted keeps its groupId and finds
+ * nothing here. It shows unmarked rather than saying the name of a group that
+ * is gone, and it still opens: the frames are all still in the project.
+ */
+export function orderGroupName(order: SortOrder): string | null {
+  if (order.groupId == null) return null;
+  const group = state().groups.find((g) => g.id === order.groupId);
+  return group ? group.name : null;
+}
+
+function groupSuffix(order: SortOrder): string {
+  const name = orderGroupName(order);
+  if (!name) return '';
+  return ` <span class="sort-dd-group">/ ${escH(name)}</span>`;
+}
+
 function renderDropdown(el: HTMLElement): void {
   const s = state();
   const activeId = s.activeSortOrderId;
@@ -1361,7 +1386,7 @@ function renderDropdown(el: HTMLElement): void {
       <div class="sort-dd-item${activeId === shootingId ? ' sort-dd-selected' : ''}" data-sort-id="${shootingId}">
         <div class="sort-dd-item-left">
           <div class="sort-dd-title-row">
-            <span class="sort-dd-title">${firstShootingOrder.name}</span>
+            <span class="sort-dd-title">${firstShootingOrder.name}</span>${groupSuffix(firstShootingOrder)}
           </div>
           <div class="sort-dd-hint">Your custom frame order</div>
         </div>
@@ -1386,7 +1411,7 @@ function renderDropdown(el: HTMLElement): void {
       <div class="sort-dd-item${activeId === order.id ? ' sort-dd-selected' : ''}" data-sort-id="${order.id}">
         <div class="sort-dd-item-left">
           <div class="sort-dd-title-row">
-            <span class="sort-dd-title">${order.name}</span>
+            <span class="sort-dd-title">${order.name}</span>${groupSuffix(order)}
           </div>
           <div class="sort-dd-hint">Your custom frame order</div>
         </div>
@@ -1453,7 +1478,7 @@ function renderDropdown(el: HTMLElement): void {
 }
 
 /** Open frame-set view for any order — handles story flow + auto-creates shooting order */
-function openOrderView(orderId: string): void {
+export function openOrderView(orderId: string): void {
   if (orderId === '__shooting_new__') {
     // Auto-create first shooting order on first click
     const s = state();
@@ -1465,6 +1490,10 @@ function openOrderView(orderId: string): void {
       description: 'Your custom frame order',
       frameOrder,
       breaks: [],
+      // frameOrder above came from getVisibleFrames(), so if a group is open
+      // this order holds only that group's frames. Say so — and say nothing at
+      // all when there is no group, see addNewOrder for why (#382).
+      ...(s.activeGroupId !== null ? { groupId: s.activeGroupId } : {}),
     };
     useStore.setState({
       sortOrders: [...s.sortOrders, newOrder],
@@ -1478,9 +1507,38 @@ function openOrderView(orderId: string): void {
   }
 
   if (orderId === '__storyflow__') {
+    // STORY FLOW IS LEFT ALONE ON PURPOSE (#382). A group already has a frame
+    // order of its own — group.frameIds — so inside a group STORY FLOW already
+    // means that group's narrative order, and in ALL it means the project's.
+    // It follows wherever you are and needs nothing added to it.
     useStore.setState({ activeSortOrderId: null });
   } else {
-    useStore.setState({ activeSortOrderId: orderId });
+    // PICKING A GROUP'S ORDER TAKES YOU INTO THAT GROUP (#382).
+    //
+    // Roman: "the moment the user selects it, it changes into that group view."
+    // The order holds only that group's frames, so this is also what makes it
+    // readable: without the switch you get a short list of frames sitting in
+    // ALL with no explanation.
+    //
+    // The other way round is here for the same reason: picking a whole-project
+    // order while a group is open goes back to ALL, otherwise the order is full
+    // of frames the view is hiding. NOT SEPARATELY ASKED FOR — say so if it is
+    // wrong and it comes straight back out.
+    //
+    // The group's name is in the view bar either way, put there by
+    // updateGroupButtonState() on the redraw below.
+    const order = state().sortOrders.find((o) => o.id === orderId);
+    const wantGroup = order ? (order.groupId ?? null) : null;
+    const goingSomewhereElse = order != null && wantGroup !== state().activeGroupId;
+    // A group that has since been deleted is not somewhere to go. The order
+    // still opens, in whatever view you are in.
+    const groupStillThere = wantGroup === null
+      || state().groups.some((g) => g.id === wantGroup);
+
+    const change: { activeSortOrderId: string; activeGroupId?: number | null } =
+      { activeSortOrderId: orderId };
+    if (goingSomewhereElse && groupStillThere) change.activeGroupId = wantGroup;
+    useStore.setState(change);
   }
   bumpRenderTick();
   void flushSyncNow();
@@ -1489,7 +1547,19 @@ function openOrderView(orderId: string): void {
 
 // ─── Add new order ────────────────────────────────────────────────────
 
-function addNewOrder(): void {
+/**
+ * + ADD ORDER.
+ *
+ * `name` is only ever passed by the test door (#382), and it exists so that an
+ * order is never SENT under a name it is about to lose. Without it the door had
+ * to make the order and rename it a moment later — but the making pushes, so
+ * the placeholder name reached the server and the other device, and then
+ * disappeared when the real name arrived. The random day caught exactly that:
+ * `shooting order "SHOOTING ORDER 2" disappeared`.
+ *
+ * The button itself passes nothing and names orders as it always did.
+ */
+export function addNewOrder(name?: string): void {
   const s = state();
   const id = genId('sort', s.nextSortOrderId);
   const frameOrder = getVisibleFrames().map((f) => f.id);
@@ -1499,10 +1569,22 @@ function addNewOrder(): void {
   while (existingNames.includes(`SHOOTING ORDER ${num}`)) num++;
   const newOrder: SortOrder = {
     id,
-    name: `SHOOTING ORDER ${num}`,
+    name: name ?? `SHOOTING ORDER ${num}`,
     description: 'Your custom frame order',
     frameOrder,
     breaks: [],
+    // AN ORDER WITH NO GROUP CARRIES NO KEY AT ALL (#382).
+    //
+    // This said `groupId: s.activeGroupId`, which put `groupId: null` on every
+    // ordinary order. The server is only sent the key when it is set, so the
+    // same order was one shape here and another shape coming back — and the app
+    // decides its settings have changed by comparing those. #337/#343 is the
+    // same fault written up: change the SHAPE of a settings value and the app
+    // thinks it has changed on every pass, pushes, and the two devices start
+    // filing decisions against each other. The random day showed it as
+    // `1 sort order decision(s) waiting` with each device keeping its own
+    // frames and neither ever taking the other's.
+    ...(s.activeGroupId !== null ? { groupId: s.activeGroupId } : {}),
   };
   useStore.setState({
     sortOrders: [...s.sortOrders, newOrder],

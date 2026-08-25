@@ -16,14 +16,13 @@
 
 import { useStore } from '../store/state';
 import type { SortOrder, StripType } from '../store/state';
-import { getVisibleFrames } from './groups';
+import { getVisibleFrames, createGroup, enterGroup } from './groups';
 import { ensureStripVersions, getStripVersions } from './helpers';
 import { openFullscreen, closeFullscreen } from './fullscreen';
 import { setViewMode } from './view';
-import { openSortEditView, closeSortMode } from './sortOrder';
+import { openSortEditView, closeSortMode, openOrderView, addNewOrder, orderGroupName } from './sortOrder';
 import { toggleScribbleMode, attachScribbleOverlays } from './scribble';
 import { trace } from './syncTrace';
-import { uniqueId } from './ids';
 import { startFromScratch } from './files';
 import { deleteFrameForGood } from './actions';
 import { createSetup, handleSetupFrameClick, handleStripTagClick } from './setups';
@@ -85,9 +84,20 @@ export interface TestDoor {
   // to prove that is what actually happens, and that nothing else is dragged
   // down with it.
 
-  /** Make a shooting order holding every visible frame, as the SHOOTING ORDER
-   *  button does the first time it is pressed. Returns its id. */
+  /** Press + ADD ORDER. The order holds every frame the view is showing, which
+   *  inside a group means that group's frames. Returns its id. */
   newSortOrder(name?: string): string;
+  // --- groups and the orders made inside them (#382) ------------------------
+  /** Make a group holding the frames at these positions. Returns its id. */
+  makeGroup(name: string, frameIndexes: number[]): number;
+  /** Go into a group, or back to ALL with null — the sidebar's own call. */
+  enterGroup(groupId: number | null): void;
+  /** Which group the view is in, null for ALL. */
+  whichGroup(): number | null;
+  /** Choose an order from the SORT BY menu, as clicking its line does. */
+  pickOrder(orderIndex: number): void;
+  /** Each line of the SORT BY menu as text, e.g. "SHOOTING ORDER 2 / KITCHEN". */
+  sortMenuLines(): string[];
   /** Move a frame inside an order — the drag in the sort edit view. */
   moveInOrder(orderIndex: number, from: number, to: number): void;
   /** ADD BREAK, at a place in the order. Returns the break's id. */
@@ -378,22 +388,70 @@ export function installTestDoor(): void {
       stampChangedSettings(getCurrentProject().projectId);
     },
 
+    // PRESSES + ADD ORDER, IT DOES NOT BUILD AN ORDER (#382).
+    //
+    // This used to assemble a SortOrder here, field by field. It was a copy of
+    // the app's own creation and it had already drifted: the app stamps the
+    // group an order is made in, and a copy made here never would — so a test
+    // could pass while the real button was broken. Every door is a pass-through
+    // to the real function, and this one was not.
+    //
+    // The name is set afterwards, because the button names orders itself.
     newSortOrder(name) {
-      const s = useStore.getState();
-      const id = uniqueId('sort');          // the same way the app does it (#322)
-      useStore.setState({
-        sortOrders: [...s.sortOrders, {
-          id,
-          name: name ?? `SHOOTING ORDER ${s.sortOrders.length + 1}`,
-          description: 'Your custom frame order',
-          frameOrder: getVisibleFrames().map((f) => f.id),
-          breaks: [],
-        }],
-        activeSortOrderId: id,
-        nextSortOrderId: s.nextSortOrderId + 1,
-      } as never);
+      // THE NAME GOES IN AT BIRTH, IT IS NOT SET AFTERWARDS (#382).
+      //
+      // Renaming after the fact looked harmless and was not: making an order
+      // pushes it, so the placeholder name reached the server and the other
+      // device before the real one replaced it. The tablet then had an order
+      // that existed for a few seconds and vanished, which the random day
+      // reports as `shooting order "SHOOTING ORDER 2" disappeared`. It is also
+      // why a name set this way never seemed to travel.
+      addNewOrder(name);
+      const made = useStore.getState().sortOrders.slice(-1)[0];
+
+      // + ADD ORDER also OPENS the order it just made, which the copy this
+      // replaced did not do. Six tests written against the copy expect this
+      // door to mean "an order now exists" and nothing more, so it is closed
+      // again here. A test that wants it open opens it, as a person would.
+      closeSortMode();
+
       stampChangedSettings(getCurrentProject().projectId);
-      return id;
+      return made.id;
+    },
+
+    // PICKS AN ORDER OUT OF THE SORT BY MENU — the same call the menu makes,
+    // so whatever choosing an order does to the view happens here too (#382).
+    pickOrder(orderIndex) {
+      const o = useStore.getState().sortOrders[orderIndex];
+      if (!o) throw new Error(`no shooting order at ${orderIndex}`);
+      openOrderView(o.id);
+    },
+
+    makeGroup(name, frameIndexes) {
+      const s = useStore.getState();
+      const ids = frameIndexes.map((i) => {
+        const f = s.frames[i];
+        if (!f) throw new Error(`no frame at ${i}`);
+        return f.id;
+      });
+      const gid = createGroup(name, ids);
+      stampChangedSettings(getCurrentProject().projectId);
+      return gid;
+    },
+
+    enterGroup(groupId) {
+      enterGroup(groupId);
+    },
+
+    whichGroup() { return useStore.getState().activeGroupId; },
+
+    /** The SORT BY menu as it reads on screen, one string per line. The group
+     *  part comes from the app's own orderGroupName, not a copy of it. */
+    sortMenuLines() {
+      return useStore.getState().sortOrders.map((o) => {
+        const g = orderGroupName(o);
+        return g ? `${o.name} / ${g}` : o.name;
+      });
     },
 
     moveInOrder(orderIndex, from, to) {

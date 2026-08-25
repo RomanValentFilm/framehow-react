@@ -1141,6 +1141,10 @@
   .sort-dd-item-left{flex:1;min-width:0;}
   .sort-dd-title-row{display:flex;align-items:center;gap:8px;}
   .sort-dd-title{font-size:13px;font-weight:500;color:#fff;letter-spacing:.03em;}
+  /* The group an order was made in, after its name (#382). Same red as the
+     rest of the app, and the same weight as the title so it reads as part of
+     the name rather than a badge stuck on the end. */
+  .sort-dd-group{font-size:13px;font-weight:500;color:var(--accent);letter-spacing:.03em;white-space:nowrap;}
   .sort-dd-hint{font-size:12px;color:#999;margin-top:2px;}
   .sort-dd-edit{font-size:11px;color:#999;cursor:pointer;letter-spacing:.3px;font-weight:700;}
   @media(hover:hover){.sort-dd-edit:hover{color:#ccc;}}

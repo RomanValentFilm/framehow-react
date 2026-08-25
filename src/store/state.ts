@@ -63,7 +63,7 @@ export interface Setup {
 
 /** 12-colour palette for setups. */
 /** App version — bump before every deploy. */
-export const APP_VERSION = 'v4.9.088';
+export const APP_VERSION = 'v4.9.089';
 
 /** Free-text fields printed in the header of every exported page. */
 export interface ExportMeta {
@@ -428,6 +428,19 @@ export interface SortOrder {
   bracketTree?: BracketNodeData;
   /** Snapshot of bracket-derived order used for manual-change detection. */
   sortedSnapshot?: number[];
+  /**
+   * WHICH GROUP THIS ORDER WAS MADE IN (#382).
+   *
+   * An order made while a group is open holds only that group's frames, because
+   * it is built from getVisibleFrames(). Until now it was filed in the same flat
+   * list as every other order with nothing to say so — picked from ALL it showed
+   * a short list of frames and no reason why.
+   *
+   * null / missing means it belongs to the whole project, which is also what
+   * every order made before this change looks like. There is no way to work out
+   * afterwards which group an old one came from, so they stay as they are.
+   */
+  groupId?: number | null;
 }
 
 export interface StripClipboard {

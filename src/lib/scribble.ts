@@ -55,10 +55,23 @@ const UNDO_LIMIT = 50;
  * meant twenty messages in ten seconds. Roman: "send when 1s pause, and if not
  * in this period, then it's saved on device and sent next time online."
  *
- * Nothing is at risk in the meantime. A stroke is on the device the instant it
- * is drawn and the local save keeps it, so closing the app or losing signal
- * inside that second costs nothing — it goes up next time the app connects,
- * exactly like anything else made offline.
+ * A stroke is in the app's own memory the instant it is drawn, so nothing is
+ * lost by closing the app or losing signal inside that second — it goes up
+ * next time the app connects, like anything else made offline.
+ *
+ * KNOWN COST, KEPT ON PURPOSE. During that held second the SERVER does not
+ * have the stroke yet, so anything that rebuilds the 3x2 page from the
+ * server's copy paints it over. Roman drew thirty fast marks and roughly
+ * every eighth vanished. A revert was written and he chose not to take it:
+ * "it's minimal and the user sees it if something goes missing the moment he
+ * created it too fast." Holding the send did not create that danger — #361 is
+ * the same hole — it widened it from milliseconds to a second.
+ *
+ * The real fix is upstream and is NOT done: #371 stops a fetch while the hand
+ * is busy, but only an ORDINARY fetch. A forced one walks past the guard
+ * (accountFlow.ts, `if (!force && handIsBusy())`). Whoever picks this up:
+ * find which forced fetch fires on a single iPad with no other device
+ * writing, because that is the one doing the damage.
  */
 const SEND_AFTER_THE_HAND_STOPS_MS = 1000;
 let _sendTimer: number | null = null;

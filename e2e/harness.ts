@@ -392,6 +392,44 @@ export class Device {
         .__fh_test.newSortOrder(n as string | undefined), name);
   }
 
+  // --- groups, and the orders made inside them (#382) -----------------------
+
+  async makeGroup(name: string, frameIndexes: number[]): Promise<number> {
+    say(`${this.name}: making the group ${name}`);
+    return this.page.evaluate(([n, ids]) =>
+      (window as never as { __fh_test: { makeGroup(n: string, ids: number[]): number } })
+        .__fh_test.makeGroup(n as string, ids as number[]),
+      [name, frameIndexes] as [string, number[]]);
+  }
+
+  async enterGroup(groupId: number | null): Promise<void> {
+    say(`${this.name}: going into ${groupId === null ? 'ALL' : `group ${groupId}`}`);
+    await this.page.evaluate((g) =>
+      (window as never as { __fh_test: { enterGroup(g: number | null): void } })
+        .__fh_test.enterGroup(g as number | null), groupId);
+  }
+
+  whichGroup(): Promise<number | null> {
+    return this.page.evaluate(() =>
+      (window as never as { __fh_test: { whichGroup(): number | null } })
+        .__fh_test.whichGroup());
+  }
+
+  /** Choose an order from the SORT BY menu, as clicking its line does. */
+  async pickOrder(orderIndex: number): Promise<void> {
+    say(`${this.name}: choosing order ${orderIndex + 1} from the SORT BY menu`);
+    await this.page.evaluate((i) =>
+      (window as never as { __fh_test: { pickOrder(i: number): void } })
+        .__fh_test.pickOrder(i as number), orderIndex);
+  }
+
+  /** Every line of the SORT BY menu, as text. */
+  sortMenuLines(): Promise<string[]> {
+    return this.page.evaluate(() =>
+      (window as never as { __fh_test: { sortMenuLines(): string[] } })
+        .__fh_test.sortMenuLines());
+  }
+
   moveInOrder(orderIndex: number, from: number, to: number): Promise<void> {
     return this.page.evaluate(([o, f, t]) =>
       (window as never as { __fh_test: { moveInOrder(o: number, f: number, t: number): void } })
