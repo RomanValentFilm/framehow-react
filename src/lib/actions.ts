@@ -40,29 +40,6 @@ import { markAppScroll, showBarsNow } from './view';
 import { flushSyncNow } from './currentProject';
 import { addFrameToSortOrders, removeFrameFromSortOrders } from './sortOrder';
 
-/**
- * THE NEXT NUMBER, WHEN THERE IS ONE (#373).
- *
- * Roman: "take the label of the frame you pressed on and add +1 — press on
- * frame 1 and the new one is 2."
- *
- * Only when the frame pressed is the LAST one. A frame added between two others
- * has no number of its own — the next one is taken — so those keep the "3#1"
- * form, which is what it was always for.
- *
- * Returns null whenever it cannot be sure: the label is not a plain number (an
- * imported "4a"), it is not at the end, or the number it would take is already
- * on the board. Then the old rule applies and nothing can collide.
- */
-function nextNumberAfter(pressed: { label?: string }, frames: { label?: string }[]): string | null {
-  if (frames[frames.length - 1] !== pressed) return null;
-  const m = (pressed.label || '').match(/^0*(\d+)$/);
-  if (!m) return null;
-  const next = String(parseInt(m[1], 10) + 1);
-  if (frames.some((f) => (f.label || '') === next)) return null;
-  return next;
-}
-
 export function handleMainAction(action: string, fid: number, div: HTMLElement): void {
   const s = state();
   if (s.setupMode) return; // locked while setup bar is open
@@ -160,12 +137,7 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
       const newFrame: any = {
         id: nid,
         src: '',
-        // FITTING keeps its names. A 9:16 storyboard is numbered like any other
-        // board, and falls back to "name" only when there is no number to take
-        // (#373).
-        label: state().projectType === 'fitting'
-          ? 'Name'
-          : (nextNumberAfter(f2, s2.frames) ?? 'name'),
+        label: state().projectType === 'fitting' ? 'Name' : 'name',
         cropW: f2.cropW || 540,
         cropH: f2.cropH || 960,
         strokes: [],
@@ -196,11 +168,6 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
     // Base is the full label; # counter increments.
     const prevLabel = f.label || '';
     let newLabel: string;
-    const counted = nextNumberAfter(f, s.frames);
-    if (counted) {
-      // Added at the end of a numbered board: simply the next number (#373).
-      newLabel = counted;
-    } else {
     const hashMatch = prevLabel.match(/^(.+)#(\d+)$/);
     if (hashMatch) {
       // Previous is "3#2" → "3#3", or "4a#1" → "4a#2"
@@ -210,7 +177,6 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
     } else {
       // Previous is "3" or "4a" or anything → keep full label, add #1
       newLabel = `${prevLabel}#1`;
-    }
     }
 
     {

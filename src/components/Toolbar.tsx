@@ -1,4 +1,10 @@
 import { APP_VERSION } from '../store/state';
+// The change number, shown next to the version in the toolbar (#374). The
+// version says WHEN a build was made; the change number says WHAT is in it, and
+// that is the one worth reading. It used to be visible only inside the sync log,
+// which meant three taps and a strip covering the buttons to answer "which build
+// am I holding?".
+import { SYNC_BUILD_TAG } from '../lib/syncTrace';
 import { toggleSyncLog } from '../lib/syncTrace';
 
 export function Toolbar() {
@@ -30,7 +36,7 @@ export function Toolbar() {
           onClick={tapVersion}
           title="tap three times for the sync log"
           style={{fontSize:'9px',color:'#555',marginLeft:'6px',letterSpacing:'0.02em',cursor:'pointer',padding:'4px'}}
-        >{APP_VERSION}</span>
+        >{APP_VERSION} · {SYNC_BUILD_TAG}</span>
       </div>
       <span className="frame-badge" id="frameBadge">no frames</span>
       <span className="toolbar-project-name" id="toolbarProjectName">UNTITLED</span>

@@ -157,9 +157,7 @@ export function startPortrait(): void {
   s.frames.push({
     id,
     src: '',
-    // A 9:16 storyboard is numbered like any other board (#373). FITTING is the
-    // one that keeps names, and it is started elsewhere.
-    label: '1',
+    label: 'name',
     cropW: 540,
     cropH: 960,
     strokes: [],
