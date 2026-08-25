@@ -229,6 +229,12 @@ export class Device {
         .__fh_test.openOrder(i as number), orderIndex);
   }
 
+  /** Close the shooting order, as pressing done does. */
+  async closeOrder(): Promise<void> {
+    await this.page.evaluate(() =>
+      (window as never as { __fh_test: { closeOrder(): void } }).__fh_test.closeOrder());
+  }
+
   /** Which shooting order is open for editing, or null. */
   orderBeingEdited(): Promise<string | null> {
     return this.page.evaluate(() =>

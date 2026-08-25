@@ -72,10 +72,12 @@ test('scribbling fast does not lose a stroke', async ({ browser }) => {
   await tabletWorking;
 
   const log = await desktop.log();
-  const pushes = log.filter((l) => l.includes('push start')).length;
   const rebuilds = log.filter((l) => l.includes('arrangement arrived')).length;
-  expect(pushes, 'no push ever started, so no stroke could have been made while '
-    + 'one was in the air — this test proves nothing as written').toBeGreaterThan(2);
+  // NO LONGER COUNTING PUSHES (#381). This used to insist several pushes had
+  // started while drawing, because each stroke sent on its own — which was the
+  // very thing that made a fast hand hammer the server. Strokes are now held
+  // until the hand has been still for a second, so during a run of marks there
+  // may be no push at all. That is the point of the change, not a failure.
   expect(rebuilds, 'nothing was ever rebuilt from the server during the drawing, '
     + 'so the dangerous moment never happened — this test proves nothing as '
     + 'written').toBeGreaterThan(1);

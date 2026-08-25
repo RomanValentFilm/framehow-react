@@ -3950,15 +3950,24 @@ function startHeartbeatSender(): void {
   // permanently and never fetched. Roman worked it out from the outside: "isn't
   // it because in the time of writing we are not asking for a pull?"
   //
-  // #376 was part of it and is fixed — but not the whole of it. With this on,
-  // the same test fails again: two devices, one in a shooting order, and the
-  // desktop never takes the tablet's writing. Runs 29 and 30, with the local
-  // server alive through both.
+  // ON, AND BEING JUDGED BY HAND (#366).
   //
-  // So there is a second reason, still unknown, and it is not worth guessing at
-  // a third time. Whoever picks this up: the failing test is "a pull does not
-  // close the shooting order you are in", and the thing to find out first is
-  // whether the tablet stops pushing or the desktop stops fetching.
+  // Roman's rule: a device nobody is looking at has no reason to be kept up to
+  // date — which is what the app already did — but the moment somebody touches
+  // it or scrolls, it should catch up rather than waiting up to five seconds for
+  // the next regular check.
+  //
+  // Switched on three times before and taken off three times, each time because
+  // a different test failed: a card, a shooting order, a drawing. The local test
+  // server crashed during two of those runs, so it was never clear whether the
+  // change breaks something real or merely shifts the timing enough to upset a
+  // shaky test setup. Five seconds of behaviour did not justify a fourth round
+  // of guessing.
+  //
+  // OFF, AND STAYING OFF. The fourth attempt failed the same way as the others,
+  // and this time on the thing that matters most: with it on, the shooting order
+  // can close on you mid-edit again — the exact fault reported and fixed as
+  // #357. Nothing is worth reopening that for, least of all five seconds.
   //
   //   const wasQuietFor = Date.now() - _lastUserActivity;
   //   _lastUserActivity = Date.now();
@@ -4718,6 +4727,8 @@ let _lastHeldBackTrace = 0;
 let _lastQuietBeatTrace = 0;
 /** ...and the same for "not fetching while somebody is drawing" (#371). */
 let _lastHandBusyTrace = 0;
+/** ...and for "not fetching while a shooting order is open" (#380). */
+let _lastOrderBusyTrace = 0;
 
 async function tryPullFromCloud(force = false): Promise<void> {
   // Did the rebuild actually begin? A pull that dies on the way to the server
@@ -4739,6 +4750,28 @@ async function tryPullFromCloud(force = false): Promise<void> {
   // Holding back the FETCH costs nothing: the work is still on the server, the
   // heartbeat comes round every few seconds, and it lands the moment the hand
   // is off. Roman's rule, and the right one.
+  // NOT WHILE YOU ARE WORKING IN A SHOOTING ORDER (#380).
+  //
+  // Roman: "when you are working in a shooting order there is no reason for you
+  // to pull. If the other device changes something, we call for the changes once
+  // the shooting order is finished. It's a one man's app and nobody should be
+  // changing frames or needs at the same time."
+  //
+  // Same shape as the hand on the page (#371): the work is still on the server
+  // and nothing is lost, it simply waits until the order is closed — which asks
+  // for it straight away, see closeSortMode.
+  // NOT SWITCHED ON. Roman's rule is right — a device working in a shooting
+  // order has no reason to fetch, and should catch up when the order closes.
+  // Holding the fetching works; the catching-up does not. Closing the order
+  // asks for the waiting work and it never arrives, forced or not, so the
+  // device would sit stale until something else happened to trigger a fetch.
+  // Worse than not holding it at all.
+  //
+  // Whoever picks this up: closeSortMode calls pullNow(), which forces
+  // tryPullFromCloud. Find out which of the guards above turns it away, or
+  // whether it runs and finds nothing.
+  //
+  //   if (!force && state().sortEditingId) { ...return; }
   if (!force && handIsBusy()) {
     if (Date.now() - _lastHandBusyTrace > 5000) {
       _lastHandBusyTrace = Date.now();

@@ -1106,7 +1106,7 @@ function rerenderBracket(editViewEl: HTMLElement, bracketState: BracketState, or
   }
 }
 
-import { flushSyncNow } from './currentProject';
+import { flushSyncNow, pullNow } from './currentProject';
 import { getStripVersions } from './helpers';
 import { getVisibleFrames } from './groups';
 import { rasterizeMain, rasterizeVersion, versionHasContent } from './rasterize';
@@ -1288,6 +1288,9 @@ export function closeSortMode(): void {
   }
 
   useStore.setState({ sortMode: false, sortEditingId: null });
+  // ...and now ask for whatever arrived while the order was open (#380). The
+  // fetching was held, not cancelled — this is where it catches up.
+  pullNow();
   const dropdown = document.getElementById('sortDropdown');
   if (dropdown) { dropdown.style.display = 'none'; dropdown.innerHTML = ''; }
   if (editView) {

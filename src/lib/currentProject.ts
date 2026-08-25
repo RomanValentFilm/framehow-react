@@ -169,6 +169,15 @@ export function registerPullFn(fn: (force?: boolean) => Promise<void>): void {
   _pullFn = fn;
 }
 
+/** Ask for whatever is waiting, now. Used when a shooting order closes (#380):
+ *  the fetching was held while it was open, and this is it catching up. */
+export function pullNow(): void {
+  // FORCED, on purpose. An ordinary ask is turned away by the "not too often"
+  // guard, and then nothing arrives at all — holding the fetching is only
+  // holding, it has to catch up the moment the order is closed (#380).
+  void _pullFn?.(true);
+}
+
 /** Called by accountFlow to tell push-sync to pause during a pull. */
 export function setPullInFlight(v: boolean): void {
   _pullInFlight = v;

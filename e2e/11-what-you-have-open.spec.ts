@@ -45,6 +45,11 @@ test('a pull does not close the shooting order you are in', async ({ browser }) 
   await tablet.settle();
 
   // Wait until the desktop has actually taken it — that is the rebuild.
+  //
+  // Roman's rule that a device in a shooting order should not fetch at all
+  // (#380) is NOT in: holding the fetching worked, but the catching-up when the
+  // order closed did not, which is worse than not holding it. So this is back to
+  // what the app really does — the writing arrives, and the order stays open.
   const deadline = Date.now() + 60_000;
   for (;;) {
     await desktop.nudge();
@@ -54,7 +59,7 @@ test('a pull does not close the shooting order you are in', async ({ browser }) 
     await desktop.page.waitForTimeout(1000);
   }
 
-  expect(await desktop.orderBeingEdited(), 'THE PULL CLOSED THE SHOOTING ORDER. '
+  expect(await desktop.orderBeingEdited(), 'THE SYNC CLOSED THE SHOOTING ORDER. '
     + 'Roman was in the middle of naming a break; the sync shut the order and '
     + 'left him looking at 3x2.').toBe(orderId);
 

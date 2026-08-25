@@ -232,7 +232,7 @@ function performUndo(): void {
   }
 
   bumpRenderTick();
-  sendWhenTheHandStops();
+  void flushSyncNow();
   refreshScribbleOverlays();
 }
 
@@ -501,7 +501,7 @@ function eraseWithPath(eraserPath: { x: number; y: number }[], cvs: HTMLCanvasEl
       if (fr?.serverFrameId) markFrameDirty(fr.serverFrameId);
     }
     bumpRenderTick();
-    sendWhenTheHandStops();   // rubbing out is drawing too (#381)
+    void flushSyncNow();
   }
 
   renderAllScribbles(cvs);
@@ -546,7 +546,7 @@ function eraseAtPoint(pt: { x: number; y: number }, cvs: HTMLCanvasElement): voi
     if (undoStack.length > UNDO_LIMIT) undoStack.shift();
     if (bestFrame.serverFrameId) markFrameDirty(bestFrame.serverFrameId);
     bumpRenderTick();
-    sendWhenTheHandStops();   // (#381)
+    void flushSyncNow();
     renderAllScribbles(cvs);
   }
 }
@@ -722,7 +722,7 @@ function wirePageDrawing(cvs: HTMLCanvasElement): void {
             if (fr?.serverFrameId) markFrameDirty(fr.serverFrameId);
           }
           bumpRenderTick();
-          sendWhenTheHandStops();
+          void flushSyncNow();
         }
       }
       drawing = false;
@@ -757,7 +757,7 @@ function wirePageDrawing(cvs: HTMLCanvasElement): void {
             if (fr?.serverFrameId) markFrameDirty(fr.serverFrameId);
           }
           bumpRenderTick();
-          sendWhenTheHandStops();
+          void flushSyncNow();
         }
       }
     }

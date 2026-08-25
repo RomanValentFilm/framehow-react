@@ -20,7 +20,7 @@ import { getVisibleFrames } from './groups';
 import { ensureStripVersions, getStripVersions } from './helpers';
 import { openFullscreen, closeFullscreen } from './fullscreen';
 import { setViewMode } from './view';
-import { openSortEditView } from './sortOrder';
+import { openSortEditView, closeSortMode } from './sortOrder';
 import { toggleScribbleMode, attachScribbleOverlays } from './scribble';
 import { trace } from './syncTrace';
 import { uniqueId } from './ids';
@@ -149,6 +149,10 @@ export interface TestDoor {
    *  pull was quietly closing — and being thrown out of it is what put Roman
    *  back in 3x2 while he was naming a break. */
   orderBeingEdited(): string | null;
+
+  /** Close it, as pressing done does. Fetching held while it was open catches
+   *  up now (#380). */
+  closeOrder(): void;
 
   /** LOOK at a strip, as showing it on screen does (#358). Nothing is created
    *  by a person here — this is only the app preparing the strip to be drawn. */
@@ -586,6 +590,8 @@ export function installTestDoor(): void {
     },
 
     orderBeingEdited() { return useStore.getState().sortEditingId ?? null; },
+
+    closeOrder() { closeSortMode(); },
 
     lookAtStrip(frameIndex, strip) {
       const f = useStore.getState().frames[frameIndex];
