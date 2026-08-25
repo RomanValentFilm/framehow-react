@@ -8,6 +8,7 @@ import type { Setup, StripType } from '../store/state';
 import { getStripVersions, ensureStripVersions, stripTabPrefix, relabelStripVersions, reorderByStars, getStripActiveTab, setStripActiveTab } from './helpers';
 import { showToast, showConfirm } from './modals';
 import { flushSyncNow } from './currentProject';
+import { trace } from './syncTrace';
 
 // ─── Setup bar rendering ───────────────────────────────────────────────
 
@@ -597,7 +598,14 @@ export function wireSetupClicks(container: HTMLElement | Document = document): v
  *  Called when a frame loses its SETUP (unassign or delete).
  *  Also clears 'origin' markers — they become regular user content.
  *  Without this, old origins would be propagated into the new setup. */
+/** Who just changed a version's tag, and from where (#375). */
+function sayTagChange(what: string): void {
+  const who = new Error().stack?.split('\n')[3]?.trim().replace(/^at /, '') ?? '?';
+  trace(`tag: ${what}   (${who.slice(0, 60)})`);
+}
+
 function clearCopyTaggedVersions(fid: number): void {
+  sayTagChange(`clearing every tag on frame ${fid}`);
   const strips: StripType[] = ['ver', 'floor', 'refs'];
   for (const strip of strips) {
     const vers = getStripVersions(fid, strip);
@@ -849,6 +857,7 @@ function applyStripTag(fid: number, vi: number, strip: StripType): void {
   if (!mainFrame || !mainFrame.setupId) return;
 
   // Mark this version as the origin
+  sayTagChange(`frame ${fid} ${strip} ${vi + 1} becomes an origin of ${mainFrame.setupId.slice(0, 10)}`);
   ver.setupTagged = 'origin';
 
   // Re-apply ALL origins for this frame+strip so slots are assigned in order

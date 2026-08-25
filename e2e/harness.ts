@@ -346,6 +346,30 @@ export class Device {
         .__fh_test.swipeCard(i as number), frameIndex);
   }
 
+  /** Put a setup on a frame, as tapping it in SETUPS mode does. */
+  async putSetupOnFrame(frameIndex: number, setupId: string): Promise<void> {
+    await this.page.evaluate(([i, id]) =>
+      (window as never as { __fh_test: { putSetupOnFrame(i: number, id: string): void } })
+        .__fh_test.putSetupOnFrame(i as number, id as string),
+      [frameIndex, setupId] as [number, string]);
+  }
+
+  /** Tag a version with the frame's setup. */
+  async tagVersion(frameIndex: number, strip = 'ver', versionIndex = 0): Promise<void> {
+    await this.page.evaluate(([i, s, v]) =>
+      (window as never as { __fh_test: { tagVersion(i: number, s: string, v: number): void } })
+        .__fh_test.tagVersion(i as number, s as string, v as number),
+      [frameIndex, strip, versionIndex] as [number, string, number]);
+  }
+
+  /** What the version's tag says: 'none', or the setup whose colour it wears. */
+  versionTag(frameIndex: number, strip = 'ver', versionIndex = 0): Promise<string> {
+    return this.page.evaluate(([i, s, v]) =>
+      (window as never as { __fh_test: { versionTag(i: number, s: string, v: number): string } })
+        .__fh_test.versionTag(i as number, s as string, v as number),
+      [frameIndex, strip, versionIndex] as [number, string, number]);
+  }
+
   /** Press a view button. */
   async setView(mode: string): Promise<void> {
     say(`${this.name}: switching to ${mode}`);

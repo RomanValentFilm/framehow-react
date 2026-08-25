@@ -26,7 +26,7 @@ import { trace } from './syncTrace';
 import { uniqueId } from './ids';
 import { startFromScratch } from './files';
 import { deleteFrameForGood } from './actions';
-import { createSetup } from './setups';
+import { createSetup, handleSetupFrameClick, handleStripTagClick } from './setups';
 import { saveNow, openCloudProjectById } from './accountFlow';
 import { flushSyncNow, markFrameDirty, getDirtyFrameIds } from './currentProject';
 import { stampChangedContent } from './changeStamps';
@@ -62,6 +62,19 @@ export interface TestDoor {
   deleteFrame(index: number): void;
   /** Make a setup, exactly as the CREATE button does. Returns its id. */
   newSetup(name: string, colorIndex?: number): string;
+
+  // --- setups on frames and versions (#375) --------------------------------
+
+  /** Put the currently chosen setup on a frame, as tapping the frame in SETUPS
+   *  mode does. Choosing which setup is active is part of it. */
+  putSetupOnFrame(frameIndex: number, setupId: string): void;
+
+  /** Tag a version with the frame's setup, as tapping its TAG pill does. */
+  tagVersion(frameIndex: number, strip?: StripType, versionIndex?: number): void;
+
+  /** What the version's tag says now: 'none', or the name of the setup whose
+   *  colour it is wearing. This is what the person actually sees. */
+  versionTag(frameIndex: number, strip?: StripType, versionIndex?: number): string;
   /** Put a break in the STORY FLOW at a place in the frame order (#337). */
   addStoryBreak(position: number, text: string): string;
 
@@ -412,6 +425,42 @@ export function installTestDoor(): void {
     },
 
     newSetup(name, colorIndex = 0) { return createSetup(name, colorIndex); },
+
+    putSetupOnFrame(frameIndex, setupId) {
+      const f = useStore.getState().frames[frameIndex];
+      if (!f) throw new Error(`no frame at ${frameIndex}`);
+      // Being IN setups mode, with that setup chosen and open for editing, and
+      // then tapping the frame. All three are required — the app quite properly
+      // ignores a tap that arrives without them, which is why the first version
+      // of this door did nothing at all.
+      useStore.setState({
+        setupMode: true, setupEditing: true, activeSetupId: setupId,
+      } as never);
+      handleSetupFrameClick(f.id);
+    },
+
+    tagVersion(frameIndex, strip = 'ver', versionIndex = 0) {
+      const f = useStore.getState().frames[frameIndex];
+      if (!f) throw new Error(`no frame at ${frameIndex}`);
+      ensureStripVersions(f.id, strip);
+      // The pill asks for confirmation the first time; a person who has said
+      // "don't ask again" gets the tag straight away, and so does this.
+      useStore.setState({ stripTagInfoDismissed: true } as never);
+      handleStripTagClick(f.id, versionIndex, strip);
+    },
+
+    versionTag(frameIndex, strip = 'ver', versionIndex = 0) {
+      const s = useStore.getState();
+      const f = s.frames[frameIndex];
+      if (!f) throw new Error(`no frame at ${frameIndex}`);
+      const ver = getStripVersions(f.id, strip)[versionIndex];
+      if (!ver || !ver.setupTagged) return 'none';
+      // A tag has no colour of its own — it wears whatever setup the MAIN frame
+      // is currently in. That is exactly the thing under suspicion, so the door
+      // reports what the person would see rather than what is stored.
+      const setup = s.setups.find((su) => su.id === f.setupId);
+      return setup ? setup.name : 'none';
+    },
 
     addStoryBreak(position, text) {
       const id = `brk_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
