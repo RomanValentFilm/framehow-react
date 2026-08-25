@@ -355,9 +355,17 @@ export function setupMainDrawing(cvs: HTMLCanvasElement, fid: number): void {
       const drawn = state().frames.find((x) => x.id === fid);
       if (drawn?.serverFrameId) markFrameDirty(drawn.serverFrameId);
       stampChangedContent();
+      // ONLY WHEN A STROKE REALLY HAPPENED (#376).
+      //
+      // This used to sit outside the test, so it fired whenever the pointer
+      // merely LEFT the canvas — and "the hand is still warm" was then true for
+      // five seconds at a time, for nothing. With a pointer moving about, the
+      // app could believe somebody was drawing permanently and never fetch at
+      // all. Roman spotted it from the outside: "isn't it because in the time of
+      // writing we are not asking for a pull?"
+      noteStrokeEnded();
     }
     useStore.setState({ drawingInProgress: false });
-    noteStrokeEnded();   // the hand stays warm for a few seconds (#371)
     isDrawing = false;
     isErasing = false;
     cur = null;
@@ -449,9 +457,17 @@ export function setupDrawing(cvs: HTMLCanvasElement, fid: number, ai: number, st
       const drawn = state().frames.find((x) => x.id === fid);
       if (drawn?.serverFrameId) markFrameDirty(drawn.serverFrameId);
       stampChangedContent();
+      // ONLY WHEN A STROKE REALLY HAPPENED (#376).
+      //
+      // This used to sit outside the test, so it fired whenever the pointer
+      // merely LEFT the canvas — and "the hand is still warm" was then true for
+      // five seconds at a time, for nothing. With a pointer moving about, the
+      // app could believe somebody was drawing permanently and never fetch at
+      // all. Roman spotted it from the outside: "isn't it because in the time of
+      // writing we are not asking for a pull?"
+      noteStrokeEnded();
     }
     useStore.setState({ drawingInProgress: false });
-    noteStrokeEnded();   // the hand stays warm for a few seconds (#371)
     isDrawing = false;
     isErasing = false;
     cur = null;

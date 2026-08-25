@@ -3934,16 +3934,29 @@ function startHeartbeatSender(): void {
   // heard nothing at all until it was clicked, which is exactly how a setup made
   // on one device appeared to be lost on the other.
   //
-  // STILL NOT SWITCHED ON, and now for a second reason.
+  // TOUCH IT AND IT CATCHES UP (#366).
   //
-  // #368 was the first blocker and is fixed. But with this on, one test fails
-  // every single time and passes every time without it: two devices, one in a
-  // shooting order, and the desktop never takes the tablet's writing. Something
-  // about asking the instant a device is touched makes it SLOWER to hear, which
-  // is the opposite of the intent and is not understood.
+  // Roman's rule: a device nobody is looking at has no reason to be kept up to
+  // date — but the moment somebody touches it, or just scrolls, it should catch
+  // up. No button, no particular action.
   //
-  // Runs 1, 15, 16 and 17 fail it; runs 2 and 14 pass without it. That is a
-  // clear enough signal to leave it out until the reason is known.
+  // Held back twice. First by #368, a card falling off the version it was
+  // showing. Then by something stranger: with this on, a device stopped taking
+  // the other's writing at all. That turned out to be my own mistake in #371 —
+  // "the hand is still warm" was being set whenever the pointer merely left a
+  // canvas, so a device with a moving pointer believed somebody was drawing
+  // permanently and never fetched. Roman worked it out from the outside: "isn't
+  // it because in the time of writing we are not asking for a pull?"
+  //
+  // #376 was part of it and is fixed — but not the whole of it. With this on,
+  // the same test fails again: two devices, one in a shooting order, and the
+  // desktop never takes the tablet's writing. Runs 29 and 30, with the local
+  // server alive through both.
+  //
+  // So there is a second reason, still unknown, and it is not worth guessing at
+  // a third time. Whoever picks this up: the failing test is "a pull does not
+  // close the shooting order you are in", and the thing to find out first is
+  // whether the tablet stops pushing or the desktop stops fetching.
   //
   //   const wasQuietFor = Date.now() - _lastUserActivity;
   //   _lastUserActivity = Date.now();
