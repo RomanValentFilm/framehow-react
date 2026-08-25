@@ -55,6 +55,7 @@ import {
   pendingOnDevice,
   markSomethingToSend,
   registerTombstoneBridge,
+  handIsBusy,
 } from './currentProject';
 import { trace } from './syncTrace';
 import { frameChangedAt, versionChangedAt, importChangeStamps, stampChangedContent, seedContentStamps, pictureFp, strokesFp } from './changeStamps';
@@ -4700,6 +4701,8 @@ function mergeFrames(
 let _lastHeldBackTrace = 0;
 /** So a heartbeat that finds nothing says so, but only now and then (#365). */
 let _lastQuietBeatTrace = 0;
+/** ...and the same for "not fetching while somebody is drawing" (#371). */
+let _lastHandBusyTrace = 0;
 
 async function tryPullFromCloud(force = false): Promise<void> {
   // Did the rebuild actually begin? A pull that dies on the way to the server
@@ -4711,6 +4714,23 @@ async function tryPullFromCloud(force = false): Promise<void> {
   // answer, and then skipped the one pull that would have applied it. Every
   // early exit is traced here, so a pull can never again vanish unseen.
   if (pullInFlight) { if (force) trace('  pull skipped: another pull is running'); return; }
+  // NOT WHILE A HAND IS ON THE PAGE (#371).
+  //
+  // Fetching is what rebuilds the page, and rebuilding the page in 3x2 throws
+  // away the scribble layer somebody may be drawing on. Two earlier attempts
+  // held back the REDRAW and both tore the screen — the layer ended up not
+  // rebuilt at all, or rebuilt from notes taken before the person had finished.
+  //
+  // Holding back the FETCH costs nothing: the work is still on the server, the
+  // heartbeat comes round every few seconds, and it lands the moment the hand
+  // is off. Roman's rule, and the right one.
+  if (!force && handIsBusy()) {
+    if (Date.now() - _lastHandBusyTrace > 5000) {
+      _lastHandBusyTrace = Date.now();
+      trace('  not fetching while somebody is drawing');
+    }
+    return;
+  }
   if (!force && isPushInFlight()) return;
   if (!force && Date.now() - lastPullAt < PULL_COOLDOWN_MS) return;
   if (!isLoggedIn()) { if (force) trace('  pull skipped: not signed in'); return; }

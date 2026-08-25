@@ -260,6 +260,35 @@ export function adoptDirtyFrameIds(ids: string[] | undefined | null): void {
  *  Use this for in-place mutations (e.g. setting noteHolder.note) where
  *  the object reference doesn't change so the ref-based subscriber can't
  *  detect the change automatically. */
+/**
+ * A HAND ON THE PAGE HOLDS THE FETCHING BACK (#371).
+ *
+ * Roman's rule, and a better one than the two I tried: "a device you write on in
+ * scribble does not need to pull new stuff from the server while your pen is
+ * down — and maybe pause for five seconds after the last stroke."
+ *
+ * Both earlier attempts held back the REDRAW, which tears the screen: the layer
+ * ends up not rebuilt at all, or rebuilt from notes taken before the person
+ * finished. Holding the FETCH instead costs nothing — nothing is torn down,
+ * nothing goes stale, and the fetch simply happens a moment later when the
+ * heartbeat comes round again.
+ *
+ * The grace period matters as much as the stroke itself: a series of quick marks
+ * has gaps between them, and a rebuild landing in one of those gaps is the same
+ * interruption.
+ */
+let _lastStrokeAt = 0;
+const HAND_STILL_WARM_MS = 5_000;
+
+/** Called when a stroke ends, wherever it was drawn. */
+export function noteStrokeEnded(): void { _lastStrokeAt = Date.now(); }
+
+/** Is somebody drawing, or have they only just stopped? */
+export function handIsBusy(): boolean {
+  if (useStore.getState().drawingInProgress) return true;
+  return Date.now() - _lastStrokeAt < HAND_STILL_WARM_MS;
+}
+
 export function markFrameDirty(serverFrameId: string): void {
   _dirtyFrameIds.add(serverFrameId);
 }

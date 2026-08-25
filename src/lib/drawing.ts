@@ -5,7 +5,7 @@
 import { COLORS, state, useStore } from '../store/state';
 import type { Frame, Stroke, Version, StripType, FrameSnapshot } from '../store/state';
 import { getStripVersions, getStripActiveTab, getStripCrossCompare, setStripPrevFrameState } from './helpers';
-import { markFrameDirty } from './currentProject';
+import { markFrameDirty, noteStrokeEnded } from './currentProject';
 import { stampChangedContent } from './changeStamps';
 
 export function _drawStrokeItem(tctx: CanvasRenderingContext2D, st: Stroke, cH: number): void {
@@ -357,6 +357,7 @@ export function setupMainDrawing(cvs: HTMLCanvasElement, fid: number): void {
       stampChangedContent();
     }
     useStore.setState({ drawingInProgress: false });
+    noteStrokeEnded();   // the hand stays warm for a few seconds (#371)
     isDrawing = false;
     isErasing = false;
     cur = null;
@@ -450,6 +451,7 @@ export function setupDrawing(cvs: HTMLCanvasElement, fid: number, ai: number, st
       stampChangedContent();
     }
     useStore.setState({ drawingInProgress: false });
+    noteStrokeEnded();   // the hand stays warm for a few seconds (#371)
     isDrawing = false;
     isErasing = false;
     cur = null;

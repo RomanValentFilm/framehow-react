@@ -1,38 +1,38 @@
-v4.9.082 - a picture is never replaced by nothing, and a field you are typing in stays open (#369, #370)
+v4.9.083 - a hand on the page holds the fetching back (#371)
 
-#369 NEVER THROW AWAY A PICTURE WE ALREADY HAVE.
+#371 Roman, after watching me fail at this three times: "a device you write on in
+     scribble does not need to pull new stuff from the server while your pen is
+     down... and maybe pause loading for five seconds after the last stroke."
 
-     On every rebuild each picture was asked one question: does the copy I hold
-     carry the same server name as the one up there? If yes it was kept. If not
-     it was set to NOTHING and downloaded again.
+     That is the fix, and it is better than any of mine.
 
-     A photo just taken has no server name yet. A sync landing in that window
-     therefore did not recognise the app's own picture, threw it away, and left
-     the card empty until the download finished. Roman: "you take a photo and it
-     takes quite a while till it appears as the version in the LOOKs... earlier
-     it was immediately, which was much better."
+     THE FAULT: fetching is what rebuilds the page, and rebuilding the 3x2 page
+     throws away the whole scribble layer and makes a new one. A sync landing
+     mid-stroke destroyed the canvas under the hand: the half-made mark went with
+     it and the finger came up on an element that no longer existed. Drawing fast
+     simply means more strokes are in progress when a sync arrives.
 
-     Whatever is held now stays on screen until something better arrives. The
-     download is unchanged, so the right picture still lands exactly as before -
-     the only difference is what you look at meanwhile. Replacing a picture with
-     a picture is invisible; replacing it with nothing is not.
+     WHY MY THREE ATTEMPTS FAILED: all of them held back the REDRAW - first the
+     layer, then the page, then the whole redraw - and every one tore the screen.
+     The layer ended up not rebuilt at all, or rebuilt from notes taken before
+     the person had finished.
 
-     Two lines: one for versions, one for main frames.
+     Holding back the FETCH costs nothing. Nothing is torn down, nothing goes
+     stale. The work is still on the server, the heartbeat comes round every few
+     seconds, and it lands the moment the hand is off.
 
-#370 DO NOT REBUILD A COLUMN SOMEBODY IS TYPING IN.
+     The five seconds matter as much as the stroke: a series of quick marks has
+     gaps between them, and a rebuild landing in one of those gaps is the same
+     interruption. Applies to the scribble layer and to drawing on a version,
+     since both already say when a stroke is in progress.
 
-     Roman: "the categories in NEEDS when renamed sometimes just jump back in the
-     middle of typing - the field closes and you stay there with half a name."
+     The test that describes this failed three times against my attempts and was
+     parked. It is back in, and green.
 
-     Writing under a frame was always safe: the redraw copies the box into the
-     frame before rebuilding anything. The little box you get when you click a
-     category NAME never had that. It is made on the spot and destroyed by the
-     next redraw, taking what was typed with it. The flash fix did not help and
-     was never going to - it stopped pictures blanking, not redraws happening.
+WHAT THIS CHANGES ON THE LIST
 
-     Saving half a name would be worse than losing it, so the answer is not to
-     save it but to leave that column alone while the cursor is in it. Everything
-     else on the page still redraws; the column catches up the moment you click
-     away. Applies to NEEDS and NOTES.
+Scribble batching was only ever the cheap route to this. With the fetching held
+it is no longer a correctness question, only traffic: a fast hand still sends one
+push per stroke, but nothing comes back to disturb it. Demoted.
 
-27 of 27 pass, twice, with the local server staying up both times.
+28 of 28 pass, with the local server staying up.

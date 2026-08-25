@@ -6,7 +6,7 @@
 
 import { state, useStore, bumpRenderTick } from '../store/state';
 import type { Stroke } from '../store/state';
-import { flushSyncNow, markFrameDirty } from './currentProject';
+import { flushSyncNow, markFrameDirty, noteStrokeEnded } from './currentProject';
 import { getZoomState, setZoomState } from './overview';
 
 // ─── SVG icons ───────────────────────────────────────────────────────
@@ -314,6 +314,9 @@ export function injectScribbleButton(): void {
  */
 function penIsDown(down: boolean): void {
   useStore.setState({ drawingInProgress: down });
+  // ...and when it comes up, the hand stays warm for a few seconds so a series
+  // of quick marks is not interrupted between them either (#371).
+  if (!down) noteStrokeEnded();
 }
 
 export function attachScribbleOverlays(): void {

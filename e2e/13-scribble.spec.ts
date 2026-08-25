@@ -159,11 +159,11 @@ test('a quick little tick stays a tick, and does not become a dot', async ({ bro
 //
 // So this puts the pen down, lets the other device's work arrive and rebuild the
 // page, and only then lifts it.
-// STILL OPEN. The fault is real and this test caught it. The fix is not: holding
-// the page redraw back while the pen is down left the layer not rebuilt at all,
-// and after three attempts it was taken out rather than kept on being poked at.
-// Left here, skipped, so it is not forgotten and does not fail the suite.
-test.fixme('a stroke survives the page being redrawn under it', async ({ browser }) => {
+// Held back three times while the fix was wrong. Roman's rule is the right one
+// and it is now in: while a hand is on the page, the app does not FETCH — the
+// earlier attempts all held back the REDRAW, which tears the screen. Holding the
+// fetch costs nothing; the work is still on the server and lands a moment later.
+test('a stroke survives the page being redrawn under it', async ({ browser }) => {
   const { token } = await freshAccount();
   const desktop = await Device.open(browser, 'desktop', token);
   const tablet = await Device.open(browser, 'tablet', token, true);
