@@ -234,9 +234,33 @@ export function renderAll(): void {
   overviewScroll.replaceChildren();
   if (floorScroll) floorScroll.replaceChildren(floorFrag);
   if (refsScroll) refsScroll.replaceChildren(refsFrag);
-  if (needsScroll) needsScroll.replaceChildren(s.needsStripVisible ? needsFrag : document.createDocumentFragment());
+  // DO NOT REBUILD A COLUMN SOMEBODY IS TYPING IN (#370).
+  //
+  // Roman: "the categories in NEEDS when renamed sometimes just jump back in the
+  // middle of typing — the field closes and you stay there with half a name."
+  //
+  // Writing under a frame has always been safe: the redraw copies the box into
+  // the frame before rebuilding. The little box you get when you click a
+  // category NAME never had that. It is made on the spot and destroyed by the
+  // next redraw, taking what was typed with it.
+  //
+  // Committing half a name would be worse than losing it, so the answer is not
+  // to save it but to leave the column alone until the cursor has gone. A column
+  // nobody is typing in is rebuilt exactly as before.
+  const beingTypedIn = (el: HTMLElement | null): boolean => {
+    const active = document.activeElement;
+    if (!el || !active || active === document.body) return false;
+    const tag = active.tagName;
+    if (tag !== 'INPUT' && tag !== 'TEXTAREA' && !(active as HTMLElement).isContentEditable) return false;
+    return el.contains(active);
+  };
+  if (needsScroll && !beingTypedIn(needsScroll)) {
+    needsScroll.replaceChildren(s.needsStripVisible ? needsFrag : document.createDocumentFragment());
+  }
   const notesScrollEl = document.getElementById('notesScroll');
-  if (notesScrollEl) notesScrollEl.replaceChildren(s.notesStripVisible ? notesFrag : document.createDocumentFragment());
+  if (notesScrollEl && !beingTypedIn(notesScrollEl)) {
+    notesScrollEl.replaceChildren(s.notesStripVisible ? notesFrag : document.createDocumentFragment());
+  }
   if (s.currentViewMode === 'overview') {
     const fn = (window as any).__fh_renderOverview;
     if (fn) fn();

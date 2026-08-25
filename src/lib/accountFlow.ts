@@ -2724,7 +2724,10 @@ async function applyCloudTreeToStore(
       newFrames.push({
         id: localId,
         // DIFF: carry forward existing image if r2Key matches, otherwise empty (fetched async)
-        src: mainImageUnchanged ? existingFrame!.src : '',
+        // Same rule as the versions below (#369): whatever we already hold stays
+        // on screen until something better arrives, rather than being wiped and
+        // fetched again.
+        src: mainImageUnchanged ? existingFrame!.src : existingFrame?.src ?? '',
         label: sf.label ?? '',
         stripLabels,
         hidden: !!sf.hidden,
@@ -2772,8 +2775,21 @@ async function applyCloudTreeToStore(
             label: sv.label ?? '',
             type: (rawType === 'drawing' || rawType === 'upload' || rawType === 'empty') ? rawType as 'drawing' | 'upload' | 'empty' : 'empty' as const,
             strokes: parseStrokes(drawingByVersion.get(sv.id)),
-            // DIFF: carry forward existing image if r2Key matches
-            bgImage: imageUnchanged ? existingVer!.bgImage : null as string | null,
+            // NEVER THROW AWAY A PICTURE WE ALREADY HAVE (#369).
+            //
+            // This used to keep the picture only if its server name matched, and
+            // set it to NOTHING otherwise — then download it again. A photo just
+            // taken has no server name yet, so a rebuild landing in that window
+            // did not recognise the app's own picture, threw it away, and left
+            // the version blank until the download finished. Roman: "you take a
+            // photo and it takes quite a while till it appears as the version…
+            // earlier it was immediately, which was much better."
+            //
+            // Whatever we hold is shown until something better arrives. If the
+            // server's copy really is different, the fetch below replaces it a
+            // moment later — and replacing a picture with a picture is invisible,
+            // where replacing it with nothing is not.
+            bgImage: (imageUnchanged ? existingVer!.bgImage : existingVer?.bgImage ?? null) as string | null,
             hidden: !!sv.hidden,
             starred: !!sv.starred,
             stars: Number(sv.starred) || 0,

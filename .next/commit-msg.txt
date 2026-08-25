@@ -1,55 +1,38 @@
-v4.9.081 - the card keeps showing what you drew on (#368)
+v4.9.082 - a picture is never replaced by nothing, and a field you are typing in stays open (#369, #370)
 
-#368 A drawing could still appear to vanish: close the big view in 3x2 and the
-     card sometimes fell back to the main frame, so what had just been drawn was
-     no longer on screen. One device, on its own - the app's own sync racing its
-     own closing animation. Nobody else needed.
+#369 NEVER THROW AWAY A PICTURE WE ALREADY HAVE.
 
-     The close zooms shut over about a fifth of a second and only then decides
-     "leave the card showing this version". It made that change by reaching into
-     the map it had picked up when the close STARTED and altering it in place.
-     Anything that replaces that map in between - a sync rebuilding the project,
-     among others - left the write landing on a copy nothing reads.
+     On every rebuild each picture was asked one question: does the copy I hold
+     carry the same server name as the one up there? If yes it was kept. If not
+     it was set to NOTHING and downloaded again.
 
-     It now goes through the store. That cannot be raced, and it removes the
-     whole class rather than this one instance.
+     A photo just taken has no server name yet. A sync landing in that window
+     therefore did not recognise the app's own picture, threw it away, and left
+     the card empty until the download finished. Roman: "you take a photo and it
+     takes quite a while till it appears as the version in the LOOKs... earlier
+     it was immediately, which was much better."
 
-HOW IT WAS FOUND, after four wrong answers
+     Whatever is held now stays on screen until something better arrives. The
+     download is unchanged, so the right picture still lands exactly as before -
+     the only difference is what you look at meanwhile. Replacing a picture with
+     a picture is invisible; replacing it with nothing is not.
 
-Every one of the four was reasoned rather than measured, and each cost a run:
+     Two lines: one for versions, one for main frames.
 
-  - "the close writes into a stale copy, so read the state fresh" - cured one
-    test, broke the other
-  - "then leave it as it was" - cured the other, broke the first
-  - "the rebuild moves the card" - the app was made to say so, and it never once
-    did, either way round
-  - "the person changed it while the rebuild was in flight, so take what is on
-    screen at the last instant" - the app was made to print both numbers, and at
-    that instant the card was ALREADY back on the main frame
+#370 DO NOT REBUILD A COLUMN SOMEBODY IS TYPING IN.
 
-Only then did the shape become obvious: nothing moves the card, so the value is
-never really put there. Traced, then fixed.
+     Roman: "the categories in NEEDS when renamed sometimes just jump back in the
+     middle of typing - the field closes and you stay there with half a name."
 
-The test that catches it watches the card seven times a second and keeps the
-app's own log from the instant it flips. Six failures in a row before, green
-after.
+     Writing under a frame was always safe: the redraw copies the box into the
+     frame before rebuilding anything. The little box you get when you click a
+     category NAME never had that. It is made on the spot and destroyed by the
+     next redraw, taking what was typed with it. The flash fix did not help and
+     was never going to - it stopped pictures blanking, not redraws happening.
 
-ALSO
+     Saving half a name would be worse than losing it, so the answer is not to
+     save it but to leave that column alone while the cursor is in it. Everything
+     else on the page still redraws; the column catches up the moment you click
+     away. Applies to NEEDS and NOTES.
 
-#366 - touch a device and it catches up - is written and still NOT switched on.
-It fixes a setup appearing lost on a device that has been sitting behind another
-window, and makes that test pass in twenty-two seconds instead of failing after
-ninety. But with it on, another test fails every single time and passes every
-time without it: two devices, one in a shooting order, and the desktop never
-takes the tablet's writing. Asking the instant a device is touched somehow makes
-it slower to hear, which is the opposite of the intent and is not understood.
-Runs 1, 15, 16 and 17 fail; runs 2, 14 and 18 pass without it.
-
-The setups test is left in the file, skipped, as the thing #366 is for.
-
-A note on the local test server: it crashed mid-suite four times today with an
-empty error. The crash is inside wrangler's own dev plumbing - the wrapper that
-only exists on a laptop - not in our worker, and upgrading it to 4.125 did not
-help. Nothing that runs on Cloudflare goes near it. Run 18 was clean.
-
-27 of 28 pass; the one skipped is #366's.
+27 of 27 pass, twice, with the local server staying up both times.
