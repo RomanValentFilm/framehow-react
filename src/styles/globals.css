@@ -1145,10 +1145,12 @@
      rest of the app, and the same weight as the title so it reads as part of
      the name rather than a badge stuck on the end. */
   .sort-dd-group{font-size:13px;font-weight:500;color:var(--accent);letter-spacing:.03em;white-space:nowrap;}
-  /* Between the project's orders and each group's (#383). A tight 2px rule read
-     as a hairline crack; this is the wide, quiet break the modals use — the
-     space does the separating, not the line. */
-  .sort-dd-sep{height:1px;background:#000;margin:14px 0 12px;}
+  /* Between the project's orders and each group's (#385).
+     The same break the MENU button's menu uses, copied from it exactly: the
+     WHOLE space is black, not a black line inside a grey gap. Earlier tries
+     were a 2px rule and then a hairline with wide margins — both left the gap
+     the menu's own grey, which is not a break at all. See Toolbar.tsx. */
+  .sort-dd-sep{height:20px;background:#000;margin:0;border-top:1px solid var(--border);}
   .sort-dd-hint{font-size:12px;color:#999;margin-top:2px;}
   .sort-dd-edit{font-size:11px;color:#999;cursor:pointer;letter-spacing:.3px;font-weight:700;}
   @media(hover:hover){.sort-dd-edit:hover{color:#ccc;}}
