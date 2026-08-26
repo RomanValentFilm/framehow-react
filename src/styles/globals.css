@@ -920,7 +920,19 @@
     display:flex;gap:8px;overflow-x:auto;-webkit-overflow-scrolling:touch;
     flex:1;
   }
-  .needs-table{min-width:0;flex:1 1 0%;}
+  /* A COLUMN NEVER SHRINKS BELOW ITS OWN WORDS (#389).
+   *
+   * min-width:0 let a column be squeezed narrower than the text in it, so with
+   * six columns in a narrow place — a phone, or a needs card sitting inside a
+   * frame card in the strip views — the headings and the pills ran into each
+   * other. max-content is the width of the widest line and no more.
+   *
+   * The shares below still do the work whenever there IS room: they grow from a
+   * basis of 0 and divide the space. This only sets the floor. When the floor
+   * adds up to more than the card, .needs-tables scrolls sideways, which it has
+   * always been able to do — nothing could ever reach it while the columns
+   * shrank to fit instead. The card itself never changes size. */
+  .needs-table{min-width:max-content;flex:1 1 0%;}
   .needs-table[data-needs-table="tbl_shootday"]{flex:0.65 1 0%;}
   .needs-table[data-needs-table="tbl_unit"]{flex:0.7 1 0%;}
   /* A touch under LOCATION, which has no rule and so falls back to 1. Its own
@@ -930,24 +942,11 @@
      letters each and had room to spare. */
   .needs-table[data-needs-table="tbl_extint"]{flex:0.51 1 0%;}
   .needs-table[data-needs-table="tbl_daytime"]{flex:0.6 1 0%;}
-  /* ON A PHONE THE COLUMNS KEEP THEIR OWN WIDTH AND THE ROW SCROLLS (#387).
-   *
-   * Every width above is a SHARE of the row, which works while there is room to
-   * share out. On an iPhone there is not: six columns divided one screen between
-   * them and each was squeezed narrower than its own words, so the headings and
-   * the pills ran into each other.
-   *
-   * The row has always scrolled sideways — .needs-tables is overflow-x:auto.
-   * What stopped it being used is that the columns shrank to fit instead of
-   * overflowing. max-content makes each one as wide as its widest line and no
-   * wider, so nothing is crushed and the scroll does the rest. The card itself
-   * does not change size.
-   *
-   * The selector names the attribute, or the shares above win on specificity. */
-  @media (max-width:430px){
-    .needs-table[data-needs-table]{flex:0 0 auto;min-width:max-content;}
-    .needs-tables{padding-right:6px;}
-  }
+  /* #387 did this for phones only, with a media query. #389 made it the rule
+     everywhere — a needs card inside a frame card in the strip views is just as
+     narrow as a phone — so the query is gone and the floor lives on
+     .needs-table above. This is all that is left of it. */
+  .needs-tables{padding-right:6px;}
   .needs-table-header{
     font-size:12px;font-weight:700;color:#fff;letter-spacing:.06em;
     margin-bottom:4px;text-transform:uppercase;white-space:nowrap;

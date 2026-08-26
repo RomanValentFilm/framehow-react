@@ -430,6 +430,36 @@ export class Device {
         .__fh_test.pickOrder(i as number), orderIndex);
   }
 
+  // --- renames in NEEDS (#388) ---------------------------------------------
+
+  async renameNeedTable(tableId: string, name: string): Promise<void> {
+    say(`${this.name}: renaming the column ${tableId} to ${name}`);
+    await this.page.evaluate(([t, n]) =>
+      (window as never as { __fh_test: { renameNeedTable(t: string, n: string): void } })
+        .__fh_test.renameNeedTable(t as string, n as string),
+      [tableId, name] as [string, string]);
+  }
+
+  async renameNeedItem(tableId: string, itemId: string, name: string): Promise<void> {
+    say(`${this.name}: renaming ${itemId} to ${name}`);
+    await this.page.evaluate(([t, i, n]) =>
+      (window as never as { __fh_test: { renameNeedItem(t: string, i: string, n: string): void } })
+        .__fh_test.renameNeedItem(t as string, i as string, n as string),
+      [tableId, itemId, name] as [string, string, string]);
+  }
+
+  needTables(categoryIndex = 0): Promise<string[]> {
+    return this.page.evaluate((i) =>
+      (window as never as { __fh_test: { needTables(i: number): string[] } })
+        .__fh_test.needTables(i as number), categoryIndex);
+  }
+
+  needItems(tableId: string): Promise<string[]> {
+    return this.page.evaluate((t) =>
+      (window as never as { __fh_test: { needItems(t: string): string[] } })
+        .__fh_test.needItems(t as string), tableId);
+  }
+
   /** Choose a story flow: null for the project's, or a group's id. */
   async pickStoryFlow(groupId: number | null): Promise<void> {
     say(`${this.name}: choosing the ${groupId === null ? 'project' : `group ${groupId}`} story flow`);

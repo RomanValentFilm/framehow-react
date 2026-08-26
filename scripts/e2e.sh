@@ -27,7 +27,7 @@ mkdir -p e2e-log
 # like devices that stopped agreeing. `caffeinate -i` holds off idle sleep for
 # as long as the tests run and nothing longer.
 { echo "=== RUN ${FH_RUN:-unnumbered} — $(date '+%H:%M:%S') — args: $* ==="; \
-  caffeinate -i npx playwright test --project=webkit "$@" 2>&1; } | tee e2e-log/last-run.log | grep -v WebServer
+  caffeinate -dims npx playwright test --project=webkit "$@" 2>&1; } | tee e2e-log/last-run.log | grep -v WebServer
 afplay /System/Library/Sounds/Glass.aiff 2>/dev/null &
 osascript -e 'display notification "Tests finished — say zzz" with title "Framehow"' 2>/dev/null
 echo

@@ -6,6 +6,86 @@
 import { state, useStore, createDefaultFrameNeedState, SETUP_COLORS } from '../store/state';
 import type { FrameNeedState, NeedTable } from '../store/state';
 import { showVerLabelEdit } from './modals';
+import { stampChangedSettings } from './projectSettings';
+import { stampChangedContent } from './changeStamps';
+import { getCurrentProject, markSomethingToSend, markFrameDirty, flushSyncNow } from './currentProject';
+
+/**
+ * RENAMING SOMETHING IN NEEDS HAS TO LEAVE THE DEVICE (#388).
+ *
+ * All three renames — a column heading, an item inside it, and the card's own
+ * label — did the same thing: reached into the store and changed the name on
+ * the object that was already there, then asked for a sync.
+ *
+ * The sync did nothing. A push begins `if (!_dirty) return;`, and nothing had
+ * said there was anything to send — that flag is set by the functions that
+ * REPLACE things in the store, not by writing over one in place. So the new
+ * name sat on the device until the next fetch arrived with the old one and
+ * painted over it. Roman: "the tags sync and travel, but the renamed categories
+ * do not", and before that: renamed it, saw the name for a second, and it came
+ * back.
+ *
+ * There was a passing test for this the whole time. It was a copy of what a
+ * rename ought to do — it built new objects, put them in the store and stamped
+ * them — so it exercised none of the code above. Now the test door and the
+ * buttons both call these.
+ */
+export function renameNeedTable(tableId: string, name: string): void {
+  const s = state();
+  const tabs = s.needDefinitions.tabs.map((tab) => ({
+    ...tab,
+    tables: tab.tables.map((t) => (t.id === tableId ? { ...t, name } : t)),
+  }));
+  useStore.setState({ needDefinitions: { ...s.needDefinitions, tabs } });
+  stampChangedSettings(getCurrentProject().projectId);
+  markSomethingToSend();
+  void flushSyncNow();
+}
+
+/** A whole category. Nothing on screen renames one today — the tabs are only
+ *  switched between — so this exists for the tests and for whatever gives the
+ *  tabs a rename later. It stamps and marks like the other two, so it cannot
+ *  drift away from them again. */
+export function renameNeedTab(tabId: string, name: string): void {
+  const s = state();
+  const tabs = s.needDefinitions.tabs.map((t) => (t.id === tabId ? { ...t, name } : t));
+  useStore.setState({ needDefinitions: { ...s.needDefinitions, tabs } });
+  stampChangedSettings(getCurrentProject().projectId);
+  markSomethingToSend();
+  void flushSyncNow();
+}
+
+export function renameNeedItem(tableId: string, itemId: string, name: string): void {
+  const s = state();
+  const tabs = s.needDefinitions.tabs.map((tab) => ({
+    ...tab,
+    tables: tab.tables.map((t) => (t.id !== tableId ? t : {
+      ...t,
+      items: t.items.map((i) => (i.id === itemId ? { ...i, name } : i)),
+    })),
+  }));
+  useStore.setState({ needDefinitions: { ...s.needDefinitions, tabs } });
+  stampChangedSettings(getCurrentProject().projectId);
+  markSomethingToSend();
+  void flushSyncNow();
+}
+
+/**
+ * The card's own label, on every frame at once. This one is not a setting: a
+ * frame's needs travel WITH the frame, so each frame has to be marked as having
+ * something unsent, and the frames' own change times have to be taken — or the
+ * new label goes up with no time on it and loses to whatever is already there.
+ */
+export function renameNeedsLabel(label: string): void {
+  const s = state();
+  const next: Record<number, FrameNeedState> = {};
+  for (const [fid, ft] of Object.entries(s.frameNeeds)) next[+fid] = { ...ft, label };
+  useStore.setState({ frameNeeds: next });
+  for (const f of state().frames) if (f.serverFrameId) markFrameDirty(f.serverFrameId);
+  stampChangedContent(getCurrentProject().projectId);
+  markSomethingToSend();
+  void flushSyncNow();
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────
 
@@ -369,11 +449,8 @@ function wireNeedsCard(container: HTMLElement, fid: number): void {
       const ft = ensureFrameNeeds(fid);
       const result = await showVerLabelEdit(f.label || String(fid), ft.label);
       if (result === null) return;
-      // Update label on ALL frames' needs (project-wide rename)
-      const allNeeds = s.frameNeeds;
-      for (const key of Object.keys(allNeeds)) {
-        allNeeds[+key].label = result;
-      }
+      // Project-wide rename, on every frame's needs at once (#388).
+      renameNeedsLabel(result);
       bumpRenderTick();
       rerenderAllNeedsCards();
       flushDebouncedSync();
@@ -406,16 +483,7 @@ function wireNeedsCard(container: HTMLElement, fid: number): void {
 
       const commit = () => {
         const newName = (input.value.trim() || currentName).toUpperCase();
-        // Find item in needDefinitions and rename (project-wide)
-        const defs = state().needDefinitions;
-        for (const tab of defs.tabs) {
-          const table = tab.tables.find((t) => t.id === tableId);
-          if (table) {
-            const item = table.items.find((i) => i.id === itemId);
-            if (item) item.name = newName;
-            break;
-          }
-        }
+        renameNeedItem(tableId, itemId, newName);
         rerenderAllNeedsCards();
         flushDebouncedSync();
       };
@@ -451,11 +519,7 @@ function wireNeedsCard(container: HTMLElement, fid: number): void {
 
       const commit = () => {
         const newName = (input.value.trim() || currentName).toUpperCase();
-        const defs = state().needDefinitions;
-        for (const tab of defs.tabs) {
-          const table = tab.tables.find((t) => t.id === tableId);
-          if (table) { table.name = newName; break; }
-        }
+        renameNeedTable(tableId, newName);
         rerenderAllNeedsCards();
         flushDebouncedSync();
       };

@@ -26,6 +26,7 @@ import { trace } from './syncTrace';
 import { startFromScratch } from './files';
 import { deleteFrameForGood } from './actions';
 import { createSetup, handleSetupFrameClick, handleStripTagClick } from './setups';
+import { renameNeedTab, renameNeedTable, renameNeedItem } from './needs';
 import { saveNow, openCloudProjectById } from './accountFlow';
 import { flushSyncNow, markFrameDirty, getDirtyFrameIds } from './currentProject';
 import { stampChangedContent } from './changeStamps';
@@ -56,6 +57,14 @@ export interface TestDoor {
   moveFrame(from: number, to: number): void;
   /** Rename a NEEDS category by its place in the list. */
   renameCategory(index: number, name: string): void;
+  /** Rename a column inside a category, as clicking its heading does (#388). */
+  renameNeedTable(tableId: string, name: string): void;
+  /** Rename one item inside a column, as clicking its name does (#388). */
+  renameNeedItem(tableId: string, itemId: string, name: string): void;
+  /** Every column heading in a category, as they read on screen. */
+  needTables(categoryIndex: number): string[];
+  /** Every item name inside one column. */
+  needItems(tableId: string): string[];
   /** Delete a frame for good, by its place on screen. The same function the
    *  DELETE choice calls, tombstones and all — not a copy of it. */
   deleteFrame(index: number): void;
@@ -381,15 +390,42 @@ export function installTestDoor(): void {
       (window as never as { __fh_renderAll?: () => void }).__fh_renderAll?.();
     },
 
+    // A COPY UNTIL #388, AND IT HID A REAL FAULT FOR WEEKS.
+    //
+    // This built new objects, put them in the store and stamped them — which is
+    // what a rename SHOULD do, and not what any of the app's renames did. So
+    // "a renamed category reaches the other device" passed while renaming one
+    // by hand never left the device at all.
     renameCategory(index, name) {
-      const s = useStore.getState();
-      const tabs = [...(s.needDefinitions?.tabs ?? [])];
-      if (!tabs[index]) throw new Error(`no category at ${index}`);
-      tabs[index] = { ...tabs[index], name };
-      useStore.setState({
-        needDefinitions: { ...s.needDefinitions, tabs },
-      } as never);
-      stampChangedSettings(getCurrentProject().projectId);
+      const tab = useStore.getState().needDefinitions?.tabs?.[index];
+      if (!tab) throw new Error(`no category at ${index}`);
+      renameNeedTab(tab.id, name);
+    },
+
+    /** Rename a column inside a category, as clicking its heading does. */
+    renameNeedTable(tableId, name) {
+      renameNeedTable(tableId, name);
+    },
+
+    /** Rename one item inside a column, as clicking its name does. */
+    renameNeedItem(tableId, itemId, name) {
+      renameNeedItem(tableId, itemId, name);
+    },
+
+    /** Every column heading in a category, as they read on screen. */
+    needTables(categoryIndex) {
+      const tab = useStore.getState().needDefinitions?.tabs?.[categoryIndex];
+      if (!tab) throw new Error(`no category at ${categoryIndex}`);
+      return tab.tables.map((t) => t.name);
+    },
+
+    /** Every item name inside one column. */
+    needItems(tableId) {
+      for (const tab of useStore.getState().needDefinitions?.tabs ?? []) {
+        const t = tab.tables.find((x) => x.id === tableId);
+        if (t) return t.items.map((i) => i.name);
+      }
+      throw new Error(`no column called ${tableId}`);
     },
 
     // PRESSES + ADD ORDER, IT DOES NOT BUILD AN ORDER (#382).
