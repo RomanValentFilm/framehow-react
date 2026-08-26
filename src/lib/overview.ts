@@ -1831,7 +1831,11 @@ export function wireGrid3x2PinchZoom(): void {
   scrollParent.addEventListener('touchcancel', endTouch);
 }
 
-/** Open NEEDS card for a frame as a modal overlay (75% screen height). */
+/** Open NEEDS card for a frame as a modal overlay (75% screen height).
+ *  Exported for the test door (#391) — the two places that open it are both
+ *  taps on a card, and a test has to be able to reach the same function. */
+export function openNeedsModal(fid: number): void { _openNeedsModal(fid); }
+
 function _openNeedsModal(fid: number): void {
   if (document.querySelector('.g3-needs-overlay')) return; // already open
 
@@ -1906,6 +1910,18 @@ function _openNeedsModal(fid: number): void {
 
   // Close helper with animation
   const doClose = () => {
+    // FINISH WHAT IS BEING TYPED BEFORE THE CARD GOES (#391).
+    //
+    // A rename in here is committed when its input loses focus. Closing threw
+    // the overlay away, and an input REMOVED from the page never fires blur —
+    // so the new name was not saved, not sent, and not even kept on the device.
+    // Roman: rename in 3x2, click out of the card, and nothing happened.
+    //
+    // Blurring first makes the app's own commit run, exactly as it does when
+    // you click from the heading onto something else inside the card.
+    const typing = document.activeElement as HTMLElement | null;
+    if (typing && container.contains(typing)) typing.blur();
+
     const target = document.querySelector(`.grid3x2-card-wrap[data-g3fid="${fid}"] .canvas-wrap`) as HTMLElement | null;
     const doRemove = () => {
       overlay.remove();

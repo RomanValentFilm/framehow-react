@@ -26,9 +26,10 @@ import { trace } from './syncTrace';
 import { startFromScratch } from './files';
 import { deleteFrameForGood } from './actions';
 import { createSetup, handleSetupFrameClick, handleStripTagClick } from './setups';
-import { renameNeedTab, renameNeedTable, renameNeedItem } from './needs';
+import { renameNeedTab, renameNeedTable, renameNeedItem, ensureFrameNeeds } from './needs';
 import { saveNow, openCloudProjectById } from './accountFlow';
 import { flushSyncNow, markFrameDirty, getDirtyFrameIds } from './currentProject';
+import { openNeedsModal } from './overview';
 import { stampChangedContent } from './changeStamps';
 import { stampChangedSettings } from './projectSettings';
 import { setProjectName, getCurrentProject } from './currentProject';
@@ -65,6 +66,12 @@ export interface TestDoor {
   needTables(categoryIndex: number): string[];
   /** Every item name inside one column. */
   needItems(tableId: string): string[];
+  /** Open the big NEEDS card over 3x2, as tapping the needs area does (#391). */
+  openNeedsCard(frameIndex: number): void;
+  /** Show a tab on a frame's needs card, as tapping the tab does (#390). */
+  openNeedsTab(frameIndex: number, tabId: string): void;
+  /** Which tab that card is showing. */
+  needsTab(frameIndex: number): string | null;
   /** Delete a frame for good, by its place on screen. The same function the
    *  DELETE choice calls, tombstones and all — not a copy of it. */
   deleteFrame(index: number): void;
@@ -417,6 +424,27 @@ export function installTestDoor(): void {
       const tab = useStore.getState().needDefinitions?.tabs?.[categoryIndex];
       if (!tab) throw new Error(`no category at ${categoryIndex}`);
       return tab.tables.map((t) => t.name);
+    },
+
+    /** Open the big NEEDS card over 3x2, as tapping the needs area does. */
+    openNeedsCard(frameIndex) {
+      const f = useStore.getState().frames[frameIndex];
+      if (!f) throw new Error(`no frame at ${frameIndex}`);
+      openNeedsModal(f.id);
+    },
+
+    // Switching tab is a plain write to the frame's needs, exactly as the tab
+    // buttons do it (needs.ts, wireNeedsCard).
+    openNeedsTab(frameIndex, tabId) {
+      const f = useStore.getState().frames[frameIndex];
+      if (!f) throw new Error(`no frame at ${frameIndex}`);
+      ensureFrameNeeds(f.id).activeTabId = tabId;
+    },
+
+    needsTab(frameIndex) {
+      const f = useStore.getState().frames[frameIndex];
+      if (!f) throw new Error(`no frame at ${frameIndex}`);
+      return useStore.getState().frameNeeds[f.id]?.activeTabId ?? null;
     },
 
     /** Every item name inside one column. */

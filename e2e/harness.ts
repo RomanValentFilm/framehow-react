@@ -454,6 +454,27 @@ export class Device {
         .__fh_test.needTables(i as number), categoryIndex);
   }
 
+  async openNeedsCard(frameIndex: number): Promise<void> {
+    say(`${this.name}: opening the big NEEDS card on frame ${frameIndex + 1}`);
+    await this.page.evaluate((i) =>
+      (window as never as { __fh_test: { openNeedsCard(i: number): void } })
+        .__fh_test.openNeedsCard(i as number), frameIndex);
+  }
+
+  async openNeedsTab(frameIndex: number, tabId: string): Promise<void> {
+    say(`${this.name}: opening the ${tabId} tab on frame ${frameIndex + 1}`);
+    await this.page.evaluate(([i, t]) =>
+      (window as never as { __fh_test: { openNeedsTab(i: number, t: string): void } })
+        .__fh_test.openNeedsTab(i as number, t as string),
+      [frameIndex, tabId] as [number, string]);
+  }
+
+  needsTab(frameIndex: number): Promise<string | null> {
+    return this.page.evaluate((i) =>
+      (window as never as { __fh_test: { needsTab(i: number): string | null } })
+        .__fh_test.needsTab(i as number), frameIndex);
+  }
+
   needItems(tableId: string): Promise<string[]> {
     return this.page.evaluate((t) =>
       (window as never as { __fh_test: { needItems(t: string): string[] } })

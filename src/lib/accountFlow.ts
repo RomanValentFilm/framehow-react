@@ -2970,11 +2970,29 @@ async function applyCloudTreeToStore(
   }
 
   // Remap per-frame needs from server UUIDs back to local IDs
+  /**
+   * WHICH NEEDS TAB YOU ARE LOOKING AT IS YOURS, NOT THE PROJECT'S (#390).
+   *
+   * activeTabId rides along inside a frame's needs, so an arriving copy carried
+   * whichever tab the other device — or this one, a moment ago — happened to be
+   * on, and put you there. It never showed until #388 made a rename push at
+   * once: rename something in TALENTS, the push goes, the fetch comes back, and
+   * the card jumps to SHOOT while you are still looking at it.
+   *
+   * The same decision as #355 for shooting orders: what you have OPEN belongs to
+   * the device, not to the project. Everything else in the needs still arrives
+   * normally — only the tab you are standing on is kept.
+   */
+  const keepMyTab = (fid: number, arriving: FrameNeedState): FrameNeedState => {
+    const mine = state().frameNeeds[fid]?.activeTabId;
+    return mine ? { ...arriving, activeTabId: mine } : arriving;
+  };
+
   const localFrameNeeds: Record<number, FrameNeedState> = {};
   if (Object.keys(restoredFrameNeeds).length > 0) {
     for (const [uuid, needState] of Object.entries(restoredFrameNeeds)) {
       const localId = serverToLocalFrame.get(uuid);
-      if (localId != null) localFrameNeeds[localId] = needState;
+      if (localId != null) localFrameNeeds[localId] = keepMyTab(localId, needState);
     }
   }
   const localFrameNotes: Record<number, FrameNoteState> = {};
@@ -3000,7 +3018,9 @@ async function applyCloudTreeToStore(
     const localId = serverToLocalFrame.get(cf.id);
     if (localId == null) continue;
     if (cf.needs) {
-      try { localFrameNeeds[localId] = JSON.parse(cf.needs) as FrameNeedState; } catch { /* keep the list's copy */ }
+      try {
+        localFrameNeeds[localId] = keepMyTab(localId, JSON.parse(cf.needs) as FrameNeedState);
+      } catch { /* keep the list's copy */ }
     }
     if (cf.notes) {
       try { localFrameNotes[localId] = JSON.parse(cf.notes) as FrameNoteState; } catch { /* keep the list's copy */ }

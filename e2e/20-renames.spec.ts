@@ -70,6 +70,82 @@ test('a renamed column travels with nothing else touched', async ({ browser }) =
   await tablet.close();
 });
 
+// ---------------------------------------------------------------------------
+// THE TAB YOU ARE STANDING ON STAYS PUT (#390)
+// ---------------------------------------------------------------------------
+//
+// Roman: "when you rename a category in TALENTS GEAR OR ART and click elsewhere
+// it jumps to the SHOOT tab."
+//
+// Which tab a needs card is showing travels inside the frame's needs. Once #388
+// made a rename push immediately, the fetch that follows brought the tab back
+// from the server and moved the card while he was still looking at it. Same
+// decision as #355 for shooting orders: what you have open is yours.
+test('renaming in another tab does not throw you back to the first one', async ({ browser }) => {
+  const { token } = await freshAccount();
+  const desktop = await Device.open(browser, 'desktop', token);
+
+  await desktop.newProject('Stay on my tab', 3);
+  await desktop.settle();
+
+  say('desktop: going to TALENTS on the first frame');
+  await desktop.openNeedsTab(0, 'tab_talents');
+  expect(await desktop.needsTab(0), 'the card should be on TALENTS').toBe('tab_talents');
+
+  say('desktop: renaming a column there, which pushes and then fetches');
+  await desktop.renameNeedTable('tbl_ward', 'FITTINGS');
+  for (let i = 0; i < 10; i++) { await desktop.nudge(); await desktop.page.waitForTimeout(500); }
+
+  expect(await desktop.needsTab(0), 'THE CARD JUMPED BACK TO SHOOT. The tab you '
+    + 'are standing on arrived from the server with the rest of the needs and '
+    + 'replaced the one you were on.').toBe('tab_talents');
+  expect(await desktop.needTables(1), 'and the rename itself must have stuck')
+    .toContain('FITTINGS');
+
+  await desktop.close();
+});
+
+// ---------------------------------------------------------------------------
+// A RENAME IN THE BIG 3x2 CARD SURVIVES CLICKING OUTSIDE IT (#391)
+// ---------------------------------------------------------------------------
+//
+// Roman: "it also does not sync the rename when you in 3x2 click out of the
+// card." It was worse than not syncing — the name was thrown away outright.
+//
+// The heading is committed when its input loses focus. Clicking outside removed
+// the whole overlay, and an input REMOVED from the page never fires blur. So
+// nothing was saved, nothing was sent, and there was nothing left on the device
+// either. This types into the real input and clicks the real backdrop.
+test('a rename in the big 3x2 card survives clicking outside it', async ({ browser }) => {
+  const { token } = await freshAccount();
+  const desktop = await Device.open(browser, 'desktop', token);
+
+  await desktop.newProject('Click away', 3);
+  await desktop.settle();
+  await desktop.page.evaluate(() =>
+    document.getElementById('projectListModal')?.classList.add('hidden'));
+
+  say('desktop: opening the big NEEDS card on the first frame');
+  await desktop.openNeedsCard(0);
+  await desktop.page.waitForSelector('.g3-needs-modal .needs-table-header');
+
+  say('desktop: clicking the DIRECTION heading and typing a new name');
+  await desktop.page.click('.g3-needs-modal .needs-table-header[data-needs-tableid="tbl_direction"]');
+  await desktop.page.waitForSelector('.g3-needs-modal input.needs-inline-edit-header');
+  await desktop.page.fill('.g3-needs-modal input.needs-inline-edit-header', 'CAMERA SIDE');
+
+  say('desktop: clicking outside the card, with the name still being typed');
+  await desktop.page.click('.g3-needs-overlay', { position: { x: 5, y: 5 } });
+  await desktop.page.waitForTimeout(600);
+
+  expect(await desktop.needTables(0), 'THE RENAME WAS THROWN AWAY. Clicking '
+    + 'outside took the card off the page, and the heading was never committed '
+    + 'because an input that is removed does not lose focus first.')
+    .toContain('CAMERA SIDE');
+
+  await desktop.close();
+});
+
 test('a renamed item inside a column travels too', async ({ browser }) => {
   const { token } = await freshAccount();
   const desktop = await Device.open(browser, 'desktop', token);
