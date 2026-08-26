@@ -54,6 +54,7 @@ import {
   endSystemAction,
   pendingOnDevice,
   markSomethingToSend,
+  markFrameDirty,
   registerTombstoneBridge,
   handIsBusy,
 } from './currentProject';
@@ -2403,6 +2404,50 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
     };
   });
 
+  // ANYTHING CHANGED WHILE THE PUSH WAS IN THE AIR IS STILL UNSENT (#392).
+  //
+  // The fingerprints recorded above were taken when the payload was BUILT. A
+  // push is a round trip, and a person can type during it — so by the time the
+  // answer comes back, a frame may no longer look like the copy the server was
+  // given. Recording it as "the server has this" is then simply untrue, and it
+  // has two consequences: the next push does not send it, and the next pull
+  // does not protect it. The server's older copy lands and the change is gone.
+  //
+  // It bites hardest on a frame that has just been made, because pressing NEW
+  // pushes immediately: the frame has no server id yet, so renaming it cannot
+  // mark anything as unsent either. Roman: made a frame, renamed it, watched the
+  // name come back — and renaming a second time stuck, because by then the frame
+  // had an id and the ordinary path worked.
+  //
+  // Comparing again HERE, after the ids have been written back, catches all of
+  // it: anything that no longer matches what went up is marked unsent, and the
+  // stamp gives it an honest time to argue with.
+  {
+    // First move what was SENT for a brand-new frame from its temporary key to
+    // the id the server has just given it. Without this the comparison below
+    // finds nothing filed under the real id, every new frame looks changed, and
+    // every new frame costs one extra push for no reason.
+    for (const upd of frameIdUpdates) {
+      const tempKey = `new_${upd.localId}`;
+      const sent = _lastPushedFingerprints.get(tempKey);
+      if (sent !== undefined) {
+        _lastPushedFingerprints.set(upd.serverFrameId, sent);
+        _lastPushedFingerprints.delete(tempKey);
+      }
+    }
+
+    const now2 = state();
+    now2.frames.forEach((f, i) => {
+      if (!f.serverFrameId) return;
+      const fpNow = frameFingerprint(f, i, now2);
+      if (_lastPushedFingerprints.get(f.serverFrameId) !== fpNow) {
+        markFrameDirty(f.serverFrameId);
+        markSomethingToSend();
+      }
+    });
+    stampChangedContent(cp.projectId);
+  }
+
   // LAST: ask about anything the server is holding a decision on. The server
   // kept the refused version, so this asks from its list rather than from this
   // one response — which means any device can answer, not only this one.
@@ -4377,6 +4422,32 @@ function projectMetaFingerprint(s: ReturnType<typeof state>): string {
     s.sortOrders, s.nextSortOrderId, s.activeSortOrderId,
     s.storyFlowBreaks, s.camAspectRatio, s.exportMeta,
     s.portraitMode, s.projectType, s.stripTagInfoDismissed,
+    // THE STRIPS' NAMES (#392).
+    //
+    // stripDefs was missing from this list, and this list is what the push uses
+    // to decide whether the project's settings have changed at all. So renaming
+    // a version — which writes the new name into stripDefs — changed nothing
+    // the push could see, and the push gave up with "nothing to send". No frame
+    // changed either, because renaming a strip CLEARS the per-frame overrides
+    // rather than setting one.
+    //
+    // It could only ever travel by accident, riding along with some other
+    // change. Roman: renamed a version, saw the name for a second, and the next
+    // fetch put the old one back; renaming a second time stuck, because by then
+    // there was other work to carry it.
+    //
+    // stripDefs is already SENT in the metadata — it was only the "has anything
+    // changed" question that never asked about it.
+    s.stripDefs,
+    // Found by comparing the two lists side by side rather than one field at a
+    // time: the metadata SENDS twenty-one things and this asked about thirteen.
+    // nextGroupId is the rest of the gap that cannot travel any other way. (The
+    // PDF adjust rectangles are kept outside the store, so they are not here.)
+    // (frameNeeds, frameNotes, frameSetups and versionTags were missing too and
+    // are deliberately left out — they ride with the frames, and putting them
+    // here as well would make every frame edit look like a settings change,
+    // which is the churn #343 was about.)
+    s.nextGroupId,
   ]);
 }
 

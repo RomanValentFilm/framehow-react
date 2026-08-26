@@ -454,6 +454,56 @@ export class Device {
         .__fh_test.needTables(i as number), categoryIndex);
   }
 
+  async renameStrip(strip: string, label: string): Promise<void> {
+    say(`${this.name}: renaming the ${strip} strip to ${label}`);
+    await this.page.evaluate(([st, l]) =>
+      (window as never as { __fh_test: { renameStrip(st: string, l: string): void } })
+        .__fh_test.renameStrip(st as string, l as string),
+      [strip, label] as [string, string]);
+  }
+
+  stripName(strip: string): Promise<string> {
+    return this.page.evaluate((st) =>
+      (window as never as { __fh_test: { stripName(st: string): string } })
+        .__fh_test.stripName(st as string), strip);
+  }
+
+  /** Press NEW on a frame, as the button does (#392). */
+  async newFrameAfter(frameIndex: number): Promise<number> {
+    say(`${this.name}: pressing NEW after frame ${frameIndex + 1}`);
+    return this.page.evaluate((i) =>
+      (window as never as { __fh_test: { newFrameAfter(i: number): number } })
+        .__fh_test.newFrameAfter(i as number), frameIndex);
+  }
+
+  async renameFrame(frameIndex: number, label: string): Promise<void> {
+    say(`${this.name}: renaming frame ${frameIndex + 1} to ${label}`);
+    await this.page.evaluate(([i, l]) =>
+      (window as never as { __fh_test: { renameFrame(i: number, l: string): void } })
+        .__fh_test.renameFrame(i as number, l as string),
+      [frameIndex, label] as [number, string]);
+  }
+
+  frameLabelById(id: number): Promise<string | null> {
+    return this.page.evaluate((i) =>
+      (window as never as { __fh_test: { frameLabelById(i: number): string | null } })
+        .__fh_test.frameLabelById(i as number), id);
+  }
+
+  async renameFrameById(id: number, label: string): Promise<void> {
+    say(`${this.name}: renaming frame ${id} to ${label}`);
+    await this.page.evaluate(([i, l]) =>
+      (window as never as { __fh_test: { renameFrameById(i: number, l: string): void } })
+        .__fh_test.renameFrameById(i as number, l as string),
+      [id, label] as [number, string]);
+  }
+
+  frameLabel(frameIndex: number): Promise<string> {
+    return this.page.evaluate((i) =>
+      (window as never as { __fh_test: { frameLabel(i: number): string } })
+        .__fh_test.frameLabel(i as number), frameIndex);
+  }
+
   async openNeedsCard(frameIndex: number): Promise<void> {
     say(`${this.name}: opening the big NEEDS card on frame ${frameIndex + 1}`);
     await this.page.evaluate((i) =>

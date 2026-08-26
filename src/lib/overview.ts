@@ -250,6 +250,19 @@ export function renderOverviewRow(row: HTMLElement, fid: number): void {
         const result = await showVerLabelEdit(f.label, getFrameStripLabel(f, companionStrip));
         if (result === null) return;
         setFrameStripLabel(f, companionStrip, result);
+        // AND SAY THERE IS SOMETHING TO SEND (#392).
+        //
+        // This renamed the strip and redrew the screen, and that was all: no
+        // write to the store, so nothing marked the project as having unsent
+        // work, and no push. The new name then sat here until some OTHER change
+        // happened to carry it — and if a fetch arrived first, the old name came
+        // back. Roman: renamed a version, saw it for a second, and it reverted;
+        // renaming a second time stuck, because by then there was other work to
+        // ride along with.
+        //
+        // Same two lines the setups rename has used all along.
+        bumpRenderTick();
+        void import('./currentProject').then(({ flushSyncNow }) => flushSyncNow());
         const fn = (window as any).__fh_renderAll;
         if (fn) fn();
       })
@@ -638,6 +651,19 @@ export function renderGrid4Row(row: HTMLElement, fid: number): void {
         const result = await showVerLabelEdit(f.label, getFrameStripLabel(f, companionStrip));
         if (result === null) return;
         setFrameStripLabel(f, companionStrip, result);
+        // AND SAY THERE IS SOMETHING TO SEND (#392).
+        //
+        // This renamed the strip and redrew the screen, and that was all: no
+        // write to the store, so nothing marked the project as having unsent
+        // work, and no push. The new name then sat here until some OTHER change
+        // happened to carry it — and if a fetch arrived first, the old name came
+        // back. Roman: renamed a version, saw it for a second, and it reverted;
+        // renaming a second time stuck, because by then there was other work to
+        // ride along with.
+        //
+        // Same two lines the setups rename has used all along.
+        bumpRenderTick();
+        void import('./currentProject').then(({ flushSyncNow }) => flushSyncNow());
         const fn = (window as any).__fh_renderAll;
         if (fn) fn();
       })

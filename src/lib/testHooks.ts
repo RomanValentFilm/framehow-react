@@ -14,17 +14,17 @@
 // real user never has it. And it is deliberately tiny: anything that grows a
 // decision of its own belongs in the app, where the app's own tests can see it.
 
-import { useStore } from '../store/state';
+import { useStore, bumpRenderTick } from '../store/state';
 import type { SortOrder, StripType } from '../store/state';
 import { getVisibleFrames, createGroup, enterGroup } from './groups';
-import { ensureStripVersions, getStripVersions } from './helpers';
+import { ensureStripVersions, getStripVersions, setFrameStripLabel } from './helpers';
 import { openFullscreen, closeFullscreen } from './fullscreen';
 import { setViewMode } from './view';
 import { openSortEditView, closeSortMode, openOrderView, addNewOrder, toggleSortDropdown } from './sortOrder';
 import { toggleScribbleMode, attachScribbleOverlays } from './scribble';
 import { trace } from './syncTrace';
 import { startFromScratch } from './files';
-import { deleteFrameForGood } from './actions';
+import { deleteFrameForGood, handleMainAction } from './actions';
 import { createSetup, handleSetupFrameClick, handleStripTagClick } from './setups';
 import { renameNeedTab, renameNeedTable, renameNeedItem, ensureFrameNeeds } from './needs';
 import { saveNow, openCloudProjectById } from './accountFlow';
@@ -66,6 +66,20 @@ export interface TestDoor {
   needTables(categoryIndex: number): string[];
   /** Every item name inside one column. */
   needItems(tableId: string): string[];
+  /** Press NEW on a frame, as the button does. Returns the new frame's id (#392). */
+  newFrameAfter(frameIndex: number): number;
+  /** Rename a strip, as renaming a version does (#392). */
+  renameStrip(strip: StripType, label: string): void;
+  /** What that strip's versions are called. */
+  stripName(strip: StripType): string;
+  /** Rename a frame, as tapping its label does (#392). */
+  renameFrame(frameIndex: number, label: string): void;
+  /** A frame's label found by its own id. null when there is no such frame. */
+  frameLabelById(id: number): string | null;
+  /** Rename a frame by its own id. */
+  renameFrameById(id: number, label: string): void;
+  /** A frame's label, as it reads on the card. */
+  frameLabel(frameIndex: number): string;
   /** Open the big NEEDS card over 3x2, as tapping the needs area does (#391). */
   openNeedsCard(frameIndex: number): void;
   /** Show a tab on a frame's needs card, as tapping the tab does (#390). */
@@ -424,6 +438,65 @@ export function installTestDoor(): void {
       const tab = useStore.getState().needDefinitions?.tabs?.[categoryIndex];
       if (!tab) throw new Error(`no category at ${categoryIndex}`);
       return tab.tables.map((t) => t.name);
+    },
+
+    // PRESSES NEW ON A FRAME (#392). The suite has never had this, which is
+    // why "a frame I just created" has never been testable — and every fault
+    // Roman has reported about a NEW frame has had to be found by hand.
+    newFrameAfter(frameIndex) {
+      const before = useStore.getState().frames.length;
+      const f = useStore.getState().frames[frameIndex];
+      if (!f) throw new Error(`no frame at ${frameIndex}`);
+      handleMainAction('new', f.id, document.createElement('div'));
+      const after = useStore.getState().frames;
+      if (after.length !== before + 1) {
+        throw new Error(`pressing NEW made ${after.length - before} frames, not 1`);
+      }
+      return after[frameIndex + 1].id;
+    },
+
+    // Rename a strip — what a person calls "renaming a version". The app's own
+    // function, so the marking and the push that follow it are the app's (#392).
+    renameStrip(strip, label) {
+      const f = useStore.getState().frames[0];
+      if (!f) throw new Error('no frames');
+      setFrameStripLabel(f, strip, label);
+      bumpRenderTick();
+      void flushSyncNow();
+    },
+
+    stripName(strip) {
+      const def = useStore.getState().stripDefs.find((d) => d.id === strip);
+      return def ? def.defaultFrameLabel : '';
+    },
+
+    /** Rename a frame, as tapping its label does. */
+    renameFrame(frameIndex, label) {
+      const s = useStore.getState();
+      const frames = s.frames.map((f, i) => (i === frameIndex ? { ...f, label } : f));
+      useStore.setState({ frames } as never);
+      stampChangedContent(getCurrentProject().projectId);
+    },
+
+    /** A frame's label found by its own id, not its place — a sync can move
+     *  frames about, and reading by position then asks about a different one. */
+    frameLabelById(id) {
+      const f = useStore.getState().frames.find((x) => x.id === id);
+      return f ? (f.label ?? '') : null;
+    },
+
+    /** Rename a frame by its own id. */
+    renameFrameById(id, label) {
+      const frames = useStore.getState().frames.map((f) => (f.id === id ? { ...f, label } : f));
+      useStore.setState({ frames } as never);
+      stampChangedContent(getCurrentProject().projectId);
+    },
+
+    /** A frame's label, as it reads on the card. */
+    frameLabel(frameIndex) {
+      const f = useStore.getState().frames[frameIndex];
+      if (!f) throw new Error(`no frame at ${frameIndex}`);
+      return f.label ?? '';
     },
 
     /** Open the big NEEDS card over 3x2, as tapping the needs area does. */
