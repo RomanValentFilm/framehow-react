@@ -74,22 +74,20 @@ function currentItems(): Array<{ kind: string; item_id: string; json: string }> 
   // Notes, needs and versions need no special care: they belong to the frame, so
   // they travel with it wherever it lands. An id in the list with no frame
   // behind it is simply skipped, so a deleted frame needs no place-holder.
-  // AN ARRANGEMENT THAT LEAVES A FRAME OUT IS NOT SENT AT ALL (#397).
+  // AN ARRANGEMENT IS ALWAYS SENT, EVEN IF A FRAME IS MISSING FROM IT (#398).
   //
-  // This list is built from frames that have a server id, so a frame made a
-  // second ago is simply missing from it. That incomplete order went up, came
-  // back, and the new frame was put wherever the merge could fit it — Roman
-  // made a frame at the END and found it in the middle of the others. The log
-  // says it plainly: "story flow: 23 frames" in a project holding 24.
+  // #397 tried to hold it back while any frame still had no server id, by
+  // making this list empty. That was wrong in a way worth writing down: an
+  // empty list is not "say nothing". The item simply stops appearing, and the
+  // settings machinery reads an item that has stopped appearing as DELETED. So
+  // instead of quietly waiting, the device announced that the whole arrangement
+  // was gone — `frameOrder/main (deleted)` in Roman's log, seconds after that
+  // build went out. Far worse than the misplacement it was meant to cure.
   //
-  // Waiting costs nothing. The frame gets its id a second later and the very
-  // next push carries the whole order, new frame included and in its right
-  // place. Sending a half-order is worse than sending none, because the other
-  // device cannot tell the difference between "not mentioned" and "moved".
-  const everyFrameKnown = s.frames.every((f) => f.serverFrameId);
-  const orderedIds = everyFrameKnown
-    ? (s.frames.map((f) => f.serverFrameId).filter(Boolean) as string[])
-    : [];
+  // Left as it was. A brand-new frame is missing from the order for a second;
+  // applyArrangement keeps an unlisted frame behind the one it currently
+  // follows, so it is not dropped, and the next push carries the full order.
+  const orderedIds = s.frames.map((f) => f.serverFrameId).filter(Boolean) as string[];
   // REVERTED (#343). #337 put the breaks inside this item so the whole
   // arrangement travelled as one thing. It also changed the SHAPE of a settings
   // value that had been a plain list since #294 — and the app then decided its
