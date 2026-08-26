@@ -24,7 +24,7 @@ import { openSortEditView, closeSortMode, openOrderView, addNewOrder, toggleSort
 import { toggleScribbleMode, attachScribbleOverlays } from './scribble';
 import { trace } from './syncTrace';
 import { startFromScratch } from './files';
-import { deleteFrameForGood, handleMainAction } from './actions';
+import { deleteFrameForGood, handleMainAction, renameFrame } from './actions';
 import { createSetup, handleSetupFrameClick, handleStripTagClick } from './setups';
 import { renameNeedTab, renameNeedTable, renameNeedItem, ensureFrameNeeds } from './needs';
 import { saveNow, openCloudProjectById } from './accountFlow';
@@ -485,11 +485,14 @@ export function installTestDoor(): void {
       return f ? (f.label ?? '') : null;
     },
 
-    /** Rename a frame by its own id. */
+    // THE APP'S OWN RENAME, NOT A COPY OF ONE (#396).
+    //
+    // This built a new frames array and put it in the store — which is what a
+    // rename ought to do, and not what the app did. So every test of renaming a
+    // frame passed while renaming one by hand was broken, for the same reason
+    // the needs rename hid behind its door in #388. Doors are pass-throughs.
     renameFrameById(id, label) {
-      const frames = useStore.getState().frames.map((f) => (f.id === id ? { ...f, label } : f));
-      useStore.setState({ frames } as never);
-      stampChangedContent(getCurrentProject().projectId);
+      renameFrame(id, label);
     },
 
     /** A frame's label, as it reads on the card. */

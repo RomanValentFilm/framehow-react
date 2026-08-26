@@ -37,7 +37,8 @@ import { openCamera, getCameraTarget, clearCameraTarget, setOnCapturedImage } fr
 import { recordTombstone } from './accountFlow';
 import { openFullscreen } from './fullscreen';
 import { markAppScroll, showBarsNow } from './view';
-import { flushSyncNow } from './currentProject';
+import { flushSyncNow, markSomethingToSend, getCurrentProject } from './currentProject';
+import { stampChangedContent } from './changeStamps';
 import { addFrameToSortOrders, removeFrameFromSortOrders } from './sortOrder';
 
 export function handleMainAction(action: string, fid: number, div: HTMLElement): void {
@@ -382,6 +383,39 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
  * tombstones are recorded BEFORE the frame leaves the store, because once it is
  * gone there is nothing left to read its server id from.
  */
+/**
+ * RENAME A FRAME (#396).
+ *
+ * All three places that renamed a frame did this:
+ *
+ *     const currentF = state().frames.find(...);
+ *     const result = await showLabelEdit(currentF.label);   // waits for you
+ *     currentF.label = result;                              // writes to it
+ *
+ * The wait in the middle is the whole problem. While that box is open a push
+ * can come back, and writing the ids into the store REPLACES every frame
+ * object. So `currentF` is a frame that is no longer in the project, the new
+ * name is written onto a discarded object, and nothing happens on screen at
+ * all. Roman: made a frame, renamed it, closed the box, no new name — renamed
+ * again and it stuck, because by then no push was in the air.
+ *
+ * There is already a comment about this trap in needs.ts, on a different
+ * button: "the closure's `f` may be stale if a sync cycle replaced frame
+ * objects". It was true here too.
+ *
+ * So the frame is found again by id, NOW, and replaced through the store rather
+ * than written over in place. Stamping it here also gives the rename an honest
+ * time of its own instead of waiting for the next autosave.
+ */
+export function renameFrame(fid: number, label: string): void {
+  const s = state();
+  if (!s.frames.some((f) => f.id === fid)) return;   // deleted while the box was open
+  useStore.setState({ frames: s.frames.map((f) => (f.id === fid ? { ...f, label } : f)) });
+  stampChangedContent(getCurrentProject().projectId);
+  markSomethingToSend();
+  void flushSyncNow();
+}
+
 export function deleteFrameForGood(fid: number): void {
   const s = state();
   const idx = s.frames.findIndex((x) => x.id === fid);

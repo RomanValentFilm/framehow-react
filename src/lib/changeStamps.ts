@@ -200,8 +200,24 @@ export function stampChangedContent(
  * answer to "when did I change this", and callers that need to know the
  * difference use it directly.
  */
-export function frameChangedAtForSending(serverFrameId: string | undefined): number {
-  return frameChangedAt(serverFrameId) ?? 0;
+export function frameChangedAtForSending(
+  serverFrameId: string | undefined,
+  localId?: number,
+): number {
+  const known = frameChangedAt(serverFrameId);
+  if (known !== undefined) return known;
+  // AND LOOK UNDER THE LOCAL NUMBER TOO (#397).
+  //
+  // #395 started recording a time for a frame that has no server id yet, filed
+  // under `l/<localId>`. It did not teach the SENDER to look there, so a brand
+  // new frame still went up as zero — `change times: 3d7c54@none` in Roman's
+  // log, on the build that was supposed to have fixed it. Writing it down and
+  // never reading it is worth nothing.
+  if (localId !== undefined) {
+    const hit = _seen.get(`l/${localId}`);
+    if (hit && hit.at > 0) return hit.at;
+  }
+  return 0;
 }
 
 export function frameChangedAt(serverFrameId: string | undefined): number | undefined {

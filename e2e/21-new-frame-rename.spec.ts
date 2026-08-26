@@ -294,3 +294,62 @@ test('a frame made and renamed offline arrives whole when the device reconnects'
   await desktop.close();
   await tablet.close();
 });
+
+// ---------------------------------------------------------------------------
+// RENAMED WITH THE BOX OPEN ACROSS THE PUSH (#396)
+// ---------------------------------------------------------------------------
+//
+// Roman: "last frame made a new, renamed, closed, no new name was shown.
+// re-named again, name is shown and synced."
+//
+// NO NEW NAME SHOWN. Not lost later by a fetch — never on screen at all. That
+// is not sync, it is local, and it is the wait in the middle: the rename box
+// is open while the push comes back, and writing the ids into the store
+// replaces every frame object. The old code held on to the frame it found
+// BEFORE the box opened and wrote the name onto that, which by then was not in
+// the project any more.
+//
+// Every other test here renames instantly and so never sits across a push,
+// which is exactly why they all passed while his hand failed. This one waits.
+test('a frame renamed while the push is still in the air shows the new name', async ({ browser }) => {
+  const { token } = await freshAccount();
+  const desktop = await Device.open(browser, 'desktop', token);
+  const tablet = await Device.open(browser, 'tablet', token, true);
+
+  const madeId = await desktop.newProject('Box left open', 3);
+  await tablet.openProject(madeId!);
+  await Device.waitUntilTheyAgree(desktop, tablet);
+  await desktop.settle();
+  await tablet.settle();
+
+  say('desktop: pressing NEW, which pushes at once');
+  const newId = await desktop.newFrameAfter(2);
+
+  // The wait is the point: long enough for the push to come back and put the
+  // server ids into the store, which is when the frame objects are replaced.
+  await desktop.page.waitForTimeout(1500);
+
+  say('desktop: only NOW typing the name, as a person closing the box would');
+  await desktop.renameFrameById(newId, 'TYPED LATE');
+
+  expect((await desktop.read()).frames.map((f) => f.label),
+    'THE NAME WAS NEVER SHOWN. It was written onto a frame object that the '
+    + 'push had already replaced, so it went nowhere at all.')
+    .toContain('TYPED LATE');
+
+  say('tablet: and it has to travel');
+  const deadline = Date.now() + 60_000;
+  for (;;) {
+    await tablet.nudge();
+    const labels = (await tablet.read()).frames.map((f) => f.label);
+    if (labels.includes('TYPED LATE')) break;
+    if (Date.now() > deadline) {
+      throw new Error(`THE LATE RENAME NEVER TRAVELLED. The tablet has `
+        + `${JSON.stringify(labels)}.`);
+    }
+    await tablet.page.waitForTimeout(1000);
+  }
+
+  await desktop.close();
+  await tablet.close();
+});

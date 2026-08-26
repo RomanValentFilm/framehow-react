@@ -24,6 +24,7 @@ import {
 import { restoreCanvas, restoreMainCanvas, setupMainDrawing } from './drawing';
 import { renderVersionFrame } from './render';
 import { showLabelEdit, showVerLabelEdit, showDeleteChoice, showConfirm } from './modals';
+import { renameFrame } from './actions';
 import { getVisibleFrames, removeFrameFromGroup } from './groups';
 import { setupTagHTML, stripTagHTML } from './setups';
 import { recordTombstone } from './accountFlow';
@@ -168,7 +169,7 @@ export function renderOverviewRow(row: HTMLElement, fid: number): void {
       if (!currentF) return;
       const result = await showLabelEdit(currentF.label);
       if (result === null) return;
-      currentF.label = result;
+      renameFrame(fid, result);   // through the store, not onto a stale object (#396)
       bumpRenderTick();
       const fn = (window as any).__fh_renderAll;
       if (fn) fn();
@@ -543,7 +544,7 @@ export function renderGrid4Row(row: HTMLElement, fid: number): void {
       if (!currentF) return;
       const result = await showLabelEdit(currentF.label);
       if (result === null) return;
-      currentF.label = result;
+      renameFrame(fid, result);   // through the store, not onto a stale object (#396)
       bumpRenderTick();
       const fn = (window as any).__fh_renderAll;
       if (fn) fn();
@@ -1175,7 +1176,7 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
         if (!currentF) return;
         const result = await showLabelEdit(currentF.label);
         if (result === null) return;
-        currentF.label = result;
+        renameFrame(fid, result);   // through the store, not onto a stale object (#396)
         bumpRenderTick();
         const fn = (window as any).__fh_renderGrid3x2;
         if (fn) fn();

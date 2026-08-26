@@ -1954,7 +1954,7 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
       // the later push. `updated_at` above is the push time.
       // Never "I don't know" (#379): a frame this device has not changed says
       // zero, which loses to any real edit instead of slipping past unjudged.
-      content_changed_at: frameChangedAtForSending(f.serverFrameId),
+      content_changed_at: frameChangedAtForSending(f.serverFrameId, f.id),
     });
     if (f.scribbles && f.scribbles.length > 0) {
       console.log(`[sync][scribble] INCLUDED frame ${f.id} in push payload with ${f.scribbles.length} scribbles (${JSON.stringify(f.scribbles).length} bytes)`);
