@@ -923,8 +923,31 @@
   .needs-table{min-width:0;flex:1 1 0%;}
   .needs-table[data-needs-table="tbl_shootday"]{flex:0.65 1 0%;}
   .needs-table[data-needs-table="tbl_unit"]{flex:0.7 1 0%;}
-  .needs-table[data-needs-table="tbl_extint"]{flex:0.6 1 0%;}
+  /* A touch under LOCATION, which has no rule and so falls back to 1. Its own
+     longest word is DIRECTION A, so it cannot go much narrower (#386). */
+  .needs-table[data-needs-table="tbl_direction"]{flex:0.94 1 0%;}
+  /* Two points moved from INT/EXT to DIRECTION (#386). INT and EXT are three
+     letters each and had room to spare. */
+  .needs-table[data-needs-table="tbl_extint"]{flex:0.51 1 0%;}
   .needs-table[data-needs-table="tbl_daytime"]{flex:0.6 1 0%;}
+  /* ON A PHONE THE COLUMNS KEEP THEIR OWN WIDTH AND THE ROW SCROLLS (#387).
+   *
+   * Every width above is a SHARE of the row, which works while there is room to
+   * share out. On an iPhone there is not: six columns divided one screen between
+   * them and each was squeezed narrower than its own words, so the headings and
+   * the pills ran into each other.
+   *
+   * The row has always scrolled sideways — .needs-tables is overflow-x:auto.
+   * What stopped it being used is that the columns shrank to fit instead of
+   * overflowing. max-content makes each one as wide as its widest line and no
+   * wider, so nothing is crushed and the scroll does the rest. The card itself
+   * does not change size.
+   *
+   * The selector names the attribute, or the shares above win on specificity. */
+  @media (max-width:430px){
+    .needs-table[data-needs-table]{flex:0 0 auto;min-width:max-content;}
+    .needs-tables{padding-right:6px;}
+  }
   .needs-table-header{
     font-size:12px;font-weight:700;color:#fff;letter-spacing:.06em;
     margin-bottom:4px;text-transform:uppercase;white-space:nowrap;

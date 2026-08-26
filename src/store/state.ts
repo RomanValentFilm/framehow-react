@@ -63,7 +63,7 @@ export interface Setup {
 
 /** 12-colour palette for setups. */
 /** App version — bump before every deploy. */
-export const APP_VERSION = 'v4.9.092';
+export const APP_VERSION = 'v4.9.093';
 
 /** Free-text fields printed in the header of every exported page. */
 export interface ExportMeta {
@@ -189,6 +189,14 @@ export const DEFAULT_NEED_DEFINITIONS: NeedDefinitions = {
         { id: 'tbl_location', name: 'LOCATION', type: 'toggle', items: [
           { id: 'ti_loc1', name: 'LOCATION 1' },
           { id: 'ti_loc2', name: 'LOCATION 2' },
+        ]},
+        // DIRECTION (#386). Sits after LOCATION: where you are, then which way
+        // you are pointing. New default tables reach projects that already
+        // exist through migrateNeedDefinitions, which follows this order.
+        { id: 'tbl_direction', name: 'DIRECTION', type: 'toggle', items: [
+          { id: 'ti_dir_a', name: 'DIRECTION A' },
+          { id: 'ti_dir_reverse', name: 'REVERSE' },
+          { id: 'ti_dir_plusminus', name: '+/-' },
         ]},
         { id: 'tbl_extint', name: 'INT/EXT', type: 'toggle', items: [
           { id: 'ti_int', name: 'INT' },
