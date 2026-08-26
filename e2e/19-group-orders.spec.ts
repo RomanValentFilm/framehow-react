@@ -174,6 +174,7 @@ test('a group story flow can be chosen from ALL, and takes you into the group', 
       '---',
       'STORY FLOW / KITCHEN',
       '+ ADD ORDER',
+      '---',
       'STORY FLOW / STREET',
       '+ ADD ORDER',
     ]);

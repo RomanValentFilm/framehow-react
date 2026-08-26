@@ -1446,11 +1446,12 @@ function renderDropdown(el: HTMLElement): void {
   html += addLine(null);
 
   // ── Each group ─────────────────────────────────────────────────────
-  // ONE separator, not one per group: the line divides the project from the
-  // groups. Below it the groups follow one after another, each keeping its own
-  // story flow and its own orders together.
-  if (s.groups.length > 0) html += `<div class="sort-dd-sep"></div>`;
+  // ONE BREAK BEFORE EVERY GROUP. It started as a single line dividing the
+  // project from the groups, which left two or three groups running together
+  // as one column of names. Roman: "after each group has to be a dark break and
+  // then another group."
   for (const g of s.groups) {
+    html += `<div class="sort-dd-sep"></div>`;
     const onThisFlow = activeId === null && here === g.id;
     html += `
       <div class="sort-dd-item${onThisFlow ? ' sort-dd-selected' : ''}" data-sort-id="__storyflow__:${g.id}">
