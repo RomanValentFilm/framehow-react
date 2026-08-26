@@ -2404,42 +2404,21 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
     };
   });
 
-  // WHAT CHANGED WHILE THE PUSH WAS IN THE AIR IS STILL UNSENT (#395).
+  // #395's after-the-push comparison is GONE (#399).
   //
-  // The fingerprints recorded above were taken when the payload was BUILT. A
-  // push is a round trip and a person keeps typing during it, so by the time
-  // the answer arrives a frame may no longer look like the copy the server was
-  // given. Recording it as "the server has this" is then untrue, and it has two
-  // consequences: the next push does not send it, and the next fetch does not
-  // protect it. The server's older copy lands and the change is gone.
+  // It marked any frame that no longer matched the copy that went up as unsent,
+  // and stamped it. The intention was right — a rename typed during a round trip
+  // should not be recorded as sent — but the effect was churn: each push stamped
+  // the frame anew, which made it differ again, which pushed again. Roman's log
+  // shows one frame going up three times in eleven seconds with a later time
+  // each round, and the name flickering back whenever a fetch landed in the
+  // middle of it.
   //
-  // It bites hardest on a frame that has just been made, because pressing NEW
-  // pushes at once. Roman: made a frame, renamed it, watched the name come
-  // back — and renaming a second time stuck, because by then the round trip was
-  // over.
-  //
-  // Comparing again HERE, after the ids have been written back, catches all of
-  // it. With #395's other half — a frame having a real time even before it has
-  // an id — the re-sent copy also carries the moment it was typed, so it wins
-  // the argument instead of losing it as zero.
-  //
-  // NOTE the fingerprint of a brand-new frame is filed under `new_<localId>`,
-  // so nothing is found under its real id and it is marked unsent once more.
-  // That costs one extra push per new frame. An earlier version moved the entry
-  // across to save it, was deployed, and a new frame stopped reaching the other
-  // device within minutes. Being too eager to re-send is the harmless side of
-  // this; being clever is not.
-  {
-    const afterPush = state();
-    afterPush.frames.forEach((f, i) => {
-      if (!f.serverFrameId) return;
-      if (_lastPushedFingerprints.get(f.serverFrameId) !== frameFingerprint(f, i, afterPush)) {
-        markFrameDirty(f.serverFrameId);
-        markSomethingToSend();
-      }
-    });
-    stampChangedContent(cp.projectId);
-  }
+  // What remains of #395 is the half that cannot churn: a frame has a real
+  // change time from the moment it is made, filed under its local number until
+  // the server id arrives, and the push READS that time instead of sending zero.
+  // A rename made during a round trip therefore still carries an honest time and
+  // still wins — without anything being pushed twice to achieve it.
 
   // LAST: ask about anything the server is holding a decision on. The server
   // kept the refused version, so this asks from its list rather than from this
