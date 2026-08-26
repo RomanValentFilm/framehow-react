@@ -134,6 +134,18 @@ export function reorderFrameInGroup(fid: number, direction: 'up' | 'down'): bool
  */
 export function enterGroup(groupId: number | null): void {
   useStore.setState({ activeGroupId: groupId });
+  // AND REDRAW, HERE, ALWAYS (#383).
+  //
+  // Changing the group used to be two lines inside the sidebar's click handler,
+  // and the handler called triggerRerender() itself afterwards. So the redraw
+  // belonged to the button, not to the switch — and when #382 made the SORT BY
+  // menu switch groups too, it changed the group and drew nothing. The frames
+  // changed, the red name in the view bar did not appear, and the GROUP button
+  // did not go red. Roman saw exactly that.
+  //
+  // bumpRenderTick() is not enough and never was: nothing in the app watches
+  // that counter and redraws. Only calling renderAll rebuilds the bar.
+  triggerRerender();
 }
 
 /**

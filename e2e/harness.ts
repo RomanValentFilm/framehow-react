@@ -415,12 +415,27 @@ export class Device {
         .__fh_test.whichGroup());
   }
 
+  /** The group name as it reads in the view bar, or null if it is not there. */
+  groupLabelOnScreen(): Promise<string | null> {
+    return this.page.evaluate(() =>
+      (window as never as { __fh_test: { groupLabelOnScreen(): string | null } })
+        .__fh_test.groupLabelOnScreen());
+  }
+
   /** Choose an order from the SORT BY menu, as clicking its line does. */
   async pickOrder(orderIndex: number): Promise<void> {
     say(`${this.name}: choosing order ${orderIndex + 1} from the SORT BY menu`);
     await this.page.evaluate((i) =>
       (window as never as { __fh_test: { pickOrder(i: number): void } })
         .__fh_test.pickOrder(i as number), orderIndex);
+  }
+
+  /** Choose a story flow: null for the project's, or a group's id. */
+  async pickStoryFlow(groupId: number | null): Promise<void> {
+    say(`${this.name}: choosing the ${groupId === null ? 'project' : `group ${groupId}`} story flow`);
+    await this.page.evaluate((g) =>
+      (window as never as { __fh_test: { pickStoryFlow(g: number | null): void } })
+        .__fh_test.pickStoryFlow(g as number | null), groupId);
   }
 
   /** Every line of the SORT BY menu, as text. */

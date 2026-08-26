@@ -20,7 +20,7 @@ import { getVisibleFrames, createGroup, enterGroup } from './groups';
 import { ensureStripVersions, getStripVersions } from './helpers';
 import { openFullscreen, closeFullscreen } from './fullscreen';
 import { setViewMode } from './view';
-import { openSortEditView, closeSortMode, openOrderView, addNewOrder, orderGroupName } from './sortOrder';
+import { openSortEditView, closeSortMode, openOrderView, addNewOrder, toggleSortDropdown } from './sortOrder';
 import { toggleScribbleMode, attachScribbleOverlays } from './scribble';
 import { trace } from './syncTrace';
 import { startFromScratch } from './files';
@@ -94,8 +94,12 @@ export interface TestDoor {
   enterGroup(groupId: number | null): void;
   /** Which group the view is in, null for ALL. */
   whichGroup(): number | null;
+  /** The group name as it reads in the view bar, or null if it is not there. */
+  groupLabelOnScreen(): string | null;
   /** Choose an order from the SORT BY menu, as clicking its line does. */
   pickOrder(orderIndex: number): void;
+  /** Choose a story flow line: null for the project's, or a group's id. */
+  pickStoryFlow(groupId: number | null): void;
   /** Each line of the SORT BY menu as text, e.g. "SHOOTING ORDER 2 / KITCHEN". */
   sortMenuLines(): string[];
   /** Move a frame inside an order — the drag in the sort edit view. */
@@ -421,6 +425,12 @@ export function installTestDoor(): void {
 
     // PICKS AN ORDER OUT OF THE SORT BY MENU — the same call the menu makes,
     // so whatever choosing an order does to the view happens here too (#382).
+    // Choose a story flow line: null for the project's, or a group's id. The
+    // same call the menu makes, so the switching is the app's, not the test's.
+    pickStoryFlow(groupId) {
+      openOrderView(groupId === null ? '__storyflow__' : `__storyflow__:${groupId}`);
+    },
+
     pickOrder(orderIndex) {
       const o = useStore.getState().sortOrders[orderIndex];
       if (!o) throw new Error(`no shooting order at ${orderIndex}`);
@@ -445,13 +455,54 @@ export function installTestDoor(): void {
 
     whichGroup() { return useStore.getState().activeGroupId; },
 
-    /** The SORT BY menu as it reads on screen, one string per line. The group
-     *  part comes from the app's own orderGroupName, not a copy of it. */
+    // WHAT THE VIEW BAR ACTUALLY SAYS, off the screen itself — not what the
+    // store thinks (#383). Roman: picking a group's order opens the order but
+    // the group's name does not appear next to the GROUP button. The store and
+    // the screen have to be asked separately or there is no way to tell which
+    // of the two is wrong.
+    groupLabelOnScreen() {
+      const el = document.getElementById('groupActiveLabel');
+      if (!el) return null;
+      // ASK WHETHER IT IS ON SCREEN, NOT WHETHER IT IS HIDDEN.
+      //
+      // This first asked getComputedStyle(el).display, which was worthless: an
+      // element inside a hidden parent still reports its OWN display. The label
+      // is written into the view bar, and the view bar is what gets hidden — so
+      // the door said the name was on screen while Roman was looking at a
+      // screen with no name on it, and the test passed on a real fault.
+      //
+      // getClientRects() is empty for anything that takes up no space on the
+      // page, whatever the reason: itself hidden, a parent hidden, or never
+      // laid out at all.
+      if (el.getClientRects().length === 0) return null;
+      return el.textContent ?? '';
+    },
+
+    // THE MENU AS IT IS ACTUALLY DRAWN (#383).
+    //
+    // This used to walk the store and build the lines itself, which is a copy
+    // of renderDropdown and would have said nothing about whether the menu on
+    // screen was right. It now opens the real menu, reads what is in it, and
+    // closes it again — so a line that is missing here is missing on screen.
+    //
+    // A separator comes back as "---".
     sortMenuLines() {
-      return useStore.getState().sortOrders.map((o) => {
-        const g = orderGroupName(o);
-        return g ? `${o.name} / ${g}` : o.name;
+      const dd = document.getElementById('sortDropdown');
+      if (!dd) return [];
+      const wasOpen = dd.style.display !== 'none';
+      if (!wasOpen) toggleSortDropdown();
+
+      const lines: string[] = [];
+      dd.querySelectorAll('.sort-dd-sep, .sort-dd-item').forEach((el) => {
+        if (el.classList.contains('sort-dd-sep')) { lines.push('---'); return; }
+        if (el.classList.contains('sort-dd-add')) { lines.push('+ ADD ORDER'); return; }
+        const title = el.querySelector('.sort-dd-title')?.textContent?.trim() ?? '';
+        const grp = el.querySelector('.sort-dd-group')?.textContent?.trim() ?? '';
+        lines.push(grp ? `${title} ${grp}` : title);
       });
+
+      if (!wasOpen) toggleSortDropdown();
+      return lines;
     },
 
     moveInOrder(orderIndex, from, to) {

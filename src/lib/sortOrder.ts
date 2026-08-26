@@ -1108,7 +1108,7 @@ function rerenderBracket(editViewEl: HTMLElement, bracketState: BracketState, or
 
 import { flushSyncNow, pullNow } from './currentProject';
 import { getStripVersions, escH } from './helpers';
-import { getVisibleFrames } from './groups';
+import { getVisibleFrames, enterGroup } from './groups';
 import { rasterizeMain, rasterizeVersion, versionHasContent } from './rasterize';
 
 // ─── Helpers ──────────────────────────────────────────────────────────
@@ -1361,38 +1361,67 @@ function groupSuffix(order: SortOrder): string {
   return ` <span class="sort-dd-group">/ ${escH(name)}</span>`;
 }
 
+/**
+ * THE MENU IS IN TWO PARTS (#383).
+ *
+ * Roman: "we should have always at first position the STORY FLOW and all
+ * shooting orders from ALL, then a black separator, and then the GROUP's story
+ * flow and shooting order."
+ *
+ * Why it had to change: there is ONE list of orders for the whole project, and
+ * an order made inside a group sat in it like any other. So the first order a
+ * person made — inside a group — became the only one on show, and ALL had
+ * nothing of its own left in the menu at all. "what's also missing in the SORT
+ * BY is the shooting order of ALL."
+ *
+ * Above the line is the project: its story flow and every order belonging to no
+ * group. Below it, every group: its own story flow, then its own orders. A
+ * group's story flow is not a new thing — group.frameIds has always been the
+ * group's own frame order — it simply had no way of being chosen until now.
+ */
 function renderDropdown(el: HTMLElement): void {
   const s = state();
   const activeId = s.activeSortOrderId;
+  const here = s.activeGroupId;
 
-  // Find or reference the first shooting order
-  const firstShootingOrder = s.sortOrders[0]; // first created is the default
-  const shootingId = firstShootingOrder ? firstShootingOrder.id : '__shooting_new__';
+  const ofGroup = (gid: number | null) =>
+    s.sortOrders.filter((o) => (o.groupId ?? null) === gid);
+
+  const orderLine = (order: SortOrder, deletable: boolean) => `
+      <div class="sort-dd-item${activeId === order.id ? ' sort-dd-selected' : ''}" data-sort-id="${order.id}">
+        <div class="sort-dd-item-left">
+          <div class="sort-dd-title-row">
+            <span class="sort-dd-title">${escH(order.name)}</span>${groupSuffix(order)}
+          </div>
+          <div class="sort-dd-hint">Your custom frame order</div>
+        </div>
+        ${deletable ? `<button class="sort-dd-delete" data-sort-delete="${order.id}" title="Delete order">&times;</button>` : ''}
+      </div>`;
+
+  const addLine = (gid: number | null) => `
+      <div class="sort-dd-item sort-dd-add" data-sort-action="add"${gid === null ? '' : ` data-add-group="${gid}"`}>
+        <span>+ ADD ORDER</span>
+      </div>`;
 
   let html = `<div class="sort-dd-inner">`;
 
-  // Story flow (always first, no delete)
+  // ── The project ────────────────────────────────────────────────────
+  // Selected only when you are in ALL: story flow means "wherever I am", so in
+  // a group it is the group's line below that is the one you are on.
+  const onProjectFlow = activeId === null && here === null;
   html += `
-    <div class="sort-dd-item${activeId === null ? ' sort-dd-selected' : ''}" data-sort-id="__storyflow__">
+    <div class="sort-dd-item${onProjectFlow ? ' sort-dd-selected' : ''}" data-sort-id="__storyflow__">
       <div class="sort-dd-item-left">
         <div class="sort-dd-title">STORY FLOW</div>
         <div class="sort-dd-hint">Your narrative sequence, as edited</div>
       </div>
     </div>`;
 
-  // First shooting order (always visible, no delete)
-  if (firstShootingOrder) {
-    html += `
-      <div class="sort-dd-item${activeId === shootingId ? ' sort-dd-selected' : ''}" data-sort-id="${shootingId}">
-        <div class="sort-dd-item-left">
-          <div class="sort-dd-title-row">
-            <span class="sort-dd-title">${firstShootingOrder.name}</span>${groupSuffix(firstShootingOrder)}
-          </div>
-          <div class="sort-dd-hint">Your custom frame order</div>
-        </div>
-      </div>`;
-  } else {
-    // No shooting order yet — show placeholder that auto-creates on click
+  const projectOrders = ofGroup(null);
+  if (projectOrders.length === 0) {
+    // Nothing of the project's own yet — the placeholder makes one on click.
+    // It has to be here even when a group already has orders, or ALL has no way
+    // of ever getting its first one.
     html += `
       <div class="sort-dd-item" data-sort-id="__shooting_new__">
         <div class="sort-dd-item-left">
@@ -1402,28 +1431,39 @@ function renderDropdown(el: HTMLElement): void {
           <div class="sort-dd-hint">Your custom frame order</div>
         </div>
       </div>`;
+  } else {
+    // The first one has no delete, as before: it is the one the app falls back
+    // to and a person should not be able to leave the project with none.
+    projectOrders.forEach((o, i) => { html += orderLine(o, i > 0); });
   }
+  // ONE + ADD ORDER PER BLOCK (#383).
+  //
+  // There used to be a single one at the very bottom, which made an order in
+  // whichever group you happened to be in. That was readable when the menu only
+  // ever showed one set of orders. Now every group is on screen at once, a
+  // button at the bottom cannot say what it would add to. Under each block it
+  // can only mean one thing.
+  html += addLine(null);
 
-  // Additional shooting orders (with delete button)
-  for (let i = 1; i < s.sortOrders.length; i++) {
-    const order = s.sortOrders[i];
+  // ── Each group ─────────────────────────────────────────────────────
+  // ONE separator, not one per group: the line divides the project from the
+  // groups. Below it the groups follow one after another, each keeping its own
+  // story flow and its own orders together.
+  if (s.groups.length > 0) html += `<div class="sort-dd-sep"></div>`;
+  for (const g of s.groups) {
+    const onThisFlow = activeId === null && here === g.id;
     html += `
-      <div class="sort-dd-item${activeId === order.id ? ' sort-dd-selected' : ''}" data-sort-id="${order.id}">
+      <div class="sort-dd-item${onThisFlow ? ' sort-dd-selected' : ''}" data-sort-id="__storyflow__:${g.id}">
         <div class="sort-dd-item-left">
           <div class="sort-dd-title-row">
-            <span class="sort-dd-title">${order.name}</span>${groupSuffix(order)}
+            <span class="sort-dd-title">STORY FLOW</span> <span class="sort-dd-group">/ ${escH(g.name)}</span>
           </div>
-          <div class="sort-dd-hint">Your custom frame order</div>
+          <div class="sort-dd-hint">Your narrative sequence, as edited</div>
         </div>
-        <button class="sort-dd-delete" data-sort-delete="${order.id}" title="Delete order">&times;</button>
       </div>`;
+    for (const o of ofGroup(g.id)) html += orderLine(o, true);
+    html += addLine(g.id);
   }
-
-  // Add order
-  html += `
-    <div class="sort-dd-item sort-dd-add" data-sort-action="add">
-      <span>+ ADD ORDER</span>
-    </div>`;
 
   html += `</div>`;
   el.innerHTML = html;
@@ -1472,8 +1512,18 @@ function renderDropdown(el: HTMLElement): void {
     });
   });
 
-  el.querySelector('.sort-dd-add')?.addEventListener('click', () => {
-    addNewOrder();
+  // EACH + ADD ORDER ADDS TO ITS OWN BLOCK (#383). querySelector took only the
+  // first one when there was only ever one; there is now one per block, and
+  // each says which group it belongs to.
+  el.querySelectorAll('.sort-dd-add').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const raw = (btn as HTMLElement).dataset.addGroup;
+      const gid = raw === undefined ? null : Number(raw);
+      // Go there first, so the order is built from that group's frames and is
+      // stamped with it — addNewOrder reads both from where the app is.
+      if (gid !== state().activeGroupId) enterGroup(gid);
+      addNewOrder();
+    });
   });
 }
 
@@ -1506,12 +1556,24 @@ export function openOrderView(orderId: string): void {
     return;
   }
 
-  if (orderId === '__storyflow__') {
-    // STORY FLOW IS LEFT ALONE ON PURPOSE (#382). A group already has a frame
-    // order of its own — group.frameIds — so inside a group STORY FLOW already
-    // means that group's narrative order, and in ALL it means the project's.
-    // It follows wherever you are and needs nothing added to it.
+  if (orderId === '__storyflow__' || orderId.startsWith('__storyflow__:')) {
+    // A STORY FLOW BELONGS TO SOMEWHERE (#383).
+    //
+    // It used to be one line meaning "the flow of wherever I happen to be", so
+    // choosing it did nothing at all — you stayed where you were. Roman: "when
+    // you select story flow it does not take you to that flow."
+    //
+    // There is now one line per group plus the project's own, and choosing one
+    // goes there: `__storyflow__` is the project, `__storyflow__:12` is group
+    // 12. The flow itself is not new — group.frameIds has always been the
+    // group's own frame order — it simply had no way of being chosen.
+    const bit = orderId.slice('__storyflow__:'.length);
+    const wantGroup = orderId === '__storyflow__' ? null : Number(bit);
+    const stillThere = wantGroup === null
+      || state().groups.some((g) => g.id === wantGroup);
     useStore.setState({ activeSortOrderId: null });
+    // Through the app's one way of changing group, which redraws (#383).
+    if (stillThere && wantGroup !== state().activeGroupId) enterGroup(wantGroup);
   } else {
     // PICKING A GROUP'S ORDER TAKES YOU INTO THAT GROUP (#382).
     //
@@ -1535,10 +1597,10 @@ export function openOrderView(orderId: string): void {
     const groupStillThere = wantGroup === null
       || state().groups.some((g) => g.id === wantGroup);
 
-    const change: { activeSortOrderId: string; activeGroupId?: number | null } =
-      { activeSortOrderId: orderId };
-    if (goingSomewhereElse && groupStillThere) change.activeGroupId = wantGroup;
-    useStore.setState(change);
+    useStore.setState({ activeSortOrderId: orderId });
+    // Through enterGroup, which is the app's one way of changing group and the
+    // only thing that redraws the view bar with it (#383).
+    if (goingSomewhereElse && groupStillThere) enterGroup(wantGroup);
   }
   bumpRenderTick();
   void flushSyncNow();
