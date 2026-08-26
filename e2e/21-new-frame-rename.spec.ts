@@ -140,3 +140,157 @@ test('a frame renamed the moment it is made keeps its name', async ({ browser })
   await desktop.close();
   await tablet.close();
 });
+
+// ---------------------------------------------------------------------------
+// A NEW FRAME AT THE END, IN A PROJECT THAT HAS A SHOOTING ORDER (#394)
+// ---------------------------------------------------------------------------
+//
+// Roman, on v4.9.097: "new project syncs, even the new frame's name — not the
+// new frame created on the last position."
+//
+// The test above passes on that same build, so a new frame at the end DOES
+// travel in a project made seconds earlier. The difference has to be something
+// his project has and a fresh one does not.
+//
+// Pressing NEW calls addFrameToSortOrders, which does nothing at all when there
+// are no orders — and his project has had orders in it all day. So this is the
+// same test with one thing added: an order exists first.
+test('a new frame at the end travels when the project has a shooting order', async ({ browser }) => {
+  const { token } = await freshAccount();
+  const desktop = await Device.open(browser, 'desktop', token);
+  const tablet = await Device.open(browser, 'tablet', token, true);
+
+  const madeId = await desktop.newProject('With an order', 3);
+  await tablet.openProject(madeId!);
+  await Device.waitUntilTheyAgree(desktop, tablet);
+  await desktop.settle();
+  await tablet.settle();
+
+  say('desktop: making a shooting order first — that is the difference');
+  await desktop.newSortOrder('THE ORDER');
+  await desktop.settle();
+  await Device.waitUntilTheyAgree(desktop, tablet);
+
+  say('desktop: pressing NEW on the LAST frame');
+  const newId = await desktop.newFrameAfter(2);
+  await desktop.renameFrameById(newId, 'THE LAST ONE');
+  await desktop.settle();
+
+  say('tablet: waiting for the new frame');
+  const deadline = Date.now() + 60_000;
+  for (;;) {
+    await tablet.nudge();
+    const labels = (await tablet.read()).frames.map((f) => f.label);
+    if (labels.includes('THE LAST ONE')) break;
+    if (Date.now() > deadline) {
+      throw new Error('THE NEW FRAME NEVER REACHED THE OTHER DEVICE. The tablet '
+        + `has ${JSON.stringify(labels)}. The only difference from the test `
+        + 'above is that a shooting order exists, which is what makes pressing '
+        + 'NEW touch addFrameToSortOrders.');
+    }
+    await tablet.page.waitForTimeout(1000);
+  }
+
+  await desktop.close();
+  await tablet.close();
+});
+
+// ---------------------------------------------------------------------------
+// PRESSING NEW WHILE INSIDE A GROUP (#394)
+// ---------------------------------------------------------------------------
+//
+// actions.ts, in the NEW path:
+//
+//     if (insideGroup) newFrame.hidden = true;
+//
+// A frame made inside a group is born HIDDEN. So "the new frame did not sync"
+// and "the new frame arrived and is not being shown" look identical from the
+// outside, and Roman had groups open all day.
+//
+// This asks the tablet's PROJECT, not its screen: is the frame there at all.
+test('a new frame made inside a group reaches the other device', async ({ browser }) => {
+  const { token } = await freshAccount();
+  const desktop = await Device.open(browser, 'desktop', token);
+  const tablet = await Device.open(browser, 'tablet', token, true);
+
+  const madeId = await desktop.newProject('Inside a group', 4);
+  await tablet.openProject(madeId!);
+  await Device.waitUntilTheyAgree(desktop, tablet);
+  await desktop.settle();
+  await tablet.settle();
+
+  const kitchen = await desktop.makeGroup('KITCHEN', [0, 1, 2]);
+  await desktop.enterGroup(kitchen);
+  await desktop.settle();
+
+  say('desktop: pressing NEW on the last frame of the group');
+  const newId = await desktop.newFrameAfter(2);
+  await desktop.renameFrameById(newId, 'BORN IN A GROUP');
+  await desktop.settle();
+
+  say('tablet: waiting for it — asking the project, not the screen');
+  const deadline = Date.now() + 60_000;
+  for (;;) {
+    await tablet.nudge();
+    const labels = (await tablet.read()).frames.map((f) => f.label);
+    if (labels.includes('BORN IN A GROUP')) break;
+    if (Date.now() > deadline) {
+      throw new Error('A FRAME MADE INSIDE A GROUP NEVER REACHED THE OTHER '
+        + `DEVICE. The tablet has ${JSON.stringify(labels)}.`);
+    }
+    await tablet.page.waitForTimeout(1000);
+  }
+
+  await desktop.close();
+  await tablet.close();
+});
+
+// ---------------------------------------------------------------------------
+// THE SAME THING OFFLINE, WHICH IS THE SAFE CASE (#395)
+// ---------------------------------------------------------------------------
+//
+// Roman asked what happens if you make a frame offline and edit it before
+// reconnecting. Offline is the easy one and this is here to prove it: nothing
+// is pushed while you work, so the frame and every change to it go up together
+// in one piece, and the server has no older copy to send back.
+//
+// Which is worth having written down, because it says where the fault is NOT.
+// The trouble only exists online, in the seconds between the push leaving and
+// the reply arriving.
+test('a frame made and renamed offline arrives whole when the device reconnects', async ({ browser }) => {
+  const { token } = await freshAccount();
+  const desktop = await Device.open(browser, 'desktop', token);
+  const tablet = await Device.open(browser, 'tablet', token, true);
+
+  const madeId = await desktop.newProject('Made while away', 3);
+  await tablet.openProject(madeId!);
+  await Device.waitUntilTheyAgree(desktop, tablet);
+  await desktop.settle();
+  await tablet.settle();
+
+  await desktop.offline(true);
+
+  say('desktop: making a frame and naming it, with nowhere to send it');
+  const newId = await desktop.newFrameAfter(2);
+  await desktop.renameFrameById(newId, 'MADE WHILE AWAY');
+  await desktop.settle();
+
+  await desktop.offline(false);
+
+  say('tablet: waiting for the frame and its name to arrive together');
+  const deadline = Date.now() + 60_000;
+  for (;;) {
+    await tablet.nudge();
+    const labels = (await tablet.read()).frames.map((f) => f.label);
+    if (labels.includes('MADE WHILE AWAY')) break;
+    if (Date.now() > deadline) {
+      throw new Error('A FRAME MADE OFFLINE DID NOT ARRIVE WITH ITS NAME. The '
+        + `tablet has ${JSON.stringify(labels)}. Offline should be the easy `
+        + 'case: there is no round trip for a change to fall into.');
+    }
+    await tablet.page.waitForTimeout(1000);
+  }
+
+  await desktop.close();
+  await tablet.close();
+});

@@ -145,10 +145,31 @@ export function stampChangedContent(
   };
 
   s.frames.forEach((f, i) => {
-    if (!f.serverFrameId) return;   // never synced — nothing to compare against
     const needs = s.frameNeeds[f.id] ? JSON.stringify(s.frameNeeds[f.id]) : '';
     const notes = s.frameNotes[f.id] ? JSON.stringify(s.frameNotes[f.id]) : '';
-    note(`f/${f.serverFrameId}`, frameFp(f, i, needs, notes));
+
+    // A FRAME WITH NO SERVER ID STILL HAS A TIME (#395).
+    //
+    // This used to say `if (!f.serverFrameId) return;` — nothing that had never
+    // been to the server was given a time at all. Which sounds harmless, and is
+    // not: press NEW, type a name while the push is still in the air, and that
+    // name is recorded nowhere. When the reply comes back the frame is given a
+    // time for the first time — the moment it was NOTICED, not the moment you
+    // typed it — and until then it goes up as zero, the oldest time there is,
+    // and loses to the server's own copy. That is the name coming back.
+    //
+    // So it is filed under the LOCAL number in the meantime and moved across
+    // when the id arrives, keeping the time. Roman's rule, plainly: everything
+    // the app creates has a time. Not 1970 and not zero — the real moment.
+    const key = f.serverFrameId ? `f/${f.serverFrameId}` : `l/${f.id}`;
+    if (f.serverFrameId) {
+      const waiting = _seen.get(`l/${f.id}`);
+      if (waiting && !_seen.has(key)) _seen.set(key, waiting);
+      if (waiting) _seen.delete(`l/${f.id}`);
+    }
+    note(key, frameFp(f, i, needs, notes));
+
+    if (!f.serverFrameId) return;   // versions below are keyed by server id
 
     for (const stripId of Object.keys(s.stripVersions)) {
       for (const v of s.stripVersions[stripId]?.[f.id] ?? []) {
