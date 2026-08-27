@@ -3,7 +3,7 @@
 
 import { COLORS, state, useStore, DEFAULT_STRIP_DEFS, bumpRenderTick } from '../store/state';
 import type { Version, Frame, Stroke, TableData, StripType, FrameSnapshot } from '../store/state';
-import { getCurrentProject, flushSyncNow, markFrameDirty } from './currentProject';
+import { getCurrentProject, flushSyncNow, markFrameDirty, markSomethingToSend } from './currentProject';
 
 /** Scroll a frame card into the center of the visible area after re-render.
  *  Uses requestAnimationFrame to wait for layout to settle.
@@ -652,31 +652,76 @@ export function getFrameStripLabel(f: Frame, strip: StripType): string {
   return f.stripLabels?.[strip] || stripDefaultLabel(strip);
 }
 
-/** Set the strip label globally — strips never have per-frame overrides */
+/**
+ * RENAMING A STRIP ON THE CARD HAS TO LEAVE THE DEVICE (#408).
+ *
+ * Two ways to rename VERSION / SKETCH / REFS, and they did not do the same
+ * thing. From SETTINGS the new names are written THROUGH the store and pushed.
+ * Typing the name on top of a version card came here, and here the letters were
+ * written straight onto the object already sitting in the store:
+ *
+ *     def.defaultFrameLabel = label.trim();
+ *
+ * Every card reads that same object, so the new name appeared everywhere at
+ * once and looked done. But writing over something in place tells the store
+ * nothing, so nothing was marked as needing sending and no push was asked for.
+ * Roman: "i renamed the version strips and the only one that traveled was
+ * sketch" — the one that travelled had ridden along with some other change.
+ *
+ * Asking for a push was still not enough on its own. A push with no changed
+ * frame in it stops at "nothing changed — not sending" unless the project's
+ * settings say otherwise, and the fingerprint that answers that question did
+ * not look at the strip names at all. Both halves are needed: this one says
+ * there is something to send, and projectMetaFingerprint (accountFlow.ts) now
+ * counts the strip names as part of the project.
+ *
+ * The names themselves ride in the metadata blob, which every push carries.
+ */
 export function setFrameStripLabel(f: Frame, strip: StripType, label: string): void {
   if (label.trim().length === 0) return;
   const s = state();
   const def = s.stripDefs.find((d) => d.id === strip);
   if (!def) return;
 
-  // Update the default label so ALL frames in this strip show the new name
-  def.defaultFrameLabel = label.trim();
-  // Clear any per-frame stripLabels overrides on ALL frames
-  for (const fr of s.frames) {
-    if (fr.stripLabels && fr.stripLabels[strip]) {
-      delete fr.stripLabels[strip];
-    }
+  const clean = label.trim();
+  // The first letter is the prefix on the version tabs (v1, v2 / s1, s2).
+  const newPrefix = clean[0].toLowerCase();
+  const prefixChanged = def.prefix !== newPrefix;
+
+  // Replace the strip, do not write over it — a replacement is what the store
+  // notices, and being noticed is what marks the project as unsent.
+  useStore.setState({
+    stripDefs: s.stripDefs.map((d) =>
+      d.id === strip ? { ...d, defaultFrameLabel: clean, prefix: newPrefix } : d),
+  });
+
+  // Any older name kept on a single card is cleared, so every card shows the
+  // new one. Those live on the frames, so they travel with the frames — which
+  // means the frames have to be replaced too, and marked.
+  const touched = s.frames.filter((fr) => fr.stripLabels && fr.stripLabels[strip]);
+  if (touched.length > 0) {
+    const cleared = new Set(touched.map((fr) => fr.id));
+    useStore.setState({
+      frames: state().frames.map((fr) => {
+        if (!cleared.has(fr.id)) return fr;
+        const rest = { ...(fr.stripLabels ?? {}) };
+        delete rest[strip];
+        return { ...fr, stripLabels: rest };
+      }),
+    });
+    // Filed under the frame's permanent id, which since #405 it has from birth.
+    for (const fr of touched) if (fr.serverFrameId) markFrameDirty(fr.serverFrameId);
   }
 
-  // Update strip prefix from first letter and relabel all tabs
-  const newPrefix = label.trim()[0].toLowerCase();
-  if (def.prefix !== newPrefix) {
-    def.prefix = newPrefix;
+  if (prefixChanged) {
     const versMap = reg(strip).slice().versions;
     for (const fid of Object.keys(versMap)) {
       relabelStripVersions(+fid, strip);
     }
   }
+
+  markSomethingToSend();
+  void flushSyncNow();
 }
 
 export function stripScrollId(strip: StripType): string {

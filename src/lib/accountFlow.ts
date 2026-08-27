@@ -2903,6 +2903,22 @@ async function applyCloudTreeToStore(
       const meta = JSON.parse(tree.project.metadata);
       if (meta.stripDefs && Array.isArray(meta.stripDefs)) {
         restoredStripDefs = meta.stripDefs;
+        // SAY WHAT ARRIVED AND WHAT WE HOLD (#407).
+        //
+        // Roman renamed all the strips and only SKETCH travelled. The names live
+        // in stripDefs, which rides in the metadata blob. So: what does this
+        // device call each strip, and what does the arriving copy call it? If
+        // they match, the rename never left the other device; if they differ,
+        // something here is throwing the arriving one away.
+        {
+          const mine = state().stripDefs;
+          const line = (restoredStripDefs as { id: string; defaultFrameLabel?: string }[])
+            .map((d) => {
+              const here = mine.find((m) => m.id === d.id)?.defaultFrameLabel ?? '?';
+              return `${d.id}: mine "${here}" arrived "${d.defaultFrameLabel ?? '?'}"`;
+            }).join(' | ');
+          trace(`  strip names — ${line}`);
+        }
         // Migrate old default names → new defaults (preserve user customizations)
         const OLD_LABELS: Record<string, { btn: string; frame: string }> = {
           ver: { btn: 'VERSN', frame: 'vers' },
@@ -4466,6 +4482,10 @@ function projectMetaFingerprint(s: ReturnType<typeof state>): string {
     s.sortOrders, s.nextSortOrderId, s.activeSortOrderId,
     s.storyFlowBreaks, s.camAspectRatio, s.exportMeta,
     s.portraitMode, s.projectType, s.stripTagInfoDismissed,
+    // The names of the three strips (#408). They ride in the metadata blob on
+    // every push, but nothing here counted them, so renaming one and touching
+    // nothing else came out as "nothing changed — not sending".
+    s.stripDefs,
   ]);
 }
 

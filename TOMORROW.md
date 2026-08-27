@@ -1,108 +1,78 @@
-# Tomorrow — the new frame
+# Where things stand
 
-Deployed: **v4.9.101 · #399**. Next number: **v4.9.102**. Last run: 91.
+Deployed: **v4.9.105 · #406**. Next number: **v4.9.106**. Last run: 100.
 
-## One fault, three symptoms
+## The week's fault, and it was one fault
 
-For the second or two between pressing NEW and the server answering, the frame has
-no server id. Everything in the sync is filed BY that id, so for those seconds the
-frame is invisible to it:
+A frame had no identity for the first two seconds of its life. Everything in the
+sync is filed by that identity, so for those seconds the frame was invisible to
+it — and every symptom lived in that hole:
 
-- **its name** cannot be given a change time — times are filed under the server id
-  — so the rename goes up as zero, the oldest time there is, and loses to the
-  server's copy. The name comes back.
-- **its place** cannot be put in the arrangement — that is a list of server ids —
-  so the arrangement goes up one frame short (`story flow: 23 frames` with 24 on
-  screen) and the other device has to guess. Middle at 21:20, end at 21:32.
-- **the orders it belongs to** drop it, because they map their frames to server
-  ids and filter out the ones with none.
+- its name could not be stamped, so a rename went up as zero and lost
+- it could not be in the arrangement, so its place was guessed
+- it was dropped from shooting orders at push time, silently and permanently
+- and the local numbering was dealt out afresh on every sync, so a rename could
+  land on a different frame than the one you tapped
 
-Same hole, three symptoms. And the cure is the same shape each time: **the frame
-carries its own facts** — its time, its place — instead of being pointed at from a
-list keyed by an id it does not have yet.
+**#405** — the frame gets its id when it is made. The app always invented these
+itself (`f.serverFrameId || uuid()`); it simply did it at push time. Nothing
+about the server changed.
 
-NOT NEW. Compared against v4.9.087, ten versions back: `sort_order: i`, the
-arrangement built only from frames with ids, and applyArrangement are all
-unchanged. This has been there the whole time. What today's two bad builds did was
-make it loud enough to find.
+**#406** — a frame keeps the local number it already has. Only frames this device
+has never seen get new ones.
 
-## The plan, in order
+Confirmed by hand: names hold, positions hold, both renames of the same card show
+the same id.
 
-**1. Check the rename. Two minutes, before touching anything.**
-Press NEW, rename, close. Two separate questions:
-- does the name show at once? (fixed in #396 and proven — the rename used to be
-  written onto a frame object the push had already replaced)
-- is it still there a minute later? (the time-from-birth half is in, unconfirmed)
+## Still open
 
-**2. Stop the jumping. Small, safe, no migration.**
-Never APPLY an arrangement that is missing frames this device holds.
-Never solve it by not SENDING ours — an item that stops appearing reads as
-DELETED, which is exactly what #397 did to every frame.
+- **Renaming a version** — sending is fixed, the receiving side does not take a
+  strip name that arrives. Test held back: it kills the local wrangler every run.
+- **The random day** — fails on settings (setups, an unanswered sort-order
+  decision). Proved NOT ours: the same seed fails identically with #406 stashed.
+  Also not repeatable — same seed, different failure each time.
+- **13-scribble "scribbling fast"** — fails on its own guard, because #381 means
+  fewer rebuilds. Not a lost stroke. The test needs rewriting for the behaviour
+  Roman chose to keep.
+- **A forced fetch ignores the hand-busy guard** (`if (!force && handIsBusy())`).
+  The real hole under the vanishing strokes.
+- Groups and shooting orders store frames by local NUMBER and translate to ids on
+  the way out. Since #405 that translation cannot fail, but storing ids directly
+  is the cleaner end state.
+- Using ids in the buttons instead of local numbers — would retire the private
+  numbering altogether. A proper piece of work, not a patch.
 
-**3. Write the tests before the fix.**
-Every test was green today while frames jumped on screen, because they all asked
-where things ENDED UP — and the order settles after a second, so that question can
-never fail. Ask instead whether the position moved AT ALL:
-- press NEW, watch the position for five seconds, it must never move
-- two devices reordering while apart, each adding a frame
-- a frame made offline, then reconnected
+## The list
 
-**4. The fix: a position on the frame.** (Roman's, and simpler than mine.)
-Given when the frame is made, exactly as a break has one, travelling with the
-frame like any other content. Then `frameOrder/main` retires and there is ONE
-answer to "where".
-
-Position and id cannot fight: the id says WHICH frame, the position says WHERE it
-sits. What fights today is two things that both answer WHERE — `sort_order` and
-the whole-list arrangement. The fix works by deleting one of them.
-
-(My earlier idea was a key sitting BETWEEN the neighbours' keys, so two devices
-inserting in the same place at the same instant cannot collide. That is all it
-buys, and in a one-man app it is not worth the machinery. Plain position first.)
-
-**5. The shooting orders — this is the one that loses work.**
-You cannot make a frame inside an order, but the app adds every new frame to
-existing orders by itself. At push time the order's frames are mapped to server
-ids and filtered, so a frame without one is dropped. Then nothing repairs it: the
-order's stored value holds LOCAL numbers, which did not change, so the app sees no
-change and never re-sends it. The frame is missing from that order on the other
-device for good.
-
-Rule: when a frame gets its id, re-send the orders it belongs to.
-
-Breaks need nothing — a break is a position in the agreed order, and step 4 is
-what makes that order reliable.
-
-## Offline
-
-**The order is safe while you are away.** It is simply the order of the list on the
-device, saved with the project. No ids involved, nothing expires — two hours or two
-days makes no difference. The only risky moment is the reconnect.
-
-**Story flow on reconnect — transient.** Everything goes up at once, but the
-arrangement is built before the ids come back, so that first push is still one
-frame short. Gone by the next push, and removed entirely by step 4.
-
-**Shooting orders on reconnect — permanent and silent.** As in step 5. This is why
-step 5 must not slip behind step 4.
+1. iPad view bar and setup bar hiding
+2. Preview thumbnails in the sort view
+3. Offline copies in the project list
+4. A picker when a frame's needs change after sorting
+5. Retire the frame picker — dead code
+6. The ten-second lock
+7. Retry backoff
+8. Sweep tombstones
+9. Take the sync log out — last
+10. FITTING export modal
+11. FRAME → SHOT, HOW → ANGLE as default strip names. ANGLE starts with A, which
+    changes the strip prefix and relabels every version — understand that first.
 
 ## Do not repeat
 
-- **#397** made the arrangement empty while a frame had no id. An empty list is not
-  "say nothing" — a missing item reads as DELETED, so the device announced the
-  whole arrangement was gone. Every new frame was misplaced within minutes.
-- **#395's after-push comparison** marked any frame that no longer matched what was
-  sent as unsent, and stamped it — which made it differ again, and push again. One
-  frame went up three times in eleven seconds.
-- Both went out on a green suite. Green means "nothing I can see objects", not
-  "safe".
+- **#397** made the arrangement empty while a frame had no id. A missing item
+  reads as DELETED, so the device announced the whole arrangement was gone.
+- **#395's after-push comparison** stamped what it marked, which made it differ
+  again, which pushed again. One frame went up three times in eleven seconds.
+- **#403** gave every frame its own fractional number and retired the
+  arrangement. It undid rearranging and collided with #294 — one arrangement,
+  later wins whole. Roman chose #294. Tests kept in 23-position.spec.ts, parked.
+- All three went out, or nearly went out, on a green suite. Green means "nothing
+  I can see objects", not "safe".
 
-## Still open, from earlier
+## Tooling
 
-- Renaming a version: the sending side is fixed, the receiving side does not take a
-  strip name that arrives. Test held back — it kills the local wrangler every run.
-- FRAME → SHOT and HOW → ANGLE as default strip names. ANGLE starts with A, which
-  changes the strip prefix and relabels every version — understand that first.
-- The list: iPad bars hiding, thumbnails in the sort view, offline copies in the
-  project list, needs-changed picker, retire the frame picker, the ten-second lock,
-  retry backoff, sweep tombstones, take the sync log out, FITTING export.
+- `wrangler dev` crashes at random and takes the rest of the run with it. If a
+  run says `ECONNREFUSED 127.0.0.1:8787`, it is void — repeat it.
+- The run script holds the Mac awake (`caffeinate -dims`) and prints FH_RUN at
+  the end.
+- ALWAYS tell Roman how long a run will take. Figures are in CLAUDE.md.

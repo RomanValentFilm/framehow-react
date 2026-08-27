@@ -6,6 +6,16 @@
 is broken and why, and the plan in order. Read it before doing anything else at
 the start of a session — it is written to be the handover.
 
+## ALWAYS SAY HOW LONG A TEST RUN WILL TAKE
+
+Roman is waiting at the other end with nothing to look at. Every time a run is
+handed over, say the expected time with it. Rough figures:
+
+- the whole suite — about 10 minutes
+- the sync core (01, 02, 03, 05, 06, 07) — about 2.5 minutes
+- one file — 30 seconds to a minute
+- the random day on its own — about 2 minutes
+
 ## Deployment
 
 Git branch is `v4.4`. Cloudflare Pages production branch is `main`.
