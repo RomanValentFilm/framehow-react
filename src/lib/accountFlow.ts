@@ -684,12 +684,30 @@ function renderProjectList(
   content.innerHTML = '';
   document.getElementById('projectListOfflineNote')?.classList.toggle('hidden', !offlineListing);
 
-  // One list, most recent first, so the project you are working on is at the
-  // top and everything else falls into place behind it by when it was last
-  // touched — cloud projects and offline copies together.
+  // THE LIST, THE WAY ROMAN ASKED FOR IT (#409).
+  //
+  // Two parts. The project you have open sits on top as its own button, with
+  // its own offline copies directly beneath it — they are clickable, so the
+  // work you did offline this morning is one tap away and not hunted for.
+  // Then the words LIST OF PROJECTS, and then everything else.
+  //
+  // Everything else is ALPHABETICAL by name — the old list was newest-first
+  // throughout, which meant a project moved every time you touched it and was
+  // never where you last saw it. Within one name it is newest first, whatever
+  // that happens to be: usually the work still on this device, but the cloud
+  // row if another device pushed something later. No special case for either.
+  //
+  // So the newest thing is always the top row of its name, and every row opens
+  // itself — nothing decides for the user, the order does.
   type Row = { at: number; render: () => HTMLElement };
-  const rows: Row[] = [];
   const openId = getCurrentProject().projectId;
+
+  /** One project's worth of rows, whatever kind they are. */
+  type Entry = { name: string; at: number; render: () => HTMLElement };
+  const entries: Entry[] = [];
+  const mineNow: Entry[] = [];        // copies of the project that is open
+
+  const nameOf = (n: string | null | undefined): string => (n || 'Unnamed project');
 
   const localRow = (rec: PendingRecord, archivedCopy: boolean): HTMLElement => {
     const row = document.createElement('button');
@@ -701,13 +719,16 @@ function renderProjectList(
     if (archivedCopy) name.style.cssText = 'font-style:italic;color:#888;';
     row.appendChild(name);
     const tag = document.createElement('span');
-    tag.textContent = archivedCopy
-      ? `offline copy from ${formatClockTime(rec.savedAt)} — already uploaded`
-      : `saved offline at ${formatClockTime(rec.savedAt)} — open to upload`;
+    tag.textContent = archivedCopy ? 'offline copy — already uploaded' : 'on this device — not uploaded yet';
     tag.style.cssText = archivedCopy
       ? 'font-style:italic;color:#888;font-size:11px;margin-left:8px;'
       : 'color:#d52632;font-size:11px;margin-left:8px;';
     row.appendChild(tag);
+    // When it was saved, in full — the same stamp on every row in the list.
+    const when = document.createElement('span');
+    when.className = 'project-list-meta';
+    when.textContent = formatSavedStamp(rec.savedAt);
+    row.appendChild(when);
     if (editMode && onDeleteLocal) {
       const del = document.createElement('span');
       del.textContent = 'Delete';
@@ -720,11 +741,19 @@ function renderProjectList(
     return row;
   };
 
-  for (const rec of archived) rows.push({ at: rec.savedAt, render: () => localRow(rec, true) });
+  // The open project appears TWICE on purpose: once on top as the shortcut,
+  // and again down in the alphabetical list with its copies, in its proper
+  // place under its own letter. The list below is the whole truth; the top is
+  // only a shortcut to where you already are.
+  const fileCopy = (rec: PendingRecord, render: () => HTMLElement): void => {
+    const e: Entry = { name: nameOf(rec.name), at: rec.savedAt, render };
+    if (openId && rec.projectId === openId) mineNow.push({ ...e });
+    entries.push(e);
+  };
+
+  for (const rec of archived) fileCopy(rec, () => localRow(rec, true));
   if (editMode) {
-    for (const rec of deletedCopies) rows.push({
-      at: rec.savedAt,
-      render: () => {
+    for (const rec of deletedCopies) fileCopy(rec, () => {
         const row = document.createElement('button');
         row.type = 'button';
         row.className = 'project-list-row';
@@ -744,10 +773,9 @@ function renderProjectList(
         rec2.onclick = (e) => { e.stopPropagation(); onRecoverLocal?.(rec); };
         row.appendChild(rec2);
         return row;
-      },
     });
   }
-  for (const rec of deviceOnly) rows.push({ at: rec.savedAt, render: () => localRow(rec, false) });
+  for (const rec of deviceOnly) fileCopy(rec, () => localRow(rec, false));
 
   if (projects.length === 0 && deviceOnly.length === 0 && archived.length === 0) {
     const empty = document.createElement('div');
@@ -756,14 +784,34 @@ function renderProjectList(
     content.appendChild(empty);
     return;
   }
-  for (const p of projects) rows.push({
-    at: p.id === openId ? Number.MAX_SAFE_INTEGER : (p.updated_at || 0),
-    render: () => cloudRow(p),
-  });
+  let openRow: Entry | null = null;
+  for (const p of projects) {
+    const e: Entry = { name: nameOf(p.name), at: p.updated_at || 0, render: () => cloudRow(p) };
+    if (p.id === openId) openRow = { ...e };
+    entries.push(e);
+  }
 
-  // Most recent first; the project currently open is pinned to the top.
-  rows.sort((a, b) => b.at - a.at);
-  for (const r of rows) content.appendChild(r.render());
+  // The open project first, then its own copies, newest first.
+  if (openRow) content.appendChild(openRow.render());
+  mineNow.sort((a, b) => b.at - a.at);
+  for (const e of mineNow) content.appendChild(e.render());
+
+  // Then the heading, and then the rest.
+  if (entries.length > 0) {
+    const heading = document.createElement('div');
+    heading.textContent = 'LIST OF PROJECTS';
+    heading.style.cssText =
+      'color:#888;font-size:11px;letter-spacing:1px;margin:18px 0 6px;padding:0 2px;';
+    content.appendChild(heading);
+  }
+
+  // By name first — the whole point, so a project stays where you last saw it.
+  // Then newest first inside the name, so the freshest copy is the top row.
+  entries.sort((a, b) => {
+    const byName = a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+    return byName !== 0 ? byName : b.at - a.at;
+  });
+  for (const e of entries) content.appendChild(e.render());
 
   function cloudRow(p: CloudProject): HTMLElement {
     const isDeleted = p.deleted_at != null;
@@ -779,7 +827,7 @@ function renderProjectList(
 
     if (p.id === openId) {
       const nowTag = document.createElement('span');
-      nowTag.textContent = 'just now — open';
+      nowTag.textContent = 'open now';
       nowTag.style.cssText = 'color:#888;font-size:11px;margin-left:8px;';
       row.appendChild(nowTag);
     }
@@ -796,7 +844,10 @@ function renderProjectList(
     const waiting = pendingOnDevice().find((w) => w.projectId === p.id);
     if (waiting) {
       const tag = document.createElement('span');
-      tag.textContent = `offline changes from ${formatClockTime(waiting.savedAt)} — open here to upload`;
+      // It used to say "open here to upload", and opening this row does no such
+      // thing — it loads the cloud copy and leaves the device copy sitting
+      // there (#409). The copy has its own row now, directly above this one.
+      tag.textContent = 'offline changes on this device — see the copy above';
       tag.style.cssText = 'color:#d52632;font-size:11px;margin-left:8px;';
       row.appendChild(tag);
     }
@@ -831,7 +882,10 @@ function renderProjectList(
       if (!isDeleted) {
         const meta = document.createElement('span');
         meta.className = 'project-list-meta';
-        meta.textContent = formatRelative(p.updated_at);
+        // The full stamp, not "3 hours ago" (#409): the list can hold three
+        // copies of one project and the user has to be able to tell which is
+        // which without counting backwards.
+        meta.textContent = formatSavedStamp(p.updated_at);
         row.appendChild(meta);
       }
     }
@@ -3753,6 +3807,23 @@ function formatTimeAgo(ms: number): string {
   if (hours < 48) return 'yesterday';
   const days = Math.round(ms / 86400000);
   return `${days} days ago`;
+}
+
+/** When it was last saved, in full: "20:17, Thursday 12.Oct. 2026" (#409).
+ *  Every row in the project list carries one, so two copies of the same
+ *  project can be told apart at a glance without doing arithmetic on
+ *  "3 hours ago". */
+const _MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const _DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday',
+               'Thursday', 'Friday', 'Saturday'];
+
+export function formatSavedStamp(timestamp: number): string {
+  if (!timestamp) return '';
+  const d = new Date(timestamp);
+  const h = d.getHours().toString().padStart(2, '0');
+  const m = d.getMinutes().toString().padStart(2, '0');
+  return `${h}:${m}, ${_DAYS[d.getDay()]} ${d.getDate()}.${_MONTHS[d.getMonth()]}. ${d.getFullYear()}`;
 }
 
 function formatClockTime(timestamp: number): string {

@@ -1,6 +1,6 @@
 # Where things stand
 
-Deployed: **v4.9.105 · #406**. Next number: **v4.9.106**. Last run: 100.
+Deployed: **v4.9.106 · #408**. Next number: **v4.9.107**. Last run: 101.
 
 ## The week's fault, and it was one fault
 
@@ -26,16 +26,27 @@ the same id.
 
 ## Still open
 
-- **Renaming a version** — sending is fixed, the receiving side does not take a
-  strip name that arrives. Test held back: it kills the local wrangler every run.
 - **The random day** — fails on settings (setups, an unanswered sort-order
   decision). Proved NOT ours: the same seed fails identically with #406 stashed.
   Also not repeatable — same seed, different failure each time.
 - **13-scribble "scribbling fast"** — fails on its own guard, because #381 means
   fewer rebuilds. Not a lost stroke. The test needs rewriting for the behaviour
   Roman chose to keep.
-- **A forced fetch ignores the hand-busy guard** (`if (!force && handIsBusy())`).
-  The real hole under the vanishing strokes.
+- **A forced fetch ignores the hand-busy guard** (`if (!force && handIsBusy())`,
+  accountFlow.ts). The real hole under the vanishing strokes. **AGREED WITH
+  ROMAN, KEEP EXACTLY THIS:**
+
+  > So the fix is narrower than "forced fetches ignore the guard". It's one
+  > path, and the honest question for it is: does it need to happen this
+  > second, or can it wait the few seconds until the hand stops?
+
+  There are five forced fetches and only five. Four cannot land while a hand is
+  drawing — three are the keep-both/keep-mine picker (you are tapping a dialog)
+  and one is closing a shooting order (#380, the catching-up). The fifth is the
+  one that matters: **after a push the server refused as stale** (~line 2431,
+  `if (staleCount > 0)`), which fires on its own from an autosave with nobody
+  touching anything. That is the only path to change. Put it in a log before
+  writing anything — the way #407 settled the strip names in one reading.
 - Groups and shooting orders store frames by local NUMBER and translate to ids on
   the way out. Since #405 that translation cannot fail, but storing ids directly
   is the cleaner end state.
