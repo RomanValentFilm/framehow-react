@@ -4,6 +4,7 @@
 import { state, useStore, bumpRenderTick, SETUP_COLORS } from '../store/state';
 import type { SortOrder, SortBreak, Frame, NeedTable, BracketNodeData } from '../store/state';
 import { uniqueId } from './ids';
+import { trace } from './syncTrace';
 
 // ─── Sort Bracket Types ──────────────────────────────────────────────
 
@@ -1764,6 +1765,27 @@ function renderSortEditView(el: HTMLElement, orderId: string): void {
     if (!order) { closeSortMode(); return; }
     frames = getOrderedFrames(order);
     orderName = order.name;
+  }
+
+  // SAY WHAT THIS VIEW IS ABOUT TO SHOW (#400).
+  //
+  // Roman: frames he had just made are missing from the story flow and from a
+  // shooting order until he draws on them — and still missing after a reload.
+  // Reading the code says that cannot happen: the story flow lists
+  // getVisibleFrames() with no filter of any kind, and 3x2 lists the same thing
+  // and hides MORE (hidden frames), yet 3x2 shows them.
+  //
+  // So the reading is wrong somewhere. This says which list it is building, how
+  // many frames it has, and which frames the project holds that did NOT make it
+  // into that list — which is the answer, whatever it turns out to be.
+  {
+    const inProject = state().frames;
+    const shown = new Set(frames.map((f) => f.id));
+    const missing = inProject.filter((f) => !shown.has(f.id));
+    trace(`sort view: ${orderId} · showing ${frames.length} of ${inProject.length}`
+      + (missing.length
+        ? ` · MISSING: ${missing.map((f) => `${f.label || f.id}${f.serverFrameId ? '' : ' (no id)'}${f.hidden ? ' (hidden)' : ''}`).join(', ')}`
+        : ' · none missing'));
   }
 
   const activeReorderFid = (el as any).__activeReorderFid as number | null ?? null;

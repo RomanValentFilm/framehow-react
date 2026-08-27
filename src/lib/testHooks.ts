@@ -80,6 +80,8 @@ export interface TestDoor {
   renameFrameById(id: number, label: string): void;
   /** A frame's label, as it reads on the card. */
   frameLabel(frameIndex: number): string;
+  /** Every card the open sort view is showing (#400). */
+  sortViewFrames(): string[];
   /** Open the big NEEDS card over 3x2, as tapping the needs area does (#391). */
   openNeedsCard(frameIndex: number): void;
   /** Show a tab on a frame's needs card, as tapping the tab does (#390). */
@@ -500,6 +502,20 @@ export function installTestDoor(): void {
       const f = useStore.getState().frames[frameIndex];
       if (!f) throw new Error(`no frame at ${frameIndex}`);
       return f.label ?? '';
+    },
+
+    // WHAT THE SORT VIEW ACTUALLY LISTS, read off the screen (#400).
+    //
+    // Roman: a frame he had just made was not in the story flow or the shooting
+    // order until he drew on it. Both build their list differently — the story
+    // flow from every visible frame, an order from its own list — so this reads
+    // the cards that are really on the page rather than either rule.
+    sortViewFrames() {
+      const view = document.getElementById('sortEditView');
+      if (!view) return [];
+      return Array.from(view.querySelectorAll('.sort-card'))
+        .map((c) => (c.querySelector('.sort-card-num')?.textContent
+          ?? c.getAttribute('data-sort-fid') ?? '').trim());
     },
 
     /** Open the big NEEDS card over 3x2, as tapping the needs area does. */

@@ -54,7 +54,6 @@ import {
   endSystemAction,
   pendingOnDevice,
   markSomethingToSend,
-  markFrameDirty,
   registerTombstoneBridge,
   handIsBusy,
 } from './currentProject';

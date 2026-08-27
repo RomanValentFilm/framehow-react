@@ -1,5 +1,11 @@
 # Framehow React — Project Notes
 
+## READ TOMORROW.md FIRST
+
+`TOMORROW.md` in this folder holds where the work stopped, what is deployed, what
+is broken and why, and the plan in order. Read it before doing anything else at
+the start of a session — it is written to be the handover.
+
 ## Deployment
 
 Git branch is `v4.4`. Cloudflare Pages production branch is `main`.

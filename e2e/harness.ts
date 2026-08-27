@@ -504,6 +504,13 @@ export class Device {
         .__fh_test.frameLabel(i as number), frameIndex);
   }
 
+  /** Every card the open sort view is showing (#400). */
+  sortViewFrames(): Promise<string[]> {
+    return this.page.evaluate(() =>
+      (window as never as { __fh_test: { sortViewFrames(): string[] } })
+        .__fh_test.sortViewFrames());
+  }
+
   async openNeedsCard(frameIndex: number): Promise<void> {
     say(`${this.name}: opening the big NEEDS card on frame ${frameIndex + 1}`);
     await this.page.evaluate((i) =>
