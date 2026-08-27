@@ -1503,34 +1503,11 @@ function countCurrentImages(): number {
 // machine that happens to be closed.
 // ---------------------------------------------------------------------------
 
-interface OpenConflict {
-  id: string;
-  frame_id: string;
-  losing_json: string;
-  device_name: string | null;
-  made_at: number | null;
-  winner_device: string | null;
-  winner_made_at: number | null;
-  made_offline: number;
-  created_at: number;
-}
 
 /** Name a side the way the user would: by device and when it was made. */
 /** Say what the frame actually holds after a decision — names, not just a
  *  count, so "it is not in the layout" can be told apart from "it is not in
  *  the data". */
-function traceFrameVersions(serverFrameId: string): void {
-  const st = state();
-  const f = st.frames.find((x) => x.serverFrameId === serverFrameId);
-  if (!f) { trace('  that frame is not in the store'); return; }
-  // After KEEP BOTH there should be a PAIR of frames in the main strip, so
-  // report the neighbours by name, not a version count.
-  const base = (f.label || '').replace(/#\d+$/, '');
-  const pair = st.frames
-    .filter((x) => (x.label || '').replace(/#\d+$/, '') === base)
-    .map((x) => `${x.label || '·'}:${(st.versions[x.id] ?? []).length}v${x.src ? '' : '(no image)'}`);
-  trace(`  ${st.frames.length} frames · matching "${base}": [${pair.join(', ')}]`);
-}
 
 function sideWho(frameLabel: string, device: string | null, isThisDevice: boolean,
                  fallback = 'another device'): string {
@@ -1651,148 +1628,8 @@ async function askAboutOpenSettingConflicts(projectId: string): Promise<void> {
  *  push and the heartbeat — and both can fire within a second of each other.
  *  Without this the same conflict got two pickers, and answering one left the
  *  device taking the same result twice. */
-let askingAboutConflicts = false;
 
-async function askAboutOpenConflicts(projectId: string): Promise<void> {
-  if (askingAboutConflicts) return;
-  askingAboutConflicts = true;
-  try {
-    await askAboutOpenConflictsInner(projectId);
-  } finally {
-    askingAboutConflicts = false;
-  }
-}
 
-async function askAboutOpenConflictsInner(projectId: string): Promise<void> {
-  let list: OpenConflict[];
-  try {
-    const res = await api.get<{ conflicts: OpenConflict[] }>(
-      `/projects/${encodeURIComponent(projectId)}/conflicts`, getToken());
-    list = res.conflicts ?? [];
-  } catch {
-    return;   // ask again next time; nothing is lost by not asking now
-  }
-  if (list.length === 0) return;
-  trace(`  ${list.length} frame decision(s) waiting`);
-
-  for (const c of list) {
-    const losing = JSON.parse(c.losing_json) as {
-      frame: { label?: string | null };
-      versions: Array<{ id: string; type: string }>;
-      images: Array<{ version_id: string; r2_key: string }>;
-    };
-    const mainV = losing.versions.find((v) => v.type === 'main');
-    const key = mainV ? losing.images.find((i) => i.version_id === mainV.id)?.r2_key : undefined;
-    let losingSrc = '';
-    if (key) { try { losingSrc = await fetchImageFromR2(key, getToken()!); } catch { /* blank */ } }
-
-    const localFrame = state().frames.find((f) => f.serverFrameId === c.frame_id);
-    const here = getDeviceName();
-
-    const label = localFrame?.label || losing.frame.label || '?';
-    const choice = await showThreeWayConflict({
-      frameLabel: label,
-      keepWho:  sideWho(label, c.winner_device, c.winner_device === here, 'the cloud'),
-      keepWhen: sideWhen(c.winner_made_at),
-      otherWho:  sideWho(label, c.device_name, c.device_name === here, 'this device'),
-      otherWhen: sideWhen(c.made_at),
-      keepDevice:  c.winner_device,
-      otherDevice: c.device_name,
-      keepSrc: localFrame?.src || '',
-      otherSrc: losingSrc,
-      madeOffline: !!c.made_offline,
-      stillOpen: async () => {
-        try {
-          const r = await api.get<{ conflicts: OpenConflict[] }>(
-            `/projects/${encodeURIComponent(projectId)}/conflicts`, getToken());
-          return (r.conflicts ?? []).some((x) => x.id === c.id);
-        } catch { return true; }   // can't tell — leave it up
-      },
-    });
-
-    if (!choice) {
-      // The picker closed itself because the question was settled elsewhere.
-      // Closing the window is not enough: this device is now out of date and
-      // must take the decided result, or the two devices sit there each
-      // showing its own version. This was the real cause of "keep both did
-      // nothing" — the answering device was fine, this one never looked.
-      trace('  decision was answered on another device — taking that result');
-      markFrameAsMatchingServer(c.frame_id);
-      lastKnownUpdatedAt = 0;         // force the pull to apply
-      await tryPullFromCloud(true);
-      traceFrameVersions(c.frame_id);
-      continue;
-    }
-
-    try {
-      const res = await api.post<{ already_resolved?: boolean; resolution?: string } & CloudProjectTree>(
-        `/projects/${encodeURIComponent(projectId)}/conflicts/${encodeURIComponent(c.id)}`,
-        {
-          choice,
-          device_id: getDeviceId(),
-          device_name: getDeviceName(),
-        }, getToken());
-      if (res.already_resolved) {
-        // Someone answered first — so this device is now out of date and must
-        // take what was decided. Doing nothing here left the two devices
-        // showing different things, each convinced it was right.
-        trace(`  already decided elsewhere: ${res.resolution} — taking that result`);
-        showToast(`Already decided on another device — kept ${res.resolution === 'both' ? 'both' : res.resolution}.`);
-        markFrameAsMatchingServer(c.frame_id);
-        lastKnownUpdatedAt = 0;         // force the pull to apply
-        await tryPullFromCloud(true);
-        continue;
-      }
-      trace(`  decided: ${choice}`);
-
-      // Applying the result rebuilds the project from the server, which resets
-      // the view to the default. Answering a question should not move you: if
-      // you were in 3x2, you stay in 3x2.
-      const before = state();
-      const viewBefore = {
-        currentViewMode: before.currentViewMode,
-        activeStrips: [...before.activeStrips],
-        notesStripVisible: before.notesStripVisible,
-        needsStripVisible: before.needsStripVisible,
-        activeGroupId: before.activeGroupId,
-        centerFid: before.centerFid,
-      };
-
-      beginSystemAction();
-      try {
-        await applyCloudTreeToStore(res as CloudProjectTree);
-      } finally {
-        endSystemAction();
-      }
-      adoptFingerprintsFromStore();
-
-      traceFrameVersions(c.frame_id);
-
-      const after = state();
-      const groupStillThere =
-        viewBefore.activeGroupId !== null &&
-        after.groups.some((g) => g.id === viewBefore.activeGroupId);
-      useStore.setState({
-        currentViewMode: viewBefore.currentViewMode,
-        activeStrips: viewBefore.activeStrips,
-        notesStripVisible: viewBefore.notesStripVisible,
-        needsStripVisible: viewBefore.needsStripVisible,
-        activeGroupId: groupStillThere ? viewBefore.activeGroupId : null,
-      });
-
-      (window as any).__fh_renderAll?.();
-      // After the rebuild, not before — otherwise the rebuild has the last word.
-      setViewMode(viewBefore.currentViewMode);
-
-      const frameStillThere =
-        viewBefore.centerFid != null &&
-        state().frames.some((f) => String(f.id) === String(viewBefore.centerFid));
-      if (frameStillThere) requestAnimationFrame(() => scrollAnchorTo(viewBefore.centerFid));
-    } catch {
-      showToast('Could not save that choice — it will be asked again.');
-    }
-  }
-}
 
 /**
  * IS THIS STRIP STILL EMPTY — as in, has anyone ever put anything in it (#358).
@@ -2488,7 +2325,9 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
     await tryPullFromCloud(true);
   }
 
-  if (rejected.length > 0) await askAboutOpenConflicts(projectId);
+  // Anything the server refused is simply fetched, above. There is no question
+  // to ask: a main frame has settled by TIME since #303 (#410).
+  void rejected;
 }
 
 /**
@@ -3958,7 +3797,6 @@ export function signalActivity(): void {
 /** Send a heartbeat to the server — "this device is actively working". */
 /** Guards against a second heartbeat opening the question again while the
  *  first one is still on screen. */
-let _askingAboutConflicts = false;
 
 async function sendHeartbeat(): Promise<void> {
   const cp = getCurrentProject();
@@ -3966,7 +3804,6 @@ async function sendHeartbeat(): Promise<void> {
   try {
     const beat = await api.post<{
       ok: boolean;
-      open_conflicts?: number;
       open_setting_conflicts?: number;
       project_updated_at?: number | null;
       project_last_device_id?: string | null;
@@ -4023,15 +3860,6 @@ async function sendHeartbeat(): Promise<void> {
     // waiting decision gets noticed, on whichever device the user is at.
     if ((beat?.open_setting_conflicts ?? 0) > 0) {
       await askAboutOpenSettingConflicts(cp.projectId);
-    }
-
-    if ((beat?.open_conflicts ?? 0) > 0 && !_askingAboutConflicts) {
-      _askingAboutConflicts = true;
-      try {
-        await askAboutOpenConflicts(cp.projectId);
-      } finally {
-        _askingAboutConflicts = false;
-      }
     }
   } catch { /* silent */ }
 }
@@ -4628,12 +4456,6 @@ export function forgetPushedFingerprint(serverFrameId: string): void {
  *  frame, so the local copy must not be defended as "mine". Left dirty, the
  *  pull keeps the local version instead of the decided one and then pushes it
  *  back up, which is how a settled conflict came undone. */
-export function markFrameAsMatchingServer(serverFrameId: string): void {
-  const s = state();
-  const i = s.frames.findIndex((f) => f.serverFrameId === serverFrameId);
-  if (i < 0) return;
-  _lastPushedFingerprints.set(serverFrameId, frameFingerprint(s.frames[i], i, s));
-}
 
 export function clearPushedFingerprints(): void {
   _lastPushedFingerprints.clear();
