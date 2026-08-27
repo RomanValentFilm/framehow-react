@@ -33,6 +33,7 @@ import { renderOverviewRow, renderGrid4Row, renderGrid3x2Card } from './overview
 import { showConfirm, showDeleteChoice, showGroupDeleteChoice, showToast, showVersionChoice, openTextModal } from './modals';
 import { fhTrack } from './tracking';
 import { trace } from './syncTrace';
+import { newFrameId } from './ids';
 import { drawFit } from './drawing';
 import { openCamera, getCameraTarget, clearCameraTarget, setOnCapturedImage } from './camera';
 import { recordTombstone } from './accountFlow';
@@ -148,6 +149,7 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
         tableData: null,
       };
       if (insideGroup) newFrame.hidden = true;
+      newFrame.serverFrameId = newFrameId();   // its identity, from the start (#405)
       s2.frames.splice(idx2 + 1, 0, newFrame);
       s2.versions[nid] = [{ id: 1, label: firstVerLabel(), type: 'empty', strokes: [], bgImage: null }];
       s2.activeTab[nid] = 0;
@@ -202,6 +204,7 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
       };
       // Frames created inside a group are auto-hidden in ALL view
       if (insideGroup) newFrame.hidden = true;
+      newFrame.serverFrameId = newFrameId();   // its identity, from the start (#405)
       s2.frames.splice(idx2 + 1, 0, newFrame);
       s2.versions[nid] = [{ id: 1, label: firstVerLabel(), type: 'empty', strokes: [], bgImage: null }];
       s2.activeTab[nid] = 0;
@@ -230,6 +233,7 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
       textContent: f.textContent || '',
       tableData: f.tableData ? JSON.parse(JSON.stringify(f.tableData)) : null,
     };
+    (newFrame as any).serverFrameId = newFrameId();   // its identity, from the start (#405)
     s.frames.splice(idx + 1, 0, newFrame);
     s.versions[nid] = [{ id: 1, label: firstVerLabel(), type: 'empty', strokes: [], bgImage: null }];
     s.activeTab[nid] = 0;

@@ -44,3 +44,26 @@ export function uniqueId(prefix: string): string {
 export function uniqueNumericId(): number {
   return Math.floor(Math.random() * 2_000_000_000) + 1;
 }
+
+/**
+ * A FRAME'S IDENTITY, MADE WHEN THE FRAME IS MADE (#405).
+ *
+ * The server never handed these out — the app has always invented them, in the
+ * push: `const frameId = f.serverFrameId || uuid()`. It simply did it two
+ * seconds too late and did not write it onto the frame until the answer came
+ * back. Everything filed by that id therefore had a hole in it for those two
+ * seconds, and every symptom of this week lived in the hole:
+ *
+ *   - the whole-project arrangement is a list of ids, so a frame without one
+ *     could not be in it and its place had to be guessed
+ *   - change times are filed by id, so a rename went up as zero and lost
+ *   - and a rename could land on a different frame entirely, because the local
+ *     numbers are handed out afresh on every pull
+ *
+ * Roman: "we could give him a temporary ID, that will be reassigned once the
+ * server gives him the real one." Nothing needs reassigning — it is the real one
+ * from the start.
+ */
+export function newFrameId(): string {
+  return crypto.randomUUID();
+}

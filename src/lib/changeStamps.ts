@@ -213,10 +213,12 @@ export function frameChangedAtForSending(
   // new frame still went up as zero — `change times: 3d7c54@none` in Roman's
   // log, on the build that was supposed to have fixed it. Writing it down and
   // never reading it is worth nothing.
-  if (localId !== undefined) {
-    const hit = _seen.get(`l/${localId}`);
-    if (hit && hit.at > 0) return hit.at;
-  }
+  // The local-number fallback added in #397 is gone (#405). It was built on a
+  // number the pull hands out afresh every time, so by the moment it was read it
+  // could belong to a different frame — which is how a rename landed on the
+  // wrong one. A frame now has its server id from birth, so there is nothing
+  // left to fall back to.
+  void localId;
   return 0;
 }
 

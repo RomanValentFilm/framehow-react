@@ -3079,6 +3079,47 @@ async function applyCloudTreeToStore(
     return mapped;
   });
 
+  // A FRAME THE SERVER HAS NEVER HEARD OF STAYS, NEXT TO THE FRAME IT FOLLOWS
+  // (#405).
+  //
+  // newFrames is built from the SERVER's frames, so anything the server does not
+  // know about is simply absent from it. Until now that was safe by accident: a
+  // frame with no id could not be pushed, so the pull was held back until it had
+  // been. Now a frame has its id from the moment it is made, and that accident
+  // no longer protects it — so this does, on purpose.
+  //
+  // It is put back where it is on screen: after the frame it currently follows.
+  // Roman's rule for a frame the arrangement cannot name yet — keep it close,
+  // and let him move it if he wants it elsewhere.
+  {
+    const arrived = new Set(newFrames.map((f) => f.serverFrameId).filter(Boolean) as string[]);
+    // NOT EVERY ABSENT FRAME IS A NEW ONE.
+    //
+    // "The server does not have it" means two opposite things: never sent, or
+    // DELETED somewhere else. The first version of this kept both, and brought a
+    // frame the other device had deleted straight back from the dead — caught by
+    // 05-away-and-late within a minute.
+    //
+    // Never sent means: no fingerprint was ever recorded for it, because that is
+    // only written after the server has taken it. And a tombstoned frame is
+    // deliberately gone, whatever else is true.
+    const missing = prev.frames.filter((f) => f.serverFrameId
+      && !arrived.has(f.serverFrameId)
+      && !tombstonedIds.has(f.serverFrameId)
+      && !_lastPushedFingerprints.has(f.serverFrameId));
+    for (const f of missing) {
+      const wasAt = prev.frames.indexOf(f);
+      const follows = prev.frames[wasAt - 1]?.serverFrameId;
+      const at = follows ? newFrames.findIndex((n) => n.serverFrameId === follows) : -1;
+      const localId = nextId++;
+      const kept = { ...f, id: localId };
+      if (at >= 0) newFrames.splice(at + 1, 0, kept); else newFrames.unshift(kept);
+      if (f.serverFrameId) serverToLocalFrame.set(f.serverFrameId, localId);
+      trace(`  kept a frame the server has not seen yet: ${f.label || localId}`
+        + ` (${f.serverFrameId!.slice(0, 6)})`);
+    }
+  }
+
   // Apply structure immediately so the user sees the project right away.
   // Do a FULL reset of all per-frame maps to avoid stale data from the previous project.
   // IMPORTANT: Legacy aliases must reference the SAME objects as stripXxx maps.
