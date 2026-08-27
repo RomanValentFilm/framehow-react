@@ -311,6 +311,55 @@ test('a frame made and renamed offline arrives whole when the device reconnects'
 //
 // Every other test here renames instantly and so never sits across a push,
 // which is exactly why they all passed while his hand failed. This one waits.
+// IN THE MIDDLE, NOT AT THE END (#402).
+//
+// Every test in this file makes the frame at the END of a short project, and
+// they all pass. Roman's morning test — new frame on the LAST frame, renamed —
+// also passed. The one that fails is a frame made in the MIDDLE of a long
+// project: "after frame 6" of twenty-nine.
+//
+// That is the difference worth chasing. A frame at the end cannot be pushed
+// about by an arrangement arriving one frame short; a frame in the middle can.
+test('a frame made in the middle of a long project keeps its new name', async ({ browser }) => {
+  const { token } = await freshAccount();
+  const desktop = await Device.open(browser, 'desktop', token);
+  const tablet = await Device.open(browser, 'tablet', token, true);
+
+  const madeId = await desktop.newProject('Long one', 12);
+  await tablet.openProject(madeId!);
+  await Device.waitUntilTheyAgree(desktop, tablet);
+  await desktop.settle();
+  await tablet.settle();
+
+  say('desktop: pressing NEW after the sixth frame — the middle, not the end');
+  const newId = await desktop.newFrameAfter(5);
+  await desktop.renameFrameById(newId, 'MIDDLE ONE');
+  await desktop.settle();
+
+  say('desktop: letting the push and the fetch go round');
+  for (let i = 0; i < 20; i++) { await desktop.nudge(); await desktop.page.waitForTimeout(500); }
+
+  expect((await desktop.read()).frames.map((f) => f.label),
+    'THE NAME IS GONE from a frame made in the middle. The same thing at the '
+    + 'end of the project keeps its name — every other test here proves that — '
+    + 'so what is different is the frames around it.').toContain('MIDDLE ONE');
+
+  say('tablet: and it has to arrive');
+  const deadline = Date.now() + 60_000;
+  for (;;) {
+    await tablet.nudge();
+    if ((await tablet.read()).frames.map((f) => f.label).includes('MIDDLE ONE')) break;
+    if (Date.now() > deadline) {
+      throw new Error('THE NAME NEVER ARRIVED on the other device. The tablet '
+        + `has ${JSON.stringify((await tablet.read()).frames.map((f) => f.label))}.`);
+    }
+    await tablet.page.waitForTimeout(1000);
+  }
+
+  await desktop.close();
+  await tablet.close();
+});
+
 test('a frame renamed while the push is still in the air shows the new name', async ({ browser }) => {
   const { token } = await freshAccount();
   const desktop = await Device.open(browser, 'desktop', token);

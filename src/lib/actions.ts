@@ -32,6 +32,7 @@ import { renderAll, renderMainFrame, renderVersionFrame } from './render';
 import { renderOverviewRow, renderGrid4Row, renderGrid3x2Card } from './overview';
 import { showConfirm, showDeleteChoice, showGroupDeleteChoice, showToast, showVersionChoice, openTextModal } from './modals';
 import { fhTrack } from './tracking';
+import { trace } from './syncTrace';
 import { drawFit } from './drawing';
 import { openCamera, getCameraTarget, clearCameraTarget, setOnCapturedImage } from './camera';
 import { recordTombstone } from './accountFlow';
@@ -409,7 +410,14 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
  */
 export function renameFrame(fid: number, label: string): void {
   const s = state();
-  if (!s.frames.some((f) => f.id === fid)) return;   // deleted while the box was open
+  const before = s.frames.find((f) => f.id === fid);
+  // SAY IT OUT LOUD (#404). Three theories about this rename have been wrong,
+  // so from here on the app reports what it did rather than being reasoned
+  // about: which frame, what it was called, what it is called now, and whether
+  // the server has ever heard of it.
+  trace(`rename: frame ${fid} "${before?.label ?? '(gone)'}" -> "${label}"`
+    + ` · ${before?.serverFrameId ? `id ${before.serverFrameId.slice(0, 6)}` : 'NO ID YET'}`);
+  if (!before) return;   // deleted while the box was open
   useStore.setState({ frames: s.frames.map((f) => (f.id === fid ? { ...f, label } : f)) });
   stampChangedContent(getCurrentProject().projectId);
   markSomethingToSend();

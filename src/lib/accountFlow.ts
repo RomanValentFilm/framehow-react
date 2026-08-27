@@ -2612,6 +2612,21 @@ async function applyCloudTreeToStore(
       const localId = nextId++;
       serverToLocalFrame.set(sf.id, localId);
 
+      // A NAME ARRIVING DIFFERENT FROM THE ONE ON SCREEN (#404).
+      //
+      // "I renamed it and it came back" has to be visible at the moment it
+      // happens, and from the app rather than from me guessing. This says which
+      // frame, what this device calls it, what arrived, and whether this device
+      // was holding it as unsent — which is what decides who wins.
+      {
+        const mine = existingFrameByServerId.get(sf.id);
+        const theirs = sf.label ?? '';
+        if (mine && (mine.label ?? '') !== theirs) {
+          trace(`  name differs on ${sf.id.slice(0, 6)}: mine "${mine.label}" · `
+            + `arrived "${theirs}" · ${keepLocalFrameIds?.has(sf.id) ? 'KEEPING MINE' : 'TAKING THEIRS'}`);
+        }
+      }
+
       // PER-FRAME MERGE: if this frame was modified locally (dirty), keep the
       // local version entirely — image, strokes, versions. Skip cloud data.
       if (keepLocalFrameIds?.has(sf.id)) {
