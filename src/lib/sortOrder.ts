@@ -1782,7 +1782,9 @@ function renderSortEditView(el: HTMLElement, orderId: string): void {
     const inProject = state().frames;
     const shown = new Set(frames.map((f) => f.id));
     const missing = inProject.filter((f) => !shown.has(f.id));
-    trace(`sort view: ${orderId} · showing ${frames.length} of ${inProject.length}`
+    const g = state().activeGroupId;
+    const gName = g === null ? 'ALL' : (state().groups.find((x) => x.id === g)?.name ?? `group ${g}`);
+    trace(`sort view: ${orderId} · in ${gName} · showing ${frames.length} of ${inProject.length}`
       + (missing.length
         ? ` · MISSING: ${missing.map((f) => `${f.label || f.id}${f.serverFrameId ? '' : ' (no id)'}${f.hidden ? ' (hidden)' : ''}`).join(', ')}`
         : ' · none missing'));
