@@ -2522,9 +2522,26 @@ async function applyCloudTreeToStore(
   // recomputes from scratch (the state changed underneath us).
   clearPushedFingerprints();
 
-  // Map server tree back into the local Frame[] / versions[] shape.
-  // We assign new local numeric ids that don't clash with the existing autoincrement.
-  let nextId = 1;
+  // A FRAME KEEPS THE NUMBER IT ALREADY HAS (#406).
+  //
+  // This used to hand out fresh local numbers to everything on every pull —
+  // `let nextId = 1` and count up. The numbers are what every button, every
+  // open editor and every per-frame map is written in, so after a sync the card
+  // you tapped could be a different frame. Roman renamed what looked like two
+  // frames and hit the same one twice; the log shows local 25 meaning 4d481e at
+  // one moment and ec96a0 twelve seconds later.
+  //
+  // There is no reason for it any more. Since #405 a frame has a permanent id
+  // from the moment it is made, so a frame the device already holds keeps its
+  // number, and only frames this device has never seen are given new ones.
+  const framesHeldNow = useStore.getState().frames;
+  const heldNumbers = new Map<string, number>();
+  for (const f of framesHeldNow) if (f.serverFrameId) heldNumbers.set(f.serverFrameId, f.id);
+  let nextId = Math.max(0, ...framesHeldNow.map((f) => f.id)) + 1;
+  const takeNumberFor = (serverId: string | undefined): number => {
+    const had = serverId ? heldNumbers.get(serverId) : undefined;
+    return had !== undefined ? had : nextId++;
+  };
   const newFrames: Frame[] = [];
 
   // ---------------------------------------------------------------------------
@@ -2609,7 +2626,7 @@ async function applyCloudTreeToStore(
       // TOMBSTONE: skip frames that were explicitly deleted
       if (tombstonedIds.has(sf.id)) continue;
 
-      const localId = nextId++;
+      const localId = takeNumberFor(sf.id);
       serverToLocalFrame.set(sf.id, localId);
 
       // A NAME ARRIVING DIFFERENT FROM THE ONE ON SCREEN (#404).
