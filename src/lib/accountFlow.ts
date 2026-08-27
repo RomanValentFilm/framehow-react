@@ -800,8 +800,11 @@ function renderProjectList(
   if (entries.length > 0) {
     const heading = document.createElement('div');
     heading.textContent = 'LIST OF PROJECTS';
+    // The same white as "Open project" above it, and the same size and weight
+    // (.account-card h2 — 18px/600/#fff). It is a heading of the same rank,
+    // so it looks like one.
     heading.style.cssText =
-      'color:#888;font-size:11px;letter-spacing:1px;margin:18px 0 6px;padding:0 2px;';
+      'color:#fff;font-size:18px;font-weight:600;margin:20px 0 8px;padding:0 2px;';
     content.appendChild(heading);
   }
 
