@@ -275,46 +275,61 @@ function noteIsOff(): boolean {
   try { return localStorage.getItem(NOTE_OFF_KEY) === '1'; } catch { return false; }
 }
 
-/** "This order was changed to match the needs — the moved shots are green." */
+/**
+ * "This order was changed to match the needs — the moved shots are green."
+ *
+ * Built from the same pieces as every other modal in the app — account-modal,
+ * account-card, account-hint, btn btn-accent — so it looks like one. The first
+ * version borrowed the bracket's own confirm styling, which is a full black
+ * sheet drawn over everything, and Roman saw a shooting order with no shots in
+ * it. It is also shown AFTER the order is drawn, so the green cards are behind
+ * it when it is dismissed.
+ */
 function showResortedNote(count: number): void {
-  if (noteIsOff()) return;
+  if (count <= 0 || noteIsOff()) return;
   if (document.querySelector('.sort-resort-note-modal')) return;
+
   const modal = document.createElement('div');
-  modal.className = 'sort-bracket-confirm sort-resort-note-modal';
+  modal.className = 'account-modal sort-resort-note-modal';
   modal.innerHTML = `
-    <div class="sort-bracket-confirm-inner">
-      <div class="sort-bracket-confirm-text">
-        Shooting order was automatically modified to match new criteria in NEEDS.<br />
-        Please check the ${count === 1 ? 'shot' : `${count} shots`} marked in green.
-      </div>
+    <div class="account-card">
+      <h2>Shooting order updated</h2>
+      <p class="account-hint">
+        This order was modified to match new criteria in NEEDS.
+        Please check the ${count === 1 ? 'shot' : `${count} shots`} marked in green,
+        and press DONE on each one.
+      </p>
       <label class="sort-resort-note-off">
         <input type="checkbox" class="sort-resort-note-off-box" />
         <span>Don't show this again</span>
       </label>
-      <div class="sort-bracket-confirm-btns">
-        <button class="sort-bracket-confirm-yes">OK</button>
+      <div class="account-btns">
+        <button class="btn btn-accent" type="button">OK</button>
       </div>
     </div>`;
   document.body.appendChild(modal);
-  modal.querySelector('.sort-bracket-confirm-yes')!.addEventListener('click', (e) => {
-    e.stopPropagation();
+
+  const close = (): void => {
     const off = (modal.querySelector('.sort-resort-note-off-box') as HTMLInputElement)?.checked;
     if (off) { try { localStorage.setItem(NOTE_OFF_KEY, '1'); } catch { /* ignore */ } }
     modal.remove();
-  });
+  };
+  modal.querySelector('.btn')!.addEventListener('click', (e) => { e.stopPropagation(); close(); });
+  // Tapping the dark surround closes it too, as the other modals do.
+  modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
 }
 
 /**
  * Opening an order: if the needs no longer agree with it, re-sort it and say so.
  *
- * Returns true when it actually changed something, which is the only time the
- * line is shown. Nothing here runs while somebody is inside an order — see
+ * Says HOW MANY frames it moved. Zero means the needs and the order agree, and
+ * nothing at all happens — no marks, no note, no push. Nothing here runs while somebody is inside an order — see
  * openSortEditView, which is the one door in.
  */
-export function resortToNeedsOnOpen(orderId: string): boolean {
+export function resortToNeedsOnOpen(orderId: string): number {
   const s = state();
   const order = s.sortOrders.find((o) => o.id === orderId);
-  if (!order?.bracketTree || !order.sortedSnapshot) return false;   // never sorted
+  if (!order?.bracketTree || !order.sortedSnapshot) return 0;   // never sorted
 
   const root = deserializeBracket(order.bracketTree);
   const visibleIds = getVisibleFrames().map((f) => f.id);
@@ -322,7 +337,7 @@ export function resortToNeedsOnOpen(orderId: string): boolean {
 
   // Where each frame sat BEFORE the boxes are asked again.
   const was = boxOfEachFrame(root);
-  if (!rematchToNeeds(root)) return false;                          // needs agree
+  if (!rematchToNeeds(root)) return 0;                          // needs agree
   const now = boxOfEachFrame(root);
 
   // A frame that changed box is a frame whose needs changed. Nothing else moves.
@@ -330,14 +345,14 @@ export function resortToNeedsOnOpen(orderId: string): boolean {
   for (const fid of new Set([...was.keys(), ...now.keys()])) {
     if (was.get(fid) !== now.get(fid)) changed.add(fid);
   }
-  if (changed.size === 0) return false;
+  if (changed.size === 0) return 0;
 
   const fresh = flattenBracketOrder(root);
   const newFrameOrder = placeChangedFrames(order.frameOrder, fresh, changed);
 
   const same = newFrameOrder.length === order.frameOrder.length
     && newFrameOrder.every((id, i) => id === order.frameOrder[i]);
-  if (same) return false;              // the answers moved, the order did not
+  if (same) return 0;              // the answers moved, the order did not
 
   // The snapshot is "what the boxes produce", NOT "what the order is". Writing
   // the new order into it would tell the app the boxes produced the hand moves
@@ -353,13 +368,12 @@ export function resortToNeedsOnOpen(orderId: string): boolean {
   const waiting = framesWaitingToBeSeen(orderId);
   for (const fid of changed) waiting.add(fid);
   rememberWaiting(orderId, waiting);
-  showResortedNote(changed.size);
 
   trace(`order "${order.name}": ${changed.size} frame(s) moved to match NEEDS`);
   stampChangedSettings(getCurrentProject().projectId);
   markSomethingToSend();
   void flushSyncNow();
-  return true;
+  return changed.size;
 }
 
 /** Save bracket tree + snapshot into the SortOrder in the store. */
@@ -1976,12 +1990,16 @@ export function openSortEditView(orderId: string): void {
   // THE ORDER FOLLOWS THE NEEDS (#411). Here and nowhere else: this is the one
   // door into an order, so it is the one place the needs can be re-asked
   // without anything moving under somebody's hand while they work.
-  (editView as any).__resortedToNeeds = resortToNeedsOnOpen(orderId);
+  const movedByNeeds = resortToNeedsOnOpen(orderId);
 
   useStore.setState({ sortEditingId: orderId });
   editView.style.display = '';
   window.scrollTo(0, 0); // Start at top so toolbar is visible
   renderSortEditView(editView, orderId);
+  // AFTER the order is on screen, never before — the note sits over it, and a
+  // shooting order with nothing behind the note looks like a shooting order
+  // with no shots in it.
+  showResortedNote(movedByNeeds);
 
   // Persist bracket if browser closes mid-sort
   const unloadHandler = () => {

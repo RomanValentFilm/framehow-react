@@ -1217,9 +1217,11 @@
   .sort-card-resorted .sort-card-desc,
   .sort-card-resorted .sort-card-num,
   .sort-card-resorted .sort-card-extra{color:#1a1a1a;}
-  .sort-resort-note-off{display:flex;align-items:center;gap:7px;justify-content:center;
-    color:#999;font-size:11px;padding:2px 0 10px;cursor:pointer;}
-  .sort-resort-note-off input{accent-color:#999;}
+  /* Grey, quiet, and sitting where a hint sits — it is an aside, not a choice
+     the user has to weigh. */
+  .sort-resort-note-off{display:flex;align-items:center;gap:8px;color:var(--text-faint);
+    font-size:12px;margin:0 0 14px;cursor:pointer;user-select:none;}
+  .sort-resort-note-off input{accent-color:var(--text-faint);margin:0;}
   .sort-bracket-pill-moved{background:var(--accent) !important;color:#fff !important;}
   .sort-bracket-sel-affected{outline:2px solid rgba(255,255,255,0.5);outline-offset:-2px;opacity:0.5;}
   .sort-bracket-sel-affected .sort-bracket-sel-count{outline:2px solid rgba(255,255,255,0.5);outline-offset:-2px;}
