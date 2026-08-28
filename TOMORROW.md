@@ -1,6 +1,6 @@
 # Where things stand
 
-Deployed: **v4.9.107 · #409**. Next number: **v4.9.108**. Last run: 102.
+Deployed: **v4.9.108 · #410**. Next number: **v4.9.109**. Last run: 103.
 
 ## The week's fault, and it was one fault
 
@@ -40,10 +40,10 @@ the same id.
   > path, and the honest question for it is: does it need to happen this
   > second, or can it wait the few seconds until the hand stops?
 
-  There are five forced fetches and only five. Four cannot land while a hand is
-  drawing — three are the keep-both/keep-mine picker (you are tapping a dialog)
-  and one is closing a shooting order (#380, the catching-up). The fifth is the
-  one that matters: **after a push the server refused as stale** (~line 2431,
+  THREE forced fetches now, not five — #410 retired the dead frame picker and
+  took two with it. Two of the three cannot land while a hand is drawing: the
+  sort-order picker (you are tapping a dialog) and closing a shooting order
+  (#380, the catching-up). The third is the one that matters: **after a push the server refused as stale** (~line 2431,
   `if (staleCount > 0)`), which fires on its own from an autosave with nobody
   touching anything. That is the only path to change. Put it in a log before
   writing anything — the way #407 settled the strip names in one reading.
@@ -99,14 +99,13 @@ the same id.
    today's needs (each node has `categoryId`/`itemId`, so it can be done) and
    then flattens. That walk is the main piece; the rest is the line, the replay,
    and the ordering rule.
-4. Retire the frame picker — dead code
-5. The ten-second lock
-6. Retry backoff
-7. Sweep tombstones
-8. FITTING export modal
-9. FRAME → SHOT, HOW → ANGLE as default strip names. ANGLE starts with A, which
+4. The ten-second lock
+5. Retry backoff
+6. Sweep tombstones
+7. FITTING export modal
+8. FRAME → SHOT, HOW → ANGLE as default strip names. ANGLE starts with A, which
    changes the strip prefix and relabels every version — understand that first.
-10. Take the sync log out — last
+9. Take the sync log out — last
 
 ## Do not repeat
 

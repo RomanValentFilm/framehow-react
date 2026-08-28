@@ -1206,6 +1206,20 @@
   .sort-bracket-frozen .sort-bracket-sel-box,.sort-bracket-frozen .sort-bracket-gray-box,.sort-bracket-frozen .sort-bracket-dropdown,.sort-bracket-frozen .sort-bracket-harrow,.sort-bracket-frozen .sort-bracket-swap-btn,.sort-bracket-frozen .sort-bracket-hint{opacity:0.45;}
   .sort-bracket-frozen .sort-bracket-pills,.sort-bracket-frozen .sort-bracket-pill{opacity:1;}
   .sort-bracket-warning{color:var(--accent);font-size:11px;font-weight:700;letter-spacing:.3px;padding:6px 8px 2px;text-transform:uppercase;}
+  /* The order followed the needs (#411). Same family as the manual-change line
+     above, but grey — this is information, not a warning. It sits at the very
+     top of the order view, above the header, where somebody who never opens
+     EDIT will still read it. */
+  /* A shot the needs moved, waiting to be looked at (#411). Light green so it
+     reads as "new", red outline so it reads as "check me". It keeps the arrows
+     and the DONE button, which is how it gets cleared. */
+  .sort-card-resorted{background:#e8f6e8 !important;outline:2px solid var(--accent);outline-offset:-2px;}
+  .sort-card-resorted .sort-card-desc,
+  .sort-card-resorted .sort-card-num,
+  .sort-card-resorted .sort-card-extra{color:#1a1a1a;}
+  .sort-resort-note-off{display:flex;align-items:center;gap:7px;justify-content:center;
+    color:#999;font-size:11px;padding:2px 0 10px;cursor:pointer;}
+  .sort-resort-note-off input{accent-color:#999;}
   .sort-bracket-pill-moved{background:var(--accent) !important;color:#fff !important;}
   .sort-bracket-sel-affected{outline:2px solid rgba(255,255,255,0.5);outline-offset:-2px;opacity:0.5;}
   .sort-bracket-sel-affected .sort-bracket-sel-count{outline:2px solid rgba(255,255,255,0.5);outline-offset:-2px;}

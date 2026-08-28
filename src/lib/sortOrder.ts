@@ -5,6 +5,8 @@ import { state, useStore, bumpRenderTick, SETUP_COLORS } from '../store/state';
 import type { SortOrder, SortBreak, Frame, NeedTable, BracketNodeData } from '../store/state';
 import { uniqueId } from './ids';
 import { trace } from './syncTrace';
+import { stampChangedSettings } from './projectSettings';
+import { getCurrentProject, markSomethingToSend } from './currentProject';
 
 // ─── Sort Bracket Types ──────────────────────────────────────────────
 
@@ -70,6 +72,294 @@ function deserializeBracket(d: BracketNodeData): BracketNode {
     down: d.down ? deserializeBracket(d.down) : null,
     expanded: d.expanded ?? false,
   };
+}
+
+/**
+ * THE ORDER FOLLOWS THE NEEDS (#411).
+ *
+ * A shooting order is built from a sorting sheet: a list of steps, each one
+ * saying "first by SHOOT DAY, then by LOCATION". Each step remembers which
+ * frames answered yes AT THE TIME it was made. So the moment somebody changes
+ * a frame's needs, the order is quietly out of date — it is sorted by an answer
+ * nobody would give today.
+ *
+ * These three do the whole job:
+ *   framesMatching   — which frames answer yes to one step, TODAY
+ *   rematchToNeeds   — ask every step again, from the top down
+ *   keepHandMoves    — put the frames somebody moved by hand back where they
+ *                      were put
+ *
+ * The principle, if this is ever reopened: an automatically re-sorted
+ * arrangement is not data, it is a RESULT. Never fight over a result —
+ * recompute it. The only thing in an order that is truly data is the hand
+ * rearranging, because nothing else can recreate it.
+ */
+
+/** Which of these frames answer yes to this one step, as things stand now. */
+function framesMatching(categoryId: string, itemId: string, frameIds: number[]): number[] {
+  const s = state();
+
+  // SETUP is not in the needs — it is the frame's own colour tag.
+  if (categoryId === 'setup') {
+    return frameIds.filter((fid) => s.frames.find((f) => f.id === fid)?.setupId === itemId);
+  }
+
+  let table: NeedTable | undefined;
+  for (const tab of s.needDefinitions.tabs) {
+    table = tab.tables.find((t) => t.id === categoryId);
+    if (table) break;
+  }
+  // The category itself is gone — renamed away or deleted. Say nobody matches
+  // rather than guessing; the step then has nothing under it and the frames
+  // fall through to the next step, which is what the sheet already does for an
+  // empty step.
+  if (!table) return [];
+
+  return frameIds.filter((fid) => {
+    const fn = s.frameNeeds[fid];
+    if (!fn) return false;
+    return table!.type === 'counter'
+      ? (fn.counters?.[itemId] || 0) > 0
+      : !!fn.toggles?.[itemId];
+  });
+}
+
+/** Ask every step of the sheet again with today's needs. Says whether anything
+ *  came out differently. Walks top down, because each step only ever sees the
+ *  frames the step above it did not take. */
+function rematchToNeeds(node: BracketNode): boolean {
+  if (!node.categoryId || !node.itemId) return false;   // step never chosen
+
+  const fresh = framesMatching(node.categoryId, node.itemId, node.inputIds);
+  const before = node.matchedIds;
+  let changed = fresh.length !== before.length || fresh.some((id, i) => id !== before[i]);
+  node.matchedIds = fresh;
+
+  // Matched frames are refined by the step to the right; everyone else drops to
+  // the step below. Exactly how fixInputIds cascades — but with the answers
+  // asked again rather than taken from the shelf.
+  if (node.right) {
+    node.right.inputIds = [...fresh];
+    if (rematchToNeeds(node.right)) changed = true;
+  }
+  if (node.down) {
+    node.down.inputIds = node.inputIds.filter((id) => !fresh.includes(id));
+    if (rematchToNeeds(node.down)) changed = true;
+  }
+  return changed;
+}
+
+/**
+ * WHICH FRAMES' NEEDS ACTUALLY CHANGED.
+ *
+ * Every box in the sheet remembers which frames matched it when it was made.
+ * Ask the boxes again with today's needs, and a frame that has moved from one
+ * box to another is a frame whose needs changed. Everything else answered
+ * exactly as it did before.
+ *
+ * This is the whole trick, and it is Roman's: instead of asking "which frames
+ * did the user move by hand" — which cannot be answered honestly, because the
+ * app never recorded it and dragging one frame shifts everything behind it —
+ * ask "which frames' needs changed". Then the hand moves survive without ever
+ * being identified, because nothing else is touched.
+ */
+function boxOfEachFrame(root: BracketNode): Map<number, string> {
+  const where = new Map<number, string>();
+  // THE WHOLE CHAIN, NOT THE FIRST BOX.
+  //
+  // Boxes lead into boxes: DAY 1, and inside it LOCATION 2. A frame matched by
+  // DAY 1 is matched AGAIN by the box to its right, and it is that deepest box
+  // that decides where the frame sits. Recording the first box to claim it
+  // would file both LOCATION 2 and LOCATION 3 under plain "DAY 1", so moving a
+  // frame from one location to the other inside the same day would look like
+  // no change at all. Parents are walked before their children, so a child
+  // simply writes over its parent and the deepest box wins.
+  const walk = (n: BracketNode, path: string): void => {
+    const here = n.categoryId && n.itemId ? `${path}/${n.categoryId}|${n.itemId}` : path;
+    if (n.categoryId && n.itemId) for (const fid of n.matchedIds) where.set(fid, here);
+    if (n.right) walk(n.right, here);
+    if (n.down) walk(n.down, path);
+  };
+  walk(root, '');
+  return where;
+}
+
+/**
+ * Move ONLY the frames whose needs changed; leave every other frame exactly
+ * where it is.
+ *
+ * `fresh` is the order the sheet would give if it were sorted from scratch, and
+ * it is used for one thing only: to say where each changed frame now belongs.
+ * Each one is dropped in behind the nearest frame in front of it that is
+ * staying put. So the list keeps its shape — including every frame somebody
+ * moved by hand — and only the frames that answered differently move.
+ *
+ * A frame moved by hand whose needs then changed DOES move: changing its needs
+ * is a later and more deliberate statement about that frame than the drag was.
+ * Agreed with Roman explicitly.
+ */
+function placeChangedFrames(standsAs: number[], fresh: number[], changed: Set<number>): number[] {
+  if (changed.size === 0) return standsAs;
+
+  const out = standsAs.filter((id) => !changed.has(id));
+
+  // For each changed frame, the frame it should now sit behind: the nearest one
+  // in front of it in the fresh order that is NOT itself moving. null = front.
+  const behind = new Map<number | null, number[]>();
+  for (let i = 0; i < fresh.length; i++) {
+    const fid = fresh[i];
+    if (!changed.has(fid)) continue;
+    let anchor: number | null = null;
+    for (let j = i - 1; j >= 0; j--) {
+      if (!changed.has(fresh[j])) { anchor = fresh[j]; break; }
+    }
+    const list = behind.get(anchor) ?? [];
+    list.push(fid);                       // in fresh order, so they keep theirs
+    behind.set(anchor, list);
+  }
+
+  for (const [anchor, group] of behind) {
+    if (anchor === null) { out.unshift(...group); continue; }
+    const at = out.indexOf(anchor);
+    if (at === -1) out.push(...group); else out.splice(at + 1, 0, ...group);
+  }
+  return out;
+}
+
+/**
+ * THE FRAMES WAITING TO BE LOOKED AT (#411).
+ *
+ * A re-sorted frame is marked until somebody has seen where it landed and
+ * pressed DONE. That mark is "this device has not looked at this yet" — a fact
+ * about the device, not about the order — so it is kept HERE and never sent.
+ * Putting it on the order would push a change every time a card was confirmed,
+ * on the one thing in the app with a keep-both question behind it.
+ *
+ * Kept on the device, so you can leave the order green, come back tomorrow and
+ * still see exactly what moved.
+ */
+function marksKey(orderId: string): string {
+  return `fh_resorted_${getCurrentProject().projectId ?? 'local'}_${orderId}`;
+}
+
+export function framesWaitingToBeSeen(orderId: string): Set<number> {
+  try {
+    const raw = localStorage.getItem(marksKey(orderId));
+    return new Set<number>(raw ? JSON.parse(raw) : []);
+  } catch { return new Set(); }
+}
+
+function rememberWaiting(orderId: string, ids: Set<number>): void {
+  try {
+    if (ids.size === 0) localStorage.removeItem(marksKey(orderId));
+    else localStorage.setItem(marksKey(orderId), JSON.stringify([...ids]));
+  } catch { /* private mode — the marks just do not survive */ }
+}
+
+/** EDIT ORDER: the rules are being built again, so nothing is waiting. */
+function forgetAllWaiting(orderId: string): void {
+  try { localStorage.removeItem(marksKey(orderId)); } catch { /* ignore */ }
+}
+
+/** DONE on one card: it has been seen. */
+function stopWaiting(orderId: string, fid: number): void {
+  const ids = framesWaitingToBeSeen(orderId);
+  ids.delete(fid);
+  rememberWaiting(orderId, ids);
+}
+
+/** The note is shown once per device unless it is turned off for good. */
+const NOTE_OFF_KEY = 'fh_resort_note_off';
+
+function noteIsOff(): boolean {
+  try { return localStorage.getItem(NOTE_OFF_KEY) === '1'; } catch { return false; }
+}
+
+/** "This order was changed to match the needs — the moved shots are green." */
+function showResortedNote(count: number): void {
+  if (noteIsOff()) return;
+  if (document.querySelector('.sort-resort-note-modal')) return;
+  const modal = document.createElement('div');
+  modal.className = 'sort-bracket-confirm sort-resort-note-modal';
+  modal.innerHTML = `
+    <div class="sort-bracket-confirm-inner">
+      <div class="sort-bracket-confirm-text">
+        Shooting order was automatically modified to match new criteria in NEEDS.<br />
+        Please check the ${count === 1 ? 'shot' : `${count} shots`} marked in green.
+      </div>
+      <label class="sort-resort-note-off">
+        <input type="checkbox" class="sort-resort-note-off-box" />
+        <span>Don't show this again</span>
+      </label>
+      <div class="sort-bracket-confirm-btns">
+        <button class="sort-bracket-confirm-yes">OK</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.querySelector('.sort-bracket-confirm-yes')!.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const off = (modal.querySelector('.sort-resort-note-off-box') as HTMLInputElement)?.checked;
+    if (off) { try { localStorage.setItem(NOTE_OFF_KEY, '1'); } catch { /* ignore */ } }
+    modal.remove();
+  });
+}
+
+/**
+ * Opening an order: if the needs no longer agree with it, re-sort it and say so.
+ *
+ * Returns true when it actually changed something, which is the only time the
+ * line is shown. Nothing here runs while somebody is inside an order — see
+ * openSortEditView, which is the one door in.
+ */
+export function resortToNeedsOnOpen(orderId: string): boolean {
+  const s = state();
+  const order = s.sortOrders.find((o) => o.id === orderId);
+  if (!order?.bracketTree || !order.sortedSnapshot) return false;   // never sorted
+
+  const root = deserializeBracket(order.bracketTree);
+  const visibleIds = getVisibleFrames().map((f) => f.id);
+  syncBracketWithVisibleFrames(root, visibleIds);
+
+  // Where each frame sat BEFORE the boxes are asked again.
+  const was = boxOfEachFrame(root);
+  if (!rematchToNeeds(root)) return false;                          // needs agree
+  const now = boxOfEachFrame(root);
+
+  // A frame that changed box is a frame whose needs changed. Nothing else moves.
+  const changed = new Set<number>();
+  for (const fid of new Set([...was.keys(), ...now.keys()])) {
+    if (was.get(fid) !== now.get(fid)) changed.add(fid);
+  }
+  if (changed.size === 0) return false;
+
+  const fresh = flattenBracketOrder(root);
+  const newFrameOrder = placeChangedFrames(order.frameOrder, fresh, changed);
+
+  const same = newFrameOrder.length === order.frameOrder.length
+    && newFrameOrder.every((id, i) => id === order.frameOrder[i]);
+  if (same) return false;              // the answers moved, the order did not
+
+  // The snapshot is "what the boxes produce", NOT "what the order is". Writing
+  // the new order into it would tell the app the boxes produced the hand moves
+  // too, and "You modified the order manually" would stop showing.
+  useStore.setState({
+    sortOrders: s.sortOrders.map((o) => (o.id === orderId
+      ? { ...o, frameOrder: newFrameOrder, bracketTree: serializeBracket(root), sortedSnapshot: [...fresh] }
+      : o)),
+  });
+  // Marked until somebody has looked at each one. Frames still waiting from an
+  // earlier change stay waiting — a second change adds to the green, it does
+  // not wipe it.
+  const waiting = framesWaitingToBeSeen(orderId);
+  for (const fid of changed) waiting.add(fid);
+  rememberWaiting(orderId, waiting);
+  showResortedNote(changed.size);
+
+  trace(`order "${order.name}": ${changed.size} frame(s) moved to match NEEDS`);
+  stampChangedSettings(getCurrentProject().projectId);
+  markSomethingToSend();
+  void flushSyncNow();
+  return true;
 }
 
 /** Save bracket tree + snapshot into the SortOrder in the store. */
@@ -1683,6 +1973,11 @@ export function openSortEditView(orderId: string): void {
   const columns = document.querySelector('.columns') as HTMLElement | null;
   if (columns) columns.style.display = 'none';
 
+  // THE ORDER FOLLOWS THE NEEDS (#411). Here and nowhere else: this is the one
+  // door into an order, so it is the one place the needs can be re-asked
+  // without anything moving under somebody's hand while they work.
+  (editView as any).__resortedToNeeds = resortToNeedsOnOpen(orderId);
+
   useStore.setState({ sortEditingId: orderId });
   editView.style.display = '';
   window.scrollTo(0, 0); // Start at top so toolbar is visible
@@ -1791,10 +2086,27 @@ function renderSortEditView(el: HTMLElement, orderId: string): void {
   }
 
   const activeReorderFid = (el as any).__activeReorderFid as number | null ?? null;
+  // The frames the needs moved, still waiting to be looked at on THIS device.
+  const waitingToBeSeen = orderId === '__storyflow__' ? new Set<number>() : framesWaitingToBeSeen(orderId);
   const activeBreakId = (el as any).__activeBreakId as string | null ?? null;
   const bracketActive = (el as any).__bracketActive as boolean ?? false;
 
   let html = `<div class="sort-edit-inner">`;
+
+  // WHY THIS ORDER LOOKS DIFFERENT (#411).
+  //
+  // First thing in the view, above the header and the sorting sheet, so it is
+  // read by somebody who only came in to LOOK and will never open EDIT.
+  //
+  // It follows the GREEN CARDS, not this particular opening — so it is still
+  // there tomorrow if the shots have not been checked yet, and still there for
+  // somebody who ticked "don't show this again" on the note. It goes when the
+  // last DONE is pressed.
+  if (waitingToBeSeen.size > 0) {
+    html += `<div class="sort-resorted-note">Modified to match new criteria in NEEDS —`
+          + ` ${waitingToBeSeen.size} shot${waitingToBeSeen.size === 1 ? '' : 's'} in green,`
+          + ` press DONE on each when checked.</div>`;
+  }
 
   // Detect manual reorder (compare to snapshot from last SORT NOW)
   const sortedSnapshot = (el as any).__sortedSnapshot as number[] | undefined;
@@ -1881,7 +2193,7 @@ function renderSortEditView(el: HTMLElement, orderId: string): void {
       html += renderBreakCard(brk, activeBreakId);
     }
 
-    html += renderFrameSetCard(f, orderIdx, activeReorderFid);
+    html += renderFrameSetCard(f, orderIdx, activeReorderFid, waitingToBeSeen.has(f.id));
     orderIdx++;
   }
 
@@ -1920,9 +2232,12 @@ function renderSortEditView(el: HTMLElement, orderId: string): void {
   syncSortHeaderTop();
 }
 
-function renderFrameSetCard(f: Frame, idx: number, activeReorderFid: number | null): string {
+function renderFrameSetCard(f: Frame, idx: number, activeReorderFid: number | null,
+                            waiting = false): string {
   const s = state();
-  const isActive = activeReorderFid === f.id;
+  // A frame the needs moved shows its arrows and DONE straight away, the same
+  // controls a tapped card gets — so it can be nudged and confirmed in place.
+  const isActive = activeReorderFid === f.id || waiting;
   const setup = f.setupId ? s.setups.find((su) => su.id === f.setupId) : null;
   const setupColor = setup ? SETUP_COLORS[setup.colorIndex]?.hex || '#999' : '';
   const setupName = setup ? setup.name : '';
@@ -1951,7 +2266,7 @@ function renderFrameSetCard(f: Frame, idx: number, activeReorderFid: number | nu
   const needsHtml = renderNeedsInfo(f.id);
 
   return `
-    <div class="sort-card${isActive ? ' sort-card-active' : ''}" data-sort-fid="${f.id}" data-sort-idx="${idx}">
+    <div class="sort-card${isActive ? ' sort-card-active' : ''}${waiting ? ' sort-card-resorted' : ''}" data-sort-fid="${f.id}" data-sort-idx="${idx}">
       <div class="sort-card-grid">
         <div class="sort-card-col-num">
           <span class="sort-card-num">${labelNum}</span>
@@ -2325,7 +2640,11 @@ function wireEditViewEvents(el: HTMLElement, orderId: string): void {
           }
           return;
         }
-        // Enter edit mode
+        // Enter edit mode.
+        // EDIT ORDER IS A RESTART (#411). New rules are about to be built, so
+        // whatever the needs moved a moment ago is beside the point — the green
+        // marks go and nothing is left waiting to be checked.
+        if (orderId !== '__storyflow__') forgetAllWaiting(orderId);
         (el as any).__bracketActive = true;
         if ((el as any).__bracketState) {
           // Existing bracket in DOM — keep it, require confirmation before modifying
@@ -2456,6 +2775,12 @@ function wireEditViewEvents(el: HTMLElement, orderId: string): void {
   el.querySelectorAll('[data-sort-deactivate]').forEach((btn) => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
+      // DONE on a green card means "I have seen where this landed" — the mark
+      // goes, on this device. Pressed straight away it accepts what the boxes
+      // decided; nudged with the arrows first, the frame is a hand move from
+      // then on and no re-sort will touch it again unless ITS needs change.
+      const doneFid = Number((btn as HTMLElement).dataset.sortDeactivate);
+      if (!Number.isNaN(doneFid) && orderId !== '__storyflow__') stopWaiting(orderId, doneFid);
       (el as any).__activeReorderFid = null;
       const bs = (el as any).__bracketState as BracketState | undefined;
       if (bs) {
