@@ -345,7 +345,13 @@ function showResortedNote(count: number): void {
 export function resortToNeedsOnOpen(orderId: string): number {
   const s = state();
   const order = s.sortOrders.find((o) => o.id === orderId);
-  if (!order?.bracketTree || !order.sortedSnapshot) return 0;   // never sorted
+  if (!order?.bracketTree || !order.sortedSnapshot) {
+    // SAY WHY NOTHING HAPPENED (#411). Four different reasons all looked the
+    // same from outside — silence. Roman changed a need, opened the order and
+    // was asked nothing, and no line in the log said which of the four it was.
+    trace(`resort ${orderId}: no sorting sheet yet — nothing to follow`);
+    return 0;
+  }
 
   // NOT YET. An order opened before the frames are all there would be sorted
   // against half a storyboard — and until #411 stopped saving the sheet back,
@@ -353,11 +359,15 @@ export function resortToNeedsOnOpen(orderId: string): number {
   // all frames, sometimes not." If this device is holding fewer frames than the
   // order lists, it is not ready to judge anything; leave it alone.
   const visibleIds = getVisibleFrames().map((f) => f.id);
-  if (visibleIds.length === 0) return 0;
+  if (visibleIds.length === 0) { trace(`resort ${orderId}: no frames on screen yet`); return 0; }
   const listed = new Set(order.frameOrder);
   const here = new Set(visibleIds);
   if ([...listed].filter((id) => here.has(id)).length < listed.size
-      && state().frames.length < order.frameOrder.length) return 0;
+      && state().frames.length < order.frameOrder.length) {
+    trace(`resort ${orderId}: only ${state().frames.length} of ${order.frameOrder.length}`
+      + ` frames here yet — too early to judge`);
+    return 0;
+  }
 
   // A COPY, and it is never saved back. syncBracketWithVisibleFrames prunes the
   // sheet to what is on screen, which is right for working out today's answer
@@ -367,7 +377,10 @@ export function resortToNeedsOnOpen(orderId: string): number {
 
   // Where each frame sat BEFORE the boxes are asked again.
   const was = boxOfEachFrame(root);
-  if (!rematchToNeeds(root)) return 0;                          // needs agree
+  if (!rematchToNeeds(root)) {
+    trace(`resort ${orderId}: the boxes match the needs — nothing to do`);
+    return 0;
+  }
   const now = boxOfEachFrame(root);
 
   // A frame that changed box is a frame whose needs changed. Nothing else moves.
@@ -375,7 +388,10 @@ export function resortToNeedsOnOpen(orderId: string): number {
   for (const fid of new Set([...was.keys(), ...now.keys()])) {
     if (was.get(fid) !== now.get(fid)) changed.add(fid);
   }
-  if (changed.size === 0) return 0;
+  if (changed.size === 0) {
+    trace(`resort ${orderId}: answers moved inside their boxes — no frame changed box`);
+    return 0;
+  }
 
   // ONLY FRAMES THE SHEET CAN ACTUALLY PLACE (#411).
   //
@@ -389,8 +405,13 @@ export function resortToNeedsOnOpen(orderId: string): number {
   // A frame the sheet cannot place is not moved. It stays exactly where it is.
   const fresh = flattenBracketOrder(root);
   const canBePlaced = new Set(fresh);
-  for (const fid of [...changed]) if (!canBePlaced.has(fid)) changed.delete(fid);
-  if (changed.size === 0) return 0;
+  const cannotPlace: number[] = [];
+  for (const fid of [...changed]) if (!canBePlaced.has(fid)) { cannotPlace.push(fid); changed.delete(fid); }
+  if (changed.size === 0) {
+    trace(`resort ${orderId}: ${cannotPlace.length} frame(s) changed box but the sheet`
+      + ` cannot place them — left alone`);
+    return 0;
+  }
 
   const newFrameOrder = placeChangedFrames(order.frameOrder, fresh, changed);
 
@@ -404,7 +425,10 @@ export function resortToNeedsOnOpen(orderId: string): number {
 
   const same = newFrameOrder.length === order.frameOrder.length
     && newFrameOrder.every((id, i) => id === order.frameOrder[i]);
-  if (same) return 0;              // the answers moved, the order did not
+  if (same) {
+    trace(`resort ${orderId}: ${changed.size} frame(s) changed box, order comes out the same`);
+    return 0;
+  }
 
   // The snapshot is "what the boxes produce", NOT "what the order is". Writing
   // the new order into it would tell the app the boxes produced the hand moves
