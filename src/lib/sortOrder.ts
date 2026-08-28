@@ -223,6 +223,22 @@ function placeChangedFrames(standsAs: number[], fresh: number[], changed: Set<nu
     const at = out.indexOf(anchor);
     if (at === -1) out.push(...group); else out.splice(at + 1, 0, ...group);
   }
+
+  // NOBODY IS EVER DROPPED.
+  //
+  // The view only draws frames that are in the order's list, so a frame this
+  // rebuild lost would simply disappear from the shooting order — and it would
+  // look exactly like the app losing work. A frame can only reach the loop
+  // above through the fresh order, so anything not in it must be put back by
+  // hand. Belt and braces, and cheap.
+  const have = new Set(out);
+  for (let i = 0; i < standsAs.length; i++) {
+    if (have.has(standsAs[i])) continue;
+    const before = standsAs.slice(0, i).reverse().find((id) => have.has(id));
+    const at = before === undefined ? -1 : out.indexOf(before);
+    if (at === -1) out.unshift(standsAs[i]); else out.splice(at + 1, 0, standsAs[i]);
+    have.add(standsAs[i]);
+  }
   return out;
 }
 
@@ -331,8 +347,22 @@ export function resortToNeedsOnOpen(orderId: string): number {
   const order = s.sortOrders.find((o) => o.id === orderId);
   if (!order?.bracketTree || !order.sortedSnapshot) return 0;   // never sorted
 
-  const root = deserializeBracket(order.bracketTree);
+  // NOT YET. An order opened before the frames are all there would be sorted
+  // against half a storyboard — and until #411 stopped saving the sheet back,
+  // that half was written onto the order for good. Roman: "it shows sometimes
+  // all frames, sometimes not." If this device is holding fewer frames than the
+  // order lists, it is not ready to judge anything; leave it alone.
   const visibleIds = getVisibleFrames().map((f) => f.id);
+  if (visibleIds.length === 0) return 0;
+  const listed = new Set(order.frameOrder);
+  const here = new Set(visibleIds);
+  if ([...listed].filter((id) => here.has(id)).length < listed.size
+      && state().frames.length < order.frameOrder.length) return 0;
+
+  // A COPY, and it is never saved back. syncBracketWithVisibleFrames prunes the
+  // sheet to what is on screen, which is right for working out today's answer
+  // and quite wrong to keep.
+  const root = deserializeBracket(order.bracketTree);
   syncBracketWithVisibleFrames(root, visibleIds);
 
   // Where each frame sat BEFORE the boxes are asked again.
@@ -347,8 +377,30 @@ export function resortToNeedsOnOpen(orderId: string): number {
   }
   if (changed.size === 0) return 0;
 
+  // ONLY FRAMES THE SHEET CAN ACTUALLY PLACE (#411).
+  //
+  // flattenBracketOrder does NOT return everybody: when a box has nothing below
+  // it, the frames it did not match are left out entirely. So a frame can be
+  // "no longer in a box" and also have no place in the fresh list — and moving
+  // a frame the sheet cannot place means taking it out of the order with
+  // nowhere to put it back. Roman's log: 27 frames moved, 5 frames left on
+  // screen. His shooting order lost 27 shots.
+  //
+  // A frame the sheet cannot place is not moved. It stays exactly where it is.
   const fresh = flattenBracketOrder(root);
+  const canBePlaced = new Set(fresh);
+  for (const fid of [...changed]) if (!canBePlaced.has(fid)) changed.delete(fid);
+  if (changed.size === 0) return 0;
+
   const newFrameOrder = placeChangedFrames(order.frameOrder, fresh, changed);
+
+  // Never fewer than we started with. If this ever trips, something is wrong
+  // and the order is left untouched rather than shortened.
+  if (newFrameOrder.length < order.frameOrder.length) {
+    trace(`order "${order.name}": re-sort would have lost `
+      + `${order.frameOrder.length - newFrameOrder.length} frame(s) — left alone`);
+    return 0;
+  }
 
   const same = newFrameOrder.length === order.frameOrder.length
     && newFrameOrder.every((id, i) => id === order.frameOrder[i]);
@@ -359,7 +411,10 @@ export function resortToNeedsOnOpen(orderId: string): number {
   // too, and "You modified the order manually" would stop showing.
   useStore.setState({
     sortOrders: s.sortOrders.map((o) => (o.id === orderId
-      ? { ...o, frameOrder: newFrameOrder, bracketTree: serializeBracket(root), sortedSnapshot: [...fresh] }
+      // The SHEET IS NOT WRITTEN BACK — see above. Only the order itself, and
+      // what the boxes produce, which is what "you modified this by hand" is
+      // measured against.
+      ? { ...o, frameOrder: newFrameOrder, sortedSnapshot: [...fresh] }
       : o)),
   });
   // Marked until somebody has looked at each one. Frames still waiting from an
@@ -369,7 +424,8 @@ export function resortToNeedsOnOpen(orderId: string): number {
   for (const fid of changed) waiting.add(fid);
   rememberWaiting(orderId, waiting);
 
-  trace(`order "${order.name}": ${changed.size} frame(s) moved to match NEEDS`);
+  trace(`order "${order.name}": ${changed.size} frame(s) moved to match NEEDS`
+    + ` · list ${order.frameOrder.length} → ${newFrameOrder.length} · on screen ${visibleIds.length}`);
   stampChangedSettings(getCurrentProject().projectId);
   markSomethingToSend();
   void flushSyncNow();
