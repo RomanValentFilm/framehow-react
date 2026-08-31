@@ -133,12 +133,11 @@ console.log('\n3. THE 27 SHOTS: a sheet that cannot place a frame must not move 
   needs[1] = { ...needs[1], toggles: { [D2]: true } };
   useStore.setState({ frameNeeds: needs });
 
-  // The REASON matters, not just the outcome. Without the check, the frame is
-  // pulled out of the order and only the last-ditch guard puts it back — right
-  // answer, wrong route, and the route is what broke.
+  // The sheet has no opinion about where a frame it cannot place should go, so
+  // that frame stays exactly where it is and the order comes out unchanged.
   const said = decideResort(order(), allIds);
   check('nothing was moved', openTheOrder(), 0);
-  check('and it says why', (said.why ?? '').includes('cannot place them'), true);
+  check('and it says so', said.why, '1 frame(s) changed box, order comes out the same');
   check('ALL SIX SHOTS ARE STILL IN THE ORDER', order().frameOrder, [1, 2, 3, 4, 5, 6]);
 }
 
@@ -200,6 +199,44 @@ console.log('\n7. a change that does not move the order still settles');
   openTheOrder();                       // the app writes the sheet down
   const second = decideResort(order(), allIds);
   check('so the next open is quiet', second.why, 'the boxes match the needs — nothing to do');
+}
+
+console.log('\n8. A CHAIN: DAY 1 > LOCATION 1, and a frame leaves for DAY 2');
+{
+  // The sheet goes two deep: of the DAY 1 shots, which are at LOCATION 1.
+  // Frame 1 is a DAY 1 / LOCATION 1 shot. Change it to DAY 2 and it has to
+  // leave the first box altogether and join the day 2 shots — which only works
+  // if a frame is filed by its WHOLE chain and not just the box it starts in.
+  const LOC = 'tbl_location';
+  const L1 = 'ti_loc1';
+  const chain: BracketNodeData = {
+    inputIds: [1, 2, 3, 4, 5, 6], categoryId: DAY, categoryName: 'SHOOT DAY',
+    itemId: D1, itemName: 'DAY 1', matchedIds: [1, 2, 3],
+    right: {
+      inputIds: [1, 2, 3], categoryId: LOC, categoryName: 'LOCATION',
+      itemId: L1, itemName: 'LOCATION 1', matchedIds: [1, 2],
+    },
+    down: {
+      inputIds: [4, 5, 6], categoryId: DAY, categoryName: 'SHOOT DAY',
+      itemId: D2, itemName: 'DAY 2', matchedIds: [4, 5, 6],
+    },
+  };
+  setUp({ 1: D1, 2: D1, 3: D1, 4: D2, 5: D2, 6: D2 },
+        [1, 2, 3, 4, 5, 6], chain, [1, 2, 3, 4, 5, 6]);
+  // Frames 1 and 2 are also at LOCATION 1.
+  const withLoc = { ...useStore.getState().frameNeeds };
+  for (const id of [1, 2]) withLoc[id] = { ...withLoc[id], toggles: { [D1]: true, [L1]: true } };
+  useStore.setState({ frameNeeds: withLoc });
+  check('nothing to do to start with', openTheOrder(), 0);
+
+  // Now frame 1 is a DAY 2 shot. It keeps LOCATION 1, which no longer helps it.
+  const moved = { ...useStore.getState().frameNeeds };
+  moved[1] = { ...moved[1], toggles: { [D2]: true, [L1]: true } };
+  useStore.setState({ frameNeeds: moved });
+
+  check('the frame leaves the first box', openTheOrder(), 1);
+  check('and sits with the day 2 shots', order().frameOrder, [2, 3, 1, 4, 5, 6]);
+  check('nobody was lost', order().frameOrder.length, 6);
 }
 
 console.log('\n4. needs unchanged — the order is left completely alone');

@@ -182,13 +182,26 @@ export function placeChangedFrames(standsAs: number[], fresh: number[], changed:
     if (at === -1) out.push(...group); else out.splice(at + 1, 0, ...group);
   }
 
-  // NOBODY IS EVER DROPPED.
-  //
-  // The view only draws frames that are in the order's list, so a frame this
-  // rebuild lost would simply disappear from the shooting order — and it would
-  // look exactly like the app losing work. A frame can only reach the loop
-  // above through the fresh order, so anything not in it must be put back by
-  // hand. Belt and braces, and cheap.
+  return fillTheGaps(out, standsAs);
+}
+
+/**
+ * PUT BACK ANYBODY THE SHEET LEFT OUT.
+ *
+ * The sheet's answer is not a complete list. When a box has nothing below it,
+ * the frames it did not match are simply left out — so `flattenBracketOrder`
+ * can return five of six frames and say nothing about it.
+ *
+ * That has bitten twice. Once as a loss: 27 shots taken out of Roman's order
+ * with nowhere to put them back. Once as a wrong position: a frame moved to
+ * another day anchored itself to the wrong neighbour, because the neighbour it
+ * should have followed was one of the ones left out.
+ *
+ * So every list that comes out of the sheet is completed here first: anybody
+ * missing goes straight back in behind the frame they currently follow.
+ */
+export function fillTheGaps(list: number[], standsAs: number[]): number[] {
+  const out = [...list];
   const have = new Set(out);
   for (let i = 0; i < standsAs.length; i++) {
     if (have.has(standsAs[i])) continue;
@@ -199,6 +212,7 @@ export function placeChangedFrames(standsAs: number[], fresh: number[], changed:
   }
   return out;
 }
+
 
 /** After swap, fix inputIds down the chain so dropdowns show correct items.
  *  matchedIds stay unchanged — groupings are preserved. */
@@ -335,7 +349,9 @@ export function decideResort(
   // "no longer in a box" and also have no place in the fresh list — and moving
   // a frame the sheet cannot place means taking it out of the order with
   // nowhere to put it back. Roman's log: 27 frames moved, 5 left on screen.
-  const fresh = flattenBracketOrder(root);
+  // Completed first — see fillTheGaps. Anchoring against a list with holes in
+  // it puts frames in the wrong place.
+  const fresh = fillTheGaps(flattenBracketOrder(root), order.frameOrder);
   const canBePlaced = new Set(fresh);
   let cannotPlace = 0;
   for (const fid of [...moved]) if (!canBePlaced.has(fid)) { cannotPlace++; moved.delete(fid); }
