@@ -350,9 +350,19 @@ export function decideResort(
   if (frameOrder.length < order.frameOrder.length) {
     return { why: `re-sort would have lost ${order.frameOrder.length - frameOrder.length} frame(s) — left alone` };
   }
+  // The order does not always move when the boxes do — a frame can change day
+  // and still sit in the same place. The SHEET has still learned something, and
+  // it has to be written down: without this it repeated "4 frame(s) changed
+  // box, order comes out the same" on every open for ever, and the next real
+  // change was buried in with those four. Seen live on try411.
   const same = frameOrder.length === order.frameOrder.length
     && frameOrder.every((id, i) => id === order.frameOrder[i]);
-  if (same) return { why: `${moved.size} frame(s) changed box, order comes out the same` };
+  if (same) {
+    return {
+      why: `${moved.size} frame(s) changed box, order comes out the same`,
+      sheet: withFreshMatches(order.bracketTree, root),
+    };
+  }
 
   return { frameOrder, fresh, moved, sheet: withFreshMatches(order.bracketTree, root) };
 }

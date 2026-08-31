@@ -176,6 +176,17 @@ export function resortToNeedsOnOpen(orderId: string): number {
     // outside — silence. Roman changed a need, opened the order and was asked
     // nothing, and no line said which reason it was.
     trace(`resort ${orderId}: ${said.why}`);
+    // Nothing moved, but the boxes may still have learned who they now hold.
+    // Write that down quietly — no green, no note, nothing on screen — or the
+    // same four frames are reported as freshly changed on every single open.
+    if (said.sheet) {
+      useStore.setState({
+        sortOrders: s.sortOrders.map((o) => (o.id === orderId ? { ...o, bracketTree: said.sheet! } : o)),
+      });
+      stampChangedSettings(getCurrentProject().projectId);
+      markSomethingToSend();
+      void flushSyncNow();
+    }
     return 0;
   }
 

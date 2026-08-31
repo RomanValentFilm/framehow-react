@@ -73,7 +73,13 @@ const allIds = [1, 2, 3, 4, 5, 6];
 /** What the app does on opening: ask, then write the answer down. */
 function openTheOrder(): number {
   const said = decideResort(order(), allIds);
-  if (!said.frameOrder) { console.log(`        (${said.why})`); return 0; }
+  if (!said.frameOrder) {
+    console.log(`        (${said.why})`);
+    // Nothing moved, but the boxes may have learned who they hold — the app
+    // writes that down quietly, and so must the bench.
+    if (said.sheet) useStore.setState({ sortOrders: [{ ...order(), bracketTree: said.sheet }] });
+    return 0;
+  }
   useStore.setState({
     sortOrders: [{ ...order(), frameOrder: said.frameOrder, sortedSnapshot: said.fresh!,
                    bracketTree: said.sheet! }],
@@ -172,6 +178,28 @@ console.log('\n6. once it has followed a change, it does not keep re-announcing 
   useStore.setState({ frameNeeds: more });
   check('a later change is noticed', openTheOrder(), 1);
   check('and frame 6 is with the day 1 shots', order().frameOrder, [2, 3, 6, 1, 4, 5]);
+}
+
+console.log('\n7. a change that does not move the order still settles');
+{
+  // Frame 3 becomes a DAY 2 shot. It already sits next to the day 2 block, so
+  // the order comes out identical — but the boxes have changed, and the sheet
+  // has to learn it. Live on try411 this repeated "4 frame(s) changed box,
+  // order comes out the same" on every single open, for ever.
+  setUp({ 1: D1, 2: D1, 3: D1, 4: D2, 5: D2, 6: D2 },
+        [1, 2, 3, 4, 5, 6],
+        twoBoxes([1, 2, 3], [4, 5, 6], [1, 2, 3, 4, 5, 6]),
+        [1, 2, 3, 4, 5, 6]);
+  const needs = { ...useStore.getState().frameNeeds };
+  needs[3] = { ...needs[3], toggles: { [D2]: true } };
+  useStore.setState({ frameNeeds: needs });
+
+  const first = decideResort(order(), allIds);
+  check('the order does not move', first.frameOrder, undefined);
+  check('but the sheet has learned', !!first.sheet, true);
+  openTheOrder();                       // the app writes the sheet down
+  const second = decideResort(order(), allIds);
+  check('so the next open is quiet', second.why, 'the boxes match the needs — nothing to do');
 }
 
 console.log('\n4. needs unchanged — the order is left completely alone');
