@@ -5,23 +5,18 @@ import { state, useStore, bumpRenderTick, SETUP_COLORS } from '../store/state';
 import type { SortOrder, SortBreak, Frame, NeedTable, BracketNodeData } from '../store/state';
 import { uniqueId } from './ids';
 import { trace } from './syncTrace';
+// The sheet itself lives apart, so it can be put on the bench (#411).
+import {
+  serializeBracket, deserializeBracket, flattenBracketOrder, fixInputIds,
+  syncBracketWithVisibleFrames, framesMatching, rematchToNeeds, boxOfEachFrame,
+  placeChangedFrames, decideResort,
+} from './bracket';
+import type { BracketNode } from './bracket';
 import { stampChangedSettings } from './projectSettings';
 import { getCurrentProject, markSomethingToSend } from './currentProject';
 
 // ─── Sort Bracket Types ──────────────────────────────────────────────
 
-/** Tree node — selected goes right, remaining goes down. Like Finder folders. */
-interface BracketNode {
-  inputIds: number[];          // frames entering this node
-  categoryId: string | null;   // 'setup' | needTable.id | null
-  categoryName: string | null;
-  itemId: string | null;       // setup.id | needItem.id | null
-  itemName: string | null;
-  matchedIds: number[];        // frames matching selection → right child
-  right: BracketNode | null;   // next selection step (matched frames)
-  down: BracketNode | null;    // remaining frames node (auto-created)
-  expanded: boolean;           // is the remaining dropdown open?
-}
 
 /** Category option for the dropdown. */
 interface CategoryOption {
@@ -43,36 +38,7 @@ interface BracketState {
   root: BracketNode;
 }
 
-/** Convert BracketNode tree → serialisable BracketNodeData for persistence. */
-function serializeBracket(node: BracketNode): BracketNodeData {
-  const d: BracketNodeData = {
-    inputIds: [...node.inputIds],
-    matchedIds: [...node.matchedIds],
-  };
-  if (node.categoryId) d.categoryId = node.categoryId;
-  if (node.categoryName) d.categoryName = node.categoryName;
-  if (node.itemId) d.itemId = node.itemId;
-  if (node.itemName) d.itemName = node.itemName;
-  if (node.expanded) d.expanded = true;
-  if (node.right) d.right = serializeBracket(node.right);
-  if (node.down) d.down = serializeBracket(node.down);
-  return d;
-}
 
-/** Restore BracketNode tree from persisted BracketNodeData. */
-function deserializeBracket(d: BracketNodeData): BracketNode {
-  return {
-    inputIds: [...d.inputIds],
-    categoryId: d.categoryId ?? null,
-    categoryName: d.categoryName ?? null,
-    itemId: d.itemId ?? null,
-    itemName: d.itemName ?? null,
-    matchedIds: [...d.matchedIds],
-    right: d.right ? deserializeBracket(d.right) : null,
-    down: d.down ? deserializeBracket(d.down) : null,
-    expanded: d.expanded ?? false,
-  };
-}
 
 /**
  * THE ORDER FOLLOWS THE NEEDS (#411).
@@ -95,152 +61,9 @@ function deserializeBracket(d: BracketNodeData): BracketNode {
  * rearranging, because nothing else can recreate it.
  */
 
-/** Which of these frames answer yes to this one step, as things stand now. */
-function framesMatching(categoryId: string, itemId: string, frameIds: number[]): number[] {
-  const s = state();
 
-  // SETUP is not in the needs — it is the frame's own colour tag.
-  if (categoryId === 'setup') {
-    return frameIds.filter((fid) => s.frames.find((f) => f.id === fid)?.setupId === itemId);
-  }
 
-  let table: NeedTable | undefined;
-  for (const tab of s.needDefinitions.tabs) {
-    table = tab.tables.find((t) => t.id === categoryId);
-    if (table) break;
-  }
-  // The category itself is gone — renamed away or deleted. Say nobody matches
-  // rather than guessing; the step then has nothing under it and the frames
-  // fall through to the next step, which is what the sheet already does for an
-  // empty step.
-  if (!table) return [];
 
-  return frameIds.filter((fid) => {
-    const fn = s.frameNeeds[fid];
-    if (!fn) return false;
-    return table!.type === 'counter'
-      ? (fn.counters?.[itemId] || 0) > 0
-      : !!fn.toggles?.[itemId];
-  });
-}
-
-/** Ask every step of the sheet again with today's needs. Says whether anything
- *  came out differently. Walks top down, because each step only ever sees the
- *  frames the step above it did not take. */
-function rematchToNeeds(node: BracketNode): boolean {
-  if (!node.categoryId || !node.itemId) return false;   // step never chosen
-
-  const fresh = framesMatching(node.categoryId, node.itemId, node.inputIds);
-  const before = node.matchedIds;
-  let changed = fresh.length !== before.length || fresh.some((id, i) => id !== before[i]);
-  node.matchedIds = fresh;
-
-  // Matched frames are refined by the step to the right; everyone else drops to
-  // the step below. Exactly how fixInputIds cascades — but with the answers
-  // asked again rather than taken from the shelf.
-  if (node.right) {
-    node.right.inputIds = [...fresh];
-    if (rematchToNeeds(node.right)) changed = true;
-  }
-  if (node.down) {
-    node.down.inputIds = node.inputIds.filter((id) => !fresh.includes(id));
-    if (rematchToNeeds(node.down)) changed = true;
-  }
-  return changed;
-}
-
-/**
- * WHICH FRAMES' NEEDS ACTUALLY CHANGED.
- *
- * Every box in the sheet remembers which frames matched it when it was made.
- * Ask the boxes again with today's needs, and a frame that has moved from one
- * box to another is a frame whose needs changed. Everything else answered
- * exactly as it did before.
- *
- * This is the whole trick, and it is Roman's: instead of asking "which frames
- * did the user move by hand" — which cannot be answered honestly, because the
- * app never recorded it and dragging one frame shifts everything behind it —
- * ask "which frames' needs changed". Then the hand moves survive without ever
- * being identified, because nothing else is touched.
- */
-function boxOfEachFrame(root: BracketNode): Map<number, string> {
-  const where = new Map<number, string>();
-  // THE WHOLE CHAIN, NOT THE FIRST BOX.
-  //
-  // Boxes lead into boxes: DAY 1, and inside it LOCATION 2. A frame matched by
-  // DAY 1 is matched AGAIN by the box to its right, and it is that deepest box
-  // that decides where the frame sits. Recording the first box to claim it
-  // would file both LOCATION 2 and LOCATION 3 under plain "DAY 1", so moving a
-  // frame from one location to the other inside the same day would look like
-  // no change at all. Parents are walked before their children, so a child
-  // simply writes over its parent and the deepest box wins.
-  const walk = (n: BracketNode, path: string): void => {
-    const here = n.categoryId && n.itemId ? `${path}/${n.categoryId}|${n.itemId}` : path;
-    if (n.categoryId && n.itemId) for (const fid of n.matchedIds) where.set(fid, here);
-    if (n.right) walk(n.right, here);
-    if (n.down) walk(n.down, path);
-  };
-  walk(root, '');
-  return where;
-}
-
-/**
- * Move ONLY the frames whose needs changed; leave every other frame exactly
- * where it is.
- *
- * `fresh` is the order the sheet would give if it were sorted from scratch, and
- * it is used for one thing only: to say where each changed frame now belongs.
- * Each one is dropped in behind the nearest frame in front of it that is
- * staying put. So the list keeps its shape — including every frame somebody
- * moved by hand — and only the frames that answered differently move.
- *
- * A frame moved by hand whose needs then changed DOES move: changing its needs
- * is a later and more deliberate statement about that frame than the drag was.
- * Agreed with Roman explicitly.
- */
-function placeChangedFrames(standsAs: number[], fresh: number[], changed: Set<number>): number[] {
-  if (changed.size === 0) return standsAs;
-
-  const out = standsAs.filter((id) => !changed.has(id));
-
-  // For each changed frame, the frame it should now sit behind: the nearest one
-  // in front of it in the fresh order that is NOT itself moving. null = front.
-  const behind = new Map<number | null, number[]>();
-  for (let i = 0; i < fresh.length; i++) {
-    const fid = fresh[i];
-    if (!changed.has(fid)) continue;
-    let anchor: number | null = null;
-    for (let j = i - 1; j >= 0; j--) {
-      if (!changed.has(fresh[j])) { anchor = fresh[j]; break; }
-    }
-    const list = behind.get(anchor) ?? [];
-    list.push(fid);                       // in fresh order, so they keep theirs
-    behind.set(anchor, list);
-  }
-
-  for (const [anchor, group] of behind) {
-    if (anchor === null) { out.unshift(...group); continue; }
-    const at = out.indexOf(anchor);
-    if (at === -1) out.push(...group); else out.splice(at + 1, 0, ...group);
-  }
-
-  // NOBODY IS EVER DROPPED.
-  //
-  // The view only draws frames that are in the order's list, so a frame this
-  // rebuild lost would simply disappear from the shooting order — and it would
-  // look exactly like the app losing work. A frame can only reach the loop
-  // above through the fresh order, so anything not in it must be put back by
-  // hand. Belt and braces, and cheap.
-  const have = new Set(out);
-  for (let i = 0; i < standsAs.length; i++) {
-    if (have.has(standsAs[i])) continue;
-    const before = standsAs.slice(0, i).reverse().find((id) => have.has(id));
-    const at = before === undefined ? -1 : out.indexOf(before);
-    if (at === -1) out.unshift(standsAs[i]); else out.splice(at + 1, 0, standsAs[i]);
-    have.add(standsAs[i]);
-  }
-  return out;
-}
 
 /**
  * THE FRAMES WAITING TO BE LOOKED AT (#411).
@@ -345,115 +168,43 @@ function showResortedNote(count: number): void {
 export function resortToNeedsOnOpen(orderId: string): number {
   const s = state();
   const order = s.sortOrders.find((o) => o.id === orderId);
-  if (!order?.bracketTree || !order.sortedSnapshot) {
-    // SAY WHY NOTHING HAPPENED (#411). Four different reasons all looked the
-    // same from outside — silence. Roman changed a need, opened the order and
-    // was asked nothing, and no line in the log said which of the four it was.
-    trace(`resort ${orderId}: no sorting sheet yet — nothing to follow`);
-    return 0;
-  }
+  if (!order) return 0;
 
-  // NOT YET. An order opened before the frames are all there would be sorted
-  // against half a storyboard — and until #411 stopped saving the sheet back,
-  // that half was written onto the order for good. Roman: "it shows sometimes
-  // all frames, sometimes not." If this device is holding fewer frames than the
-  // order lists, it is not ready to judge anything; leave it alone.
-  const visibleIds = getVisibleFrames().map((f) => f.id);
-  if (visibleIds.length === 0) { trace(`resort ${orderId}: no frames on screen yet`); return 0; }
-  const listed = new Set(order.frameOrder);
-  const here = new Set(visibleIds);
-  if ([...listed].filter((id) => here.has(id)).length < listed.size
-      && state().frames.length < order.frameOrder.length) {
-    trace(`resort ${orderId}: only ${state().frames.length} of ${order.frameOrder.length}`
-      + ` frames here yet — too early to judge`);
-    return 0;
-  }
-
-  // A COPY, and it is never saved back. syncBracketWithVisibleFrames prunes the
-  // sheet to what is on screen, which is right for working out today's answer
-  // and quite wrong to keep.
-  const root = deserializeBracket(order.bracketTree);
-  syncBracketWithVisibleFrames(root, visibleIds);
-
-  // Where each frame sat BEFORE the boxes are asked again.
-  const was = boxOfEachFrame(root);
-  if (!rematchToNeeds(root)) {
-    trace(`resort ${orderId}: the boxes match the needs — nothing to do`);
-    return 0;
-  }
-  const now = boxOfEachFrame(root);
-
-  // A frame that changed box is a frame whose needs changed. Nothing else moves.
-  const changed = new Set<number>();
-  for (const fid of new Set([...was.keys(), ...now.keys()])) {
-    if (was.get(fid) !== now.get(fid)) changed.add(fid);
-  }
-  if (changed.size === 0) {
-    trace(`resort ${orderId}: answers moved inside their boxes — no frame changed box`);
-    return 0;
-  }
-
-  // ONLY FRAMES THE SHEET CAN ACTUALLY PLACE (#411).
-  //
-  // flattenBracketOrder does NOT return everybody: when a box has nothing below
-  // it, the frames it did not match are left out entirely. So a frame can be
-  // "no longer in a box" and also have no place in the fresh list — and moving
-  // a frame the sheet cannot place means taking it out of the order with
-  // nowhere to put it back. Roman's log: 27 frames moved, 5 frames left on
-  // screen. His shooting order lost 27 shots.
-  //
-  // A frame the sheet cannot place is not moved. It stays exactly where it is.
-  const fresh = flattenBracketOrder(root);
-  const canBePlaced = new Set(fresh);
-  const cannotPlace: number[] = [];
-  for (const fid of [...changed]) if (!canBePlaced.has(fid)) { cannotPlace.push(fid); changed.delete(fid); }
-  if (changed.size === 0) {
-    trace(`resort ${orderId}: ${cannotPlace.length} frame(s) changed box but the sheet`
-      + ` cannot place them — left alone`);
-    return 0;
-  }
-
-  const newFrameOrder = placeChangedFrames(order.frameOrder, fresh, changed);
-
-  // Never fewer than we started with. If this ever trips, something is wrong
-  // and the order is left untouched rather than shortened.
-  if (newFrameOrder.length < order.frameOrder.length) {
-    trace(`order "${order.name}": re-sort would have lost `
-      + `${order.frameOrder.length - newFrameOrder.length} frame(s) — left alone`);
-    return 0;
-  }
-
-  const same = newFrameOrder.length === order.frameOrder.length
-    && newFrameOrder.every((id, i) => id === order.frameOrder[i]);
-  if (same) {
-    trace(`resort ${orderId}: ${changed.size} frame(s) changed box, order comes out the same`);
+  const said = decideResort(order, getVisibleFrames().map((f) => f.id));
+  if (!said.frameOrder) {
+    // SAY WHY NOTHING HAPPENED (#411). Several reasons all looked the same from
+    // outside — silence. Roman changed a need, opened the order and was asked
+    // nothing, and no line said which reason it was.
+    trace(`resort ${orderId}: ${said.why}`);
     return 0;
   }
 
   // The snapshot is "what the boxes produce", NOT "what the order is". Writing
   // the new order into it would tell the app the boxes produced the hand moves
   // too, and "You modified the order manually" would stop showing.
+  //
+  // The SHEET IS NOT WRITTEN BACK: working out today's answer prunes it to
+  // whatever is on screen, which is right for the answer and quite wrong to
+  // keep — that is what made an order come back short.
   useStore.setState({
     sortOrders: s.sortOrders.map((o) => (o.id === orderId
-      // The SHEET IS NOT WRITTEN BACK — see above. Only the order itself, and
-      // what the boxes produce, which is what "you modified this by hand" is
-      // measured against.
-      ? { ...o, frameOrder: newFrameOrder, sortedSnapshot: [...fresh] }
+      ? { ...o, frameOrder: said.frameOrder!, sortedSnapshot: [...said.fresh!], bracketTree: said.sheet! }
       : o)),
   });
+
   // Marked until somebody has looked at each one. Frames still waiting from an
   // earlier change stay waiting — a second change adds to the green, it does
   // not wipe it.
   const waiting = framesWaitingToBeSeen(orderId);
-  for (const fid of changed) waiting.add(fid);
+  for (const fid of said.moved!) waiting.add(fid);
   rememberWaiting(orderId, waiting);
 
-  trace(`order "${order.name}": ${changed.size} frame(s) moved to match NEEDS`
-    + ` · list ${order.frameOrder.length} → ${newFrameOrder.length} · on screen ${visibleIds.length}`);
+  trace(`order "${order.name}": ${said.moved!.size} frame(s) moved to match NEEDS`
+    + ` · list ${order.frameOrder.length} → ${said.frameOrder.length}`);
   stampChangedSettings(getCurrentProject().projectId);
   markSomethingToSend();
   void flushSyncNow();
-  return changed.size;
+  return said.moved!.size;
 }
 
 /** Save bracket tree + snapshot into the SortOrder in the store. */
@@ -687,20 +438,6 @@ function findInTree(root: BracketNode, target: BracketNode, via: 'down' | 'right
   return walk(root);
 }
 
-/** After swap, fix inputIds down the chain so dropdowns show correct items.
- *  matchedIds stay unchanged — groupings are preserved. */
-function fixInputIds(node: BracketNode): void {
-  if (!node.itemId) return;
-  if (node.right) {
-    node.right.inputIds = [...node.matchedIds];
-    fixInputIds(node.right);
-  }
-  const remaining = node.inputIds.filter((id) => !node.matchedIds.includes(id));
-  if (node.down) {
-    node.down.inputIds = remaining;
-    fixInputIds(node.down);
-  }
-}
 
 /** Swap a node up — exchange it with its parent sibling in the same column.
  *  Groupings (matchedIds) stay the same, only schedule order changes.
@@ -735,35 +472,6 @@ function swapUpInTree(bracketState: BracketState, target: BracketNode): void {
   fixInputIds(target);
 }
 
-/** Sync bracket tree with current visible frames.
- *  - Adds new frames to root.inputIds (they cascade to "remaining" buckets via fixInputIds)
- *  - Removes deleted frames from the tree
- *  Returns true if any changes were made. */
-function syncBracketWithVisibleFrames(root: BracketNode, visibleIds: number[]): boolean {
-  const bracketIds = new Set(flattenBracketOrder(root));
-  const visibleSet = new Set(visibleIds);
-  let changed = false;
-  // Add new frames not in bracket
-  for (const id of visibleIds) {
-    if (!bracketIds.has(id)) {
-      root.inputIds.push(id);
-      changed = true;
-    }
-  }
-  // Remove deleted frames from bracket
-  const removeFromNode = (node: BracketNode) => {
-    const before = node.inputIds.length;
-    node.inputIds = node.inputIds.filter((id) => visibleSet.has(id));
-    node.matchedIds = node.matchedIds.filter((id) => visibleSet.has(id));
-    if (node.inputIds.length !== before) changed = true;
-    if (node.right) removeFromNode(node.right);
-    if (node.down) removeFromNode(node.down);
-  };
-  removeFromNode(root);
-  // Cascade inputIds through the tree so new frames land in correct remaining buckets
-  if (changed) fixInputIds(root);
-  return changed;
-}
 
 /** Detect which bracket nodes are "affected" by manual reordering.
  *  A node is affected if any of its matchedIds changed position relative to sortedSnapshot. */
@@ -829,25 +537,6 @@ function subtreeHeight(node: BracketNode, isDownChild: boolean = false): number 
   return Math.max(1, rightH) + downH + swapH;
 }
 
-/** Extract final frame order from the bracket tree (depth-first: right then down). */
-function flattenBracketOrder(node: BracketNode): number[] {
-  if (!node.itemId) {
-    // Pending — not yet sorted, keep input order
-    return [...node.inputIds];
-  }
-  const result: number[] = [];
-  // Matched frames — refined by right subtree, or as-is
-  if (node.right) {
-    result.push(...flattenBracketOrder(node.right));
-  } else {
-    result.push(...node.matchedIds);
-  }
-  // Remaining frames — refined by down subtree
-  if (node.down) {
-    result.push(...flattenBracketOrder(node.down));
-  }
-  return result;
-}
 
 /** Recursively lay out nodes into grid cells. */
 function layoutNode(node: BracketNode, col: number, startRow: number, cells: GridCell[], nodeId: number[], root: BracketNode, isDownChild: boolean = false, affectedNodes?: Set<BracketNode>): void {
