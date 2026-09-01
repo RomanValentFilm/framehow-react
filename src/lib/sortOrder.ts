@@ -165,7 +165,41 @@ function showResortedNote(count: number): void {
  * nothing at all happens — no marks, no note, no push. Nothing here runs while somebody is inside an order — see
  * openSortEditView, which is the one door in.
  */
+/**
+ * NO SHOT TWICE (#413).
+ *
+ * An order's list is a list of shots, and the same shot cannot be two places in
+ * it. A build of #411 saved a sorting sheet that contradicted itself, and the
+ * list it produced held some frames two and three times: Roman's log read
+ * `showing 20 of 13`, and the screen drew the same card again and again.
+ *
+ * The fault is fixed, but the damage is saved on the server and comes back on
+ * every device. So opening an order tidies it: duplicates are dropped, the first
+ * of each is kept, and nothing else is touched. Frames the list mentions that
+ * this device has not got are LEFT ALONE — they may simply not have arrived yet,
+ * and dropping them is how an order loses shots for good.
+ */
+function noShotTwice(orderId: string): boolean {
+  const s = state();
+  const order = s.sortOrders.find((o) => o.id === orderId);
+  if (!order) return false;
+  const seen = new Set<number>();
+  const clean = order.frameOrder.filter((id) => (seen.has(id) ? false : (seen.add(id), true)));
+  if (clean.length === order.frameOrder.length) return false;
+
+  trace(`order "${order.name}": tidied ${order.frameOrder.length - clean.length}`
+    + ` repeated shot(s) — ${order.frameOrder.length} → ${clean.length}`);
+  useStore.setState({
+    sortOrders: s.sortOrders.map((o) => (o.id === orderId ? { ...o, frameOrder: clean } : o)),
+  });
+  stampChangedSettings(getCurrentProject().projectId);
+  markSomethingToSend();
+  void flushSyncNow();
+  return true;
+}
+
 export function resortToNeedsOnOpen(orderId: string): number {
+  noShotTwice(orderId);
   const s = state();
   const order = s.sortOrders.find((o) => o.id === orderId);
   if (!order) return 0;
