@@ -239,6 +239,37 @@ console.log('\n8. A CHAIN: DAY 1 > LOCATION 1, and a frame leaves for DAY 2');
   check('nobody was lost', order().frameOrder.length, 6);
 }
 
+console.log('\n9. the sheet that gets saved must not contradict itself');
+{
+  // Every box's matches have to come out of its own incoming frames, and what
+  // it does not take has to drop to the box below. A sheet where a box holds a
+  // frame that never entered it draws the same shot in two places at once —
+  // Roman: "chaos, the frames are duplicated or even tripled, even the boxes."
+  setUp({ 1: D1, 2: D1, 3: D1, 4: D2, 5: D2, 6: D2 },
+        [1, 2, 3, 4, 5, 6],
+        twoBoxes([1, 2, 3], [4, 5, 6], [1, 2, 3, 4, 5, 6]),
+        [1, 2, 3, 4, 5, 6]);
+  const needs = { ...useStore.getState().frameNeeds };
+  needs[1] = { ...needs[1], toggles: { [D2]: true } };
+  useStore.setState({ frameNeeds: needs });
+
+  const said = decideResort(order(), allIds);
+  const problems: string[] = [];
+  const seen = new Set<number>();
+  const walk = (b: BracketNodeData | undefined): void => {
+    if (!b) return;
+    const input = new Set(b.inputIds);
+    for (const id of b.matchedIds) {
+      if (!input.has(id)) problems.push(`frame ${id} matched by a box it never entered`);
+      if (seen.has(id)) problems.push(`frame ${id} is in two boxes at once`);
+      seen.add(id);
+    }
+    walk(b.right); walk(b.down);
+  };
+  walk(said.sheet);
+  check('the saved sheet makes sense', problems, []);
+}
+
 console.log('\n4. needs unchanged — the order is left completely alone');
 {
   setUp({ 1: D1, 2: D1, 3: D1, 4: D2, 5: D2, 6: D2 },

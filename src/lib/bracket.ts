@@ -376,31 +376,33 @@ export function decideResort(
   if (same) {
     return {
       why: `${moved.size} frame(s) changed box, order comes out the same`,
-      sheet: withFreshMatches(order.bracketTree, root),
+      sheet: serializeBracket(root),
     };
   }
 
-  return { frameOrder, fresh, moved, sheet: withFreshMatches(order.bracketTree, root) };
+  return { frameOrder, fresh, moved, sheet: serializeBracket(root) };
 }
 
 /**
  * THE SHEET HAS TO LEARN WHAT IT NOW HOLDS (#411).
  *
- * Every open said the same thing — "4 frame(s) changed box, order comes out the
- * same" — over and over, because the sheet was never written back. So today's
- * needs were always compared against the sheet as it stood the day it was made,
- * those four frames counted as freshly moved for ever, and a real change made
- * afterwards was buried in with them. Roman: "I changed needs so it has to
- * change in the shooting order, and nothing happened, no green frame."
+ * Written back whole, and here is why it must be whole.
  *
- * ONLY the matches are copied across. The boxes, their order, and the frames
- * entering each one are left exactly as they were — saving the whole worked-out
- * copy is what once pruned a sheet down to whatever happened to be on screen
- * and cost an order 27 shots.
+ * The first try copied only the MATCHES into the sheet as it was saved, leaving
+ * each box's incoming frames untouched — the idea being to change as little as
+ * possible. That leaves a sheet contradicting itself: a box holding frames that
+ * never entered it. The screen then draws the same shot in several boxes at
+ * once. Roman: "chaos, the frames are duplicated or even tripled, even the
+ * boxes." Nothing was wrong with his project — 13 frames, all present — the
+ * sheet describing it was impossible.
+ *
+ * The worked-out copy is consistent by construction: every box's matches come
+ * out of its own incoming frames, and what it does not take drops to the box
+ * below. So that is what gets saved.
+ *
+ * The reason not to save it used to be that working it out prunes the sheet to
+ * whatever is on screen, which once cost an order 27 shots. That is now caught
+ * earlier: decideResort refuses to run at all while this device is holding
+ * fewer frames than the order lists.
  */
-function withFreshMatches(saved: BracketNodeData, asked: BracketNode): BracketNodeData {
-  const out: BracketNodeData = { ...saved, matchedIds: [...asked.matchedIds] };
-  if (saved.right && asked.right) out.right = withFreshMatches(saved.right, asked.right);
-  if (saved.down && asked.down) out.down = withFreshMatches(saved.down, asked.down);
-  return out;
-}
+
