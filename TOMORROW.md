@@ -1,8 +1,8 @@
 # Where things stand
 
 Deployed to dev: **v4.9.108 · #410**.
-On try411 only: **v4.9.115 · #417** (the re-sort). Next number: **v4.9.116 · #418**.
-Last run: 107. A NEW NUMBER FOR EVERY DEPLOY — both parts, always.
+On try411 only: **v4.9.119 · #421** (the re-sort; #422 built, not deployed).
+Next number: **v4.9.121 · #423**. Last run: 108. A NEW NUMBER FOR EVERY DEPLOY — both parts, always.
 
 ## The week's fault, and it was one fault
 
@@ -131,6 +131,24 @@ trusting a project-switch test.
    refused, and that fingerprint having to travel — otherwise the other device
    re-sorts straight back and overrules the undo. And it solved a problem the
    manual-move replay already solves. Do not reintroduce it without that.
+
+   **As it ended up (#411–#422), confirmed working by Roman:**
+   - Green means "its needs changed" — the shot's BOX changed. Not "it moved".
+   - A changed shot goes to the END OF ITS BOX as that box sits in the list in
+     front of you — the whole chain, so DAY 1 > LOCATION 1 is a different place
+     from DAY 1 > LOCATION 2. Anchoring to "the nearest shot not moving" only
+     worked while the list was already in box order, and put 8B behind DAY 3.
+   - Nowhere to put it — its box has no other shots yet — it stays where it is
+     and goes green for you to place. The app moves what it is sure of.
+   - A shot you placed by hand goes green when the shot above it leaves (#420).
+   - Green is a running list of "not looked at yet". A second change ADDS to it.
+     DONE clears one, is remembered on the device, and survives a reload.
+   - The log names the shots (#421) and DONE writes a line (#422). Both exist
+     because "4 frame(s) changed box" could not be argued with.
+
+   **Roman, at the end of the day: "it works... I'm just thinking if we should
+   not simplify."** The rule grew three clauses in one evening, each for a real
+   reason. Worth re-reading whole, with fresh eyes, before it goes to dev.
 
    **The work:** the saved `bracketTree` stores each node's `matchedIds` frozen
    from when it was built. The re-sort needs a walk that recomputes them from
