@@ -138,7 +138,8 @@ console.log('\n3. THE 27 SHOTS: a sheet that cannot place a frame must not move 
   // that frame stays exactly where it is and the order comes out unchanged.
   const said = decideResort(order(), allIds);
   check('nothing was moved', openTheOrder(), 0);
-  check('and it says so', said.why, '1 frame(s) changed box, order comes out the same');
+  check('and it says so, naming the shot', said.why,
+    '1 frame(s) changed box, order comes out the same — 1');
   check('ALL SIX SHOTS ARE STILL IN THE ORDER', order().frameOrder, [1, 2, 3, 4, 5, 6]);
 }
 

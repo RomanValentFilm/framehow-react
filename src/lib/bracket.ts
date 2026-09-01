@@ -517,7 +517,8 @@ export function decideResort(
     && frameOrder.every((id, i) => id === order.frameOrder[i]);
   if (same) {
     return {
-      why: `${moved.size} frame(s) changed box, order comes out the same`,
+      why: `${moved.size} frame(s) changed box, order comes out the same`
+        + ` — ${[...moved].join(', ')}`,
       sheet: serializeBracket(root),
       // STILL GREEN (#418). Green means "its needs changed", not "it moved" —
       // a shot can change day and stay exactly where it was, and that is

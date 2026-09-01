@@ -257,8 +257,13 @@ export function resortToNeedsOnOpen(orderId: string): number {
   for (const fid of said.moved!) waiting.add(fid);
   rememberWaiting(orderId, waiting);
 
+  // SAY WHICH ONES, NOT JUST HOW MANY (#421). Roman: "why was 9 and 10 green?"
+  // — and the line said only "4 frame(s)", so neither of us could answer it.
+  const named = [...said.moved!]
+    .map((fid) => state().frames.find((f) => f.id === fid)?.label || String(fid))
+    .join(', ');
   trace(`order "${order.name}": ${said.moved!.size} frame(s) moved to match NEEDS`
-    + ` · list ${order.frameOrder.length} → ${said.frameOrder.length}`);
+    + ` — ${named} · list ${order.frameOrder.length} → ${said.frameOrder.length}`);
   stampChangedSettings(getCurrentProject().projectId);
   markSomethingToSend();
   void flushSyncNow();
