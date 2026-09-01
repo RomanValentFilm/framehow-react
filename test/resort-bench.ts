@@ -11,7 +11,7 @@
 
 import { useStore, DEFAULT_NEED_DEFINITIONS, createDefaultFrameNeedState } from '../src/store/state';
 import type { Frame, SortOrder, BracketNodeData, FrameNeedState } from '../src/store/state';
-import { decideResort, placeChangedFrames } from '../src/lib/bracket';
+import { decideResort, placeChangedFrames, breaksAfterResort } from '../src/lib/bracket';
 
 const DAY = 'tbl_shootday';
 const D1 = 'ti_day1';
@@ -294,6 +294,29 @@ console.log('\n10. A SHEET THAT NAMES A FRAME TWICE MUST NOT DOUBLE THE ORDER');
   const list = order().frameOrder;
   check('the order did not grow', list.length <= 6, true);
   check('and no shot is in it twice', new Set(list).size, list.length);
+}
+
+console.log('\n11. breaks follow the shot above them — unless that shot changed');
+{
+  const was = [1, 2, 3, 4, 5, 6];
+  const now = [2, 3, 1, 4, 5, 6];        // frame 1 changed day and moved down
+  const moved = new Set([1]);
+
+  // A break after frame 3 — frame 3 did not change, so the break goes with it.
+  check('a break follows the shot above it',
+    breaksAfterResort([{ id: 'b1', text: 'LUNCH', position: 3 }], was, now, moved),
+    [{ id: 'b1', text: 'LUNCH', position: 2 }]);
+
+  // A break after frame 1 — frame 1 is the one that changed day, so the break
+  // stays where it was rather than being dragged to another day.
+  check('but not one whose shot changed',
+    breaksAfterResort([{ id: 'b2', text: 'DAY 2', position: 1 }], was, now, moved),
+    [{ id: 'b2', text: 'DAY 2', position: 1 }]);
+
+  // A break at the very top has no shot above it.
+  check('and one at the top stays at the top',
+    breaksAfterResort([{ id: 'b3', text: 'CALL', position: 0 }], was, now, moved),
+    [{ id: 'b3', text: 'CALL', position: 0 }]);
 }
 
 console.log('\n4. needs unchanged — the order is left completely alone');

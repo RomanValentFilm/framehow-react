@@ -233,7 +233,8 @@ export function resortToNeedsOnOpen(orderId: string): number {
   // keep — that is what made an order come back short.
   useStore.setState({
     sortOrders: s.sortOrders.map((o) => (o.id === orderId
-      ? { ...o, frameOrder: said.frameOrder!, sortedSnapshot: [...said.fresh!], bracketTree: said.sheet! }
+      ? { ...o, frameOrder: said.frameOrder!, sortedSnapshot: [...said.fresh!], bracketTree: said.sheet!,
+          ...(said.breaks ? { breaks: said.breaks } : {}) }
       : o)),
   });
 

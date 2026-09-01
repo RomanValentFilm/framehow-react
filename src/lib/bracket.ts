@@ -307,12 +307,45 @@ export interface ResortSaid {
   fresh?: number[];
   /** The frames whose needs changed. These are the ones marked green. */
   moved?: Set<number>;
+  /** Where the breaks should sit afterwards, when any of them move. */
+  breaks?: { id: string; text: string; position: number }[];
   /** Why nothing is changing, in words, for the log. */
   why?: string;
 }
 
+/**
+ * WHERE A BREAK GOES AFTERWARDS (#415).
+ *
+ * Roman uses breaks to separate locations, a lunch break, the end of a day —
+ * so a break belongs BETWEEN two particular shots, not at a number. It follows
+ * the shot above it: sitting after shot 12, it goes back after shot 12,
+ * wherever 12 has landed.
+ *
+ * UNLESS that shot is one whose needs changed. A shot that has just jumped to
+ * another day should not drag the lunch break across with it, so in that case
+ * the break stays at the position it was given. Roman's rule, and it is the
+ * right way round: the break follows a shot that merely moved, and lets go of
+ * one that changed what it is.
+ *
+ * A break at the very top has no shot above it and stays at the top.
+ */
+export function breaksAfterResort(
+  breaks: readonly { id: string; text: string; position: number }[],
+  was: number[],
+  now: number[],
+  moved: ReadonlySet<number>,
+): { id: string; text: string; position: number }[] {
+  return breaks.map((b) => {
+    const above = b.position > 0 ? was[b.position - 1] : undefined;
+    if (above === undefined || moved.has(above)) return { ...b };
+    const at = now.indexOf(above);
+    return at === -1 ? { ...b } : { ...b, position: at + 1 };
+  });
+}
+
 export function decideResort(
-  order: { frameOrder: number[]; bracketTree?: BracketNodeData; sortedSnapshot?: number[] },
+  order: { frameOrder: number[]; bracketTree?: BracketNodeData; sortedSnapshot?: number[];
+           breaks?: readonly { id: string; text: string; position: number }[] },
   visibleIds: number[],
   framesHeld = state().frames.length,
 ): ResortSaid {
@@ -392,7 +425,10 @@ export function decideResort(
     };
   }
 
-  return { frameOrder, fresh, moved, sheet: serializeBracket(root) };
+  return {
+    frameOrder, fresh, moved, sheet: serializeBracket(root),
+    breaks: breaksAfterResort(order.breaks ?? [], order.frameOrder, frameOrder, moved),
+  };
 }
 
 /**
