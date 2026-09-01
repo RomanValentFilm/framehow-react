@@ -697,3 +697,10 @@ Dashboard: `https://framehow-api.roman-cbd.workers.dev/analytics?token=ADMIN_API
 - `GET /analytics/users` — all users with activity summary
 - `GET /analytics/user/:uid` — single user's full journey
 - `GET /analytics/funnel` — conversion funnel (landing → app → signup → project → export)
+
+## A NEW NUMBER FOR EVERY DEPLOY
+
+Roman reads the strip in the corner to know what he is looking at. Both parts —
+the version AND the # number — get bumped for EVERY deploy, even a one-line
+change, even a colour. #411 went out six times in one afternoon and there was no
+way to tell the builds apart; he asked for it and he is right.
