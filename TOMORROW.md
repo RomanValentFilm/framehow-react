@@ -1,6 +1,8 @@
 # Where things stand
 
-Deployed: **v4.9.108 · #410**. Next number: **v4.9.109**. Last run: 103.
+Deployed to dev: **v4.9.108 · #410**.
+On try411 only: **v4.9.115 · #417** (the re-sort). Next number: **v4.9.116 · #418**.
+Last run: 107. A NEW NUMBER FOR EVERY DEPLOY — both parts, always.
 
 ## The week's fault, and it was one fault
 
@@ -23,6 +25,40 @@ has never seen get new ones.
 
 Confirmed by hand: names hold, positions hold, both renames of the same card show
 the same id.
+
+## #417 — ONE PROJECT'S FRAMES WERE BEING ADOPTED BY ANOTHER
+
+The afternoon's chaos, and it was not the re-sort. Roman watched one project go
+9 → 21 → 29 → 33 frames. Orders full of shots that were not in the project,
+`showing 20 of 13`, cards drawn twice.
+
+`applyCloudTreeToStore` keeps every frame in the store the answer did not
+mention, on the grounds that it must be unsent work (#405). The guard that told
+unsent work from somebody else's frames — "was this ever pushed?" — is emptied
+by `clearPushedFingerprints()` THREE HUNDRED LINES EARLIER IN THE SAME
+FUNCTION. So the answer was always "never pushed" and everything was kept. The
+next push then re-parented those frames onto the open project on the server
+(`ON CONFLICT(id) DO UPDATE SET strip_id = excluded.strip_id`), which is why it
+survived a reload.
+
+Fixed two ways: read the record before it is thrown away, and never rescue when
+the tree being applied is not the project the app is standing in (opening a
+project applies its tree BEFORE setCurrentProject, so a mismatch means those
+frames belong to something else).
+
+**Still worth doing, from the audit:** `loadCloudProject` never calls
+`resetProjectSyncGuards()` or `forgetHeldTree()`, so `_pendingTombstones`,
+`_lastKnownFrameCount` and the held delta tree cross the project boundary; a
+pull in flight is never cancelled by a project switch (it captures `cp` once and
+uses it after the await, ending in `markSaved(cp.projectId)`); and
+`applyArrangement` does not de-dup, so one repeated id becomes permanent and
+travels. Full audit findings are in the transcript.
+
+**And the test doors are not the app.** `testHooks.newProject` calls
+`startFromScratch()`, which does not clear the current project id — so
+`saveNow()` pushes the "new" project into the previously open one. Any test that
+makes two projects in one session is really working on one. Worth fixing before
+trusting a project-switch test.
 
 ## Still open
 
@@ -57,7 +93,9 @@ the same id.
 
 1. iPad view bar and setup bar hiding
 2. Preview thumbnails in the sort view
-3. **The order follows the needs** — agreed in full with Roman, build to this:
+3. **The order follows the needs** — BUILT (#411–#417), on try411 only, not yet
+   on dev. Twelve cases in `test/resort-bench.ts` (`npm run bench:resort`, one
+   second). The rules as agreed:
    - Only when a shooting order is OPENED. Never in the background, never while
      somebody is inside one.
    - Catch up FIRST. If a pull is in flight, or the device knows the project

@@ -446,6 +446,11 @@ export function decideResort(
     return {
       why: `${moved.size} frame(s) changed box, order comes out the same`,
       sheet: serializeBracket(root),
+      // STILL GREEN (#418). Green means "its needs changed", not "it moved" —
+      // a shot can change day and stay exactly where it was, and that is
+      // precisely when the user has no other way of noticing. Roman doubted
+      // this worked; it did not. The set was simply not passed back.
+      moved,
     };
   }
 

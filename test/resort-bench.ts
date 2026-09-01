@@ -197,6 +197,10 @@ console.log('\n7. a change that does not move the order still settles');
   const first = decideResort(order(), allIds);
   check('the order does not move', first.frameOrder, undefined);
   check('but the sheet has learned', !!first.sheet, true);
+  // GREEN EVEN THOUGH NOTHING MOVED (#418). Roman doubted this worked, and he
+  // was right — the set was not passed back, so the shot he had just changed
+  // was never marked.
+  check('and the changed shot is still reported', first.moved ? [...first.moved] : [], [3]);
   openTheOrder();                       // the app writes the sheet down
   const second = decideResort(order(), allIds);
   check('so the next open is quiet', second.why, 'the boxes match the needs — nothing to do');
