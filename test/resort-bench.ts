@@ -11,7 +11,8 @@
 
 import { useStore, DEFAULT_NEED_DEFINITIONS, createDefaultFrameNeedState } from '../src/store/state';
 import type { Frame, SortOrder, BracketNodeData, FrameNeedState } from '../src/store/state';
-import { decideResort, placeChangedFrames, breaksAfterResort } from '../src/lib/bracket';
+import { decideResort, placeChangedFrames, breaksAfterResort,
+         deserializeBracket, serializeBracket, syncBracketWithVisibleFrames } from '../src/lib/bracket';
 
 const DAY = 'tbl_shootday';
 const D1 = 'ti_day1';
@@ -317,6 +318,23 @@ console.log('\n11. breaks follow the shot above them — unless that shot change
   check('and one at the top stays at the top',
     breaksAfterResort([{ id: 'b3', text: 'CALL', position: 0 }], was, now, moved),
     [{ id: 'b3', text: 'CALL', position: 0 }]);
+}
+
+console.log('\n12. a sheet must not gain the same frame twice');
+{
+  // The sheet already holds all six, but flattening it leaves out 3 (the box
+  // has nothing below it). Taking the frames on screen must not add 3 again.
+  const oneBox: BracketNodeData = {
+    inputIds: [1, 2, 3, 4, 5, 6], categoryId: DAY, categoryName: 'SHOOT DAY',
+    itemId: D1, itemName: 'DAY 1', matchedIds: [1, 2],
+  };
+  setUp({ 1: D1, 2: D1, 3: D1, 4: D2, 5: D2, 6: D2 },
+        [1, 2, 3, 4, 5, 6], oneBox, [1, 2, 3, 4, 5, 6]);
+  const root = deserializeBracket(oneBox);
+  syncBracketWithVisibleFrames(root, allIds);
+  const saved = serializeBracket(root);
+  check('no box lists a frame twice', saved.inputIds.length, new Set(saved.inputIds).size);
+  check('and the sheet did not grow', saved.inputIds.length, 6);
 }
 
 console.log('\n4. needs unchanged — the order is left completely alone');

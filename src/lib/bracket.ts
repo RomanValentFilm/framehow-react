@@ -23,10 +23,16 @@ export interface BracketNode {
 }
 
 /** Convert BracketNode tree → serialisable BracketNodeData for persistence. */
+/** No box may name the same frame twice (#416). */
+function once(ids: number[]): number[] {
+  const seen = new Set<number>();
+  return ids.filter((id) => (seen.has(id) ? false : (seen.add(id), true)));
+}
+
 export function serializeBracket(node: BracketNode): BracketNodeData {
   const d: BracketNodeData = {
-    inputIds: [...node.inputIds],
-    matchedIds: [...node.matchedIds],
+    inputIds: once(node.inputIds),
+    matchedIds: once(node.matchedIds),
   };
   if (node.categoryId) d.categoryId = node.categoryId;
   if (node.categoryName) d.categoryName = node.categoryName;
@@ -41,12 +47,14 @@ export function serializeBracket(node: BracketNode): BracketNodeData {
 /** Restore BracketNode tree from persisted BracketNodeData. */
 export function deserializeBracket(d: BracketNodeData): BracketNode {
   return {
-    inputIds: [...d.inputIds],
+    // Deduped coming back in as well, so a sheet already damaged on the server
+    // is cleaned the first time it is read (#416).
+    inputIds: once(d.inputIds),
     categoryId: d.categoryId ?? null,
     categoryName: d.categoryName ?? null,
     itemId: d.itemId ?? null,
     itemName: d.itemName ?? null,
-    matchedIds: [...d.matchedIds],
+    matchedIds: once(d.matchedIds),
     right: d.right ? deserializeBracket(d.right) : null,
     down: d.down ? deserializeBracket(d.down) : null,
     expanded: d.expanded ?? false,
@@ -240,7 +248,23 @@ export function fixInputIds(node: BracketNode): void {
  *  - Removes deleted frames from the tree
  *  Returns true if any changes were made. */
 export function syncBracketWithVisibleFrames(root: BracketNode, visibleIds: number[]): boolean {
-  const bracketIds = new Set(flattenBracketOrder(root));
+  // WHO IS ALREADY IN THE SHEET — asked of every box, not of the flattened
+  // answer (#416).
+  //
+  // flattenBracketOrder leaves out the frames a box did not match when it has
+  // nothing below it. Asking IT who is already here therefore says "not here"
+  // about frames that are, and they get added a second time. Roman: "have a
+  // look at 4B and 5A in the last REMAINING box." It never showed before
+  // because the sheet was thrown away after each use; now it is kept, so the
+  // repeats pile up.
+  const bracketIds = new Set<number>();
+  const gather = (n: BracketNode): void => {
+    for (const id of n.inputIds) bracketIds.add(id);
+    for (const id of n.matchedIds) bracketIds.add(id);
+    if (n.right) gather(n.right);
+    if (n.down) gather(n.down);
+  };
+  gather(root);
   const visibleSet = new Set(visibleIds);
   let changed = false;
   // Add new frames not in bracket
