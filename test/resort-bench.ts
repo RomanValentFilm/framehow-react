@@ -365,6 +365,25 @@ console.log('\n13. A SHOT GOES TO THE END OF ITS BOX, WHEREVER THAT BOX IS');
   check('nobody lost or repeated', new Set(list).size, 6);
 }
 
+console.log('\n14. a hand-placed shot is told when its neighbour moves away');
+{
+  // Frame 5 was placed by hand right after frame 2. Frame 2 then changes box
+  // and leaves. Frame 5 has not changed at all — but it is no longer where it
+  // was put, and nobody would know.
+  setUp({ 1: D1, 2: D1, 3: D1, 4: D2, 5: D2, 6: D2 },
+        [1, 2, 5, 3, 4, 6],
+        twoBoxes([1, 2, 3], [4, 5, 6], [1, 2, 3, 4, 5, 6]),
+        [1, 2, 3, 4, 5, 6]);
+  const needs = { ...useStore.getState().frameNeeds };
+  needs[2] = { ...needs[2], toggles: { [D2]: true } };
+  useStore.setState({ frameNeeds: needs });
+
+  const said = decideResort(order(), allIds);
+  const marked = said.moved ? [...said.moved].sort((a, b) => a - b) : [];
+  check('the changed shot is marked', marked.includes(2), true);
+  check('and so is the hand-placed shot it left behind', marked.includes(5), true);
+}
+
 console.log('\n4. needs unchanged — the order is left completely alone');
 {
   setUp({ 1: D1, 2: D1, 3: D1, 4: D2, 5: D2, 6: D2 },

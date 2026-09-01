@@ -169,6 +169,9 @@ export function placeChangedFrames(
   fresh: number[],
   changed: Set<number>,
   boxOf?: Map<number, string>,
+  /** What the boxes last produced — used to spot the shots somebody placed by
+   *  hand, so they can be told when the shot they were placed after moves. */
+  wasSorted?: number[],
 ): { list: number[]; outOfStep: Set<number> } {
   const outOfStep = new Set<number>(changed);
   if (changed.size === 0) return { list: standsAs, outOfStep };
@@ -229,6 +232,28 @@ export function placeChangedFrames(
   }
 
   const list = fillTheGaps(out, standsAs);   // deduped there — see the note in it
+
+  // A HAND-PLACED SHOT WHOSE NEIGHBOUR MOVED AWAY (#420).
+  //
+  // Somebody put a shot right after 5 on purpose. Nothing about that shot has
+  // changed — but if 5 moves to another box, the shot is now sitting after
+  // something else entirely, and nobody told them. Roman: "if a shot was moved
+  // by hand, and it suddenly changed position compared to previous or last
+  // shot, then green."
+  //
+  // Only shots placed by hand are checked. A shot that simply sat where the
+  // boxes put it has no arrangement to lose.
+  if (wasSorted) {
+    const before = (l: number[], id: number): number | null => {
+      const at = l.indexOf(id);
+      return at > 0 ? l[at - 1] : null;
+    };
+    for (const id of standsAs) {
+      if (changed.has(id)) continue;
+      const placedByHand = before(standsAs, id) !== before(wasSorted, id);
+      if (placedByHand && before(list, id) !== before(standsAs, id)) outOfStep.add(id);
+    }
+  }
 
   // NOTHING ELSE IS MARKED.
   //
@@ -470,7 +495,8 @@ export function decideResort(
     return { why: `${cannotPlace} frame(s) changed box but the sheet cannot place them — left alone` };
   }
 
-  const { list: frameOrder, outOfStep } = placeChangedFrames(order.frameOrder, fresh, moved, now);
+  const { list: frameOrder, outOfStep } =
+    placeChangedFrames(order.frameOrder, fresh, moved, now, order.sortedSnapshot);
 
   // Never fewer than we started with. If this ever trips, the order is left
   // untouched rather than shortened.
@@ -502,7 +528,17 @@ export function decideResort(
   }
 
   return {
-    frameOrder, fresh, moved: outOfStep, sheet: serializeBracket(root),
+    // WHAT THE SHEET PRODUCED IS THE LIST IT PRODUCED (#420).
+    //
+    // This used to write down `fresh` — the sheet's own order — while the order
+    // itself became something else, because a changed shot is put at the end of
+    // its box rather than wherever `fresh` had it. The gap between the two was
+    // then read as "the user moved these by hand", which it was not: the app
+    // had done it. So a later change marked shots nobody had touched.
+    //
+    // Hand work now means exactly one thing: what you moved since the last
+    // sort.
+    frameOrder, fresh: frameOrder, moved: outOfStep, sheet: serializeBracket(root),
     breaks: breaksAfterResort(order.breaks ?? [], order.frameOrder, frameOrder, moved),
   };
 }
