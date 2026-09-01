@@ -100,7 +100,7 @@ console.log('\n1. a frame moved to another day moves in the order');
   useStore.setState({ frameNeeds: needs });
 
   check('one frame moved', openTheOrder(), 1);
-  check('it sits with the day 2 shots', order().frameOrder, [2, 3, 1, 4, 5, 6]);
+  check('it goes to the end of its box', order().frameOrder, [2, 3, 4, 5, 6, 1]);
   check('nobody was lost', order().frameOrder.length, 6);
 }
 
@@ -117,7 +117,7 @@ console.log('\n2. a frame moved BY HAND stays where it was put');
 
   check('one frame moved', openTheOrder(), 1);
   check('the hand-moved frame is still at the front', order().frameOrder[0], 6);
-  check('and the needs frame moved', order().frameOrder, [6, 2, 3, 1, 4, 5]);
+  check('and the needs frame went to the end of its box', order().frameOrder, [6, 2, 3, 4, 5, 1]);
 }
 
 console.log('\n3. THE 27 SHOTS: a sheet that cannot place a frame must not move it');
@@ -151,7 +151,7 @@ console.log('\n5. the last-ditch guard: rebuilding never loses a frame');
     [1, 2, 3, 4, 5, 6],           // the order as it stands
     [2, 1, 4, 5],                 // what the sheet can place — 3 and 6 missing
     new Set([1, 3, 6]),           // the frames said to have moved
-  );
+  ).list;
   check('every shot is still there', [...rebuilt].sort((a, b) => a - b), [1, 2, 3, 4, 5, 6]);
   check('and none of them twice', new Set(rebuilt).size, 6);
 }
@@ -177,7 +177,7 @@ console.log('\n6. once it has followed a change, it does not keep re-announcing 
   more[6] = { ...more[6], toggles: { [D1]: true } };
   useStore.setState({ frameNeeds: more });
   check('a later change is noticed', openTheOrder(), 1);
-  check('and frame 6 is with the day 1 shots', order().frameOrder, [2, 3, 6, 1, 4, 5]);
+  check('and frame 6 joined the day 1 shots', order().frameOrder, [2, 3, 6, 4, 5, 1]);
 }
 
 console.log('\n7. a change that does not move the order still settles');
@@ -194,13 +194,15 @@ console.log('\n7. a change that does not move the order still settles');
   needs[3] = { ...needs[3], toggles: { [D2]: true } };
   useStore.setState({ frameNeeds: needs });
 
+  // Since #419 a shot that changes day goes to the END of that day, so this
+  // one does move — it was written when a changed shot stayed put.
   const first = decideResort(order(), allIds);
-  check('the order does not move', first.frameOrder, undefined);
-  check('but the sheet has learned', !!first.sheet, true);
+  check('it goes to the end of its new box', first.frameOrder, [1, 2, 4, 5, 6, 3]);
+  check('and the sheet has learned', !!first.sheet, true);
   // GREEN EVEN THOUGH NOTHING MOVED (#418). Roman doubted this worked, and he
   // was right — the set was not passed back, so the shot he had just changed
   // was never marked.
-  check('and the changed shot is still reported', first.moved ? [...first.moved] : [], [3]);
+  check('and the changed shot is reported', first.moved ? [...first.moved] : [], [3]);
   openTheOrder();                       // the app writes the sheet down
   const second = decideResort(order(), allIds);
   check('so the next open is quiet', second.why, 'the boxes match the needs — nothing to do');
@@ -240,7 +242,7 @@ console.log('\n8. A CHAIN: DAY 1 > LOCATION 1, and a frame leaves for DAY 2');
   useStore.setState({ frameNeeds: moved });
 
   check('the frame leaves the first box', openTheOrder(), 1);
-  check('and sits with the day 2 shots', order().frameOrder, [2, 3, 1, 4, 5, 6]);
+  check('and sits with the day 2 shots', order().frameOrder, [2, 3, 4, 5, 6, 1]);
   check('nobody was lost', order().frameOrder.length, 6);
 }
 
@@ -339,6 +341,28 @@ console.log('\n12. a sheet must not gain the same frame twice');
   const saved = serializeBracket(root);
   check('no box lists a frame twice', saved.inputIds.length, new Set(saved.inputIds).size);
   check('and the sheet did not grow', saved.inputIds.length, 6);
+}
+
+console.log('\n13. A SHOT GOES TO THE END OF ITS BOX, WHEREVER THAT BOX IS');
+{
+  // The list is NOT in box order — 6 (a day 2 shot) was dragged to the front.
+  // Frame 1 becomes a day 2 shot. Under the old rule it anchored to whichever
+  // shot happened to sit in front of it and could land among the wrong day —
+  // Roman: "8B ... its green card landed behind DAY 3". It must join the day 2
+  // shots as they actually sit in this list.
+  setUp({ 1: D1, 2: D1, 3: D1, 4: D2, 5: D2, 6: D2 },
+        [6, 1, 2, 3, 4, 5],
+        twoBoxes([1, 2, 3], [4, 5, 6], [1, 2, 3, 4, 5, 6]),
+        [1, 2, 3, 4, 5, 6]);
+  const needs = { ...useStore.getState().frameNeeds };
+  needs[1] = { ...needs[1], toggles: { [D2]: true } };
+  useStore.setState({ frameNeeds: needs });
+
+  check('one shot moved', openTheOrder(), 1);
+  const list = order().frameOrder;
+  check('the hand-moved shot is still at the front', list[0], 6);
+  check('and the changed shot is at the end of its box', list[list.length - 1], 1);
+  check('nobody lost or repeated', new Set(list).size, 6);
 }
 
 console.log('\n4. needs unchanged — the order is left completely alone');

@@ -164,33 +164,80 @@ export function boxOfEachFrame(root: BracketNode): Map<number, string> {
  * is a later and more deliberate statement about that frame than the drag was.
  * Agreed with Roman explicitly.
  */
-export function placeChangedFrames(standsAs: number[], fresh: number[], changed: Set<number>): number[] {
-  if (changed.size === 0) return standsAs;
+export function placeChangedFrames(
+  standsAs: number[],
+  fresh: number[],
+  changed: Set<number>,
+  boxOf?: Map<number, string>,
+): { list: number[]; outOfStep: Set<number> } {
+  const outOfStep = new Set<number>(changed);
+  if (changed.size === 0) return { list: standsAs, outOfStep };
 
   const out = standsAs.filter((id) => !changed.has(id));
 
-  // For each changed frame, the frame it should now sit behind: the nearest one
-  // in front of it in the fresh order that is NOT itself moving. null = front.
-  const behind = new Map<number | null, number[]>();
-  for (let i = 0; i < fresh.length; i++) {
-    const fid = fresh[i];
+  // A SHOT GOES WITH THE OTHERS OF ITS DAY (#419).
+  //
+  // It used to be dropped in behind the nearest shot in front of it that was
+  // not itself moving. That works only while the rest of the list is already in
+  // box order — and it very often is not, because somebody rearranged it by
+  // hand. Then the anchor is a shot that in TODAY's list sits somewhere else
+  // entirely, and a shot correctly filed under DAY 2 in the sheet lands behind
+  // the DAY 3 cards. Roman: "look at frame 8B... its green card landed behind
+  // DAY 3."
+  //
+  // So: find where that box's shots actually are in the list in front of you,
+  // and put it after the last of them. That is what a person would do, and it
+  // can be said in one line — "it goes to the end of its box".
+  //
+  // BOX, not day. The whole chain counts: DAY 1 > LOCATION 1 is a different box
+  // from DAY 1 > LOCATION 2, and a shot joins the one it actually belongs to.
+  //
+  // When there is nowhere obvious — the box has no other shots yet, or its
+  // shots are scattered — the shot is left where it is and MARKED, rather than
+  // guessed at. Roman's rule: the app moves what it is sure of and is honest
+  // about the rest.
+  const placed = new Map<number | null, number[]>();
+  for (const fid of fresh) {
     if (!changed.has(fid)) continue;
     let anchor: number | null = null;
-    for (let j = i - 1; j >= 0; j--) {
-      if (!changed.has(fresh[j])) { anchor = fresh[j]; break; }
+
+    const myBox = boxOf?.get(fid);
+    if (myBox !== undefined) {
+      // The last shot of MY BOX that is staying put — the whole chain, so
+      // DAY 1 > LOCATION 1 and DAY 1 > LOCATION 2 are different places.
+      for (let j = out.length - 1; j >= 0; j--) {
+        if (boxOf!.get(out[j]) === myBox) { anchor = out[j]; break; }
+      }
     }
-    const list = behind.get(anchor) ?? [];
+    if (anchor === null) {
+      // Nobody of my box is here. Fall back to the old anchor so the list still
+      // makes sense, and let the green say "check this one".
+      const at = fresh.indexOf(fid);
+      for (let j = at - 1; j >= 0; j--) {
+        if (!changed.has(fresh[j])) { anchor = fresh[j]; break; }
+      }
+    }
+    const list = placed.get(anchor) ?? [];
     list.push(fid);                       // in fresh order, so they keep theirs
-    behind.set(anchor, list);
+    placed.set(anchor, list);
   }
 
-  for (const [anchor, group] of behind) {
+  for (const [anchor, group] of placed) {
     if (anchor === null) { out.unshift(...group); continue; }
     const at = out.indexOf(anchor);
     if (at === -1) out.push(...group); else out.splice(at + 1, 0, ...group);
   }
 
-  return fillTheGaps(out, standsAs);   // deduped there — see the note in it
+  const list = fillTheGaps(out, standsAs);   // deduped there — see the note in it
+
+  // NOTHING ELSE IS MARKED.
+  //
+  // A first version also marked any shot standing out of box order — but a
+  // shot you moved by hand breaks the run of days on purpose, so every one of
+  // its neighbours went green and stayed green. Deliberate work must not look
+  // like a warning. Green is for shots whose needs changed, and for shots the
+  // app could not place with confidence — both of which are already here.
+  return { list, outOfStep };
 }
 
 /**
@@ -423,7 +470,7 @@ export function decideResort(
     return { why: `${cannotPlace} frame(s) changed box but the sheet cannot place them — left alone` };
   }
 
-  const frameOrder = placeChangedFrames(order.frameOrder, fresh, moved);
+  const { list: frameOrder, outOfStep } = placeChangedFrames(order.frameOrder, fresh, moved, now);
 
   // Never fewer than we started with. If this ever trips, the order is left
   // untouched rather than shortened.
@@ -455,7 +502,7 @@ export function decideResort(
   }
 
   return {
-    frameOrder, fresh, moved, sheet: serializeBracket(root),
+    frameOrder, fresh, moved: outOfStep, sheet: serializeBracket(root),
     breaks: breaksAfterResort(order.breaks ?? [], order.frameOrder, frameOrder, moved),
   };
 }
