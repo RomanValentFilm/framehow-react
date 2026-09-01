@@ -103,8 +103,14 @@ function forgetAllWaiting(orderId: string): void {
 /** DONE on one card: it has been seen. */
 function stopWaiting(orderId: string, fid: number): void {
   const ids = framesWaitingToBeSeen(orderId);
+  const was = ids.has(fid);
   ids.delete(fid);
   rememberWaiting(orderId, ids);
+  // SAY IT (#422). Roman: "so I did not press DONE on 5?" — and there was no
+  // way to tell from the log whether he had pressed it and it failed, or never
+  // pressed it. Now the green being cleared leaves a mark of its own.
+  trace(`DONE on ${state().frames.find((f) => f.id === fid)?.label || fid}`
+    + `${was ? '' : ' (was not green)'} · ${ids.size} still waiting`);
 }
 
 /** The note is shown once per device unless it is turned off for good. */
