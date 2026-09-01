@@ -210,9 +210,21 @@ export function resortToNeedsOnOpen(orderId: string): number {
     // outside — silence. Roman changed a need, opened the order and was asked
     // nothing, and no line said which reason it was.
     trace(`resort ${orderId}: ${said.why}`);
+    // GREEN MEANS "ITS NEEDS CHANGED", NOT "IT MOVED" (#417).
+    //
+    // Roman changed one shot from DAY 2 to DAY 1 in a three-shot order. DAY 1
+    // was already first, so nothing moved and nothing went green — correct by
+    // the old rule and useless to him. What he wants to see is which shots the
+    // change touched, so he can check them. That is the same set either way.
+    if (said.moved && said.moved.size > 0 && orderId !== '__storyflow__') {
+      const waiting = framesWaitingToBeSeen(orderId);
+      for (const fid of said.moved) waiting.add(fid);
+      rememberWaiting(orderId, waiting);
+      showResortedNote(said.moved.size);
+    }
     // Nothing moved, but the boxes may still have learned who they now hold.
-    // Write that down quietly — no green, no note, nothing on screen — or the
-    // same four frames are reported as freshly changed on every single open.
+    // Write that down quietly, or the same shots are reported as freshly
+    // changed on every single open.
     if (said.sheet) {
       useStore.setState({
         sortOrders: s.sortOrders.map((o) => (o.id === orderId ? { ...o, bracketTree: said.sheet! } : o)),

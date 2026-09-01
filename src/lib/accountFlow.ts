@@ -2414,6 +2414,20 @@ async function applyCloudTreeToStore(
   const wantedCC: Record<'ver' | 'floor' | 'refs', Record<number, number | undefined>> =
     { ver: {}, floor: {}, refs: {} };
 
+  // WHAT THE SERVER HAS ALREADY TAKEN — READ BEFORE IT IS THROWN AWAY (#417).
+  //
+  // The line below empties this record, and three hundred lines further down
+  // the rescue asks it "was this frame ever pushed?" to tell unsent work from a
+  // frame that belongs somewhere else. By then the answer is always "never",
+  // so EVERY leftover frame in the store was kept — including the frames of the
+  // project that was open a minute ago. They were then pushed under the new
+  // project's id, which re-parents them on the server, which is why it survived
+  // a reload. Roman watched one project go 9 → 21 → 29 → 33 frames.
+  //
+  // The guard was written in #405 and disarmed by this very function. Read it
+  // first, and ask the copy.
+  const alreadyOnServer = new Set(_lastPushedFingerprints.keys());
+
   // After pulling cloud data, clear fingerprints so the next push
   // recomputes from scratch (the state changed underneath us).
   clearPushedFingerprints();
@@ -3021,6 +3035,21 @@ async function applyCloudTreeToStore(
   // Roman's rule for a frame the arrangement cannot name yet — keep it close,
   // and let him move it if he wants it elsewhere.
   {
+    // AND ONLY FOR THE PROJECT WE ARE ACTUALLY IN (#417).
+    //
+    // Opening another project applies its tree while the app still believes it
+    // is in the old one — setCurrentProject comes afterwards. So a mismatch
+    // here means "these frames on screen belong to something else", and none of
+    // them are unsent work of the project arriving. Rescuing across that line is
+    // how one project's shots ended up in another.
+    const applyingTo = tree.project?.id ?? null;
+    const standingIn = getCurrentProject().projectId ?? null;
+    const sameProject = applyingTo !== null && applyingTo === standingIn;
+    if (!sameProject && prev.frames.length > 0) {
+      trace(`  not keeping ${prev.frames.length} frame(s) of another project`
+        + ` (in ${standingIn?.slice(0, 6) ?? 'none'}, applying ${applyingTo?.slice(0, 6) ?? '?'})`);
+    }
+
     const arrived = new Set(newFrames.map((f) => f.serverFrameId).filter(Boolean) as string[]);
     // NOT EVERY ABSENT FRAME IS A NEW ONE.
     //
@@ -3032,10 +3061,10 @@ async function applyCloudTreeToStore(
     // Never sent means: no fingerprint was ever recorded for it, because that is
     // only written after the server has taken it. And a tombstoned frame is
     // deliberately gone, whatever else is true.
-    const missing = prev.frames.filter((f) => f.serverFrameId
+    const missing = !sameProject ? [] : prev.frames.filter((f) => f.serverFrameId
       && !arrived.has(f.serverFrameId)
       && !tombstonedIds.has(f.serverFrameId)
-      && !_lastPushedFingerprints.has(f.serverFrameId));
+      && !alreadyOnServer.has(f.serverFrameId));   // the copy — see #417 above
     for (const f of missing) {
       const wasAt = prev.frames.indexOf(f);
       const follows = prev.frames[wasAt - 1]?.serverFrameId;
