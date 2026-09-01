@@ -270,6 +270,32 @@ console.log('\n9. the sheet that gets saved must not contradict itself');
   check('the saved sheet makes sense', problems, []);
 }
 
+console.log('\n10. A SHEET THAT NAMES A FRAME TWICE MUST NOT DOUBLE THE ORDER');
+{
+  // Two boxes both claiming frame 2 — which is what a corrupted sheet looks
+  // like. The rebuild must still be a rearrangement of the list it was given:
+  // never longer, never the same shot twice. Roman's log: `list 18 → 19`, and
+  // the same shot drawn again and again on screen.
+  const overlapping: BracketNodeData = {
+    inputIds: [1, 2, 3, 4, 5, 6], categoryId: DAY, categoryName: 'SHOOT DAY',
+    itemId: D1, itemName: 'DAY 1', matchedIds: [1, 2, 3],
+    down: {
+      inputIds: [2, 4, 5, 6], categoryId: DAY, categoryName: 'SHOOT DAY',
+      itemId: D2, itemName: 'DAY 2', matchedIds: [2, 4, 5, 6],
+    },
+  };
+  setUp({ 1: D1, 2: D1, 3: D1, 4: D2, 5: D2, 6: D2 },
+        [1, 2, 3, 4, 5, 6], overlapping, [1, 2, 3, 4, 5, 6]);
+  const needs = { ...useStore.getState().frameNeeds };
+  needs[1] = { ...needs[1], toggles: { [D2]: true } };
+  useStore.setState({ frameNeeds: needs });
+
+  openTheOrder();
+  const list = order().frameOrder;
+  check('the order did not grow', list.length <= 6, true);
+  check('and no shot is in it twice', new Set(list).size, list.length);
+}
+
 console.log('\n4. needs unchanged — the order is left completely alone');
 {
   setUp({ 1: D1, 2: D1, 3: D1, 4: D2, 5: D2, 6: D2 },

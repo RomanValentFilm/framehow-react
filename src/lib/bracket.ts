@@ -182,7 +182,7 @@ export function placeChangedFrames(standsAs: number[], fresh: number[], changed:
     if (at === -1) out.push(...group); else out.splice(at + 1, 0, ...group);
   }
 
-  return fillTheGaps(out, standsAs);
+  return fillTheGaps(out, standsAs);   // deduped there — see the note in it
 }
 
 /**
@@ -201,8 +201,14 @@ export function placeChangedFrames(standsAs: number[], fresh: number[], changed:
  * missing goes straight back in behind the frame they currently follow.
  */
 export function fillTheGaps(list: number[], standsAs: number[]): number[] {
-  const out = [...list];
-  const have = new Set(out);
+  // Deduped on the way in. The sheet can name the same frame twice — a box
+  // whose matches overlap another's — and a list with a shot in it twice draws
+  // that shot twice. Roman: "it duplicates the frames again", and his log:
+  // `1 frame(s) moved to match NEEDS · list 18 → 19`. A rebuild must never
+  // come out LONGER than it went in.
+  const out: number[] = [];
+  const have = new Set<number>();
+  for (const id of list) if (!have.has(id)) { out.push(id); have.add(id); }
   for (let i = 0; i < standsAs.length; i++) {
     if (have.has(standsAs[i])) continue;
     const before = standsAs.slice(0, i).reverse().find((id) => have.has(id));
@@ -352,6 +358,7 @@ export function decideResort(
   // Completed first — see fillTheGaps. Anchoring against a list with holes in
   // it puts frames in the wrong place.
   const fresh = fillTheGaps(flattenBracketOrder(root), order.frameOrder);
+  // Belt and braces: the rebuild is checked for repeats below, and refused.
   const canBePlaced = new Set(fresh);
   let cannotPlace = 0;
   for (const fid of [...moved]) if (!canBePlaced.has(fid)) { cannotPlace++; moved.delete(fid); }
@@ -365,6 +372,11 @@ export function decideResort(
   // untouched rather than shortened.
   if (frameOrder.length < order.frameOrder.length) {
     return { why: `re-sort would have lost ${order.frameOrder.length - frameOrder.length} frame(s) — left alone` };
+  }
+  // NEVER LONGER, AND NEVER THE SAME SHOT TWICE. Between them these two say the
+  // rebuild is a rearrangement of the list it was given, and nothing else.
+  if (frameOrder.length > order.frameOrder.length || new Set(frameOrder).size !== frameOrder.length) {
+    return { why: `re-sort would have repeated a shot (${order.frameOrder.length} → ${frameOrder.length}) — left alone` };
   }
   // The order does not always move when the boxes do — a frame can change day
   // and still sit in the same place. The SHEET has still learned something, and
