@@ -160,6 +160,20 @@ export function rematchToNeeds(node: BracketNode): boolean {
  * ask "which frames' needs changed". Then the hand moves survive without ever
  * being identified, because nothing else is touched.
  */
+/**
+ * IS THIS "NOWHERE"? — the two ways a shot can be in no box at all.
+ *
+ * Either nothing claimed it, or the deepest thing that claimed it was the
+ * REMAINING box the sheet writes for the tail of a chain. REMAINING asks the
+ * needs nothing; it holds whatever is left over. So a shot sitting in it has
+ * not been placed by any need, and by Roman's rule it is grey and is left where
+ * it is. KEEP ORDER is not listed here: it never takes anybody in on its own,
+ * so a shot only reaches it because the user's sheet put it there.
+ */
+export function isLeftovers(box: string | undefined): boolean {
+  return box === undefined || box.endsWith('/__remaining__|__remaining__');
+}
+
 export function boxOfEachFrame(root: BracketNode): Map<number, string> {
   const where = new Map<number, string>();
   // THE WHOLE CHAIN, NOT THE FIRST BOX.
@@ -424,12 +438,17 @@ export function syncBracketWithVisibleFrames(root: BracketNode, visibleIds: numb
   gather(root);
   const visibleSet = new Set(visibleIds);
   let changed = false;
-  // Add new frames not in bracket
-  for (const id of visibleIds) {
-    if (!bracketIds.has(id)) {
-      root.inputIds.push(id);
-      changed = true;
-    }
+  // A NEW SHOT ENTERS THE SHEET AT ITS NUMBER, NOT AT THE BACK (#439).
+  //
+  // A box hands out its shots in the order they entered it, so a shot pushed on
+  // to the end of the root's list ends up at the end of whichever box takes it —
+  // shot 7, made between 1 and 2, would sit behind shot 6 in DAY 2. Rule 2 says
+  // it joins its box in storyboard order. So it is slipped in behind the shot it
+  // follows in the storyboard, which is what fillTheGaps already does for lists
+  // coming out of the sheet.
+  if (visibleIds.some((id) => !bracketIds.has(id))) {
+    root.inputIds = fillTheGaps(root.inputIds, visibleIds);
+    changed = true;
   }
   // Remove deleted frames from bracket
   const removeFromNode = (node: BracketNode) => {
@@ -572,10 +591,21 @@ export function decideResort(
   // Without this, one change that stops a lot of shots matching turns the whole
   // REMAINING box green at once. Roman: "in the last box remaining 38... they
   // are green" — 38 shots he had not touched.
+  //
+  // AND NEITHER IS A SHOT THAT LANDS IN "REMAINING" (#439).
+  //
+  // The rule above was only half applied. A sheet leaves the tail of a chain
+  // empty sometimes and writes a REMAINING box for it other times, and those
+  // two are the same thing to the user: the place for shots no need matched.
+  // Only the first was treated as grey. So the second went green — and worse,
+  // it counted as "the boxes put this shot somewhere", which MOVED the shot
+  // down into that box. That is what happened to a newly created shot with no
+  // needs: made after shot 5, it was carried off to the end of the order.
+  // Roman: "the new frame's position is somehow off."
   const moved = new Set<number>();
   for (const fid of new Set([...was.keys(), ...now.keys()])) {
     if (was.get(fid) === now.get(fid)) continue;
-    if (now.get(fid) === undefined) continue;      // fell out of every box: grey
+    if (isLeftovers(now.get(fid))) continue;       // in no box, or only in REMAINING: grey
     moved.add(fid);
   }
   if (moved.size === 0) return { why: 'answers moved inside their boxes — no frame changed box' };

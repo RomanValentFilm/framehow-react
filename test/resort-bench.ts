@@ -401,9 +401,10 @@ console.log('\n13. a shot created after the order was sorted');
   // written when the shot is created (addFrameToSortOrders) because nothing
   // moves and so nothing here would mark it; what is checked here is that the
   // shot is put in the right PLACE, which is all decideResort decides.
-  const ALL7 = [1, 2, 3, 4, 5, 6, 7];
+  // Born from shot 1: it takes its place right behind shot 1 in the STORYBOARD,
+  // which is the order the boxes count in, and right behind shot 1 in the order.
+  const ALL7 = [1, 7, 2, 3, 4, 5, 6];
 
-  /** Born from shot 1, so it is slipped in right behind shot 1. */
   function newShotAfterOne(day: string | null): void {
     setUp(EVERY_DAY, [1, 2, 3, 4, 5, 6], twoBoxes([1, 2, 3], [4, 5, 6]), [1, 2, 3, 4, 5, 6]);
     const s = useStore.getState();
@@ -411,8 +412,10 @@ console.log('\n13. a shot created after the order was sorted');
     const n = createDefaultFrameNeedState();
     n.toggles = day ? { [day]: true } : {};
     needs[7] = n;
+    const storyboard = [...s.frames];
+    storyboard.splice(1, 0, frame(7));
     useStore.setState({
-      frames: [...s.frames, frame(7)], frameNeeds: needs,
+      frames: storyboard, frameNeeds: needs,
       sortOrders: [{ ...s.sortOrders[0], frameOrder: [1, 7, 2, 3, 4, 5, 6] }],
     } as never);
   }
@@ -420,14 +423,53 @@ console.log('\n13. a shot created after the order was sorted');
   newShotAfterOne(D2);
   const withNeeds = decideResort(order(), ALL7);
   check('a new DAY 2 shot is one shot moved', [...(withNeeds.moved ?? [])], [7]);
+  // AT ITS NUMBER, NOT AT THE BACK OF THE BOX. Made between 1 and 2, it is the
+  // first of the day 2 shots — not behind shot 6.
   check('and it joins the day 2 shots at its number',
-    withNeeds.frameOrder, [1, 2, 3, 4, 5, 6, 7]);
+    withNeeds.frameOrder, [1, 2, 3, 7, 4, 5, 6]);
 
   newShotAfterOne(null);
   const noNeeds = decideResort(order(), ALL7);
   check('a new shot with no needs is not moved at all', noNeeds.frameOrder, undefined);
   check('and the order still has it where it was made',
     order().frameOrder, [1, 7, 2, 3, 4, 5, 6]);
+}
+
+console.log('\n13b. …and REMAINING is not a place the boxes PUT anybody');
+{
+  // Roman: "the new frame's position is somehow off — if I make a new frame
+  // after 5 it should be after 5 in the shooting order too."
+  //
+  // The sheet fills the tail of a chain in for you as a REMAINING box. It is
+  // not a need: it holds whatever nobody else matched. So when a new shot with
+  // no needs arrived, it landed in REMAINING, and "it is in a box now, it was
+  // in none before" read as "its needs changed" — the shot was carried off to
+  // the REMAINING box at the end of the order. Same reason 38 untouched shots
+  // once went green: rule 6 was only half applied, to the tail a sheet leaves
+  // empty and not to the REMAINING box it writes out.
+  const withRemaining: BracketNodeData = {
+    inputIds: [...ALL], categoryId: DAY, categoryName: 'SHOOT DAY',
+    itemId: D1, itemName: 'DAY 1', matchedIds: [1, 2, 3],
+    down: { inputIds: [4, 5, 6], categoryId: '__remaining__', categoryName: 'REMAINING',
+            itemId: '__remaining__', itemName: 'REMAINING', matchedIds: [4, 5, 6] },
+  };
+  setUp(EVERY_DAY, [1, 2, 3, 4, 5, 6], withRemaining, [1, 2, 3, 4, 5, 6]);
+  const s = useStore.getState();
+  const needs = { ...s.frameNeeds };
+  const blank = createDefaultFrameNeedState();
+  blank.toggles = {};
+  needs[7] = blank;
+  const storyboard = [...s.frames];
+  storyboard.splice(5, 0, frame(7));            // made from shot 5
+  useStore.setState({
+    frames: storyboard, frameNeeds: needs,
+    sortOrders: [{ ...s.sortOrders[0], frameOrder: [1, 2, 3, 4, 5, 7, 6] }],
+  } as never);
+
+  const said = decideResort(order(), [1, 2, 3, 4, 5, 7, 6]);
+  check('a new shot with no needs is not moved into REMAINING', said.frameOrder, undefined);
+  check('and it is not marked either', [...(said.moved ?? [])], []);
+  check('so it stays behind the shot it was made from', order().frameOrder, [1, 2, 3, 4, 5, 7, 6]);
 }
 
 console.log(failures === 0 ? '\nALL GOOD\n' : `\n${failures} FAILED\n`);
