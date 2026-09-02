@@ -394,5 +394,41 @@ console.log('\n12. KEEP ORDER and REMAINING are not needs, and must never be emp
     [4, 5, 6].map((id) => boxes.get(id) !== undefined), [true, true, true]);
 }
 
+console.log('\n13. a shot created after the order was sorted');
+{
+  // Roman's rule: needs → it belongs in the box those needs name; no needs →
+  // it stays where it was made. Both end green. Green for the second half is
+  // written when the shot is created (addFrameToSortOrders) because nothing
+  // moves and so nothing here would mark it; what is checked here is that the
+  // shot is put in the right PLACE, which is all decideResort decides.
+  const ALL7 = [1, 2, 3, 4, 5, 6, 7];
+
+  /** Born from shot 1, so it is slipped in right behind shot 1. */
+  function newShotAfterOne(day: string | null): void {
+    setUp(EVERY_DAY, [1, 2, 3, 4, 5, 6], twoBoxes([1, 2, 3], [4, 5, 6]), [1, 2, 3, 4, 5, 6]);
+    const s = useStore.getState();
+    const needs = { ...s.frameNeeds };
+    const n = createDefaultFrameNeedState();
+    n.toggles = day ? { [day]: true } : {};
+    needs[7] = n;
+    useStore.setState({
+      frames: [...s.frames, frame(7)], frameNeeds: needs,
+      sortOrders: [{ ...s.sortOrders[0], frameOrder: [1, 7, 2, 3, 4, 5, 6] }],
+    } as never);
+  }
+
+  newShotAfterOne(D2);
+  const withNeeds = decideResort(order(), ALL7);
+  check('a new DAY 2 shot is one shot moved', [...(withNeeds.moved ?? [])], [7]);
+  check('and it joins the day 2 shots at its number',
+    withNeeds.frameOrder, [1, 2, 3, 4, 5, 6, 7]);
+
+  newShotAfterOne(null);
+  const noNeeds = decideResort(order(), ALL7);
+  check('a new shot with no needs is not moved at all', noNeeds.frameOrder, undefined);
+  check('and the order still has it where it was made',
+    order().frameOrder, [1, 7, 2, 3, 4, 5, 6]);
+}
+
 console.log(failures === 0 ? '\nALL GOOD\n' : `\n${failures} FAILED\n`);
 process.exit(failures === 0 ? 0 : 1);

@@ -1284,14 +1284,41 @@ function genId(prefix: string, _n: number): string {
   return uniqueId(prefix);
 }
 
-/** Add a newly created frame to all existing sort orders (appended at end). */
+/**
+ * A NEW SHOT JOINS EVERY SHOOTING ORDER, AND IT ARRIVES GREEN (#438).
+ *
+ * Roman's rule for a shot created after an order was sorted:
+ *   - it has NEEDS  → it belongs in the box those needs name, and it is green
+ *   - it has none   → it stays where it was made, and it is green
+ *
+ * Both halves end green, because either way the user has to look at it once and
+ * say yes. The two halves are handled in different places, which is worth
+ * writing down because neither is obvious from the other:
+ *
+ *   POSITION is not decided here. Here the shot is only slipped in behind the
+ *   shot it was made from — "where it was created". If it has needs, the next
+ *   opening of the order re-sorts it into its box like any other shot whose box
+ *   changed (decideResort sees it in no box before and in one after). If it has
+ *   no needs it matches nothing, changes no box, and is therefore left exactly
+ *   where this function put it. So the rule's two halves fall out of one line
+ *   of code each, and neither needs a special case.
+ *
+ *   GREEN is decided here, for both halves. It cannot be left to the re-sort:
+ *   a shot with no needs moves nothing, so rematchToNeeds reports no change and
+ *   decideResort returns before it marks anybody. The mark is written now, and
+ *   the re-sort marking the same shot again later is harmless — it is a set.
+ *
+ * Only orders that have been sorted are marked. In an order with no sheet there
+ * is no such thing as "the place the boxes put it", so there is nothing for the
+ * user to confirm and a green card would mean nothing.
+ */
 export function addFrameToSortOrders(frameId: number, afterFrameId?: number): void {
   const s = state();
 
   // The story flow's breaks move down when a frame is put in above them (#338),
   // for the same reason they move up when one is deleted: the break stays in the
-  // same place on screen. A shooting order needs none of this — a new frame is
-  // appended at its end, below everything.
+  // same place on screen. Only the story flow's breaks are touched here; a
+  // shooting order's are moved by breaksAfterResort when the order itself moves.
   if (afterFrameId !== undefined && (s.storyFlowBreaks?.length ?? 0) > 0) {
     const afterIdx = s.frames.findIndex((f) => f.id === afterFrameId);
     if (afterIdx >= 0) {
@@ -1303,6 +1330,7 @@ export function addFrameToSortOrders(frameId: number, afterFrameId?: number): vo
   }
 
   if (!s.sortOrders.length) return;
+  const joined: string[] = [];
   const updated = s.sortOrders.map((o) => {
     if (o.frameOrder.includes(frameId)) return o; // already present
     const newOrder = [...o.frameOrder];
@@ -1316,9 +1344,20 @@ export function addFrameToSortOrders(frameId: number, afterFrameId?: number): vo
     } else {
       newOrder.push(frameId);
     }
+    if (o.bracketTree) joined.push(o.id);
     return { ...o, frameOrder: newOrder };
   });
   useStore.setState({ sortOrders: updated });
+
+  for (const orderId of joined) {
+    const waiting = framesWaitingToBeSeen(orderId);
+    waiting.add(frameId);
+    rememberWaiting(orderId, waiting);
+  }
+  if (joined.length > 0) {
+    trace(`new shot ${state().frames.find((f) => f.id === frameId)?.label || frameId}`
+      + ` added to ${joined.length} sorted order(s) — green in each`);
+  }
 }
 
 /** Remove a deleted frame from all sort orders. */
