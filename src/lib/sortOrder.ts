@@ -839,6 +839,26 @@ function hasAffectedDescendant(node: BracketNode, affectedNodes: Set<BracketNode
   return false;
 }
 
+/**
+ * THE SHEET HAS BEEN CHANGED BUT NOT APPLIED YET (#443).
+ *
+ * RED means one thing: you moved this shot out of the place the boxes gave it.
+ * While the sheet is being BUILT, the boxes have not given anybody a place yet
+ * — the order is still in the order it was in. Comparing the two then marks
+ * half the order red for no reason at all. Roman, making an order for the first
+ * time: "it gives me red icons... there is no reason for that."
+ *
+ * So from the first change to the sheet until SORT NOW is pressed, no red is
+ * painted. Opening and closing a box is not a change; picking, keeping,
+ * swapping or re-picking is.
+ */
+function sheetChangedSinceSort(editViewEl: HTMLElement): boolean {
+  return (editViewEl as any).__sheetTouched === true;
+}
+function sheetWasTouched(editViewEl: HTMLElement): void {
+  (editViewEl as any).__sheetTouched = true;
+}
+
 /** Wire bracket events — uses data-bn (node index) + data-bact (action). */
 function wireBracketEvents(el: HTMLElement, bracketState: BracketState, orderId: string, editViewEl: HTMLElement): void {
   const affectedNodes = (editViewEl as any).__affectedNodes as Set<BracketNode> | undefined;
@@ -882,6 +902,7 @@ function wireBracketEvents(el: HTMLElement, bracketState: BracketState, orderId:
       if (rem.length > 0) {
         node.down = createEmptyNode(rem);
       }
+      sheetWasTouched(editViewEl);
       rerenderBracket(editViewEl, bracketState, orderId);
     });
   });
@@ -900,6 +921,7 @@ function wireBracketEvents(el: HTMLElement, bracketState: BracketState, orderId:
       node.right = null;
       node.down = null;
       node.expanded = false;
+      sheetWasTouched(editViewEl);
       rerenderBracket(editViewEl, bracketState, orderId);
     });
   });
@@ -934,6 +956,7 @@ function wireBracketEvents(el: HTMLElement, bracketState: BracketState, orderId:
       const node = nodes[nid];
       if (!node) return;
       swapUpInTree(bracketState, node);
+      sheetWasTouched(editViewEl);
       rerenderBracket(editViewEl, bracketState, orderId);
     });
   });
@@ -968,6 +991,7 @@ function wireBracketEvents(el: HTMLElement, bracketState: BracketState, orderId:
       node.right = null;
       node.down = null;
       node.expanded = true; // auto-open dropdown for immediate re-pick
+      sheetWasTouched(editViewEl);
       rerenderBracket(editViewEl, bracketState, orderId);
     });
   });
@@ -1272,7 +1296,7 @@ function rerenderBracket(editViewEl: HTMLElement, bracketState: BracketState, or
   existing.replaceWith(newBracket);
   wireBracketEvents(newBracket, bracketState, orderId, editViewEl);
   // Preserve red pills: reorder + mark moved after re-render
-  if (sortedSnapshot) {
+  if (sortedSnapshot && !sheetChangedSinceSort(editViewEl)) {
     const s = state();
     const order = s.sortOrders.find((o) => o.id === orderId);
     if (order) {
@@ -1910,6 +1934,7 @@ export function openSortEditView(orderId: string): void {
   // Clear previous order's bracket state — each order has its own
   (editView as any).__bracketState = undefined;
   (editView as any).__sortedSnapshot = undefined;
+  (editView as any).__sheetTouched = false;
   (editView as any).__bracketActive = false;
   (editView as any).__pendingConfirm = false;
   (editView as any).__activeReorderFid = null;
@@ -2550,6 +2575,8 @@ function wireEditViewEvents(el: HTMLElement, orderId: string): void {
             finalBracketOrder = rawBracketOrder;
             (el as any).__sortedSnapshot = rawBracketOrder;
           }
+          // The sheet has now been applied, so red means something again (#443).
+          (el as any).__sheetTouched = false;
 
           const order = s.sortOrders.find((o) => o.id === orderId);
           if (order) {
