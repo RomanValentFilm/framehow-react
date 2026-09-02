@@ -9,7 +9,7 @@ import { trace } from './syncTrace';
 import {
   serializeBracket, deserializeBracket, flattenBracketOrder, fixInputIds,
   syncBracketWithVisibleFrames, framesMatching, rematchToNeeds, boxOfEachFrame,
-  placeChangedFrames, decideResort,
+  placeChangedFrames, decideResort, shotsOutsideTheirBox, boxOrderOfSheet,
 } from './bracket';
 import type { BracketNode } from './bracket';
 import { stampChangedSettings } from './projectSettings';
@@ -2067,12 +2067,31 @@ function renderSortEditView(el: HTMLElement, orderId: string): void {
   html += `</div>`;
   el.innerHTML = html;
 
-  // Reorder pills to match current frame order, then mark moved ones red
-  if (sortedSnapshot && hasManualChanges) {
+  // THE THREE STATES OF AN ICON (#427).
+  //
+  //   grey   the shot is in the box it belongs to, or among the leftover shots
+  //   green  the app moved it there because its needs changed — not approved
+  //   red    it sits OUTSIDE its box, because somebody moved it there
+  //
+  // Red is worked out fresh every time from where the shots actually sit
+  // against the boxes, so putting a shot back in its box turns it grey again
+  // with nothing to remember. Green IS remembered — it means "not looked at
+  // yet" and has to survive leaving the order and coming back.
+  {
     const bracketEl = el.querySelector('.sort-bracket-frozen') || el.querySelector('.sort-bracket');
-    if (bracketEl) {
-      reorderPillsByCurrentOrder(bracketEl as HTMLElement, sortedSnapshot, frames.map((f) => f.id));
-      markMovedPills(bracketEl as HTMLElement, sortedSnapshot, frames.map((f) => f.id));
+    const order = orderId === '__storyflow__' ? null : s.sortOrders.find((o) => o.id === orderId);
+    if (bracketEl && order?.bracketTree) {
+      const here = frames.map((f) => f.id);
+      if (sortedSnapshot && hasManualChanges) {
+        reorderPillsByCurrentOrder(bracketEl as HTMLElement, sortedSnapshot, here);
+      }
+      const root = deserializeBracket(order.bracketTree);
+      const outside = shotsOutsideTheirBox(here, boxOfEachFrame(root), boxOrderOfSheet(root));
+      bracketEl.querySelectorAll('.sort-bracket-pill[data-fid]').forEach((pill) => {
+        const fid = Number((pill as HTMLElement).dataset.fid);
+        if (waitingToBeSeen.has(fid)) pill.classList.add('sort-bracket-pill-new');
+        else if (outside.has(fid)) pill.classList.add('sort-bracket-pill-moved');
+      });
     }
   }
 

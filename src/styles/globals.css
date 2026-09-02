@@ -1222,7 +1222,12 @@
   .sort-resort-note-off{display:flex;align-items:center;gap:8px;color:var(--text-faint);
     font-size:12px;margin:0 0 14px;cursor:pointer;user-select:none;}
   .sort-resort-note-off input{accent-color:var(--text-faint);margin:0;}
+  /* RED — this shot sits outside the box it belongs to, because somebody moved
+     it there. Worked out fresh each time, so putting it back turns it grey. */
   .sort-bracket-pill-moved{background:var(--accent) !important;color:#fff !important;}
+  /* GREEN — the app moved this shot because its needs changed, and nobody has
+     pressed DONE on it yet (#427). Same green as the card it belongs to. */
+  .sort-bracket-pill-new{background:#7bd97b !important;color:#173404 !important;}
   .sort-bracket-sel-affected{outline:2px solid rgba(255,255,255,0.5);outline-offset:-2px;opacity:0.5;}
   .sort-bracket-sel-affected .sort-bracket-sel-count{outline:2px solid rgba(255,255,255,0.5);outline-offset:-2px;}
   .sort-bracket-confirm{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);z-index:9999;border-radius:0;}

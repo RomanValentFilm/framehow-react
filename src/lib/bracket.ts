@@ -169,59 +169,60 @@ export function placeChangedFrames(
   fresh: number[],
   changed: Set<number>,
   boxOf?: Map<number, string>,
-  /** What the boxes last produced — used to spot the shots somebody placed by
-   *  hand, so they can be told when the shot they were placed after moves. */
-  wasSorted?: number[],
 ): { list: number[]; outOfStep: Set<number> } {
   const outOfStep = new Set<number>(changed);
   if (changed.size === 0) return { list: standsAs, outOfStep };
 
   const out = standsAs.filter((id) => !changed.has(id));
 
-  // A SHOT GOES WITH THE OTHERS OF ITS DAY (#419).
+  // A SHOT JOINS ITS BOX IN STORYBOARD ORDER (#427).
   //
-  // It used to be dropped in behind the nearest shot in front of it that was
-  // not itself moving. That works only while the rest of the list is already in
-  // box order — and it very often is not, because somebody rearranged it by
-  // hand. Then the anchor is a shot that in TODAY's list sits somewhere else
-  // entirely, and a shot correctly filed under DAY 2 in the sheet lands behind
-  // the DAY 3 cards. Roman: "look at frame 8B... its green card landed behind
-  // DAY 3."
+  // Roman: "in the continuous count... so a shot 7 lands after 6". Not at the
+  // end of the box — where it would belong if you had sorted from scratch.
   //
-  // So: find where that box's shots actually are in the list in front of you,
-  // and put it after the last of them. That is what a person would do, and it
-  // can be said in one line — "it goes to the end of its box".
-  //
-  // BOX, not day. The whole chain counts: DAY 1 > LOCATION 1 is a different box
-  // from DAY 1 > LOCATION 2, and a shot joins the one it actually belongs to.
-  //
-  // When there is nowhere obvious — the box has no other shots yet, or its
-  // shots are scattered — the shot is left where it is and MARKED, rather than
-  // guessed at. Roman's rule: the app moves what it is sure of and is honest
-  // about the rest.
+  // `fresh` is the order the sheet gives when it sorts everything, so it
+  // already has each box's shots in storyboard order. Finding the shot in there
+  // and looking at who is in front of it inside the SAME box gives the place it
+  // should take. Only if it is the first of its box does it go at the front of
+  // that box's run.
+  const sameBoxBefore = (fid: number): number | null => {
+    const myBox = boxOf?.get(fid);
+    if (myBox === undefined) return null;
+    const at = fresh.indexOf(fid);
+    for (let j = at - 1; j >= 0; j--) {
+      if (boxOf!.get(fresh[j]) === myBox && !changed.has(fresh[j])) return fresh[j];
+    }
+    return null;
+  };
+
   const placed = new Map<number | null, number[]>();
   for (const fid of fresh) {
     if (!changed.has(fid)) continue;
-    let anchor: number | null = null;
+    let anchor: number | null = sameBoxBefore(fid);
 
-    const myBox = boxOf?.get(fid);
-    if (myBox !== undefined) {
-      // The last shot of MY BOX that is staying put — the whole chain, so
-      // DAY 1 > LOCATION 1 and DAY 1 > LOCATION 2 are different places.
-      for (let j = out.length - 1; j >= 0; j--) {
-        if (boxOf!.get(out[j]) === myBox) { anchor = out[j]; break; }
-      }
-    }
     if (anchor === null) {
-      // Nobody of my box is here. Fall back to the old anchor so the list still
-      // makes sense, and let the green say "check this one".
-      const at = fresh.indexOf(fid);
-      for (let j = at - 1; j >= 0; j--) {
-        if (!changed.has(fresh[j])) { anchor = fresh[j]; break; }
+      // First of its box, or its box holds nobody else: sit in front of the
+      // box's first shot if there is one, otherwise fall back to the nearest
+      // shot in front that is staying put.
+      const myBox = boxOf?.get(fid);
+      const firstOfBox = myBox === undefined ? -1
+        : out.findIndex((id) => boxOf!.get(id) === myBox);
+      // IT NEVER TAKES THE LEAD FROM A SHOT ALREADY THERE (#427).
+      //
+      // Storyboard order would put it in front of its box, but somebody may
+      // have moved that leading shot there on purpose — and a shot placed by
+      // hand stays where it is. So the newcomer goes in just behind it.
+      if (firstOfBox === 0) anchor = out[0];
+      else if (firstOfBox > 0) anchor = out[firstOfBox - 1];
+      else {
+        const at = fresh.indexOf(fid);
+        for (let j = at - 1; j >= 0; j--) {
+          if (!changed.has(fresh[j])) { anchor = fresh[j]; break; }
+        }
       }
     }
     const list = placed.get(anchor) ?? [];
-    list.push(fid);                       // in fresh order, so they keep theirs
+    list.push(fid);
     placed.set(anchor, list);
   }
 
@@ -231,38 +232,71 @@ export function placeChangedFrames(
     if (at === -1) out.push(...group); else out.splice(at + 1, 0, ...group);
   }
 
-  const list = fillTheGaps(out, standsAs);   // deduped there — see the note in it
+  // NOTHING ELSE IS MARKED (#427).
+  //
+  // Green means one thing: the app moved this shot because its needs changed.
+  // An earlier version also marked a shot somebody had placed by hand when its
+  // neighbour left — but Roman's rule is that a hand-placed shot simply stays
+  // where it is, and staying put is not news.
+  return { list: fillTheGaps(out, standsAs), outOfStep };
+}
 
-  // A HAND-PLACED SHOT WHOSE NEIGHBOUR MOVED AWAY (#420).
-  //
-  // Somebody put a shot right after 5 on purpose. Nothing about that shot has
-  // changed — but if 5 moves to another box, the shot is now sitting after
-  // something else entirely, and nobody told them. Roman: "if a shot was moved
-  // by hand, and it suddenly changed position compared to previous or last
-  // shot, then green."
-  //
-  // Only shots placed by hand are checked. A shot that simply sat where the
-  // boxes put it has no arrangement to lose.
-  if (wasSorted) {
-    const before = (l: number[], id: number): number | null => {
-      const at = l.indexOf(id);
-      return at > 0 ? l[at - 1] : null;
-    };
-    for (const id of standsAs) {
-      if (changed.has(id)) continue;
-      const placedByHand = before(standsAs, id) !== before(wasSorted, id);
-      if (placedByHand && before(list, id) !== before(standsAs, id)) outOfStep.add(id);
-    }
+/**
+ * WHICH SHOTS SIT OUTSIDE THE BOX THEY BELONG TO (#427) — the red icons.
+ *
+ * The old rule was "its position number is not the one the boxes gave it", and
+ * that marks far too much: drag one shot to the top and every shot behind it
+ * has a different number, so the whole order turns red. Roman: "why do the
+ * other shots go red as well?"
+ *
+ * A shot is out of place only if it BREAKS THE ORDER OF THE BOXES — a DAY 2
+ * shot sitting among the DAY 1 shots. So: give every shot the rank of its box,
+ * find the longest run through the list whose ranks never go backwards, and
+ * mark everything not in it. Move one shot and exactly one shot is marked.
+ *
+ * A shot no box matches has no rank and is never marked: the leftover shots at
+ * the end are a legitimate place to be.
+ */
+export function shotsOutsideTheirBox(list: number[], boxOf: Map<number, string>,
+                                     boxOrder: string[]): Set<number> {
+  const rankOf = new Map(boxOrder.map((b, i) => [b, i]));
+  const ranked = list
+    .map((id) => ({ id, rank: rankOf.get(boxOf.get(id) ?? '') }))
+    .filter((x): x is { id: number; rank: number } => x.rank !== undefined);
+  if (ranked.length === 0) return new Set();
+
+  // Longest non-decreasing run, kept by patience sorting so it is the LARGEST
+  // set that is in order — everything outside it is what actually moved.
+  const tails: number[] = [];
+  const tailIdx: number[] = [];
+  const prev: number[] = new Array(ranked.length).fill(-1);
+  for (let i = 0; i < ranked.length; i++) {
+    const r = ranked[i].rank;
+    let lo = 0, hi = tails.length;
+    while (lo < hi) { const mid = (lo + hi) >> 1; if (tails[mid] <= r) lo = mid + 1; else hi = mid; }
+    tails[lo] = r;
+    tailIdx[lo] = i;
+    prev[i] = lo > 0 ? tailIdx[lo - 1] : -1;
   }
+  const inOrder = new Set<number>();
+  for (let i = tailIdx[tails.length - 1]; i >= 0; i = prev[i]) {
+    inOrder.add(ranked[i].id);
+    if (prev[i] === -1) break;
+  }
+  return new Set(ranked.filter((x) => !inOrder.has(x.id)).map((x) => x.id));
+}
 
-  // NOTHING ELSE IS MARKED.
-  //
-  // A first version also marked any shot standing out of box order — but a
-  // shot you moved by hand breaks the run of days on purpose, so every one of
-  // its neighbours went green and stayed green. Deliberate work must not look
-  // like a warning. Green is for shots whose needs changed, and for shots the
-  // app could not place with confidence — both of which are already here.
-  return { list, outOfStep };
+/** The boxes in the order the sheet puts them, top to bottom. */
+export function boxOrderOfSheet(root: BracketNode): string[] {
+  const out: string[] = [];
+  const walk = (n: BracketNode, path: string): void => {
+    const here = n.categoryId && n.itemId ? `${path}/${n.categoryId}|${n.itemId}` : path;
+    if (n.categoryId && n.itemId && !n.right) out.push(here);
+    if (n.right) walk(n.right, here);
+    if (n.down) walk(n.down, path);
+  };
+  walk(root, '');
+  return out;
 }
 
 /**
@@ -410,18 +444,21 @@ export interface ResortSaid {
 }
 
 /**
- * WHERE A BREAK GOES AFTERWARDS (#415).
+ * WHERE A BREAK GOES AFTERWARDS (#428).
  *
- * Roman uses breaks to separate locations, a lunch break, the end of a day —
- * so a break belongs BETWEEN two particular shots, not at a number. It follows
- * the shot above it: sitting after shot 12, it goes back after shot 12,
- * wherever 12 has landed.
+ * A break belongs BETWEEN two shots — Roman uses them for a lunch break, the
+ * end of a day, a change of location. So it follows the nearest shot above it
+ * THAT STAYED PUT.
  *
- * UNLESS that shot is one whose needs changed. A shot that has just jumped to
- * another day should not drag the lunch break across with it, so in that case
- * the break stays at the position it was given. Roman's rule, and it is the
- * right way round: the break follows a shot that merely moved, and lets go of
- * one that changed what it is.
+ * Both of his examples fall out of that one sentence:
+ *   - a break after shot 9, and 9 moves away down the list: the break now sits
+ *     behind shot 8, because 8 is the nearest shot above it that did not move.
+ *     It is NOT dragged down with 9.
+ *   - a shot is added above the break: everything above it grew by one, so the
+ *     break moves from 10 to 11 and stays between the same two shots.
+ *
+ * An earlier version anchored on whichever shot happened to be above it, moved
+ * or not, which carried a lunch break into another day when that shot changed.
  *
  * A break at the very top has no shot above it and stays at the top.
  */
@@ -432,9 +469,13 @@ export function breaksAfterResort(
   moved: ReadonlySet<number>,
 ): { id: string; text: string; position: number }[] {
   return breaks.map((b) => {
-    const above = b.position > 0 ? was[b.position - 1] : undefined;
-    if (above === undefined || moved.has(above)) return { ...b };
-    const at = now.indexOf(above);
+    // The nearest shot above it that is not one of the shots being moved.
+    let stayed: number | undefined;
+    for (let i = b.position - 1; i >= 0; i--) {
+      if (!moved.has(was[i])) { stayed = was[i]; break; }
+    }
+    if (stayed === undefined) return { ...b, position: 0 };   // nothing above it stayed
+    const at = now.indexOf(stayed);
     return at === -1 ? { ...b } : { ...b, position: at + 1 };
   });
 }
@@ -496,7 +537,7 @@ export function decideResort(
   }
 
   const { list: frameOrder, outOfStep } =
-    placeChangedFrames(order.frameOrder, fresh, moved, now, order.sortedSnapshot);
+    placeChangedFrames(order.frameOrder, fresh, moved, now);
 
   // Never fewer than we started with. If this ever trips, the order is left
   // untouched rather than shortened.
