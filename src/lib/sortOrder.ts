@@ -2199,7 +2199,15 @@ function renderSortEditView(el: HTMLElement, orderId: string): void {
   {
     const bracketEl = el.querySelector('.sort-bracket-frozen') || el.querySelector('.sort-bracket');
     const order = orderId === '__storyflow__' ? null : s.sortOrders.find((o) => o.id === orderId);
-    if (bracketEl && order?.bracketTree) {
+    // …AND THE SAME HOLDS HERE (#444). This is the second place red is painted,
+    // and #443 only gated the first. The sheet is written down on every change
+    // while it is being built, so the moment a box was picked this render had a
+    // sheet to compare the order against — and the order had not been sorted by
+    // it yet, so half of it went red. Roman: "I'm doing boxes and suddenly red
+    // frames appear." Red needs BOTH: the order has been sorted at least once,
+    // and the sheet has not been touched since.
+    const canJudge = !!order?.sortedSnapshot && !sheetChangedSinceSort(el);
+    if (bracketEl && order?.bracketTree && canJudge) {
       markOutOfBoxPills(bracketEl as HTMLElement, orderId, frames.map((f) => f.id),
                         waitingToBeSeen);
     }
