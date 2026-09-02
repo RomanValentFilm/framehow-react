@@ -311,11 +311,16 @@ console.log('\n11. RED marks only the shot that breaks the order of the boxes');
     [...shotsOutsideTheirBox([6, 1, 2, 3, 4, 5], box, ranks)], [6]);
   check('and putting it back marks nobody again',
     [...shotsOutsideTheirBox([1, 2, 3, 4, 5, 6], box, ranks)], []);
-  // A shot no box matches has no place to be wrong.
+  // REMAINING IS A BOX TOO (#433). A shot no box matches belongs at the END
+  // with the other leftovers, so it can be out of place like anything else.
+  // Roman moved a shot with no needs up among the day 2 shots and nothing
+  // marked it.
   const halfSheet = new Map(box);
-  halfSheet.delete(5);
-  check('a shot no box matches is never marked',
-    [...shotsOutsideTheirBox([1, 2, 5, 3, 4, 6], halfSheet, ranks)], []);
+  halfSheet.delete(5);                    // shot 5 matches no box
+  check('a leftover shot left at the end is not marked',
+    [...shotsOutsideTheirBox([1, 2, 3, 4, 6, 5], halfSheet, ranks)], []);
+  check('BUT A LEFTOVER SHOT MOVED UP AMONG THE BOXES IS MARKED',
+    [...shotsOutsideTheirBox([1, 2, 5, 3, 4, 6], halfSheet, ranks)], [5]);
 }
 
 console.log('\n11b. RED works on a sheet with chains, not only a plain one');

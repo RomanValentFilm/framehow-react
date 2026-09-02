@@ -259,10 +259,16 @@ export function placeChangedFrames(
  */
 export function shotsOutsideTheirBox(list: number[], boxOf: Map<number, string>,
                                      boxOrder: string[]): Set<number> {
+  // REMAINING IS A BOX TOO (#433).
+  //
+  // A shot no box matches is not nowhere — it belongs with the leftovers, at
+  // the end, and that is a place like any other. Roman moved a shot with no
+  // needs up among the DAY 2 shots and nothing marked it, because a shot
+  // without a box had no place in the order and so could never be out of it.
+  // The leftovers rank last.
   const rankOf = new Map(boxOrder.map((b, i) => [b, i]));
-  const ranked = list
-    .map((id) => ({ id, rank: rankOf.get(boxOf.get(id) ?? '') }))
-    .filter((x): x is { id: number; rank: number } => x.rank !== undefined);
+  const LEFTOVERS = boxOrder.length;
+  const ranked = list.map((id) => ({ id, rank: rankOf.get(boxOf.get(id) ?? '') ?? LEFTOVERS }));
   if (ranked.length === 0) return new Set();
 
   // Longest non-decreasing run, kept by patience sorting so it is the LARGEST
