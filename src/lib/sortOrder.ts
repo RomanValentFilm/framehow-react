@@ -2574,18 +2574,33 @@ function wireEditViewEvents(el: HTMLElement, orderId: string): void {
       const fid = parseInt(pill.dataset.fid!, 10);
       const f = s.frames.find((fr) => fr.id === fid);
       if (!f || !f.src) return;
+
+      // AND SAY WHY IT IS COLOURED (#436).
+      //
+      // The colour alone does not say what happened. Hovering already shows the
+      // picture; this says, in the same colour, which of the two things it is —
+      // so nobody has to remember what red means at seven in the morning.
+      const wrap = document.createElement('span');
+      wrap.className = 'sort-pill-thumb-wrap';
+      const red = pill.classList.contains('sort-bracket-pill-moved');
+      const green = pill.classList.contains('sort-bracket-pill-new');
+      if (red || green) {
+        const why = document.createElement('span');
+        why.className = `sort-pill-why sort-pill-why-${red ? 'red' : 'green'}`;
+        why.textContent = red
+          ? 'You moved this shot manually to a new position, not matching the sort order'
+          : "You changed the shot's NEEDS criteria, please confirm its new position";
+        wrap.appendChild(why);
+      }
       const img = document.createElement('img');
-      img.className = 'sort-pill-thumb';
       img.src = f.src;
+      wrap.appendChild(img);
+
       // Position above or below depending on space
       const rect = pill.getBoundingClientRect();
-      if (rect.top > 180) {
-        img.classList.add('sort-pill-thumb-above');
-      } else {
-        img.classList.add('sort-pill-thumb-below');
-      }
-      pill.appendChild(img);
-      activeThumb = img;
+      wrap.classList.add(rect.top > 180 ? 'sort-pill-thumb-above' : 'sort-pill-thumb-below');
+      pill.appendChild(wrap);
+      activeThumb = wrap;
     };
 
     pillContainer.querySelectorAll('.sort-bracket-pill[data-fid]').forEach((pill) => {

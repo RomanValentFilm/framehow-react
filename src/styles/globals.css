@@ -1361,6 +1361,15 @@
   .sort-bracket-pill{position:relative;cursor:pointer;}
   .sort-bracket-pill-rem{background:transparent;border:1px dashed #555;color:#888;}
   .sort-pill-thumb{position:absolute;right:100%;margin-right:6px;z-index:100;pointer-events:none;border:2px solid var(--border-strong);border-radius:4px;box-shadow:0 4px 16px rgba(0,0,0,.6);width:220px;height:auto;object-fit:contain;background:#000;}
+  /* The picture with a line above it saying why the icon is coloured (#436). */
+  .sort-pill-thumb-wrap{position:absolute;right:100%;margin-right:6px;z-index:100;pointer-events:none;
+    display:flex;flex-direction:column;gap:4px;width:220px;}
+  .sort-pill-thumb-wrap img{width:100%;height:auto;object-fit:contain;background:#000;
+    border:2px solid var(--border-strong);border-radius:4px;box-shadow:0 4px 16px rgba(0,0,0,.6);}
+  .sort-pill-why{font-size:11px;line-height:1.35;font-weight:600;padding:6px 8px;border-radius:4px;
+    background:rgba(0,0,0,.92);box-shadow:0 4px 16px rgba(0,0,0,.6);white-space:normal;text-align:left;}
+  .sort-pill-why-red{color:#ff6b6b;}
+  .sort-pill-why-green{color:#7bd97b;}
   .sort-pill-thumb-above{bottom:0;}
   .sort-pill-thumb-below{top:0;}
   .sort-bracket-pills-rem{margin-top:2px;}
