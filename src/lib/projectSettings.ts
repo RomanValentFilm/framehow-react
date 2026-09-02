@@ -87,7 +87,12 @@ function currentItems(): Array<{ kind: string; item_id: string; json: string }> 
   // Left as it was. A brand-new frame is missing from the order for a second;
   // applyArrangement keeps an unlisted frame behind the one it currently
   // follows, so it is not dropped, and the next push carries the full order.
-  const orderedIds = s.frames.map((f) => f.serverFrameId).filter(Boolean) as string[];
+  // NO SHOT NAMED TWICE (#426). If the same id ever reaches the list — from a
+  // damaged copy, or a merge that went wrong — nothing else removes it, and it
+  // is then sent to the server and read back by every device for ever. The
+  // storyboard would draw that card twice.
+  const orderedIds = [...new Set(
+    s.frames.map((f) => f.serverFrameId).filter(Boolean) as string[])];
   // REVERTED (#343). #337 put the breaks inside this item so the whole
   // arrangement travelled as one thing. It also changed the SHAPE of a settings
   // value that had been a plain list since #294 — and the app then decided its
@@ -306,11 +311,20 @@ export function applyArrangement<T extends { serverFrameId?: string }>(
 
   const byId = new Map(here.filter((f) => f.serverFrameId).map((f) => [f.serverFrameId!, f]));
   const out: T[] = [...(followers.get(null) ?? [])];
+  // AND NOT TWICE ON THE WAY BACK IN EITHER (#426). An arrangement that already
+  // names a frame twice — one saved before the fix, sitting on the server —
+  // would otherwise put the same frame object into the storyboard twice.
+  const alreadyOut = new Set(out.map((f) => f.serverFrameId).filter(Boolean));
   for (const id of arrangement) {
+    if (alreadyOut.has(id)) continue;
     const f = byId.get(id);
-    if (f) out.push(f);                             // an id with no frame is skipped
+    if (f) { out.push(f); alreadyOut.add(id); }     // an id with no frame is skipped
     const after = followers.get(id);
-    if (after) out.push(...after);
+    if (after) for (const g of after) {
+      if (g.serverFrameId && alreadyOut.has(g.serverFrameId)) continue;
+      out.push(g);
+      if (g.serverFrameId) alreadyOut.add(g.serverFrameId);
+    }
   }
   return out;
 }

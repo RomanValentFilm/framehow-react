@@ -12,7 +12,7 @@ import type { NeedTab } from '../src/store/state';
 import {
   stampChangedSettings, settingsForPush, adoptSettingsFromServer,
   applySettingsToStore, settingsNeedPush, seedSettings, importSettingStamps,
-  reconcileRestoredSettings,
+  reconcileRestoredSettings, applyArrangement,
   exportSettingStamps, type SettingItem,
 } from '../src/lib/projectSettings';
 import { stampChangedContent, frameChangedAt, seedContentStamps } from '../src/lib/changeStamps';
@@ -570,6 +570,24 @@ const check = (what: string, got: unknown, want: unknown) =>
 // ---------------------------------------------------------------------------
 // report
 // ---------------------------------------------------------------------------
+
+// AN ARRANGEMENT MAY NOT NAME A SHOT TWICE (#426).
+//
+// Nothing removed a repeated id, so one would be sent to the server and read
+// back by every device for ever — and the storyboard drew that card twice.
+{
+  const frames = [
+    { serverFrameId: 'a', label: '1' },
+    { serverFrameId: 'b', label: '2' },
+    { serverFrameId: 'c', label: '3' },
+  ];
+  const laid = applyArrangement(frames, ['a', 'b', 'a', 'c', 'b']);
+  results.push({
+    what: 'an arrangement naming a shot twice lays out each shot once',
+    got: laid.map((f) => f.serverFrameId).join(','),
+    want: 'a,b,c',
+  });
+}
 
 const width = Math.max(...results.map((r) => r.what.length));
 let failed = 0;
