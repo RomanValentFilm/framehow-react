@@ -1147,12 +1147,43 @@ function markOutOfBoxPills(container: HTMLElement, orderId: string,
   if (!order?.bracketTree) return;
   const root = deserializeBracket(order.bracketTree);
   const outside = shotsOutsideTheirBox(currentOrder, boxOfEachFrame(root), boxOrderOfSheet(root));
+  const pillOf = (fid: number) =>
+    container.querySelector(`.sort-bracket-pill[data-fid="${fid}"]`) as HTMLElement | null;
+
   container.querySelectorAll('.sort-bracket-pill[data-fid]').forEach((pill) => {
     const fid = Number((pill as HTMLElement).dataset.fid);
     pill.classList.remove('sort-bracket-pill-moved', 'sort-bracket-pill-new');
     if (green?.has(fid)) pill.classList.add('sort-bracket-pill-new');
     else if (outside.has(fid)) pill.classList.add('sort-bracket-pill-moved');
   });
+
+  // A MOVED SHOT'S ICON GOES WHERE THE SHOT WENT (#431).
+  //
+  // Roman: "basically by moving a frame manually you add it into a box result."
+  // So the icon joins the row it now sits among — red, because it does not
+  // belong there — and the sheet mirrors the real order.
+  //
+  // It is put next to the shot it now follows, so no mapping from box to row is
+  // needed and, crucially, NO OTHER ICON MOVES. The old version worked from
+  // position numbers and shuffled icons all over the sheet whenever one shot
+  // was dragged.
+  for (const fid of outside) {
+    const pill = pillOf(fid);
+    if (!pill) continue;
+    const at = currentOrder.indexOf(fid);
+    let before: HTMLElement | null = null;
+    for (let i = at - 1; i >= 0; i--) {
+      if (outside.has(currentOrder[i])) continue;        // also displaced — keep looking
+      before = pillOf(currentOrder[i]);
+      if (before) break;
+    }
+    if (before) { before.after(pill); continue; }
+    // Nothing above it is staying put: it goes to the front of the row holding
+    // the first shot that is.
+    const firstStaying = currentOrder.find((id) => !outside.has(id));
+    const row = firstStaying !== undefined ? pillOf(firstStaying)?.parentElement : null;
+    if (row) row.insertBefore(pill, row.firstChild);
+  }
 }
 
 
