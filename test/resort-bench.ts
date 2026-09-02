@@ -159,11 +159,12 @@ console.log('\n6. a shot no box matches belongs with the leftovers');
   };
   setUp(EVERY_DAY, [1, 2, 3, 4, 5, 6], oneBox, [1, 2, 3, 4, 5, 6]);
   moveToDay(1, D2);
-  // Its box DID change — it left day 1 — so it is marked. But no box covers
-  // day 2, so there is nowhere to put it and the order is left exactly as it
-  // is. The green says "look at this one"; you decide where it goes.
-  check('it is still marked', openTheOrder(), 1);
-  check('but nothing is moved', order().frameOrder, [1, 2, 3, 4, 5, 6]);
+  // It left day 1, but no box covers day 2 — so it has not been PUT anywhere.
+  // It belongs with the leftovers, which is a legitimate place, so it is grey
+  // and nothing moves. Roman: "in the last box remaining 38... they are green"
+  // — 38 shots he had never touched, all marked because they stopped matching.
+  check('it is NOT marked', openTheOrder(), 0);
+  check('and nothing is moved', order().frameOrder, [1, 2, 3, 4, 5, 6]);
 }
 
 console.log('\n7. the list can never grow, shrink, or hold a shot twice');

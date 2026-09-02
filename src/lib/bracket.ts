@@ -526,9 +526,20 @@ export function decideResort(
   const now = boxOfEachFrame(root);
 
   // A frame that changed box is a frame whose needs changed. Nothing else moves.
+  // A SHOT THAT LANDS IN THE LEFTOVERS IS NOT MARKED (#432).
+  //
+  // Green means "the boxes put this somewhere new". A shot that no box matches
+  // any more has not been put anywhere — it belongs with the leftovers, which
+  // is a legitimate place, and Roman's rule for it is grey.
+  //
+  // Without this, one change that stops a lot of shots matching turns the whole
+  // REMAINING box green at once. Roman: "in the last box remaining 38... they
+  // are green" — 38 shots he had not touched.
   const moved = new Set<number>();
   for (const fid of new Set([...was.keys(), ...now.keys()])) {
-    if (was.get(fid) !== now.get(fid)) moved.add(fid);
+    if (was.get(fid) === now.get(fid)) continue;
+    if (now.get(fid) === undefined) continue;      // fell out of every box: grey
+    moved.add(fid);
   }
   if (moved.size === 0) return { why: 'answers moved inside their boxes — no frame changed box' };
 
