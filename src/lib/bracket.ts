@@ -174,6 +174,23 @@ export function isLeftovers(box: string | undefined): boolean {
   return box === undefined || box.endsWith('/__remaining__|__remaining__');
 }
 
+/** The same boxes, but named the way they read on screen: "DAY 2 > LOCATION 1". */
+export function boxNamesOfSheet(root: BracketNode): Map<string, string> {
+  const names = new Map<string, string>();
+  const walk = (n: BracketNode, path: string, said: string): void => {
+    const mine = n.categoryId && n.itemId;
+    const here = mine ? `${path}/${n.categoryId}|${n.itemId}` : path;
+    const hereSaid = mine
+      ? (said ? `${said} > ${n.itemName || n.itemId}` : (n.itemName || n.itemId)!)
+      : said;
+    if (mine) names.set(here, hereSaid);
+    if (n.right) walk(n.right, here, hereSaid);
+    if (n.down) walk(n.down, path, said);
+  };
+  walk(root, '', '');
+  return names;
+}
+
 export function boxOfEachFrame(root: BracketNode): Map<number, string> {
   const where = new Map<number, string>();
   // THE WHOLE CHAIN, NOT THE FIRST BOX.
@@ -602,13 +619,30 @@ export function decideResort(
   // down into that box. That is what happened to a newly created shot with no
   // needs: made after shot 5, it was carried off to the end of the order.
   // Roman: "the new frame's position is somehow off."
+  //
+  // AND IT SAYS WHICH BOXES, BY NAME (#440). "1 frame(s) changed box, order
+  // comes out the same" was true and useless: neither Roman nor I could tell
+  // from it whether the shot had gone where he meant it to. The line now reads
+  // `6#1: no box → DAY 3` and the question answers itself.
+  const names = boxNamesOfSheet(root);
+  const boxName = (p: string | undefined): string =>
+    p === undefined ? 'no box' : (names.get(p) ?? p);
+  const labelOf = (fid: number): string =>
+    state().frames.find((f) => f.id === fid)?.label || String(fid);
+
   const moved = new Set<number>();
+  const changes: string[] = [];
   for (const fid of new Set([...was.keys(), ...now.keys()])) {
     if (was.get(fid) === now.get(fid)) continue;
+    changes.push(`${labelOf(fid)}: ${boxName(was.get(fid))} → ${boxName(now.get(fid))}`);
     if (isLeftovers(now.get(fid))) continue;       // in no box, or only in REMAINING: grey
     moved.add(fid);
   }
-  if (moved.size === 0) return { why: 'answers moved inside their boxes — no frame changed box' };
+  const tell = changes.join(' · ');
+  if (moved.size === 0) {
+    return { why: 'answers moved inside their boxes — no frame changed box'
+      + (tell ? ` · ${tell}` : '') };
+  }
 
   // ONLY FRAMES THE SHEET CAN ACTUALLY PLACE.
   //
@@ -651,7 +685,7 @@ export function decideResort(
   if (same) {
     return {
       why: `${moved.size} frame(s) changed box, order comes out the same`
-        + ` — ${[...moved].join(', ')}`,
+        + ` — ${tell}`,
       sheet: serializeBracket(root),
       // STILL GREEN (#418). Green means "its needs changed", not "it moved" —
       // a shot can change day and stay exactly where it was, and that is
@@ -674,6 +708,7 @@ export function decideResort(
     // sort.
     frameOrder, fresh: frameOrder, moved: outOfStep, sheet: serializeBracket(root),
     breaks: breaksAfterResort(order.breaks ?? [], order.frameOrder, frameOrder, moved),
+    why: tell,
   };
 }
 

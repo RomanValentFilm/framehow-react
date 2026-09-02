@@ -269,7 +269,8 @@ export function resortToNeedsOnOpen(orderId: string): number {
     .map((fid) => state().frames.find((f) => f.id === fid)?.label || String(fid))
     .join(', ');
   trace(`order "${order.name}": ${said.moved!.size} frame(s) moved to match NEEDS`
-    + ` — ${named} · list ${order.frameOrder.length} → ${said.frameOrder.length}`);
+    + ` — ${named} · list ${order.frameOrder.length} → ${said.frameOrder.length}`
+    + (said.why ? ` · ${said.why}` : ''));
   stampChangedSettings(getCurrentProject().projectId);
   markSomethingToSend();
   void flushSyncNow();

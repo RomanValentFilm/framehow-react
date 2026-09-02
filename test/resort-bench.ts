@@ -150,6 +150,19 @@ console.log('\n5. shots whose needs did not change are untouched');
   check('and only shot 6 moved', list, [1, 5, 2, 3, 6, 4]);
 }
 
+console.log('\n5b. …but a shot moved by hand DOES move when its OWN needs change');
+{
+  // Agreed with Roman: changing a shot's needs is a later and more deliberate
+  // statement about that shot than the drag was, so the needs win. Rule 5 keeps
+  // a hand-placed shot still while OTHER shots change; it does not freeze it
+  // for ever.
+  setUp(EVERY_DAY, [1, 5, 2, 3, 4, 6], twoBoxes([1, 2, 3], [4, 5, 6]), [1, 2, 3, 4, 5, 6]);
+  // Shot 5 was dragged up to second place. Now it is given DAY 1.
+  moveToDay(5, D1);
+  check('it moves', openTheOrder(), 1);
+  check('and it joins the day 1 shots at its number', order().frameOrder, [1, 2, 3, 5, 4, 6]);
+}
+
 console.log('\n6. a shot no box matches belongs with the leftovers');
 {
   // One box only: day 1. Shot 1 leaves for day 2, which no box covers.
@@ -470,6 +483,94 @@ console.log('\n13b. …and REMAINING is not a place the boxes PUT anybody');
   check('a new shot with no needs is not moved into REMAINING', said.frameOrder, undefined);
   check('and it is not marked either', [...(said.moved ?? [])], []);
   check('so it stays behind the shot it was made from', order().frameOrder, [1, 2, 3, 4, 5, 7, 6]);
+}
+
+console.log('\n13c. the whole story: made, seen, DONE, and only later given needs');
+{
+  // Roman: "I added needs to a new frame that had been approved by DONE, and
+  // when I changed its needs it was not put in a new position."
+  const withRemaining = (): BracketNodeData => ({
+    inputIds: [...ALL], categoryId: DAY, categoryName: 'SHOOT DAY',
+    itemId: D1, itemName: 'DAY 1', matchedIds: [1, 2, 3],
+    down: { inputIds: [4, 5, 6], categoryId: '__remaining__', categoryName: 'REMAINING',
+            itemId: '__remaining__', itemName: 'REMAINING', matchedIds: [4, 5, 6] },
+  });
+  const HERE = [1, 2, 3, 4, 5, 7, 6];              // the storyboard, 7 made from 5
+
+  /** Opening the order, exactly as the app does it — sheet written back and all. */
+  function open(): { moved: number[]; why: string | undefined } {
+    const said = decideResort(order(), HERE);
+    if (!said.frameOrder) {
+      if (said.sheet) useStore.setState({ sortOrders: [{ ...order(), bracketTree: said.sheet }] } as never);
+      return { moved: [...(said.moved ?? [])], why: said.why };
+    }
+    useStore.setState({
+      sortOrders: [{ ...order(), frameOrder: said.frameOrder, sortedSnapshot: said.fresh!,
+                     bracketTree: said.sheet! }],
+    } as never);
+    return { moved: [...(said.moved ?? [])], why: said.why };
+  }
+
+  setUp(EVERY_DAY, [1, 2, 3, 4, 5, 6], withRemaining(), [1, 2, 3, 4, 5, 6]);
+  const s = useStore.getState();
+  const needs = { ...s.frameNeeds };
+  const blank = createDefaultFrameNeedState();
+  blank.toggles = {};
+  needs[7] = blank;
+  const storyboard = [...s.frames];
+  storyboard.splice(5, 0, frame(7));
+  useStore.setState({
+    frames: storyboard, frameNeeds: needs,
+    sortOrders: [{ ...s.sortOrders[0], frameOrder: [1, 2, 3, 4, 5, 7, 6] }],
+  } as never);
+
+  // Opened once with no needs — it stays put. (DONE only clears the green mark,
+  // which lives on the device and has no say in any of this.)
+  open();
+  check('after the first look it is still behind shot 5', order().frameOrder, [1, 2, 3, 4, 5, 7, 6]);
+  open();
+  check('and after a second look too', order().frameOrder, [1, 2, 3, 4, 5, 7, 6]);
+
+  // NOW its needs are set — DAY 1 — and it has to join the day 1 shots.
+  moveToDay(7, D1);
+  const said = open();
+  check('giving it needs moves it', said.moved, [7]);
+  check('and it joins the day 1 shots', order().frameOrder, [1, 2, 3, 7, 4, 5, 6]);
+}
+
+console.log('\n13d. a new shot given a DIFFERENT day from the shot it was made from');
+{
+  // Roman: "6 is DAY 1, I made 6#1 from it and gave 6#1 DAY 3 on purpose" —
+  // and the app said "changed box, order comes out the same".
+  const D3 = 'ti_day3';
+  const threeBoxes: BracketNodeData = {
+    inputIds: [...ALL], categoryId: DAY, categoryName: 'SHOOT DAY',
+    itemId: D1, itemName: 'DAY 1', matchedIds: [1, 2],
+    down: {
+      inputIds: [3, 4, 5, 6], categoryId: DAY, categoryName: 'SHOOT DAY',
+      itemId: D2, itemName: 'DAY 2', matchedIds: [3, 4],
+      down: { inputIds: [5, 6], categoryId: DAY, categoryName: 'SHOOT DAY',
+              itemId: D3, itemName: 'DAY 3', matchedIds: [5, 6] },
+    },
+  };
+  setUp({ 1: D1, 2: D1, 3: D2, 4: D2, 5: D3, 6: D3 },
+        [1, 2, 3, 4, 5, 6], threeBoxes, [1, 2, 3, 4, 5, 6]);
+  const s = useStore.getState();
+  const needs = { ...s.frameNeeds };
+  const n = createDefaultFrameNeedState();
+  n.toggles = { [D3]: true };                    // made from shot 1 (DAY 1), given DAY 3
+  needs[7] = n;
+  const storyboard = [...s.frames];
+  storyboard.splice(1, 0, frame(7));
+  useStore.setState({
+    frames: storyboard, frameNeeds: needs,
+    sortOrders: [{ ...s.sortOrders[0], frameOrder: [1, 7, 2, 3, 4, 5, 6] }],
+  } as never);
+
+  const said = decideResort(order(), [1, 7, 2, 3, 4, 5, 6]);
+  check('it is marked', [...(said.moved ?? [])], [7]);
+  check('AND IT LEAVES THE DAY 1 SHOTS FOR THE DAY 3 ONES',
+    said.frameOrder, [1, 2, 3, 4, 7, 5, 6]);
 }
 
 console.log(failures === 0 ? '\nALL GOOD\n' : `\n${failures} FAILED\n`);
