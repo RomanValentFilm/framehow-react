@@ -277,13 +277,31 @@ export function resortToNeedsOnOpen(orderId: string): number {
 }
 
 /** Save bracket tree + snapshot into the SortOrder in the store. */
+/**
+ * NEVER WRITE THE SHEET DOWN OUT OF DATE (#434).
+ *
+ * The sheet on screen remembers which shots matched each box AT THE MOMENT THE
+ * BOX WAS PICKED. Change a need afterwards and those matches are stale — and
+ * SORT NOW saved them exactly as they were.
+ *
+ * The sheet is the app's only memory of "which shot was in which box last
+ * time". Saving it out of date means the very next open compares today's needs
+ * against a sheet that was already wrong and marks everything that disagrees.
+ * That is a wall of green immediately AFTER a re-sort, surviving a reload —
+ * which is exactly what Roman had, and why pressing SORT NOW never cured it.
+ *
+ * So the matches are brought up to date on the way in. The boxes, their order
+ * and the shots entering them are untouched; only who each box holds today.
+ */
 function persistBracketToOrder(orderId: string, bracketState: BracketState, sortedSnapshot: number[] | undefined): void {
   const s = state();
+  const fresh = deserializeBracket(serializeBracket(bracketState.root));
+  rematchToNeeds(fresh);
   const orders = s.sortOrders.map((o) => {
     if (o.id !== orderId) return o;
     return {
       ...o,
-      bracketTree: serializeBracket(bracketState.root),
+      bracketTree: serializeBracket(fresh),
       sortedSnapshot: sortedSnapshot ? [...sortedSnapshot] : undefined,
     };
   });
