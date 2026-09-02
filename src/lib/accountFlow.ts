@@ -1328,17 +1328,19 @@ export async function saveNow(): Promise<void> {
   }
 }
 
-async function startNewProject(): Promise<void> {
-  // Spec: only one unsaved project at a time.
-  const cp = getCurrentProject();
-  if (cp.dirty) {
-    const ok = await showConfirm(
-      'Start a new project?\n\n' +
-      'Your current work is kept on this device and stays in the project list ' +
-      'until it has reached the cloud.',
-    );
-    if (!ok) return;
-  }
+/**
+ * EVERYTHING STARTING A NEW PROJECT HAS TO CLEAR (#423).
+ *
+ * Split out of startNewProject so the browser tests can use it instead of
+ * making their own arrangements. The test door called `startFromScratch`, which
+ * empties the storyboard but leaves the app still pointing at the project that
+ * was open — so `saveNow()` wrote the "new" project INTO the old one and handed
+ * back the old id. Any test that made two projects was really working on one,
+ * which is exactly why nothing ever caught a fault in switching between them.
+ *
+ * A door must be the app's own path, never a copy of it. This is that path.
+ */
+export async function beginNewProject(): Promise<void> {
   if (state().sortEditingId) closeSortMode();
 
   // File the outgoing project BEFORE the store is wiped. Online this uploads
@@ -1356,6 +1358,20 @@ async function startNewProject(): Promise<void> {
   // project doesn't carry an old base_updated_at that could trigger a 409.
   lastKnownUpdatedAt = null;
   takenFromServerAt = null;        // a different project — nothing taken yet (#299)
+}
+
+async function startNewProject(): Promise<void> {
+  // Spec: only one unsaved project at a time.
+  const cp = getCurrentProject();
+  if (cp.dirty) {
+    const ok = await showConfirm(
+      'Start a new project?\n\n' +
+      'Your current work is kept on this device and stays in the project list ' +
+      'until it has reached the cloud.',
+    );
+    if (!ok) return;
+  }
+  await beginNewProject();
   // Refresh DOM
   (window as any).__fh_renderAll?.();
   // Show Signpost modal so the user can pick what to do next

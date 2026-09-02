@@ -27,7 +27,7 @@ import { startFromScratch } from './files';
 import { deleteFrameForGood, handleMainAction, renameFrame } from './actions';
 import { createSetup, handleSetupFrameClick, handleStripTagClick } from './setups';
 import { renameNeedTab, renameNeedTable, renameNeedItem, ensureFrameNeeds } from './needs';
-import { saveNow, openCloudProjectById } from './accountFlow';
+import { saveNow, openCloudProjectById, beginNewProject } from './accountFlow';
 import { flushSyncNow, markFrameDirty, getDirtyFrameIds } from './currentProject';
 import { openNeedsModal } from './overview';
 import { stampChangedContent } from './changeStamps';
@@ -371,6 +371,11 @@ export function installTestDoor(): void {
 
   const door: TestDoor = {
     async newProject(name, count) {
+      // THE APP'S OWN PATH (#423). This used to call startFromScratch, which
+      // leaves the app pointing at the project that was open — so saveNow()
+      // wrote into it instead of making a new one, and every test that made two
+      // projects was quietly working on one.
+      await beginNewProject();
       startFromScratch();
       // startFromScratch makes one frame; add the rest the same way the store holds them
       const first = useStore.getState().frames[0];

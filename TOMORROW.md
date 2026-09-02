@@ -1,7 +1,7 @@
 # Where things stand
 
 Deployed to dev: **v4.9.108 · #410**.
-On try411 only: **v4.9.119 · #421** (the re-sort; #422 built, not deployed).
+On try411 only: **v4.9.120 · #422** (the re-sort, working).
 Next number: **v4.9.121 · #423**. Last run: 108. A NEW NUMBER FOR EVERY DEPLOY — both parts, always.
 
 ## The week's fault, and it was one fault
