@@ -26,7 +26,7 @@ import type { Frame, SortOrder, BracketNodeData, FrameNeedState } from '../src/s
 import {
   decideResort, placeChangedFrames, breaksAfterResort, deserializeBracket,
   serializeBracket, syncBracketWithVisibleFrames, boxOfEachFrame, boxOrderOfSheet,
-  shotsOutsideTheirBox, rematchToNeeds, flattenBracketOrder,
+  shotsOutsideTheirBox, rematchToNeeds, flattenBracketOrder, withoutShotsThatAreGone,
 } from '../src/lib/bracket';
 
 const DAY = 'tbl_shootday';
@@ -624,6 +624,40 @@ console.log('\n14. a shot its box takes but the box INSIDE it does not');
   const said = decideResort(order(), [1, 2, 3, 4, 5, 7, 6]);
   check('it is marked', [...(said.moved ?? [])], [7]);
   check('AND IT CLIMBS TO THE DAY 1 SHOTS', said.frameOrder, [1, 2, 3, 7, 4, 5, 6]);
+}
+
+console.log('\n15. a shot deleted from the project leaves the order too');
+{
+  // Roman's log, on every open, for ever:
+  //   `only 19 of 20 frames here yet — too early to judge`
+  // The order still listed 3.#1, which he had deleted. The re-sort will not
+  // judge an order whose shots are not all here — a load half done must not be
+  // sorted — so one ghost froze that order completely.
+  const cleaned = withoutShotsThatAreGone(
+    [1, 2, 3, 99, 4, 5, 6], [1, 2, 3, 4, 5, 6],
+    [{ id: 'b1', text: 'LUNCH', position: 2 }, { id: 'b2', text: 'WRAP', position: 6 }]);
+  check('the ghost is dropped', cleaned.frameOrder, [1, 2, 3, 4, 5, 6]);
+  check('and it is named', cleaned.gone, [99]);
+  check('a break in front of it does not move', cleaned.breaks[0].position, 2);
+  check('a break behind it comes up one', cleaned.breaks[1].position, 5);
+  check('and an order with no ghosts is left alone',
+    withoutShotsThatAreGone([1, 2, 3], [1, 2, 3]).gone, []);
+
+  // And the freeze itself: with the ghost gone, the order judges again.
+  setUp(EVERY_DAY, [1, 2, 3, 4, 5, 6], twoBoxes([1, 2, 3], [4, 5, 6]), [1, 2, 3, 4, 5, 6]);
+  useStore.setState({
+    sortOrders: [{ ...order(), frameOrder: [1, 2, 3, 99, 4, 5, 6] }],
+  } as never);
+  moveToDay(6, D1);
+  check('WITH A GHOST IN THE LIST IT REFUSES TO JUDGE',
+    decideResort(order(), ALL).why, 'only 6 of 7 frames here yet — too early to judge');
+
+  useStore.setState({
+    sortOrders: [{ ...order(),
+      frameOrder: withoutShotsThatAreGone(order().frameOrder, ALL).frameOrder }],
+  } as never);
+  check('and with the ghost gone it moves the shot', openTheOrder(), 1);
+  check('to where its box puts it', order().frameOrder, [1, 2, 3, 6, 4, 5]);
 }
 
 console.log(failures === 0 ? '\nALL GOOD\n' : `\n${failures} FAILED\n`);

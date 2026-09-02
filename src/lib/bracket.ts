@@ -174,6 +174,41 @@ export function isLeftovers(box: string | undefined): boolean {
   return box === undefined || box.endsWith('/__remaining__|__remaining__');
 }
 
+/**
+ * A SHOT DELETED FROM THE PROJECT HAS TO LEAVE THE ORDER TOO (#442).
+ *
+ * An order that lists a shot the project no longer holds is not merely untidy —
+ * it is FROZEN. The re-sort refuses to judge an order whose shots are not all
+ * here, because an order opened halfway through a load would otherwise be
+ * sorted against half a storyboard. It cannot tell "not arrived yet" from "gone
+ * for good", so one deleted shot stops that order re-sorting ever again. Roman,
+ * on his own project: `only 19 of 20 frames here yet — too early to judge`, on
+ * every open, and nothing he did to a shot's needs moved anything.
+ *
+ * So the ghosts are dropped — but only by the caller, and only once the project
+ * has finished arriving. That condition is the whole safety of this: a shot
+ * missing because it has not downloaded yet must NEVER be dropped, or the order
+ * loses it for good. See noShotThatIsGone in sortOrder.ts.
+ *
+ * `breaks` come back moved up by however many shots in front of them went.
+ */
+export function withoutShotsThatAreGone(
+  frameOrder: readonly number[],
+  framesHeld: readonly number[],
+  breaks: readonly { id: string; text: string; position: number }[] = [],
+): { frameOrder: number[]; breaks: { id: string; text: string; position: number }[]; gone: number[] } {
+  const here = new Set(framesHeld);
+  const keep = frameOrder.filter((id) => here.has(id));
+  const gone = frameOrder.filter((id) => !here.has(id));
+  const goneBefore = (pos: number): number =>
+    frameOrder.slice(0, pos).filter((id) => !here.has(id)).length;
+  return {
+    frameOrder: keep,
+    breaks: breaks.map((b) => ({ ...b, position: Math.max(0, b.position - goneBefore(b.position)) })),
+    gone,
+  };
+}
+
 /** The same boxes, but named the way they read on screen: "DAY 2 > LOCATION 1". */
 export function boxNamesOfSheet(root: BracketNode): Map<string, string> {
   const names = new Map<string, string>();

@@ -10,10 +10,11 @@ import {
   serializeBracket, deserializeBracket, flattenBracketOrder, fixInputIds,
   syncBracketWithVisibleFrames, framesMatching, rematchToNeeds, boxOfEachFrame,
   placeChangedFrames, decideResort, shotsOutsideTheirBox, boxOrderOfSheet,
+  withoutShotsThatAreGone,
 } from './bracket';
 import type { BracketNode } from './bracket';
 import { stampChangedSettings } from './projectSettings';
-import { getCurrentProject, markSomethingToSend } from './currentProject';
+import { getCurrentProject, markSomethingToSend, isPullIncomplete } from './currentProject';
 
 // ─── Sort Bracket Types ──────────────────────────────────────────────
 
@@ -204,8 +205,43 @@ function noShotTwice(orderId: string): boolean {
   return true;
 }
 
+/**
+ * THE GHOSTS GO, BUT ONLY WHEN THE PROJECT IS ALL HERE (#442).
+ *
+ * A shot deleted while another device held the order — or deleted here before a
+ * fix that has since landed — can stay in the order's list after it has left the
+ * project. The order is then frozen: see withoutShotsThatAreGone.
+ *
+ * The one thing that makes this safe rather than dangerous is the test for
+ * "gone": the shot is not in state().frames AT ALL. A shot that is merely hidden
+ * or in another group is still there and is never touched; a shot that has not
+ * downloaded yet is caught by isPullIncomplete, and by refusing to do anything
+ * to a project with no frames in it.
+ */
+function noShotThatIsGone(orderId: string): void {
+  if (isPullIncomplete()) return;          // still arriving — a gap proves nothing
+  const s = state();
+  if (s.frames.length === 0) return;       // nothing here to judge against
+  const order = s.sortOrders.find((o) => o.id === orderId);
+  if (!order) return;
+
+  const tidy = withoutShotsThatAreGone(order.frameOrder, s.frames.map((f) => f.id), order.breaks ?? []);
+  if (tidy.gone.length === 0) return;
+
+  trace(`order "${order.name}": dropped ${tidy.gone.length} shot(s) no longer in the project`
+    + ` — ${tidy.gone.join(', ')} · list ${order.frameOrder.length} → ${tidy.frameOrder.length}`);
+  useStore.setState({
+    sortOrders: s.sortOrders.map((o) => (o.id === orderId
+      ? { ...o, frameOrder: tidy.frameOrder, breaks: tidy.breaks } : o)),
+  });
+  stampChangedSettings(getCurrentProject().projectId);
+  markSomethingToSend();
+  void flushSyncNow();
+}
+
 export function resortToNeedsOnOpen(orderId: string): number {
   noShotTwice(orderId);
+  noShotThatIsGone(orderId);
   const s = state();
   const order = s.sortOrders.find((o) => o.id === orderId);
   if (!order) return 0;
