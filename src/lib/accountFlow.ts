@@ -987,6 +987,22 @@ async function loadCloudProject(p: CloudProject): Promise<void> {
   try {
     // 1. Flush-save current project before switching (blocking)
     await flushSyncNow();
+
+    // LET NOTHING OF THE OLD PROJECT CROSS (#424).
+    //
+    // Making a new project and starting from scratch both clear these; opening
+    // one never did. It was the only path that did not, and it is the path
+    // taken most.
+    //
+    // The flush above is not enough on its own. `flushSyncNow` gives up in
+    // silence when a pull or a push is already running — and one is running
+    // every few seconds — so tapping a project in the list at an ordinary
+    // moment leaves the outgoing project's unsent deletions sitting there.
+    // They then go up under the NEW project's id, telling the server to delete
+    // frames it never had. resetProjectSyncGuards says exactly this in its own
+    // comments (#327); the open path simply never called it.
+    resetProjectSyncGuards();
+
     if (progressBar) progressBar.style.width = '20%';
     // 2. Pause auto-sync to prevent cross-contamination during load
     setProjectSwitchInFlight(true);
