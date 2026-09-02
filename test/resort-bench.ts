@@ -26,7 +26,7 @@ import type { Frame, SortOrder, BracketNodeData, FrameNeedState } from '../src/s
 import {
   decideResort, placeChangedFrames, breaksAfterResort, deserializeBracket,
   serializeBracket, syncBracketWithVisibleFrames, boxOfEachFrame, boxOrderOfSheet,
-  shotsOutsideTheirBox, rematchToNeeds,
+  shotsOutsideTheirBox, rematchToNeeds, flattenBracketOrder,
 } from '../src/lib/bracket';
 
 const DAY = 'tbl_shootday';
@@ -571,6 +571,59 @@ console.log('\n13d. a new shot given a DIFFERENT day from the shot it was made f
   check('it is marked', [...(said.moved ?? [])], [7]);
   check('AND IT LEAVES THE DAY 1 SHOTS FOR THE DAY 3 ONES',
     said.frameOrder, [1, 2, 3, 4, 7, 5, 6]);
+}
+
+console.log('\n14. a shot its box takes but the box INSIDE it does not');
+{
+  // Roman's log: `3.#1: no box → DAY 3` — and the order came out the same.
+  //
+  // DAY 3 leads into 1ST UNIT. A shot with DAY 3 and no unit is taken by DAY 3
+  // and refused by the box inside it. flattenBracketOrder then LEFT IT OUT
+  // altogether: it hands back what the inner box says and nothing else. So the
+  // shot had no place in the sheet's own answer, fillTheGaps put it back where
+  // it already was — and the order "came out the same" every single time.
+  //
+  // A box's shots all belong inside that box's run. The ones its inner box did
+  // not claim come after the ones it did, which is also the order the boxes are
+  // ranked in (boxOrderOfSheet puts a refinement before its parent).
+  const UNIT = 'tbl_unit';
+  const U1 = 'ti_unit1';
+  const inner: BracketNodeData = {
+    inputIds: [...ALL], categoryId: DAY, categoryName: 'SHOOT DAY',
+    itemId: D1, itemName: 'DAY 1', matchedIds: [1, 2, 3],
+    right: { inputIds: [1, 2, 3], categoryId: UNIT, categoryName: 'UNIT',
+             itemId: U1, itemName: '1ST UNIT', matchedIds: [1, 2] },
+    down: { inputIds: [4, 5, 6], categoryId: DAY, categoryName: 'SHOOT DAY',
+            itemId: D2, itemName: 'DAY 2', matchedIds: [4, 5, 6] },
+  };
+  setUp(EVERY_DAY, [1, 2, 3, 4, 5, 6], inner, [1, 2, 3, 4, 5, 6]);
+  {
+    const s = useStore.getState();
+    const needs = { ...s.frameNeeds };
+    for (const id of [1, 2]) needs[id] = { ...needs[id], toggles: { [D1]: true, [U1]: true } };
+    useStore.setState({ frameNeeds: needs } as never);
+  }
+  check('THE SHOT THE INNER BOX REFUSED IS STILL IN THE ANSWER',
+    flattenBracketOrder(deserializeBracket(inner)), [1, 2, 3, 4, 5, 6]);
+
+  // And the whole story: a new shot made low down, then given DAY 1 and no
+  // unit, has to climb to the day 1 shots — behind shot 3, the other shot its
+  // inner box refused.
+  const s = useStore.getState();
+  const needs = { ...s.frameNeeds };
+  const n = createDefaultFrameNeedState();
+  n.toggles = { [D1]: true };
+  needs[7] = n;
+  const storyboard = [...s.frames];
+  storyboard.splice(5, 0, frame(7));            // made from shot 5, down in day 2
+  useStore.setState({
+    frames: storyboard, frameNeeds: needs,
+    sortOrders: [{ ...s.sortOrders[0], frameOrder: [1, 2, 3, 4, 5, 7, 6] }],
+  } as never);
+
+  const said = decideResort(order(), [1, 2, 3, 4, 5, 7, 6]);
+  check('it is marked', [...(said.moved ?? [])], [7]);
+  check('AND IT CLIMBS TO THE DAY 1 SHOTS', said.frameOrder, [1, 2, 3, 7, 4, 5, 6]);
 }
 
 console.log(failures === 0 ? '\nALL GOOD\n' : `\n${failures} FAILED\n`);

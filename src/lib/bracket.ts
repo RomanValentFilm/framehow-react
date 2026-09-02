@@ -491,7 +491,23 @@ export function flattenBracketOrder(node: BracketNode): number[] {
   const result: number[] = [];
   // Matched frames — refined by right subtree, or as-is
   if (node.right) {
-    result.push(...flattenBracketOrder(node.right));
+    // A BOX KEEPS EVERY SHOT IT TOOK, EVEN THE ONES ITS INNER BOX REFUSED
+    // (#441).
+    //
+    // DAY 3 leads into 1ST UNIT. A shot with DAY 3 and no unit is taken by
+    // DAY 3 and turned down by the box inside it — and this used to hand back
+    // only what the inner box said, so that shot fell out of the sheet's answer
+    // completely. It then had nowhere to be put, fillTheGaps returned it to
+    // where it already sat, and the re-sort reported "order comes out the same"
+    // for ever. Roman's log: `3.#1: no box → DAY 3`, and it never moved.
+    //
+    // They go after the shots the inner box did claim, which is also how the
+    // boxes are ranked (boxOrderOfSheet places a refinement before its parent),
+    // so the sheet's answer and the red-icon ranking agree.
+    const refined = flattenBracketOrder(node.right);
+    result.push(...refined);
+    const claimed = new Set(refined);
+    for (const id of node.matchedIds) if (!claimed.has(id)) result.push(id);
   } else {
     result.push(...node.matchedIds);
   }
