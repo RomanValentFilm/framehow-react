@@ -286,13 +286,27 @@ export function shotsOutsideTheirBox(list: number[], boxOf: Map<number, string>,
   return new Set(ranked.filter((x) => !inOrder.has(x.id)).map((x) => x.id));
 }
 
-/** The boxes in the order the sheet puts them, top to bottom. */
+/**
+ * The boxes in the order the sheet puts them, top to bottom (#429).
+ *
+ * EVERY box that can hold a shot, not only the ones at the end of a chain. A
+ * box with another box to its right still holds the shots the refinement did
+ * not take — DAY 2 keeps whatever is not 1ST UNIT — and those shots have to
+ * have a place in the order, or they can never be judged out of place.
+ *
+ * That was the fault: Roman moved a DAY 3 shot above the DAY 2 shots and it did
+ * not go red, because his sheet has chains and only the ends of chains were
+ * being ranked. A box is listed just before its own refinements, which is where
+ * its unrefined shots sit.
+ */
 export function boxOrderOfSheet(root: BracketNode): string[] {
   const out: string[] = [];
   const walk = (n: BracketNode, path: string): void => {
     const here = n.categoryId && n.itemId ? `${path}/${n.categoryId}|${n.itemId}` : path;
-    if (n.categoryId && n.itemId && !n.right) out.push(here);
+    // The refinements first, then the box itself: the sheet lists the shots a
+    // box refined to its right BEFORE whatever the refinement did not take.
     if (n.right) walk(n.right, here);
+    if (n.categoryId && n.itemId) out.push(here);
     if (n.down) walk(n.down, path);
   };
   walk(root, '');

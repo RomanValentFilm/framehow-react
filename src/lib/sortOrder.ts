@@ -1129,67 +1129,32 @@ function showBracketConfirmModal(editViewEl: HTMLElement, _bracketState: Bracket
   });
 }
 
-/** Reorder bracket pills to reflect current frame order — cross-row AND within-row. */
-function reorderPillsByCurrentOrder(container: HTMLElement, sortedSnapshot: number[], currentOrder: number[]): void {
-  const containers = Array.from(container.querySelectorAll('.sort-bracket-pills'));
-  if (containers.length === 0) return;
-
-  // Row sizes from original bracket grouping (before any moves)
-  const sizes = containers.map((c) => c.querySelectorAll('.sort-bracket-pill[data-fid]').length);
-  const rowForPos = (pos: number): number => {
-    let cumul = 0;
-    for (let r = 0; r < sizes.length; r++) {
-      cumul += sizes[r];
-      if (pos < cumul) return r;
-    }
-    return sizes.length - 1;
-  };
-
-  const snapshotPos = new Map(sortedSnapshot.map((id, i) => [id, i]));
-  const currentPos = new Map(currentOrder.map((id, i) => [id, i]));
-
-  // 1. Move pills whose row changed (cross-row)
-  for (const id of currentOrder) {
-    const oPos = snapshotPos.get(id);
-    const cPos = currentPos.get(id);
-    if (oPos === undefined || cPos === undefined) continue;
-    if (rowForPos(oPos) === rowForPos(cPos)) continue;
-
-    const pill = container.querySelector(`.sort-bracket-pill[data-fid="${id}"]`) as HTMLElement | null;
-    if (!pill) continue;
-    pill.remove();
-
-    const target = containers[rowForPos(cPos)];
-    if (!target) continue;
-    target.appendChild(pill);
-  }
-
-  // 2. Within each row, sort pills by their position in currentOrder
-  for (const rowEl of containers) {
-    const pills = Array.from(rowEl.querySelectorAll('.sort-bracket-pill[data-fid]')) as HTMLElement[];
-    if (pills.length < 2) continue;
-    pills.sort((a, b) => {
-      const aPos = currentPos.get(parseInt(a.dataset.fid!, 10)) ?? 999;
-      const bPos = currentPos.get(parseInt(b.dataset.fid!, 10)) ?? 999;
-      return aPos - bPos;
-    });
-    for (const p of pills) rowEl.appendChild(p);
-  }
-}
 
 /** Mark pills red for frames that moved from their sorted position. */
-function markMovedPills(container: HTMLElement, sortedSnapshot: number[], currentOrder: number[]): void {
-  const snapshotPos = new Map(sortedSnapshot.map((id, i) => [id, i]));
-  const currentPos = new Map(currentOrder.map((id, i) => [id, i]));
-  const movedIds = new Set<number>();
-  for (const [id, pos] of currentPos) {
-    if (snapshotPos.get(id) !== pos) movedIds.add(id);
-  }
+/**
+ * PAINT THE ICONS (#430).
+ *
+ *   grey   the shot is in the box it belongs to, or among the leftovers
+ *   green  the app moved it there because its needs changed — not approved yet
+ *   red    it sits OUTSIDE its box, because somebody moved it there
+ *
+ * Red is worked out fresh from where the shots actually sit against the boxes,
+ * so putting a shot back turns it grey again with nothing to remember.
+ */
+function markOutOfBoxPills(container: HTMLElement, orderId: string,
+                           currentOrder: number[], green?: Set<number>): void {
+  const order = state().sortOrders.find((o) => o.id === orderId);
+  if (!order?.bracketTree) return;
+  const root = deserializeBracket(order.bracketTree);
+  const outside = shotsOutsideTheirBox(currentOrder, boxOfEachFrame(root), boxOrderOfSheet(root));
   container.querySelectorAll('.sort-bracket-pill[data-fid]').forEach((pill) => {
-    const fid = parseInt((pill as HTMLElement).dataset.fid!, 10);
-    if (movedIds.has(fid)) pill.classList.add('sort-bracket-pill-moved');
+    const fid = Number((pill as HTMLElement).dataset.fid);
+    pill.classList.remove('sort-bracket-pill-moved', 'sort-bracket-pill-new');
+    if (green?.has(fid)) pill.classList.add('sort-bracket-pill-new');
+    else if (outside.has(fid)) pill.classList.add('sort-bracket-pill-moved');
   });
 }
+
 
 /** Re-render bracket area. */
 function rerenderBracket(editViewEl: HTMLElement, bracketState: BracketState, orderId: string): void {
@@ -1225,9 +1190,13 @@ function rerenderBracket(editViewEl: HTMLElement, bracketState: BracketState, or
     const s = state();
     const order = s.sortOrders.find((o) => o.id === orderId);
     if (order) {
+      // THE ICONS STAY UNDER THEIR OWN BOX (#430). They used to be lifted from
+      // one box's row into another to follow the shot's position number, so
+      // moving one shot made icons shift about and you could no longer see
+      // which box a shot belonged to. Now every icon sits under its box and the
+      // box's row simply grows when a shot joins it.
       const currentOrder = getOrderedFrames(order).map((f) => f.id);
-      reorderPillsByCurrentOrder(newBracket, sortedSnapshot, currentOrder);
-      markMovedPills(newBracket, sortedSnapshot, currentOrder);
+      markOutOfBoxPills(newBracket, orderId, currentOrder);
     }
   }
   // Integrity check — ensure all frames remain in bracket
@@ -2081,17 +2050,8 @@ function renderSortEditView(el: HTMLElement, orderId: string): void {
     const bracketEl = el.querySelector('.sort-bracket-frozen') || el.querySelector('.sort-bracket');
     const order = orderId === '__storyflow__' ? null : s.sortOrders.find((o) => o.id === orderId);
     if (bracketEl && order?.bracketTree) {
-      const here = frames.map((f) => f.id);
-      if (sortedSnapshot && hasManualChanges) {
-        reorderPillsByCurrentOrder(bracketEl as HTMLElement, sortedSnapshot, here);
-      }
-      const root = deserializeBracket(order.bracketTree);
-      const outside = shotsOutsideTheirBox(here, boxOfEachFrame(root), boxOrderOfSheet(root));
-      bracketEl.querySelectorAll('.sort-bracket-pill[data-fid]').forEach((pill) => {
-        const fid = Number((pill as HTMLElement).dataset.fid);
-        if (waitingToBeSeen.has(fid)) pill.classList.add('sort-bracket-pill-new');
-        else if (outside.has(fid)) pill.classList.add('sort-bracket-pill-moved');
-      });
+      markOutOfBoxPills(bracketEl as HTMLElement, orderId, frames.map((f) => f.id),
+                        waitingToBeSeen);
     }
   }
 

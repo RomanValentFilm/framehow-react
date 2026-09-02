@@ -317,5 +317,43 @@ console.log('\n11. RED marks only the shot that breaks the order of the boxes');
     [...shotsOutsideTheirBox([1, 2, 5, 3, 4, 6], halfSheet, ranks)], []);
 }
 
+console.log('\n11b. RED works on a sheet with chains, not only a plain one');
+{
+  // Roman's sheet looks like this: DAY 2 refined to the right by 1ST UNIT, and
+  // DAY 3 below. He moved a DAY 3 shot above the DAY 2 shots and it did not go
+  // red — because only the ENDS of chains were being ranked, so DAY 3 had no
+  // place in the order and a shot with no place can never be out of place.
+  const DAY3 = 'ti_day3';
+  const UNIT = 'tbl_unit';
+  const U1 = 'ti_unit1';
+  const chained: BracketNodeData = {
+    inputIds: [...ALL], categoryId: DAY, categoryName: 'SHOOT DAY',
+    itemId: D1, itemName: 'DAY 1', matchedIds: [1, 2],
+    down: {
+      inputIds: [3, 4, 5, 6], categoryId: DAY, categoryName: 'SHOOT DAY',
+      itemId: D2, itemName: 'DAY 2', matchedIds: [3, 4],
+      right: { inputIds: [3, 4], categoryId: UNIT, categoryName: 'UNIT',
+               itemId: U1, itemName: '1ST UNIT', matchedIds: [3] },
+      down: { inputIds: [5, 6], categoryId: DAY, categoryName: 'SHOOT DAY',
+              itemId: DAY3, itemName: 'DAY 3', matchedIds: [5, 6] },
+    },
+  };
+  setUp({ 1: D1, 2: D1, 3: D2, 4: D2, 5: DAY3, 6: DAY3 },
+        [1, 2, 3, 4, 5, 6], chained, [1, 2, 3, 4, 5, 6]);
+  const root = deserializeBracket(chained);
+  const box = boxOfEachFrame(root);
+  const ranks = boxOrderOfSheet(root);
+
+  check('every box has a place, including one above a refinement', ranks.length, 4);
+  check('a list in box order marks nobody',
+    [...shotsOutsideTheirBox([1, 2, 3, 4, 5, 6], box, ranks)], []);
+  check('A DAY 3 SHOT MOVED ABOVE THE DAY 2 SHOTS IS MARKED',
+    [...shotsOutsideTheirBox([1, 2, 5, 3, 4, 6], box, ranks)], [5]);
+  check('a day 1 shot dragged to the end is marked',
+    [...shotsOutsideTheirBox([2, 3, 4, 5, 6, 1], box, ranks)], [1]);
+  check('but a swap inside one box is nobody\'s business',
+    [...shotsOutsideTheirBox([1, 2, 3, 4, 6, 5], box, ranks)], []);
+}
+
 console.log(failures === 0 ? '\nALL GOOD\n' : `\n${failures} FAILED\n`);
 process.exit(failures === 0 ? 0 : 1);
