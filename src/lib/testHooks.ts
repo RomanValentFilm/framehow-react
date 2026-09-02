@@ -28,7 +28,7 @@ import { deleteFrameForGood, handleMainAction, renameFrame } from './actions';
 import { createSetup, handleSetupFrameClick, handleStripTagClick } from './setups';
 import { renameNeedTab, renameNeedTable, renameNeedItem, ensureFrameNeeds } from './needs';
 import { saveNow, openCloudProjectById, beginNewProject } from './accountFlow';
-import { flushSyncNow, markFrameDirty, getDirtyFrameIds } from './currentProject';
+import { flushSyncNow, markFrameDirty, getDirtyFrameIds, pullNow } from './currentProject';
 import { openNeedsModal } from './overview';
 import { stampChangedContent } from './changeStamps';
 import { stampChangedSettings } from './projectSettings';
@@ -245,6 +245,9 @@ export interface TestDoor {
 
   /** Send whatever is unsent, now, without waiting for the debounce. */
   push(): Promise<void>;
+  /** Start a fetch and do not wait for it, so a project can be opened while
+   *  the answer is still in the air (#425). */
+  startPullWithoutWaiting(): void;
   /** What is on screen, in order, as plain facts a test can compare. */
   read(): {
     projectId: string | null;
@@ -1032,6 +1035,15 @@ export function installTestDoor(): void {
     },
 
     async push() { await flushSyncNow(); },
+
+    /** Start a fetch and DO NOT wait for it (#425).
+     *
+     *  A pull decides which project it is for at the top and then waits on the
+     *  network; opening another project during that wait is the whole fault.
+     *  The door does not simulate any of that — it calls the app's own pullNow
+     *  and returns, so the test can open another project while the real answer
+     *  is genuinely still in the air. */
+    startPullWithoutWaiting() { pullNow(); },
 
     read() {
       const s = useStore.getState();

@@ -164,6 +164,36 @@ export class Device {
   }
 
   /** The second device opens the project the first one made. */
+  /**
+   * HOLD ONE REQUEST OPEN (#425).
+   *
+   * The race we need is "an answer arrives after you opened another project".
+   * Against a local server every answer arrives in a millisecond, so the race
+   * never happens and a test written around it passes whether the fault is
+   * there or not — which is exactly what the first version of this test did.
+   *
+   * So the answer is held open deliberately: the request goes out for real, and
+   * is let through after the switch has happened.
+   */
+  async holdAnswerFor(projectId: string, ms: number): Promise<void> {
+    await this.page.route(`**/projects/${projectId}/sync*`, async (route) => {
+      await new Promise((r) => setTimeout(r, ms));
+      await route.continue();
+    });
+  }
+
+  /** Stop holding anything back. */
+  async holdNothing(): Promise<void> {
+    await this.page.unroute('**/projects/*/sync*');
+  }
+
+  /** Start a fetch and do not wait for it (#425). */
+  async startPullWithoutWaiting(): Promise<void> {
+    await this.page.evaluate(() =>
+      (window as never as { __fh_test: { startPullWithoutWaiting(): void } })
+        .__fh_test.startPullWithoutWaiting());
+  }
+
   async openProject(id: string): Promise<void> {
     say(`${this.name}: opening the project from the server`);
     await this.page.evaluate((pid) =>

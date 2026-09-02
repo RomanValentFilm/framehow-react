@@ -4919,6 +4919,26 @@ async function tryPullFromCloud(force = false): Promise<void> {
       `/projects/${encodeURIComponent(cp.projectId)}/sync${asDelta ? `?since=${_heardAt}` : ''}`,
       getToken(),
     );
+
+    // IS THIS STILL THE PROJECT WE ASKED FOR? (#425)
+    //
+    // A pull decides which project it is for once, at the top, and then waits
+    // on the network. Somebody can open another project during that wait — an
+    // ordinary thing to do, since a pull runs every few seconds — and nothing
+    // stopped this one carrying on. It would then rebuild the storyboard from
+    // the OLD project's answer, on top of the new one, and finish by marking
+    // the new project as saved under the old one's id.
+    //
+    // That is the same shape as the fault that put one project's frames into
+    // another (#417). The answer belongs to a project nobody is looking at any
+    // more: drop it. The heartbeat brings the right one along in a moment.
+    const nowIn = getCurrentProject().projectId;
+    if (nowIn !== cp.projectId) {
+      trace(`  answer was for another project (${cp.projectId.slice(0, 6)}`
+        + ` — we are in ${nowIn?.slice(0, 6) ?? 'none'}) — dropped`);
+      return;
+    }
+
     let tree = raw;
     // Frames the answer did not mention. Their copy on this device is kept
     // exactly as it is — nothing about them is re-read or re-mapped (#285).
