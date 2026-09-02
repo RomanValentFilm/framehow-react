@@ -26,7 +26,7 @@ import type { Frame, SortOrder, BracketNodeData, FrameNeedState } from '../src/s
 import {
   decideResort, placeChangedFrames, breaksAfterResort, deserializeBracket,
   serializeBracket, syncBracketWithVisibleFrames, boxOfEachFrame, boxOrderOfSheet,
-  shotsOutsideTheirBox,
+  shotsOutsideTheirBox, rematchToNeeds,
 } from '../src/lib/bracket';
 
 const DAY = 'tbl_shootday';
@@ -359,6 +359,39 @@ console.log('\n11b. RED works on a sheet with chains, not only a plain one');
     [...shotsOutsideTheirBox([2, 3, 4, 5, 6, 1], box, ranks)], [1]);
   check('but a swap inside one box is nobody\'s business',
     [...shotsOutsideTheirBox([1, 2, 3, 4, 6, 5], box, ranks)], []);
+}
+
+console.log('\n12. KEEP ORDER and REMAINING are not needs, and must never be emptied');
+{
+  // Both are stored under made-up category names. Asking the needs about them
+  // found no such category, which read as "the category is gone, nobody
+  // matches" — so the box was emptied and the emptied sheet SAVED. The box then
+  // showed 0, its icons vanished, and the shots inside it lost their box, so
+  // shots nobody had touched went red. It fired on every open.
+  const withKeep: BracketNodeData = {
+    inputIds: [...ALL], categoryId: DAY, categoryName: 'SHOOT DAY',
+    itemId: D1, itemName: 'DAY 1', matchedIds: [1, 2, 3],
+    down: {
+      inputIds: [4, 5, 6], categoryId: '__keep__', categoryName: 'KEEP ORDER',
+      itemId: '__keep__', itemName: 'KEEP ORDER', matchedIds: [4, 5, 6],
+    },
+  };
+  setUp(EVERY_DAY, [1, 2, 3, 4, 5, 6], withKeep, [1, 2, 3, 4, 5, 6]);
+
+  const said = decideResort(order(), ALL);
+  check('a sheet with a KEEP ORDER box has nothing to do', said.why,
+    'the boxes match the needs — nothing to do');
+
+  // And asking the boxes again leaves it holding exactly what it was given.
+  // Before the fix it was emptied, its icons vanished from the sheet, and the
+  // shots in it lost their box.
+  const root = deserializeBracket(withKeep);
+  syncBracketWithVisibleFrames(root, ALL);
+  rematchToNeeds(root);
+  check('KEEP ORDER still holds its shots', root.down?.matchedIds, [4, 5, 6]);
+  const boxes = boxOfEachFrame(root);
+  check('and those shots still have a box',
+    [4, 5, 6].map((id) => boxes.get(id) !== undefined), [true, true, true]);
 }
 
 console.log(failures === 0 ? '\nALL GOOD\n' : `\n${failures} FAILED\n`);

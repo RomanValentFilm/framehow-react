@@ -96,6 +96,37 @@ export function framesMatching(categoryId: string, itemId: string, frameIds: num
 export function rematchToNeeds(node: BracketNode): boolean {
   if (!node.categoryId || !node.itemId) return false;   // step never chosen
 
+  // KEEP ORDER AND REMAINING ARE NOT NEEDS (#437).
+  //
+  // Both are stored under made-up category names — '__keep__' when somebody
+  // presses KEEP ORDER, '__remaining__' for the box the sheet fills in by
+  // itself. Asking the needs about them finds no such category, which reads as
+  // "the category is gone, nobody matches", so the box was EMPTIED — and then
+  // the emptied sheet was saved.
+  //
+  // What that looked like: the box showing 0, its icons disappearing from the
+  // sheet, and the shots inside it losing their box — so shots nobody had
+  // touched turned red in the middle of the order. It fired on every single
+  // open.
+  //
+  // KEEP ORDER holds exactly the shots it was given; REMAINING holds whatever
+  // reaches it. Neither has anything to do with today's needs.
+  if (node.categoryId === '__keep__') {
+    if (node.right) { node.right.inputIds = [...node.matchedIds]; rematchToNeeds(node.right); }
+    if (node.down) {
+      node.down.inputIds = node.inputIds.filter((id) => !node.matchedIds.includes(id));
+      rematchToNeeds(node.down);
+    }
+    return false;
+  }
+  if (node.categoryId === '__remaining__') {
+    const before = node.matchedIds;
+    const fresh = [...node.inputIds];
+    node.matchedIds = fresh;
+    if (node.down) { node.down.inputIds = []; rematchToNeeds(node.down); }
+    return fresh.length !== before.length || fresh.some((id, i) => id !== before[i]);
+  }
+
   const fresh = framesMatching(node.categoryId, node.itemId, node.inputIds);
   const before = node.matchedIds;
   let changed = fresh.length !== before.length || fresh.some((id, i) => id !== before[i]);
