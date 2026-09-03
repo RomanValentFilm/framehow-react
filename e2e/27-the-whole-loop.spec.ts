@@ -254,6 +254,28 @@ async function calm(d: Device): Promise<void> {
   await d.page.waitForTimeout(3500);
 }
 
+/**
+ * THE ICONS AND THE CARDS MUST TELL THE SAME STORY (#459).
+ *
+ * The icons read in box order; the cards are the order itself. After a fresh
+ * sort they are identical — phase B proves that. After a needs change they may
+ * differ ONLY where somebody moved a shot by hand, and those shots are exactly
+ * the red ones. So take the red ones out of both lists, and what is left must
+ * read the same.
+ *
+ * Roman's 7A broke this and nothing was watching: "it changed position
+ * correctly in the bracket, but wrongly in the order of frame-cards".
+ */
+function iconsAndCardsAgree(
+  seen: { order: string[]; pills: string[]; redIcons: string[] },
+): { icons: string[]; cards: string[] } {
+  const red = new Set(seen.redIcons);
+  return {
+    icons: seen.pills.filter((n) => !red.has(n)),
+    cards: seen.order.filter((n) => !red.has(n)),
+  };
+}
+
 const reopen = async (d: Device): Promise<void> => {
   await d.closeOrder();
   await calm(d);
@@ -382,6 +404,11 @@ test('the whole loop, three times over', async ({ browser }) => {
   }
   expect.soft(seen.order.length, 'still twelve shots').toBe(12);
   expect.soft(new Set(seen.order).size, 'each once').toBe(12);
+  {
+    const both = iconsAndCardsAgree(seen);
+    expect.soft(both.cards,
+      'THE CARDS MUST SIT WHERE THE ICONS SAY, EXCEPT THE RED ONES').toEqual(both.icons);
+  }
 
   say('   approve four of the five — they should go grey, not red');
   const fiveGreen = [...seen.greenCards];
@@ -401,6 +428,11 @@ test('the whole loop, three times over', async ({ browser }) => {
     [6, ['ti_day2', 'ti_loc1', 'ti_unit2', 'ti_dir_reverse']],
   ]);
   seen = await look(page);
+  {
+    const both = iconsAndCardsAgree(seen);
+    expect.soft(both.cards,
+      'THE CARDS MUST SIT WHERE THE ICONS SAY, EXCEPT THE RED ONES').toEqual(both.icons);
+  }
   expect.soft(seen.greenCards.length, 'THREE NEW GREEN PLUS THE ONE NOT YET APPROVED').toBe(4);
   expect.soft(seen.greenCards, 'and the old one is still among them').toContain(fiveGreen[4]);
   for (const who of [...seen.greenCards]) await approve(page, who);
@@ -497,6 +529,11 @@ test('the whole loop, three times over', async ({ browser }) => {
     expect.soft(new Set(seen.order).size, `round ${round}: no shot twice`).toBe(13);
     expect.soft(seen.greenIcons.sort(), `round ${round}: icons and cards agree`)
       .toEqual([...seen.greenCards].sort());
+    {
+      const both = iconsAndCardsAgree(seen);
+      expect.soft(both.cards,
+        `round ${round}: THE CARDS SIT WHERE THE ICONS SAY`).toEqual(both.icons);
+    }
     for (const who of [...seen.greenCards]) await approve(page, who);
     seen = await look(page);
     expect.soft(seen.greenCards, `round ${round}: nothing left waiting`).toEqual([]);

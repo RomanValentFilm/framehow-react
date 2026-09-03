@@ -1008,5 +1008,49 @@ console.log('\n21. the REMAINING inside a branch is a real place');
   // the sheet, is the leftovers and is not marked. That is section 6.
 }
 
+console.log('\n22. a shot joining a box whose only other shot is out of place');
+{
+  // Roman's 7A. It moved into DAY 2 > LOCATION 1 > 1st UNIT > REVERSE, a box
+  // whose only other shot was 3 — and 3 was red, sitting where he had dragged
+  // it. The placement stepped around misplaced shots when picking a NEIGHBOUR
+  // but not in the last fallback, so 7A anchored to whatever happened to
+  // precede it. "It changed position correctly in the bracket, but wrongly in
+  // the order of frame-cards."
+  //
+  // Three boxes; shot 5 is the only DAY 3 shot and it has been dragged to the
+  // very front, out of its box. Shot 2 now becomes a DAY 3 shot.
+  const D3 = 'ti_day3';
+  const threeBoxes: BracketNodeData = {
+    inputIds: [...ALL], categoryId: DAY, categoryName: 'SHOOT DAY',
+    itemId: D1, itemName: 'DAY 1', matchedIds: [1, 2],
+    down: {
+      inputIds: [3, 4, 5, 6], categoryId: DAY, categoryName: 'SHOOT DAY',
+      itemId: D2, itemName: 'DAY 2', matchedIds: [3, 4, 6],
+      down: { inputIds: [5], categoryId: DAY, categoryName: 'SHOOT DAY',
+              itemId: D3, itemName: 'DAY 3', matchedIds: [5] },
+    },
+  };
+  setUp({ 1: D1, 2: D1, 3: D2, 4: D2, 5: D3, 6: D2 },
+        [5, 1, 2, 3, 4, 6], threeBoxes, [1, 2, 3, 4, 6, 5]);
+
+  // Shot 5 is out of its box, at the front.
+  {
+    const root = deserializeBracket(threeBoxes);
+    const red = shotsOutsideTheirBox([5, 1, 2, 3, 4, 6],
+      boxOfEachFrame(root), boxOrderOfSheet(root));
+    check('shot 5 is the misplaced one', [...red], [5]);
+  }
+
+  moveToDay(2, D3);              // shot 2 joins DAY 3 — where only shot 5 lives
+  openTheOrder();
+  const now = order().frameOrder;
+  const root = deserializeBracket(order().bracketTree!);
+  const red = shotsOutsideTheirBox(now, boxOfEachFrame(root), boxOrderOfSheet(root));
+
+  check('IT IS NOT PARKED NEXT TO THE MISPLACED SHOT', now.indexOf(2), 5);
+  check('and the app has not made it red', red.has(2), false);
+  check('only the shot somebody dragged is red', [...red], [5]);
+}
+
 console.log(failures === 0 ? '\nALL GOOD\n' : `\n${failures} FAILED\n`);
 process.exit(failures === 0 ? 0 : 1);
