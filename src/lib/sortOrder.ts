@@ -10,7 +10,7 @@ import {
   serializeBracket, deserializeBracket, flattenBracketOrder, fixInputIds,
   syncBracketWithVisibleFrames, framesMatching, rematchToNeeds, boxOfEachFrame,
   placeChangedFrames, decideResort, shotsOutsideTheirBox, boxOrderOfSheet,
-  withoutShotsThatAreGone, orderFromSheet, iconStates,
+  withoutShotsThatAreGone, orderFromSheet, iconStates, boxNamesOfSheet,
 } from './bracket';
 import type { BracketNode } from './bracket';
 import { stampChangedSettings } from './projectSettings';
@@ -1179,6 +1179,8 @@ function showAncestorReselectWarning(editViewEl: HTMLElement, bracketState: Brac
  * Red is worked out fresh from where the shots actually sit against the boxes,
  * so putting a shot back turns it grey again with nothing to remember.
  */
+const _lastIconLine = new Map<string, string>();
+
 function markOutOfBoxPills(container: HTMLElement, orderId: string,
                            currentOrder: number[], green?: Set<number>,
                            mayMarkRed = true): void {
@@ -1189,6 +1191,29 @@ function markOutOfBoxPills(container: HTMLElement, orderId: string,
   // is red, and it is on the bench. This code only paints what it is told.
   const { green: isGreen, red: outside } =
     iconStates(currentOrder, root, green ?? new Set<number>(), mayMarkRed);
+
+  // THE ICONS SAY WHAT THEY ARE AND WHY (#448).
+  //
+  // Same reason the boxes started naming themselves in #440: "why is this shot
+  // not red?" cannot be answered from a screenshot, and the sheet is redrawn
+  // often enough that a line every time would drown the log. So it is written
+  // only when the answer CHANGES, with each shot's box next to it.
+  {
+    const names = boxNamesOfSheet(root);
+    const boxOf = boxOfEachFrame(root);
+    const labelOf = (fid: number) =>
+      state().frames.find((f) => f.id === fid)?.label || String(fid);
+    const say = (fid: number) =>
+      `${labelOf(fid)} (${names.get(boxOf.get(fid) ?? '') ?? 'no box'})`;
+    const line = `green ${isGreen.size ? [...isGreen].map(say).join(', ') : '—'}`
+      + ` · red ${outside.size ? [...outside].map(say).join(', ') : '—'}`
+      + (mayMarkRed ? '' : ' · red is off: the sheet has not been applied yet');
+    if (_lastIconLine.get(orderId) !== line) {
+      _lastIconLine.set(orderId, line);
+      trace(`icons ${orderId}: ${line}`);
+    }
+  }
+
   const pillOf = (fid: number) =>
     container.querySelector(`.sort-bracket-pill[data-fid="${fid}"]`) as HTMLElement | null;
 
