@@ -83,23 +83,47 @@ async function sortByDays(page: Page, days: string[]): Promise<void> {
  * as a person does.
  */
 async function nudge(page: Page, label: string, steps: number): Promise<void> {
+  const before = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('.sort-card')).map((c) =>
+      ((c.querySelector('.sort-card-num')?.textContent || '')
+        + (c.querySelector('.sort-card-extra')?.textContent || '')).trim()));
   await page.evaluate(async ([want, n]) => {
-    const card = Array.from(document.querySelectorAll('.sort-card'))
-      .find((c) => (c.querySelector('.sort-card-num')?.textContent || '').trim() === want);
+    const name = (c: Element) =>
+      ((c.querySelector('.sort-card-num')?.textContent || '')
+        + (c.querySelector('.sort-card-extra')?.textContent || '')).trim();
+    const card = Array.from(document.querySelectorAll('.sort-card')).find((c) => name(c) === want);
     if (!card) throw new Error(`no card ${want}`);
-    (card as HTMLElement).click();
-    await new Promise((r) => setTimeout(r, 250));
+    // A CARD IS WOKEN BY ITS OWN BUTTON, NOT BY CLICKING THE CARD.
+    //
+    // This clicked the card, which does nothing at all — so the arrows never
+    // appeared, the shot never moved, and tests 2 and 3 blamed the app for not
+    // marking it. They were red for two days without ever touching the app.
+    // Run 125 of the newer test caught it, because that helper says whether it
+    // actually moved anything.
+    const fid = (card as HTMLElement).dataset.sortFid!;
+    (card.querySelector(`[data-sort-activate="${fid}"]`) as HTMLElement | null)?.click();
+    await new Promise((r) => setTimeout(r, 350));
     const dir = (n as number) < 0 ? 'up' : 'down';
     for (let i = 0; i < Math.abs(n as number); i++) {
       const arrow = document.querySelector(
         `.sort-card-active [data-sort-move="${dir}"]`) as HTMLElement | null;
-      if (!arrow) throw new Error('no arrow on the active card');
+      if (!arrow) break;
       arrow.click();
       await new Promise((r) => setTimeout(r, 200));
     }
+    // DONE is also what puts a card back to sleep — the same button.
     (document.querySelector('.sort-card-active [data-sort-deactivate]') as HTMLElement | null)?.click();
   }, [label, steps] as [string, number]);
   await page.waitForTimeout(500);
+  const after = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('.sort-card')).map((c) =>
+      ((c.querySelector('.sort-card-num')?.textContent || '')
+        + (c.querySelector('.sort-card-extra')?.textContent || '')).trim()));
+  if (before.indexOf(label) === after.indexOf(label)) {
+    throw new Error(`THE TEST COULD NOT MOVE ${label}: still at place ${after.indexOf(label) + 1}.`
+      + ` The test's arrows are failing, not the app's marking.`
+      + `\n  before: ${before.join(' ')}\n  after:  ${after.join(' ')}`);
+  }
 }
 
 /** What the order view is showing right now. */
@@ -108,9 +132,9 @@ async function look(page: Page): Promise<{ order: string[]; green: string[]; red
     const txt = (e: Element | null) => (e?.textContent || '').trim();
     return {
       order: Array.from(document.querySelectorAll('.sort-card'))
-        .map((c) => txt(c.querySelector('.sort-card-num'))),
+        .map((c) => txt(c.querySelector('.sort-card-num')) + txt(c.querySelector('.sort-card-extra'))),
       green: Array.from(document.querySelectorAll('.sort-card-resorted'))
-        .map((c) => txt(c.querySelector('.sort-card-num'))),
+        .map((c) => txt(c.querySelector('.sort-card-num')) + txt(c.querySelector('.sort-card-extra'))),
       red: Array.from(document.querySelectorAll('.sort-bracket-pill-moved')).map((p) => txt(p)),
       greenIcons: Array.from(document.querySelectorAll('.sort-bracket-pill-new')).map((p) => txt(p)),
     };

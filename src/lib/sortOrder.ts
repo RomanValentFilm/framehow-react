@@ -11,6 +11,7 @@ import {
   syncBracketWithVisibleFrames, framesMatching, rematchToNeeds, boxOfEachFrame,
   placeChangedFrames, decideResort, shotsOutsideTheirBox, boxOrderOfSheet,
   withoutShotsThatAreGone, orderFromSheet, iconStates, boxNamesOfSheet, breaksAfterInsert,
+  inCardOrder,
 } from './bracket';
 import type { BracketNode } from './bracket';
 import { stampChangedSettings } from './projectSettings';
@@ -1062,6 +1063,22 @@ function markOutOfBoxPills(container: HTMLElement, orderId: string,
     pill.classList.remove('sort-bracket-pill-moved', 'sort-bracket-pill-new');
     if (isGreen.has(fid)) pill.classList.add('sort-bracket-pill-new');
     else if (outside.has(fid)) pill.classList.add('sort-bracket-pill-moved');
+  });
+
+  // AND EVERY ROW READS IN THE CARD ORDER (#461).
+  //
+  // Not only the displaced ones. With a single KEEP ORDER box nobody is ever
+  // out of place, so the loop below never ran and the icons never followed a
+  // hand re-order at all. Roman: "they have to be the same, always matching the
+  // manual reorder, even if they stay grey."
+  container.querySelectorAll('.sort-bracket-pills').forEach((row) => {
+    const pills = Array.from(row.querySelectorAll('.sort-bracket-pill[data-fid]'));
+    if (pills.length < 2) return;
+    const byFid = new Map(pills.map((p) => [Number((p as HTMLElement).dataset.fid), p]));
+    for (const fid of inCardOrder([...byFid.keys()], currentOrder)) {
+      const pill = byFid.get(fid);
+      if (pill) row.appendChild(pill);
+    }
   });
 
   // A MOVED SHOT'S ICON GOES WHERE THE SHOT WENT (#431).

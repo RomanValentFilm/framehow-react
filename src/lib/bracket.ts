@@ -275,6 +275,30 @@ export function breaksAfterRemoval(
  * A shot cannot be both: green wins, because "its needs changed" is the newer
  * and more useful thing to say about it.
  */
+/**
+ * THE ICONS ALWAYS READ IN THE CARD ORDER (#461).
+ *
+ * Roman, having sorted everything into ONE KEEP ORDER box and then dragged a
+ * few shots by hand: "the icons didn't move in the bracket — they have to be
+ * the same, always matching the manual reorder, even if they stay grey."
+ *
+ * Carrying an icon over to follow its card only ever ran for shots that were
+ * OUT of their box. With a single box every shot has the same rank, so nobody
+ * is ever out of place, nothing is red, and no icon moved at all.
+ *
+ * So the rule is not about red. Within a box's row, its shots are listed in the
+ * order the CARDS are in — that is all this does. A shot the cards do not
+ * mention keeps its place at the end.
+ */
+export function inCardOrder(
+  ids: readonly number[],
+  currentOrder: readonly number[],
+): number[] {
+  const at = new Map(currentOrder.map((id, i) => [id, i]));
+  return [...ids].sort((a, b) =>
+    (at.get(a) ?? Number.MAX_SAFE_INTEGER) - (at.get(b) ?? Number.MAX_SAFE_INTEGER));
+}
+
 export function iconStates(
   currentOrder: readonly number[],
   root: BracketNode,

@@ -46,6 +46,9 @@
 //   11d WHERE an icon sits is a different question from its COLOUR. A shot
 //       whose card is not where its box would put it has its icon carried over
 //       to follow the card — whatever colour it is.                      [17]
+//   11e AND EVERY BOX'S ROW READS IN THE CARD ORDER, grey or not. With a single
+//       KEEP ORDER box nobody is ever out of place, so this is the only thing
+//       that makes the icons follow a hand re-order.                     [23]
 //
 //   BREAKS
 //   10  A break follows the nearest shot above it THAT STAYED PUT.        [10]
@@ -69,7 +72,7 @@ import type { Frame, SortOrder, BracketNodeData, FrameNeedState } from '../src/s
 import {
   decideResort, placeChangedFrames, breaksAfterResort, deserializeBracket,
   serializeBracket, syncBracketWithVisibleFrames, boxOfEachFrame, boxOrderOfSheet,
-  shotsOutsideTheirBox, rematchToNeeds, flattenBracketOrder, withoutShotsThatAreGone, orderFromSheet, iconStates, breaksAfterInsert, breaksAfterRemoval,
+  shotsOutsideTheirBox, rematchToNeeds, flattenBracketOrder, withoutShotsThatAreGone, orderFromSheet, iconStates, inCardOrder, breaksAfterInsert, breaksAfterRemoval,
 } from '../src/lib/bracket';
 
 const DAY = 'tbl_shootday';
@@ -1066,6 +1069,26 @@ console.log('\n22. a shot joining a box whose only other shot is out of place');
   check('IT IS NOT PARKED NEXT TO THE MISPLACED SHOT', now.indexOf(2), 5);
   check('and the app has not made it red', red.has(2), false);
   check('only the shot somebody dragged is red', [...red], [5]);
+}
+
+console.log('\n23. the icons always read in the card order');
+{
+  // Roman, having put everything into ONE KEEP ORDER box and then dragged three
+  // shots by hand: "the icons didn't move in the bracket — they have to be the
+  // same, always matching the manual reorder, even if they stay grey."
+  //
+  // With one box every shot has the same rank, so nobody is ever out of place,
+  // nothing is red, and the code that carries an icon over to follow its card
+  // never ran. The rule is not about red at all.
+  const inTheBox = [1, 2, 3, 4, 5, 6];
+  check('a settled order leaves the row as it is',
+    inCardOrder(inTheBox, [1, 2, 3, 4, 5, 6]), [1, 2, 3, 4, 5, 6]);
+  check('THE ROW FOLLOWS A HAND RE-ORDER',
+    inCardOrder(inTheBox, [3, 1, 2, 6, 4, 5]), [3, 1, 2, 6, 4, 5]);
+  check('and only the shots that are in that box',
+    inCardOrder([2, 5], [3, 1, 2, 6, 4, 5]), [2, 5]);
+  check('a shot the cards do not mention keeps its place at the end',
+    inCardOrder([1, 99, 2], [2, 1]), [2, 1, 99]);
 }
 
 console.log(failures === 0 ? '\nALL GOOD\n' : `\n${failures} FAILED\n`);
