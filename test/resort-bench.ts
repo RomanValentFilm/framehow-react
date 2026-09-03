@@ -8,25 +8,60 @@
 // because an earlier version of the rule did something surprising to a real
 // shooting order.
 //
-// THE RULES
-//   1  Only a shot whose BOX changed moves. Its needs changed; nothing else has.
-//   2  It joins its box in storyboard order — shot 7 after shot 6.
-//   3  It never displaces a shot somebody placed at the head of that box.
-//   4  A shot already in the right place does not move, and is still marked.
-//   5  Everything else is untouched, including shots moved by hand.
-//   6  A shot no box matches belongs with the leftovers. That is a real place.
-//   7  The list can never grow, shrink, or hold the same shot twice.
-//   8  Boxes are read as a whole chain: DAY 1 > LOCATION 1 is its own place.
-//   9  The sheet learns what it now holds, so a change is announced once.
-//  10  Breaks follow the shot above them, unless that shot is one that changed.
-//  11  RED marks only the shot that breaks the order of the boxes.
+// THE RULES, AND THE SECTION THAT PROVES EACH ONE.
+// Nothing here lives only in a conversation. If a rule is not in this list, it
+// is not a rule.
+//
+//   WHAT MOVES
+//    1  Only a shot whose BOX changed moves. Its needs changed; nothing else
+//       has.                                                             [1,2]
+//    2  It joins its box in storyboard order — shot 7 after shot 6.      [2b]
+//    3  It joins its box AT ITS NUMBER — 7 after 6, whatever 6 is, hand moved
+//       or put there by the boxes. And a shot the app placed is never red.  [3]
+//    4  A shot already in the right place does not move, and is still
+//       marked.                                                            [4]
+//    5  Everything else is untouched, including shots moved by hand.        [5]
+//    5b …but a shot moved by hand DOES move when its OWN needs change: the
+//       needs are the later and more deliberate statement.                 [5b]
+//    6  A shot no box matches belongs with the leftovers — and REMAINING is
+//       the same thing written out. That is a real place, and grey.    [6,13b]
+//    7  The list can never grow, shrink, or hold the same shot twice.  [7,16]
+//    8  Boxes are read as a whole chain: DAY 1 > LOCATION 1 is its own
+//       place.                                                            [11b]
+//    9  The sheet learns what it now holds, so a change is announced once.  [9]
+//
+//   THE ICONS
+//   11  RED marks only the shot that breaks the order of the boxes — not
+//       everything behind it.                                         [11,11b]
+//   11b GREEN says "your needs change moved this; look at it" and is NEVER
+//       held back. RED says "you moved this out of its box" and waits until
+//       the sheet has been applied — while a sheet is being built, nobody has
+//       moved anything.                                                   [17]
+//   11c A shot cannot be both. Green wins.                                [17]
+//
+//   BREAKS
+//   10  A break follows the nearest shot above it THAT STAYED PUT.        [10]
+//   10b A shot added above it pushes it down one; a shot removed above it
+//       brings it up one. It stays between the same two shots.           [18]
+//
+//   A NEW SHOT
+//   12  With needs: it goes into the box those needs name, at its number.
+//       With none: it stays where it was made. Either way it is GREEN, and
+//       after DONE it is red or grey like any other shot.          [13,13c,13d]
+//
+//   HOUSEKEEPING
+//   13  A box keeps every shot it took, including the ones the box INSIDE it
+//       refused.                                                          [14]
+//   14  KEEP ORDER and REMAINING are not needs and are never emptied.     [12]
+//   15  A shot deleted from the project leaves every order too — a ghost in
+//       the list freezes that order for ever.                             [15]
 
 import { useStore, DEFAULT_NEED_DEFINITIONS, createDefaultFrameNeedState } from '../src/store/state';
 import type { Frame, SortOrder, BracketNodeData, FrameNeedState } from '../src/store/state';
 import {
   decideResort, placeChangedFrames, breaksAfterResort, deserializeBracket,
   serializeBracket, syncBracketWithVisibleFrames, boxOfEachFrame, boxOrderOfSheet,
-  shotsOutsideTheirBox, rematchToNeeds, flattenBracketOrder, withoutShotsThatAreGone, orderFromSheet, iconStates,
+  shotsOutsideTheirBox, rematchToNeeds, flattenBracketOrder, withoutShotsThatAreGone, orderFromSheet, iconStates, breaksAfterInsert, breaksAfterRemoval,
 } from '../src/lib/bracket';
 
 const DAY = 'tbl_shootday';
@@ -118,16 +153,55 @@ console.log('\n2b. …and at its number, not at the end of the box');
   check('shot 6 joins the day 1 shots after shot 3', order().frameOrder, [1, 2, 3, 6, 4, 5]);
 }
 
-console.log('\n3. it never displaces a shot placed at the head of that box by hand');
+console.log('\n3. a shot joins its box AT ITS NUMBER, whatever the neighbour is');
 {
-  // Shot 6 (a day 2 shot) was dragged to the very front. Shot 1 becomes day 2.
+  // REPLACED (#453). The rule here used to be "it never takes the lead of a box
+  // from a shot somebody hand-placed there", and the newcomer was slotted in
+  // behind. Roman settled it the other way: "a shot moving into a box shall be
+  // the next in the continuity of a number — 7 comes after 6, no matter what 6
+  // is, hand moved or bracket result."
+  //
+  // It also cured something worse: sitting behind a hand-placed shot could
+  // itself be out of box order, so the app placed a shot and then marked it RED
+  // for being where the app had just put it. Roman: "I don't see a reason for
+  // that."
+  //
+  // Shot 6 was dragged to the HEAD OF ITS OWN BOX — the day 2 run reads 6,4,5,
+  // which is still in box order, so nobody is out of place. Shot 1 now becomes
+  // a day 2 shot, and 1 comes before 6.
+  setUp(EVERY_DAY, [1, 2, 3, 6, 4, 5], twoBoxes([1, 2, 3], [4, 5, 6]), [1, 2, 3, 4, 5, 6]);
+  moveToDay(1, D2);
+  check('the changed shot is marked', decideResort(order(), ALL).moved
+    ? [...decideResort(order(), ALL).moved!] : [], [1]);
+  openTheOrder();
+  // The OLD rule slid it in behind shot 6 — [2,3,6,1,4,5] — because a
+  // hand-placed shot could not be overtaken. Roman's rule says the number wins.
+  check('SHOT 1 TAKES THE LEAD OF THE DAY 2 SHOTS, BECAUSE 1 COMES BEFORE 6',
+    order().frameOrder, [2, 3, 1, 6, 4, 5]);
+
+  {
+    const root = deserializeBracket(order().bracketTree!);
+    const red = shotsOutsideTheirBox(order().frameOrder, boxOfEachFrame(root), boxOrderOfSheet(root));
+    check('and nobody is red at all', [...red], []);
+  }
+}
+
+console.log('\n3b. …but it steps around a shot that is out of its box');
+{
+  // Shot 6 dragged to the very FRONT, among the day 1 shots: it is out of its
+  // box and red. It is not part of the day 2 run, so it must not be used to
+  // decide where a newcomer's number falls — otherwise the app places shot 1
+  // beside it and then marks shot 1 red for being where the app put it.
   setUp(EVERY_DAY, [6, 1, 2, 3, 4, 5], twoBoxes([1, 2, 3], [4, 5, 6]), [1, 2, 3, 4, 5, 6]);
   moveToDay(1, D2);
-  const said = decideResort(order(), ALL);
-  check('the changed shot is marked', said.moved ? [...said.moved] : [], [1]);
   openTheOrder();
-  check('the hand-placed shot keeps the lead', order().frameOrder[0], 6);
-  check('and the newcomer sits in behind it', order().frameOrder[1], 1);
+  check('it joins the day 2 shots that ARE in their box',
+    order().frameOrder, [6, 2, 3, 1, 4, 5]);
+
+  const root = deserializeBracket(order().bracketTree!);
+  const red = shotsOutsideTheirBox(order().frameOrder, boxOfEachFrame(root), boxOrderOfSheet(root));
+  check('A SHOT THE APP PLACED IS NEVER RED', red.has(1), false);
+  check('only the shot somebody dragged is red', [...red], [6]);
 }
 
 console.log('\n4. a shot already in the right place does not move, and is still marked');
@@ -745,6 +819,91 @@ console.log('\n17. which icons are green and which are red');
   // And a settled order marks nobody.
   const calm = iconStates(ALL, root, none, true);
   check('a settled order marks nobody', [[...calm.green], [...calm.red]], [[], []]);
+}
+
+console.log('\n18. a break stays between the same two shots');
+{
+  // Roman: "the break must stay behind the shot above. If a shot above it was
+  // removed it goes one higher; if a shot was added above, it goes +1."
+  //
+  // Order 1..6 with LUNCH after shot 2 and WRAP after shot 5.
+  const breaks = [{ id: 'b1', text: 'LUNCH', position: 2 },
+                  { id: 'b2', text: 'WRAP', position: 5 }];
+
+  // A shot made from shot 1 goes in at place 2 — above both breaks.
+  check('A SHOT ADDED ABOVE PUSHES THE BREAK DOWN ONE',
+    breaksAfterInsert(breaks, 0).map((b) => b.position), [3, 6]);
+  // A shot made from shot 2 — the last shot above LUNCH — is still above it.
+  check('and a shot made from the shot just above it counts as above',
+    breaksAfterInsert(breaks, 1).map((b) => b.position), [3, 6]);
+  // A shot made from shot 3 is below LUNCH and above WRAP.
+  check('a shot added between them moves only the one below',
+    breaksAfterInsert(breaks, 2).map((b) => b.position), [2, 6]);
+  check('and one added at the very end moves neither',
+    breaksAfterInsert(breaks, 5).map((b) => b.position), [2, 5]);
+
+  // Removal is the same sentence backwards.
+  check('A SHOT REMOVED ABOVE BRINGS THE BREAK UP ONE',
+    breaksAfterRemoval(breaks, 0).map((b) => b.position), [1, 4]);
+  check('a shot removed between them moves only the one below',
+    breaksAfterRemoval(breaks, 2).map((b) => b.position), [2, 4]);
+  check('and one removed below both moves neither',
+    breaksAfterRemoval(breaks, 5).map((b) => b.position), [2, 5]);
+
+  // Added then removed at the same place leaves everything as it was.
+  check('add then remove is a round trip',
+    breaksAfterRemoval(breaksAfterInsert(breaks, 0), 0).map((b) => b.position), [2, 5]);
+}
+
+console.log('\n19. no shot may be drawn in two boxes at once');
+{
+  // Roman's own test caught this: the red icons came back as
+  // ["12","10","2","5","10"] — shot 10 twice. #437 stopped KEEP ORDER being
+  // emptied, but left its list frozen, so a shot that later moved UP into a
+  // real box was still listed in KEEP ORDER as well and the sheet drew it twice.
+  const withKeep: BracketNodeData = {
+    inputIds: [...ALL], categoryId: DAY, categoryName: 'SHOOT DAY',
+    itemId: D1, itemName: 'DAY 1', matchedIds: [1, 2],
+    down: {
+      inputIds: [3, 4, 5, 6], categoryId: '__keep__', categoryName: 'KEEP ORDER',
+      itemId: '__keep__', itemName: 'KEEP ORDER', matchedIds: [3, 4, 5, 6],
+    },
+  };
+  setUp({ 1: D1, 2: D1, 3: D2, 4: D2, 5: D2, 6: D2 },
+        [1, 2, 3, 4, 5, 6], withKeep, [1, 2, 3, 4, 5, 6]);
+  moveToDay(5, D1);                      // shot 5 climbs out of KEEP ORDER
+
+  const root = deserializeBracket(withKeep);
+  syncBracketWithVisibleFrames(root, ALL);
+  rematchToNeeds(root);
+  check('the day 1 box takes it', root.matchedIds, [1, 2, 5]);
+  check('AND KEEP ORDER LETS IT GO', root.down?.matchedIds, [3, 4, 6]);
+
+  const everyPill: number[] = [];
+  const walk = (n: typeof root): void => {
+    if (n.categoryId && n.itemId) everyPill.push(...n.matchedIds);
+    if (n.right) walk(n.right);
+    if (n.down) walk(n.down);
+  };
+  walk(root);
+  check('SO NO SHOT IS DRAWN TWICE',
+    [everyPill.length, new Set(everyPill).size], [6, 6]);
+
+  // And KEEP ORDER still keeps the order it was given, newcomers at the end.
+  const back: BracketNodeData = {
+    inputIds: [...ALL], categoryId: DAY, categoryName: 'SHOOT DAY',
+    itemId: D1, itemName: 'DAY 1', matchedIds: [1],
+    down: {
+      inputIds: [2, 3, 4, 5, 6], categoryId: '__keep__', categoryName: 'KEEP ORDER',
+      itemId: '__keep__', itemName: 'KEEP ORDER', matchedIds: [6, 4, 3],
+    },
+  };
+  setUp({ 1: D1, 2: D2, 3: D2, 4: D2, 5: D2, 6: D2 },
+        [1, 2, 3, 4, 5, 6], back, [1, 2, 3, 4, 5, 6]);
+  const r2 = deserializeBracket(back);
+  rematchToNeeds(r2);
+  check('the shots it was given keep their order, newcomers go last',
+    r2.down?.matchedIds, [6, 4, 3, 2, 5]);
 }
 
 console.log(failures === 0 ? '\nALL GOOD\n' : `\n${failures} FAILED\n`);

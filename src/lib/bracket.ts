@@ -112,12 +112,30 @@ export function rematchToNeeds(node: BracketNode): boolean {
   // KEEP ORDER holds exactly the shots it was given; REMAINING holds whatever
   // reaches it. Neither has anything to do with today's needs.
   if (node.categoryId === '__keep__') {
-    if (node.right) { node.right.inputIds = [...node.matchedIds]; rematchToNeeds(node.right); }
+    // IT HOLDS WHAT REACHES IT, AND NOTHING ELSE (#452).
+    //
+    // #437 stopped this box being emptied, but left its list frozen — so a shot
+    // that later moved UP into a real box was still listed here as well, and the
+    // sheet drew its icon TWICE. Roman's own test caught it: the red icons came
+    // back as ["12", "10", "2", "5", "10"].
+    //
+    // KEEP ORDER means "keep the order you were given". So the shots it was
+    // given are kept, in that order — but only those still arriving in it — and
+    // anyone newly falling through is added at the end.
+    const before = node.matchedIds;
+    const here = new Set(node.inputIds);
+    const kept = before.filter((id) => here.has(id));
+    const kept2 = new Set(kept);
+    const arrived = node.inputIds.filter((id) => !kept2.has(id));
+    const fresh = [...kept, ...arrived];
+    const changed = fresh.length !== before.length || fresh.some((id, i) => id !== before[i]);
+    node.matchedIds = fresh;
+    if (node.right) { node.right.inputIds = [...fresh]; rematchToNeeds(node.right); }
     if (node.down) {
-      node.down.inputIds = node.inputIds.filter((id) => !node.matchedIds.includes(id));
+      node.down.inputIds = node.inputIds.filter((id) => !fresh.includes(id));
       rematchToNeeds(node.down);
     }
-    return false;
+    return changed;
   }
   if (node.categoryId === '__remaining__') {
     const before = node.matchedIds;
@@ -172,6 +190,34 @@ export function rematchToNeeds(node: BracketNode): boolean {
  */
 export function isLeftovers(box: string | undefined): boolean {
   return box === undefined || box.endsWith('/__remaining__|__remaining__');
+}
+
+/**
+ * A BREAK STAYS BETWEEN THE SAME TWO SHOTS (#451).
+ *
+ * Roman: "the break must stay behind the shot above. If a shot above it was
+ * removed it goes one higher; if a shot was added above, it goes +1."
+ *
+ * A break's `position` is simply how many shots are above it, so both halves
+ * are one comparison. `at` is the place the shot was put in or taken out of.
+ * Removal already did this; ADDING DID NOT — a new shot made above a break left
+ * the break where it was, and it ended up between the wrong two shots.
+ *
+ * This is the same sentence as breaksAfterResort ("follow the shot above you"),
+ * said for a list that grew or shrank rather than one that was rearranged.
+ */
+export function breaksAfterInsert(
+  breaks: readonly { id: string; text: string; position: number }[],
+  at: number,
+): { id: string; text: string; position: number }[] {
+  return breaks.map((b) => (b.position > at ? { ...b, position: b.position + 1 } : { ...b }));
+}
+
+export function breaksAfterRemoval(
+  breaks: readonly { id: string; text: string; position: number }[],
+  at: number,
+): { id: string; text: string; position: number }[] {
+  return breaks.map((b) => (b.position > at ? { ...b, position: b.position - 1 } : { ...b }));
 }
 
 /**
@@ -362,6 +408,11 @@ export function placeChangedFrames(
   fresh: number[],
   changed: Set<number>,
   boxOf?: Map<number, string>,
+  // Shots that are ALREADY out of their box because somebody dragged them
+  // there. They are not part of their box's run, so they must not be used to
+  // work out where a newcomer's number falls (#453) — otherwise the app places
+  // a shot next to a misplaced one and then marks the newcomer red for it.
+  misplaced: ReadonlySet<number> = new Set(),
 ): { list: number[]; outOfStep: Set<number> } {
   const outOfStep = new Set<number>(changed);
   if (changed.size === 0) return { list: standsAs, outOfStep };
@@ -383,7 +434,8 @@ export function placeChangedFrames(
     if (myBox === undefined) return null;
     const at = fresh.indexOf(fid);
     for (let j = at - 1; j >= 0; j--) {
-      if (boxOf!.get(fresh[j]) === myBox && !changed.has(fresh[j])) return fresh[j];
+      if (boxOf!.get(fresh[j]) === myBox && !changed.has(fresh[j])
+          && !misplaced.has(fresh[j])) return fresh[j];
     }
     return null;
   };
@@ -399,15 +451,28 @@ export function placeChangedFrames(
       // shot in front that is staying put.
       const myBox = boxOf?.get(fid);
       const firstOfBox = myBox === undefined ? -1
-        : out.findIndex((id) => boxOf!.get(id) === myBox);
-      // IT NEVER TAKES THE LEAD FROM A SHOT ALREADY THERE (#427).
+        : out.findIndex((id) => boxOf!.get(id) === myBox && !misplaced.has(id));
+      // IT GOES AT ITS NUMBER, WHATEVER THE NEIGHBOUR IS (#453).
       //
-      // Storyboard order would put it in front of its box, but somebody may
-      // have moved that leading shot there on purpose — and a shot placed by
-      // hand stays where it is. So the newcomer goes in just behind it.
-      if (firstOfBox === 0) anchor = out[0];
+      // This used to refuse to take the lead of a box from a shot somebody had
+      // hand-placed there, and slotted the newcomer in behind it instead. Roman
+      // settled it the other way: "a shot moving into a box shall be the next in
+      // the continuity of a number — 7 comes after 6, no matter what 6 is, hand
+      // moved or bracket result."
+      //
+      // It also fixes something worse. Sitting behind a hand-placed shot can
+      // itself be out of box order, so the app could place a shot and then mark
+      // it RED for being where the app had just put it. Roman: "I don't see a
+      // reason for that."
+      //
+      // So: first of its box by number means first of its box. anchor stays
+      // null, which puts it at the very front — it must NOT fall through to the
+      // "nearest shot in front of it" fallback below, which is for a shot whose
+      // box holds nobody else at all.
+      if (firstOfBox === 0) anchor = null;
       else if (firstOfBox > 0) anchor = out[firstOfBox - 1];
       else {
+        // firstOfBox === -1: nobody else is in this box at all.
         const at = fresh.indexOf(fid);
         for (let j = at - 1; j >= 0; j--) {
           if (!changed.has(fresh[j])) { anchor = fresh[j]; break; }
@@ -809,8 +874,12 @@ export function decideResort(
     return { why: `${cannotPlace} frame(s) changed box but the sheet cannot place them — left alone` };
   }
 
+  // Who is already sitting outside their box — the shots somebody dragged. The
+  // placement must step around them, or it puts a shot next to a misplaced one
+  // and the shot it just placed comes out red (#453).
+  const misplaced = shotsOutsideTheirBox(order.frameOrder, now, boxOrderOfSheet(root));
   const { list: frameOrder, outOfStep } =
-    placeChangedFrames(order.frameOrder, fresh, moved, now);
+    placeChangedFrames(order.frameOrder, fresh, moved, now, misplaced);
 
   // Never fewer than we started with. If this ever trips, the order is left
   // untouched rather than shortened.

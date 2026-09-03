@@ -10,7 +10,7 @@ import {
   serializeBracket, deserializeBracket, flattenBracketOrder, fixInputIds,
   syncBracketWithVisibleFrames, framesMatching, rematchToNeeds, boxOfEachFrame,
   placeChangedFrames, decideResort, shotsOutsideTheirBox, boxOrderOfSheet,
-  withoutShotsThatAreGone, orderFromSheet, iconStates, boxNamesOfSheet,
+  withoutShotsThatAreGone, orderFromSheet, iconStates, boxNamesOfSheet, breaksAfterInsert,
 } from './bracket';
 import type { BracketNode } from './bracket';
 import { stampChangedSettings } from './projectSettings';
@@ -534,11 +534,18 @@ function getItemsForCategory(categoryId: string, frameIds: number[]): ItemOption
 }
 
 /** Get short frame label. */
+/**
+ * AN ICON NAMES ONE SHOT, AND ONLY ONE (#453).
+ *
+ * This used to cut every label down to its leading number — `6#1` became `6`,
+ * `5C OPTIONAL` became `5`. So two different shots drew the SAME icon, and the
+ * sheet looked like it was holding duplicates when it was only unable to tell
+ * them apart. Roman spent two days chasing that. Roman: "full label on the
+ * icons — always unique."
+ */
 function getFrameLabel(fid: number): string {
   const f = state().frames.find((fr) => fr.id === fid);
-  if (!f) return String(fid);
-  const m = f.label.match(/^(\d+[A-Za-z]?\.?)/);
-  return m ? m[1] : f.label;
+  return f ? (f.label || String(fid)) : String(fid);
 }
 
 /** Create an empty bracket node for a set of frames. */
@@ -1405,7 +1412,12 @@ export function addFrameToSortOrders(frameId: number, afterFrameId?: number): vo
       newOrder.push(frameId);
     }
     if (o.bracketTree) joined.push(o.id);
-    return { ...o, frameOrder: newOrder };
+    // AND THE BREAKS COME WITH IT (#451). A shot put in above a break has to
+    // push that break down by one, or the break ends up between the wrong two
+    // shots. Removal already did this; adding never did.
+    const at = afterFrameId !== undefined ? o.frameOrder.indexOf(afterFrameId) : o.frameOrder.length;
+    return { ...o, frameOrder: newOrder,
+             breaks: breaksAfterInsert(o.breaks ?? [], at) };
   });
   useStore.setState({ sortOrders: updated });
 
