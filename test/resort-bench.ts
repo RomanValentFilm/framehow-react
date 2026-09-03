@@ -26,7 +26,7 @@ import type { Frame, SortOrder, BracketNodeData, FrameNeedState } from '../src/s
 import {
   decideResort, placeChangedFrames, breaksAfterResort, deserializeBracket,
   serializeBracket, syncBracketWithVisibleFrames, boxOfEachFrame, boxOrderOfSheet,
-  shotsOutsideTheirBox, rematchToNeeds, flattenBracketOrder, withoutShotsThatAreGone, orderFromSheet,
+  shotsOutsideTheirBox, rematchToNeeds, flattenBracketOrder, withoutShotsThatAreGone, orderFromSheet, iconStates,
 } from '../src/lib/bracket';
 
 const DAY = 'tbl_shootday';
@@ -712,6 +712,39 @@ console.log('\n16. SORT NOW: the order becomes what the sheet says');
     check(`${name}: 6 shots, each once`,
       [got.length, new Set(got).size, [...got].sort().join(',')], [6, 6, '1,2,3,4,5,6']);
   }
+}
+
+console.log('\n17. which icons are green and which are red');
+{
+  // The rule that #443 broke and #446 put back. It is here now, so it can be
+  // asked in a second instead of on Roman's screen.
+  const sheet = twoBoxes([1, 2, 3], [4, 5, 6]);
+  setUp(EVERY_DAY, [1, 2, 3, 4, 5, 6], sheet, [1, 2, 3, 4, 5, 6]);
+  const root = deserializeBracket(sheet);
+  const none = new Set<number>();
+
+  // GREEN, WHATEVER THE SHEET IS DOING. This is the one that broke: building a
+  // sheet must not silence "your needs change moved this shot".
+  check('a waiting shot is green once the sheet is applied',
+    [...iconStates(ALL, root, new Set([3]), true).green], [3]);
+  check('AND GREEN WHILE THE SHEET IS STILL BEING BUILT',
+    [...iconStates(ALL, root, new Set([3]), false).green], [3]);
+
+  // RED waits, because until the boxes have placed anybody nobody can be out of
+  // place. Shot 6 is a day 2 shot dragged up among the day 1 shots.
+  const dragged = [1, 6, 2, 3, 4, 5];
+  check('a displaced shot is red once the sheet is applied',
+    [...iconStates(dragged, root, none, true).red], [6]);
+  check('but not while the sheet is being built',
+    [...iconStates(dragged, root, none, false).red], []);
+
+  // Never both.
+  const both = iconStates(dragged, root, new Set([6]), true);
+  check('a shot that is green is not also red', [[...both.green], [...both.red]], [[6], []]);
+
+  // And a settled order marks nobody.
+  const calm = iconStates(ALL, root, none, true);
+  check('a settled order marks nobody', [[...calm.green], [...calm.red]], [[], []]);
 }
 
 console.log(failures === 0 ? '\nALL GOOD\n' : `\n${failures} FAILED\n`);

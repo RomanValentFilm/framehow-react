@@ -10,7 +10,7 @@ import {
   serializeBracket, deserializeBracket, flattenBracketOrder, fixInputIds,
   syncBracketWithVisibleFrames, framesMatching, rematchToNeeds, boxOfEachFrame,
   placeChangedFrames, decideResort, shotsOutsideTheirBox, boxOrderOfSheet,
-  withoutShotsThatAreGone, orderFromSheet,
+  withoutShotsThatAreGone, orderFromSheet, iconStates,
 } from './bracket';
 import type { BracketNode } from './bracket';
 import { stampChangedSettings } from './projectSettings';
@@ -1185,27 +1185,17 @@ function markOutOfBoxPills(container: HTMLElement, orderId: string,
   const order = state().sortOrders.find((o) => o.id === orderId);
   if (!order?.bracketTree) return;
   const root = deserializeBracket(order.bracketTree);
-  // GREEN IS NEVER HELD BACK (#446).
-  //
-  // #443/#444 stopped red being painted while the sheet is being built, and did
-  // it by skipping this whole function — which took GREEN with it. Roman:
-  // "it marks maybe one shot green, but when you do multiple changes in needs
-  // then it does not show in the bracket."
-  //
-  // The two marks answer different questions. Green says "this shot's needs
-  // changed, look at it" and is true whatever state the sheet is in. Red says
-  // "this shot is not where the boxes put it", which is only a question worth
-  // asking once the boxes have actually put it somewhere.
-  const outside = mayMarkRed
-    ? shotsOutsideTheirBox(currentOrder, boxOfEachFrame(root), boxOrderOfSheet(root))
-    : new Set<number>();
+  // THE DECISION IS NOT MADE HERE (#447). iconStates says who is green and who
+  // is red, and it is on the bench. This code only paints what it is told.
+  const { green: isGreen, red: outside } =
+    iconStates(currentOrder, root, green ?? new Set<number>(), mayMarkRed);
   const pillOf = (fid: number) =>
     container.querySelector(`.sort-bracket-pill[data-fid="${fid}"]`) as HTMLElement | null;
 
   container.querySelectorAll('.sort-bracket-pill[data-fid]').forEach((pill) => {
     const fid = Number((pill as HTMLElement).dataset.fid);
     pill.classList.remove('sort-bracket-pill-moved', 'sort-bracket-pill-new');
-    if (green?.has(fid)) pill.classList.add('sort-bracket-pill-new');
+    if (isGreen.has(fid)) pill.classList.add('sort-bracket-pill-new');
     else if (outside.has(fid)) pill.classList.add('sort-bracket-pill-moved');
   });
 

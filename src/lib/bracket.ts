@@ -175,6 +175,45 @@ export function isLeftovers(box: string | undefined): boolean {
 }
 
 /**
+ * WHICH ICONS ARE GREEN AND WHICH ARE RED (#447).
+ *
+ * The decision only — no screen, no store — so it can be put on the bench in a
+ * second like every other rule. It lived inside the drawing code, which the
+ * bench does not reach, and that is exactly how #443 came to switch green off
+ * along with red: the change was untested, the bench was green, and I reported
+ * the bench as if it covered the change. It did not. This is that hole closed.
+ *
+ *   GREEN  the app moved this shot because its needs changed, and nobody has
+ *          pressed DONE on it yet. Remembered per device. It answers "look at
+ *          this one", which is true whatever state the sheet is in — so it is
+ *          NEVER held back.
+ *   RED    this shot is not where the boxes put it, because somebody moved it.
+ *          Worked out fresh every time, never remembered. It is only a question
+ *          worth asking once the boxes have actually placed the shots, so it
+ *          waits for `sheetApplied` — while a sheet is being built, nobody has
+ *          moved anything and nothing can be out of place.
+ *   GREY   everything else, including the leftovers at the end.
+ *
+ * A shot cannot be both: green wins, because "its needs changed" is the newer
+ * and more useful thing to say about it.
+ */
+export function iconStates(
+  currentOrder: readonly number[],
+  root: BracketNode,
+  waiting: ReadonlySet<number>,
+  sheetApplied: boolean,
+): { green: Set<number>; red: Set<number> } {
+  const green = new Set<number>();
+  for (const id of currentOrder) if (waiting.has(id)) green.add(id);
+  if (!sheetApplied) return { green, red: new Set<number>() };
+
+  const red = shotsOutsideTheirBox(
+    [...currentOrder], boxOfEachFrame(root), boxOrderOfSheet(root));
+  for (const id of green) red.delete(id);
+  return { green, red };
+}
+
+/**
  * SORT NOW: THE ORDER BECOMES WHAT THE SHEET SAYS (#445).
  *
  * One function, used by every path that applies a sheet to an order. There used
