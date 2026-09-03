@@ -4,6 +4,7 @@
  */
 
 import { state, useStore, createDefaultFrameNeedState, SETUP_COLORS } from '../store/state';
+import { trace } from './syncTrace';
 import type { FrameNeedState, NeedTable } from '../store/state';
 import { showVerLabelEdit } from './modals';
 import { stampChangedSettings } from './projectSettings';
@@ -337,6 +338,21 @@ function wireNeedsCard(container: HTMLElement, fid: number): void {
       const itemId = (btn as HTMLElement).dataset.needsToggle!;
       const ft = ensureFrameNeeds(fid);
       ft.toggles[itemId] = !ft.toggles[itemId];
+      // WHAT THE USER ACTUALLY DID (#449). Roman's changes were invisible in the
+      // log, so a session could not be replayed as a test — every question ended
+      // in "what exactly did you press?". Now it is written down.
+      {
+        const s = state();
+        const label = s.frames.find((f) => f.id === fid)?.label || String(fid);
+        let name = itemId;
+        for (const tab of s.needDefinitions.tabs) {
+          for (const t of tab.tables) {
+            const it = t.items.find((i) => i.id === itemId);
+            if (it) { name = `${t.name} / ${it.name}`; break; }
+          }
+        }
+        trace(`needs on ${label}: ${name} ${ft.toggles[itemId] ? 'ON' : 'off'}`);
+      }
       bumpAndRerender(container, fid);
       flushDebouncedSync();
     });

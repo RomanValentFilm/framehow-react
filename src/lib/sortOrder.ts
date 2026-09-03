@@ -918,6 +918,7 @@ function wireBracketEvents(el: HTMLElement, bracketState: BracketState, orderId:
       if (rem.length > 0) {
         node.down = createEmptyNode(rem);
       }
+      trace(`sheet: picked ${catName} / ${sel.name} (${sel.matchedIds.length} shot(s))`);
       sheetWasTouched(editViewEl);
       rerenderBracket(editViewEl, bracketState, orderId);
     });
@@ -937,6 +938,7 @@ function wireBracketEvents(el: HTMLElement, bracketState: BracketState, orderId:
       node.right = null;
       node.down = null;
       node.expanded = false;
+      trace(`sheet: KEEP ORDER on ${node.inputIds.length} shot(s)`);
       sheetWasTouched(editViewEl);
       rerenderBracket(editViewEl, bracketState, orderId);
     });
@@ -1007,6 +1009,7 @@ function wireBracketEvents(el: HTMLElement, bracketState: BracketState, orderId:
       node.right = null;
       node.down = null;
       node.expanded = true; // auto-open dropdown for immediate re-pick
+      trace(`sheet: re-picking the box that held ${node.itemName || node.itemId}`);
       sheetWasTouched(editViewEl);
       rerenderBracket(editViewEl, bracketState, orderId);
     });
@@ -1179,6 +1182,11 @@ function showAncestorReselectWarning(editViewEl: HTMLElement, bracketState: Brac
  * Red is worked out fresh from where the shots actually sit against the boxes,
  * so putting a shot back turns it grey again with nothing to remember.
  */
+/** A shot's label, for the log. */
+function shotName(fid: number): string {
+  return state().frames.find((f) => f.id === fid)?.label || String(fid);
+}
+
 const _lastIconLine = new Map<string, string>();
 
 function markOutOfBoxPills(container: HTMLElement, orderId: string,
@@ -2535,6 +2543,7 @@ function wireEditViewEvents(el: HTMLElement, orderId: string): void {
   if (renameBtn) {
     renameBtn.addEventListener('click', () => {
       const isSorting = renameBtn.textContent === 'SORT NOW';
+      trace(isSorting ? `pressed SORT NOW on ${orderId}` : `pressed EDIT ORDER on ${orderId}`);
       if (isSorting) {
         const bracketState = (el as any).__bracketState as BracketState | undefined;
         const s = state();
@@ -2949,6 +2958,8 @@ function moveFrame(orderId: string, fid: number, dir: 'up' | 'down'): void {
     return { ...o, frameOrder: arr };
   });
   useStore.setState({ sortOrders: orders });
+  const now = state().sortOrders.find((o) => o.id === orderId);
+  if (now) trace(`by hand: ${shotName(fid)} ${dir} → place ${now.frameOrder.indexOf(fid) + 1}`);
   bumpRenderTick();
   void flushSyncNow();
 }
@@ -3228,8 +3239,14 @@ function setupDragAndDrop(el: HTMLElement, orderId: string): void {
               // being drawn — another group's shots, hidden ones — and wrote any
               // shot back twice if the list already held it twice. Same function
               // as SORT NOW, for the same three promises.
-              return { ...o, breaks: newBreaks,
-                       frameOrder: orderFromSheet(o.frameOrder, newFrameOrder, newFrameOrder) };
+              const dragged = orderFromSheet(o.frameOrder, newFrameOrder, newFrameOrder);
+              const before = o.frameOrder.filter((id) => dragged.includes(id));
+              const who = before.find((id, i) => dragged.indexOf(id) !== i);
+              if (who !== undefined) {
+                trace(`by hand: dragged ${shotName(who)}`
+                  + ` from place ${before.indexOf(who) + 1} to ${dragged.indexOf(who) + 1}`);
+              }
+              return { ...o, breaks: newBreaks, frameOrder: dragged };
             });
             useStore.setState({ sortOrders: orders });
           }
