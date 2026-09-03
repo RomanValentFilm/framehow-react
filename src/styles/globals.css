@@ -1205,7 +1205,6 @@
   .sort-bracket-frozen .sort-bracket-pills{pointer-events:auto;}
   .sort-bracket-frozen .sort-bracket-sel-box,.sort-bracket-frozen .sort-bracket-gray-box,.sort-bracket-frozen .sort-bracket-dropdown,.sort-bracket-frozen .sort-bracket-harrow,.sort-bracket-frozen .sort-bracket-swap-btn,.sort-bracket-frozen .sort-bracket-hint{opacity:0.45;}
   .sort-bracket-frozen .sort-bracket-pills,.sort-bracket-frozen .sort-bracket-pill{opacity:1;}
-  .sort-bracket-warning{color:var(--accent);font-size:11px;font-weight:700;letter-spacing:.3px;padding:6px 8px 2px;text-transform:uppercase;}
   /* The order followed the needs (#411). Same family as the manual-change line
      above, but grey — this is information, not a warning. It sits at the very
      top of the order view, above the header, where somebody who never opens
@@ -1228,8 +1227,6 @@
   /* GREEN — the app moved this shot because its needs changed, and nobody has
      pressed DONE on it yet (#427). Same green as the card it belongs to. */
   .sort-bracket-pill-new{background:#7bd97b !important;color:#173404 !important;}
-  .sort-bracket-sel-affected{outline:2px solid rgba(255,255,255,0.5);outline-offset:-2px;opacity:0.5;}
-  .sort-bracket-sel-affected .sort-bracket-sel-count{outline:2px solid rgba(255,255,255,0.5);outline-offset:-2px;}
   .sort-bracket-confirm{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);z-index:9999;border-radius:0;}
   .sort-bracket-confirm-inner{display:flex;flex-direction:column;align-items:center;gap:10px;background:rgba(0,0,0,0.7);padding:16px 24px;border-radius:6px;}
   .sort-bracket-confirm-text{color:#fff;font-size:12px;font-weight:600;letter-spacing:.2px;}

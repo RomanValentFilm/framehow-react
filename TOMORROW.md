@@ -1,71 +1,68 @@
 # Where things stand
 
-Deployed to dev: **v4.9.141 · #444**. try427: confirm — the last deploy output was
-cut off mid-run.
-Next number: **v4.9.142 · #445**. A NEW NUMBER FOR EVERY DEPLOY — both parts, always.
-Pins to fall back to: `good-443`, `good-440`, `good-437`. try411 sits untouched on #426.
+dev and try427: **v4.9.153 · #456**. Next number: **v4.9.154 · #457**.
+A NEW NUMBER FOR EVERY DEPLOY — both parts, always.
+Pins: `good-456`, `good-454`, `good-443`, `good-440`, `good-437`. try411 sits on #426.
 
-## TOMORROW, IN THIS ORDER
+**THE RULES LIVE AT THE TOP OF `test/resort-bench.ts`**, in Roman's words, each with
+the section number that proves it. Nothing lives only in a conversation. If a rule
+is not in that list, it is not a rule.
 
-### 1. ONE PIECE OF CODE DECIDES THE ORDER. Everything else asks it.
+**ROMAN'S OWN TEST IS `e2e/27-the-whole-loop.spec.ts`** — his script, his order, end
+to end, about three minutes:
 
-This is the evening's real finding and it explains most of tonight.
+    FH_RUN=<n> npm run t -- e2e/27-the-whole-loop.spec.ts
 
-The same job — "turn the sheet into the order" — is done by TWO pieces of code,
-and only one of them has the rules:
+It writes `e2e-log/last-run.log`, which Claude reads directly. Roman says "zzz".
+Every check is `expect.soft`, so ONE run reports EVERY broken rule.
 
-- `decideResort` (bracket.ts) — on the bench, 16 sections, one second to run.
-  Refuses a list that repeats a shot or changes length (bracket.ts:707, 726-727).
-- The **SORT NOW button** (sortOrder.ts:2545-2615) — its own private copy, in the
-  DOM, with NEITHER guard, and no test anywhere near it:
+## HOW WE WORK — from Roman
 
-      for (const fid of order.frameOrder) { if (visible) push(answer[bi++]); else push(fid); }
-      while (bi < answer.length) push(answer[bi++]);      // can only lengthen the list
+- Read the code and the tests and decide. Do not answer from a screenshot when the
+  code can be read.
+- The bench covers `bracket.ts`, the DECISION. It covers NOTHING in `sortOrder.ts`,
+  the SCREEN. Never report "benches green" after changing the screen half — that is
+  what broke green icons for a day. If a rule is worth having, make it a plain
+  function in bracket.ts and bench it.
+- Do not ask him to pin, save or park something instead of fixing it.
 
-  That is Roman's `showing 57 of 55`. The bench stayed green all evening because
-  nothing on the bench goes near this code.
+## Still open — none of it urgent
 
-- And the SAME code exists a THIRD time behind the "overwrite your frame order"
-  modal (sortOrder.ts:1171-1189). Any fix must land in both, or better: delete both.
+Leftovers of rules we deleted, all working off the old position-number rule, all
+of them only SHOW things rather than write the order:
 
-Also on this path, same handler, sortOrder.ts:2561-2578 — the "hybrid" mapping
-that puts hand-moved shots back by position. It is a leftover of a DELETED rule,
-it maps two separately-derived lists onto each other with no membership check,
-and it can repeat a shot on its own. It goes.
+- box dimming via `getAffectedNodes` (sortOrder.ts, class `sort-bracket-sel-affected`)
+- "You're about to overwrite your manual sorting" and its position re-sort
+- "This change will redistribute manually ordered frames. Continue?"
+- the red "You modified the order manually" banner
+  (`sortedSnapshot` WRITES MUST STAY — decideResort is gated on it)
 
-**Do:** make SORT NOW call the one tested function, delete its private copy and
-the modal's copy, and put a bench section on the SORT NOW path itself so this
-class of fault cannot come back silently.
+Then: the sheet-save guard (`persistBracketToOrder` can save a sheet pruned to
+what is on screen), stale comments (sortOrder.ts:249, state.ts:438), and the two
+failing tests in the older `26-needs-and-the-order.spec.ts` — they use the same
+broken arrows helper that run 125 exposed, so they were never testing the app.
 
-### 2. The drag handler cements the damage
+## The last two days, in order
 
-sortOrder.ts:3216-3256 rebuilds `frameOrder` from the cards on screen. Two cards
-with the same id write the id twice; and every frame NOT currently rendered
-(other group, hidden) is silently dropped from the order. Both wrong.
-
-### 3. The leftovers from rules we deleted
-
-All of these still fire and all of them work off the old position-number rule:
-
-- box dimming via `getAffectedNodes` (sortOrder.ts:565, class `sort-bracket-sel-affected`)
-- "You're about to overwrite your manual sorting" (:946) and its position re-sort (:997)
-- "This change will redistribute manually ordered frames. Continue?" (:1047)
-- the dead `showBracketConfirmModal` (:1152) — no callers
-- the red "You modified the order manually" banner (:1990)
-
-`sortedSnapshot` WRITES MUST STAY — bracket.ts gates `decideResort` on it.
-
-Roman was shown one of these mid-work tonight ("asked to save something") — find
-which and say so before deleting.
-
-### 4. Then the smaller ones
-
-- `verifyBracketIntegrity` (:585) reports false "missing" frames — it asks
-  `flattenBracketOrder`, which does not return everybody.
-- `persistBracketToOrder` can save a sheet pruned to whatever is on screen;
-  `decideResort` has a "too early to judge" guard, the write side does not.
-- Stale comments: sortOrder.ts:249, :1242-1246, state.ts:438.
-- e2e tests 2 and 3 in `26-needs-and-the-order.spec.ts` (run 121: 1 pass, 2 fail).
+- **#439** REMAINING is not a place the boxes PUT anybody; a new shot enters the
+  sheet at its number, not at the back.
+- **#440** the log names the boxes a shot moved between.
+- **#441** a box keeps every shot it took, including the ones its inner box refused.
+- **#442** a shot deleted from the project leaves the order too — one ghost froze
+  an order for ever.
+- **#443–#447** red waits for SORT NOW; green never does. The green/red decision is
+  now `iconStates`, a plain function on the bench.
+- **#445** ONE piece of code turns a sheet into an order. Three private copies
+  deleted, including the one that made `showing 57 of 55`.
+- **#449** the log records the user's actions, so a session can be replayed.
+- **#450** Roman's whole script as an e2e test.
+- **#452** no shot drawn in two boxes at once.
+- **#453** full labels on the icons (6#1 and 5C OPTIONAL were both drawn as their
+  number, so two shots shared one icon); a shot joins its box AT ITS NUMBER and is
+  never red for where the app put it.
+- **#454/#455** KEEP ORDER catches, it does not place; a newcomer goes at its number.
+- **#456** the REMAINING inside a branch is a real place; only the one at the bottom
+  of the sheet is the leftovers.
 
 ## Tonight's five (all with a bench test that was red first)
 
