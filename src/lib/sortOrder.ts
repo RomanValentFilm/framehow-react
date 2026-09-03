@@ -1180,11 +1180,25 @@ function showAncestorReselectWarning(editViewEl: HTMLElement, bracketState: Brac
  * so putting a shot back turns it grey again with nothing to remember.
  */
 function markOutOfBoxPills(container: HTMLElement, orderId: string,
-                           currentOrder: number[], green?: Set<number>): void {
+                           currentOrder: number[], green?: Set<number>,
+                           mayMarkRed = true): void {
   const order = state().sortOrders.find((o) => o.id === orderId);
   if (!order?.bracketTree) return;
   const root = deserializeBracket(order.bracketTree);
-  const outside = shotsOutsideTheirBox(currentOrder, boxOfEachFrame(root), boxOrderOfSheet(root));
+  // GREEN IS NEVER HELD BACK (#446).
+  //
+  // #443/#444 stopped red being painted while the sheet is being built, and did
+  // it by skipping this whole function — which took GREEN with it. Roman:
+  // "it marks maybe one shot green, but when you do multiple changes in needs
+  // then it does not show in the bracket."
+  //
+  // The two marks answer different questions. Green says "this shot's needs
+  // changed, look at it" and is true whatever state the sheet is in. Red says
+  // "this shot is not where the boxes put it", which is only a question worth
+  // asking once the boxes have actually put it somewhere.
+  const outside = mayMarkRed
+    ? shotsOutsideTheirBox(currentOrder, boxOfEachFrame(root), boxOrderOfSheet(root))
+    : new Set<number>();
   const pillOf = (fid: number) =>
     container.querySelector(`.sort-bracket-pill[data-fid="${fid}"]`) as HTMLElement | null;
 
@@ -1255,9 +1269,10 @@ function rerenderBracket(editViewEl: HTMLElement, bracketState: BracketState, or
   existing.replaceWith(newBracket);
   wireBracketEvents(newBracket, bracketState, orderId, editViewEl);
   // Preserve red pills: reorder + mark moved after re-render
-  if (sortedSnapshot && !sheetChangedSinceSort(editViewEl)) {
+  {
     const s = state();
     const order = s.sortOrders.find((o) => o.id === orderId);
+    const mayMarkRed = !!sortedSnapshot && !sheetChangedSinceSort(editViewEl);
     if (order) {
       // THE ICONS STAY UNDER THEIR OWN BOX (#430). They used to be lifted from
       // one box's row into another to follow the shot's position number, so
@@ -1265,7 +1280,9 @@ function rerenderBracket(editViewEl: HTMLElement, bracketState: BracketState, or
       // which box a shot belonged to. Now every icon sits under its box and the
       // box's row simply grows when a shot joins it.
       const currentOrder = getOrderedFrames(order).map((f) => f.id);
-      markOutOfBoxPills(newBracket, orderId, currentOrder);
+      markOutOfBoxPills(newBracket, orderId, currentOrder,
+                        orderId === '__storyflow__' ? undefined : framesWaitingToBeSeen(orderId),
+                        mayMarkRed);
     }
   }
   // Integrity check — ensure all frames remain in bracket
@@ -2166,9 +2183,9 @@ function renderSortEditView(el: HTMLElement, orderId: string): void {
     // frames appear." Red needs BOTH: the order has been sorted at least once,
     // and the sheet has not been touched since.
     const canJudge = !!order?.sortedSnapshot && !sheetChangedSinceSort(el);
-    if (bracketEl && order?.bracketTree && canJudge) {
+    if (bracketEl && order?.bracketTree) {
       markOutOfBoxPills(bracketEl as HTMLElement, orderId, frames.map((f) => f.id),
-                        waitingToBeSeen);
+                        waitingToBeSeen, canJudge);
     }
   }
 
