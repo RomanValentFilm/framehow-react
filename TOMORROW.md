@@ -1,12 +1,14 @@
 # Where things stand
 
-dev and try427: **v4.9.153 · #456**. Next number: **v4.9.154 · #457**.
+dev and try427: **v4.9.158 · #461**, tested by hand on two shooting orders in one
+project. Next number: **v4.9.159 · #462**.
 A NEW NUMBER FOR EVERY DEPLOY — both parts, always.
-Pins: `good-456`, `good-454`, `good-443`, `good-440`, `good-437`. try411 sits on #426.
+Pins: `good-461`, `good-459`, `good-456`, `good-454`, `good-443`, `good-440`,
+`good-437`. try411 sits on #426.
 
 **THE RULES LIVE AT THE TOP OF `test/resort-bench.ts`**, in Roman's words, each with
-the section number that proves it. Nothing lives only in a conversation. If a rule
-is not in that list, it is not a rule.
+the section number that proves it. 24 sections, one second to run. Nothing lives
+only in a conversation. If a rule is not in that list, it is not a rule.
 
 **ROMAN'S OWN TEST IS `e2e/27-the-whole-loop.spec.ts`** — his script, his order, end
 to end, about three minutes:
@@ -15,6 +17,11 @@ to end, about three minutes:
 
 It writes `e2e-log/last-run.log`, which Claude reads directly. Roman says "zzz".
 Every check is `expect.soft`, so ONE run reports EVERY broken rule.
+
+CLAUDE CANNOT RUN IT. Tried and confirmed: playwright is installed in the sandbox
+but downloading a browser fails, and `npm run build` cannot run there either. So
+the bench is Claude's, the e2e is Roman's, and Claude must never report "benches
+green" as if it covered a change to the screen half.
 
 ## HOW WE WORK — from Roman
 

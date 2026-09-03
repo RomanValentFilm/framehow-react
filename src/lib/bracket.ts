@@ -299,6 +299,30 @@ export function inCardOrder(
     (at.get(a) ?? Number.MAX_SAFE_INTEGER) - (at.get(b) ?? Number.MAX_SAFE_INTEGER));
 }
 
+/**
+ * IS THE PROJECT ALL HERE YET? (#462)
+ *
+ * An order opened halfway through a load lists shots this device has not got.
+ * Judging it then sorts against half a storyboard, and SAVING the sheet then is
+ * worse: syncBracketWithVisibleFrames prunes the sheet to whatever is on screen,
+ * which is right for working out today's answer and quite wrong to keep. That is
+ * how an order came back short.
+ *
+ * decideResort has always asked this before deciding. The SAVING side never did,
+ * so the two halves could disagree — and the saving side is the one that leaves
+ * damage behind. Both now ask the same question, in one place, in these words.
+ */
+export function tooEarlyToJudge(
+  frameOrder: readonly number[],
+  visibleIds: readonly number[],
+  framesHeld: number,
+): boolean {
+  const here = new Set(visibleIds);
+  const listed = new Set(frameOrder);
+  return [...listed].filter((id) => here.has(id)).length < listed.size
+    && framesHeld < frameOrder.length;
+}
+
 export function iconStates(
   currentOrder: readonly number[],
   root: BracketNode,
@@ -876,10 +900,7 @@ export function decideResort(
   // against half a storyboard. Roman: "it shows sometimes all frames, sometimes
   // not." If this device is holding fewer frames than the order lists, it is
   // not ready to judge anything.
-  const here = new Set(visibleIds);
-  const listed = new Set(order.frameOrder);
-  if ([...listed].filter((id) => here.has(id)).length < listed.size
-      && framesHeld < order.frameOrder.length) {
+  if (tooEarlyToJudge(order.frameOrder, visibleIds, framesHeld)) {
     return { why: `only ${framesHeld} of ${order.frameOrder.length} frames here yet — too early to judge` };
   }
 

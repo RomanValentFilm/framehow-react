@@ -66,13 +66,16 @@
 //   14  KEEP ORDER and REMAINING are not needs and are never emptied.     [12]
 //   15  A shot deleted from the project leaves every order too — a ghost in
 //       the list freezes that order for ever.                             [15]
+//   16  THE SHEET IS NOT SAVED while the project is still arriving. Working out
+//       its answer prunes it to what is on screen — right for the answer, wrong
+//       to keep. Deciding and saving ask the same question.                [24]
 
 import { useStore, DEFAULT_NEED_DEFINITIONS, createDefaultFrameNeedState } from '../src/store/state';
 import type { Frame, SortOrder, BracketNodeData, FrameNeedState } from '../src/store/state';
 import {
   decideResort, placeChangedFrames, breaksAfterResort, deserializeBracket,
   serializeBracket, syncBracketWithVisibleFrames, boxOfEachFrame, boxOrderOfSheet,
-  shotsOutsideTheirBox, rematchToNeeds, flattenBracketOrder, withoutShotsThatAreGone, orderFromSheet, iconStates, inCardOrder, breaksAfterInsert, breaksAfterRemoval,
+  shotsOutsideTheirBox, rematchToNeeds, flattenBracketOrder, withoutShotsThatAreGone, orderFromSheet, iconStates, inCardOrder, tooEarlyToJudge, breaksAfterInsert, breaksAfterRemoval,
 } from '../src/lib/bracket';
 
 const DAY = 'tbl_shootday';
@@ -1089,6 +1092,29 @@ console.log('\n23. the icons always read in the card order');
     inCardOrder([2, 5], [3, 1, 2, 6, 4, 5]), [2, 5]);
   check('a shot the cards do not mention keeps its place at the end',
     inCardOrder([1, 99, 2], [2, 1]), [2, 1, 99]);
+}
+
+console.log('\n24. the sheet is not saved while the project is still arriving');
+{
+  // Working out the sheet's answer prunes it to whatever is on screen — right
+  // for the answer, wrong to keep. decideResort always refused to JUDGE in that
+  // state; the SAVING side never refused, and saving is the half that leaves
+  // damage behind. Both ask this one question now.
+  const listed = [1, 2, 3, 4, 5, 6];
+
+  check('all six here — go ahead', tooEarlyToJudge(listed, ALL, 6), false);
+  check('THREE OF SIX HERE AND THE DEVICE HOLDS THREE — WAIT',
+    tooEarlyToJudge(listed, [1, 2, 3], 3), true);
+
+  // The two halves of the question, each on its own.
+  check('everybody listed is on screen, so it does not matter what else is held',
+    tooEarlyToJudge(listed, ALL, 3), false);
+  check('the device holds them all, they are just not on this screen — a group',
+    tooEarlyToJudge(listed, [1, 2, 3], 6), false);
+
+  // And it still judges a shot that is simply gone: withoutShotsThatAreGone
+  // drops the ghost first, so the list it asks about is the real one.
+  check('an empty order is nothing to wait for', tooEarlyToJudge([], [], 0), false);
 }
 
 console.log(failures === 0 ? '\nALL GOOD\n' : `\n${failures} FAILED\n`);

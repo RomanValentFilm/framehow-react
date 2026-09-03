@@ -11,7 +11,7 @@ import {
   syncBracketWithVisibleFrames, framesMatching, rematchToNeeds, boxOfEachFrame,
   placeChangedFrames, decideResort, shotsOutsideTheirBox, boxOrderOfSheet,
   withoutShotsThatAreGone, orderFromSheet, iconStates, boxNamesOfSheet, breaksAfterInsert,
-  inCardOrder,
+  inCardOrder, tooEarlyToJudge,
 } from './bracket';
 import type { BracketNode } from './bracket';
 import { stampChangedSettings } from './projectSettings';
@@ -356,6 +356,25 @@ export function resortToNeedsOnOpen(orderId: string): number {
  */
 function persistBracketToOrder(orderId: string, bracketState: BracketState, sortedSnapshot: number[] | undefined): void {
   const s = state();
+
+  // NOT WHILE THE PROJECT IS STILL ARRIVING (#462).
+  //
+  // Working out the sheet's answer prunes it to whatever is on screen. That is
+  // right for the answer and quite wrong to keep — an order opened halfway
+  // through a load would have its sheet saved with the missing shots cut out of
+  // it, and that is how an order came back short.
+  //
+  // decideResort has always refused to JUDGE in this state. The saving side
+  // never refused, and saving is the half that leaves damage behind. Same
+  // question, same words, one place: tooEarlyToJudge.
+  const order0 = s.sortOrders.find((o) => o.id === orderId);
+  if (order0 && tooEarlyToJudge(order0.frameOrder, getVisibleFrames().map((f) => f.id),
+                               s.frames.length)) {
+    trace(`order "${order0.name}": not saving the sheet —`
+      + ` only ${s.frames.length} of ${order0.frameOrder.length} shots here yet`);
+    return;
+  }
+
   const fresh = deserializeBracket(serializeBracket(bracketState.root));
   rematchToNeeds(fresh);
   const orders = s.sortOrders.map((o) => {
