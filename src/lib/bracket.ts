@@ -120,14 +120,17 @@ export function rematchToNeeds(node: BracketNode): boolean {
     // back as ["12", "10", "2", "5", "10"].
     //
     // KEEP ORDER means "keep the order you were given". So the shots it was
-    // given are kept, in that order — but only those still arriving in it — and
-    // anyone newly falling through is added at the end.
+    // given are kept, in that order — but only those still arriving in it.
+    //
+    // A NEWCOMER GOES AT ITS NUMBER, NOT ON THE END (#455). Roman: "why does a
+    // new one come at the end?" — and he is right, there is no reason for it.
+    // Every other place in the app slips a shot in behind the shot it follows in
+    // the storyboard, and this is the same job: fillTheGaps against the shots
+    // arriving here, which are in storyboard order.
     const before = node.matchedIds;
     const here = new Set(node.inputIds);
     const kept = before.filter((id) => here.has(id));
-    const kept2 = new Set(kept);
-    const arrived = node.inputIds.filter((id) => !kept2.has(id));
-    const fresh = [...kept, ...arrived];
+    const fresh = fillTheGaps(kept, node.inputIds);
     const changed = fresh.length !== before.length || fresh.some((id, i) => id !== before[i]);
     node.matchedIds = fresh;
     if (node.right) { node.right.inputIds = [...fresh]; rematchToNeeds(node.right); }

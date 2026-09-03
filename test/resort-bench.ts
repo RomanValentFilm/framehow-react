@@ -905,8 +905,12 @@ console.log('\n19. no shot may be drawn in two boxes at once');
         [1, 2, 3, 4, 5, 6], back, [1, 2, 3, 4, 5, 6]);
   const r2 = deserializeBracket(back);
   rematchToNeeds(r2);
-  check('the shots it was given keep their order, newcomers go last',
-    r2.down?.matchedIds, [6, 4, 3, 2, 5]);
+  // A NEWCOMER GOES AT ITS NUMBER (#455). The box was given 6, 4, 3 in that
+  // order — somebody put them that way round on purpose — and keeps it. Shots
+  // 2 and 5 are new to it: 5 slips in behind 4, the shot it follows in the
+  // storyboard, and 2 has nobody above it at all so it goes to the front.
+  check('the shots it was given keep their order, newcomers go at their number',
+    r2.down?.matchedIds, [2, 6, 4, 5, 3]);
 }
 
 console.log('\n20. a shot falling into KEEP ORDER is left where it is');
