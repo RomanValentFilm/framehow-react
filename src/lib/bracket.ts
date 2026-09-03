@@ -280,15 +280,30 @@ export function iconStates(
   root: BracketNode,
   waiting: ReadonlySet<number>,
   sheetApplied: boolean,
-): { green: Set<number>; red: Set<number> } {
+): { green: Set<number>; red: Set<number>; outOfPlace: Set<number> } {
   const green = new Set<number>();
   for (const id of currentOrder) if (waiting.has(id)) green.add(id);
-  if (!sheetApplied) return { green, red: new Set<number>() };
+  if (!sheetApplied) {
+    return { green, red: new Set<number>(), outOfPlace: new Set<number>() };
+  }
 
-  const red = shotsOutsideTheirBox(
+  // WHERE AN ICON SITS IS NOT THE SAME QUESTION AS WHAT COLOUR IT IS (#460).
+  //
+  // `outOfPlace` is every shot whose card is not where its box would put it.
+  // Its icon is carried over to follow its card, so the sheet mirrors the real
+  // order — that is #431, and it must happen whatever colour the shot is.
+  //
+  // `red` is that same set MINUS the green ones, because a shot cannot be both
+  // and green wins. Sharing one set made the two answers the same, so a shot
+  // still waiting for DONE had its icon left behind: Roman's new shot with no
+  // needs sat right after the shot it was made from, while its icon stayed down
+  // among the leftovers. "It was positioned right in the frame cards order, but
+  // in the bracket it was put to the bottom in between the remaining."
+  const outOfPlace = shotsOutsideTheirBox(
     [...currentOrder], boxOfEachFrame(root), boxOrderOfSheet(root));
+  const red = new Set(outOfPlace);
   for (const id of green) red.delete(id);
-  return { green, red };
+  return { green, red, outOfPlace };
 }
 
 /**

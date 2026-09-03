@@ -1029,7 +1029,7 @@ function markOutOfBoxPills(container: HTMLElement, orderId: string,
   const root = deserializeBracket(order.bracketTree);
   // THE DECISION IS NOT MADE HERE (#447). iconStates says who is green and who
   // is red, and it is on the bench. This code only paints what it is told.
-  const { green: isGreen, red: outside } =
+  const { green: isGreen, red: outside, outOfPlace } =
     iconStates(currentOrder, root, green ?? new Set<number>(), mayMarkRed);
 
   // THE ICONS SAY WHAT THEY ARE AND WHY (#448).
@@ -1074,20 +1074,20 @@ function markOutOfBoxPills(container: HTMLElement, orderId: string,
   // needed and, crucially, NO OTHER ICON MOVES. The old version worked from
   // position numbers and shuffled icons all over the sheet whenever one shot
   // was dragged.
-  for (const fid of outside) {
+  for (const fid of outOfPlace) {
     const pill = pillOf(fid);
     if (!pill) continue;
     const at = currentOrder.indexOf(fid);
     let before: HTMLElement | null = null;
     for (let i = at - 1; i >= 0; i--) {
-      if (outside.has(currentOrder[i])) continue;        // also displaced — keep looking
+      if (outOfPlace.has(currentOrder[i])) continue;     // also displaced — keep looking
       before = pillOf(currentOrder[i]);
       if (before) break;
     }
     if (before) { before.after(pill); continue; }
     // Nothing above it is staying put: it goes to the front of the row holding
     // the first shot that is.
-    const firstStaying = currentOrder.find((id) => !outside.has(id));
+    const firstStaying = currentOrder.find((id) => !outOfPlace.has(id));
     const row = firstStaying !== undefined ? pillOf(firstStaying)?.parentElement : null;
     if (row) row.insertBefore(pill, row.firstChild);
   }

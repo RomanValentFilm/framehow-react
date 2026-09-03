@@ -43,6 +43,9 @@
 //       the sheet has been applied — while a sheet is being built, nobody has
 //       moved anything.                                                   [17]
 //   11c A shot cannot be both. Green wins.                                [17]
+//   11d WHERE an icon sits is a different question from its COLOUR. A shot
+//       whose card is not where its box would put it has its icon carried over
+//       to follow the card — whatever colour it is.                      [17]
 //
 //   BREAKS
 //   10  A break follows the nearest shot above it THAT STAYED PUT.        [10]
@@ -820,6 +823,19 @@ console.log('\n17. which icons are green and which are red');
   // Never both.
   const both = iconStates(dragged, root, new Set([6]), true);
   check('a shot that is green is not also red', [[...both.green], [...both.red]], [[6], []]);
+
+  // WHERE THE ICON SITS IS A DIFFERENT QUESTION FROM ITS COLOUR (#460).
+  //
+  // A shot whose card is not where its box would put it has its icon carried
+  // over to follow the card — whatever colour it is. Sharing one set left a
+  // green shot's icon behind: Roman's new shot with no needs sat right after
+  // the shot it was made from while its icon stayed among the leftovers.
+  check('A GREEN SHOT OUT OF ITS BOX STILL HAS ITS ICON CARRIED OVER',
+    [...both.outOfPlace], [6]);
+  check('and a settled order carries nobody',
+    [...iconStates(ALL, root, none, true).outOfPlace], []);
+  check('nor while the sheet is still being built',
+    [...iconStates(dragged, root, none, false).outOfPlace], []);
 
   // And a settled order marks nobody.
   const calm = iconStates(ALL, root, none, true);
