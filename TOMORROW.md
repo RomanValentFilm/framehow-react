@@ -1,8 +1,91 @@
 # Where things stand
 
-Deployed to dev: **v4.9.108 · #410**.
-On try411 only: **v4.9.120 · #422** (the re-sort, working).
-Next number: **v4.9.121 · #423**. Last run: 108. A NEW NUMBER FOR EVERY DEPLOY — both parts, always.
+Deployed to dev: **v4.9.141 · #444**. try427: confirm — the last deploy output was
+cut off mid-run.
+Next number: **v4.9.142 · #445**. A NEW NUMBER FOR EVERY DEPLOY — both parts, always.
+Pins to fall back to: `good-443`, `good-440`, `good-437`. try411 sits untouched on #426.
+
+## TOMORROW, IN THIS ORDER
+
+### 1. ONE PIECE OF CODE DECIDES THE ORDER. Everything else asks it.
+
+This is the evening's real finding and it explains most of tonight.
+
+The same job — "turn the sheet into the order" — is done by TWO pieces of code,
+and only one of them has the rules:
+
+- `decideResort` (bracket.ts) — on the bench, 16 sections, one second to run.
+  Refuses a list that repeats a shot or changes length (bracket.ts:707, 726-727).
+- The **SORT NOW button** (sortOrder.ts:2545-2615) — its own private copy, in the
+  DOM, with NEITHER guard, and no test anywhere near it:
+
+      for (const fid of order.frameOrder) { if (visible) push(answer[bi++]); else push(fid); }
+      while (bi < answer.length) push(answer[bi++]);      // can only lengthen the list
+
+  That is Roman's `showing 57 of 55`. The bench stayed green all evening because
+  nothing on the bench goes near this code.
+
+- And the SAME code exists a THIRD time behind the "overwrite your frame order"
+  modal (sortOrder.ts:1171-1189). Any fix must land in both, or better: delete both.
+
+Also on this path, same handler, sortOrder.ts:2561-2578 — the "hybrid" mapping
+that puts hand-moved shots back by position. It is a leftover of a DELETED rule,
+it maps two separately-derived lists onto each other with no membership check,
+and it can repeat a shot on its own. It goes.
+
+**Do:** make SORT NOW call the one tested function, delete its private copy and
+the modal's copy, and put a bench section on the SORT NOW path itself so this
+class of fault cannot come back silently.
+
+### 2. The drag handler cements the damage
+
+sortOrder.ts:3216-3256 rebuilds `frameOrder` from the cards on screen. Two cards
+with the same id write the id twice; and every frame NOT currently rendered
+(other group, hidden) is silently dropped from the order. Both wrong.
+
+### 3. The leftovers from rules we deleted
+
+All of these still fire and all of them work off the old position-number rule:
+
+- box dimming via `getAffectedNodes` (sortOrder.ts:565, class `sort-bracket-sel-affected`)
+- "You're about to overwrite your manual sorting" (:946) and its position re-sort (:997)
+- "This change will redistribute manually ordered frames. Continue?" (:1047)
+- the dead `showBracketConfirmModal` (:1152) — no callers
+- the red "You modified the order manually" banner (:1990)
+
+`sortedSnapshot` WRITES MUST STAY — bracket.ts gates `decideResort` on it.
+
+Roman was shown one of these mid-work tonight ("asked to save something") — find
+which and say so before deleting.
+
+### 4. Then the smaller ones
+
+- `verifyBracketIntegrity` (:585) reports false "missing" frames — it asks
+  `flattenBracketOrder`, which does not return everybody.
+- `persistBracketToOrder` can save a sheet pruned to whatever is on screen;
+  `decideResort` has a "too early to judge" guard, the write side does not.
+- Stale comments: sortOrder.ts:249, :1242-1246, state.ts:438.
+- e2e tests 2 and 3 in `26-needs-and-the-order.spec.ts` (run 121: 1 pass, 2 fail).
+
+## Tonight's five (all with a bench test that was red first)
+
+- **#439** REMAINING is not a place the boxes PUT anybody; a new shot enters the
+  sheet at its number, not at the back.
+- **#440** the log names the boxes a shot moved between — `6#1: no box → DAY 3`.
+- **#441** a box keeps every shot it took, including the ones its inner box refused.
+  (DAY 3 leads into 1ST UNIT; a DAY 3 shot with no unit was falling out of the
+  sheet's answer entirely, so it could never be placed and never moved.)
+- **#442** a shot deleted from the project leaves the order too. One ghost in the
+  list froze that order for ever: `only 19 of 20 frames here yet`.
+- **#443/#444** no red while the sheet is being built — in BOTH places that paint
+  it. #443 gated one and missed the other; that is the same "two copies of one
+  job" fault as item 1.
+
+## How we work, from Roman, tonight
+
+Read the code and the tests and decide. Do not ask him to pin, save or park
+something instead of fixing it. Do not answer from a screenshot when the code
+can be read.
 
 ## The week's fault, and it was one fault
 

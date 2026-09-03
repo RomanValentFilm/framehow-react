@@ -26,7 +26,7 @@ import type { Frame, SortOrder, BracketNodeData, FrameNeedState } from '../src/s
 import {
   decideResort, placeChangedFrames, breaksAfterResort, deserializeBracket,
   serializeBracket, syncBracketWithVisibleFrames, boxOfEachFrame, boxOrderOfSheet,
-  shotsOutsideTheirBox, rematchToNeeds, flattenBracketOrder, withoutShotsThatAreGone,
+  shotsOutsideTheirBox, rematchToNeeds, flattenBracketOrder, withoutShotsThatAreGone, orderFromSheet,
 } from '../src/lib/bracket';
 
 const DAY = 'tbl_shootday';
@@ -658,6 +658,60 @@ console.log('\n15. a shot deleted from the project leaves the order too');
   } as never);
   check('and with the ghost gone it moves the shot', openTheOrder(), 1);
   check('to where its box puts it', order().frameOrder, [1, 2, 3, 6, 4, 5]);
+}
+
+console.log('\n16. SORT NOW: the order becomes what the sheet says');
+{
+  // THE LOOP THAT BROKE ROMAN'S ORDER, kept here so it cannot come back.
+  // This is what the SORT NOW button used to do on its own, with none of the
+  // protections decideResort has. `showing 57 of 55`.
+  function theOldWay(standsAs: number[], sheetSays: number[], visible: number[]): number[] {
+    const here = new Set(visible);
+    const out: number[] = [];
+    let bi = 0;
+    for (const fid of standsAs) {
+      if (here.has(fid)) { if (bi < sheetSays.length) out.push(sheetSays[bi++]); }
+      else out.push(fid);
+    }
+    while (bi < sheetSays.length) out.push(sheetSays[bi++]);
+    return out;
+  }
+
+  // A sheet that names shot 2 twice — which flattenBracketOrder can do, and
+  // which is why every other path runs its answer through fillTheGaps first.
+  const repeats = [4, 5, 6, 1, 2, 2, 3];
+  check('THE OLD WAY GREW THE LIST AND REPEATED A SHOT',
+    theOldWay([1, 2, 3, 4, 5, 6], repeats, ALL), [4, 5, 6, 1, 2, 2, 3]);
+  check('the new way does not', orderFromSheet([1, 2, 3, 4, 5, 6], repeats, ALL),
+    [4, 5, 6, 1, 2, 3]);
+
+  // The plain case.
+  check('a plain sort is just the sheet',
+    orderFromSheet([1, 2, 3, 4, 5, 6], [4, 5, 6, 1, 2, 3], ALL), [4, 5, 6, 1, 2, 3]);
+
+  // A shot in another group is not on screen: it does not move, and the shots
+  // that ARE on screen sort around it.
+  check('a shot not on screen stays exactly where it is',
+    orderFromSheet([1, 2, 3, 4, 5, 6], [6, 5, 4, 2, 1], [1, 2, 4, 5, 6]),
+    [6, 5, 3, 4, 2, 1]);
+
+  // The sheet leaves somebody out — it must not cost them their place.
+  check('a shot the sheet does not name keeps its place',
+    orderFromSheet([1, 2, 3, 4, 5, 6], [1, 2, 4, 5, 6], ALL), [1, 2, 3, 4, 5, 6]);
+
+  // And an order that is ALREADY damaged comes back clean.
+  check('an order holding a shot twice comes back holding it once',
+    orderFromSheet([1, 2, 2, 3, 4, 5, 6], [1, 2, 3, 4, 5, 6], ALL), [1, 2, 3, 4, 5, 6]);
+
+  // The three promises, on every case above.
+  for (const [name, got] of [
+    ['plain', orderFromSheet([1, 2, 3, 4, 5, 6], [4, 5, 6, 1, 2, 3], ALL)],
+    ['repeating sheet', orderFromSheet([1, 2, 3, 4, 5, 6], repeats, ALL)],
+    ['sheet with a gap', orderFromSheet([1, 2, 3, 4, 5, 6], [1, 2, 4, 5, 6], ALL)],
+  ] as [string, number[]][]) {
+    check(`${name}: 6 shots, each once`,
+      [got.length, new Set(got).size, [...got].sort().join(',')], [6, 6, '1,2,3,4,5,6']);
+  }
 }
 
 console.log(failures === 0 ? '\nALL GOOD\n' : `\n${failures} FAILED\n`);

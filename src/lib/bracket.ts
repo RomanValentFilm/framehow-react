@@ -175,6 +175,63 @@ export function isLeftovers(box: string | undefined): boolean {
 }
 
 /**
+ * SORT NOW: THE ORDER BECOMES WHAT THE SHEET SAYS (#445).
+ *
+ * One function, used by every path that applies a sheet to an order. There used
+ * to be three: this one, the SORT NOW button's own copy, and a third behind the
+ * "overwrite your frame order" question. The two copies had none of the
+ * protections and no test anywhere near them, so the bench stayed green while a
+ * real order broke. Roman's log: `showing 57 of 55` — an order holding two of
+ * his shots twice. Their loop was
+ *
+ *     for (const fid of order.frameOrder) { if (visible) push(answer[bi++]); else push(fid); }
+ *     while (bi < answer.length) push(answer[bi++]);
+ *
+ * and that trailing line can only ever make the list longer: whatever the sheet
+ * named twice was pushed on to the end a second time.
+ *
+ * WHAT THIS PROMISES, and the reason it is one function:
+ *   - the shots on screen come out in the sheet's order
+ *   - a shot NOT on screen (another group) does not move at all
+ *   - a shot the sheet does not name keeps the place it had
+ *   - the list never grows, never shrinks, and never holds a shot twice —
+ *     and if it arrived holding one twice, it comes back holding it once
+ */
+export function orderFromSheet(
+  standsAs: readonly number[],
+  sheetSays: readonly number[],
+  visible: readonly number[],
+): number[] {
+  // Whatever arrives, we work from a list with no repeats in it.
+  const clean: number[] = [];
+  const have = new Set<number>();
+  for (const id of standsAs) if (!have.has(id)) { clean.push(id); have.add(id); }
+
+  const here = new Set(visible);
+  const mine = clean.filter((id) => here.has(id));   // the shots the sheet is allowed to move
+  const wanted = new Set(mine);
+
+  // The sheet's answer, kept to shots that are actually in this order and on
+  // screen, and each of them once.
+  const queue: number[] = [];
+  const placed = new Set<number>();
+  for (const id of sheetSays) {
+    if (!wanted.has(id) || placed.has(id)) continue;
+    queue.push(id);
+    placed.add(id);
+  }
+  // Anybody the sheet did not name goes back in behind the shot they follow now
+  // — the sheet is not allowed to lose a shot by omitting it.
+  const full = fillTheGaps(queue, mine);
+
+  // Same number of slots as shots to put in them, so the length cannot change.
+  const out: number[] = [];
+  let qi = 0;
+  for (const id of clean) out.push(here.has(id) ? full[qi++] : id);
+  return out;
+}
+
+/**
  * A SHOT DELETED FROM THE PROJECT HAS TO LEAVE THE ORDER TOO (#442).
  *
  * An order that lists a shot the project no longer holds is not merely untidy —

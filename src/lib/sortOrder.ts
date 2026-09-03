@@ -10,7 +10,7 @@ import {
   serializeBracket, deserializeBracket, flattenBracketOrder, fixInputIds,
   syncBracketWithVisibleFrames, framesMatching, rematchToNeeds, boxOfEachFrame,
   placeChangedFrames, decideResort, shotsOutsideTheirBox, boxOrderOfSheet,
-  withoutShotsThatAreGone,
+  withoutShotsThatAreGone, orderFromSheet,
 } from './bracket';
 import type { BracketNode } from './bracket';
 import { stampChangedSettings } from './projectSettings';
@@ -618,10 +618,26 @@ function getAffectedNodes(root: BracketNode, sortedSnapshot: number[], currentOr
   return affected;
 }
 
-/** Verify all visible frame IDs are in the bracket tree. Returns missing IDs. */
+/**
+ * Which shots on screen the sheet does not hold. Returns their ids.
+ *
+ * ASKED OF EVERY BOX, NOT OF THE ANSWER (#445). This used to ask
+ * flattenBracketOrder, which does not name everybody — a shot a box took but
+ * the box inside it refused was left out, so this reported shots as "missing"
+ * that were sitting in the sheet all along, and warned about them on the
+ * console every time the sheet was drawn. Same mistake, and the same fix, as
+ * syncBracketWithVisibleFrames (#416).
+ */
 function verifyBracketIntegrity(root: BracketNode, visibleIds: number[]): number[] {
-  const bracketIds = new Set(flattenBracketOrder(root));
-  return visibleIds.filter((id) => !bracketIds.has(id));
+  const held = new Set<number>();
+  const gather = (n: BracketNode): void => {
+    for (const id of n.inputIds) held.add(id);
+    for (const id of n.matchedIds) held.add(id);
+    if (n.right) gather(n.right);
+    if (n.down) gather(n.down);
+  };
+  gather(root);
+  return visibleIds.filter((id) => !held.has(id));
 }
 
 // ─── Grid-based layout ───────────────────────────────────────────────
@@ -1147,66 +1163,9 @@ function showAncestorReselectWarning(editViewEl: HTMLElement, bracketState: Brac
     modal.remove();
   });
 }
-
-/** Show confirmation modal overlaying the bracket. */
-function showBracketConfirmModal(editViewEl: HTMLElement, _bracketState: BracketState, orderId: string): void {
-  // Don't show duplicate
-  if (document.querySelector('.sort-bracket-confirm')) return;
-  const modal = document.createElement('div');
-  modal.className = 'sort-bracket-confirm';
-  modal.innerHTML = `
-    <div class="sort-bracket-confirm-inner">
-      <div class="sort-bracket-confirm-text">Your previous frame order will be overwritten</div>
-      <div class="sort-bracket-confirm-btns">
-        <button class="sort-bracket-confirm-yes">Yes</button>
-        <button class="sort-bracket-confirm-no">No</button>
-      </div>
-    </div>`;
-  document.body.appendChild(modal);
-  modal.querySelector('.sort-bracket-confirm-yes')!.addEventListener('click', (e) => {
-    e.stopPropagation();
-    // Re-apply bracket order (overwrite manual changes, keep bracket as-is)
-    const bs = (editViewEl as any).__bracketState as BracketState | undefined;
-    if (bs) {
-      const bracketOrder = flattenBracketOrder(bs.root);
-      const s = state();
-      const order = s.sortOrders.find((o) => o.id === orderId);
-      if (order) {
-        const visibleSet = new Set(getVisibleFrames().map((f) => f.id));
-        const newFrameOrder: number[] = [];
-        let bi = 0;
-        for (const fid of order.frameOrder) {
-          if (visibleSet.has(fid)) {
-            if (bi < bracketOrder.length) newFrameOrder.push(bracketOrder[bi++]);
-          } else {
-            newFrameOrder.push(fid);
-          }
-        }
-        while (bi < bracketOrder.length) newFrameOrder.push(bracketOrder[bi++]);
-        const orders = s.sortOrders.map((o) =>
-          o.id === orderId ? { ...o, frameOrder: newFrameOrder } : o
-        );
-        useStore.setState({ sortOrders: orders });
-        // Persist bracket tree + snapshot
-        persistBracketToOrder(orderId, bs, bracketOrder);
-        bumpRenderTick();
-        (editViewEl as any).__sortedSnapshot = bracketOrder;
-      }
-    }
-    (editViewEl as any).__pendingConfirm = false;
-    // Bracket stays ACTIVE — user can now edit it
-    modal.remove();
-    void flushSyncNow();
-    renderSortEditView(editViewEl, orderId);
-  });
-  modal.querySelector('.sort-bracket-confirm-no')!.addEventListener('click', (e) => {
-    e.stopPropagation();
-    (editViewEl as any).__pendingConfirm = false;
-    (editViewEl as any).__bracketActive = false;
-    modal.remove();
-    renderSortEditView(editViewEl, orderId);
-  });
-}
+/* The "Your previous frame order will be overwritten" question is gone (#445).
+ * It had no callers at all, and its Yes button held a third copy of the
+ * list-building that put a shot in Roman's order twice. Both went. */
 
 
 /** Mark pills red for frames that moved from their sorted position. */
@@ -2545,60 +2504,39 @@ function wireEditViewEvents(el: HTMLElement, orderId: string): void {
     renameBtn.addEventListener('click', () => {
       const isSorting = renameBtn.textContent === 'SORT NOW';
       if (isSorting) {
-        const pendingConfirm = (el as any).__pendingConfirm as boolean ?? false;
         const bracketState = (el as any).__bracketState as BracketState | undefined;
         const s = state();
 
-        // Build the final frame order from the bracket
+        // SORT NOW APPLIES THE SHEET, THROUGH THE ONE FUNCTION THAT KNOWS THE
+        // RULES (#445).
+        //
+        // This used to build the list itself, with none of the protections, and
+        // it is what put two of Roman's shots in his order twice — `showing 57
+        // of 55`. Its loop ended with a line that could only ever make the list
+        // longer. See orderFromSheet, which every path now goes through.
+        //
+        // The "hybrid" that stood here has gone with it. It put shots the app
+        // called "affected" back by their POSITION NUMBER — the rule we deleted.
+        // Hand work is respected by leaving a shot alone, not by shuffling it
+        // back afterwards; and SORT NOW is the user asking for the sheet
+        // outright, the one moment the sheet wins over everything.
         let newFrameOrder: number[] | null = null;
-        let finalBracketOrder: number[] | undefined;
-        const affectedNodes = (el as any).__affectedNodes as Set<BracketNode> | undefined;
 
         if (bracketState) {
-          // Always get the raw bracket order (used for snapshot + non-affected frames)
-          const rawBracketOrder = flattenBracketOrder(bracketState.root);
-
-          if (pendingConfirm && affectedNodes && affectedNodes.size > 0) {
-            // Hybrid: bracket order for unaffected, manual positions for affected frames
-            const affectedFrameIds = new Set<number>();
-            for (const node of affectedNodes) {
-              for (const id of node.matchedIds) affectedFrameIds.add(id);
-            }
-            const order = s.sortOrders.find((o) => o.id === orderId);
-            if (order) {
-              const currentCardOrder = getOrderedFrames(order).map((f) => f.id);
-              const manualQueue = currentCardOrder.filter((id) => affectedFrameIds.has(id));
-              let mi = 0;
-              finalBracketOrder = rawBracketOrder.map((id) => {
-                if (affectedFrameIds.has(id)) return manualQueue[mi++] ?? id;
-                return id;
-              });
-            } else {
-              finalBracketOrder = rawBracketOrder;
-            }
-            // Snapshot = raw bracket order (not hybrid) so affected frames show as red pills
-            (el as any).__sortedSnapshot = rawBracketOrder;
-          } else {
-            // No manual changes or all resolved — apply bracket order as-is
-            finalBracketOrder = rawBracketOrder;
-            (el as any).__sortedSnapshot = rawBracketOrder;
-          }
+          const sheetSays = flattenBracketOrder(bracketState.root);
+          (el as any).__sortedSnapshot = sheetSays;
           // The sheet has now been applied, so red means something again (#443).
           (el as any).__sheetTouched = false;
 
           const order = s.sortOrders.find((o) => o.id === orderId);
           if (order) {
-            const visibleSet = new Set(getVisibleFrames().map((f) => f.id));
-            newFrameOrder = [];
-            let bi = 0;
-            for (const fid of order.frameOrder) {
-              if (visibleSet.has(fid)) {
-                if (bi < finalBracketOrder!.length) newFrameOrder.push(finalBracketOrder![bi++]);
-              } else {
-                newFrameOrder.push(fid);
-              }
+            const applied = orderFromSheet(
+              order.frameOrder, sheetSays, getVisibleFrames().map((f) => f.id));
+            if (applied.length !== order.frameOrder.length) {
+              trace(`order "${order.name}": SORT NOW tidied the list`
+                + ` ${order.frameOrder.length} → ${applied.length}`);
             }
-            while (bi < finalBracketOrder!.length) newFrameOrder.push(finalBracketOrder![bi++]);
+            newFrameOrder = applied;
           }
         }
 
@@ -3251,7 +3189,15 @@ function setupDragAndDrop(el: HTMLElement, orderId: string): void {
                 const pos = newBreakPositions.get(b.id);
                 return pos !== undefined ? { ...b, position: pos } : b;
               });
-              return { ...o, frameOrder: newFrameOrder, breaks: newBreaks };
+              // A DRAG REARRANGES WHAT IS ON SCREEN AND NOTHING ELSE (#445).
+              //
+              // This used to replace the whole list with the cards it could see,
+              // which silently DELETED every shot of the order that was not
+              // being drawn — another group's shots, hidden ones — and wrote any
+              // shot back twice if the list already held it twice. Same function
+              // as SORT NOW, for the same three promises.
+              return { ...o, breaks: newBreaks,
+                       frameOrder: orderFromSheet(o.frameOrder, newFrameOrder, newFrameOrder) };
             });
             useStore.setState({ sortOrders: orders });
           }
