@@ -181,15 +181,26 @@ export function rematchToNeeds(node: BracketNode): boolean {
 /**
  * IS THIS "NOWHERE"? — the two ways a shot can be in no box at all.
  *
- * Either nothing claimed it, or the deepest thing that claimed it was the
- * REMAINING box the sheet writes for the tail of a chain. REMAINING asks the
- * needs nothing; it holds whatever is left over. So a shot sitting in it has
- * not been placed by any need, and by Roman's rule it is grey and is left where
- * it is. KEEP ORDER is not listed here: it never takes anybody in on its own,
- * so a shot only reaches it because the user's sheet put it there.
+ * Either nothing claimed it, or the deepest thing that claimed it asks the needs
+ * nothing at all — REMAINING, which the sheet writes for the tail of a chain,
+ * and KEEP ORDER, which holds whatever reaches it in the order it was given.
+ * Neither places a shot; they catch the shots no need placed. So a shot sitting
+ * in one has not been put there by the boxes: it is grey, and it is left exactly
+ * where it is.
+ *
+ * KEEP ORDER WAS MISSING FROM THIS (#454). A new shot with no needs fell through
+ * into KEEP ORDER, which counted as "the boxes have placed it", so the app
+ * carried it off to the end of that box — when Roman's rule is that a shot with
+ * no needs stays where it was made. Roman's own test caught it: "the new shot
+ * 6#1 sits at place 13, behind 11" instead of behind the shot it came from.
+ *
+ * This says nothing about RED. Red is worked out from the box ranks, so a
+ * KEEP ORDER shot dragged up among the DAY 1 shots is still marked.
  */
 export function isLeftovers(box: string | undefined): boolean {
-  return box === undefined || box.endsWith('/__remaining__|__remaining__');
+  return box === undefined
+    || box.endsWith('/__remaining__|__remaining__')
+    || box.endsWith('/__keep__|__keep__');
 }
 
 /**

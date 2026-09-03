@@ -23,8 +23,11 @@
 //    5  Everything else is untouched, including shots moved by hand.        [5]
 //    5b …but a shot moved by hand DOES move when its OWN needs change: the
 //       needs are the later and more deliberate statement.                 [5b]
-//    6  A shot no box matches belongs with the leftovers — and REMAINING is
-//       the same thing written out. That is a real place, and grey.    [6,13b]
+//    6  A shot no box matches belongs with the leftovers. REMAINING and KEEP
+//       ORDER are the same thing written out — neither asks the needs anything,
+//       so neither PLACES a shot. A shot in one is left where it is and is not
+//       marked green. It can still be RED, which is worked out from the box
+//       ranks.                                                    [6,13b,20]
 //    7  The list can never grow, shrink, or hold the same shot twice.  [7,16]
 //    8  Boxes are read as a whole chain: DAY 1 > LOCATION 1 is its own
 //       place.                                                            [11b]
@@ -904,6 +907,53 @@ console.log('\n19. no shot may be drawn in two boxes at once');
   rematchToNeeds(r2);
   check('the shots it was given keep their order, newcomers go last',
     r2.down?.matchedIds, [6, 4, 3, 2, 5]);
+}
+
+console.log('\n20. a shot falling into KEEP ORDER is left where it is');
+{
+  // Roman's rule: a shot with no needs stays where it was made. A new shot
+  // falls through every box and lands in KEEP ORDER — and that counted as "the
+  // boxes placed it", so the app carried it off to the end of that box. His own
+  // test caught it: "the new shot 6#1 sits at place 13, behind 11".
+  const withKeep: BracketNodeData = {
+    inputIds: [...ALL], categoryId: DAY, categoryName: 'SHOOT DAY',
+    itemId: D1, itemName: 'DAY 1', matchedIds: [1, 2],
+    down: {
+      inputIds: [3, 4, 5, 6], categoryId: '__keep__', categoryName: 'KEEP ORDER',
+      itemId: '__keep__', itemName: 'KEEP ORDER', matchedIds: [3, 4, 5, 6],
+    },
+  };
+  setUp({ 1: D1, 2: D1, 3: D2, 4: D2, 5: D2, 6: D2 },
+        [1, 2, 3, 4, 5, 6], withKeep, [1, 2, 3, 4, 5, 6]);
+
+  // A new shot with no needs at all, made from shot 1 — so it sits BETWEEN the
+  // two day 1 shots, which is where the boxes would never put it.
+  const here = [1, 7, 2, 3, 4, 5, 6];
+  const s0 = useStore.getState();
+  const needs = { ...s0.frameNeeds };
+  const blank = createDefaultFrameNeedState();
+  blank.toggles = {};
+  needs[7] = blank;
+  const storyboard = [...s0.frames];
+  storyboard.splice(1, 0, frame(7));
+  useStore.setState({
+    frames: storyboard, frameNeeds: needs,
+    sortOrders: [{ ...s0.sortOrders[0], frameOrder: [...here] }],
+  } as never);
+
+  const said = decideResort(order(), here);
+  check('IT IS NOT CARRIED OFF TO KEEP ORDER', said.frameOrder, undefined);
+  check('and it is not marked by the boxes either', [...(said.moved ?? [])], []);
+  check('so it stays behind the shot it was made from', order().frameOrder, here);
+
+  // …but it IS red, because it is sitting among the day 1 shots and belongs
+  // with the leftovers. Red is worked out from the box ranks, and this rule
+  // says nothing about it.
+  const root = deserializeBracket(withKeep);
+  syncBracketWithVisibleFrames(root, here);
+  rematchToNeeds(root);
+  const red = shotsOutsideTheirBox(here, boxOfEachFrame(root), boxOrderOfSheet(root));
+  check('AND IT IS STILL RED FOR SITTING THERE', [...red], [7]);
 }
 
 console.log(failures === 0 ? '\nALL GOOD\n' : `\n${failures} FAILED\n`);
