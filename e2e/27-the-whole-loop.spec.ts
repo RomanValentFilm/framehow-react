@@ -255,25 +255,21 @@ async function calm(d: Device): Promise<void> {
 }
 
 /**
- * THE ICONS AND THE CARDS MUST TELL THE SAME STORY (#459).
+ * THE ICONS AND THE CARDS MUST READ THE SAME. ALWAYS.
  *
- * The icons read in box order; the cards are the order itself. After a fresh
- * sort they are identical — phase B proves that. After a needs change they may
- * differ ONLY where somebody moved a shot by hand, and those shots are exactly
- * the red ones. So take the red ones out of both lists, and what is left must
- * read the same.
+ * Not "except the red ones". Roman: "the red ones are deliberately moved shots
+ * from the user, so they have to be in the position the user has put them" —
+ * and the sheet already agrees, because a moved shot's icon is carried to
+ * follow its card (#431). So there is no shot whose icon and card may disagree,
+ * and an earlier version of this check let exactly that through.
  *
- * Roman's 7A broke this and nothing was watching: "it changed position
- * correctly in the bracket, but wrongly in the order of frame-cards".
+ * His 7A: "it changed position correctly in the bracket, but wrongly in the
+ * order of frame-cards."
  */
 function iconsAndCardsAgree(
-  seen: { order: string[]; pills: string[]; redIcons: string[] },
+  seen: { order: string[]; pills: string[] },
 ): { icons: string[]; cards: string[] } {
-  const red = new Set(seen.redIcons);
-  return {
-    icons: seen.pills.filter((n) => !red.has(n)),
-    cards: seen.order.filter((n) => !red.has(n)),
-  };
+  return { icons: seen.pills, cards: seen.order };
 }
 
 const reopen = async (d: Device): Promise<void> => {
@@ -407,7 +403,7 @@ test('the whole loop, three times over', async ({ browser }) => {
   {
     const both = iconsAndCardsAgree(seen);
     expect.soft(both.cards,
-      'THE CARDS MUST SIT WHERE THE ICONS SAY, EXCEPT THE RED ONES').toEqual(both.icons);
+      'THE CARDS MUST SIT WHERE THE ICONS SAY').toEqual(both.icons);
   }
 
   say('   approve four of the five — they should go grey, not red');
@@ -431,7 +427,7 @@ test('the whole loop, three times over', async ({ browser }) => {
   {
     const both = iconsAndCardsAgree(seen);
     expect.soft(both.cards,
-      'THE CARDS MUST SIT WHERE THE ICONS SAY, EXCEPT THE RED ONES').toEqual(both.icons);
+      'THE CARDS MUST SIT WHERE THE ICONS SAY').toEqual(both.icons);
   }
   expect.soft(seen.greenCards.length, 'THREE NEW GREEN PLUS THE ONE NOT YET APPROVED').toBe(4);
   expect.soft(seen.greenCards, 'and the old one is still among them').toContain(fiveGreen[4]);
@@ -480,7 +476,16 @@ test('the whole loop, three times over', async ({ browser }) => {
   await approve(page, newShot);
   seen = await look(page);
   expect.soft(seen.greenCards, 'the green is gone').not.toContain(newShot);
-  expect.soft(seen.redIcons, 'A NO-NEEDS SHOT PARKED IN THE MIDDLE IS RED').toContain(newShot);
+  // AND THEN RED OR GREY, DEPENDING ON WHERE IT LANDED — not always red.
+  //
+  // A shot with no needs belongs with the leftovers at the end. It stays where
+  // it was made, so whether that is "out of place" depends entirely on where
+  // the shot it was made FROM happens to sit. Made from a shot already down
+  // among the leftovers, it is in a perfectly good place and grey is right.
+  // This used to demand red and failed whenever the source sat low down.
+  // The rule itself is held on the bench, section 20, where the position is
+  // controlled.
+  expect.soft(seen.greenIcons, 'and its icon is not green either').not.toContain(newShot);
 
   // ── H. give the new shot needs ────────────────────────────────────────
   say('H · the new shot given needs — it moves into its box and goes grey');
