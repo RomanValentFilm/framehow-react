@@ -23,11 +23,13 @@
 //    5  Everything else is untouched, including shots moved by hand.        [5]
 //    5b …but a shot moved by hand DOES move when its OWN needs change: the
 //       needs are the later and more deliberate statement.                 [5b]
-//    6  A shot no box matches belongs with the leftovers. REMAINING and KEEP
-//       ORDER are the same thing written out — neither asks the needs anything,
-//       so neither PLACES a shot. A shot in one is left where it is and is not
-//       marked green. It can still be RED, which is worked out from the box
-//       ranks.                                                    [6,13b,20]
+//    6  THE LEFTOVERS ARE THE BOX AT THE VERY BOTTOM OF THE SHEET — the shots
+//       every box in the FIRST COLUMN turned down. Not "shots with no needs": a
+//       shot can have LOCATION 1 and no day, and the first column sorts by day,
+//       so it falls through all of them. Nothing placed it — grey, never moved.
+//       A REMAINING INSIDE A BRANCH is a different thing: "DAY 1, no location"
+//       is a real place, moved into and marked green. KEEP ORDER at the bottom
+//       is the leftovers too, by the user's own choice.        [6,13b,20,21]
 //    7  The list can never grow, shrink, or hold the same shot twice.  [7,16]
 //    8  Boxes are read as a whole chain: DAY 1 > LOCATION 1 is its own
 //       place.                                                            [11b]
@@ -958,6 +960,52 @@ console.log('\n20. a shot falling into KEEP ORDER is left where it is');
   rematchToNeeds(root);
   const red = shotsOutsideTheirBox(here, boxOfEachFrame(root), boxOrderOfSheet(root));
   check('AND IT IS STILL RED FOR SITTING THERE', [...red], [7]);
+}
+
+console.log('\n21. the REMAINING inside a branch is a real place');
+{
+  // Roman: "inside a branch — DAY 1 minus LOCATION 1. A real place. Moved into,
+  // and marked green." Only the box at the very BOTTOM of the sheet is the
+  // leftovers. Both used to be called leftovers, so a shot whose needs went
+  // from DAY 1 + LOCATION 1 to DAY 1 only sat still and stayed grey.
+  const LOCATION = 'tbl_location';
+  const branch: BracketNodeData = {
+    inputIds: [...ALL], categoryId: DAY, categoryName: 'SHOOT DAY',
+    itemId: D1, itemName: 'DAY 1', matchedIds: [1, 2, 3],
+    right: {
+      inputIds: [1, 2, 3], categoryId: LOCATION, categoryName: 'LOCATION',
+      itemId: L1, itemName: 'LOCATION 1', matchedIds: [1, 2, 3],
+      down: { inputIds: [], categoryId: '__remaining__', categoryName: 'REMAINING',
+              itemId: '__remaining__', itemName: 'REMAINING', matchedIds: [] },
+    },
+    down: {
+      inputIds: [4, 5, 6], categoryId: DAY, categoryName: 'SHOOT DAY',
+      itemId: D2, itemName: 'DAY 2', matchedIds: [4, 5, 6],
+    },
+  };
+  setUp(EVERY_DAY, [1, 2, 3, 4, 5, 6], branch, [1, 2, 3, 4, 5, 6]);
+  {
+    const s0 = useStore.getState();
+    const needs = { ...s0.frameNeeds };
+    for (const id of [1, 2, 3]) needs[id] = { ...needs[id], toggles: { [D1]: true, [L1]: true } };
+    useStore.setState({ frameNeeds: needs } as never);
+  }
+
+  // Shot 1 keeps DAY 1 but loses LOCATION 1 — so it leaves the LOCATION 1 box
+  // for the REMAINING inside DAY 1. That is a real move.
+  {
+    const s0 = useStore.getState();
+    const needs = { ...s0.frameNeeds };
+    needs[1] = { ...needs[1], toggles: { [D1]: true } };
+    useStore.setState({ frameNeeds: needs } as never);
+  }
+  const said = decideResort(order(), ALL);
+  check('IT IS MARKED — the branch REMAINING is a place, not the leftovers',
+    [...(said.moved ?? [])], [1]);
+  check('and it says which boxes', said.why?.includes('REMAINING'), true);
+
+  // …while a shot falling out of every box, to the box at the very BOTTOM of
+  // the sheet, is the leftovers and is not marked. That is section 6.
 }
 
 console.log(failures === 0 ? '\nALL GOOD\n' : `\n${failures} FAILED\n`);

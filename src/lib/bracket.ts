@@ -201,9 +201,27 @@ export function rematchToNeeds(node: BracketNode): boolean {
  * KEEP ORDER shot dragged up among the DAY 1 shots is still marked.
  */
 export function isLeftovers(box: string | undefined): boolean {
+  // TWO REMAINING BOXES, AND THEY MEAN DIFFERENT THINGS (#456).
+  //
+  //   THE ONE AT THE BOTTOM OF THE SHEET is the leftovers. NOT "shots with no
+  //   needs" — Roman: a shot can carry LOCATION 1 and no day at all, and since
+  //   the first column sorts by DAY 1, 2, 3 it is turned down by every one of
+  //   them and falls to the bottom. It has needs; just none the first column
+  //   asked about. Nothing placed it, so it is grey and it is never moved.
+  //
+  //   THE ONE INSIDE A BRANCH is a real place: "DAY 1, no location". A shot
+  //   moves into it, and is marked green for it.
+  //
+  // This used to call BOTH the leftovers, so a shot whose needs went from
+  // DAY 1 + LOCATION 1 to DAY 1 only sat still and stayed grey — when it had
+  // plainly changed place. Roman: "the app always judges the shots by the
+  // results of the bracket."
+  //
+  // A box path carries its whole chain, so the bottom ones are exactly the
+  // paths with no box in front of them.
   return box === undefined
-    || box.endsWith('/__remaining__|__remaining__')
-    || box.endsWith('/__keep__|__keep__');
+    || box === '/__remaining__|__remaining__'
+    || box === '/__keep__|__keep__';
 }
 
 /**
