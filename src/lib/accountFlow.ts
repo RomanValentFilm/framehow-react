@@ -1200,10 +1200,20 @@ const TOASTER_RESHOW_AFTER_LATER_MS = 15 * 60 * 1000;
 export function isToasterShowing(): boolean { return toasterShowing; }
 
 export function showSaveToaster(): void {
-  // Don't double-fire; don't show if user is logged in & this project is saved.
+  // WHOSE WORK IS NOT IN THE CLOUD (#458).
+  //
+  // This asked for `!dirty` as well — and dirty only means "an edit has not
+  // pushed yet", which is true for a second or two after EVERY change. So a
+  // project that is signed in, named and saved was told to save itself, simply
+  // because Roman had just touched something: "even the project is saved and
+  // has a name".
+  //
+  // The nudge is for work that has nowhere to go: nobody signed in, or a project
+  // that has never reached the cloud and so has no id. A project with an id is
+  // in the cloud, and the app pushes the rest by itself.
   if (toasterShowing) return;
   if (toasterDismissCount >= 2) return;
-  if (isLoggedIn() && getCurrentProject().projectId !== null && !getCurrentProject().dirty) return;
+  if (isLoggedIn() && getCurrentProject().projectId !== null) return;
 
   const msg = isOnIOS()
     ? "To edit this project on your desktop, you'll need to save it first."

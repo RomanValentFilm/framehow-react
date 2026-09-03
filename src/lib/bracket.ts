@@ -504,10 +504,21 @@ export function placeChangedFrames(
       if (firstOfBox === 0) anchor = null;
       else if (firstOfBox > 0) anchor = out[firstOfBox - 1];
       else {
-        // firstOfBox === -1: nobody else is in this box at all.
+        // NOBODY USABLE IS IN THIS BOX — either it holds no one else, or every
+        // other shot in it has been dragged out of place (#459).
+        //
+        // Fall back to the shot in front of it in the SHEET'S OWN ANSWER, which
+        // is in box order — but skip the misplaced ones here too. Roman's 7A
+        // moved into a box whose only other shot was 3, and 3 was red: the
+        // fallback anchored 7A to whatever happened to precede it, so the icon
+        // followed the box and looked right while the card landed among the
+        // wrong shots. "It changed position correctly in the bracket, but
+        // wrongly in the order of frame-cards."
         const at = fresh.indexOf(fid);
         for (let j = at - 1; j >= 0; j--) {
-          if (!changed.has(fresh[j])) { anchor = fresh[j]; break; }
+          if (changed.has(fresh[j]) || misplaced.has(fresh[j])) continue;
+          anchor = fresh[j];
+          break;
         }
       }
     }
