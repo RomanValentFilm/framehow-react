@@ -351,7 +351,17 @@ const ids = (rows: Array<{ id: string }>) => rows.map((r) => r.id).sort().join('
 {
   check('no answer at all is an outage', whatWentWrong(0), 'offline');
   check('...and so is no status at all', whatWentWrong(undefined), 'offline');
-  check('410 is gone — the server SAW the deletion', whatWentWrong(410), 'gone');
+  check('410 AND "deleted" is gone — the server SAW the deletion',
+    whatWentWrong(410, 'deleted'), 'gone');
+
+  // BOTH, NOT EITHER (#469). Nothing but our own server sends 410 with that
+  // code. A 410 from anywhere else — a proxy rule, a retired address — must be
+  // an ordinary failure, never an accusation.
+  check('a bare 410 with no code proves nothing', whatWentWrong(410), 'offline');
+  check('...nor a 410 wearing somebody else\'s code',
+    whatWentWrong(410, 'not_found'), 'offline');
+  check('...and it is retried like any other failure',
+    worthTryingAgain(410, 'gone_forever'), true);
   check('409 is the server being ahead', whatWentWrong(409), 'conflict');
   check('500 is the server having trouble — try again', whatWentWrong(500), 'offline');
   check('200 is fine', whatWentWrong(200), 'fine');
@@ -363,13 +373,15 @@ const ids = (rows: Array<{ id: string }>) => rows.map((r) => r.id).sort().join('
     whatWentWrong(404), 'offline');
   check('...so a 404 never accuses you of anything', worthTryingAgain(404), true);
 
-  check('a deleted project is never worth trying again', worthTryingAgain(410), false);
+  check('a deleted project is never worth trying again',
+    worthTryingAgain(410, 'deleted'), false);
   check('...but no answer is', worthTryingAgain(0), true);
   check('...and so is a 500', worthTryingAgain(500), true);
 
   // THE MESSAGE THAT WAS LYING. "You seem to be working offline" is for an
   // outage only.
-  check('a deleted project must NOT say you are offline', isReallyOffline(410), false);
+  check('a deleted project must NOT say you are offline',
+    isReallyOffline(410, 'deleted'), false);
   check('...but no answer at all should', isReallyOffline(0), true);
 
   // ASKED ONCE, BUT SILENCE IS NOT AN ANSWER.

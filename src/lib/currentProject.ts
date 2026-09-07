@@ -543,7 +543,7 @@ export async function flushSyncNow(): Promise<void> {
     // is filed either way — including when the project is gone, because SAVE AS
     // NEW has to have something to save.
     _pendingSyncIds.add(pid);
-    if (whatWentWrong(err?.status) === 'gone') {
+    if (whatWentWrong(err?.status, (e as { code?: string })?.code) === 'gone') {
       // NOT an outage. No "you seem to be working offline" — that message was
       // untrue, and no amount of retrying will make this succeed (#465).
       void noticeUnsent(pid, cp.name, snapshotFromStore(pid, cp.name), pid, false);
@@ -700,7 +700,8 @@ async function retryPendingSyncs(why: 'timer' | 'now' = 'timer'): Promise<void> 
       emit();
     } catch (e) {
       const st = (e as { status?: number })?.status;
-      if (whatWentWrong(st) === 'gone') {
+      const stCode = (e as { code?: string })?.code;
+      if (whatWentWrong(st, stCode) === 'gone') {
         trace('retry push FAILED status=404 — the project is not on the server');
         noteTheProjectIsGone(currentPid);
       } else {

@@ -59,22 +59,33 @@ export type SyncTrouble =
  * id and a deleted_at, and a plain 404 stays an ordinary failure that is
  * retried and never accused of anything.
  */
-export function whatWentWrong(status: number | undefined | null): SyncTrouble {
+export function whatWentWrong(
+  status: number | undefined | null, code?: string | null,
+): SyncTrouble {
   if (status === undefined || status === null || status === 0) return 'offline';
-  if (status === 410) return 'gone';
+  // BOTH, NOT EITHER. Our own server sends 410 AND code "deleted" together, and
+  // nothing else in the app or the backend produces a 410 at all. Demanding
+  // both means a 410 arriving from anywhere else — a proxy rule, a retired
+  // address, an intermediary we never wrote — cannot be mistaken for proof that
+  // you deleted something. It is treated as an ordinary failure and retried.
+  if (status === 410) return code === 'deleted' ? 'gone' : 'offline';
   if (status === 409) return 'conflict';
   if (status >= 200 && status < 300) return 'fine';
   return 'offline';
 }
 
 /** Only a deleted project is beyond asking again. */
-export function worthTryingAgain(status: number | undefined | null): boolean {
-  return whatWentWrong(status) !== 'gone';
+export function worthTryingAgain(
+  status: number | undefined | null, code?: string | null,
+): boolean {
+  return whatWentWrong(status, code) !== 'gone';
 }
 
 /** Should the "you seem to be working offline" notice be shown for this? */
-export function isReallyOffline(status: number | undefined | null): boolean {
-  return whatWentWrong(status) === 'offline';
+export function isReallyOffline(
+  status: number | undefined | null, code?: string | null,
+): boolean {
+  return whatWentWrong(status, code) === 'offline';
 }
 
 // ---------------------------------------------------------------------------

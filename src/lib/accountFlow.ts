@@ -444,10 +444,27 @@ const _goneRegister = makeGoneRegister();
 
 async function askAboutTheDeletedProject(projectId: string): Promise<void> {
   if (!_goneRegister.shouldAsk(projectId)) return;
+  // ONLY ABOUT THE PROJECT IN FRONT OF YOU (#469). The dialog talks about "this
+  // project", and both its answers act on the open one — SAVE AS NEW detaches
+  // it from its cloud id, DELETE drops its copies. Raised about anything else,
+  // it would be asking one question and answering another.
+  if (getCurrentProject().projectId !== projectId) {
+    trace('a deleted project that is not the one open — not asking');
+    return;
+  }
   _goneRegister.asking(projectId);
 
   const { showProjectDeleted } = await import('./modals');
   const answer = await showProjectDeleted();
+
+  // The dialog does not block the app. If another project was opened while it
+  // stood there, the answer is about something that is no longer in front of
+  // the user — so it decides nothing, and the question comes back.
+  if (getCurrentProject().projectId !== projectId) {
+    trace('the deleted project: another project was opened — the answer is dropped');
+    _goneRegister.unanswered(projectId);
+    return;
+  }
 
   if (answer === null) {
     // Dismissed. Nothing thrown away, nothing decided — ask again next time.
@@ -463,8 +480,19 @@ async function askAboutTheDeletedProject(projectId: string): Promise<void> {
     // The cloud id goes first, then everything this device remembers about
     // what the server held — otherwise the push sends a handful of changed
     // frames and leaves the rest behind.
-    trace('the deleted project: saving it as a new one');
-    const name = getCurrentProject().name;
+    // YOU CHOOSE THE NAME (#470). It is becoming a different project, and the
+    // old name is the name of one you deleted. Offered filled in, so it is one
+    // tap to keep it.
+    const wasCalled = getCurrentProject().name ?? '';
+    const name = await openProjectNameModal(wasCalled);
+    if (!name) {
+      // Backed out of naming it. Nothing has been changed and nothing thrown
+      // away — the question comes back the next time a sync is refused.
+      trace('the deleted project: naming was cancelled, nothing changed');
+      _goneRegister.unanswered(projectId);
+      return;
+    }
+    trace(`the deleted project: saving it as a new one — "${name}"`);
     const oldLocalKey = localProjectId();
     setCurrentProject({ projectId: null, name });
     forgetTheServerEverHadIt();
@@ -648,6 +676,17 @@ export async function openProjectList(): Promise<void> {
         await api.delete(`/projects/${encodeURIComponent(p.id)}`, getToken());
         p.deleted_at = Date.now();
         clearRectsForProject(p.id);
+        // THE ONE YOU WERE LOOKING AT: close it (#470). Deleting the open
+        // project used to leave it sitting on screen, so the next sync came
+        // back "not found" and told you that you had deleted it — which you
+        // had, on purpose, three seconds earlier.
+        if (getCurrentProject().projectId === p.id) {
+          trace('deleted the project that was open — closing it');
+          const { startFromScratch } = await import('./files');
+          startFromScratch();
+          clearCurrentProject();
+          await deleteEveryCopyOf(p.id, [localProjectId()]);
+        }
       } catch (e) {
         showToast(asMessage(e, 'Could not delete project.'));
       }
@@ -5520,9 +5559,26 @@ async function tryPullFromCloud(force = false): Promise<void> {
     // hours later with nothing to send, and the pull failed quietly on every
     // focus and never said why. The pull is usually the FIRST thing to reach
     // the server, so it is the first to find out.
-    if (whatWentWrong(api_err?.status) === 'gone') {
-      const pid = getCurrentProject().projectId;
-      if (pid) noteTheProjectIsGone(pid);
+    // THE ANSWER BELONGS TO THE PROJECT THAT ASKED (#469).
+    //
+    // The audit found this and it was reachable by ordinary use: delete a
+    // project, then open another one from the same list before the answer
+    // lands. The catch read `getCurrentProject()` — the project you had JUST
+    // opened — and accused THAT one of being deleted.
+    //
+    // It is the #417/#425 shape again: a pull decides which project it is for
+    // at the top, then waits on the network, and somebody opens another one
+    // during the wait. The success path twenty lines above has exactly this
+    // guard. The failure path did not.
+    if (whatWentWrong(api_err?.status, api_err?.code) === 'gone') {
+      const askedFor = cp.projectId;
+      const nowIn = getCurrentProject().projectId;
+      if (nowIn !== askedFor) {
+        trace(`  a deleted-project answer for ${askedFor?.slice(0, 6)}`
+          + ` — we are in ${nowIn?.slice(0, 6) ?? 'none'} now, so it is dropped`);
+      } else if (askedFor) {
+        noteTheProjectIsGone(askedFor);
+      }
     }
     // What the device knows about the server was cleared on the way in. Put it
     // back from what is on screen, or the next push resends the whole project.
