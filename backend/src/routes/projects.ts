@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import type { D1Database } from "@cloudflare/workers-types";
 import type { AppVariables, Env } from "../types";
-import { loadOwnedProject, requireUser } from "../lib/auth";
+import { loadOwnedProject, requireUser, wasDeletedByOwner } from "../lib/auth";
 import { newId } from "../lib/crypto";
 import { isNonEmptyString, jsonError } from "../lib/response";
 import { decideFrame, decideVersion } from "../lib/syncDecide";
@@ -217,6 +217,29 @@ projects.post("/:id/heartbeat", async (c) => {
   });
 });
 
+/**
+ * The push and the pull could not find the project. Say WHICH (#465).
+ *
+ * 410 `deleted` — this user owned it and deleted it. This is the ONLY answer
+ *                 that lets the app say "IT SEEMS YOU DELETED THIS PROJECT
+ *                 ALREADY", and it can only be reached by a row that carries
+ *                 both this user_id and a deleted_at.
+ * 404 `not_found` — anything else: somebody else's project, or an id that
+ *                 never existed. Exactly as before, so nothing that used to
+ *                 work changes.
+ *
+ * Only these two routes tell the difference. Every other route still answers a
+ * plain 404, because nothing else asks the question.
+ */
+async function missingOrDeleted(
+  c: Parameters<typeof jsonError>[0], userId: string, projectId: string,
+) {
+  if (await wasDeletedByOwner(c.env.DB, userId, projectId)) {
+    return jsonError(c, 410, "deleted", "Project was deleted.");
+  }
+  return jsonError(c, 404, "not_found", "Project not found.");
+}
+
 // ---------------------------------------------------------------------------
 // GET /projects/:id/sync — download cloud state
 // ---------------------------------------------------------------------------
@@ -224,7 +247,7 @@ projects.get("/:id/sync", async (c) => {
   const me = c.get("user");
   const id = c.req.param("id");
   const project = await loadOwnedProject(c.env.DB, me.id, id);
-  if (!project) return jsonError(c, 404, "not_found", "Project not found.");
+  if (!project) return await missingOrDeleted(c, me.id, id);
   // ?since=<server time> — only what has reached the server after that moment.
   // Without it, the whole project, exactly as before (#280).
   const raw = c.req.query("since");
@@ -246,7 +269,7 @@ projects.post("/:id/sync", async (c) => {
   const me = c.get("user");
   const id = c.req.param("id");
   const project = await loadOwnedProject(c.env.DB, me.id, id);
-  if (!project) return jsonError(c, 404, "not_found", "Project not found.");
+  if (!project) return await missingOrDeleted(c, me.id, id);
 
   let body: unknown;
   try {

@@ -12,6 +12,9 @@ import {
   untouchedByDelta, type MergeableTree,
 } from '../src/lib/deltaMerge';
 import { nextRetryWait, timeToTryAgain, makeRetryClock } from '../src/lib/retryWait';
+import {
+  whatWentWrong, worthTryingAgain, isReallyOffline, makeGoneRegister,
+} from '../src/lib/projectGone';
 
 const results: Array<{ what: string; got: string; want: string }> = [];
 const check = (what: string, got: unknown, want: unknown) =>
@@ -336,6 +339,54 @@ const ids = (rows: Array<{ id: string }>) => rows.map((r) => r.id).sort().join('
   c2.succeeded();
   check('...the count is cleared', c2.count(), 0);
   check('...and it is free to try immediately', c2.mayTry(2_000_001), true);
+}
+
+// ---------------------------------------------------------------------------
+// THE PROJECT IS GONE — NOT AN OUTAGE (#465)
+//
+// Roman's Mac pushed at a deleted project all morning and told him he was
+// offline. Two questions the app was getting wrong at once: is this worth
+// trying again, and is this actually an outage.
+// ---------------------------------------------------------------------------
+{
+  check('no answer at all is an outage', whatWentWrong(0), 'offline');
+  check('...and so is no status at all', whatWentWrong(undefined), 'offline');
+  check('410 is gone — the server SAW the deletion', whatWentWrong(410), 'gone');
+  check('409 is the server being ahead', whatWentWrong(409), 'conflict');
+  check('500 is the server having trouble — try again', whatWentWrong(500), 'offline');
+  check('200 is fine', whatWentWrong(200), 'fine');
+
+  // ROMAN'S CONDITION, AND IT IS ABSOLUTE. "IT SEEMS YOU DELETED THIS PROJECT
+  // ALREADY" must NEVER show for a project that was not deleted. A 404 means
+  // deleted OR somebody else's OR never existed, so it can never be the trigger.
+  check('a plain 404 is NOT "deleted" — it could be another account',
+    whatWentWrong(404), 'offline');
+  check('...so a 404 never accuses you of anything', worthTryingAgain(404), true);
+
+  check('a deleted project is never worth trying again', worthTryingAgain(410), false);
+  check('...but no answer is', worthTryingAgain(0), true);
+  check('...and so is a 500', worthTryingAgain(500), true);
+
+  // THE MESSAGE THAT WAS LYING. "You seem to be working offline" is for an
+  // outage only.
+  check('a deleted project must NOT say you are offline', isReallyOffline(410), false);
+  check('...but no answer at all should', isReallyOffline(0), true);
+
+  // ASKED ONCE, BUT SILENCE IS NOT AN ANSWER.
+  const reg = makeGoneRegister();
+  check('the first refusal asks', reg.shouldAsk('p1'), true);
+  reg.asking('p1');
+  check('a push five seconds later does not ask again', reg.shouldAsk('p1'), false);
+  check('another project is its own question', reg.shouldAsk('p2'), true);
+
+  // Dismissed with no answer: nothing decided, nothing thrown away.
+  reg.unanswered('p1');
+  check('dismissed — so it asks again next time', reg.shouldAsk('p1'), true);
+
+  // Answered: done with.
+  reg.asking('p1');
+  reg.answered('p1');
+  check('answered — never asked again', reg.shouldAsk('p1'), false);
 }
 
 // ---------------------------------------------------------------------------

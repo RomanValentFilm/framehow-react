@@ -49,6 +49,7 @@ import { isLoggedIn } from './session';
 import { stampChangedSettings, exportSettingStamps } from './projectSettings';
 import { stampChangedContent, exportChangeStamps } from './changeStamps';
 import { makeRetryClock } from './retryWait';
+import { whatWentWrong } from './projectGone';
 
 interface CurrentProject {
   /** Server-side UUID once the project has been saved. Null = local-only. */
@@ -241,6 +242,34 @@ let _fingerprintsIn: ((m: Record<string, string>) => void) | null = null;
 let _lastRememberedTraced = -1;
 let _watchForConnection: (() => void) | null = null;
 export function registerConnectionWatch(fn: () => void): void { _watchForConnection = fn; }
+
+/** Asked when the server says a project is not there any more (#465). Lives in
+ *  accountFlow, where the dialog and the re-save can reach each other. */
+let _projectGoneOut: ((projectId: string) => void) | null = null;
+export function registerProjectGone(fn: (projectId: string) => void): void {
+  _projectGoneOut = fn;
+}
+
+/** Projects the server has told us are not there. Nothing is retried for these
+ *  — a 404 does not heal — but nothing is thrown away either. */
+const _goneProjectIds = new Set<string>();
+
+/** Called when the answer has been given, or the project saved as a new one. */
+export function projectIsBackFromTheDead(projectId: string): void {
+  _goneProjectIds.delete(projectId);
+}
+
+/**
+ * The server does not have this project. Stop pushing at it, say so in the log,
+ * and let accountFlow ask the question. NOT an outage — so no offline notice,
+ * which is the message that was lying to Roman all morning.
+ */
+function projectIsGone(projectId: string): void {
+  const first = !_goneProjectIds.has(projectId);
+  _goneProjectIds.add(projectId);
+  if (first) trace('the server does not have this project any more — not trying again');
+  _projectGoneOut?.(projectId);
+}
 
 export function registerFingerprintBridge(
   out: () => Record<string, string>,
@@ -481,8 +510,17 @@ export async function flushSyncNow(): Promise<void> {
       return; // skip the finally's cloudSyncInFlight = false (already cleared)
     }
     // Unsent. Keep this project's work under its own key so opening another
-    // project cannot overwrite it, and so it survives closing the app.
+    // project cannot overwrite it, and so it survives closing the app. The work
+    // is filed either way — including when the project is gone, because SAVE AS
+    // NEW has to have something to save.
     _pendingSyncIds.add(pid);
+    if (whatWentWrong(err?.status) === 'gone') {
+      // NOT an outage. No "you seem to be working offline" — that message was
+      // untrue, and no amount of retrying will make this succeed (#465).
+      void noticeUnsent(pid, cp.name, snapshotFromStore(pid, cp.name), pid, false);
+      projectIsGone(pid);
+      return;
+    }
     void noticeUnsent(pid, cp.name, snapshotFromStore(pid, cp.name), pid);
   } finally {
     cloudSyncInFlight = false;
@@ -613,6 +651,8 @@ async function retryPendingSyncs(why: 'timer' | 'now' = 'timer'): Promise<void> 
   }
 
   const currentPid = cp.projectId;
+  // A project the server does not have is not coming back by asking again.
+  if (currentPid && _goneProjectIds.has(currentPid)) return;
   if (currentPid && _pendingSyncIds.has(currentPid) && _dirty) {
     // Success below is the server's answer, not the browser's opinion.
     cloudSyncInFlight = true;
@@ -629,9 +669,15 @@ async function retryPendingSyncs(why: 'timer' | 'now' = 'timer'): Promise<void> 
       hideOfflineBanner();
       emit();
     } catch (e) {
-      _retryClock.failed();
-      trace(`retry push FAILED status=${(e as { status?: number })?.status ?? '(no response)'}`
-        + ` · trying again in ${Math.round(_retryClock.waitNow() / 1000)}s`);
+      const st = (e as { status?: number })?.status;
+      if (whatWentWrong(st) === 'gone') {
+        trace('retry push FAILED status=404 — the project is not on the server');
+        projectIsGone(currentPid);
+      } else {
+        _retryClock.failed();
+        trace(`retry push FAILED status=${st ?? '(no response)'}`
+          + ` · trying again in ${Math.round(_retryClock.waitNow() / 1000)}s`);
+      }
     } finally {
       cloudSyncInFlight = false;
     }

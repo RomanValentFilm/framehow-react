@@ -97,3 +97,36 @@ export async function loadOwnedProject(
     .bind(projectId, userId)
     .first();
 }
+
+/**
+ * WAS IT DELETED, OR IS IT SIMPLY NOT THERE? (#465)
+ *
+ * `loadOwnedProject` answers null for three different situations, and the app
+ * cannot tell them apart:
+ *
+ *   1. the owner deleted it            → deleted_at is set
+ *   2. it belongs to somebody else     → the row exists, another user_id
+ *   3. that id never existed at all    → no row
+ *
+ * Only the first may ever produce "IT SEEMS YOU DELETED THIS PROJECT ALREADY".
+ * Roman's condition, and it is absolute: that line must NEVER show for a
+ * project that was not deleted. So the server has to say which, rather than
+ * the app guessing from a 404 that means all three.
+ *
+ * Returns true only when THIS user owns the row AND it is soft-deleted.
+ */
+export async function wasDeletedByOwner(
+  db: D1Database,
+  userId: string,
+  projectId: string,
+): Promise<boolean> {
+  const row = await db
+    .prepare(
+      `SELECT id FROM projects
+        WHERE id = ? AND user_id = ? AND deleted_at IS NOT NULL
+        LIMIT 1`,
+    )
+    .bind(projectId, userId)
+    .first<{ id: string }>();
+  return row !== null && row !== undefined;
+}

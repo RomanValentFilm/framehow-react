@@ -746,6 +746,73 @@ export function showImportantNote(headline: string, body: string): Promise<void>
 }
 
 /**
+ * THE PROJECT WAS DELETED (#465).
+ *
+ * Shown on a device still holding a project the server no longer has. Two
+ * answers, and a third: closing it without choosing. That third one throws
+ * nothing away — the caller asks again next time, which is why this resolves
+ * with null rather than assuming anything.
+ *
+ * SAVE AS NEW sits first and is the lit button, because it is the one that
+ * cannot lose anything.
+ */
+export function showProjectDeleted(): Promise<'new' | 'delete' | null> {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText =
+      'position:fixed;inset:0;z-index:999999;background:rgba(0,0,0,0.75);' +
+      'display:flex;align-items:center;justify-content:center;padding:20px;' +
+      'font-family:-apple-system,BlinkMacSystemFont,sans-serif;';
+
+    const box = document.createElement('div');
+    box.style.cssText =
+      'background:#1a1a1a;border-radius:12px;padding:24px;max-width:380px;width:100%;' +
+      'color:#fff;text-align:left;';
+
+    const h = document.createElement('div');
+    h.textContent = 'IT SEEMS YOU DELETED THIS PROJECT ALREADY';
+    h.style.cssText = 'color:#d52632;font-weight:700;font-size:15px;margin-bottom:12px;';
+    box.appendChild(h);
+
+    const p = document.createElement('div');
+    p.textContent =
+      'It is no longer on the server, so the changes on this device cannot be '
+      + 'uploaded. If you deleted it by mistake, you may still be able to save it '
+      + 'as a new project.';
+    p.style.cssText = 'color:#fff;font-size:13px;line-height:1.5;margin-bottom:20px;';
+    box.appendChild(p);
+
+    const done = (answer: 'new' | 'delete' | null) => { overlay.remove(); resolve(answer); };
+
+    const saveNew = document.createElement('button');
+    saveNew.textContent = 'SAVE AS NEW';
+    saveNew.setAttribute('data-gone', 'new');
+    saveNew.style.cssText =
+      'display:block;width:100%;padding:12px;background:#d52632;border:1px solid #d52632;'
+      + 'border-radius:8px;color:#fff;font-size:14px;font-weight:700;cursor:pointer;'
+      + 'margin-bottom:10px;';
+    saveNew.onclick = () => done('new');
+    box.appendChild(saveNew);
+
+    const del = document.createElement('button');
+    del.textContent = 'DELETE';
+    del.setAttribute('data-gone', 'delete');
+    del.style.cssText =
+      'display:block;width:100%;padding:12px;background:#2a2a2a;border:1px solid #555;'
+      + 'border-radius:8px;color:#fff;font-size:14px;cursor:pointer;';
+    del.onclick = () => done('delete');
+    box.appendChild(del);
+
+    // Tapping the dark outside is not an answer. Nothing is thrown away and the
+    // question comes back the next time a push is refused.
+    overlay.onclick = (e) => { if (e.target === overlay) done(null); };
+
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+  });
+}
+
+/**
  * Three-way question about one frame: keep what is on the server, keep the
  * version that was refused, or keep both.
  *

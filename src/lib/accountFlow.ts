@@ -57,7 +57,10 @@ import {
   registerTombstoneBridge,
   handIsBusy,
   msSinceLastStroke,
+  registerProjectGone,
+  projectIsBackFromTheDead,
 } from './currentProject';
+import { makeGoneRegister } from './projectGone';
 import { trace } from './syncTrace';
 import { frameChangedAt, versionChangedAt, frameChangedAtForSending, versionChangedAtForSending, importChangeStamps, stampChangedContent, seedContentStamps, pictureFp, strokesFp } from './changeStamps';
 import { shouldSendOnlyChanges } from './pushMode';
@@ -423,6 +426,58 @@ interface CloudProject {
   created_at: number;
   updated_at: number;
   deleted_at: number | null;
+}
+
+// ---------------------------------------------------------------------------
+// YOU DELETED THIS PROJECT ALREADY (#465)
+//
+// The server says the project is not there. The work is still on this device,
+// filed under its own key, and it is not going anywhere until the question is
+// answered. Asked once at a time; dismissing it answers nothing and it comes
+// back the next time a push is refused.
+// ---------------------------------------------------------------------------
+
+const _goneRegister = makeGoneRegister();
+
+async function askAboutTheDeletedProject(projectId: string): Promise<void> {
+  if (!_goneRegister.shouldAsk(projectId)) return;
+  _goneRegister.asking(projectId);
+
+  const { showProjectDeleted } = await import('./modals');
+  const answer = await showProjectDeleted();
+
+  if (answer === null) {
+    // Dismissed. Nothing thrown away, nothing decided — ask again next time.
+    trace('the deleted project: no answer yet, the work stays on this device');
+    _goneRegister.unanswered(projectId);
+    return;
+  }
+
+  _goneRegister.answered(projectId);
+
+  if (answer === 'new') {
+    // Carry on in the same window, as a project the server has never seen.
+    // The cloud id goes first, then everything this device remembers about
+    // what the server held — otherwise the push sends a handful of changed
+    // frames and leaves the rest behind.
+    trace('the deleted project: saving it as a new one');
+    const name = getCurrentProject().name;
+    setCurrentProject({ projectId: null, name });
+    forgetTheServerEverHadIt();
+    void deletePending(projectId);
+    projectIsBackFromTheDead(projectId);
+    markSomethingToSend();
+    await saveNow();
+    return;
+  }
+
+  // DELETE — the copy on this device goes, and we start from the project list.
+  trace('the deleted project: dropping the copy on this device');
+  void deletePending(projectId);
+  projectIsBackFromTheDead(projectId);
+  const { startFromScratch } = await import('./files');
+  startFromScratch();
+  await openProjectList();
 }
 
 export async function openProjectList(): Promise<void> {
@@ -4552,6 +4607,20 @@ export function clearPushedFingerprints(): void {
  * full one made the guard cancel the very first upload — silently, while the
  * app still reported a successful save. Every switch must reset them.
  */
+/**
+ * Forget that the server ever held this project's frames (#465).
+ *
+ * Needed by SAVE AS NEW and nothing else. The push decides between "send only
+ * what changed" and "send everything" from three facts, and two of them are
+ * these memories. Left in place, saving the work as a NEW project would send
+ * three frames of thirty-three and quietly leave the rest behind — the work
+ * would look saved and would not be.
+ */
+export function forgetTheServerEverHadIt(): void {
+  _serverFrameTimes.clear();
+  resetProjectSyncGuards();
+}
+
 export function resetProjectSyncGuards(): void {
   _lastKnownImageCount = 0;
   _lastKnownFrameCount = 0;
@@ -5523,6 +5592,7 @@ export async function bootstrapAccountSystem(): Promise<void> {
   // A project made offline has no cloud id, so it cannot be pushed — it has to
   // be created first. saveNow() does exactly that, then uploads.
   registerCreateAndSync(saveNow);
+  registerProjectGone(askAboutTheDeletedProject);           // #465
   registerPullFn(tryPullFromCloud);
   registerConnectionWatch(watchForTheConnectionComingBack);   // #298
   startPullOnFocus();
