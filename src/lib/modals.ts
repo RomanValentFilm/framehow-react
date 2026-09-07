@@ -776,9 +776,8 @@ export function showProjectDeleted(): Promise<'new' | 'delete' | null> {
 
     const p = document.createElement('div');
     p.textContent =
-      'It is no longer on the server, so the changes on this device cannot be '
-      + 'uploaded. If you deleted it by mistake, you may still be able to save it '
-      + 'as a new project.';
+      'It is no longer on the server, any changes on this device cannot be '
+      + 'uploaded. If you deleted it by mistake, you can save it as a new project.';
     p.style.cssText = 'color:#fff;font-size:13px;line-height:1.5;margin-bottom:20px;';
     box.appendChild(p);
 

@@ -264,7 +264,7 @@ export function projectIsBackFromTheDead(projectId: string): void {
  * and let accountFlow ask the question. NOT an outage — so no offline notice,
  * which is the message that was lying to Roman all morning.
  */
-function projectIsGone(projectId: string): void {
+export function noteTheProjectIsGone(projectId: string): void {
   const first = !_goneProjectIds.has(projectId);
   _goneProjectIds.add(projectId);
   if (first) trace('the server does not have this project any more — not trying again');
@@ -518,7 +518,7 @@ export async function flushSyncNow(): Promise<void> {
       // NOT an outage. No "you seem to be working offline" — that message was
       // untrue, and no amount of retrying will make this succeed (#465).
       void noticeUnsent(pid, cp.name, snapshotFromStore(pid, cp.name), pid, false);
-      projectIsGone(pid);
+      noteTheProjectIsGone(pid);
       return;
     }
     void noticeUnsent(pid, cp.name, snapshotFromStore(pid, cp.name), pid);
@@ -672,7 +672,7 @@ async function retryPendingSyncs(why: 'timer' | 'now' = 'timer'): Promise<void> 
       const st = (e as { status?: number })?.status;
       if (whatWentWrong(st) === 'gone') {
         trace('retry push FAILED status=404 — the project is not on the server');
-        projectIsGone(currentPid);
+        noteTheProjectIsGone(currentPid);
       } else {
         _retryClock.failed();
         trace(`retry push FAILED status=${st ?? '(no response)'}`

@@ -59,8 +59,9 @@ import {
   msSinceLastStroke,
   registerProjectGone,
   projectIsBackFromTheDead,
+  noteTheProjectIsGone,
 } from './currentProject';
-import { makeGoneRegister } from './projectGone';
+import { makeGoneRegister, whatWentWrong } from './projectGone';
 import { trace } from './syncTrace';
 import { frameChangedAt, versionChangedAt, frameChangedAtForSending, versionChangedAtForSending, importChangeStamps, stampChangedContent, seedContentStamps, pictureFp, strokesFp } from './changeStamps';
 import { shouldSendOnlyChanges } from './pushMode';
@@ -5506,6 +5507,15 @@ async function tryPullFromCloud(force = false): Promise<void> {
     } else {
       console.error('[sync] pull failed', e);
       trace(`  PULL FAILED — ${msg}`);
+    }
+    // THE PULL HAS TO ASK TOO (#467). Only the PUSH used to notice a deleted
+    // project, and a push needs unsent work. Come back to an open project two
+    // hours later with nothing to send, and the pull failed quietly on every
+    // focus and never said why. The pull is usually the FIRST thing to reach
+    // the server, so it is the first to find out.
+    if (whatWentWrong(api_err?.status) === 'gone') {
+      const pid = getCurrentProject().projectId;
+      if (pid) noteTheProjectIsGone(pid);
     }
     // What the device knows about the server was cleared on the way in. Put it
     // back from what is on screen, or the next push resends the whole project.
