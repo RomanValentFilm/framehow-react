@@ -63,7 +63,7 @@ export interface Setup {
 
 /** 12-colour palette for setups. */
 /** App version — bump before every deploy. */
-export const APP_VERSION = 'v4.9.173';
+export const APP_VERSION = 'v4.9.174';
 
 /** Free-text fields printed in the header of every exported page. */
 export interface ExportMeta {
@@ -398,7 +398,11 @@ export interface StripDef {
 // STRIP3 = 'refs'  (originally "references")
 // The buttonLabel is what users see and can rename via Customise.
 export const DEFAULT_STRIP_DEFS: StripDef[] = [
-  { id: 'ver',   buttonLabel: 'HOW', defaultFrameLabel: 'versn',  prefix: 'v' },
+  // FRAME → SHOT and HOW → ANGLE, the names every NEW project opens with
+  // (#477). Only the DEFAULTS change: a project that already exists carries
+  // its own strip names as a synced setting, so nothing already made is
+  // renamed under anybody.
+  { id: 'ver',   buttonLabel: 'ANGLE', defaultFrameLabel: 'versn',  prefix: 'v' },
   { id: 'floor', buttonLabel: 'SKETCH', defaultFrameLabel: 'sketch', prefix: 's' },
   { id: 'refs',  buttonLabel: 'REFS',  defaultFrameLabel: 'refs',  prefix: 'r' },
 ];

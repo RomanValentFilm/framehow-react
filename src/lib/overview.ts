@@ -1230,7 +1230,7 @@ function quickBtnsFor(fid: number, has: Record<string, string>, short: boolean):
       b(has.notes, 'data-g3notes', short ? 'NOTE' : 'NOTES')}</div>`;
   }
   return `<div class="g3-quick-btns">${
-    b(has.ver, 'data-g3versn', 'HOW')}${
+    b(has.ver, 'data-g3versn', 'ANGLE')}${
     b(has.floor, 'data-g3sketch', short ? 'SKTCH' : 'SKETCH')}${
     b(has.refs, 'data-g3refs', 'REFS')}${
     b(has.needs, 'data-g3needs', short ? 'NEED' : 'NEEDS')}${

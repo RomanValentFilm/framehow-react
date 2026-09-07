@@ -21,6 +21,16 @@ traced"** instead of stating it as fact.
 **2. Before saying a fix is DONE — grep for every other place doing the same job.**
 The long version is below.
 
+**3. A change that DELETES anything gets its danger traced BEFORE the deploy
+command is handed over, not after.**
+
+Write down the sentence "this could wipe X if Y", then go and prove Y cannot
+happen — in the code, with line numbers. #476 taught this: the honest fear was
+"a device that does not know about a drawing tells the server there isn't one".
+It is safe (the app reads strokes from the MERGED answer, `accountFlow.ts:2760`,
+never from the bare one) — but that was checked after Roman had already run the
+deploy. Right answer, wrong order.
+
 Neither takes a minute. Between them they cover the whole failure mode: filling a
 gap with reasoning instead of reading.
 

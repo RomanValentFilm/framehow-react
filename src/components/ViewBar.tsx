@@ -27,7 +27,7 @@ export function ViewBar() {
       <div className="detail-bar" id="detailBar" style={{display:'none'}}>
         <div className="db-left" />
         <div className="view-btns db-middle">
-          <button className="view-btn strip-toggle" data-strip="main" title="Main Strip">FRAME</button>
+          <button className="view-btn strip-toggle" data-strip="main" title="Main Strip">SHOT</button>
           {DEFAULT_STRIP_DEFS.map((def, i) => (
             <button
               key={def.id}

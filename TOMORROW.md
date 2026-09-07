@@ -1,12 +1,18 @@
 # Where things stand
 
-dev and try427: **v4.9.159 · #462**, run 136 green, tested by hand on two shooting
-orders in one project. Next number: **v4.9.160 · #463**.
+dev: **v4.9.173 · #476**, app AND backend. Next number: **v4.9.174 · #477**.
 A NEW NUMBER FOR EVERY DEPLOY — both parts, always.
-Pins: `good-462`, `good-461`, `good-459`, `good-456`, `good-454`, `good-443`,
-`good-440`, `good-437`. try411 sits on #426.
+WE WORK ON DEV. try427 and try411 are old addresses; ignore them unless Roman
+says otherwise.
+Pins: `good-476`, `good-463`, `good-462`, `good-461`, `good-459`, `good-456`,
+`good-454`, `good-443`, `good-440`, `good-437`.
 
-The shooting order is finished as far as the rules go.
+The shooting order is finished as far as the rules go (#462, run 136 green,
+tested by hand on two shooting orders in one project).
+
+Since then, 7 September: #463 the retry backoff · #465-#474 a deleted project is
+not an outage, and the line about it can only ever be true · #476 rubbed-out
+strokes stay rubbed out.
 
 ## Where the rules live
 
@@ -54,12 +60,59 @@ None of it urgent, none of it a ten-minute job.
 1. iPad view bar and setup bar hiding — needs the iPad to judge
 2. Preview thumbnails in the sort view
 3. The ten-second lock
-4. Retry backoff
-5. Sweep tombstones
-6. FITTING export modal
-7. FRAME → SHOT, HOW → ANGLE as default strip names. ANGLE starts with A, which
-   changes the strip prefix and relabels every version — understand that first.
-8. **A forced fetch ignores the hand-busy guard**
+4. **Dead data on the server — three parts, and only two are worth doing.**
+   Traced on 7 September; "sweep tombstones" turned out to be aimed at the
+   smallest of them.
+
+   **4a. THE PICTURES — the only one that takes real space.** Deleting a shot
+   removes the picture's row but never the picture itself
+   (`projects.ts:1657-1674` deletes drawings, images, versions, frames — no
+   `bucket.delete` anywhere near it). So every photo from every shot ever
+   deleted is still stored. A cleaner exists and works — `POST
+   /admin/cleanup/orphans` (`cleanup.ts:19`) — but it is NOT on the daily
+   schedule; the cron only calls `purgeExpiredProjects` (`index.ts:59`).
+
+   **DO NOT simply schedule it.** It deletes any file with no row, and a photo
+   is uploaded BEFORE its row is written (`accountFlow.ts:2302`, then the rows
+   go up in the same save). If that save fails after the upload, the photo sits
+   there with no row for as long as the failures last. Give the cleaner an age
+   guard first — only files older than about 7 days — deploy that, watch
+   `GET /admin/cleanup/preview`, and only then put it on the schedule.
+
+   **4b. The notes outlive their project.** `project_deletions` is the one child
+   table whose foreign key has no `ON DELETE CASCADE`
+   (`0009_tombstones.sql:13`), so a purged project leaves its notes behind — and
+   the purge itself may be refused because of it. Do it with ONE line in the
+   purge that deletes those rows, NOT a migration: rebuilding a table on live
+   data is not worth it for this.
+
+   **4c. Do NOT sweep the notes of a live project.** This is a decision to leave
+   things alone, and it matters. The note is what stops a deleted shot coming
+   back: the push throws out any frame with a note, with no time limit at all
+   (`THE DEAD STAY DEAD`, `projects.ts:355`). Delete the note and that guard
+   goes with it. The schema comment saying "cleaned up after 30 days by cron"
+   was never true and should not be made true.
+5. FITTING export modal
+6. **FRAME → SHOT, HOW → ANGLE — the names EVERY NEW PROJECT opens with.**
+   Roman: "every new project should open with this as default." So this is
+   `DEFAULT_STRIP_DEFS` (`state.ts:400`), which today reads:
+
+       { id: 'ver', buttonLabel: 'HOW', defaultFrameLabel: 'versn', prefix: 'v' }
+
+   THREE things change together and have to be thought about as one: the button
+   says ANGLE, the cards are called something other than "versn", and the
+   PREFIX. The prefix is the letter in front of every version label — 'v'
+   today, so v1, v2, v3. ANGLE would make it 'a', renaming every version on
+   every card. Work out what the prefix touches before changing it, and decide
+   whether projects that already exist are left alone (they should be).
+
+   **AND THE BUTTONS IN EVERY VIEW.** Roman: "also the buttons in 3x2 and all
+   views need to be renamed with it." There are SIX views (`state.ts:363`):
+   `main`, `ver`, `both`, `overview`, `grid4`, `grid3x2`. The name has to be
+   right in all of them, plus the view bar itself. FIRST job is to find every
+   place the word is drawn — `grep -rn "HOW\|FRAME" src/` — and read every hit.
+   Do not change the default and hope.
+7. **A forced fetch ignores the hand-busy guard**
    (`if (!force && handIsBusy())`, `accountFlow.ts`). Three forced fetches, not
    five — #410 retired the dead frame picker and took two with it. Two of the
    three cannot land while a hand is drawing: the sort-order picker (you are
@@ -73,7 +126,7 @@ None of it urgent, none of it a ten-minute job.
    > So the fix is narrower than "forced fetches ignore the guard". It's one
    > path, and the honest question for it is: does it need to happen this
    > second, or can it wait the few seconds until the hand stops?
-9. Take the sync log out — last, and Roman still reads it constantly.
+8. Take the sync log out — last, and Roman still reads it constantly.
 
 ## Parked, with a reason
 

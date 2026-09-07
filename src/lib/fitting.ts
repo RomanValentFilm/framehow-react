@@ -33,7 +33,7 @@ const CANONICAL: [string, string[]][] = [
 /** Original button wording, restored alongside the original positions. */
 const CANONICAL_TEXT: [string, string][] = [
   ['.view-btn[data-view="3x2"]', '3×2VIEW'],
-  ['.strip-toggle[data-strip="main"]', 'FRAME'],
+  ['.strip-toggle[data-strip="main"]', 'SHOT'],
   ['.view-btn[data-view="grid4"]', 'M+3'],
 ];
 
