@@ -512,14 +512,39 @@ async function askAboutTheDeletedProject(projectId: string): Promise<void> {
     return;
   }
 
-  // DELETE — EVERY copy on this device goes, and we start from the project
-  // list. Not just the one under the cloud id: the device-only key and the
-  // offline archives are the same project and must go with it (#466).
-  const gone = await deleteEveryCopyOf(projectId, [localProjectId()]);
+  // DELETE — EVERY copy on this device goes (#466), and the project leaves the
+  // screen (#473).
+  //
+  // THIS BRANCH STILL HAD #470's MISTAKE IN IT. #471 and #472 mended the same
+  // fault in the project list's own delete and left this one behind, and
+  // Roman's log caught it within a minute:
+  //
+  //   14:18:22  the deleted project: dropped 1 copy(ies) from this device
+  //   14:18:45  push start · online=true
+  //   14:18:45    delta: 1/1 frames changed · partial=true
+  //   14:18:45  push FAILED status=410
+  //
+  // startFromScratch() BUILDS a project — that one frame is its empty frame —
+  // and it does not clear the cloud id, so the app went straight on pushing at
+  // a project the server had just refused. And projectIsBackFromTheDead() had
+  // cleared the mark that stops the retrying, on a project that is genuinely
+  // gone.
+  //
+  // Take the key first, drop the copies, empty the storyboard, let go of the
+  // project. The same three steps logout uses.
+  const oldLocalKey = localProjectId();
+  const gone = await deleteEveryCopyOf(projectId, [oldLocalKey]);
   trace(`the deleted project: dropped ${gone} copy(ies) from this device`);
-  projectIsBackFromTheDead(projectId);
-  const { startFromScratch } = await import('./files');
-  startFromScratch();
+  beginSystemAction();
+  try {
+    if (state().sortEditingId) closeSortMode();
+    resetStoryboardState();
+    clearCurrentProject();
+    clearPushedFingerprints();
+  } finally {
+    endSystemAction();
+  }
+  (window as any).__fh_renderAll?.();
   await openProjectList();
 }
 
