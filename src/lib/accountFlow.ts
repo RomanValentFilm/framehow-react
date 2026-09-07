@@ -67,7 +67,7 @@ import { shouldSendOnlyChanges } from './pushMode';
 import { serverHasSomethingNew, whoseFrameWins, type DeviceMemory } from './sessionRules';
 import { mergeDelta, lastMergeRefusal, answerIsSafeToApply, untouchedByDelta, type MergeableTree } from './deltaMerge';
 import { settingsForPush, adoptSettingsFromServer, applySettingsToStore, importSettingStamps, stampChangedSettings, seedSettings, settingsNeedPush, reconcileRestoredSettings, captureMySettings, keepMyUnsentSettings, unsentSettingNames, type SettingItem } from './projectSettings';
-import { applySnapshotToStore, loadSnapshot, snapshotFromStore, listPending, isArchived, getPending, markPendingUploaded, saveProjectListCache, loadProjectListCache, deletePending, recoverPending, isDeletedCopy, requestDurableStorage } from './persistence';
+import { applySnapshotToStore, loadSnapshot, snapshotFromStore, listPending, isArchived, getPending, markPendingUploaded, saveProjectListCache, loadProjectListCache, deletePending, deleteEveryCopyOf, recoverPending, isDeletedCopy, requestDurableStorage } from './persistence';
 import type { PendingRecord } from './persistence';
 import { showThreeWayConflict, showConfirm, showToast } from './modals';
 import { saveOpenTextEdits, saveOpenTableEdits, versionStars } from './helpers';
@@ -462,18 +462,30 @@ async function askAboutTheDeletedProject(projectId: string): Promise<void> {
     // frames and leaves the rest behind.
     trace('the deleted project: saving it as a new one');
     const name = getCurrentProject().name;
+    const oldLocalKey = localProjectId();
     setCurrentProject({ projectId: null, name });
     forgetTheServerEverHadIt();
-    void deletePending(projectId);
     projectIsBackFromTheDead(projectId);
     markSomethingToSend();
     await saveNow();
+    // NOTHING is thrown away until the work is known to be up. If saveNow could
+    // not reach the server, the copies on this device are the only copies there
+    // are, and they stay.
+    const now = getCurrentProject();
+    if (now.projectId && now.projectId !== projectId) {
+      const gone = await deleteEveryCopyOf(projectId, [oldLocalKey]);
+      trace(`saved as a new project — dropped ${gone} old copy(ies) from this device`);
+    } else {
+      trace('saved as a new project: not up yet, so the copies on this device stay');
+    }
     return;
   }
 
-  // DELETE — the copy on this device goes, and we start from the project list.
-  trace('the deleted project: dropping the copy on this device');
-  void deletePending(projectId);
+  // DELETE — EVERY copy on this device goes, and we start from the project
+  // list. Not just the one under the cloud id: the device-only key and the
+  // offline archives are the same project and must go with it (#466).
+  const gone = await deleteEveryCopyOf(projectId, [localProjectId()]);
+  trace(`the deleted project: dropped ${gone} copy(ies) from this device`);
   projectIsBackFromTheDead(projectId);
   const { startFromScratch } = await import('./files');
   startFromScratch();

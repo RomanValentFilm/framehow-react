@@ -464,6 +464,44 @@ export async function deletePending(key: string): Promise<void> {
   await withStore('readwrite', (s) => s.put(rec, key), PENDING_STORE);
 }
 
+/**
+ * EVERY COPY OF ONE PROJECT, NOT JUST ONE (#466).
+ *
+ * A project leaves up to three sorts of record on the device:
+ *
+ *   1. the live one under its cloud id
+ *   2. another under the device-only id it had before it was first uploaded
+ *   3. `archive:<key>:<time>` copies, one per offline stretch
+ *
+ * `deletePending` marks ONE. So answering DELETE to "it seems you deleted this
+ * project already" left the other two in the project list — which is exactly
+ * what Roman saw: the project greyed out, a copy "on this device, not uploaded
+ * yet", and an older offline copy underneath it.
+ *
+ * They are marked deleted, not destroyed: hidden from the list, recoverable in
+ * Edit mode for 24 hours, swept after that. The same grace everything else
+ * here gets.
+ *
+ * Returns how many were marked, for the log.
+ */
+export async function deleteEveryCopyOf(
+  projectId: string, alsoTheseKeys: readonly string[] = [],
+): Promise<number> {
+  const wanted = new Set([projectId, ...alsoTheseKeys]);
+  const recs = await listPending();
+  let marked = 0;
+  for (const rec of recs) {
+    if (rec.deletedAt) continue;
+    const mine = (rec.projectId !== null && rec.projectId === projectId)
+      || wanted.has(rec.key)
+      || [...wanted].some((k) => rec.key.startsWith(`archive:${k}:`));
+    if (!mine) continue;
+    await deletePending(rec.key);
+    marked++;
+  }
+  return marked;
+}
+
 /** Undo a deletion made within the last 24 hours. */
 export async function recoverPending(key: string): Promise<void> {
   const rec = await getPending(key);
