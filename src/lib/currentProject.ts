@@ -702,7 +702,9 @@ async function retryPendingSyncs(why: 'timer' | 'now' = 'timer'): Promise<void> 
       const st = (e as { status?: number })?.status;
       const stCode = (e as { code?: string })?.code;
       if (whatWentWrong(st, stCode) === 'gone') {
-        trace('retry push FAILED status=404 — the project is not on the server');
+        // The status is READ, never typed in. It said 404 for two builds after
+        // the rule moved to 410, so the log was telling a story of its own (#474).
+        trace(`retry push FAILED status=${st ?? '(no response)'} — the project is not on the server`);
         noteTheProjectIsGone(currentPid);
       } else {
         _retryClock.failed();

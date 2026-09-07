@@ -6,6 +6,29 @@
 is broken and why, and the plan in order. Read it before doing anything else at
 the start of a session — it is written to be the handover.
 
+## NEVER FIX ONE OF TWO. GREP FIRST.
+
+**Before saying a fix is done, search the codebase for every other place that
+does the same thing.** Not "the place I found" — every place.
+
+This is the fault that has cost the most days on this project, and it keeps
+coming back in the same shape: one job, two copies, and only one of them mended.
+
+- `decideResort` had the rules; the SORT NOW button had a private copy that
+  didn't. Every icon fault for a day lived in that gap (#445).
+- Red was painted in TWO places. #443 gated one and missed the other, so red
+  still appeared while the sheet was being built (#444).
+- `startFromScratch()` was called from the project list's delete AND from the
+  deleted-project dialog. #471 and #472 mended the first; the second went on
+  pushing at a deleted project until Roman's log caught it in one minute (#473).
+- `clearPushedFingerprints()` emptied the guard three hundred lines above the
+  code that relied on it, so one project's frames were adopted by another (#417).
+
+So: when a symbol, a string, a status code or a decision is changed, run
+`grep -rn` for it across `src/`, `backend/src/`, `test/` and `e2e/` and read
+EVERY hit before reporting. The five seconds that costs is the cheapest thing
+in this project.
+
 ## ALWAYS SAY HOW LONG A TEST RUN WILL TAKE
 
 Roman is waiting at the other end with nothing to look at. Every time a run is

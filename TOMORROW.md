@@ -25,6 +25,11 @@ Every check is `expect.soft`, so ONE run reports EVERY broken rule.
 
 ## How we work — from Roman
 
+- **NEVER FIX ONE OF TWO. GREP FIRST.** Before saying a fix is done, search for
+  every other place that does the same thing and read every hit. This one fault
+  — one job, two copies, only one mended — has cost more days than anything
+  else here. The long version, with the list of times it has happened, is at the
+  top of CLAUDE.md.
 - Read the code and the tests and decide. Do not answer from a screenshot when
   the code can be read.
 - CLAUDE CANNOT RUN THE E2E OR THE BUILD. Tried and confirmed: playwright is in
