@@ -11,6 +11,7 @@ import {
   mergeDelta, lastMergeRefusal, answerIsSafeToApply,
   untouchedByDelta, type MergeableTree,
 } from '../src/lib/deltaMerge';
+import { nextRetryWait, timeToTryAgain } from '../src/lib/retryWait';
 
 const results: Array<{ what: string; got: string; want: string }> = [];
 const check = (what: string, got: unknown, want: unknown) =>
@@ -255,6 +256,38 @@ const ids = (rows: Array<{ id: string }>) => rows.map((r) => r.id).sort().join('
   const keep = untouchedByDelta(mergeDelta(held, delta), delta);
   check('the frame the delta mentioned is not "kept local"', keep.has('a'), false);
   check('...and the untouched one is', keep.has('b'), true);
+}
+
+// ---------------------------------------------------------------------------
+// HOW LONG BEFORE TRYING AGAIN (#463)
+//
+// The retry used to ask every forty seconds for ever. Now the wait grows while
+// nothing is getting through — but it must never delay the retry the user can
+// feel, and it must never lock itself out.
+// ---------------------------------------------------------------------------
+{
+  check('nothing has failed — the ordinary forty seconds', nextRetryWait(0), 40_000);
+  check('one failure — eighty', nextRetryWait(1), 80_000);
+  check('two — a hundred and sixty', nextRetryWait(2), 160_000);
+  check('three — held down to five minutes', nextRetryWait(3), 300_000);
+  check('an outage all afternoon — still five minutes', nextRetryWait(400), 300_000);
+  check('a nonsense count is the ordinary wait, not nothing', nextRetryWait(NaN), 40_000);
+
+  // Never attempted: a device just opened with unsent work goes at once.
+  check('never tried yet — go now', timeToTryAgain(1_000_000, null, 0), true);
+
+  // The ordinary rhythm.
+  check('thirty-nine seconds after a clean try — wait', timeToTryAgain(39_000, 0, 0), false);
+  check('forty seconds after a clean try — go', timeToTryAgain(40_000, 0, 0), true);
+
+  // The whole point: after failures the same forty seconds is NOT enough.
+  check('forty seconds after two failures — wait', timeToTryAgain(40_000, 0, 2), false);
+  check('a hundred and sixty after two failures — go', timeToTryAgain(160_000, 0, 2), true);
+
+  // A device waking, or the clock put back by hand, must not lock the retry
+  // out for hours.
+  check('the clock went backwards — go, do not sit it out',
+    timeToTryAgain(1_000, 9_999_999, 3), true);
 }
 
 // ---------------------------------------------------------------------------

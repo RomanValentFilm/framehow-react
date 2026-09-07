@@ -56,6 +56,7 @@ import {
   markSomethingToSend,
   registerTombstoneBridge,
   handIsBusy,
+  msSinceLastStroke,
 } from './currentProject';
 import { trace } from './syncTrace';
 import { frameChangedAt, versionChangedAt, frameChangedAtForSending, versionChangedAtForSending, importChangeStamps, stampChangedContent, seedContentStamps, pictureFp, strokesFp } from './changeStamps';
@@ -2363,6 +2364,15 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   // a pull — its own push moved the project's timestamp, so it believes it is
   // up to date, and even reloading restores the same stale copy.
   if (staleCount > 0) {
+    // A LOG LINE, NOT A FIX (#463). This is item 8 — the one forced fetch that
+    // can land while a hand is drawing, because it fires on its own from an
+    // autosave with nobody touching anything. Roman's question for it, agreed
+    // and unchanged: "does it need to happen this second, or can it wait the
+    // few seconds until the hand stops?" We cannot answer that until we know
+    // how often it fires while the hand IS busy. So: watch first, decide after.
+    const since = msSinceLastStroke();
+    trace(`  forced fetch after a stale push · hand busy=${handIsBusy()}`
+      + ` · last stroke ${since === Infinity ? 'never' : `${Math.round(since / 1000)}s ago`}`);
     lastKnownUpdatedAt = 0;
     await tryPullFromCloud(true);
   }

@@ -48,6 +48,7 @@ import { clearSnapshot, saveSnapshot, snapshotFromStore, savePending, clearPendi
 import { isLoggedIn } from './session';
 import { stampChangedSettings, exportSettingStamps } from './projectSettings';
 import { stampChangedContent, exportChangeStamps } from './changeStamps';
+import { nextRetryWait, timeToTryAgain } from './retryWait';
 
 interface CurrentProject {
   /** Server-side UUID once the project has been saved. Null = local-only. */
@@ -298,6 +299,17 @@ export function handIsBusy(): boolean {
   return Date.now() - _lastStrokeAt < HAND_STILL_WARM_MS;
 }
 
+/**
+ * For the log only (#463). Item 8 on the list is "a forced fetch ignores the
+ * hand-busy guard", and the one path that matters is the fetch after the server
+ * refused a push as stale. Before changing anything there we want to SEE it:
+ * how long ago the hand stopped, each time that fetch fires. Infinity means no
+ * stroke has been drawn on this device at all.
+ */
+export function msSinceLastStroke(): number {
+  return _lastStrokeAt === 0 ? Infinity : Date.now() - _lastStrokeAt;
+}
+
 export function markFrameDirty(serverFrameId: string): void {
   _dirtyFrameIds.add(serverFrameId);
 }
@@ -434,6 +446,7 @@ export async function flushSyncNow(): Promise<void> {
     // filed under its device-only id until it had a cloud id. Deleting a key
     // that is not there is harmless, and this only runs after confirmation.
     _unsentSince = null;                       // the run of failures is over
+    forgetRetryFailures();                     // and so is the growing wait (#463)
     void markPendingUploaded(pid);
     void markPendingUploaded(_localId);
     hideOfflineBanner();
@@ -524,8 +537,25 @@ let _unsentSince: number | null = null;
  *  before the user is told — no warning about outages that clear themselves. */
 const OFFLINE_NOTICE_DELAY_MS = 45_000;
 
-/** How often to try again for work the server has not confirmed. */
+/** How often the timer LOOKS. What it is allowed to do when it looks is
+ *  decided by `timeToTryAgain` below — the wait grows while nothing is getting
+ *  through, so a server that is down is not asked ninety times an hour (#463). */
 const RETRY_INTERVAL_MS = 40_000;
+
+/** Background retries that failed in a row. Zero the moment anything gets
+ *  through, and the moment the connection comes back. */
+let _retryFailures = 0;
+
+/** When the background retry last actually attempted a push. Null means it
+ *  never has — a device just opened with unsent work must not sit out a wait
+ *  it never earned. */
+let _lastRetryAt: number | null = null;
+
+/** Anything that gets through puts the growing wait back to nothing. */
+export function forgetRetryFailures(): void {
+  _retryFailures = 0;
+  _lastRetryAt = null;
+}
 
 /** Projects with unsent work found on the device, other than the open one. */
 let _pendingOnDevice: Array<{ projectId: string | null; name: string | null; savedAt: number }> = [];
@@ -556,14 +586,26 @@ async function restorePendingFromDevice(): Promise<void> {
     const recs = (await listPending()).filter((r) => !isArchived(r));
     _pendingOnDevice = recs.map((r) => ({ projectId: r.projectId, name: r.name, savedAt: r.savedAt }));
     for (const r of recs) if (r.projectId) _pendingSyncIds.add(r.projectId);
-    if (recs.length > 0) void retryPendingSyncs();
+    if (recs.length > 0) void retryPendingSyncs('now');
   } catch { /* nothing outstanding, or storage unavailable */ }
 }
 
-async function retryPendingSyncs(): Promise<void> {
+/**
+ * `why` is the whole of the backoff rule.
+ *
+ *   'timer' — the background tick. It waits its turn, and the turn gets longer
+ *             each time it fails.
+ *   'now'   — something happened that the user can feel: the connection came
+ *             back, or the app was just opened. Goes at once, and the growing
+ *             wait is forgotten.
+ */
+async function retryPendingSyncs(why: 'timer' | 'now' = 'timer'): Promise<void> {
+  if (why === 'now') forgetRetryFailures();
   if (!_syncFn || !isLoggedIn() || !navigator.onLine) return;
   if (_pendingSyncIds.size === 0) return;
   if (cloudSyncInFlight || _projectSwitchInFlight) return;
+  if (why === 'timer' && !timeToTryAgain(Date.now(), _lastRetryAt, _retryFailures)) return;
+  _lastRetryAt = Date.now();
   // Made offline and never uploaded: it needs creating on the server first.
   // Only when it already has a name — otherwise saving would have to stop and
   // ask for one, and this runs in the background.
@@ -572,7 +614,8 @@ async function retryPendingSyncs(): Promise<void> {
     cloudSyncInFlight = true;
     try {
       await _createAndSyncFn();
-    } catch { /* still unreachable — the device copy stays put */ }
+      forgetRetryFailures();
+    } catch { _retryFailures++; /* still unreachable — the device copy stays put */ }
     finally { cloudSyncInFlight = false; }
     return;
   }
@@ -585,6 +628,7 @@ async function retryPendingSyncs(): Promise<void> {
     try {
       await _syncFn(currentPid);
       trace('retry push OK');
+      forgetRetryFailures();
       clearDirtyState();
       cp = { ...cp, lastSavedAt: Date.now(), dirty: false };
       _pendingSyncIds.delete(currentPid);
@@ -593,7 +637,9 @@ async function retryPendingSyncs(): Promise<void> {
       hideOfflineBanner();
       emit();
     } catch (e) {
-      trace(`retry push FAILED status=${(e as { status?: number })?.status ?? '(no response)'}`);
+      _retryFailures++;
+      trace(`retry push FAILED status=${(e as { status?: number })?.status ?? '(no response)'}`
+        + ` · trying again in ${Math.round(nextRetryWait(_retryFailures) / 1000)}s`);
     } finally {
       cloudSyncInFlight = false;
     }
@@ -893,7 +939,10 @@ export function startAutosave(): void {
   // means a network exists — hotel wifi and captive portals claim it while
   // nothing gets through — so it is a hint to try, never proof of success.
   window.addEventListener('offline', () => { showOfflineBanner(); void checkStorageHeadroom(); });
-  window.addEventListener('online', () => { void retryPendingSyncs(); });
+  // AT ONCE, and the growing wait is forgotten — a device that earned a
+  // five-minute wait while the wifi was off must not sit through it once the
+  // wifi is back (#463).
+  window.addEventListener('online', () => { void retryPendingSyncs('now'); });
 
   // Anything the server has not confirmed is retried on startup and then at
   // intervals, because the browser's online event may never arrive (the app
