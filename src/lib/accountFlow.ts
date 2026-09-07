@@ -693,9 +693,28 @@ export async function openProjectList(): Promise<void> {
         if (getCurrentProject().projectId === p.id) {
           const oldLocalKey = localProjectId();
           const gone = await deleteEveryCopyOf(p.id, [oldLocalKey]);
-          trace(`deleted the project that was open — let go of it,`
+          trace(`deleted the project that was open — closed it,`
             + ` and dropped ${gone} copy(ies) from this device`);
-          clearCurrentProject();
+          // AND IT MUST NOT STILL BE ON SCREEN (#472). Roman: "once you delete,
+          // then the project cannot be showing anymore". So the storyboard is
+          // emptied — NOT replaced by a new one, which was #470's mistake.
+          // Nothing is left to draw, nothing is filed (a copy with no frames is
+          // refused), and the project list is already in front, which is where
+          // you choose what to open next. Zero frames is a state the app knows:
+          // it is what it launches into.
+          // The same three steps logout has always used to put the app back to
+          // nothing — including closing a shooting order, which must not be
+          // left standing over a storyboard that no longer exists.
+          beginSystemAction();
+          try {
+            if (state().sortEditingId) closeSortMode();
+            resetStoryboardState();
+            clearCurrentProject();
+            clearPushedFingerprints();
+          } finally {
+            endSystemAction();
+          }
+          (window as any).__fh_renderAll?.();
         }
         // Whatever was deleted, the offline rows on screen are now out of date.
         await refreshLocalCopies();
