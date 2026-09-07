@@ -1324,7 +1324,17 @@ interface SyncPayload {
     /** When this device CHANGED the frame, not when it sent it. `updated_at` is
      *  stamped at push time, so it orders reconnections, not edits. */
     content_changed_at?: number | null }>;
-  versions: Array<{ id: string; frame_id: string; label: string | null; type: string; hidden: boolean; starred: number; note: string | null; updated_at: number; tags?: string | null; content_changed_at?: number | null }>;
+  versions: Array<{ id: string; frame_id: string; label: string | null; type: string; hidden: boolean; starred: number; note: string | null; updated_at: number; tags?: string | null; content_changed_at?: number | null;
+    /** Does this card still have a drawing on it? (#475)
+     *
+     *  A drawing is only sent when it has strokes, and this server deletes
+     *  nothing it was not told about — so rubbing out every stroke used to say
+     *  nothing at all, and the old drawing came back on the next rebuild.
+     *
+     *  UNDEFINED MEANS "I DID NOT SAY", and nothing happens — which is what an
+     *  older app sends, and what must keep working. Only an explicit `false`
+     *  removes a drawing, and only for a card in this push. */
+    has_drawing?: boolean }>;
   images: Array<{
     id: string;
     version_id: string;
@@ -1444,7 +1454,11 @@ function parseSyncPayload(body: unknown): Parsed<SyncPayload> {
     if (!frameIdSet.has(frame_id)) return err("versions[].frame_id (unknown)");
     const tags = r.tags === null || r.tags === undefined ? null : asStr(r.tags);
     const verChangedAt = typeof r.content_changed_at === "number" ? r.content_changed_at : null;
-    versions.push({ id, frame_id, label, type, hidden, starred, note, updated_at, tags, content_changed_at: verChangedAt });
+    // "I have no drawing" vs "I did not say" (#475). ONLY a real boolean false
+    // is carried through; anything else — missing, null, a string — stays
+    // undefined and changes nothing, which is what an older app sends.
+    const hasDrawing = r.has_drawing === true ? true : r.has_drawing === false ? false : undefined;
+    versions.push({ id, frame_id, label, type, hidden, starred, note, updated_at, tags, content_changed_at: verChangedAt, has_drawing: hasDrawing });
   }
 
   const versionIdSet = new Set(versions.map((v) => v.id));
@@ -1649,6 +1663,19 @@ async function applySyncPartial(db: D1Database, projectId: string, payload: Sync
   // Real deletions travel as TOMBSTONES, which the app already records for
   // frames and for versions, and which are applied a few lines below. The rows
   // the push does describe are updated in place by appendFrameInserts.
+
+  // RUBBED OUT (#475).
+  //
+  // The rule above — absence is not a deletion — is right and stays. This is
+  // the other half of it: a card that says "I have no drawing" is not silent,
+  // it is telling us. Only cards in THIS push can say it, and only an explicit
+  // false counts, so an older app (which says nothing) behaves exactly as it
+  // always has.
+  for (const v of payload.versions) {
+    if (v.has_drawing === false) {
+      stmts.push(db.prepare("DELETE FROM drawings WHERE version_id = ?").bind(v.id));
+    }
+  }
 
   // Apply tombstones: actively delete the entities they reference.
   // In full mode this isn't needed (everything is deleted). In partial mode

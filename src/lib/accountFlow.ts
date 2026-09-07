@@ -2004,7 +2004,10 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   const frames: Array<{ id: string; strip_id: string; label: string | null; sort_order: number; crop_w: number | null; crop_h: number | null; text_content: string | null; table_data: string | null; version_label: string | null; strip_labels: string | null; hidden: boolean; note: string | null; scribbles: string | null; updated_at: number; base_updated_at?: number;
     needs: string | null; notes: string | null; setup_id: string | null;
     content_changed_at?: number }> = [];
-  const versions: Array<{ id: string; frame_id: string; label: string | null; type: string; hidden: boolean; starred: boolean; note: string | null; updated_at: number; tags?: string | null; content_changed_at?: number }> = [];
+  const versions: Array<{ id: string; frame_id: string; label: string | null; type: string; hidden: boolean; starred: boolean; note: string | null; updated_at: number; tags?: string | null; content_changed_at?: number;
+    /** Does this card still have a drawing on it? Sent for every card in this
+     *  push, so "rubbed out" can be told apart from "I do not know" (#475). */
+    has_drawing?: boolean }> = [];
   const drawings: Array<{ id: string; version_id: string; drawing_data: string; updated_at: number }> = [];
   const imageUploads: Array<{
     versionId: string; src: string;
@@ -2083,7 +2086,24 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
     const mainVersionId = f.serverMainVersionId || preAssignedMainVersionIds.get(f.id) || uuid();
     frameIdUpdates.push({ localId: f.id, serverFrameId: frameId, serverMainVersionId: mainVersionId });
 
-    versions.push({ id: mainVersionId, frame_id: frameId, label: 'main', type: 'main', hidden: false, starred: false, note: null, updated_at: now });
+    // "RUBBED OUT" IS NOT THE SAME AS "I DO NOT KNOW" (#475).
+    //
+    // A drawing is only ever SENT when it has at least one stroke, and the
+    // server deliberately deletes nothing it was not told about — the rule that
+    // stopped one device wiping the other's SKETCH and REFS cards. Rub out
+    // every stroke and the two rules meet: the device says nothing, the server
+    // keeps the old drawing, and the next time the project is rebuilt from the
+    // server's answer the strokes are drawn back on. #335 predicted exactly
+    // this in its own comment and only fixed the half it could see.
+    //
+    // So a card the device IS describing now says whether it has a drawing.
+    // Silence still means "I do not know" — this speaks only for cards in
+    // this push, which are the ones this device has just been working on.
+    versions.push({
+      id: mainVersionId, frame_id: frameId, label: 'main', type: 'main',
+      hidden: false, starred: false, note: null, updated_at: now,
+      has_drawing: !!(f.strokes && f.strokes.length > 0),
+    });
     if (f.strokes && f.strokes.length > 0) {
       drawings.push({ id: uuid(), version_id: mainVersionId, drawing_data: JSON.stringify(f.strokes), updated_at: now });
     }
@@ -2126,6 +2146,8 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
           // The tag belongs to the version, same reasoning as needs and notes.
           tags: lv.setupTagged ?? null,
           content_changed_at: versionChangedAtForSending(lv.serverVersionId),
+          // Same as the main card above (#475).
+          has_drawing: !!(lv.strokes && lv.strokes.length > 0),
         });
         if (lv.strokes && lv.strokes.length > 0) {
           drawings.push({ id: uuid(), version_id: vid, drawing_data: JSON.stringify(lv.strokes), updated_at: now });

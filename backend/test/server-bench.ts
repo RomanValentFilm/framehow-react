@@ -810,6 +810,66 @@ async function run() {
     check('...and an older arrangement cannot undo it', after.join(','), 'f1,f2,f3,f0');
   }
 
+  // -------------------------------------------------------------------------
+  // RUBBED OUT IS NOT "I DO NOT KNOW" (#475)
+  //
+  // A drawing is only ever sent when it has strokes, and this server deletes
+  // nothing it was not told about. Rub out every stroke and those two rules met
+  // in the middle: the device said nothing, the server kept the old drawing,
+  // and it came back on the next rebuild.
+  //
+  // The three cases that matter are all here, and the THIRD is the one that
+  // protects everything else: an app that does not send the flag must behave
+  // exactly as it always did.
+  // -------------------------------------------------------------------------
+  {
+    const db = await freshServer();
+    const at = Date.now();
+
+    const withDrawing = (has: boolean | undefined, strokes: boolean, when = at) => {
+      const p = push([{ id: 'd1' }], { at: when });
+      (p.versions as Array<Record<string, unknown>>)[0].has_drawing = has;
+      p.drawings = strokes
+        ? [{ id: 'd1-draw', version_id: 'd1-v0', drawing_data: '[{"points":[]}]', updated_at: when }] as never
+        : [];
+      return p;
+    };
+
+    // 1. A card arrives WITH a drawing.
+    await call(db, 'POST', `/projects/${PROJECT}/sync`, withDrawing(true, true));
+    check('a drawing that was sent is stored',
+      db.rows<{ n: number }>("SELECT COUNT(*) AS n FROM drawings WHERE version_id = 'd1-v0'")[0].n, 1);
+
+    // 2. Every stroke rubbed out: no drawing sent, and the card SAYS so.
+    //    A LATER TIME, because rubbing out IS a change — and a card no newer
+    //    than the server's copy is judged stale and thrown out before any of
+    //    this runs (projects.ts:420). That guard is right: a stale card must
+    //    never be allowed to wipe a newer drawing. The bench found it by
+    //    sending the same time twice and watching the drawing survive.
+    await call(db, 'POST', `/projects/${PROJECT}/sync`, withDrawing(false, false, at + 1000));
+    check('rubbed out — and the card said so, so it is gone',
+      db.rows<{ n: number }>("SELECT COUNT(*) AS n FROM drawings WHERE version_id = 'd1-v0'")[0].n, 0);
+
+    // 3. THE GUARD. An older app sends no flag at all. Silence must still mean
+    //    "I do not know about this", or a device that was away wipes the other
+    //    one's work — the whole reason the absence rule exists.
+    const db2 = await freshServer();
+    await call(db2, 'POST', `/projects/${PROJECT}/sync`, (() => {
+      const p = push([{ id: 'd2' }], { at });
+      (p.versions as Array<Record<string, unknown>>)[0].has_drawing = true;
+      p.drawings = [{ id: 'd2-draw', version_id: 'd2-v0', drawing_data: '[{"points":[]}]', updated_at: at }] as never;
+      return p;
+    })());
+    await call(db2, 'POST', `/projects/${PROJECT}/sync`, (() => {
+      const p = push([{ id: 'd2' }], { at: at + 2000 });
+      delete (p.versions as Array<Record<string, unknown>>)[0].has_drawing;   // an older app
+      p.drawings = [];
+      return p;
+    })());
+    check('an app that says nothing changes nothing — the drawing stays',
+      db2.rows<{ n: number }>("SELECT COUNT(*) AS n FROM drawings WHERE version_id = 'd2-v0'")[0].n, 1);
+  }
+
   // --- report ---------------------------------------------------------------
   const width = Math.max(...results.map((r) => r.what.length));
   let failed = 0;

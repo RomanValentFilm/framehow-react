@@ -30,6 +30,11 @@ Every check is `expect.soft`, so ONE run reports EVERY broken rule.
   — one job, two copies, only one mended — has cost more days than anything
   else here. The long version, with the list of times it has happened, is at the
   top of CLAUDE.md.
+- **NEVER SAY A FAULT EXISTS WITHOUT TRACING THE PATH TO IT.** Reading one
+  function and reasoning forward is not evidence. If the path from a button to
+  the code has not been walked, say "not traced" — do not state it as fact.
+- **Roman's check, and he should use it freely: "did you trace it, or are you
+  reasoning?"** An honest answer is "reasoning" more often than it should be.
 - Read the code and the tests and decide. Do not answer from a screenshot when
   the code can be read.
 - CLAUDE CANNOT RUN THE E2E OR THE BUILD. Tried and confirmed: playwright is in

@@ -6,6 +6,24 @@
 is broken and why, and the plan in order. Read it before doing anything else at
 the start of a session — it is written to be the handover.
 
+## TWO RULES THAT WOULD HAVE CAUGHT EVERY MISTAKE OF 7 SEPTEMBER
+
+**1. Before saying a fault EXISTS — trace the path a person takes to reach it.**
+
+Reading one function and reasoning forward is not evidence. On 7 September I read
+"the push only sends a picture when there is one", concluded that clearing a
+picture leaves it on the server, and told Roman it was an everyday fault. It is
+not: there is no button that clears a picture and leaves the card. Deleting a
+card records a note and the server deletes it properly (`actions.ts:622-627`).
+One grep would have shown that. If the path has not been traced, say **"not
+traced"** instead of stating it as fact.
+
+**2. Before saying a fix is DONE — grep for every other place doing the same job.**
+The long version is below.
+
+Neither takes a minute. Between them they cover the whole failure mode: filling a
+gap with reasoning instead of reading.
+
 ## NEVER FIX ONE OF TWO. GREP FIRST.
 
 **Before saying a fix is done, search the codebase for every other place that
