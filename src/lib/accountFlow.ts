@@ -676,17 +676,29 @@ export async function openProjectList(): Promise<void> {
         await api.delete(`/projects/${encodeURIComponent(p.id)}`, getToken());
         p.deleted_at = Date.now();
         clearRectsForProject(p.id);
-        // THE ONE YOU WERE LOOKING AT: close it (#470). Deleting the open
-        // project used to leave it sitting on screen, so the next sync came
-        // back "not found" and told you that you had deleted it — which you
-        // had, on purpose, three seconds earlier.
+        // THE ONE YOU WERE LOOKING AT (#471).
+        //
+        // #470 called startFromScratch() here and it was wrong twice over.
+        // startFromScratch is the "new blank project" the signpost offers — it
+        // BUILDS a project, one empty frame and all, so deleting the open
+        // project left an untitled project sitting there as if you had asked
+        // for one. And clearCurrentProject() runs newLocalProjectIdentity(),
+        // so the `localProjectId()` read on the next line was already a fresh
+        // id belonging to nothing: the real device copy, filed under the OLD
+        // one, survived and reappeared in the list as an offline copy.
+        //
+        // So: take the key FIRST, drop the copies, and let go of the project
+        // without inventing another one. Nothing is filed, nothing is pushed,
+        // and the project list stays in front of you to choose from.
         if (getCurrentProject().projectId === p.id) {
-          trace('deleted the project that was open — closing it');
-          const { startFromScratch } = await import('./files');
-          startFromScratch();
+          const oldLocalKey = localProjectId();
+          const gone = await deleteEveryCopyOf(p.id, [oldLocalKey]);
+          trace(`deleted the project that was open — let go of it,`
+            + ` and dropped ${gone} copy(ies) from this device`);
           clearCurrentProject();
-          await deleteEveryCopyOf(p.id, [localProjectId()]);
         }
+        // Whatever was deleted, the offline rows on screen are now out of date.
+        await refreshLocalCopies();
       } catch (e) {
         showToast(asMessage(e, 'Could not delete project.'));
       }
@@ -712,6 +724,24 @@ export async function openProjectList(): Promise<void> {
     let archived: PendingRecord[] = [];
     let deletedCopies: PendingRecord[] = [];
     let offlineListing = false;
+
+    /**
+     * Read the device copies again from storage (#471).
+     *
+     * The three lists are built once when the modal opens and then kept in step
+     * by hand at each call site. Deleting a project drops several records at
+     * once, and nothing was re-reading them — so copies that had just been
+     * deleted were still drawn, looking like old offline copies coming back
+     * from nowhere. One place, one read, no bookkeeping to forget.
+     */
+    async function refreshLocalCopies(): Promise<void> {
+      try {
+        const allLocal = await listPending();
+        deviceOnly = allLocal.filter((r) => !isArchived(r) && !isDeletedCopy(r));
+        archived = allLocal.filter((r) => isArchived(r) && !isDeletedCopy(r));
+        deletedCopies = allLocal.filter((r) => isDeletedCopy(r));
+      } catch { /* storage unavailable — leave the lists as they are */ }
+    }
 
     /** Put a deleted copy back within its 24 hours. */
     async function onRecoverLocal(rec: PendingRecord): Promise<void> {
