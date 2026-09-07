@@ -387,6 +387,18 @@ const ids = (rows: Array<{ id: string }>) => rows.map((r) => r.id).sort().join('
   reg.asking('p1');
   reg.answered('p1');
   check('answered — never asked again', reg.shouldAsk('p1'), false);
+
+  // DELETED, RECOVERED, DELETED AGAIN (#468).
+  // Recovering a project from the project list puts it back on the server. The
+  // next thing that gets through proves it, and the whole question is off — so
+  // a SECOND deletion is a fresh question, not a remembered answer.
+  reg.cameBack('p1');
+  check('recovered, then deleted again — it asks a second time',
+    reg.shouldAsk('p1'), true);
+
+  // And a project nobody ever asked about is unharmed by it.
+  reg.cameBack('p3');
+  check('a project that was never gone is untouched', reg.shouldAsk('p3'), true);
 }
 
 // ---------------------------------------------------------------------------

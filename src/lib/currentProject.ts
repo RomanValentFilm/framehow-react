@@ -254,9 +254,37 @@ export function registerProjectGone(fn: (projectId: string) => void): void {
  *  — a 404 does not heal — but nothing is thrown away either. */
 const _goneProjectIds = new Set<string>();
 
+/** Told when the question has been answered, or when something got through for
+ *  a project we had written off — see `noteTheProjectIsAlive` (#468). */
+let _projectAliveOut: ((projectId: string) => void) | null = null;
+export function registerProjectAlive(fn: (projectId: string) => void): void {
+  _projectAliveOut = fn;
+}
+
 /** Called when the answer has been given, or the project saved as a new one. */
 export function projectIsBackFromTheDead(projectId: string): void {
   _goneProjectIds.delete(projectId);
+}
+
+/**
+ * SOMETHING GOT THROUGH — SO IT IS NOT DELETED (#468).
+ *
+ * A project can be deleted, RECOVERED from the project list, and deleted again.
+ * Two things went wrong without this:
+ *
+ *   1. once written off, the background retry skipped it for ever, so this
+ *      device never noticed the recovery — it simply stopped talking
+ *   2. the question was remembered as answered, so a SECOND deletion was never
+ *      mentioned at all
+ *
+ * Any success at all — a push, a pull — is proof the project is there, and puts
+ * everything back as it was.
+ */
+export function noteTheProjectIsAlive(projectId: string): void {
+  if (!_goneProjectIds.has(projectId)) { _projectAliveOut?.(projectId); return; }
+  _goneProjectIds.delete(projectId);
+  trace('the project is on the server again — back to normal');
+  _projectAliveOut?.(projectId);
 }
 
 /**
@@ -476,6 +504,7 @@ export async function flushSyncNow(): Promise<void> {
     // that is not there is harmless, and this only runs after confirmation.
     _unsentSince = null;                       // the run of failures is over
     forgetRetryFailures();                     // and so is the growing wait (#463)
+    noteTheProjectIsAlive(pid);                // and it is plainly not deleted (#468)
     void markPendingUploaded(pid);
     void markPendingUploaded(_localId);
     hideOfflineBanner();
@@ -661,6 +690,7 @@ async function retryPendingSyncs(why: 'timer' | 'now' = 'timer'): Promise<void> 
       await _syncFn(currentPid);
       trace('retry push OK');
       forgetRetryFailures();
+      noteTheProjectIsAlive(currentPid);
       clearDirtyState();
       cp = { ...cp, lastSavedAt: Date.now(), dirty: false };
       _pendingSyncIds.delete(currentPid);

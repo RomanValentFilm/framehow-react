@@ -96,6 +96,16 @@ export interface GoneRegister {
   unanswered(projectId: string): void;
   /** Answered. Nothing more to ask about this one. */
   answered(projectId: string): void;
+  /**
+   * Something got through for this project after all — so it is not deleted any
+   * more, and the whole question is off (#468).
+   *
+   * A project can be deleted, RECOVERED from the project list, and deleted
+   * again. Without this, the second deletion would never be mentioned: the
+   * first answer would still be remembered, and the app would sit there saying
+   * nothing while the work piled up.
+   */
+  cameBack(projectId: string): void;
 }
 
 export function makeGoneRegister(): GoneRegister {
@@ -108,5 +118,6 @@ export function makeGoneRegister(): GoneRegister {
     // so the next failed push asks again. Nothing was thrown away.
     unanswered: (id) => { onScreen.delete(id); },
     answered: (id) => { onScreen.delete(id); settled.add(id); },
+    cameBack: (id) => { onScreen.delete(id); settled.delete(id); },
   };
 }

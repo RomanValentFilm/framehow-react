@@ -58,8 +58,10 @@ import {
   handIsBusy,
   msSinceLastStroke,
   registerProjectGone,
+  registerProjectAlive,
   projectIsBackFromTheDead,
   noteTheProjectIsGone,
+  noteTheProjectIsAlive,
 } from './currentProject';
 import { makeGoneRegister, whatWentWrong } from './projectGone';
 import { trace } from './syncTrace';
@@ -5041,6 +5043,11 @@ async function tryPullFromCloud(force = false): Promise<void> {
       return;
     }
 
+    // The server answered for this project, so it is plainly not deleted. If we
+    // had written it off, that is over — it can have been recovered from the
+    // project list, and a later deletion has to be able to ask again (#468).
+    noteTheProjectIsAlive(cp.projectId);
+
     let tree = raw;
     // Frames the answer did not mention. Their copy on this device is kept
     // exactly as it is — nothing about them is re-read or re-mapped (#285).
@@ -5615,6 +5622,7 @@ export async function bootstrapAccountSystem(): Promise<void> {
   // be created first. saveNow() does exactly that, then uploads.
   registerCreateAndSync(saveNow);
   registerProjectGone(askAboutTheDeletedProject);           // #465
+  registerProjectAlive((pid) => _goneRegister.cameBack(pid));  // #468
   registerPullFn(tryPullFromCloud);
   registerConnectionWatch(watchForTheConnectionComingBack);   // #298
   startPullOnFocus();
