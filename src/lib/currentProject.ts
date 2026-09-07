@@ -48,7 +48,7 @@ import { clearSnapshot, saveSnapshot, snapshotFromStore, savePending, clearPendi
 import { isLoggedIn } from './session';
 import { stampChangedSettings, exportSettingStamps } from './projectSettings';
 import { stampChangedContent, exportChangeStamps } from './changeStamps';
-import { nextRetryWait, timeToTryAgain } from './retryWait';
+import { makeRetryClock } from './retryWait';
 
 interface CurrentProject {
   /** Server-side UUID once the project has been saved. Null = local-only. */
@@ -542,20 +542,12 @@ const OFFLINE_NOTICE_DELAY_MS = 45_000;
  *  through, so a server that is down is not asked ninety times an hour (#463). */
 const RETRY_INTERVAL_MS = 40_000;
 
-/** Background retries that failed in a row. Zero the moment anything gets
- *  through, and the moment the connection comes back. */
-let _retryFailures = 0;
-
-/** When the background retry last actually attempted a push. Null means it
- *  never has — a device just opened with unsent work must not sit out a wait
- *  it never earned. */
-let _lastRetryAt: number | null = null;
+/** How long to wait before trying again, and the remembering behind it. The
+ *  rule itself lives in retryWait.ts, where the bench can drive it (#463). */
+const _retryClock = makeRetryClock();
 
 /** Anything that gets through puts the growing wait back to nothing. */
-export function forgetRetryFailures(): void {
-  _retryFailures = 0;
-  _lastRetryAt = null;
-}
+export function forgetRetryFailures(): void { _retryClock.succeeded(); }
 
 /** Projects with unsent work found on the device, other than the open one. */
 let _pendingOnDevice: Array<{ projectId: string | null; name: string | null; savedAt: number }> = [];
@@ -600,12 +592,12 @@ async function restorePendingFromDevice(): Promise<void> {
  *             wait is forgotten.
  */
 async function retryPendingSyncs(why: 'timer' | 'now' = 'timer'): Promise<void> {
-  if (why === 'now') forgetRetryFailures();
+  if (why === 'now') _retryClock.wokeUp();
   if (!_syncFn || !isLoggedIn() || !navigator.onLine) return;
   if (_pendingSyncIds.size === 0) return;
   if (cloudSyncInFlight || _projectSwitchInFlight) return;
-  if (why === 'timer' && !timeToTryAgain(Date.now(), _lastRetryAt, _retryFailures)) return;
-  _lastRetryAt = Date.now();
+  if (why === 'timer' && !_retryClock.mayTry(Date.now())) return;
+  _retryClock.tried(Date.now());
   // Made offline and never uploaded: it needs creating on the server first.
   // Only when it already has a name — otherwise saving would have to stop and
   // ask for one, and this runs in the background.
@@ -614,8 +606,8 @@ async function retryPendingSyncs(why: 'timer' | 'now' = 'timer'): Promise<void> 
     cloudSyncInFlight = true;
     try {
       await _createAndSyncFn();
-      forgetRetryFailures();
-    } catch { _retryFailures++; /* still unreachable — the device copy stays put */ }
+      _retryClock.succeeded();
+    } catch { _retryClock.failed(); /* still unreachable — the device copy stays put */ }
     finally { cloudSyncInFlight = false; }
     return;
   }
@@ -637,9 +629,9 @@ async function retryPendingSyncs(why: 'timer' | 'now' = 'timer'): Promise<void> 
       hideOfflineBanner();
       emit();
     } catch (e) {
-      _retryFailures++;
+      _retryClock.failed();
       trace(`retry push FAILED status=${(e as { status?: number })?.status ?? '(no response)'}`
-        + ` · trying again in ${Math.round(nextRetryWait(_retryFailures) / 1000)}s`);
+        + ` · trying again in ${Math.round(_retryClock.waitNow() / 1000)}s`);
     } finally {
       cloudSyncInFlight = false;
     }

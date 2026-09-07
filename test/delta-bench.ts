@@ -11,7 +11,7 @@ import {
   mergeDelta, lastMergeRefusal, answerIsSafeToApply,
   untouchedByDelta, type MergeableTree,
 } from '../src/lib/deltaMerge';
-import { nextRetryWait, timeToTryAgain } from '../src/lib/retryWait';
+import { nextRetryWait, timeToTryAgain, makeRetryClock } from '../src/lib/retryWait';
 
 const results: Array<{ what: string; got: string; want: string }> = [];
 const check = (what: string, got: unknown, want: unknown) =>
@@ -288,6 +288,54 @@ const ids = (rows: Array<{ id: string }>) => rows.map((r) => r.id).sort().join('
   // out for hours.
   check('the clock went backwards — go, do not sit it out',
     timeToTryAgain(1_000, 9_999_999, 3), true);
+}
+
+// ---------------------------------------------------------------------------
+// THE SAME THING AS A SEQUENCE — the wifi test, without the wifi (#463)
+//
+// This is the shape of the fault worth fearing: the wifi is off for ten
+// minutes, so the wait has grown to five. Then the wifi comes back. If waking
+// up forgets the FAILURES but not WHEN THE LAST TRY WAS, the app looks patched
+// and correct and still sits on your work for up to forty seconds. Reading the
+// code does not show it. A person testing by hand does not see forty seconds
+// as wrong. So it is pinned here.
+// ---------------------------------------------------------------------------
+{
+  const clock = makeRetryClock();
+  let now = 1_000_000;
+
+  // Nothing has happened yet: a device just opened with unsent work goes now.
+  check('a fresh clock goes at once', clock.mayTry(now), true);
+
+  // Three failures in a row, each one waiting out its turn.
+  clock.tried(now); clock.failed();
+  check('after one failure the next wait is eighty seconds', clock.waitNow(), 80_000);
+  now += 79_000;
+  check('seventy-nine seconds later — still waiting', clock.mayTry(now), false);
+  now += 2_000;
+  check('past eighty — go', clock.mayTry(now), true);
+
+  clock.tried(now); clock.failed();
+  clock.tried(now + 160_000); clock.failed();
+  check('three failures — the wait is five minutes', clock.waitNow(), 300_000);
+  now += 160_000;
+
+  // THE ONE THAT MATTERS. The wifi comes back after a long outage.
+  clock.wokeUp();
+  check('the wifi is back — go THIS SECOND, not in five minutes',
+    clock.mayTry(now), true);
+  check('...and it is not still holding forty seconds either',
+    clock.mayTry(now + 1), true);
+  check('...and the run of failures is forgotten', clock.count(), 0);
+  check('...so the next wait is the ordinary forty', clock.waitNow(), 40_000);
+
+  // A push that gets through does the same.
+  const c2 = makeRetryClock();
+  c2.tried(2_000_000); c2.failed(); c2.failed();
+  check('two failures, then something got through', c2.count(), 2);
+  c2.succeeded();
+  check('...the count is cleared', c2.count(), 0);
+  check('...and it is free to try immediately', c2.mayTry(2_000_001), true);
 }
 
 // ---------------------------------------------------------------------------

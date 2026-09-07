@@ -57,3 +57,48 @@ export function timeToTryAgain(
   if (now < lastTryAt) return true;
   return now - lastTryAt >= nextRetryWait(failures);
 }
+
+// ---------------------------------------------------------------------------
+// THE WHOLE RULE IN ONE PLACE, SO THE BENCH CAN DRIVE IT
+//
+// The arithmetic above is easy to get right. What is easy to get WRONG is the
+// remembering: coming back online must forget BOTH things — how many failures
+// there were AND when the last try was. Forget only the failures and the wait
+// drops to forty seconds but still counts from the last attempt, so a device
+// with the wifi back on sits there for up to forty seconds with your work in
+// its pocket. That fault cannot be seen by reading, and nobody would find it by
+// hand without a stopwatch. So the remembering lives here and is benched as a
+// SEQUENCE — fail, fail, fail, wake up, go.
+// ---------------------------------------------------------------------------
+
+export interface RetryClock {
+  /** May the background timer try now? */
+  mayTry(now: number): boolean;
+  /** The timer is attempting a push this moment. */
+  tried(now: number): void;
+  /** That attempt failed. The next wait gets longer. */
+  failed(): void;
+  /** Something got through. Back to the ordinary rhythm. */
+  succeeded(): void;
+  /** The connection came back, or the app was opened. Go at once. */
+  wokeUp(): void;
+  /** How long the next wait is, for the log. */
+  waitNow(): number;
+  /** Failures in a row, for the log and the bench. */
+  count(): number;
+}
+
+export function makeRetryClock(): RetryClock {
+  let failures = 0;
+  let lastTryAt: number | null = null;
+  const clear = () => { failures = 0; lastTryAt = null; };
+  return {
+    mayTry: (now) => timeToTryAgain(now, lastTryAt, failures),
+    tried: (now) => { lastTryAt = now; },
+    failed: () => { failures++; },
+    succeeded: clear,
+    wokeUp: clear,
+    waitNow: () => nextRetryWait(failures),
+    count: () => failures,
+  };
+}
