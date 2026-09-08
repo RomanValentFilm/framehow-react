@@ -1089,13 +1089,36 @@ export function handleOrientationFlip(): void {
   const wasLandscape = lastW > lastH,
     nowLandscape = newW > newH;
   const flipped = wasLandscape !== nowLandscape;
-  (window as any)._lastWinW = newW;
-  (window as any)._lastWinH = newH;
+  // STAY WHERE YOU ARE (#478).
+  //
+  // SETUPS, a SHOOTING ORDER and STORY FLOW are screens of their own. Turning
+  // the iPad while you are in one of them must leave you in it, in portrait,
+  // and say nothing.
+  //
+  // It did not. Opening a shooting order sets `sortMode` and never touches
+  // `currentViewMode` (sortOrder.ts:1358) — so a shooting order opened from 3x2
+  // still LOOKS like 3x2 to this function. Turning to portrait therefore ran
+  // the branch below: it swapped the strips, forced the detail bar open,
+  // re-rendered, scrolled to the top and put up "3x2 needs landscape" — all
+  // behind a shooting order the user was working in. Same for SETUPS. The
+  // buttons in init.ts have guarded on both flags for a long time
+  // (init.ts:653, 657); this function never did.
+  //
+  // The size is NOT recorded while one of those is open, so the turn stays
+  // OWED. Closing the screen calls this again, it sees the size still differs,
+  // and settles the view for however the iPad is being held — which is why
+  // leaving a shooting order in portrait does not drop you into 3x2 portrait.
+  const busyElsewhere = state().sortMode || state().setupMode;
+  if (!busyElsewhere) {
+    (window as any)._lastWinW = newW;
+    (window as any)._lastWinH = newH;
+  }
 
   document.getElementById('rotateMsg')!.classList.remove('show');
   const g3Overlay = document.getElementById('g3RotateMsg');
   // Only auto-dismiss g3RotateMsg if rotating back to landscape (not during portrait resize events)
   if (g3Overlay && nowLandscape) g3Overlay.classList.remove('show');
+  if (busyElsewhere) { g3Overlay?.classList.remove('show'); return; }
   if (!flipped) return;
 
   // Block scroll handler during the entire orientation transition.

@@ -46,6 +46,8 @@ export function toggleSetupMode(): void {
     document.getElementById('setupsBtn')?.classList.remove('active');
     const renderAll = (window as any).__fh_renderAll;
     if (renderAll) renderAll();
+    // THE TURN THAT WAS OWED (#478) — see the comment in view.ts.
+    void import('./view').then((m) => m.handleOrientationFlip());
     return;
   }
 

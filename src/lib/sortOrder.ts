@@ -1451,6 +1451,11 @@ export function closeSortMode(): void {
   if (s.needsStripVisible) {
     document.getElementById('needsStripBtn')?.classList.add('active');
   }
+
+  // THE TURN THAT WAS OWED (#478). Rotating while a shooting order is open
+  // leaves the view alone and does not record the new size, so this settles it
+  // now — you come out into the right view for however the iPad is being held.
+  void import('./view').then((m) => m.handleOrientationFlip());
 }
 
 // ─── Dropdown rendering ───────────────────────────────────────────────
