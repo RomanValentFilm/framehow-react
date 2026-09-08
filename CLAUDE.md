@@ -1,5 +1,40 @@
 # Framehow React — Project Notes
 
+## HOW WE WORK — READ THIS FIRST, EVERY SESSION
+
+Agreed with Roman on 8 September, after a run of days where things settled weeks
+ago were quietly undone. The cause is not mysterious: nothing carries over
+between sessions except what is written in these files. A rule that only ever
+lived in a conversation is gone.
+
+**1. Nothing counts until it is written down here, in Roman's words.**
+When he settles a rule, write it that minute and show him the line. If it is
+only in the chat, treat it as not agreed. He says **"write the rule"**; the
+right home is:
+  - how we work together → this file
+  - how the app must behave → the top of `test/resort-bench.ts`
+  - where things stand and what is next → `TOMORROW.md`
+He says **"show me the rule"** → paste the line back with the file it is in.
+
+**2. Read this file and TOMORROW.md at the start of every session**, and say
+back the three things that constrain the day before touching anything. Twenty
+seconds. It is what would have caught "WE WORK ON DEV".
+
+**3. Before making a change, name the rule being followed and where it is
+written.** If there is no line to point at, ask — do not guess.
+
+**4. Do ONLY what was asked.** Not the neighbouring thing. He said iPad and got
+iPad and phone; he asked what an item WAS and the work was started instead. If
+something next to it looks worth doing, say so and wait.
+
+**5. Roman's check, and he should use it freely: "did you trace it, or are you
+reasoning?"** The honest answer is "reasoning" more often than it should be, and
+that answer means: go and read the code before saying another word.
+
+A sixth thing, honestly: long sessions get worse, not better. Ending one while
+the notes are good and starting fresh beats pushing through — the notes are the
+memory, not the conversation.
+
 ## READ TOMORROW.md FIRST
 
 `TOMORROW.md` in this folder holds where the work stopped, what is deployed, what
@@ -66,6 +101,26 @@ handed over, say the expected time with it. Rough figures:
 - the sync core (01, 02, 03, 05, 06, 07) — about 2.5 minutes
 - one file — 30 seconds to a minute
 - the random day on its own — about 2 minutes
+
+## CHECK THE STATE BEFORE HANDING OVER A COMMAND — ESPECIALLY A GIT ONE
+
+A command is only correct for the state the folder is actually in. On 8
+September a `git commit --amend` was handed over twice: the first run did the
+job, the second renamed the WRONG commit and force-pushed it. Nothing was lost,
+but the history had to be mended twice.
+
+So: before any command that amends, resets, force-pushes, deletes or tags, run
+`git log -3 --format="%h %s"` and `git status --porcelain` FIRST, and write the
+command for what is really there. Never re-offer a command that may already have
+been run.
+
+## NEVER HAND OVER A COMMAND WITH A PLACEHOLDER IN IT
+
+Roman pastes what he is given, and he is right to. A template with `MESSAGE` or
+`vX.Y.ZZZ` in it will be run exactly as written — it happened on 8 September and
+put a commit called "MESSAGE" into the history. Every command handed over is
+COMPLETE and ready to paste: the real commit message, the real version, the real
+branch. Templates belong in this file, never in the chat.
 
 ## THE DEPLOY LINE MUST PRINT WHAT IT DEPLOYED
 
