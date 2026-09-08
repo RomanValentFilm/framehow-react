@@ -1108,7 +1108,10 @@ export function handleOrientationFlip(): void {
   // OWED. Closing the screen calls this again, it sees the size still differs,
   // and settles the view for however the iPad is being held — which is why
   // leaving a shooting order in portrait does not drop you into 3x2 portrait.
-  const busyElsewhere = state().sortMode || state().setupMode;
+  // IPAD ONLY. Roman asked for the iPad and only the iPad. On a phone, turning
+  // to portrait forces the single MAIN strip, and that is unchanged.
+  const busyElsewhere = Math.min(newW, newH) > 430
+    && (state().sortMode || state().setupMode);
   if (!busyElsewhere) {
     (window as any)._lastWinW = newW;
     (window as any)._lastWinH = newH;

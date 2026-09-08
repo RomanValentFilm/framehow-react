@@ -67,6 +67,19 @@ handed over, say the expected time with it. Rough figures:
 - one file — 30 seconds to a minute
 - the random day on its own — about 2 minutes
 
+## THE DEPLOY LINE MUST PRINT WHAT IT DEPLOYED
+
+Roman asked for this and it is not optional: every deploy command ends by
+echoing the version and build number it just put up, read out of the source
+files — not typed by hand, which is how the log came to say 404 for a 410
+(#474). The two greps target the CONSTANTS, not the comments above them:
+
+    V="$(grep -o "APP_VERSION = 'v[0-9.]*'" src/store/state.ts | grep -o "v[0-9.]*") · $(grep -o "SYNC_BUILD_TAG = '#[0-9]*'" src/lib/syncTrace.ts | grep -o '#[0-9]*')"
+    … the deploy … ; echo "DEPLOYED: $V"
+
+`V` is captured at the START, while the shell is still in the project folder —
+the deploy `cd`s to /tmp/fhdeploy before it finishes.
+
 ## Deployment
 
 Git branch is `v4.4`. Cloudflare Pages production branch is `main`.
