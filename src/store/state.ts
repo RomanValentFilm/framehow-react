@@ -63,7 +63,7 @@ export interface Setup {
 
 /** 12-colour palette for setups. */
 /** App version — bump before every deploy. */
-export const APP_VERSION = 'v4.9.186';
+export const APP_VERSION = 'v4.9.187';
 
 /** Free-text fields printed in the header of every exported page. */
 export interface ExportMeta {
@@ -193,10 +193,18 @@ export const DEFAULT_NEED_DEFINITIONS: NeedDefinitions = {
         // DIRECTION (#386). Sits after LOCATION: where you are, then which way
         // you are pointing. New default tables reach projects that already
         // exist through migrateNeedDefinitions, which follows this order.
+        // "+/-" IS GONE FROM THE DEFAULT (#490). It arrived with the table in
+        // #386 alongside DIRECTION A and REVERSE, with no reason recorded in
+        // the commit, the comments or the changelog — and Roman did not agree
+        // to it. Nothing keys off the name or the id, so it simply goes.
+        //
+        // A project made BEFORE this keeps its own copy: migrateNeedDefinitions
+        // merges by table id and leaves a saved table's items alone, which is
+        // right — it must never delete something a person has been using. Those
+        // are removed by hand in the card, one tap, if wanted.
         { id: 'tbl_direction', name: 'DIRECTION', type: 'toggle', items: [
           { id: 'ti_dir_a', name: 'DIRECTION A' },
           { id: 'ti_dir_reverse', name: 'REVERSE' },
-          { id: 'ti_dir_plusminus', name: '+/-' },
         ]},
         { id: 'tbl_extint', name: 'INT/EXT', type: 'toggle', items: [
           { id: 'ti_int', name: 'INT' },

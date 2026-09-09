@@ -157,11 +157,21 @@
   @media (hover:hover){.setup-delete-btn:hover{color:#e6e6e6;border-color:var(--border-strong);}}
   @media (pointer:coarse){.setup-delete-btn{padding:4px 5px 2px;}}
   /* Setup-lock: block all UI except setup bar + setup canvas controls */
-  body.setup-lock .view-bar{pointer-events:none;background:#1a1a1a;border-bottom-color:transparent;}
+  /* A LOCKED BAR IS STILL A BAR (#490).
+     While SETUPS is on, the view bar and the detail bar cannot be used — but
+     they were also painted #1a1a1a with their dividing line taken away. Against
+     the new fills (#486–#488) that is darker than the toolbar above and the
+     setup bar below, so the middle of the screen became two 28px strips of
+     near-black with no edges. Roman: "you see a gap", and then "the detail bar
+     is missing totally in 3x2" — it was there all along, painted out.
+     Measured in a browser at an iPad's size, not guessed at.
+     The buttons still go to 25%, which is what says "locked". The bar keeps its
+     own colour and its line, which is what says "here". */
+  body.setup-lock .view-bar{pointer-events:none;}
   body.setup-lock .view-bar .view-btn{opacity:.25;}
   body.setup-lock .view-bar .vb-sep{opacity:.25;}
   body.setup-lock #setupsBtn.view-btn{opacity:1!important;pointer-events:auto!important;}
-  body.setup-lock .detail-bar{pointer-events:none;background:#1a1a1a;border-bottom-color:transparent;}
+  body.setup-lock .detail-bar{pointer-events:none;}
   body.setup-lock .detail-bar .view-btn{opacity:.25;}
   body.setup-lock .detail-bar .vb-sep{opacity:.25;}
   body.detail-open .setup-bar{top:calc(44px + env(safe-area-inset-top) * 0.5 + 56px);}

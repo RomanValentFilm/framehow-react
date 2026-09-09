@@ -522,15 +522,31 @@ function getItemsForCategory(categoryId: string, frameIds: number[]): ItemOption
   const s = state();
 
   if (categoryId === 'setup') {
-    const setupCounts = new Map<string, { name: string; ids: number[] }>();
+    // EVERY SETUP YOU HAVE MADE IS OFFERED, NOT ONLY THE ONES ALREADY ON A CARD
+    // (#490).
+    //
+    // This list used to be built by walking the FRAMES and reading each one's
+    // setup — so a setup that existed but had not been put on a card yet was
+    // not in the list at all. Make three setups, put the third on some cards,
+    // and EDIT ORDER offers only the third. Roman: "i think i see only the last
+    // one created."
+    //
+    // The needs list right below does the opposite and is the model: it shows
+    // every item in the table, and the ones nothing matches come out with a
+    // count of nothing and are drawn greyed. A setup with no cards yet belongs
+    // in the list the same way — you cannot sort by it, but you can see it is
+    // there, which is the difference between "not yet used" and "gone".
+    const setupCounts = new Map<string, { name: string; ids: number[] }>(
+      s.setups.map((su) => [su.id, { name: su.name, ids: [] as number[] }]),
+    );
     for (const fid of frameIds) {
       const f = s.frames.find((fr) => fr.id === fid);
       if (!f || !f.setupId) continue;
       const setup = s.setups.find((su) => su.id === f.setupId);
       if (!setup) continue;
-      const entry = setupCounts.get(setup.id) || { name: setup.name, ids: [] };
+      const entry = setupCounts.get(setup.id);
+      if (!entry) continue;          // a setup the palette no longer holds
       entry.ids.push(fid);
-      setupCounts.set(setup.id, entry);
     }
     return Array.from(setupCounts.entries()).map(([id, { name, ids }]) => ({
       id, name, count: ids.length, matchedIds: ids,
