@@ -531,6 +531,34 @@ function getAvailableCategories(frameIds: number[], excludeIds: string[] = []): 
  *
  * One question, asked the same way everywhere. NEVER FIX ONE OF TWO.
  */
+/**
+ * WHICH STORY FLOW IS THIS — the project's, or a group's? (#493)
+ *
+ * `null` for the project's own, a group id for a group's. Only ask this when
+ * isStoryFlow() has already said yes.
+ */
+function storyFlowGroup(orderId: string): number | null {
+  if (orderId === '__storyflow__') return null;
+  const bit = orderId.slice('__storyflow__:'.length);
+  const n = Number(bit);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Does this break belong to the story flow the user is looking at right now?
+ *  Used wherever positions shift, so a shot added in the barn cannot move the
+ *  exteriors' lunch break (#493). */
+function inTheOpenFlow(b: SortBreak): boolean {
+  return (b.groupId ?? null) === (state().activeGroupId ?? null);
+}
+
+/** The breaks THIS view owns — a shooting order's own, or the story flow's for
+ *  this group alone. A break with no group on it belongs to the project (#493). */
+function breaksForView(orderId: string, order: { breaks: SortBreak[] } | null): SortBreak[] {
+  if (order) return order.breaks;
+  const want = storyFlowGroup(orderId);
+  return (state().storyFlowBreaks || []).filter((b) => (b.groupId ?? null) === want);
+}
+
 function isStoryFlow(orderId: string): boolean {
   // Written out in full, deliberately. The first version of this was produced by
   // a search-and-replace that rewrote its own body into a call to itself — so
@@ -1273,7 +1301,8 @@ export function addFrameToSortOrders(frameId: number, afterFrameId?: number): vo
     if (afterIdx >= 0) {
       useStore.setState({
         storyFlowBreaks: s.storyFlowBreaks.map((b) =>
-          (b.position > afterIdx ? { ...b, position: b.position + 1 } : b)),
+          (inTheOpenFlow(b) && b.position > afterIdx
+            ? { ...b, position: b.position + 1 } : b)),
       });
     }
   }
@@ -1331,7 +1360,8 @@ export function removeFrameFromSortOrders(frameId: number): void {
   if (flowIdx >= 0 && (s.storyFlowBreaks?.length ?? 0) > 0) {
     useStore.setState({
       storyFlowBreaks: s.storyFlowBreaks.map((b) =>
-        (b.position > flowIdx ? { ...b, position: b.position - 1 } : b)),
+        (inTheOpenFlow(b) && b.position > flowIdx
+          ? { ...b, position: b.position - 1 } : b)),
     });
   }
 
@@ -2035,7 +2065,7 @@ function renderSortEditView(el: HTMLElement, orderId: string): void {
   let orderIdx = 0;
   for (const f of frames) {
     // Check for breaks before this position
-    const breaks = order ? order.breaks : (s.storyFlowBreaks || []);
+    const breaks = breaksForView(orderId, order);
     const breaksHere = breaks.filter((b) => b.position === orderIdx);
     for (const brk of breaksHere) {
       html += renderBreakCard(brk, activeBreakId);
@@ -2047,7 +2077,7 @@ function renderSortEditView(el: HTMLElement, orderId: string): void {
 
   // Trailing breaks
   {
-    const breaks = order ? order.breaks : (s.storyFlowBreaks || []);
+    const breaks = breaksForView(orderId, order);
     const trailingBreaks = breaks.filter((b) => b.position >= orderIdx);
     for (const brk of trailingBreaks) {
       html += renderBreakCard(brk, activeBreakId);
@@ -2858,7 +2888,11 @@ function addBreak(orderId: string, editView: HTMLElement): void {
     }
   }
 
-  const newBreak: SortBreak = { id: breakId, text: 'BREAK NAME', position };
+  // A STORY FLOW BREAK REMEMBERS WHICH FLOW IT WAS MADE IN (#493). A shooting
+  // order's break does not need it — the order holds its own.
+  const newBreak: SortBreak = isStoryFlow(orderId)
+    ? { id: breakId, text: 'BREAK NAME', position, groupId: storyFlowGroup(orderId) }
+    : { id: breakId, text: 'BREAK NAME', position };
 
   if (isStoryFlow(orderId)) {
     useStore.setState({ storyFlowBreaks: [...(s.storyFlowBreaks || []), newBreak] });

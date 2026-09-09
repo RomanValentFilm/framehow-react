@@ -416,7 +416,14 @@ function getExportFrames(radioName: string): Frame[] {
 function getSortedExportFrames(orderId: string, pool: Frame[]): { frames: Frame[]; breaks: SortBreak[] } {
   const s = state();
   if (orderId === '__storyflow__') {
-    return { frames: pool, breaks: [...(s.storyFlowBreaks || [])] };
+    // ONLY THE PROJECT'S OWN BREAKS (#493). Each story flow — the project's and
+    // each group's — keeps its own now, all in the one list, told apart by the
+    // group written on them. Exporting the project's flow with every group's
+    // breaks in it would scatter lunch through the wrong pages.
+    return {
+      frames: pool,
+      breaks: (s.storyFlowBreaks || []).filter((b) => (b.groupId ?? null) === null),
+    };
   }
   const order = s.sortOrders.find((o) => o.id === orderId);
   if (!order) return { frames: pool, breaks: [] };

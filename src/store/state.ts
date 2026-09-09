@@ -63,7 +63,7 @@ export interface Setup {
 
 /** 12-colour palette for setups. */
 /** App version — bump before every deploy. */
-export const APP_VERSION = 'v4.9.190';
+export const APP_VERSION = 'v4.9.191';
 
 /** Free-text fields printed in the header of every exported page. */
 export interface ExportMeta {
@@ -420,6 +420,21 @@ export interface SortBreak {
   id: string;
   text: string;       // e.g. "LUNCH BREAK — 60 min"
   position: number;   // index in the order array where this break sits
+  /**
+   * WHICH STORY FLOW THIS BREAK BELONGS TO (#493).
+   *
+   * Only meaningful on a STORY FLOW break. A shooting order carries its own
+   * breaks inside itself and has never needed this.
+   *
+   * `null` or missing means the project's own story flow — which is also what
+   * every break made before today is, so nothing already written has to change.
+   * A number is the group whose story flow it belongs to.
+   *
+   * Before this there was ONE list for the whole project and every group's story
+   * flow read it, so a break put in the barn showed up in the exteriors, in the
+   * project, and everywhere else. Roman: "each group needs its own breaks."
+   */
+  groupId?: number | null;
 }
 
 /** Bracket tree node – serialisable subset (no DOM refs). */
