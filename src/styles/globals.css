@@ -4,10 +4,13 @@
   @media (hover:none) and (pointer:coarse){html{overflow-x:hidden;}}
   :root{
     --bg:#000;--surface:#333;--surface2:#404040;
-    /* The toolbar and the detail bar, 20% darker than --surface (#333 → #292929).
-       Their own colour so the view bar, the setup bar, buttons and modals —
-       everything else on --surface — are untouched (#486). */
-    --bar-fill:#292929;
+    /* The toolbar and the detail bar. #333 → 20% darker (#292929, #486) → a
+       further 15% darker (#232323, #487). Their own colour, so the view bar,
+       the setup bar, the dialog buttons and the modals — everything else on
+       --surface — are untouched. The buttons IN these two bars have no fill of
+       their own (see .view-btn, background:transparent), so they show whatever
+       the bar behind them is. */
+    --bar-fill:#232323;
     --border:rgba(255,255,255,0.25);--border-strong:rgba(255,255,255,0.35);
     --text:#d9d9d9;--text-muted:#999;--text-faint:#666;
     --accent:#d52632;--font:'DM Sans',sans-serif;--mono:'DM Mono',monospace;
