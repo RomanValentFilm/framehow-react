@@ -55,7 +55,6 @@ const FITTING_TEXT: [string, string][] = [
 ];
 
 let _applied = false;
-let _detailBarWasOpen = false;
 
 /** True when every container already holds exactly the children it should. */
 function isCanonical(): boolean {
@@ -91,12 +90,20 @@ function restoreCanonical(): void {
   document.querySelectorAll('.fitting-hidden').forEach((el) => el.classList.remove('fitting-hidden'));
   document.querySelectorAll('.vb-sep-hair').forEach((el) => ((el as HTMLElement).style.display = ''));
 
+  // THE DETAIL BAR IS ALWAYS OPEN NOW (#484).
+  //
+  // This used to close it whenever `_detailBarWasOpen` was false — and that
+  // variable starts as false and is only ever set on the way INTO a fitting
+  // project. This function runs on every render of a NON-fitting project
+  // (`if (_applied || !isCanonical())`), so it could close the bar on a project
+  // that had never been near fitting. With #483 there is no DETAIL button any
+  // more, so that was a room with no door.
+  //
+  // Fitting hides the bar with CSS (`body.fitting-mode .detail-bar`), so
+  // clearing the inline style here is safe and is what puts it back.
   const detailBar = q<HTMLElement>('#detailBar');
-  if (detailBar) detailBar.style.display = _detailBarWasOpen ? '' : 'none';
-  const detailBtn = q<HTMLElement>('#detailBtn');
-  if (detailBtn) detailBtn.classList.toggle('active', _detailBarWasOpen);
-  document.body.classList.toggle('detail-open', _detailBarWasOpen);
-  _detailBarWasOpen = false;
+  if (detailBar) detailBar.style.display = '';
+  document.body.classList.add('detail-open');
 }
 
 function applyFitting(): boolean {
@@ -135,7 +142,6 @@ function applyFitting(): boolean {
 
   const detailBar = q<HTMLElement>('#detailBar');
   if (detailBar) {
-    _detailBarWasOpen = detailBar.style.display !== 'none';
     detailBar.style.display = 'none';
   }
   document.body.classList.remove('detail-open');
