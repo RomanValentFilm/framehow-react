@@ -142,10 +142,14 @@ async function look(page: Page): Promise<{ order: string[]; green: string[]; red
 }
 
 const reopen = async (d: Device): Promise<void> => {
+  // A plain visit changes nothing, and the app writes "saving:" only when
+  // something did — so this must not wait for it (runs 155/156). It used to
+  // get away with it because every tap in the boxes pushed; since #495 the
+  // boxes push once, on leaving.
   await d.closeOrder();
-  await d.settle();
+  await d.page.waitForTimeout(900);
   await d.openOrder(0);
-  await d.settle();
+  await d.page.waitForTimeout(900);
 };
 
 test('the needs move a shot, mark it, and never announce it twice', async ({ browser }) => {
@@ -259,25 +263,19 @@ test('going round the loop many times settles, and never invents work',
     await desktop.settle();
     await desktop.openOrder(0);
     await desktop.settle();
-    // THE SHEET HAS A BOX FOR DAY 3 TOO, and it has to (#490).
-    //
-    // This used to sort by DAY 1 and DAY 2 only, and then the plan below set a
-    // shot to DAY 3 on the third round and demanded a green mark. The app said
-    // exactly what it was doing — "the boxes match the needs — nothing to do" —
-    // and it was right: with no DAY 3 box the shot never changed box, and a shot
-    // that did not change box is not marked. That is #432, written so a needs
-    // change cannot paint a wall of green on shots nobody touched.
-    //
-    // So the test was asking for something the sheet was never set up to give.
-    // The box is added here — empty at first, which is allowed — and then "a
-    // third day appearing halfway through" is finally true.
-    await sortByDays(desktop.page, [DAY1, DAY2, DAY3]);
+    // NO BOX FOR A DAY NOBODY HAS (#495). Roman's rule: an item is tappable in
+    // the sheet only once at least one shot has it ticked. So the sheet is DAY 1
+    // and DAY 2 only; DAY 3 arrives on the third round of the plan below, and
+    // what is checked then is that EDIT ORDER offers it — read fresh from the
+    // needs — not that a shot is marked, because a shot with no box to move to
+    // has not moved (#432).
+    await sortByDays(desktop.page, [DAY1, DAY2]);
 
     // Change a shot, look, DONE it, come back. Four times over, with a third
     // day appearing halfway through — every fault today showed up on a LATER
     // visit, never the first.
-    const plan: Array<[number, string]> = [[4, DAY1], [5, DAY2], [6, DAY3], [2, DAY1]];
-    for (const [idx, day] of plan) {
+    const plan: Array<[number, string, number]> = [[4, DAY1, 1], [5, DAY2, 1], [6, DAY3, 0], [2, DAY1, 1]];
+    for (const [idx, day, marks] of plan) {
       await desktop.closeOrder();
       await desktop.settle();
       await setDay(desktop.page, idx, day);
@@ -286,8 +284,37 @@ test('going round the loop many times settles, and never invents work',
 
       const seen = await look(desktop.page);
       expect(seen.green.length,
-        `ONE CHANGE SHOULD MARK ONE SHOT — it marked ${seen.green.length}: ${seen.green.join(', ')}`)
-        .toBe(1);
+        `ONE CHANGE SHOULD MARK ${marks} SHOT(S) — it marked ${seen.green.length}: ${seen.green.join(', ')}`)
+        .toBe(marks);
+
+      if (day === DAY3) {
+        say('DAY 3 exists on one shot now — EDIT ORDER must offer it');
+        const offered = await desktop.page.evaluate(async (item) => {
+          const edit = Array.from(document.querySelectorAll('button'))
+            .find((b) => /EDIT ORDER/.test(b.textContent || ''));
+          edit?.click();
+          await new Promise((r) => setTimeout(r, 500));
+          const boxes = Array.from(document.querySelectorAll('[data-bact="expand"]'));
+          (boxes[boxes.length - 1] as HTMLElement | undefined)?.click();
+          await new Promise((r) => setTimeout(r, 350));
+          const tappable = !!document.querySelector(`[data-bact="pick"][data-bid="${item}"]`);
+          // Close the sheet again without changing anything.
+          const back = Array.from(document.querySelectorAll('button,span'))
+            .find((b) => /SORT NOW/.test(b.textContent || '')) as HTMLElement | undefined;
+          back?.click();
+          await new Promise((r) => setTimeout(r, 600));
+          const yes = Array.from(document.querySelectorAll('button'))
+            .find((b) => (b as HTMLElement).offsetParent !== null && /^(Yes|OK)$/i.test((b.textContent || '').trim()));
+          (yes as HTMLElement | undefined)?.click();
+          await new Promise((r) => setTimeout(r, 400));
+          return tappable;
+        }, DAY3);
+        expect(offered, 'DAY 3 IS NOT TAPPABLE in EDIT ORDER although a shot has it').toBe(true);
+        // Nothing was changed in the boxes, so nothing is saved — do not wait
+        // for a save that is not coming (run 155).
+        await desktop.page.waitForTimeout(800);
+        continue;
+      }
       expect(seen.order.length, 'and the order never grows or shrinks').toBe(8);
       expect(new Set(seen.order).size, 'and never holds a shot twice').toBe(8);
 

@@ -829,6 +829,10 @@ function layoutNode(node: BracketNode, col: number, startRow: number, cells: Gri
         const allZero = items.every((item) => item.count === 0);
         listHtml += `<div class="sort-bracket-dd-group${allZero ? ' sort-bracket-dd-group-empty' : ''}">${cat.name}</div>`;
         for (const item of items) {
+          // An item nobody has ticked yet is listed but NOT tappable — Roman's
+          // rule, confirmed #495: "tappable only things that have at least one
+          // toggled on". It becomes tappable the next time EDIT ORDER is opened
+          // after a shot has it, because the list is read fresh each time (#491).
           const isGrayed = item.count === 0 || grayItems.includes(item.id);
           const isScrollTarget = prevItemId === item.id;
           if (isGrayed) {
@@ -1230,9 +1234,11 @@ function rerenderBracket(editViewEl: HTMLElement, bracketState: BracketState, or
   if (missing.length > 0) {
     console.warn('[Bracket integrity] Missing frame IDs:', missing);
   }
-  // Persist bracket to IDB+cloud on every change so it survives browser close
+  // Kept on the device after every tap, so it survives the app being closed.
+  // NOT pushed here (#495): every tap on the sheet used to push, so building an
+  // order was ten pushes in a row. Roman's rule: "when you leave the shooting
+  // order you push your work to server" — closeSortMode does that.
   persistBracketToOrder(orderId, bracketState, sortedSnapshot);
-  void flushSyncNow();
   // Scroll open dropdown to previously selected item
   // Scroll dropdown list to previously selected item (centered)
   const scrollTarget = newBracket.querySelector('.sort-bracket-dd-scrollto') as HTMLElement | null;
@@ -1472,9 +1478,10 @@ export function closeSortMode(): void {
   }
 
   useStore.setState({ sortMode: false, sortEditingId: null });
-  // ...and now ask for whatever arrived while the order was open (#380). The
-  // fetching was held, not cancelled — this is where it catches up.
-  pullNow();
+  // LEAVING THE ORDER IS THE PUSH (#495). The sheet is no longer pushed on
+  // every tap, so this is where the work goes up — and only then is the
+  // catch-up asked for (#380), so the fetch cannot land on top of unsent work.
+  void flushSyncNow().finally(() => pullNow());
   const dropdown = document.getElementById('sortDropdown');
   if (dropdown) { dropdown.style.display = 'none'; dropdown.innerHTML = ''; }
   if (editView) {

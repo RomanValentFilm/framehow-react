@@ -299,6 +299,11 @@ These are not preferences. They were each written after something went wrong.
 - **Three sentences maximum** unless he asks for more.
 - **No jargon.** Say "box", not node. Say "the app", not the client. The device
   asks, the server answers; the device sends. Never "pull" or "push" as nouns.
+- **"The boxes"** = the screen behind EDIT ORDER inside a shooting order (the
+  grey REMAINING boxes where DAY 1, DAY 2… are picked, then SORT NOW). Never
+  "the sheet", "the bracket" or "the tree" — Roman asked for "boxes" (#495).
+  An item nobody has ticked yet is listed grey and NOT tappable in the boxes;
+  it becomes tappable once at least one shot has it, on the next EDIT ORDER.
 - Findings belong in the code and in `TOMORROW.md`, not in the chat.
 
 ### The words Roman uses, and what they mean
