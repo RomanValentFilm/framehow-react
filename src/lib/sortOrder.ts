@@ -532,7 +532,12 @@ function getAvailableCategories(frameIds: number[], excludeIds: string[] = []): 
  * One question, asked the same way everywhere. NEVER FIX ONE OF TWO.
  */
 function isStoryFlow(orderId: string): boolean {
-  return isStoryFlow(orderId);
+  // Written out in full, deliberately. The first version of this was produced by
+  // a search-and-replace that rewrote its own body into a call to itself — so
+  // every shooting order and every story flow crashed the moment it opened, and
+  // it went out in a deploy. A helper whose whole job is to answer one question
+  // must not be edited by the same tool that edits its callers.
+  return orderId === '__storyflow__' || orderId.indexOf('__storyflow__:') === 0;
 }
 
 /** Get items within a category with frame counts. */

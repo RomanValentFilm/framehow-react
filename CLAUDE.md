@@ -149,6 +149,18 @@ Agreed 9 September, after being asked several times.
   Without the label he cannot tell a test from a deploy, and he has run the
   wrong one. Forgotten once on 9 September; do not forget it again.
 
+## NEVER SEARCH-AND-REPLACE ACROSS A FILE THAT CONTAINS THE NEW HELPER
+
+9 September, and it reached Roman's devices. A helper `isStoryFlow(orderId)` was
+added to replace thirteen copies of `orderId === '__storyflow__'`. The same
+blanket replace then rewrote the helper's OWN body into `return isStoryFlow(...)`
+— it called itself. Every shooting order and every story flow crashed on opening,
+and it went out in a deploy.
+
+Write the helper, then replace the callers, then READ THE HELPER BACK. A one-line
+check that its body does not contain its own name costs nothing and would have
+caught it before the build.
+
 ## THE DEPLOY LINE MUST PRINT WHAT IT DEPLOYED
 
 Roman asked for this and it is not optional: every deploy command ends by
