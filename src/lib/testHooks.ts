@@ -405,11 +405,23 @@ export function installTestDoor(): void {
       // startFromScratch makes one frame; add the rest the same way the store holds them
       const first = useStore.getState().frames[0];
       if (!first) return null;
+      // EVERY SHOT GETS ITS OWN NAME, AS THE APP GIVES THEM (#491).
+      //
+      // These were made with `serverFrameId: undefined`, from before #405 gave a
+      // shot its name at birth. After #489 finished that job, exactly ONE shot
+      // here had a name — the one startFromScratch makes — so the first save
+      // wrote an arrangement naming one shot out of eight. Every device that
+      // opened the project then "repaired" it, and the repairs fought each
+      // other. Three attempts were spent on that fight before Roman said the
+      // thing that ended it: the list can never be short. It cannot — in the
+      // app. It could only be short here.
+      //
+      // The door is not the app, and when it drifts it invents faults.
       const extra = Array.from({ length: Math.max(0, count - 1) }, (_, i) => ({
         ...first,
         id: first.id + i + 1,
         label: String(i + 2),
-        serverFrameId: undefined,
+        serverFrameId: newFrameId(),
         serverMainVersionId: undefined,
       }));
       useStore.setState({ frames: [first, ...extra] } as never);

@@ -721,7 +721,12 @@ test('numbering: multiple projects, groups, orders for ALL and for groups, three
 // 08-story-flow does not set up.
 // ---------------------------------------------------------------------------
 
-// STILL OPEN. THREE ATTEMPTS, ALL TAKEN BACK OUT — see TOMORROW.md. Marked fixme so a run is honest
+// THE FAULT WAS IN THE TEST DOOR, NOT THE APP (#491).
+//
+// The door made a project's shots by hand and left them nameless; #489 then
+// gave only the first one a name, so the first save wrote an arrangement naming
+// one shot out of eight. Both devices repaired it and the repairs fought. Roman
+// ended three hours of it with one sentence: the list can never be short. Marked fixme so a run is honest
 // rather than permanently red — it is a real fault, not a flake, and it is
 // written down. It fails the same way on RUN 137 (before any of today's work),
 // 139, 142, 144 and 145, so it is older than everything done today.
@@ -735,7 +740,7 @@ test('numbering: multiple projects, groups, orders for ALL and for groups, three
 // before it is emptied for the new project — is a real thing in the code, but
 // changing it did NOT cure this, and a needs test failed in the same run, so it
 // was taken straight back out. Do not put it back without understanding both.
-test.fixme('numbering: the story flow in ALL FRAMES, rearranged from both sides',
+test('numbering: the story flow in ALL FRAMES, rearranged from both sides',
   async ({ browser }) => {
     const { token } = await freshAccount();
     const desktop = await Device.open(browser, 'desktop', token);

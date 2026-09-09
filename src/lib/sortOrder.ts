@@ -259,7 +259,7 @@ export function resortToNeedsOnOpen(orderId: string): number {
     // was already first, so nothing moved and nothing went green — correct by
     // the old rule and useless to him. What he wants to see is which shots the
     // change touched, so he can check them. That is the same set either way.
-    if (said.moved && said.moved.size > 0 && orderId !== '__storyflow__') {
+    if (said.moved && said.moved.size > 0 && !isStoryFlow(orderId)) {
       const waiting = framesWaitingToBeSeen(orderId);
       for (const fid of said.moved) waiting.add(fid);
       rememberWaiting(orderId, waiting);
@@ -517,6 +517,24 @@ function getAvailableCategories(frameIds: number[], excludeIds: string[] = []): 
   return cats;
 }
 
+/**
+ * IS THIS VIEW A STORY FLOW — THE PROJECT'S OR A GROUP'S? (#491)
+ *
+ * There are two spellings: `__storyflow__` is the project's, `__storyflow__:12`
+ * is the one inside group 12 (#383). Eight places asked `=== '__storyflow__'`
+ * and so knew only the first, which meant a GROUP's story flow fell through
+ * into the shooting-order branch every time: it looked up a shooting order with
+ * that id, found none, and then either did nothing at all (pressing ADD BREAK
+ * in a group's story flow silently added nothing) or read the wrong list of
+ * breaks. Roman: "i've added breaks in story flow and they show in shooting
+ * order... they should be separate."
+ *
+ * One question, asked the same way everywhere. NEVER FIX ONE OF TWO.
+ */
+function isStoryFlow(orderId: string): boolean {
+  return isStoryFlow(orderId);
+}
+
 /** Get items within a category with frame counts. */
 function getItemsForCategory(categoryId: string, frameIds: number[]): ItemOption[] {
   const s = state();
@@ -558,25 +576,21 @@ function getItemsForCategory(categoryId: string, frameIds: number[]): ItemOption
   for (const tab of defs.tabs) { table = tab.tables.find((t) => t.id === categoryId); if (table) break; }
   if (!table) return [];
 
-  // First: check which items have EVER been toggled ON across ALL frames
-  const allFrames = s.frames;
-  const everToggled = new Set<string>();
-  for (const item of table.items) {
-    for (const f of allFrames) {
-      const fn = s.frameNeeds[f.id];
-      if (!fn) continue;
-      if (table.type === 'counter') {
-        if ((fn.counters?.[item.id] || 0) > 0) { everToggled.add(item.id); break; }
-      } else {
-        if (fn.toggles?.[item.id]) { everToggled.add(item.id); break; }
-      }
-    }
-  }
+  // EVERY ITEM IN THE CATEGORY IS OFFERED (#491).
+  //
+  // There used to be a rule here: an item nobody had ever ticked on any shot
+  // was left out of the list entirely. So a day added today — DAY 4 — could not
+  // be chosen until some shot already had it, which is backwards: you add the
+  // day BECAUSE you are about to sort by it. Roman: "day 4, or any needs
+  // category added should be able to select in any box."
+  //
+  // The count is still the shots in THIS branch, so an item nothing matches
+  // comes out at nothing and is drawn greyed — there, visible, not yet usable.
+  // Same shape as the setups list above.
 
   // Then: count only from the current branch's frameIds
   const items: ItemOption[] = [];
   for (const item of table.items) {
-    if (!everToggled.has(item.id)) continue; // never toggled — don't show
     const matchedIds: number[] = [];
     for (const fid of frameIds) {
       const fn = s.frameNeeds[fid];
@@ -1174,7 +1188,7 @@ function rerenderBracket(editViewEl: HTMLElement, bracketState: BracketState, or
       // box's row simply grows when a shot joins it.
       const currentOrder = getOrderedFrames(order).map((f) => f.id);
       markOutOfBoxPills(newBracket, orderId, currentOrder,
-                        orderId === '__storyflow__' ? undefined : framesWaitingToBeSeen(orderId),
+                        isStoryFlow(orderId) ? undefined : framesWaitingToBeSeen(orderId),
                         mayMarkRed);
     }
   }
@@ -1697,7 +1711,7 @@ export function openOrderView(orderId: string): void {
     return;
   }
 
-  if (orderId === '__storyflow__' || orderId.startsWith('__storyflow__:')) {
+  if (isStoryFlow(orderId)) {
     // A STORY FLOW BELONGS TO SOMEWHERE (#383).
     //
     // It used to be one line meaning "the flow of wherever I happen to be", so
@@ -1904,7 +1918,7 @@ function renderSortEditView(el: HTMLElement, orderId: string): void {
   let order: SortOrder | null = null;
   let orderName: string;
 
-  if (orderId === '__storyflow__') {
+  if (isStoryFlow(orderId)) {
     frames = getVisibleFrames();
     orderName = 'STORY FLOW';
   } else {
@@ -1939,7 +1953,7 @@ function renderSortEditView(el: HTMLElement, orderId: string): void {
 
   const activeReorderFid = (el as any).__activeReorderFid as number | null ?? null;
   // The frames the needs moved, still waiting to be looked at on THIS device.
-  const waitingToBeSeen = orderId === '__storyflow__' ? new Set<number>() : framesWaitingToBeSeen(orderId);
+  const waitingToBeSeen = isStoryFlow(orderId) ? new Set<number>() : framesWaitingToBeSeen(orderId);
   const activeBreakId = (el as any).__activeBreakId as string | null ?? null;
   const bracketActive = (el as any).__bracketActive as boolean ?? false;
 
@@ -1967,13 +1981,13 @@ function renderSortEditView(el: HTMLElement, orderId: string): void {
       <div class="sort-edit-header-left">
         <span class="sort-edit-label">name:</span>
         <span class="sort-edit-sep">&rsaquo;</span>
-        ${orderId !== '__storyflow__'
+        ${!isStoryFlow(orderId)
           ? `<span class="sort-edit-name-static" data-sort-namelabel="${orderId}">${orderName}</span>
              <input class="sort-edit-name sort-edit-name-hidden" value="${orderName}" data-sort-rename="${orderId}" />`
           : `<span class="sort-edit-name-static">${orderName}</span>`}
       </div>
       <div class="sort-edit-header-right">
-        ${orderId !== '__storyflow__' ? (bracketActive
+        ${!isStoryFlow(orderId) ? (bracketActive
           ? `<div class="sort-edit-sort-wrap"><span class="sort-edit-sort-hint">sort frames by<br>bracket below</span><button class="sort-edit-rename-btn sort-edit-save-btn" data-sort-action="rename">SORT NOW</button></div>`
           : `<button class="sort-edit-rename-btn" data-sort-action="rename">EDIT ORDER</button>`)
         : ''}
@@ -1983,7 +1997,7 @@ function renderSortEditView(el: HTMLElement, orderId: string): void {
 
   // Bracket area — active (editable) or frozen (read-only after SORT NOW)
   // Restore persisted bracket from SortOrder if not already in DOM
-  if (!(el as any).__bracketState && orderId !== '__storyflow__') {
+  if (!(el as any).__bracketState && !isStoryFlow(orderId)) {
     const persistedOrder = order;
     if (persistedOrder?.bracketTree) {
       (el as any).__bracketState = { root: deserializeBracket(persistedOrder.bracketTree) };
@@ -1993,7 +2007,7 @@ function renderSortEditView(el: HTMLElement, orderId: string): void {
     }
   }
   const bracketState = (el as any).__bracketState as BracketState | undefined;
-  if (bracketActive && orderId !== '__storyflow__') {
+  if (bracketActive && !isStoryFlow(orderId)) {
     const allFrameIds = frames.map((f) => f.id);
     let bs = bracketState;
     if (!bs) {
@@ -2003,7 +2017,7 @@ function renderSortEditView(el: HTMLElement, orderId: string): void {
     // Auto-sync: add new frames, remove deleted ones
     syncBracketWithVisibleFrames(bs.root, allFrameIds);
     html += renderBracketArea(bs, orderId);
-  } else if (bracketState && !bracketActive && orderId !== '__storyflow__') {
+  } else if (bracketState && !bracketActive && !isStoryFlow(orderId)) {
     // Auto-sync frozen bracket too
     syncBracketWithVisibleFrames(bracketState.root, frames.map((f) => f.id));
     // Frozen bracket — show read-only after SORT NOW
@@ -2052,7 +2066,7 @@ function renderSortEditView(el: HTMLElement, orderId: string): void {
   // yet" and has to survive leaving the order and coming back.
   {
     const bracketEl = el.querySelector('.sort-bracket-frozen') || el.querySelector('.sort-bracket');
-    const order = orderId === '__storyflow__' ? null : s.sortOrders.find((o) => o.id === orderId);
+    const order = isStoryFlow(orderId) ? null : s.sortOrders.find((o) => o.id === orderId);
     // …AND THE SAME HOLDS HERE (#444). This is the second place red is painted,
     // and #443 only gated the first. The sheet is written down on every change
     // while it is being built, so the moment a box was picked this render had a
@@ -2314,7 +2328,7 @@ function wireEditViewEvents(el: HTMLElement, orderId: string): void {
   // ─── Inline name editing (always available, independent of bracket) ───
   const nameLabel = el.querySelector('.sort-edit-name-static') as HTMLElement | null;
   const nameInput = el.querySelector('.sort-edit-name') as HTMLInputElement | null;
-  if (nameLabel && nameInput && orderId !== '__storyflow__') {
+  if (nameLabel && nameInput && !isStoryFlow(orderId)) {
     const commitName = () => {
       const val = nameInput.value.trim();
       if (val && val !== nameLabel.textContent) {
@@ -2472,7 +2486,7 @@ function wireEditViewEvents(el: HTMLElement, orderId: string): void {
         // EDIT ORDER IS A RESTART (#411). New rules are about to be built, so
         // whatever the needs moved a moment ago is beside the point — the green
         // marks go and nothing is left waiting to be checked.
-        if (orderId !== '__storyflow__') forgetAllWaiting(orderId);
+        if (!isStoryFlow(orderId)) forgetAllWaiting(orderId);
         (el as any).__bracketActive = true;
         if ((el as any).__bracketState) {
           // Existing bracket in DOM — keep it, require confirmation before modifying
@@ -2621,7 +2635,7 @@ function wireEditViewEvents(el: HTMLElement, orderId: string): void {
       // decided; nudged with the arrows first, the frame is a hand move from
       // then on and no re-sort will touch it again unless ITS needs change.
       const doneFid = Number((btn as HTMLElement).dataset.sortDeactivate);
-      if (!Number.isNaN(doneFid) && orderId !== '__storyflow__') stopWaiting(orderId, doneFid);
+      if (!Number.isNaN(doneFid) && !isStoryFlow(orderId)) stopWaiting(orderId, doneFid);
       (el as any).__activeReorderFid = null;
       const bs = (el as any).__bracketState as BracketState | undefined;
       if (bs) {
@@ -2745,7 +2759,7 @@ function wireEditViewEvents(el: HTMLElement, orderId: string): void {
       const brkId = (input as HTMLElement).dataset.breakRename!;
       const newText = (input as HTMLInputElement).value;
       const s = state();
-      if (orderId === '__storyflow__') {
+      if (isStoryFlow(orderId)) {
         const breaks = (s.storyFlowBreaks || []).map((b) =>
           b.id === brkId ? { ...b, text: newText } : b
         );
@@ -2786,7 +2800,7 @@ function wireEditViewEvents(el: HTMLElement, orderId: string): void {
 
 function moveFrame(orderId: string, fid: number, dir: 'up' | 'down'): void {
   const s = state();
-  if (orderId === '__storyflow__') {
+  if (isStoryFlow(orderId)) {
     // Move in actual frames array
     const frames = [...s.frames];
     const idx = frames.findIndex((f) => f.id === fid);
@@ -2841,7 +2855,7 @@ function addBreak(orderId: string, editView: HTMLElement): void {
 
   const newBreak: SortBreak = { id: breakId, text: 'BREAK NAME', position };
 
-  if (orderId === '__storyflow__') {
+  if (isStoryFlow(orderId)) {
     useStore.setState({ storyFlowBreaks: [...(s.storyFlowBreaks || []), newBreak] });
   } else {
     const order = s.sortOrders.find((o) => o.id === orderId);
@@ -2857,7 +2871,7 @@ function addBreak(orderId: string, editView: HTMLElement): void {
 
 function deleteBreak(orderId: string, breakId: string): void {
   const s = state();
-  if (orderId === '__storyflow__') {
+  if (isStoryFlow(orderId)) {
     const breaks = (s.storyFlowBreaks || []).filter((b) => b.id !== breakId);
     useStore.setState({ storyFlowBreaks: breaks });
   } else {
@@ -2873,7 +2887,7 @@ function deleteBreak(orderId: string, breakId: string): void {
 
 function moveBreak(orderId: string, breakId: string, dir: 'up' | 'down'): void {
   const s = state();
-  if (orderId === '__storyflow__') {
+  if (isStoryFlow(orderId)) {
     const maxPos = getVisibleFrames().length;
     const breaks = (s.storyFlowBreaks || []).map((b) => {
       if (b.id !== breakId) return b;
@@ -3059,7 +3073,7 @@ function setupDragAndDrop(el: HTMLElement, orderId: string): void {
           }
 
           const s = state();
-          if (orderId === '__storyflow__') {
+          if (isStoryFlow(orderId)) {
             // Rearrange visible frames within s.frames, preserving non-visible frame positions
             const frames = [...s.frames];
             const visibleSet = new Set(newFrameOrder);
