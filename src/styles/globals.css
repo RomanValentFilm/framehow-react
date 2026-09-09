@@ -4,13 +4,17 @@
   @media (hover:none) and (pointer:coarse){html{overflow-x:hidden;}}
   :root{
     --bg:#000;--surface:#333;--surface2:#404040;
+    /* The toolbar and the detail bar, 20% darker than --surface (#333 → #292929).
+       Their own colour so the view bar, the setup bar, buttons and modals —
+       everything else on --surface — are untouched (#486). */
+    --bar-fill:#292929;
     --border:rgba(255,255,255,0.25);--border-strong:rgba(255,255,255,0.35);
     --text:#d9d9d9;--text-muted:#999;--text-faint:#666;
     --accent:#d52632;--font:'DM Sans',sans-serif;--mono:'DM Mono',monospace;
     --radius:10px;--radius-sm:6px;
   }
   body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:100dvh;display:flex;flex-direction:column;-webkit-overflow-scrolling:touch;width:100%;}
-  .toolbar{display:flex;align-items:center;gap:8px;padding:0 12px;padding-top:calc(env(safe-area-inset-top) * 0.5 + 4px);height:calc(44px + env(safe-area-inset-top) * 0.5);background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0;z-index:20;position:sticky;top:0;width:100%;}
+  .toolbar{display:flex;align-items:center;gap:8px;padding:0 12px;padding-top:calc(env(safe-area-inset-top) * 0.5 + 4px);height:calc(44px + env(safe-area-inset-top) * 0.5);background:var(--bar-fill);border-bottom:1px solid var(--border);flex-shrink:0;z-index:20;position:sticky;top:0;width:100%;}
   .logo{font-family:var(--mono);font-size:14px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;}
   .logo span{color:var(--accent);}
   .toolbar-right{margin-left:auto;display:flex;gap:8px;align-items:center;flex-shrink:1;min-width:0;}
@@ -27,7 +31,7 @@
   .strip-col+.strip-col{border-left:1px solid var(--border);}
   .strip-label{display:none;}
   .view-bar{display:flex;align-items:center;padding:3px 10px;background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:44px;z-index:10;}
-  .detail-bar{display:flex;align-items:center;padding:3px 10px;background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:calc(44px + env(safe-area-inset-top) * 0.5 + 28px);z-index:9;}
+  .detail-bar{display:flex;align-items:center;padding:3px 10px;background:var(--bar-fill);border-bottom:1px solid var(--border);position:sticky;top:calc(44px + env(safe-area-inset-top) * 0.5 + 28px);z-index:9;}
   .db-left,.db-right{flex:1;min-width:0;}
   .db-right{justify-content:flex-end;}
   .view-btns{display:flex;gap:4px;align-items:center;}
@@ -709,7 +713,7 @@
     .toolbar.tb-hide{transform:none;}
     .view-bar{position:-webkit-sticky;position:sticky;top:env(safe-area-inset-top);left:auto;right:auto;padding:3px 6px;z-index:20;background:var(--surface);border-bottom:1px solid var(--border);}
     .view-bar.tb-hide{transform:none;}
-    .detail-bar{position:-webkit-sticky;position:sticky;left:auto;right:auto;padding:3px 6px;z-index:19;background:var(--surface);border-bottom:1px solid var(--border);display:flex!important;}
+    .detail-bar{position:-webkit-sticky;position:sticky;left:auto;right:auto;padding:3px 6px;z-index:19;background:var(--bar-fill);border-bottom:1px solid var(--border);display:flex!important;}
     .detail-bar.tb-hide{transform:none;}
     body.view-grid3x2 .detail-bar{display:none!important;}
     body.view-grid3x2.detail-open .detail-bar{display:flex!important;}
