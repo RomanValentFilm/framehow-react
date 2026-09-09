@@ -129,6 +129,26 @@ put a commit called "MESSAGE" into the history. Every command handed over is
 COMPLETE and ready to paste: the real commit message, the real version, the real
 branch. Templates belong in this file, never in the chat.
 
+## HOW ROMAN WANTS TO BE ANSWERED — NOT NEGOTIABLE
+
+Agreed 9 September, after being asked several times.
+
+- **WORDS ONLY. No log excerpts, no code, no file paths, no line numbers, no
+  version numbers pasted back at him.** He does not read them and they bury the
+  answer. Say what happened in plain sentences.
+- **THE ONLY THING THAT EVER GOES IN A CODE BLOCK IS A DEPLOY COMMAND HE MUST
+  PASTE.** Nothing else. Not a test command, not git output, not a snippet being
+  discussed. He has mistaken these for commands before and run them.
+- **THREE SENTENCES MAXIMUM** unless he asks for more.
+- Findings go in the files and in TOMORROW.md, where they belong — not into the
+  chat.
+- **EVERY COMMAND HANDED OVER IS LABELLED, ABOVE THE BOX, WITH WHAT IT IS, THE
+  RUN NUMBER AND HOW LONG IT TAKES.** Two kinds only:
+      SIMULATOR TEST — RUN 152 — about 90 seconds
+      DEPLOY — v4.9.188 · #491
+  Without the label he cannot tell a test from a deploy, and he has run the
+  wrong one. Forgotten once on 9 September; do not forget it again.
+
 ## THE DEPLOY LINE MUST PRINT WHAT IT DEPLOYED
 
 Roman asked for this and it is not optional: every deploy command ends by

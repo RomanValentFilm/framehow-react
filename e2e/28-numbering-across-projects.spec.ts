@@ -721,7 +721,7 @@ test('numbering: multiple projects, groups, orders for ALL and for groups, three
 // 08-story-flow does not set up.
 // ---------------------------------------------------------------------------
 
-// KNOWN OPEN, AND NOT #489 (see TOMORROW.md). Marked fixme so a run is honest
+// STILL OPEN. THREE ATTEMPTS, ALL TAKEN BACK OUT — see TOMORROW.md. Marked fixme so a run is honest
 // rather than permanently red — it is a real fault, not a flake, and it is
 // written down. It fails the same way on RUN 137 (before any of today's work),
 // 139, 142, 144 and 145, so it is older than everything done today.
@@ -755,7 +755,12 @@ test.fixme('numbering: the story flow in ALL FRAMES, rearranged from both sides'
     say(`desktop ${(await desktop.read()).frames.map((f) => f.id).join(',')}`
       + ` | ipad ${(await ipad.read()).frames.map((f) => f.id).join(',')}`);
 
-    /** Wait until both show the same story flow, breaks and all. */
+    /** Wait until both show the same story flow, breaks and all.
+     *
+     *  ON FAILURE IT PRINTS BOTH DEVICES' SYNC LOGS. Without that a failure says
+     *  only "these two strings differ", and the answer — which device refused
+     *  what, and why — is in the log and gets thrown away. Three runs were spent
+     *  before this was added. */
     const bothShow = async (why: string) => {
       const wanted = await desktop.storyFlowAsText();
       const deadline = Date.now() + 60_000;
@@ -764,7 +769,12 @@ test.fixme('numbering: the story flow in ALL FRAMES, rearranged from both sides'
         const there = await ipad.storyFlowAsText();
         if (there === wanted) { say(`story flow agrees: ${wanted}`); return wanted; }
         if (Date.now() > deadline) {
-          expect(there, why).toBe(wanted);
+          const interesting = (lines: string[]) => lines
+            .filter((l) => /arrangement|story flow|settings|fill-in|push OK|pull/.test(l))
+            .slice(0, 30).map((l) => '    ' + l).join('\n');
+          throw new Error(`${why}\n  desktop: ${wanted}\n  ipad:    ${there}\n\n`
+            + `DESKTOP LOG:\n${interesting(await desktop.log())}\n\n`
+            + `IPAD LOG:\n${interesting(await ipad.log())}`);
         }
         await ipad.page.waitForTimeout(500);
       }

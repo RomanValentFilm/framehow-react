@@ -192,6 +192,28 @@ None of it urgent, none of it a ten-minute job.
   `08-story-flow` passes, because there both devices hold the one project all
   along. That is why this went unseen.
 
+  THREE ATTEMPTS, 9 September, ALL REVERTED — read this before a fourth:
+
+  1. Empty the settings memory for the new project BEFORE the arriving items are
+     judged, instead of after. True of the code, cured nothing.
+  2. A device must not REFUSE an arrangement when all it did was fill in shots
+     the list never named. It fired correctly — the log says "mine was only a
+     fill-in" — but both devices still ended on their own list, because the one
+     that corrected later overwrote the real rearrangement ON THE SERVER.
+  3. So also: do not STAMP a fill-in as a change. That stopped the correction
+     winning — and stopped the completed list ever reaching the server at all.
+     The log then reads "8 frames · already up there" while the server still
+     holds the one-shot list. Worse than the fault.
+
+  WHAT 2 AND 3 TOGETHER SHOW, and where a fourth attempt should start: the
+  server keeps ONE arrangement per project, and time is the only thing deciding
+  who wins. A correction that must reach the server but must never beat a hand
+  move cannot be expressed with a single timestamp. Either the correction and
+  the rearrangement stop sharing one item, or the arrangement stops being able
+  to be short in the first place — that is, the list written when a project is
+  born names every shot it has, not the one shot `startFromScratch` makes.
+  The second is much the smaller change and is where to look first.
+
   The first guess was that the settings memory is judged before it is emptied
   for the new project — `applySettingsToStore` weighs what arrives, and the
   memory is only emptied afterwards by `adoptSettingsFromServer`, and

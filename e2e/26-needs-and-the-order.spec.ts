@@ -259,7 +259,19 @@ test('going round the loop many times settles, and never invents work',
     await desktop.settle();
     await desktop.openOrder(0);
     await desktop.settle();
-    await sortByDays(desktop.page, [DAY1, DAY2]);
+    // THE SHEET HAS A BOX FOR DAY 3 TOO, and it has to (#490).
+    //
+    // This used to sort by DAY 1 and DAY 2 only, and then the plan below set a
+    // shot to DAY 3 on the third round and demanded a green mark. The app said
+    // exactly what it was doing — "the boxes match the needs — nothing to do" —
+    // and it was right: with no DAY 3 box the shot never changed box, and a shot
+    // that did not change box is not marked. That is #432, written so a needs
+    // change cannot paint a wall of green on shots nobody touched.
+    //
+    // So the test was asking for something the sheet was never set up to give.
+    // The box is added here — empty at first, which is allowed — and then "a
+    // third day appearing halfway through" is finally true.
+    await sortByDays(desktop.page, [DAY1, DAY2, DAY3]);
 
     // Change a shot, look, DONE it, come back. Four times over, with a third
     // day appearing halfway through — every fault today showed up on a LATER

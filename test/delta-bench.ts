@@ -19,6 +19,7 @@ import {
   orderForSending, orderAsArrived, groupForSending, groupAsArrived,
 } from '../src/lib/orderIds';
 import { applyArrangement } from '../src/lib/projectSettings';
+import { aHandMovedSomething } from '../src/lib/arrangements';
 
 /**
  * A MODEL of the numbering rule, for the simulation below — not the app's copy.
@@ -977,6 +978,76 @@ const ids = (rows: Array<{ id: string }>) => rows.map((r) => r.id).sort().join('
   const treeBack = (back.order as Record<string, unknown>).bracketTree as Record<string, unknown>;
   check('...and the bracket tree is back in this device\'s numbers',
     (treeBack.inputIds as number[]).join(','), '1,2,3');
+}
+
+// ---------------------------------------------------------------------------
+// A HAND MOVED IT, OR THE APP FILLED IT IN? (#490)
+//
+// The one question that decides whether a device may refuse an arrangement.
+// Roman: "you moved a card — real data. it filled in a shot the list didn't
+// mention — a correction, not a decision."
+// ---------------------------------------------------------------------------
+{
+  const A = ['a', 'b', 'c', 'd'];
+
+  check('nothing moved, and nothing differs',
+    aHandMovedSomething(A, ['a', 'b', 'c', 'd']), false);
+
+  // THE FAULT ITSELF. The list on the server names one shot; this device holds
+  // four and slotted three in. It has moved nothing and must not refuse.
+  check('I hold shots the list never named — that is a fill-in, not a move',
+    aHandMovedSomething(A, ['a']), false);
+  check('...and with the list naming two of my four',
+    aHandMovedSomething(A, ['a', 'c']), false);
+
+  // The other way round: the list knows a shot that has not reached me yet.
+  check('the list names a shot I have not got yet — still not a move',
+    aHandMovedSomething(['a', 'b'], ['a', 'x', 'b']), false);
+
+  // BOTH AT ONCE, which is a device that has been away.
+  check('each of us has shots the other has not — still nobody moved anything',
+    aHandMovedSomething(['a', 'mine', 'b', 'c'], ['a', 'theirs', 'b', 'c']), false);
+
+  // AND A REAL REARRANGEMENT, which must always be seen.
+  check('two shots swapped — a hand did that',
+    aHandMovedSomething(['b', 'a', 'c', 'd'], A), true);
+  check('one shot dragged to the front — a hand did that',
+    aHandMovedSomething(['d', 'a', 'b', 'c'], A), true);
+  check('a hand moved it AND shots were filled in — still a move',
+    aHandMovedSomething(['c', 'a', 'b', 'd'], ['a', 'b', 'c']), true);
+
+  // Awkward shapes.
+  check('an empty list from the other side is not a move',
+    aHandMovedSomething(A, []), false);
+  check('nothing here at all is not a move', aHandMovedSomething([], A), false);
+  check('no shot in common is not a move',
+    aHandMovedSomething(['a', 'b'], ['y', 'z']), false);
+  check('a name twice in a damaged copy does not read as a move',
+    aHandMovedSomething(['a', 'b', 'b', 'c'], ['a', 'b', 'c']), false);
+
+  // ROMAN'S OWN FAILING RUN, and the reason the comparison is against the BASE.
+  //
+  // The server held a short list. The Desktop rearranged by hand; the iPad only
+  // filled in the shots the short list never named. Each device asks the
+  // question about ITSELF, against what it last had FROM THE SERVER — never
+  // against what just arrived, because held against each other both of them see
+  // a difference and both conclude the other one moved something. That was the
+  // hole in the first version of this, caught by this bench before it shipped.
+  // Each device asks against ITS OWN base — the copy it last had from the
+  // server, which is not the same moment for both. The iPad opened while the
+  // list was still short; the Desktop had already sent the full one.
+  const ipadsBase = ['a', 'b', 'c'];                                  // short
+  const desktopsBase = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];      // complete
+  const ipadFilledIn = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+  const desktopMoved = ['h', 'a', 'b', 'c', 'd', 'e', 'f', 'g'];      // h dragged to the front
+
+  check('the iPad, against its own base: it only filled in — it must not refuse',
+    aHandMovedSomething(ipadFilledIn, ipadsBase), false);
+  check('the Desktop, against its own base: a hand dragged a shot — it keeps its own',
+    aHandMovedSomething(desktopMoved, desktopsBase), true);
+  check('...and held against each other they BOTH look changed, which is the trap',
+    aHandMovedSomething(ipadFilledIn, desktopMoved)
+      && aHandMovedSomething(desktopMoved, ipadFilledIn), true);
 }
 
 // ---------------------------------------------------------------------------
