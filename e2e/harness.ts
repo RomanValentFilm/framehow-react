@@ -194,6 +194,23 @@ export class Device {
         .__fh_test.startPullWithoutWaiting());
   }
 
+  /** Build a project and stop — no save, no server. What a person has on a
+   *  plane after pressing NEW PROJECT. */
+  async buildProjectWithoutSaving(name: string, frames: number): Promise<void> {
+    say(`${this.name}: building "${name}" with ${frames} frames, with no signal`);
+    await this.page.evaluate(([n, c]) =>
+      (window as never as { __fh_test: { buildProjectWithoutSaving(n: string, c: number): Promise<void> } })
+        .__fh_test.buildProjectWithoutSaving(n as string, c as number),
+      [name, frames] as [string, number]);
+  }
+
+  /** Save the open project, making it on the server if it is not there yet. */
+  saveThisProject(): Promise<void> {
+    return this.page.evaluate(() =>
+      (window as never as { __fh_test: { saveThisProject(): Promise<void> } })
+        .__fh_test.saveThisProject());
+  }
+
   async openProject(id: string): Promise<void> {
     say(`${this.name}: opening the project from the server`);
     await this.page.evaluate((pid) =>
@@ -432,6 +449,22 @@ export class Device {
       [name, frameIndexes] as [string, number[]]);
   }
 
+  /** Move a card up or down INSIDE the open group — the story flow of a group. */
+  moveInGroup(frameIndex: number, direction: 'up' | 'down'): Promise<boolean> {
+    return this.page.evaluate(([i, d]) =>
+      (window as never as { __fh_test: { moveInGroup(i: number, d: 'up' | 'down'): boolean } })
+        .__fh_test.moveInGroup(i as number, d as 'up' | 'down'),
+      [frameIndex, direction] as [number, 'up' | 'down']);
+  }
+
+  /** One group written out flat: its name and its shots in order. The simplest
+   *  thing to hold two devices against, same as orderAsText. */
+  async groupAsText(groupId: number): Promise<string> {
+    const g = (await this.read()).groups.find((x) => x.id === groupId);
+    if (!g) return '(no group)';
+    return `${g.name}: ${g.frames.join(' ')}`;
+  }
+
   async enterGroup(groupId: number | null): Promise<void> {
     say(`${this.name}: going into ${groupId === null ? 'ALL' : `group ${groupId}`}`);
     await this.page.evaluate((g) =>
@@ -617,6 +650,20 @@ export class Device {
     return `${o.name}: ${out.join(' ')}`;
   }
 
+  /** Where a named order sits in THIS device's list. The list is merged item by
+   *  item, so two devices can hold the same orders in a different sequence —
+   *  comparing order 0 with order 0 compares two different orders. Everything
+   *  heavy should go by name. */
+  async orderIndexOf(name: string): Promise<number> {
+    return (await this.read()).orders.findIndex((o) => o.name === name);
+  }
+
+  /** One named order written out flat, breaks in place. */
+  async orderTextByName(name: string): Promise<string> {
+    const i = await this.orderIndexOf(name);
+    return i < 0 ? '(not here)' : this.orderAsText(i);
+  }
+
   addStoryBreak(position: number, text: string): Promise<string> {
     return this.page.evaluate(([p, t]) =>
       (window as never as { __fh_test: { addStoryBreak(p: number, t: string): string } })
@@ -661,6 +708,7 @@ export class Device {
     setups: string[];
     storyBreaks: Array<{ id: string; text: string; position: number }>;
     unsent: string[];
+    groups: Array<{ id: number; name: string; frames: string[]; hidden: string[] }>;
     orders: Array<{
       id: string; name: string; frames: string[];
       breaks: Array<{ id: string; text: string; position: number }>;
@@ -820,6 +868,46 @@ export class Device {
 
   /** The same question as waitUntilTheyAgree, asked about a shooting order:
    *  the frames in order with the breaks between them. */
+  /** The same question, asked about an order BY NAME rather than by its place
+   *  in the list — which is the only safe way once there are several. */
+  static async waitUntilNamedOrdersAgree(a: Device, b: Device, name: string,
+                                         timeoutMs = 60_000): Promise<string> {
+    say(`waiting for ${a.name} and ${b.name} to show the same "${name}"…`);
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      await a.nudge(); await b.nudge();
+      const [x, y] = [await a.orderTextByName(name), await b.orderTextByName(name)];
+      if (x === y && x !== '(not here)') { say(`they agree: ${x.slice(0, 80)}`); return x; }
+      if (Date.now() > deadline) {
+        throw new Error(`the two devices never agreed on "${name}" within ${timeoutMs}ms:`
+          + `\n  ${a.name}: ${x}\n  ${b.name}: ${y}\n\n`
+          + `${a.name} log:\n${(await a.log()).slice(0, 25).map((l) => '  ' + l).join('\n')}\n\n`
+          + `${b.name} log:\n${(await b.log()).slice(0, 25).map((l) => '  ' + l).join('\n')}`);
+      }
+      await a.page.waitForTimeout(500);
+    }
+  }
+
+  /** The same question again, asked about a group — which is the story flow
+   *  when you are inside one. */
+  static async waitUntilGroupsAgree(a: Device, b: Device, groupId: number,
+                                    timeoutMs = 60_000): Promise<string> {
+    say(`waiting for ${a.name} and ${b.name} to show the same group…`);
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      await a.nudge(); await b.nudge();
+      const [x, y] = [await a.groupAsText(groupId), await b.groupAsText(groupId)];
+      if (x === y && x !== '(no group)') { say(`they agree: ${x.slice(0, 80)}`); return x; }
+      if (Date.now() > deadline) {
+        throw new Error(`the two devices never agreed on the group within ${timeoutMs}ms:`
+          + `\n  ${a.name}: ${x}\n  ${b.name}: ${y}\n\n`
+          + `${a.name} log:\n${(await a.log()).slice(0, 25).map((l) => '  ' + l).join('\n')}\n\n`
+          + `${b.name} log:\n${(await b.log()).slice(0, 25).map((l) => '  ' + l).join('\n')}`);
+      }
+      await a.page.waitForTimeout(500);
+    }
+  }
+
   static async waitUntilOrdersAgree(a: Device, b: Device, orderIndex = 0,
                                     timeoutMs = 60_000): Promise<string> {
     say(`waiting for ${a.name} and ${b.name} to show the same shooting order…`);

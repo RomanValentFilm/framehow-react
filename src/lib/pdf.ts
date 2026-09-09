@@ -3,6 +3,7 @@
 // (pdfjsLib, Tesseract) with NPM imports.
 
 import * as pdfjsLib from 'pdfjs-dist';
+import { newFrameId } from './ids';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 // @ts-ignore — Tesseract has its own bundled types but we use createWorker dynamically
 import { createWorker } from 'tesseract.js';
@@ -1369,6 +1370,14 @@ export async function handlePDF(file: File): Promise<void> {
         const id = nextId++;
         s.frames.push({
           id, src: item.src, label: item.label,
+    // ITS IDENTITY, FROM THE START (#405, finished in #489).
+    //
+    // #405 gave a shot its permanent name the moment it is made — but only
+    // in the three places that add a shot to a project you already have.
+    // The six places that BUILD a project left the shots nameless until the
+    // first save, and a shooting order made in those first minutes had no
+    // name to send. One rule, everywhere, or it is not a rule.
+          serverFrameId: newFrameId(),
           cropW: item.cropW, cropH: item.cropH,
           strokes: [], drawMode: false,
           textContent: item.textContent || '', tableData: null,

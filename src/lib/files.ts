@@ -4,6 +4,7 @@ import { COLORS, state, useStore, resetStoryboardState } from '../store/state';
 import { resetProjectSyncGuards } from './accountFlow';
 import { setProgress, showToast } from './modals';
 import { fhTrack } from './tracking';
+import { newFrameId } from './ids';
 import { renderAll } from './render';
 import { autoPhoneMainView } from './view';
 import { updateFrameBadge, firstVerLabel } from './helpers';
@@ -70,6 +71,14 @@ export function handleFolderImages(e: Event): void {
             useStore.setState({ nextId: id + 1 });
             s.frames.push({
               id,
+        // ITS IDENTITY, FROM THE START (#405, finished in #489).
+        //
+        // #405 gave a shot its permanent name the moment it is made — but only
+        // in the three places that add a shot to a project you already have.
+        // The six places that BUILD a project left the shots nameless until the
+        // first save, and a shooting order made in those first minutes had no
+        // name to send. One rule, everywhere, or it is not a rule.
+              serverFrameId: newFrameId(),
               src: img.src,
               label: item.label,
               cropW: arW,
@@ -122,6 +131,14 @@ export function startFromScratch(): void {
   useStore.setState({ nextId: id + 1 });
   s.frames.push({
     id,
+// ITS IDENTITY, FROM THE START (#405, finished in #489).
+//
+// #405 gave a shot its permanent name the moment it is made — but only
+// in the three places that add a shot to a project you already have.
+// The six places that BUILD a project left the shots nameless until the
+// first save, and a shooting order made in those first minutes had no
+// name to send. One rule, everywhere, or it is not a rule.
+    serverFrameId: newFrameId(),
     src: '',
     label: '1',
     cropW: 900,
@@ -156,6 +173,14 @@ export function startPortrait(): void {
   useStore.setState({ nextId: id + 1 });
   s.frames.push({
     id,
+// ITS IDENTITY, FROM THE START (#405, finished in #489).
+//
+// #405 gave a shot its permanent name the moment it is made — but only
+// in the three places that add a shot to a project you already have.
+// The six places that BUILD a project left the shots nameless until the
+// first save, and a shooting order made in those first minutes had no
+// name to send. One rule, everywhere, or it is not a rule.
+    serverFrameId: newFrameId(),
     src: '',
     label: 'name',
     cropW: 540,
@@ -191,6 +216,14 @@ export function startFitting(): void {
   useStore.setState({ nextId: id + 1 });
   s.frames.push({
     id,
+// ITS IDENTITY, FROM THE START (#405, finished in #489).
+//
+// #405 gave a shot its permanent name the moment it is made — but only
+// in the three places that add a shot to a project you already have.
+// The six places that BUILD a project left the shots nameless until the
+// first save, and a shooting order made in those first minutes had no
+// name to send. One rule, everywhere, or it is not a rule.
+    serverFrameId: newFrameId(),
     src: '',
     label: 'Name',
     cropW: 540,

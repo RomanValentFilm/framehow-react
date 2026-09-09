@@ -155,6 +155,33 @@ None of it urgent, none of it a ten-minute job.
 
 ## Parked, with a reason
 
+- **A REARRANGED STORY FLOW DOES NOT REACH A DEVICE THAT CAME FROM ANOTHER
+  PROJECT.** Found by the simulator on 9 September, in
+  `28-numbering-across-projects` — marked `test.fixme` there so a run stays
+  honest. NOT from today's work: it fails the same way on RUN 137, before any
+  of it.
+
+  What happens: two devices open the same project, each having had a different
+  project open before. One rearranges the story flow and adds breaks. **The
+  breaks arrive; the order does not.** The device's own log says it:
+
+      arrangement NOT taken: changed_at=1788959633351 (mine is newer and unsent)
+
+  and beside it, three different projects' arrangements all reporting
+  `server has 1788959633351` — one remembered time, shared across projects.
+
+  `08-story-flow` passes, because there both devices hold the one project all
+  along. That is why this went unseen.
+
+  The first guess was that the settings memory is judged before it is emptied
+  for the new project — `applySettingsToStore` weighs what arrives, and the
+  memory is only emptied afterwards by `adoptSettingsFromServer`, and
+  `frameOrder/main` is the same name in every project. That IS true of the code.
+  But moving the emptying earlier did not cure this, and `26-needs` "going round
+  the loop many times" failed in the same run, so it was taken straight back
+  out. Both halves need understanding before it goes back in.
+
+
 - **The random day** — fails on settings (setups, an unanswered sort-order
   decision). Proved NOT ours: the same seed fails identically with #406 stashed.
   Also not repeatable — same seed, different failure each time.

@@ -4,6 +4,7 @@
 // correct the extraction, then re-extracts with the adjusted positions.
 
 import * as pdfjsLib from 'pdfjs-dist';
+import { newFrameId } from './ids';
 import { showToast } from './modals';
 import { testExtractPDF, getTextItems, matchLabel, matchText } from './pdf';
 import type { TestFrame, ExtractedFrame, TextItem } from './pdf';
@@ -2067,6 +2068,14 @@ async function onApply(): Promise<void> {
         const id = nextId++;
         s2.frames.push({
           id, src: item.src, label: item.label,
+    // ITS IDENTITY, FROM THE START (#405, finished in #489).
+    //
+    // #405 gave a shot its permanent name the moment it is made — but only
+    // in the three places that add a shot to a project you already have.
+    // The six places that BUILD a project left the shots nameless until the
+    // first save, and a shooting order made in those first minutes had no
+    // name to send. One rule, everywhere, or it is not a rule.
+          serverFrameId: newFrameId(),
           cropW: item.cropW, cropH: item.cropH,
           strokes: [], drawMode: false,
           textContent: item.textContent || '', tableData: null,

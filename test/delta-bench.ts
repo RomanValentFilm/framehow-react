@@ -15,6 +15,38 @@ import { nextRetryWait, timeToTryAgain, makeRetryClock } from '../src/lib/retryW
 import {
   whatWentWrong, worthTryingAgain, isReallyOffline, makeGoneRegister,
 } from '../src/lib/projectGone';
+import {
+  orderForSending, orderAsArrived, groupForSending, groupAsArrived,
+} from '../src/lib/orderIds';
+import { applyArrangement } from '../src/lib/projectSettings';
+
+/**
+ * A MODEL of the numbering rule, for the simulation below — not the app's copy.
+ *
+ * It was briefly a shared file, when the plan was to make the devices agree on
+ * their numbers. #489 decided the opposite: the numbers are private and are
+ * allowed to differ for ever, because nothing that travels carries one. So the
+ * rule stays where it belongs, inside the sync, and this is only here to give
+ * the simulated devices something to number with.
+ *
+ * The real question — do two devices show the same order — is asked on the
+ * simulator, in e2e/28-numbering-across-projects.spec.ts, with real browsers.
+ */
+function numbersForArriving(
+  held: readonly { id: number; serverFrameId?: string }[],
+  arriving: readonly string[],
+  startFresh = false,
+): Map<string, number> {
+  const kept = new Map<string, number>();
+  for (const f of held) if (f.serverFrameId) kept.set(f.serverFrameId, f.id);
+  let next = startFresh ? 1 : Math.max(0, ...held.map((f) => f.id)) + 1;
+  const out = new Map<string, number>();
+  for (const name of arriving) {
+    const had = startFresh ? undefined : kept.get(name);
+    out.set(name, had !== undefined ? had : next++);
+  }
+  return out;
+}
 
 const results: Array<{ what: string; got: string; want: string }> = [];
 const check = (what: string, got: unknown, want: unknown) =>
@@ -411,6 +443,540 @@ const ids = (rows: Array<{ id: string }>) => rows.map((r) => r.id).sort().join('
   // And a project nobody ever asked about is unharmed by it.
   reg.cameBack('p3');
   check('a project that was never gone is untouched', reg.shouldAsk('p3'), true);
+}
+
+// ---------------------------------------------------------------------------
+// A SHOOTING ORDER TRAVELS BY NAME, NEVER BY NUMBER (#489)
+//
+// Roman's three logs of 9 September, the same fourteen shots:
+//   Desktop 17…30 · iPad 3,1,2,4… · iPhone 1,2,3,4…
+// The Desktop's order said "17 to 30", the iPad had 1 to 14, and the order
+// showed NOTHING. This is that, as a test.
+// ---------------------------------------------------------------------------
+{
+  // The two devices from the log. Same four shots, different private numbers.
+  const desk  = new Map<number, string>([[17,'a'],[18,'b'],[19,'c'],[20,'d']]);
+  const pad   = new Map<number, string>([[3,'a'],[1,'b'],[2,'c'],[4,'d']]);
+  const nameOn   = (m: Map<number,string>) => (n: number) => m.get(n);
+  const numberOn = (m: Map<number,string>) => (name: string) => {
+    for (const [n, s] of m) if (s === name) return n;
+    return undefined;
+  };
+
+  // THE ONE THAT WOULD HAVE CAUGHT IT.
+  const madeOnDesk = { frameOrder: [18, 17, 20, 19] };
+  const sent = orderForSending(madeOnDesk, nameOn(desk));
+  check('leaving the Desktop it is names, not numbers', sent.order.frameOrder.join(','), 'b,a,d,c');
+  const onPad = orderAsArrived(sent.order, numberOn(pad));
+  check('arriving on the iPad it is the SAME four shots', onPad.order.frameOrder.join(','), '1,3,4,2');
+  check('...and none were lost', onPad.lost.length, 0);
+
+  // Read as numbers — what actually happened — the iPad has none of them.
+  const asRawNumbers = madeOnDesk.frameOrder.filter((n) => pad.has(n));
+  check('sent raw, the iPad recognises none of them (the fault)', asRawNumbers.length, 0);
+
+  // A ROUND TRIP CHANGES NOTHING.
+  const back = orderAsArrived(orderForSending(madeOnDesk, nameOn(desk)).order, numberOn(desk));
+  check('there and back on one device is identical',
+    back.order.frameOrder.join(','), '18,17,20,19');
+
+  // A SHOT THIS DEVICE HAS NOT GOT IS REPORTED, NOT MISREAD.
+  // Roman: "careful with dropping shots!"
+  const partial = new Map<number, string>([[1,'b'],[2,'c']]);   // no 'a', no 'd'
+  const thin = orderAsArrived({ frameOrder: ['b','a','d','c'] }, numberOn(partial));
+  check('only the shots it really has come through', thin.order.frameOrder.join(','), '1,2');
+  check('...and the missing ones are NAMED, not swallowed', thin.lost.join(','), 'a,d');
+
+  // THE BREAKS. Roman: "keep in mind the BREAKS!"
+  // Order b,a,d,c with a break after the second shot (index 2) and one at the
+  // end (index 4). Drop 'a' at index 1 and both must step back one.
+  const withBreaks = {
+    frameOrder: ['b','a','d','c'],
+    breaks: [{ id: 'lunch', text: 'LUNCH', position: 2 },
+             { id: 'wrap',  text: 'WRAP',  position: 4 }],
+  };
+  const shifted = orderAsArrived(withBreaks, numberOn(new Map([[1,'b'],[3,'d'],[4,'c']])));
+  check('a break after a dropped shot steps back one',
+    shifted.order.breaks!.find((b) => b.id === 'lunch')!.position, 1);
+  check('...and so does the one at the end',
+    shifted.order.breaks!.find((b) => b.id === 'wrap')!.position, 3);
+  check('...and the break count is untouched', shifted.order.breaks!.length, 2);
+
+  // A break ABOVE the dropped shot does not move: it belongs to the shot above
+  // it, and that shot has not gone anywhere.
+  const above = orderAsArrived(
+    { frameOrder: ['b','a','d'], breaks: [{ id: 'early', text: 'E', position: 1 }] },
+    numberOn(new Map([[1,'b'],[3,'d']])));
+  check('a break ABOVE the dropped shot stays put',
+    above.order.breaks![0].position, 1);
+
+  // NOTHING TO TRANSLATE IS NOT AN ERROR.
+  const empty = orderAsArrived({ frameOrder: [] }, numberOn(pad));
+  check('an empty order stays empty and loses nothing',
+    empty.order.frameOrder.length + empty.lost.length, 0);
+
+  // A shot with no permanent name has never reached the server, so it cannot be
+  // told to anybody — reported on the way OUT too.
+  const unsent = orderForSending({ frameOrder: [17, 99, 18] }, nameOn(desk));
+  check('a shot the server has never seen is named on the way out',
+    unsent.lost.join(','), '99');
+  check('...and the rest still go', unsent.order.frameOrder.join(','), 'a,b');
+}
+
+// ---------------------------------------------------------------------------
+// THE HEAVY ONE — DEVICES OPENING AND CLOSING PROJECTS ALL DAY (#489)
+//
+// Roman: "the test should also open and close various projects on various
+// devices, and new projects etc... heavy test! we have to be 100000% sure what
+// we do. this is the most crutial part of the app, if this does not work, we
+// failed!"
+//
+// So this is not a tidy pair of maps. It is three devices living a normal week:
+// they open projects in different orders, make new ones, add shots, and pass a
+// shooting order between them. After every single move the SAME question is
+// asked: does the order still name the same shots, in the same sequence,
+// everywhere?
+//
+// The numbering here is NOT a copy of the rule — it calls the app's own
+// `numbersForArriving`. A test that re-implements the thing it is testing
+// proves nothing.
+// ---------------------------------------------------------------------------
+{
+  /** A project on the server. Everything on it is written in PERMANENT NAMES —
+   *  that is the whole point: the server never sees a device's private numbers.
+   *  It holds MANY shooting orders and MANY groups, because a real project does. */
+  type TravelOrder = { id: string; name: string; groupId?: number; frameOrder: string[];
+                       breaks: { id: string; text: string; position: number }[] };
+  type TravelGroup = { id: number; name: string; frameIds: string[]; hiddenFrameIds: string[] };
+  type Server = {
+    shots: string[];
+    order: string[] | null;
+    orders: Record<string, TravelOrder>;
+    groups: Record<number, TravelGroup>;
+  };
+  const servers: Record<string, Server> = {};
+  let madeSoFar = 0;
+  const newProject = (id: string, howMany: number) => {
+    servers[id] = {
+      shots: Array.from({ length: howMany }, () => `shot-${++madeSoFar}`),
+      order: null, orders: {}, groups: {},
+    };
+  };
+
+  /** A device: what it is holding, and the numbers it has given those shots. */
+  class Device {
+    name: string;
+    held: { id: number; serverFrameId: string }[] = [];
+    openProject: string | null = null;
+    /** its own copy of the shooting order, in ITS numbers */
+    myOrder: number[] = [];
+    /** every shooting order it holds, and every group, in ITS numbers */
+    myOrders: Record<string, { id: string; name: string; groupId?: number;
+                               frameOrder: number[];
+                               breaks: { id: string; text: string; position: number }[] }> = {};
+    myGroups: Record<number, { id: number; name: string;
+                               frameIds: number[]; hiddenFrameIds: number[] }> = {};
+    constructor(name: string) { this.name = name; }
+
+    /** THE FIX UNDER TEST: opening a project numbers from 1. */
+    open(projectId: string, startFresh: boolean) {
+      const p = servers[projectId];
+      const numbers = numbersForArriving(this.held, p.shots, startFresh);
+      this.held = p.shots.map((name) => ({ id: numbers.get(name)!, serverFrameId: name }));
+      this.openProject = projectId;
+      if (p.order) this.receiveOrder(p.order);
+      this.receiveAllOrders();
+      this.receiveAllGroups();
+    }
+    /** A shot made here. It gets the next number this device has free. */
+    addShot(): string {
+      const name = `shot-${++madeSoFar}`;
+      const next = Math.max(0, ...this.held.map((f) => f.id)) + 1;
+      this.held.push({ id: next, serverFrameId: name });
+      servers[this.openProject!].shots.push(name);
+      return name;
+    }
+    nameOf = (n: number) => this.held.find((f) => f.id === n)?.serverFrameId;
+    numberOf = (name: string) => this.held.find((f) => f.serverFrameId === name)?.id;
+
+    /** Make an order out of everything it holds, in the order given. */
+    makeOrder(numbers: number[]) { this.myOrder = numbers; }
+    sendOrder() {
+      const sent = orderForSending({ frameOrder: this.myOrder }, this.nameOf);
+      servers[this.openProject!].order = sent.order.frameOrder;
+      return sent.lost;
+    }
+    receiveOrder(names: string[]) {
+      const got = orderAsArrived({ frameOrder: names }, this.numberOf);
+      this.myOrder = got.order.frameOrder;
+      return got.lost;
+    }
+    /** What the order MEANS here — the permanent names, which every device
+     *  must agree on however it numbers them. */
+    orderMeans(): string {
+      return this.myOrder.map((n) => this.nameOf(n) ?? '??').join(',');
+    }
+
+    // ── MANY SHOOTING ORDERS ─────────────────────────────────────────────
+    /** Make a new shooting order here, in a group or across the whole project. */
+    makeNewOrder(id: string, name: string, numbers: number[],
+                 groupId?: number,
+                 breaks: { id: string; text: string; position: number }[] = []) {
+      this.myOrders[id] = { id, name, groupId, frameOrder: numbers, breaks };
+    }
+    sendAllOrders() {
+      const lost: (string | number)[] = [];
+      for (const o of Object.values(this.myOrders)) {
+        const sent = orderForSending(o, this.nameOf);
+        lost.push(...sent.lost);
+        servers[this.openProject!].orders[o.id] = sent.order as unknown as TravelOrder;
+      }
+      return lost;
+    }
+    receiveAllOrders() {
+      const lost: (string | number)[] = [];
+      for (const t of Object.values(servers[this.openProject!].orders)) {
+        const got = orderAsArrived(t, this.numberOf);
+        lost.push(...got.lost);
+        this.myOrders[t.id] = got.order as unknown as (typeof this.myOrders)[string];
+      }
+      return lost;
+    }
+    /** What one named shooting order MEANS here. */
+    meansOf(id: string): string {
+      const o = this.myOrders[id];
+      if (!o) return '(missing)';
+      return o.frameOrder.map((n) => this.nameOf(n) ?? '??').join(',');
+    }
+
+    // ── GROUPS ───────────────────────────────────────────────────────────
+    makeGroup(id: number, name: string, numbers: number[], hidden: number[] = []) {
+      this.myGroups[id] = { id, name, frameIds: numbers, hiddenFrameIds: hidden };
+    }
+    sendAllGroups() {
+      for (const g of Object.values(this.myGroups)) {
+        servers[this.openProject!].groups[g.id] =
+          groupForSending(g, this.nameOf).order as unknown as TravelGroup;
+      }
+    }
+    receiveAllGroups() {
+      for (const t of Object.values(servers[this.openProject!].groups)) {
+        this.myGroups[t.id] =
+          groupAsArrived(t, this.numberOf).order as unknown as (typeof this.myGroups)[number];
+      }
+    }
+    /** What one group HOLDS here. */
+    groupHolds(id: number): string {
+      const g = this.myGroups[id];
+      if (!g) return '(missing)';
+      return g.frameIds.map((n) => this.nameOf(n) ?? '??').join(',');
+    }
+  }
+
+  newProject('old-job', 16);      // the one the Desktop had open first
+  newProject('little', 3);
+  newProject('the-job', 14);      // Roman's fourteen shots
+
+  const desk = new Device('Desktop');
+  const pad = new Device('iPad');
+  const phone = new Device('iPhone');
+
+  // ── A day of ordinary use, and NOBODY opens things in the same sequence ──
+  desk.open('old-job', true);          // Desktop: a big job first
+  desk.open('the-job', true);          // ...then the one that matters
+  pad.open('little', true);            // iPad: a small one first
+  pad.open('the-job', true);
+  phone.open('the-job', true);         // iPhone: straight in
+
+  check('the three devices number the same shots the same way',
+    [desk.held[0].id, pad.held[0].id, phone.held[0].id].join(','), '1,1,1');
+  check('...all the way to the last one',
+    [desk.held[13].id, pad.held[13].id, phone.held[13].id].join(','), '14,14,14');
+
+  // ── The Desktop makes a shooting order and sends it ──
+  desk.makeOrder([4, 1, 9, 14, 2]);
+  const lostSending = desk.sendOrder();
+  check('nothing is lost sending an order of shots it holds', lostSending.length, 0);
+
+  const meantOnDesk = desk.orderMeans();
+  pad.receiveOrder(servers['the-job'].order!);
+  phone.receiveOrder(servers['the-job'].order!);
+  check('the iPad sees the same shots as the Desktop', pad.orderMeans(), meantOnDesk);
+  check('the iPhone too', phone.orderMeans(), meantOnDesk);
+
+  // ── Somebody adds a shot on the iPad and the others catch up ──
+  const extra = pad.addShot();
+  desk.open('the-job', false);         // an ordinary sync, NOT a fresh open
+  phone.open('the-job', false);
+  check('a shot added on the iPad reaches the others', 
+    [desk.numberOf(extra) !== undefined, phone.numberOf(extra) !== undefined].join(','), 'true,true');
+  check('...and the order still means the same shots everywhere',
+    [desk.orderMeans(), pad.orderMeans(), phone.orderMeans()].every((m) => m === meantOnDesk), true);
+
+  // ── The Desktop goes off to another project and comes back ──
+  desk.open('little', true);
+  desk.open('the-job', true);
+  desk.receiveOrder(servers['the-job'].order!);
+  check('away to another project and back — the order is unchanged',
+    desk.orderMeans(), meantOnDesk);
+
+  // ── A brand new project, made while the order exists elsewhere ──
+  newProject('brand-new', 5);
+  phone.open('brand-new', true);
+  check('a brand new project starts its numbering at 1', phone.held[0].id, 1);
+  phone.open('the-job', true);
+  phone.receiveOrder(servers['the-job'].order!);
+  check('...and coming back, the order is still the same shots',
+    phone.orderMeans(), meantOnDesk);
+
+  // ── THE OLD WAY, for contrast: numbers carried on from the last project ──
+  const oldWay = new Device('Desktop, the old way');
+  oldWay.open('old-job', true);
+  oldWay.open('the-job', false);       // false = do NOT start fresh — the fault
+  check('carrying on from the last project is where 17 came from',
+    oldWay.held[0].id, 17);
+  check('...and that device shares NO numbers with the others',
+    oldWay.held.some((f) => f.id <= 14), false);
+
+  // ── GROUPS, AND SEVERAL SHOOTING ORDERS AT ONCE ─────────────────────
+  //
+  // A real project has more than one order and more than one group, and they
+  // are not all made on the same device. `projectSettings.ts` sends each one as
+  // an item of its own precisely so two devices can each add one without either
+  // being lost (#331). So the test has to do that: make them in different
+  // places, at the same time, and check every one of them afterwards.
+
+  // The Desktop puts the barn shots in one group and the exteriors in another.
+  desk.makeGroup(1, 'THE BARN', [1, 2, 3, 4], [4]);
+  desk.makeGroup(2, 'EXTERIORS', [10, 11, 12]);
+  desk.sendAllGroups();
+
+  // ...and two shooting orders: one for the whole project, one inside the barn.
+  desk.makeNewOrder('so-day1', 'DAY 1', [2, 1, 5, 9], undefined,
+    [{ id: 'br-1', text: 'LUNCH', position: 2 }]);
+  desk.makeNewOrder('so-barn', 'BARN ONLY', [3, 1, 2], 1);
+  desk.sendAllOrders();
+
+  // Meanwhile the iPhone makes a third, in the exteriors group.
+  phone.open('the-job', false);
+  phone.makeNewOrder('so-ext', 'EXTERIORS PM', [12, 10], 2);
+  phone.sendAllOrders();
+
+  // Everyone catches up.
+  pad.open('the-job', false);
+  desk.receiveAllOrders(); desk.receiveAllGroups();
+  phone.receiveAllOrders(); phone.receiveAllGroups();
+
+  check('all three shooting orders reach every device',
+    [Object.keys(desk.myOrders).length, Object.keys(pad.myOrders).length,
+     Object.keys(phone.myOrders).length].join(','), '3,3,3');
+
+  for (const [id, label] of [['so-day1', 'DAY 1'], ['so-barn', 'BARN ONLY'], ['so-ext', 'EXTERIORS PM']] as const) {
+    check(`${label}: the same shots on all three`,
+      [desk.meansOf(id), pad.meansOf(id), phone.meansOf(id)]
+        .every((m) => m === desk.meansOf(id)) && desk.meansOf(id) !== '(missing)', true);
+  }
+
+  check('the iPad did not lose the one the iPhone made',
+    pad.meansOf('so-ext').split(',').length, 2);
+  check('...and BARN ONLY still knows it belongs to the barn group',
+    pad.myOrders['so-barn'].groupId, 1);
+  check('...and EXTERIORS PM to the other one', pad.myOrders['so-ext'].groupId, 2);
+  check('...and DAY 1 belongs to no group, as it was made',
+    pad.myOrders['so-day1'].groupId === undefined, true);
+  check('...with its break still at 2', pad.myOrders['so-day1'].breaks[0].position, 2);
+  check('...and named', pad.myOrders['so-day1'].name, 'DAY 1');
+
+  check('both groups hold the same shots on all three',
+    [1, 2].every((g) => desk.groupHolds(g) === pad.groupHolds(g)
+                     && pad.groupHolds(g) === phone.groupHolds(g)), true);
+  check('THE BARN holds four shots, not none', pad.myGroups[1].frameIds.length, 4);
+  // THE STORY FLOW INSIDE A GROUP IS THIS LIST'S ORDER (groups.ts:16, and
+  // actions.ts:78 reorders it when you drag inside a group). So it is not
+  // enough that the right shots are in the group — they must be in the same
+  // SEQUENCE on every device.
+  check('...in the same sequence on all three, not just the same shots',
+    [desk.groupHolds(1), pad.groupHolds(1), phone.groupHolds(1)]
+      .every((h) => h === desk.groupHolds(1)), true);
+  // ...and dragging one to the front inside the group travels as a re-order.
+  {
+    const g = desk.myGroups[1];
+    g.frameIds = [g.frameIds[2], g.frameIds[0], g.frameIds[1], g.frameIds[3]];
+    const wanted = desk.groupHolds(1);
+    desk.sendAllGroups();
+    pad.receiveAllGroups(); phone.receiveAllGroups();
+    check('dragging a shot inside a group travels to the other devices',
+      [pad.groupHolds(1), phone.groupHolds(1)].every((h) => h === wanted), true);
+  }
+  check('...and the hidden one is still hidden, and still the same shot',
+    pad.nameOf(pad.myGroups[1].hiddenFrameIds[0]) === desk.nameOf(desk.myGroups[1].hiddenFrameIds[0]), true);
+
+  // THE OLD WAY, for contrast: a group sent raw, read by a device that numbers
+  // differently. This is what is happening on Roman's devices today.
+  {
+    const rawFromDesk = { id: 9, name: 'THE BARN', frameIds: [17, 18, 19, 20], hiddenFrameIds: [] };
+    const heldByPad = rawFromDesk.frameIds.filter((n) => pad.held.some((f) => f.id === n));
+    check('sent raw, the iPad recognises none of the group (the fault)', heldByPad.length, 0);
+  }
+
+  // A device makes a new order while OFFLINE from the others, and a second
+  // device makes one too. Neither may beat the other.
+  desk.makeNewOrder('so-night', 'NIGHT WORK', [14, 13]);
+  phone.makeNewOrder('so-pickups', 'PICKUPS', [5, 6]);
+  desk.sendAllOrders(); phone.sendAllOrders();
+  pad.receiveAllOrders();
+  desk.receiveAllOrders();     // the Desktop has not heard about PICKUPS yet
+  phone.receiveAllOrders();
+  check('two orders made at the same time on two devices both survive',
+    [pad.meansOf('so-night') !== '(missing)', pad.meansOf('so-pickups') !== '(missing)'].join(','),
+    'true,true');
+  check('...and five orders are on the iPad now', Object.keys(pad.myOrders).length, 5);
+
+  // And after ALL of that, closing everything and opening it again on a device
+  // that has been round three other projects must change nothing.
+  pad.open('little', true);
+  pad.open('old-job', true);
+  pad.open('brand-new', true);
+  pad.open('the-job', true);
+  check('after four projects, every order still means the same shots',
+    ['so-day1', 'so-barn', 'so-ext', 'so-night', 'so-pickups']
+      .every((id) => pad.meansOf(id) === desk.meansOf(id)), true);
+  check('...and every group still holds the same shots',
+    [1, 2].every((g) => pad.groupHolds(g) === desk.groupHolds(g)), true);
+
+  // ── A device that is behind: it has not got the newest shot yet ──
+  const behind = new Device('an iPad left in a bag');
+  behind.open('the-job', true);
+  behind.held = behind.held.filter((f) => f.serverFrameId !== extra);   // never heard of it
+  desk.makeOrder([...desk.myOrder, desk.numberOf(extra)!]);
+  desk.sendOrder();
+  const lostOnArrival = behind.receiveOrder(servers['the-job'].order!);
+  check('the shot it has not got is NAMED, not guessed at',
+    lostOnArrival.join(','), extra);
+  check('...and every other shot still comes through in order',
+    behind.orderMeans(), meantOnDesk);
+}
+
+// ---------------------------------------------------------------------------
+// THE STORY FLOW IN "ALL FRAMES" — the one that was never part of this fault
+//
+// Roman asked. Traced rather than assumed: `projectSettings.ts:94` sends it as
+// `s.frames.map(f => f.serverFrameId)` — PERMANENT NAMES, never numbers — and
+// `applyArrangement` puts the frames back by matching those same names. It has
+// nothing to do with the device's private numbers, so the numbering fault never
+// touched it. These cases hold that true, using the app's OWN applyArrangement.
+// ---------------------------------------------------------------------------
+{
+  const card = (id: number, name?: string) => ({ id, serverFrameId: name });
+
+  // The Desktop's copy, numbered 17..21 — and the iPad's, numbered 1..5. Same
+  // five shots. The arrangement travels as names.
+  const arrangement = ['aaa', 'bbb', 'ccc', 'ddd', 'eee'];
+
+  const onPad = applyArrangement(
+    [card(3, 'ccc'), card(1, 'aaa'), card(5, 'eee'), card(2, 'bbb'), card(4, 'ddd')],
+    arrangement);
+  check('the story flow arrives in the right order however the iPad numbers them',
+    onPad.map((f) => f.serverFrameId).join(','), 'aaa,bbb,ccc,ddd,eee');
+
+  const onDesk = applyArrangement(
+    [card(19, 'ccc'), card(17, 'aaa'), card(21, 'eee'), card(18, 'bbb'), card(20, 'ddd')],
+    arrangement);
+  check('...and the same on the Desktop, numbering from 17',
+    onDesk.map((f) => f.serverFrameId).join(','), 'aaa,bbb,ccc,ddd,eee');
+  check('...so both devices show the same story flow',
+    onPad.map((f) => f.serverFrameId).join(',') === onDesk.map((f) => f.serverFrameId).join(','),
+    true);
+
+  // A SHOT MADE HERE A SECOND AGO has no permanent name yet, so it is not in
+  // the arrangement. It must stay, behind the shot it currently follows — not
+  // be dropped and not be thrown to the end (#398, #405).
+  const withBrandNew = applyArrangement(
+    [card(1, 'aaa'), card(9), card(2, 'bbb'), card(3, 'ccc'), card(4, 'ddd'), card(5, 'eee')],
+    arrangement);
+  check('a shot made a second ago is not dropped from the story flow',
+    withBrandNew.length, 6);
+  check('...and stays right behind the shot it was following',
+    withBrandNew.map((f) => f.serverFrameId ?? 'NEW').join(','),
+    'aaa,NEW,bbb,ccc,ddd,eee');
+
+  // A shot deleted elsewhere is simply not in the arrangement and not here.
+  const shorter = applyArrangement(
+    [card(1, 'aaa'), card(2, 'bbb')], ['bbb', 'aaa']);
+  check('the story flow works with fewer shots too',
+    shorter.map((f) => f.serverFrameId).join(','), 'bbb,aaa');
+}
+
+// ---------------------------------------------------------------------------
+// NOTHING ELSE ON THE ORDER MAY BE LOST ON THE WAY (#489, and #382 before it)
+//
+// projectSettings.ts:109 sends the WHOLE shooting order object. It carries its
+// name, its description, which group it belongs to and its bracket tree. #382
+// was written because a rebuilt object silently dropped the group.
+//
+// So a translation that returns a tidy {frameOrder, breaks} would fix the
+// numbers and break everything else. These cases are here to stop that.
+// ---------------------------------------------------------------------------
+{
+  const wholeOrder = {
+    id: 'so-1',
+    name: 'DAY 2 — INTERIORS',
+    description: 'the barn',
+    groupId: 4,
+    frameOrder: [3, 1, 2],
+    breaks: [{ id: 'b1', text: 'LUNCH', position: 2 }],
+    sortedSnapshot: [1, 2, 3],
+    // A REAL bracket tree: it points at shots too, in inputIds/matchedIds, and
+    // it nests. A branch holding no shots is dropped — that is the app's own
+    // rule in remapBracketIds, not a new one.
+    bracketTree: {
+      inputIds: [1, 2, 3], matchedIds: [2],
+      categoryName: 'CAMERA',
+      right: { inputIds: [3], matchedIds: [] },
+    },
+  };
+  const names: Record<number, string> = { 1: 'aaa', 2: 'bbb', 3: 'ccc' };
+  const sent = orderForSending(wholeOrder, (n) => names[n]);
+
+  check('the shooting order keeps its id', (sent.order as Record<string, unknown>).id, 'so-1');
+  check('...its name', (sent.order as Record<string, unknown>).name, 'DAY 2 — INTERIORS');
+  check('...its description', (sent.order as Record<string, unknown>).description, 'the barn');
+  check('...which group it belongs to (#382)', (sent.order as Record<string, unknown>).groupId, 4);
+  const treeOut = (sent.order as Record<string, unknown>).bracketTree as Record<string, unknown>;
+  check('...and its bracket tree travels by name too',
+    (treeOut.inputIds as string[]).join(','), 'aaa,bbb,ccc');
+  check('...matched shots as well', (treeOut.matchedIds as string[]).join(','), 'bbb');
+  check('...the branch below it too',
+    ((treeOut.right as Record<string, unknown>).inputIds as string[]).join(','), 'ccc');
+  check('...and what is not a shot is left alone', treeOut.categoryName, 'CAMERA');
+  check('...while the shots became names', sent.order.frameOrder.join(','), 'ccc,aaa,bbb');
+
+  const numbers: Record<string, number> = { aaa: 1, bbb: 2, ccc: 3 };
+  const back = orderAsArrived(sent.order, (nm) => numbers[nm]);
+  check('coming back it is the same order again', back.order.frameOrder.join(','), '3,1,2');
+  check('...still named', (back.order as Record<string, unknown>).name, 'DAY 2 — INTERIORS');
+  check('...still in its group', (back.order as Record<string, unknown>).groupId, 4);
+  check('...and the break is where it was', back.order.breaks![0].position, 2);
+  // THE SORTING SHEET AND ITS SNAPSHOT MUST BOTH SURVIVE (#489).
+  //
+  // decideResort (bracket.ts:894) gives up with "no sorting sheet yet — nothing
+  // to follow" if EITHER bracketTree or sortedSnapshot is missing, and then no
+  // shot is marked as moved by the re-sort. So a translation that quietly loses
+  // one of them turns the green marks off and nothing else says why.
+  check('the sorting sheet survives the journey out',
+    (sent.order as Record<string, unknown>).bracketTree !== undefined, true);
+  check('...and so does its snapshot', sent.order.sortedSnapshot?.join(','), 'aaa,bbb,ccc');
+  check('the sorting sheet survives coming back',
+    (back.order as Record<string, unknown>).bracketTree !== undefined, true);
+  check('...and its snapshot comes back in this device\'s numbers',
+    back.order.sortedSnapshot?.join(','), '1,2,3');
+  check('...so decideResort still has both halves it needs',
+    Boolean((back.order as Record<string, unknown>).bracketTree) && Boolean(back.order.sortedSnapshot),
+    true);
+
+  const treeBack = (back.order as Record<string, unknown>).bracketTree as Record<string, unknown>;
+  check('...and the bracket tree is back in this device\'s numbers',
+    (treeBack.inputIds as number[]).join(','), '1,2,3');
 }
 
 // ---------------------------------------------------------------------------

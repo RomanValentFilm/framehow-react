@@ -16,7 +16,8 @@
 
 import { useStore, bumpRenderTick } from '../store/state';
 import type { SortOrder, StripType } from '../store/state';
-import { getVisibleFrames, createGroup, enterGroup } from './groups';
+import { getVisibleFrames, createGroup, enterGroup, reorderFrameInGroup } from './groups';
+import { newFrameId } from './ids';
 import { ensureStripVersions, getStripVersions, setFrameStripLabel } from './helpers';
 import { openFullscreen, closeFullscreen } from './fullscreen';
 import { setViewMode } from './view';
@@ -49,6 +50,19 @@ export interface TestDoor {
   /** Open a project the server already has — what the second device does, and
    *  what the project list does when you tap a name. */
   openProject(id: string): Promise<void>;
+  /** BUILD a project and stop there — no save, no server.
+   *
+   *  `newProject` saves as part of making one, so with no signal it waits for
+   *  ever. This is the half before that: exactly what a person has on a plane
+   *  after pressing NEW PROJECT. It exists so the simulator can ask the one
+   *  question #489 turned on — do the shots of a project built with no signal
+   *  have their permanent names, so an order made there has something to say. */
+  buildProjectWithoutSaving(name: string, count: number): Promise<void>;
+  /** Save the project that is open, making it on the server if it is not there
+   *  yet — what the app's own autosave does a moment after you make one.
+   *  `push` is flushSyncNow, which gives up in silence when there is no project
+   *  on the server to flush TO, so it cannot stand in for this. */
+  saveThisProject(): Promise<void>;
   /** Write under a frame, by its place on screen (0 = first). The same store
    *  write the text editor makes, followed by the same stamping the autosave
    *  does — so the change carries an honest time. */
@@ -124,6 +138,12 @@ export interface TestDoor {
   makeGroup(name: string, frameIndexes: number[]): number;
   /** Go into a group, or back to ALL with null — the sidebar's own call. */
   enterGroup(groupId: number | null): void;
+  /** Move a shot UP or DOWN inside the group that is open — which is what
+   *  dragging a card does when you are inside a group, and it reorders the
+   *  GROUP's own list, not the storyboard (groups.ts, actions.ts). That list is
+   *  written in this device's private numbers, so it is the story flow inside a
+   *  group and it has to travel by name like everything else (#489). */
+  moveInGroup(frameIndex: number, direction: 'up' | 'down'): boolean;
   /** Which group the view is in, null for ALL. */
   whichGroup(): number | null;
   /** The group name as it reads in the view bar, or null if it is not there. */
@@ -256,6 +276,8 @@ export interface TestDoor {
     setups: string[];
     storyBreaks: Array<{ id: string; text: string; position: number }>;
     unsent: string[];
+    /** Every group, its shots written as LABELS — same reason as the orders. */
+    groups: Array<{ id: number; name: string; frames: string[]; hidden: string[] }>;
     orders: Array<{
       id: string;
       name: string;
@@ -398,6 +420,25 @@ export function installTestDoor(): void {
     },
 
     async openProject(id) { await openCloudProjectById(id); },
+
+    async buildProjectWithoutSaving(name, count) {
+      await beginNewProject();
+      startFromScratch();
+      const first = useStore.getState().frames[0];
+      if (!first) return;
+      const extra = Array.from({ length: Math.max(0, count - 1) }, (_, i) => ({
+        ...first,
+        id: first.id + i + 1,
+        label: String(i + 2),
+        // A SHOT OF ITS OWN, WITH ITS OWN NAME. Copying `first` would copy its
+        // name too, and eight shots sharing one name is not the app.
+        serverFrameId: newFrameId(),
+        serverMainVersionId: undefined,
+      }));
+      useStore.setState({ frames: [first, ...extra] } as never);
+      setProjectName(name);
+      (window as never as { __fh_renderAll?: () => void }).__fh_renderAll?.();
+    },
 
     writeUnder(index, text) {
       const s = useStore.getState();
@@ -611,6 +652,15 @@ export function installTestDoor(): void {
       const gid = createGroup(name, ids);
       stampChangedSettings(getCurrentProject().projectId);
       return gid;
+    },
+
+    moveInGroup(frameIndex, direction) {
+      const fid = getVisibleFrames()[frameIndex]?.id;
+      if (fid === undefined) throw new Error(`no frame at ${frameIndex} in this group`);
+      const moved = reorderFrameInGroup(fid, direction);
+      stampChangedSettings(getCurrentProject().projectId);
+      (window as never as { __fh_renderAll?: () => void }).__fh_renderAll?.();
+      return moved;
     },
 
     enterGroup(groupId) {
@@ -1036,6 +1086,8 @@ export function installTestDoor(): void {
 
     async push() { await flushSyncNow(); },
 
+    async saveThisProject() { await saveNow(); },
+
     /** Start a fetch and DO NOT wait for it (#425).
      *
      *  A pull decides which project it is for at the top and then waits on the
@@ -1059,6 +1111,16 @@ export function installTestDoor(): void {
         setups: s.setups.map((su) => su.name),
         storyBreaks: (s.storyFlowBreaks ?? []).map((b) => ({ id: b.id, text: b.text, position: b.position })),
         unsent: [...getDirtyFrameIds()],
+        // THE GROUPS, BY LABEL, for exactly the reason the orders are (#489).
+        // frameIds holds this device's private numbers, and a group is the
+        // story flow when you are inside it — so a test has to be able to hold
+        // one device's group against the other's.
+        groups: s.groups.map((g) => ({
+          id: g.id,
+          name: g.name,
+          frames: g.frameIds.map((n) => s.frames.find((f) => f.id === n)?.label ?? `?${n}`),
+          hidden: g.hiddenFrameIds.map((n) => s.frames.find((f) => f.id === n)?.label ?? `?${n}`),
+        })),
         orders: s.sortOrders.map((o) => ({
           id: o.id,
           name: o.name,

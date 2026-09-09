@@ -14,6 +14,10 @@
 import { useStore } from '../store/state';
 import type { NeedItem, Setup, SortBreak } from '../store/state';
 import { trace } from './syncTrace';
+import {
+  orderForSending, orderAsArrived, groupForSending, groupAsArrived,
+  type OrderShape, type GroupShape,
+} from './orderIds';
 
 export interface SettingItem {
   kind: string;
@@ -105,8 +109,41 @@ function currentItems(): Array<{ kind: string; item_id: string; json: string }> 
   // to what it was, and the breaks stay items of their own.
   if (orderedIds.length > 0) push('frameOrder', 'main', 0, orderedIds);
 
-  s.groups.forEach((g, i) => push('group', String(g.id), i, g));
-  s.sortOrders.forEach((o, i) => push('sortOrder', o.id, i, o));
+  // A GROUP AND A SHOOTING ORDER HOLD THEIR SHOTS BY NAME, LIKE THE STORY FLOW
+  // ABOVE (#489).
+  //
+  // Both used to be pushed WHOLE, with this device's private numbers inside
+  // them. The project's own blob translated them properly; this copy did not,
+  // and it is applied after the blob — so the raw copy won. Roman's iPad, 9
+  // September: the Desktop's order said shots 31 to 44, the iPad held 4 to 17,
+  // and the order showed nothing. The group arrived as "?27 ?28 ?29 ?30".
+  //
+  // ONE LANGUAGE, EVERYWHERE. This memory, the wire and the server all speak
+  // names; only the running screen speaks numbers. Two languages would be
+  // worse than one wrong one: this text is what the app compares each pass to
+  // decide "did it change", so a memory in numbers and a wire in names would
+  // differ for ever — push, pull, push, pull. That is #343's churn, and it is
+  // why the translation is here and not at the moment of sending.
+  //
+  // `lost` is the alarm, and it should always be empty: since #405 — finished
+  // in #489 — a shot has its name from the moment it is made, so there is no
+  // such thing as a shot that cannot be named. If one ever is, it is said out
+  // loud rather than quietly leaving a short order.
+  const nameOf = (n: number) => s.frames.find((f) => f.id === n)?.serverFrameId;
+  const noName: (string | number)[] = [];
+  s.groups.forEach((g, i) => {
+    const sent = groupForSending(g as unknown as GroupShape, nameOf);
+    noName.push(...sent.lost);
+    push('group', String(g.id), i, sent.order);
+  });
+  s.sortOrders.forEach((o, i) => {
+    const sent = orderForSending(o as unknown as OrderShape, nameOf);
+    noName.push(...sent.lost);
+    push('sortOrder', o.id, i, sent.order);
+  });
+  if (noName.length > 0) {
+    trace(`  shots with no name yet, left out of the orders/groups: ${noName.join(', ')}`);
+  }
   (s.needDefinitions?.tabs ?? []).forEach((t, i) => push('needCategory', t.id, i, t));
 
   // Agreed as one item each: short shared lists, rarely edited on two devices
@@ -162,16 +199,44 @@ export function seedSettings(projectId: string | null, createdAt?: number): void
   _seeded = true;
 }
 
-export function stampChangedSettings(projectId?: string | null): void {
-  // Everything here is remembered for ONE project. Opening another one must
-  // start empty, or its settings get pushed into the new project — which is
-  // how a brand new project arrived holding ten sort orders that belonged to
-  // the last one, conflicts and all.
+/**
+ * EMPTY THE MEMORY IF THIS IS A DIFFERENT PROJECT (#490).
+ *
+ * Everything here is remembered for ONE project. Opening another one must start
+ * empty, or its settings get pushed into the new project — which is how a brand
+ * new project arrived holding ten sort orders that belonged to the last one,
+ * conflicts and all.
+ *
+ * IT HAS TO HAPPEN BEFORE THE ARRIVING SETTINGS ARE JUDGED, not after.
+ *
+ * It used to live only inside `adoptSettingsFromServer`, which runs AFTER
+ * `applySettingsToStore` — and `applySettingsToStore` is where the arriving
+ * arrangement is weighed against what this device remembers. So opening a
+ * project after another one weighed the new project's story flow against the
+ * LAST project's time. The story flow is filed under the same name in every
+ * project, `frameOrder/main`, so the times collided every time, the device
+ * decided its own was newer, and threw the arrangement away. Its own log said
+ * so and nobody was reading it:
+ *
+ *     arrangement NOT taken: changed_at=1788959633351 (mine is newer and unsent)
+ *
+ * Found by the simulator on 9 September: two devices arriving at one project
+ * from different projects, and the rearrangement made on one never reaching the
+ * other — while the breaks, which are items of their own, arrived fine.
+ *
+ * The needs tabs and the locations have fixed names too, so they could go the
+ * same way. Groups and shooting orders cannot: their names are their own.
+ */
+export function forgetAnotherProjectsSettings(projectId?: string | null): void {
   if (projectId !== undefined && projectId !== _projectId) {
     _known.clear();
     _projectId = projectId;
     _seeded = false;
   }
+}
+
+export function stampChangedSettings(projectId?: string | null): void {
+  forgetAnotherProjectsSettings(projectId);
   // Backstop only. Every path that loads a project calls seedSettings() or
   // adoptSettingsFromServer() first, so this should not be reached — and if it
   // is, there is genuinely nothing to compare against: whatever the store holds
@@ -245,12 +310,10 @@ export function settingsForPush(): SettingItem[] {
  *   front of the user with nothing left wanting to push.
  */
 export function adoptSettingsFromServer(items: SettingItem[] | undefined, projectId?: string | null): void {
-  // A different project must not inherit this one's memory.
-  if (projectId !== undefined && projectId !== _projectId) {
-    _known.clear();
-    _projectId = projectId;
-    _seeded = false;
-  }
+  // A different project must not inherit this one's memory. By the time this
+  // runs the caller has usually cleared it already (#490) — kept here because
+  // this is also reached on paths that do not apply settings first.
+  forgetAnotherProjectsSettings(projectId);
   if (!items || items.length === 0) return;   // nothing said — leave the memory alone
   for (const it of items) {
     const k = key(it.kind, it.item_id);
@@ -364,6 +427,35 @@ export function applySettingsToStore(items: SettingItem[] | undefined): void {
 
   const s = useStore.getState();
   const patch: Record<string, unknown> = {};
+
+  // ...AND BACK INTO THIS DEVICE'S NUMBERS ON ARRIVAL (#489).
+  //
+  // Everything below merges and then writes straight into the store, which is
+  // where the numbers live. So the translation happens once, here, before any
+  // of it — never halfway down.
+  //
+  // A name this device does not hold is a shot it has not got. It is REPORTED,
+  // never mistaken for another shot — which is exactly what used to happen when
+  // the numbers travelled raw: 31 arrived and the iPad read it as its own 31.
+  {
+    const numberOf = (name: string) => s.frames.find((f) => f.serverFrameId === name)?.id;
+    const notHere: (string | number)[] = [];
+    for (const r of rows) {
+      if (r.deleted || !r.data) continue;
+      if (r.kind === 'sortOrder') {
+        const got = orderAsArrived(r.data as never, numberOf);
+        notHere.push(...got.lost);
+        r.data = got.order;
+      } else if (r.kind === 'group') {
+        const got = groupAsArrived(r.data as never, numberOf);
+        notHere.push(...got.lost);
+        r.data = got.order;
+      }
+    }
+    if (notHere.length > 0) {
+      trace(`    shots this device has not got yet, named: ${notHere.join(', ')}`);
+    }
+  }
 
   /**
    * Merge a list ITEM BY ITEM. Replacing the list with whatever arrived was
