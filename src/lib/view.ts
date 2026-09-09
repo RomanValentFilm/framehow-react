@@ -1070,15 +1070,13 @@ export function resetToolbarState(): void {
   if (viewBar) viewBar.classList.remove('tb-hide');
   if (detailBar) detailBar.classList.remove('tb-hide');
 
-  const shouldHide = window.scrollY > 10;
-  if (shouldHide) {
-    // iPad: hide all bars
-    if (toolbar) toolbar.classList.add('tb-hide');
-    if (viewBar) viewBar.classList.add('tb-hide');
-    if (detailBar) detailBar.classList.add('tb-hide');
-  }
-
-  if ((window as any)._scrollHideReset) (window as any)._scrollHideReset(shouldHide);
+  // NOTHING HIDES THE BARS ANY MORE (#481). This function is iPad-only (it
+  // returns above on a phone), and on an iPad the bars now stay put whichever
+  // way it is held. So this only ever CLEARS, above, and then tells the scroll
+  // handler that nothing is hidden. It used to add tb-hide back when scrollY
+  // was over 10 — that is what could strand the detail bar, because it never
+  // repositioned it afterwards the way the scroll handler did.
+  if ((window as any)._scrollHideReset) (window as any)._scrollHideReset(false);
 }
 
 export function handleOrientationFlip(): void {
@@ -1364,7 +1362,6 @@ export function wireScrollHandlers(): void {
   (window as any)._scrollHideReset = function (h?: boolean) {
     hidden = h !== undefined ? h : false;
   };
-  const TH = 10;
 
   // A real touch or wheel = the user has taken the page back.
   (['touchstart', 'wheel', 'keydown'] as const).forEach((evt) =>
@@ -1406,21 +1403,25 @@ export function wireScrollHandlers(): void {
       if (camOvl && !camOvl.classList.contains('hidden')) return;
       // Don't hide bars when sort-edit view is active — header sticks below them
       if (state().sortEditingId) return;
-      const y = window.scrollY;
-
-      if (y <= TH && hidden) {
-        // At top → show all bars
+      // THE BARS NEVER MOVE ON AN IPAD (#481).
+      //
+      // Roman: "show all the top view bars all the time: Tool Bar, View Mode
+      // bar, Detail Bar… this means the top view bar does not move with
+      // scrolling anymore" — and then: "these bars can be visible all the time
+      // also in horizontal mode on iPAD ONLY (let the iphone in horizontal mode
+      // as is)". So on an iPad they stay put whichever way it is held.
+      //
+      // Everything below this point only ever ran on an iPad (the phone returns
+      // at the top of wireScrollHandlers), so this ends the hiding entirely
+      // here. Anything already hidden is put back first, so a device that was
+      // scrolled down when this shipped cannot keep a bar off screen. The
+      // machinery is left in place rather than deleted: syncDetailTopIPad still
+      // places the detail bar, and the iPhone landscape path is untouched.
+      if (hidden) {
         hidden = false;
         toolbar.classList.remove('tb-hide');
         viewBar.classList.remove('tb-hide');
         if (detailBar) detailBar.classList.remove('tb-hide');
-        syncDetailTopIPad();
-      } else if (y > TH && !hidden) {
-        // Scrolled away → hide all bars
-        hidden = true;
-        toolbar.classList.add('tb-hide');
-        viewBar.classList.add('tb-hide');
-        if (detailBar) detailBar.classList.add('tb-hide');
         syncDetailTopIPad();
       }
     },

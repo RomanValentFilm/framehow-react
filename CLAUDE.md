@@ -102,6 +102,13 @@ handed over, say the expected time with it. Rough figures:
 - one file — 30 seconds to a minute
 - the random day on its own — about 2 minutes
 
+## A CODE BLOCK MEANS "PASTE THIS" — NOTHING ELSE EVER GOES IN ONE
+
+Roman reads a fenced block as a command to run, every time. So the ONLY thing
+that may appear in one is a command he is meant to paste. Never git log output,
+never a file listing, never a snippet of code being discussed, never a version
+history. All of that goes in plain words in the reply.
+
 ## CHECK THE STATE BEFORE HANDING OVER A COMMAND — ESPECIALLY A GIT ONE
 
 A command is only correct for the state the folder is actually in. On 8

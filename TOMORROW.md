@@ -53,6 +53,31 @@ Every check is `expect.soft`, so ONE run reports EVERY broken rule.
 - Do not ask him to pin, save or park something instead of fixing it.
 - Always say how long a test run will take. Figures are in CLAUDE.md.
 
+## THE BARS IN PORTRAIT — ROMAN'S RULE, 9 SEPTEMBER
+
+> "this change considers the portrait mode only... on IPAD and IPHONE... show
+> all the top view bars all the time: Tool Bar, View Mode bar, Detail Bar. (the
+> set up bar only when set up was activated, which is possible on iphone to
+> activate only in horizontal view) <<< this means the top view bar does not
+> move with scrolling anymore"
+
+and then, a minute later:
+
+> "these bars can be visible all the time also in horizontal mode on iPAD ONLY
+> (let the iphone in horizontal mode as is)"
+
+So the rule as built (#481):
+- **iPad, both ways up** — toolbar, view bar and detail bar all shown, all the
+  time. Nothing hides them on scrolling. `tb-hide` is now added NOWHERE.
+- **iPhone portrait** — the same three, all shown, stacked and still. The view
+  bar used to be hidden here entirely.
+- **iPhone landscape** — UNCHANGED. Left exactly as it was, on purpose.
+- The setup bar appears only when SETUPS is on, as before.
+
+Why it came up: on the iPhone in portrait the whole view bar was hidden, and
+SORT BY lives in it — so inside a shooting order there was no way to switch
+orders or get out.
+
 ## Still open
 
 None of it urgent, none of it a ten-minute job.

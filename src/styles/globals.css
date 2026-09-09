@@ -713,10 +713,26 @@
     body.setup-lock .columns{padding-top:0;}
     body.setup-lock.detail-open .columns{padding-top:0;}
   }
-  /* iPhone portrait: hide view-bar, always show detail bar, swipeable buttons */
+  /* iPad: the bars never move, EITHER WAY UP (#481). Roman: "these bars can be
+     visible all the time also in horizontal mode on iPAD ONLY (let the iphone
+     in horizontal mode as is)". Nothing adds tb-hide any more; these two undo
+     it on a device that still has it from the build before this one. */
+  @media (hover:none) and (pointer:coarse) and (min-width:431px){
+    .toolbar.tb-hide{transform:none;}
+    .view-bar.tb-hide{transform:none;padding-top:0;}
+  }
+  /* iPhone PORTRAIT: ALL THREE BARS, ALWAYS, AND THEY DO NOT MOVE (#481).
+     Roman: "show all the top view bars all the time: Tool Bar, View Mode bar,
+     Detail Bar… this means the top view bar does not move with scrolling
+     anymore." The view bar used to be hidden here entirely — and SORT BY lives
+     in it, so inside a shooting order there was no way to switch orders or get
+     out. Three stacked sticky bars: 44 (toolbar) + 26 (view bar) = 70. */
   @media (hover:none) and (pointer:coarse) and (max-width:430px) and (orientation:portrait){
-    .view-bar{display:none!important;}
-    .detail-bar{display:flex!important;position:-webkit-sticky;position:sticky;top:env(safe-area-inset-top);z-index:20;}
+    .toolbar{position:-webkit-sticky;position:sticky;top:0;}
+    .view-bar{display:flex!important;position:-webkit-sticky;position:sticky;
+              top:calc(44px + env(safe-area-inset-top) * 0.55);z-index:20;}
+    .detail-bar{display:flex!important;position:-webkit-sticky;position:sticky;
+                top:calc(70px + env(safe-area-inset-top) * 0.55);z-index:19;}
     .detail-bar .db-left{display:none;}
     .detail-bar .db-middle{flex:1;min-width:0;overflow-x:auto;-webkit-overflow-scrolling:touch;flex-wrap:nowrap;scrollbar-width:none;}
     .detail-bar .db-middle::-webkit-scrollbar{display:none;}
