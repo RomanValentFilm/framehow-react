@@ -996,7 +996,11 @@ export function initFramehow(): void {
           current.splice(idx, 1);
         } else {
           // Toggling on — enforce max 2 strips (NEEDS counts as one)
-          const totalVisible = current.length + (s.needsStripVisible ? 1 : 0) + 1; // +1 for strip being added
+          // NOTES COUNTS TOO (#485). It takes a column like everything else, and
+          // forgetting it here let one more column on than the screen can hold —
+          // with no message, because the sum never reached the limit.
+          const totalVisible = current.length + (s.needsStripVisible ? 1 : 0)
+            + (s.notesStripVisible ? 1 : 0) + 1; // +1 for strip being added
           if (totalVisible > 2) { showMaxStripsOverlay(2); return; }
           current.push(strip);
         }
@@ -1023,7 +1027,11 @@ export function initFramehow(): void {
       } else {
         // iPad: enforce max 3 portrait / 4 landscape (NEEDS counts as one)
         if (isTablet) {
-          const totalVisible = current.length + (s.needsStripVisible ? 1 : 0) + 1; // +1 for strip being added
+          // NOTES COUNTS TOO (#485) — see the phone branch above. This is the one
+          // Roman hit: four columns on an iPad Air in landscape, asking for a
+          // fifth, and no message, because NOTES was not in the sum.
+          const totalVisible = current.length + (s.needsStripVisible ? 1 : 0)
+            + (s.notesStripVisible ? 1 : 0) + 1; // +1 for strip being added
           const maxStrips = h > w ? 3 : 4;
           if (totalVisible > maxStrips) { showMaxStripsOverlay(maxStrips); return; }
         }

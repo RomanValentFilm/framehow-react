@@ -1215,7 +1215,9 @@ export function handleOrientationFlip(): void {
   if (!isPhone && navigator.maxTouchPoints > 1 && Math.min(newW, newH) <= 830) {
     const s = state();
     const maxStrips = newH > newW ? 3 : 4;
-    const totalVisible = s.activeStrips.length + (s.needsStripVisible ? 1 : 0);
+    // NOTES COUNTS TOO (#485) — the same omission as the two in init.ts.
+    const totalVisible = s.activeStrips.length + (s.needsStripVisible ? 1 : 0)
+      + (s.notesStripVisible ? 1 : 0);
     if (totalVisible > maxStrips) {
       const stripMax = maxStrips - (s.needsStripVisible ? 1 : 0);
       // Sort by visual position (MAIN→VER→FLOOR→REFS) before trimming rightmost
