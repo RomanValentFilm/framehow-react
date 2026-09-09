@@ -155,6 +155,25 @@ None of it urgent, none of it a ten-minute job.
 
 ## Parked, with a reason
 
+- **`26-needs` "going round the loop many times settles, and never invents
+  work" fails: ONE CHANGE SHOULD MARK ONE SHOT — it marked 0.** Single device,
+  no sync between two of them. Opens and closes a shooting order four times,
+  changing a shot's day each round, and expects exactly one shot to come up
+  green as moved by the re-sort.
+
+  NOT from #489, and proved rather than argued: RUN 148 ran the same test
+  against `3e5eae9`, this morning's code before any of today's work, and it
+  failed identically — same message, 14.2s against 14.3s. The other two tests in
+  that file pass on both.
+
+  One suspicion already ruled out with a bench, not an opinion: `decideResort`
+  (bracket.ts:894) gives up with "no sorting sheet yet — nothing to follow" if
+  the order has lost either its `bracketTree` or its `sortedSnapshot`, and #489
+  now translates both. The bench holds a real order shape through the round trip
+  and both survive, in the right numbers — see "the sorting sheet survives the
+  journey out" in delta-bench.
+
+
 - **A REARRANGED STORY FLOW DOES NOT REACH A DEVICE THAT CAME FROM ANOTHER
   PROJECT.** Found by the simulator on 9 September, in
   `28-numbering-across-projects` — marked `test.fixme` there so a run stays
