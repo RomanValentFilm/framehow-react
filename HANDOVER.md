@@ -166,6 +166,72 @@ or the green marks. Those are worked out on each device, by decision.
 
 ---
 
+## 3b. THINGS YOU WILL NEED AND WILL NOT GUESS
+
+### Where everything is
+
+- The repo is at `~/Desktop/Framehow Files/framehow-react`, branch **`v4.4`**.
+  Cloudflare Pages calls its production branch `main`; **we work on `dev`**.
+- `CLAUDE.md` at the repo root holds the working rules, the deploy lines, and
+  the admin token and database ids. Read it first, every session.
+- `TOMORROW.md` holds the open list, the decisions not to reopen, and a "do not
+  repeat" section of faults that came back. It is the memory between days.
+- `~/Desktop/framehow-react-versions/` holds a copy of the source at each saved
+  version — that is what "4 steps save" fills. Each under 5MB.
+- `CHANGELOG.md` is stale (stops at v4.7.011). Do not trust it; use `git log`.
+
+### The numbering
+
+Two numbers, bumped together on every deploy:
+
+- **`APP_VERSION`** in `src/store/state.ts` — `v4.9.191`.
+- **`SYNC_BUILD_TAG`** in `src/lib/syncTrace.ts` — `#494`.
+
+The `#NNN` is the change number. It is the thread through everything: commit
+messages, the comments in the code, `TOMORROW.md`. **When you want to know why
+something is the way it is, the reason is in a comment next to it with its
+number, or in `git log --oneline --grep="#406"`.** This codebase explains itself
+in prose; read the comment before changing the line. Several of today's mistakes
+were made by changing code whose comment said exactly why it was like that.
+
+### How Roman gives you evidence
+
+The app has an on-screen **sync log**. He turns it on by tapping the version
+number in the toolbar three times, or with `?fhsync=1` in the address. It has a
+COPY LOG button. When he pastes a wall of timestamped lines, that is it — read
+it as the app's own account of what it did, and trust it over your reading of
+the code.
+
+The log is also written by the simulator into the page, and the test can attach
+both devices' logs to a failure. **If a test fails and you cannot see why, make
+the failure print the logs before running it again.** Three runs were wasted
+today for want of that.
+
+### You can open the app yourself
+
+The deployed app at `dev.framehow-react.pages.dev` can be opened in a browser
+and driven directly — resize to an iPad's size, build a local project through
+the test door (`window.__fh_test`), and measure what is actually on screen.
+That is how the bar fault was found in one attempt after an hour of reading CSS.
+Use it for anything visual. It is not a substitute for the simulator on sync.
+
+### The devices in play
+
+A Mac desktop, an **iPad Air 5th gen** (not a Pro — the strip limits differ),
+and an iPhone. The app decides it is a tablet from the touch points and from the
+smaller side of the screen being 830px or less.
+
+### Known flaky, not faults
+
+- `wrangler` in the simulator falls over at random. `ECONNREFUSED
+  127.0.0.1:8787` means the run is void — repeat it, and split long runs.
+- `09-random-day` fails on settings and is not repeatable — parked, in
+  TOMORROW.md.
+- `13-scribble` "scribbling fast" fails on its own guard since #381, not on a
+  lost stroke. The test needs rewriting for the behaviour Roman chose.
+
+---
+
 ## 4. THE BENCH TESTS — CLAUDE CAN RUN THESE, IN SECONDS
 
 `npm run bench` in the app, `npm run bench` in `backend/`.
@@ -234,6 +300,76 @@ These are not preferences. They were each written after something went wrong.
 - **No jargon.** Say "box", not node. Say "the app", not the client. The device
   asks, the server answers; the device sends. Never "pull" or "push" as nouns.
 - Findings belong in the code and in `TOMORROW.md`, not in the chat.
+
+### The words Roman uses, and what they mean
+
+| he says | it means |
+|---|---|
+| **zzz** | the test run has finished. Read `e2e-log/last-run.log` yourself and tell me what it says. Do not ask him to paste anything. |
+| **4 steps save** | the save ritual below. All four steps, in order. |
+| **go** | build it. Stop asking. |
+| **fix it** / **fix** | the thing just discussed, now, without a plan first. |
+| **show me the list** | the open items from TOMORROW.md, short, in points. |
+| **did you trace it, or are you reasoning?** | you have stated something as fact without following the code. Answer honestly; "not traced" is an acceptable answer, a guess dressed as a finding is not. |
+| **works.** / **works** | confirmed on his device. It can come off the list. |
+| **it's a mix up** | you have handed over something wrong and he has run it. Stop, work out the actual state before touching anything else. |
+| **wait** | stop what you are doing and answer him first. |
+| **repair it now** | something is in a bad state on his machine or on dev; fixing it comes before anything else. |
+| **what is this?** | he does not recognise a word you used. Say it again without the word. |
+
+He writes fast, in lower case, often from a phone, and often mid-thought while
+something else is running. Typos are normal. If a message looks like it
+contradicts an earlier one, he has usually learnt something in between — ask
+which he means rather than picking one.
+
+### Handing over a command — the exact shape
+
+Roman pastes what he is given, without reading it. So:
+
+**Every command is labelled on the line above the box.** Two kinds, and only
+two. The label is bold, the version or run number is in it, and the time it
+takes is in it.
+
+> **SIMULATOR TEST — RUN 152 — about 90 seconds**
+>
+> ```
+> cd ~/Desktop/Framehow\ Files/framehow-react && FH_RUN=152 npm run t -- -g "some words"
+> ```
+
+> **DEPLOY — v4.9.191 · #494**
+>
+> ```
+> cd ~/Desktop/Framehow\ Files/framehow-react && V="…" && … ; echo "DEPLOYED: $V"
+> ```
+
+Rules that go with it:
+
+- **One command per box.** Never two boxes in one message unless he asked for
+  both, and then each gets its own label.
+- **Nothing else is ever in a box.** Not log output, not a snippet being
+  discussed, not a file path. He has run output as a command before.
+- **Never a placeholder.** No `MESSAGE`, no `vX.Y.ZZZ`. A template was pasted
+  once and produced a commit called "MESSAGE".
+- **Check `git status` and `git log` before handing over anything with git in
+  it.**
+- **A deploy always carries a NEW number**, in both `APP_VERSION` and
+  `SYNC_BUILD_TAG`, and the command ends by printing what it deployed, read out
+  of the source files. He checks that number on screen against what you said.
+- After a test run he says **zzz**. That means: the run finished, read
+  `e2e-log/last-run.log` yourself and tell me what it says.
+
+### "4 STEPS SAVE" — when he says those words, do exactly this
+
+1. **Say the CURRENT version** in `state.ts` — not bumped, not the next one.
+2. **One command**, labelled, that does all three things: commit, push, and copy
+   the whole folder into `~/Desktop/framehow-react-versions/<version>` —
+   excluding `node_modules`, `dist`, `.git`, and the test output folders. It
+   must come out under 5MB. End it by printing what was saved.
+3. **He pastes the output back.**
+4. **Then bump** `APP_VERSION` and `SYNC_BUILD_TAG`.
+
+Not four messages — step 2 is one line he can paste once. Do not skip step 1;
+he uses it to check you are saving what he thinks you are saving.
 
 ### How to work
 
