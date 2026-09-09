@@ -658,80 +658,12 @@ export function initFramehow(): void {
         closeSortMode();
       }
 
-      // Close detail bar when pressing VIEW MODE BAR buttons
-      // Keep open for: DETAIL (own toggle), SETUPS, GROUP (overlay), SORT BY (overlay)
-      // In portrait: also keep open for 3×2VIEW (blocked in portrait, just shows rotate overlay)
-      if (view !== 'detail' && view !== 'setups' && view !== 'group' && view !== 'sortby' && !(view === '3x2' && h > w) && (b as HTMLElement).closest('.view-bar')) {
-        const detailBar = document.getElementById('detailBar');
-        if (detailBar && detailBar.style.display !== 'none') {
-          detailBar.style.display = 'none';
-          document.body.classList.remove('detail-open');
-          const detailBtn = document.getElementById('detailBtn');
-          if (detailBtn) detailBtn.classList.remove('active');
-        }
-      }
+      // The detail bar used to be closed here whenever another view-bar button
+      // was pressed. It is ALWAYS OPEN now (#483), so there is nothing to close
+      // — and closing it would leave no way to open it again.
 
-      // DETAIL toggle — open/close the detail bar
-      if (view === 'detail') {
-        // Phone: detail bar always visible in strip view (CSS), no-op
-        // But in 3×2 landscape, allow toggling so user can open bar + pick a strip
-        const isPhoneNow = Math.min(w, h) <= 430;
-        if (isPhoneNow) {
-          if (state().currentViewMode !== 'grid3x2') return;
-          // 3×2 on phone landscape: toggle detail bar (no strip buttons active)
-          const isDetailOpen = document.body.classList.contains('detail-open');
-          document.body.classList.toggle('detail-open', !isDetailOpen);
-          (b as HTMLElement).classList.toggle('active', !isDetailOpen);
-          if (!isDetailOpen) {
-            // Opening → force all bars visible regardless of scroll position
-            const tbEl = document.getElementById('mainToolbar');
-            const vbEl = document.querySelector('.view-bar');
-            const dbEl = document.getElementById('detailBar');
-            if (tbEl) tbEl.classList.remove('tb-hide');
-            if (vbEl) vbEl.classList.remove('tb-hide');
-            if (dbEl) dbEl.classList.remove('tb-hide');
-            if ((window as any)._scrollHideReset) (window as any)._scrollHideReset(false);
-            useStore.setState({ scrollHideGuard: Date.now() + 1500 });
-            requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
-          }
-          return;
-        }
-        const detailBar = document.getElementById('detailBar');
-        if (detailBar) {
-          const isOpen = detailBar.style.display !== 'none';
-          // iPad portrait: detail bar stays open (user always sees strips)
-          if (isOpen && h > w) return;
-          detailBar.style.display = isOpen ? 'none' : '';
-          document.body.classList.toggle('detail-open', !isOpen);
-          (b as HTMLElement).classList.toggle('active', !isOpen);
-          if (isOpen) {
-            // Closing detail bar → return to 3×2VIEW (landscape only)
-            const enter3x2Btn = document.querySelector('.view-btn[data-view="3x2"]') as HTMLElement | null;
-            if (enter3x2Btn) enter3x2Btn.click();
-          } else {
-            // Opening detail bar → force all bars visible regardless of scroll position
-            const tbEl = document.getElementById('mainToolbar');
-            const vbEl = document.querySelector('.view-bar');
-            if (tbEl) tbEl.classList.remove('tb-hide');
-            if (vbEl) vbEl.classList.remove('tb-hide');
-            detailBar.classList.remove('tb-hide');
-            if ((window as any)._scrollHideReset) (window as any)._scrollHideReset(false);
-            useStore.setState({ scrollHideGuard: Date.now() + 1500 });
-            // Recalculate detail bar position (iPad: position:fixed, top managed by JS)
-            requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
-            // Update strip-toggle buttons to reflect what's visible
-            // In 3×2 mode: no buttons active (grid is showing, not individual strips)
-            const curMode = state().currentViewMode;
-            const curStrips = state().activeStrips;
-            document.querySelectorAll('.strip-toggle').forEach((btn) => {
-              const strip = (btn as HTMLElement).dataset.strip as string;
-              btn.classList.toggle('active', curMode !== 'grid3x2' && curStrips.includes(strip as any));
-            });
-          }
-        }
-        return;
-      }
-
+      // The DETAIL branch lived here and is gone (#483). The button no longer
+      // exists on any device; the bar is always on screen.
       // Left-side buttons: iPad/Desktop only
       if (view === 'group') {
         if (isPhonePortrait) {
@@ -1368,13 +1300,10 @@ export function initFramehow(): void {
     });
   }
 
-  // Phone: detail bar always visible (CSS forces it) — set body class + activate DETAIL button
-  const isPhoneInit = Math.min(window.innerWidth, window.innerHeight) <= 430;
-  if (isPhoneInit) {
-    document.body.classList.add('detail-open');
-    const detailBtnInit = document.getElementById('detailBtn');
-    if (detailBtnInit) detailBtnInit.classList.add('active');
-  }
+  // THE DETAIL BAR IS ALWAYS OPEN, ON EVERY DEVICE (#483). `detail-open` is
+  // what the columns' top padding is measured from, so it has to be on from the
+  // first paint or the first row of cards sits under the bar.
+  document.body.classList.add('detail-open');
 
   // Hide view-bar on initial empty state
   const viewBarEl = document.querySelector('.view-bar') as HTMLElement | null;

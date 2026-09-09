@@ -17,14 +17,19 @@ export function ViewBar() {
           <button className="view-btn vb-desktop-only" data-view="sortby" id="sortByBtn" title="Sort By">SORT BY</button>
         </div>
 
-        {/* RIGHT GROUP — DETAIL toggle */}
-        <div className="view-btns vb-right">
-          <button className="view-btn" data-view="detail" id="detailBtn" title="Detail">DETAIL</button>
-        </div>
+        {/* RIGHT GROUP — was the DETAIL toggle, gone in #483.
+            Roman: "on ipad, we do not need the DETAIL bar anymore as we suppose
+            to see the detail bar always on / same on desktop" and then "we also
+            do not need the DETAIL button on iPHONE anymore". The detail bar is
+            simply always there now, so a button to summon it is one press that
+            can only ever go wrong. The empty group is kept so the three-column
+            layout of the bar is unchanged. */}
+        <div className="view-btns vb-right" />
       </div>
 
       {/* DETAIL BAR — toggled by DETAIL button */}
-      <div className="detail-bar" id="detailBar" style={{display:'none'}}>
+      {/* ALWAYS OPEN (#483) — it used to start hidden and wait for DETAIL. */}
+      <div className="detail-bar" id="detailBar">
         <div className="db-left" />
         <div className="view-btns db-middle">
           <button className="view-btn strip-toggle" data-strip="main" title="Main Strip">SHOT</button>

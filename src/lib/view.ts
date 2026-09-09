@@ -1202,12 +1202,9 @@ export function handleOrientationFlip(): void {
     // iPad rotated back to landscape — restore 3x2 view
     (window as any)._returnTo3x2 = false;
     useStore.setState({ currentViewMode: 'grid3x2', crossCompare: {} });
-    // Close detail bar (3x2 doesn't use it)
-    const detailBar = document.getElementById('detailBar');
-    if (detailBar) detailBar.style.display = 'none';
-    document.body.classList.remove('detail-open');
-    const detailBtnEl = document.getElementById('detailBtn');
-    if (detailBtnEl) detailBtnEl.classList.remove('active');
+    // The detail bar used to be closed here, because 3x2 does not use it. It is
+    // ALWAYS OPEN now (#483) and there is no button to bring it back, so this
+    // leaves it alone.
     setViewMode('grid3x2');
     const renderAll = (window as any).__fh_renderAll;
     if (renderAll) renderAll();
