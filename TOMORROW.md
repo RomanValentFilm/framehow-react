@@ -80,7 +80,7 @@ orders or get out.
 
 ## Open from 9 September — the day the numbering changed (#489–#495)
 
-dev is **v4.9.192 · #495**. Next number: **v4.9.193 · #496**.
+dev is **v4.9.194 · #497**. Next number: **v4.9.195 · #498**.
 
 What changed: a shot's private number never leaves the device; shooting orders,
 groups and story flows travel by the shot's permanent name (#489). Then a day of

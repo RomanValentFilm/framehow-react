@@ -450,6 +450,26 @@ he uses it to check you are saving what he thinks you are saving.
 
 ---
 
+## 6b. RELEASE NOTES — ROMAN KEEPS THEM, CLAUDE WRITES THEM
+
+After EVERY deploy confirmation, before anything else, give Roman the note for
+his records: the number, then one short line per change, in his words, no
+numbers of issues, no file names. Not a paragraph. Like this:
+
+    v4.9.193 · #496
+    - iPad: naming a break no longer freezes or jumps the page
+    - a change made while a push was running is now sent
+    - the fetch no longer blocks its own push
+    - the log says when a device is locked and why it is not asking the server
+    - wrangler 4.130
+
+    v4.9.194 · #497
+    - a frame shows one main picture only (guard)
+    - iPhone portrait: version number hidden
+
+He asked for this on 10 September ("i need this always for my notes but
+shorter").
+
 ## 7. WHAT IS STILL BROKEN
 
 ### Certain

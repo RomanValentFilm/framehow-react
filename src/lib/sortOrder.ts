@@ -3219,8 +3219,14 @@ function setupDragAndDrop(el: HTMLElement, orderId: string): void {
 
   activeCard.addEventListener('mousedown', (e) => {
     if ((e.target as HTMLElement).closest('.sort-arrow, .sort-done-btn, .sort-break-delete-btn, input')) return;
+    // NOT THE BROWSER'S DRAG (#498). On the desktop, moving sideways over the
+    // card's picture or text made Chrome start its own "drag this image" —
+    // our mouse moves stopped arriving and the card "jumped out of the area".
+    // Roman: up and down was fine, to the left it went. The card is ours.
+    e.preventDefault();
     onStart(e.clientY);
   });
+  activeCard.addEventListener('dragstart', (e) => e.preventDefault());
   activeCard.addEventListener('touchstart', (e) => {
     if ((e.target as HTMLElement).closest('.sort-arrow, .sort-done-btn, .sort-break-delete-btn, input')) return;
     onStart(e.touches[0].clientY);
