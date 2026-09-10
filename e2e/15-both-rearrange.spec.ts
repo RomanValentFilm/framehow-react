@@ -113,14 +113,21 @@ test('two devices writing seconds apart, both online, both arrive', async ({ bro
   const deadline = Date.now() + 60_000;
   let lastSeen = '';
   for (;;) {
-    await desktop.nudge(); await tablet.nudge();
+    // ONLY THE DESKTOP IS TOUCHED WHILE WAITING (run 167). Waking the tablet
+    // every second keeps its heartbeat fresh, so the desktop stays behind the
+    // "your Tablet is working on this project — please wait" lock for the whole
+    // minute and never fetches. A person puts the iPad down first.
+    await desktop.nudge();
     const d = (await desktop.read()).frames.map((f) => f.text).join(' | ');
     const t = (await tablet.read()).frames.map((f) => f.text).join(' | ');
     lastSeen = `\n  desktop: ${d}\n  tablet:  ${t}`;
     if (d === t && d.includes('tablet third')) break;
     if (Date.now() > deadline) {
+      // BOTH LOGS, or the failure says nothing about WHY (runs 163/164).
+      const tail = (lines: string[]) => lines.slice(0, 40).map((l) => '    ' + l).join('\n');
       throw new Error('WRITING MADE SECONDS APART DID NOT REACH BOTH DEVICES. '
-        + 'Nobody was offline and nobody touched the same frame.' + lastSeen);
+        + 'Nobody was offline and nobody touched the same frame.' + lastSeen
+        + `\n\nDESKTOP LOG:\n${tail(await desktop.log())}\n\nTABLET LOG:\n${tail(await tablet.log())}`);
     }
     await desktop.page.waitForTimeout(1000);
   }

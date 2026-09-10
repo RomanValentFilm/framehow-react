@@ -277,7 +277,9 @@ test('going round the loop many times settles, and never invents work',
     const plan: Array<[number, string, number]> = [[4, DAY1, 1], [5, DAY2, 1], [6, DAY3, 0], [2, DAY1, 1]];
     for (const [idx, day, marks] of plan) {
       await desktop.closeOrder();
-      await desktop.settle();
+      // Closing with nothing new to send writes no "saving:" line — see
+      // `reopen` above. Wait a moment, not for a line that may not come.
+      await desktop.page.waitForTimeout(900);
       await setDay(desktop.page, idx, day);
       await desktop.openOrder(0);
       await desktop.settle();

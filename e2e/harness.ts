@@ -106,6 +106,13 @@ export class Device {
       localStorage.setItem('fh_test', '1');
       localStorage.setItem('fh_sync_log', '1');   // the log strip, so we can read it
       localStorage.setItem('fh_debug', '1');
+      // ARE THIS PAGE'S TIMERS RUNNING? (run 172). A device went silent for a
+      // minute — not even a timer-driven log line — so the question is whether
+      // the browser has put the window to sleep. One tick a second, readable
+      // from the test.
+      const w = window as unknown as { __ticks: number };
+      w.__ticks = 0;
+      setInterval(() => { w.__ticks++; }, 1000);
     }, token);
     page.on('console', (m) => {
       if (m.type() === 'error') console.log(`  [${name} console] ${m.text()}`);
@@ -127,8 +134,30 @@ export class Device {
    * tests are about. A person takes longer than two seconds to reach for the
    * refresh button.
    */
+  /**
+   * WAIT UNTIL THIS DEVICE HAS NOTHING LEFT TO DO (#496, runs 155–161).
+   *
+   * This used to look for a "saving:" line anywhere in the log. The app writes
+   * that line only when the number of frames it remembers as on the server
+   * CHANGES, and the log keeps 300 lines — so in any long test the one such
+   * line scrolled away and every later settle waited twenty seconds for
+   * nothing. The tests that passed were the short ones.
+   *
+   * Settled means: the local save has had its two seconds, and the log has
+   * been quiet for a moment — no push, no fetch, no redraw still going on.
+   */
   async settle(): Promise<void> {
-    await this.waitForLog('saving:', 20_000);
+    const started = Date.now();
+    let lastCount = (await this.log()).length;
+    let quietSince = Date.now();
+    for (;;) {
+      await this.page.waitForTimeout(300);
+      const n = (await this.log()).length;
+      if (n !== lastCount) { lastCount = n; quietSince = Date.now(); }
+      const quiet = Date.now() - quietSince;
+      if (Date.now() - started >= 2_300 && quiet >= 1_000) return;
+      if (Date.now() - started > 25_000) { say(`${this.name}: still busy after 25s — carrying on`); return; }
+    }
   }
 
   /** Reload, as pressing refresh does. The app restores from its own local save. */
@@ -664,21 +693,35 @@ export class Device {
     return i < 0 ? '(not here)' : this.orderAsText(i);
   }
 
-  addStoryBreak(position: number, text: string): Promise<string> {
-    return this.page.evaluate(([p, t]) =>
-      (window as never as { __fh_test: { addStoryBreak(p: number, t: string): string } })
-        .__fh_test.addStoryBreak(p as number, t as string),
-      [position, text] as [number, string]);
+  /** A break in the project's story flow, or — with a group id — in that
+   *  group's own story flow (#494/#496). */
+  addStoryBreak(position: number, text: string, groupId: number | null = null): Promise<string> {
+    return this.page.evaluate(([p, t, g]) =>
+      (window as never as { __fh_test: { addStoryBreak(p: number, t: string, g: number | null): string } })
+        .__fh_test.addStoryBreak(p as number, t as string, g as number | null),
+      [position, text, groupId] as [number, string, number | null]);
+  }
+
+  /** Name a break as typing in its box does. orderId: '__storyflow__',
+   *  '__storyflow__:<group id>', or a shooting order's id. */
+  renameBreak(orderId: string, breakId: string, text: string): Promise<void> {
+    return this.page.evaluate(([o, b, t]) =>
+      (window as never as { __fh_test: { renameBreak(o: string, b: string, t: string): void } })
+        .__fh_test.renameBreak(o as string, b as string, t as string),
+      [orderId, breakId, text] as [string, string, string]);
   }
 
   /** The story flow written out flat: frames in order with the breaks between
-   *  them, exactly as the screen shows it. */
-  async storyFlowAsText(): Promise<string> {
+   *  them, exactly as the screen shows it. The project's flow, or one group's:
+   *  each has only its own breaks (#494). */
+  async storyFlowAsText(groupId: number | null = null): Promise<string> {
     const s = await this.read();
-    const labels = s.frames.map((f) => f.label);
+    const labels = groupId === null
+      ? s.frames.map((f) => f.label)
+      : (s.groups.find((g) => g.id === groupId)?.frames ?? []);
     const out: string[] = [];
     for (let i = 0; i <= labels.length; i++) {
-      for (const b of s.storyBreaks.filter((x) => x.position === i)) out.push(`[${b.text}]`);
+      for (const b of s.storyBreaks.filter((x) => x.position === i && (x.groupId ?? null) === groupId)) out.push(`[${b.text}]`);
       if (i < labels.length) out.push(labels[i]);
     }
     return out.join(' ');
@@ -706,7 +749,7 @@ export class Device {
     frames: Array<{ id: string; serverFrameId?: string; label: string; text: string }>;
     categories: string[];
     setups: string[];
-    storyBreaks: Array<{ id: string; text: string; position: number }>;
+    storyBreaks: Array<{ id: string; text: string; position: number; groupId: number | null }>;
     unsent: string[];
     groups: Array<{ id: number; name: string; frames: string[]; hidden: string[] }>;
     orders: Array<{
@@ -728,6 +771,11 @@ export class Device {
   // --- the log -------------------------------------------------------------
 
   /** Every line the app has written to its sync log, newest first. */
+  /** How many seconds this page's timers have actually run since it opened. */
+  ticks(): Promise<number> {
+    return this.page.evaluate(() => (window as unknown as { __ticks: number }).__ticks);
+  }
+
   async log(): Promise<string[]> {
     return this.page.$$eval('[data-line]', (els) => els.map((e) => e.textContent ?? ''));
   }
@@ -848,12 +896,28 @@ export class Device {
 
   /** Wait until both devices show the same storyboard, nudging as a person
    *  would. This is the only question that really matters: do they agree? */
+  /**
+   * ONE DEVICE AT A TIME, AS A PERSON DOES (#496, runs 163–173).
+   *
+   * The waits used to wake BOTH devices every second. A device that is awake
+   * heartbeats, and a device that sees the other's heartbeat locks itself:
+   * "your Desktop is working on this project — please wait 10 sec". So the
+   * receiving device sat behind that lock for the whole minute, and the log
+   * showed nothing, because it does nothing while locked. That is the lock
+   * doing its job. A person puts one device down before picking up the other
+   * — so this wakes one for fifteen seconds, then the other.
+   */
+  static async nudgeOneAtATime(a: Device, b: Device): Promise<void> {
+    const which = Math.floor(Date.now() / 15_000) % 2 === 0 ? b : a;
+    await which.nudge();
+  }
+
   static async waitUntilTheyAgree(a: Device, b: Device, timeoutMs = 60_000): Promise<string> {
     say(`waiting for ${a.name} and ${b.name} to show the same thing…`);
     const deadline = Date.now() + timeoutMs;
     let last = '';
     for (;;) {
-      await a.nudge(); await b.nudge();
+      await Device.nudgeOneAtATime(a, b);
       const [x, y] = [await a.storyboard(), await b.storyboard()];
       if (x === y) { say(`they agree: ${x.slice(0, 70)}`); return x; }
       last = `\n  ${a.name}: ${x}\n  ${b.name}: ${y}`;
@@ -875,7 +939,7 @@ export class Device {
     say(`waiting for ${a.name} and ${b.name} to show the same "${name}"…`);
     const deadline = Date.now() + timeoutMs;
     for (;;) {
-      await a.nudge(); await b.nudge();
+      await Device.nudgeOneAtATime(a, b);
       const [x, y] = [await a.orderTextByName(name), await b.orderTextByName(name)];
       if (x === y && x !== '(not here)') { say(`they agree: ${x.slice(0, 80)}`); return x; }
       if (Date.now() > deadline) {
@@ -895,7 +959,7 @@ export class Device {
     say(`waiting for ${a.name} and ${b.name} to show the same group…`);
     const deadline = Date.now() + timeoutMs;
     for (;;) {
-      await a.nudge(); await b.nudge();
+      await Device.nudgeOneAtATime(a, b);
       const [x, y] = [await a.groupAsText(groupId), await b.groupAsText(groupId)];
       if (x === y && x !== '(no group)') { say(`they agree: ${x.slice(0, 80)}`); return x; }
       if (Date.now() > deadline) {
@@ -913,12 +977,14 @@ export class Device {
     say(`waiting for ${a.name} and ${b.name} to show the same shooting order…`);
     const deadline = Date.now() + timeoutMs;
     for (;;) {
-      await a.nudge(); await b.nudge();
+      await Device.nudgeOneAtATime(a, b);
       const [x, y] = [await a.orderAsText(orderIndex), await b.orderAsText(orderIndex)];
       if (x === y && x !== '(no order)') { say(`they agree: ${x.slice(0, 80)}`); return x; }
       if (Date.now() > deadline) {
         throw new Error(`the two devices never agreed on the shooting order within `
-          + `${timeoutMs}ms:\n  ${a.name}: ${x}\n  ${b.name}: ${y}\n\n`
+          + `${timeoutMs}ms:\n  ${a.name}: ${x}\n  ${b.name}: ${y}\n`
+          + `  timers: ${a.name} ${await a.ticks()} ticks · ${b.name} ${await b.ticks()} ticks\n`
+          + `  project open: ${a.name} ${(await a.read()).projectId} · ${b.name} ${(await b.read()).projectId}\n\n`
           + `${a.name} log:\n${(await a.log()).slice(0, 25).map((l) => '  ' + l).join('\n')}\n\n`
           + `${b.name} log:\n${(await b.log()).slice(0, 25).map((l) => '  ' + l).join('\n')}`);
       }

@@ -1466,6 +1466,7 @@ export function toggleSortDropdown(): void {
 }
 
 export function closeSortMode(): void {
+  unlockBodyAfterBreakRename();   // never leave the page held still (#496)
   // Persist bracket state before closing so it survives reopen / browser close
   const editView = document.getElementById('sortEditView');
   if (editView) {
@@ -1950,10 +1951,39 @@ export function refreshOpenSortView(): void {
   if (!orderId) return;
   const el = document.getElementById('sortEditView');
   if (!el || el.style.display === 'none') return;
+  // NOT WHILE A BREAK IS BEING NAMED (#496). A redraw arriving from a fetch
+  // rebuilds every card, so the input being typed in is thrown away with the
+  // typing — and on the iPad the body is held still while that input has the
+  // keyboard, so the page was left stuck with nothing on screen to let go of
+  // it. The fetch's work is not lost: the next redraw shows it.
+  if (breakBeingNamed()) { trace('  not redrawing the order — a break is being named'); return; }
   renderSortEditView(el, orderId);
 }
 
+/** Is the person typing a break's name right now? */
+function breakBeingNamed(): boolean {
+  const a = document.activeElement as HTMLElement | null;
+  return !!a && a.classList.contains('sort-break-text');
+}
+
+/**
+ * LET GO OF THE PAGE (#496). Naming a break on an iPad with a physical keyboard
+ * holds the body still with position:fixed and lets go on blur. If the input
+ * is removed by a redraw before it blurs, blur never comes and the page cannot
+ * be moved again. So every redraw, and closing the order, lets go first.
+ */
+function unlockBodyAfterBreakRename(): void {
+  if (document.body.style.position !== 'fixed') return;
+  const lockY = Math.abs(parseInt(document.body.style.top || '0', 10));
+  document.body.style.position = '';
+  document.body.style.top = '';
+  document.body.style.width = '';
+  document.body.style.overflow = '';
+  window.scrollTo(0, lockY);
+}
+
 function renderSortEditView(el: HTMLElement, orderId: string): void {
+  unlockBodyAfterBreakRename();
   const s = state();
 
   let frames: Frame[];
@@ -2781,16 +2811,7 @@ function wireEditViewEvents(el: HTMLElement, orderId: string): void {
         }, 500);
       }, { passive: false });
       // Unlock body when input loses focus
-      inp.addEventListener('blur', () => {
-        if (document.body.style.position === 'fixed') {
-          const lockY = Math.abs(parseInt(document.body.style.top || '0', 10));
-          document.body.style.position = '';
-          document.body.style.top = '';
-          document.body.style.width = '';
-          document.body.style.overflow = '';
-          window.scrollTo(0, lockY);
-        }
-      });
+      inp.addEventListener('blur', () => unlockBodyAfterBreakRename());
     } else {
       // Desktop: just remove readonly on mousedown, native focus handles cursor position
       inp.addEventListener('mousedown', () => { inp.removeAttribute('readonly'); });
@@ -2799,27 +2820,7 @@ function wireEditViewEvents(el: HTMLElement, orderId: string): void {
   el.querySelectorAll('.sort-break-text').forEach((input) => {
     (input as HTMLInputElement).addEventListener('change', () => {
       const brkId = (input as HTMLElement).dataset.breakRename!;
-      const newText = (input as HTMLInputElement).value;
-      const s = state();
-      if (isStoryFlow(orderId)) {
-        const breaks = (s.storyFlowBreaks || []).map((b) =>
-          b.id === brkId ? { ...b, text: newText } : b
-        );
-        useStore.setState({ storyFlowBreaks: breaks });
-      } else {
-        const orders = s.sortOrders.map((o) => {
-          if (o.id !== orderId) return o;
-          return {
-            ...o,
-            breaks: o.breaks.map((b) =>
-              b.id === brkId ? { ...b, text: newText } : b
-            ),
-          };
-        });
-        useStore.setState({ sortOrders: orders });
-      }
-      bumpRenderTick();
-      void flushSyncNow();
+      renameBreak(orderId, brkId, (input as HTMLInputElement).value);
     });
   });
 
@@ -2913,6 +2914,42 @@ function addBreak(orderId: string, editView: HTMLElement): void {
   }
   bumpRenderTick();
   void flushSyncNow();
+}
+
+/**
+ * NAME A BREAK. Lifted out of the input's change handler (#496) so the
+ * simulator can rename a break through the app's own path — a story flow's
+ * break (the project's or a group's) or a shooting order's.
+ */
+export function renameBreak(orderId: string, breakId: string, text: string): void {
+  const s = state();
+  if (isStoryFlow(orderId)) {
+    const breaks = (s.storyFlowBreaks || []).map((b) =>
+      b.id === breakId ? { ...b, text } : b
+    );
+    useStore.setState({ storyFlowBreaks: breaks });
+  } else {
+    const orders = s.sortOrders.map((o) => {
+      if (o.id !== orderId) return o;
+      return { ...o, breaks: o.breaks.map((b) => (b.id === breakId ? { ...b, text } : b)) };
+    });
+    useStore.setState({ sortOrders: orders });
+  }
+  trace(`break ${breakId.slice(0, 12)} named "${text}"`);
+  bumpRenderTick();
+  void flushSyncNow();
+}
+
+/** Put a break into a story flow — the project's (groupId null) or a group's —
+ *  at a position, exactly as ADD BREAK does, minus finding the middle of the
+ *  screen. Exported for the simulator (#496). */
+export function addStoryFlowBreak(groupId: number | null, position: number, text: string): string {
+  const s = state();
+  const id = `brk_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  useStore.setState({ storyFlowBreaks: [...(s.storyFlowBreaks || []), { id, text, position, groupId }] });
+  bumpRenderTick();
+  void flushSyncNow();
+  return id;
 }
 
 function deleteBreak(orderId: string, breakId: string): void {

@@ -78,7 +78,49 @@ Why it came up: on the iPhone in portrait the whole view bar was hidden, and
 SORT BY lives in it — so inside a shooting order there was no way to switch
 orders or get out.
 
-## Still open
+## Open from 9 September — the day the numbering changed (#489–#495)
+
+dev is **v4.9.192 · #495**. Next number: **v4.9.193 · #496**.
+
+What changed: a shot's private number never leaves the device; shooting orders,
+groups and story flows travel by the shot's permanent name (#489). Then a day of
+things that broke around it. Still standing:
+
+1. **Drag on Desktop in SORT BY** — the dragged card shows on the LEFT, not
+   under the pointer. Suspect: the clone's `left` is taken from the card's own
+   box (`setupDragAndDrop`, sortOrder.ts). Measure in a browser at desktop
+   width before touching it. Roman: "fix it when you can concentrate on it only".
+2. **Confirm on Roman's devices** (each was fixed and simulator-proven, none
+   yet confirmed by hand): the group stays selected when SORT BY switches order
+   or story flow (#493); every story flow — ALL FRAMES and each group — owns
+   its own breaks, and every shooting order owns its own (#494); the boxes
+   push once, on SORT NOW or on leaving the order, not on every tap (#495);
+   every setup is listed in the boxes (#490); a needs item nobody has ticked is
+   listed grey and NOT tappable, and becomes tappable on the next EDIT ORDER
+   after a shot has it (#491, rule confirmed #495).
+3. **A shot ticked on the OTHER device while this one has the order open**
+   must show as green when the order is next opened from the menu — the rule is
+   agreed, the two-device case is not in the simulator yet.
+4. **Two simulator tests never seen green:** "a whole project made offline" and
+   "offline with a project open, then a new project made offline too"
+   (28-numbering-across-projects). Test-door faults so far, not app faults.
+5. ~~Test helpers waiting for a save line~~ — DONE 10 Sept: `settle()` now
+   means "the local save has had its two seconds and the log is quiet" (#496,
+   run 162 proves it across the suite).
+6. **THE WHOLE DAY test** — Roman, 10 Sept: one heavy script running every
+   function of the app back and forth on three devices, so any change shows
+   at once what else it broke. Outline written: `e2e/29-THE-WHOLE-DAY.outline.md`.
+   A day's work; build it in parts, each part green before the next.
+7. **iPhone, portrait: hide the version number.**
+8. **The forced fetch after a stale push, while a hand is drawing** — agreed
+   first step: put it in the log before writing anything (older item 12).
+9. **FIX 05 — frame numbering.** New frames must be 1, 2, 3, 4 — not 1, 1#1.
+   The X#1 form exists for a reason elsewhere (a shot added after 3 is 3#1 so
+   the script's numbers stay), so find every place that reads or writes it
+   before touching it: actions.ts 'new' (the #-counter), pdf.ts, files.ts,
+   exports, the sort cards' labels. Decide with Roman what "after 3" is called.
+
+## Still open (older)
 
 None of it urgent, none of it a ten-minute job.
 

@@ -27,6 +27,8 @@ import {
   getDirtyFrameIds,
   claimStoreAsLocalWork,
   clearDirtyState,
+  pushBegan,
+  pushSucceeded,
   markSaved,
   isLoadInFlight,
   isPullIncomplete,
@@ -1506,10 +1508,13 @@ export async function saveNow(): Promise<void> {
   //    Set cloudSyncInFlight so the debounced push doesn't
   //    fire a concurrent sync while we're uploading images / POSTing.
   setCloudSyncInFlight(true);
+  const began = pushBegan();
   try {
     await syncCurrentToServer(projectId);
     markSaved(projectId);
-    clearDirtyState();
+    // Only what this save carried; anything changed meanwhile stays unsent
+    // and goes with the next push (#496).
+    if (pushSucceeded(began)) setTimeout(() => void flushSyncNow(), 300);
     updateLastKnownTimestamp(Date.now());
 
     // If this project was carrying work made offline, put a restore point in
@@ -4070,6 +4075,9 @@ const HEARTBEAT_INTERVAL_MS = 5_000;
 const HEARTBEAT_STALE_MS = 10_000; // heartbeat older than this = device stopped
 let _lastUserActivity = 0;
 let _deviceLockOverlay: HTMLElement | null = null;
+/** Whether the lock is on screen — kept as a plain flag, because the first
+ *  time the overlay is made it is born with display:flex (run 173). */
+let _lockShown = false;
 
 /**
  * Signal that the user is actively working — keeps the heartbeat sender alive.
@@ -4305,10 +4313,13 @@ function startHeartbeatSender(): void {
 
   // Send heartbeat every 5 seconds, but ONLY if the user was active in the last 10 seconds
   setInterval(() => {
-    if (!document.hasFocus()) return;
+    if (!getCurrentProject().projectId) return;
+    if (!document.hasFocus()) { quietly('  not asking the server: this window is not in front'); return; }
     if (isDeviceLocked()) return;
     if (Date.now() - _lastUserActivity < HEARTBEAT_STALE_MS) {
       void sendHeartbeat();
+    } else {
+      quietly('  not asking the server: nobody has touched this device for a while');
     }
   }, HEARTBEAT_INTERVAL_MS);
 }
@@ -4368,6 +4379,8 @@ function showDeviceLockOverlay(deviceName: string): void {
     document.body.appendChild(el);
     _deviceLockOverlay = el;
   }
+  if (!_lockShown) trace(`locked: ${deviceName} is working on this project — waiting for it to go quiet`);
+  _lockShown = true;
   _deviceLockOverlay.style.display = 'flex';
   // Prevent body scrolling while overlay is visible
   document.body.style.overflow = 'hidden';
@@ -4439,6 +4452,8 @@ function hideIncompleteLoadOverlay(): void {
 
 function hideDeviceLockOverlay(): void {
   if (_deviceLockOverlay) {
+    if (_lockShown) trace('unlocked: the other device went quiet');
+    _lockShown = false;
     _deviceLockOverlay.style.display = 'none';
     document.body.style.overflow = '';
   }
@@ -5057,6 +5072,15 @@ function mergeFrames(
 }
 
 let _lastHeldBackTrace = 0;
+/** One line for a repeated refusal, not one per attempt (#496, run 171). A
+ *  device that had gone silent for a minute gave no reason in the log. */
+const _quietSaid = new Map<string, number>();
+function quietly(msg: string): void {
+  const at = _quietSaid.get(msg) ?? 0;
+  if (Date.now() - at < 20_000) return;
+  _quietSaid.set(msg, Date.now());
+  trace(msg);
+}
 /** So a heartbeat that finds nothing says so, but only now and then (#365). */
 let _lastQuietBeatTrace = 0;
 /** ...and the same for "not fetching while somebody is drawing" (#371). */
@@ -5073,7 +5097,7 @@ async function tryPullFromCloud(force = false): Promise<void> {
   // turned it into a silent no-op — the device asked the question, heard the
   // answer, and then skipped the one pull that would have applied it. Every
   // early exit is traced here, so a pull can never again vanish unseen.
-  if (pullInFlight) { if (force) trace('  pull skipped: another pull is running'); return; }
+  if (pullInFlight) { quietly('  not fetching: another fetch is still running'); return; }
   // NOT WHILE A HAND IS ON THE PAGE (#371).
   //
   // Fetching is what rebuilds the page, and rebuilding the page in 3x2 throws
@@ -5113,7 +5137,7 @@ async function tryPullFromCloud(force = false): Promise<void> {
     }
     return;
   }
-  if (!force && isPushInFlight()) return;
+  if (!force && isPushInFlight()) { quietly('  not fetching: a push is running'); return; }
   if (!force && Date.now() - lastPullAt < PULL_COOLDOWN_MS) return;
   if (!isLoggedIn()) { if (force) trace('  pull skipped: not signed in'); return; }
   const cp = getCurrentProject();
@@ -5134,7 +5158,7 @@ async function tryPullFromCloud(force = false): Promise<void> {
   // pullIsHeldBack in sessionRules for why holding them back protected nothing
   // and deadlocked a reloaded device.
   if (!force && getDirtyFrameIds().size > 0) {
-    await flushSyncNow();
+    await flushSyncNow(true);      // asked by the fetch — not refused by its flag (#496)
     if (getDirtyFrameIds().size > 0) {
       // Say it once, not once per attempt. A stuck push retries hard enough to
       // write this line hundreds of times a second and bury everything else.

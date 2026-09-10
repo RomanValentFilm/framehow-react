@@ -369,6 +369,7 @@ export function msSinceLastStroke(): number {
 
 export function markFrameDirty(serverFrameId: string): void {
   _dirtyFrameIds.add(serverFrameId);
+  _changeSerial++;
 }
 
 /**
@@ -420,6 +421,7 @@ export function claimStoreAsLocalWork(): void {
  */
 export function markSomethingToSend(): void {
   _dirty = true;
+  _changeSerial++;
   cp = { ...cp, dirty: true };
   emit();
 }
@@ -428,6 +430,37 @@ export function markSomethingToSend(): void {
 export function clearDirtyState(): void {
   _dirty = false;
   _dirtyFrameIds.clear();
+}
+
+/**
+ * WORK DONE WHILE A PUSH IS IN THE AIR IS STILL WORK (#496).
+ *
+ * A push reads the store when it starts and clears "there is something to
+ * send" when it returns. Anything changed in between — a break named a second
+ * after the previous change sent — was marked clean without ever having been
+ * sent, and sat on the device until some unrelated change happened to carry
+ * it. Run 158 caught it: a group's break renamed on the desktop, still called
+ * BREAK NAME on the iPad a minute later.
+ *
+ * So a push remembers how many changes it had seen when it began, and on
+ * return clears only if nothing has happened since. If something has, the
+ * flag stays up and another push follows at once.
+ */
+let _changeSerial = 0;
+
+/** Where the count stood when a push began. */
+export function pushBegan(): { serial: number; frames: string[] } {
+  return { serial: _changeSerial, frames: [..._dirtyFrameIds] };
+}
+
+/** The push got through. Clear what it carried; keep what came after. Returns
+ *  true when there is more to send. */
+export function pushSucceeded(began: { serial: number; frames: string[] }): boolean {
+  for (const id of began.frames) _dirtyFrameIds.delete(id);
+  if (_changeSerial === began.serial) { _dirty = false; _dirtyFrameIds.clear(); return false; }
+  trace('  something changed while the push was in the air — sending again');
+  _dirty = true;
+  return true;
 }
 
 
@@ -464,8 +497,28 @@ function scheduleSyncSafetyNet(): void {
   }, SYNC_SAFETY_NET_MS);
 }
 
-/** Immediately push if dirty (used on blur and before project switch). */
-export async function flushSyncNow(): Promise<void> {
+/** The same refusal, at most once every few seconds — a stuck push asks often. */
+let _lastRefusal = '';
+let _lastRefusalAt = 0;
+function traceOnce(msg: string): void {
+  if (msg === _lastRefusal && Date.now() - _lastRefusalAt < 5000) return;
+  _lastRefusal = msg; _lastRefusalAt = Date.now();
+  trace(`  ${msg}`);
+}
+
+/**
+ * Immediately push if dirty (used on blur and before project switch).
+ *
+ * `askedByTheFetch` (#496, run 166): the fetch will not fetch on top of unsent
+ * work, so it asks for a push first — and the focus path had already raised
+ * "a fetch is running" before asking, so this push was refused by the fetch's
+ * own flag. Then "pull held back: local work is not on the server yet", and
+ * nothing pushed at all: the safety-net timer is cancelled on every focus, and
+ * the blur push is refused by the same flag. Both devices sat like that for a
+ * minute in the simulator. The fetch has not begun applying anything at the
+ * point it asks, so the push it asks for is safe and must not be turned away.
+ */
+export async function flushSyncNow(askedByTheFetch = false): Promise<void> {
   // Cancel any pending debounce
   if (_syncDebounceTimer !== null) {
     clearTimeout(_syncDebounceTimer);
@@ -483,21 +536,28 @@ export async function flushSyncNow(): Promise<void> {
     }
     return;
   }
-  if (cloudSyncInFlight) return;
-  if (_pullInFlight) return;
-  if (_projectSwitchInFlight) return;
+  // SAY WHY A PUSH IS REFUSED (#496, run 165). Two devices sat for a minute
+  // each saying "pull held back: local work is not on the server yet" — and the
+  // push asked for just before that line was turned away here without a word.
+  // Only when there IS something to send, so a quiet device stays quiet.
+  if (cloudSyncInFlight) { if (_dirty) traceOnce('push skipped: a push is already running'); return; }
+  if (_pullInFlight && !askedByTheFetch) { if (_dirty) traceOnce('push skipped: a fetch is running'); return; }
+  if (_projectSwitchInFlight) { if (_dirty) traceOnce('push skipped: switching project'); return; }
   if (!_dirty) return;              // nothing dirty, nothing to send
   const pid = cp.projectId;
   cloudSyncInFlight = true;
+  const began = pushBegan();
   trace(`push start · online=${navigator.onLine}`);
   try {
     await _syncFn(pid);
     trace('push OK');
 
     // The server answered. Only now is the work known to be in the cloud, so
-    // only now is it safe to drop the copy held on this device.
-    clearDirtyState();
-    cp = { ...cp, lastSavedAt: Date.now(), dirty: false };
+    // only now is it safe to drop the copy held on this device — and only the
+    // work this push carried (#496).
+    const more = pushSucceeded(began);
+    if (more) setTimeout(() => void flushSyncNow(), 300);
+    cp = { ...cp, lastSavedAt: Date.now(), dirty: more };
     _pendingSyncIds.delete(pid);
     // Clear both keys: a project saved to the cloud for the first time was
     // filed under its device-only id until it had a cloud id. Deleting a key
@@ -685,14 +745,16 @@ async function retryPendingSyncs(why: 'timer' | 'now' = 'timer'): Promise<void> 
   if (currentPid && _pendingSyncIds.has(currentPid) && _dirty) {
     // Success below is the server's answer, not the browser's opinion.
     cloudSyncInFlight = true;
+    const began = pushBegan();
     trace('retry push start');
     try {
       await _syncFn(currentPid);
       trace('retry push OK');
       forgetRetryFailures();
       noteTheProjectIsAlive(currentPid);
-      clearDirtyState();
-      cp = { ...cp, lastSavedAt: Date.now(), dirty: false };
+      const more = pushSucceeded(began);          // #496
+      if (more) setTimeout(() => void flushSyncNow(), 300);
+      cp = { ...cp, lastSavedAt: Date.now(), dirty: more };
       _pendingSyncIds.delete(currentPid);
       void markPendingUploaded(currentPid);
       _pendingOnDevice = _pendingOnDevice.filter((p) => p.projectId !== currentPid);
@@ -868,11 +930,13 @@ async function runCloudSync(): Promise<void> {
   if (!_dirty) return;
 
   cloudSyncInFlight = true;
+  const began = pushBegan();
   try {
     await _syncFn(cp.projectId);
 
-    clearDirtyState();
-    cp = { ...cp, lastSavedAt: Date.now(), dirty: false };
+    const more = pushSucceeded(began);            // #496
+    if (more) setTimeout(() => void flushSyncNow(), 300);
+    cp = { ...cp, lastSavedAt: Date.now(), dirty: more };
     hideOfflineBanner();
     emit();
   } catch (e: any) {
@@ -963,6 +1027,7 @@ export function startAutosave(): void {
     // Only mark dirty when a USER (not system) action changes the store
     if (!_isSystemAction) {
       _dirty = true;
+      _changeSerial++;
       // Track which frames changed — wrapped in try/catch so the safety-net
       // timer is ALWAYS reached even if the tracking logic has an edge-case error.
       try {

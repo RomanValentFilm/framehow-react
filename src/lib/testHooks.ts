@@ -21,7 +21,7 @@ import { newFrameId } from './ids';
 import { ensureStripVersions, getStripVersions, setFrameStripLabel } from './helpers';
 import { openFullscreen, closeFullscreen } from './fullscreen';
 import { setViewMode } from './view';
-import { openSortEditView, closeSortMode, openOrderView, addNewOrder, toggleSortDropdown } from './sortOrder';
+import { openSortEditView, closeSortMode, openOrderView, addNewOrder, toggleSortDropdown, addStoryFlowBreak, renameBreak } from './sortOrder';
 import { toggleScribbleMode, attachScribbleOverlays } from './scribble';
 import { trace } from './syncTrace';
 import { startFromScratch } from './files';
@@ -120,8 +120,12 @@ export interface TestDoor {
   /** What the version's tag says now: 'none', or the name of the setup whose
    *  colour it is wearing. This is what the person actually sees. */
   versionTag(frameIndex: number, strip?: StripType, versionIndex?: number): string;
-  /** Put a break in the STORY FLOW at a place in the frame order (#337). */
-  addStoryBreak(position: number, text: string): string;
+  /** Put a break in the STORY FLOW at a place in the frame order (#337). With a
+   *  group id it is that group's story flow's break (#494/#496). */
+  addStoryBreak(position: number, text: string, groupId?: number | null): string;
+  /** Name a break, as typing in its box does. orderId is the story flow
+   *  ('__storyflow__' or '__storyflow__:<group>') or a shooting order's id. */
+  renameBreak(orderId: string, breakId: string, text: string): void;
 
   // --- shooting orders -----------------------------------------------------
   // An order is ONE settings item, breaks and all (see projectSettings, where
@@ -274,7 +278,7 @@ export interface TestDoor {
     frames: Array<{ id: string; serverFrameId?: string; label: string; text: string }>;
     categories: string[];
     setups: string[];
-    storyBreaks: Array<{ id: string; text: string; position: number }>;
+    storyBreaks: Array<{ id: string; text: string; position: number; groupId: number | null }>;
     unsent: string[];
     /** Every group, its shots written as LABELS — same reason as the orders. */
     groups: Array<{ id: number; name: string; frames: string[]; hidden: string[] }>;
@@ -801,14 +805,16 @@ export function installTestDoor(): void {
       return setup ? setup.name : 'none';
     },
 
-    addStoryBreak(position, text) {
-      const id = `brk_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-      const s = useStore.getState();
-      useStore.setState({
-        storyFlowBreaks: [...(s.storyFlowBreaks ?? []), { id, text, position }],
-      } as never);
+    addStoryBreak(position, text, groupId = null) {
+      // The app's own path, not a copy of it (#496).
+      const id = addStoryFlowBreak(groupId, position, text);
       stampChangedSettings(getCurrentProject().projectId);
       return id;
+    },
+
+    renameBreak(orderId, breakId, text) {
+      renameBreak(orderId, breakId, text);
+      stampChangedSettings(getCurrentProject().projectId);
     },
 
     async drawOnVersion(frameIndex, strip = 'ver', versionIndex = 0) {
@@ -1121,7 +1127,7 @@ export function installTestDoor(): void {
         })),
         categories: (s.needDefinitions?.tabs ?? []).map((t) => t.name),
         setups: s.setups.map((su) => su.name),
-        storyBreaks: (s.storyFlowBreaks ?? []).map((b) => ({ id: b.id, text: b.text, position: b.position })),
+        storyBreaks: (s.storyFlowBreaks ?? []).map((b) => ({ id: b.id, text: b.text, position: b.position, groupId: b.groupId ?? null })),
         unsent: [...getDirtyFrameIds()],
         // THE GROUPS, BY LABEL, for exactly the reason the orders are (#489).
         // frameIds holds this device's private numbers, and a group is the

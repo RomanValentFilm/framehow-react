@@ -770,7 +770,7 @@ test('numbering: the story flow in ALL FRAMES, rearranged from both sides',
       const wanted = await desktop.storyFlowAsText();
       const deadline = Date.now() + 60_000;
       for (;;) {
-        await desktop.nudge(); await ipad.nudge();
+        await Device.nudgeOneAtATime(desktop, ipad);
         const there = await ipad.storyFlowAsText();
         if (there === wanted) { say(`story flow agrees: ${wanted}`); return wanted; }
         if (Date.now() > deadline) {
@@ -807,7 +807,7 @@ test('numbering: the story flow in ALL FRAMES, rearranged from both sides',
       const wanted = await ipad.storyFlowAsText();
       const deadline = Date.now() + 60_000;
       for (;;) {
-        await desktop.nudge(); await ipad.nudge();
+        await Device.nudgeOneAtATime(desktop, ipad);
         const there = await desktop.storyFlowAsText();
         if (there === wanted) { say(`story flow agrees back: ${wanted}`); break; }
         if (Date.now() > deadline) {
@@ -825,6 +825,113 @@ test('numbering: the story flow in ALL FRAMES, rearranged from both sides',
     await Device.waitUntilTheyAgree(desktop, ipad);
     await bothShow('A SHOT ADDED TO THE STORY FLOW DID NOT LAND IN THE SAME PLACE '
       + 'on the two devices.');
+
+    await desktop.close();
+    await ipad.close();
+  });
+
+// ---------------------------------------------------------------------------
+// EACH STORY FLOW OWNS ITS BREAKS, AND THE NAMES TRAVEL (#494/#496)
+//
+// Roman, 10 September: "I'm not sure the breaks sync across server/devices
+// properly anymore... when I create a break in ALL and a break in an extra
+// group, are these breaks only for this particular group?"
+//
+// So: a break in ALL FRAMES, a break in a group's story flow, a break in the
+// group's shooting order. Each named on the desktop. The iPad must show each
+// one in ITS flow only, with the name — and renaming on the iPad must come back.
+// ---------------------------------------------------------------------------
+
+test('numbering: breaks belong to one story flow each, and their names travel',
+  async ({ browser }) => {
+    const { token } = await freshAccount();
+    const desktop = await Device.open(browser, 'desktop', token);
+    const ipad = await Device.open(browser, 'ipad', token, true);
+
+    const job = await desktop.newProject('BREAKS', 8);
+    await desktop.settle();
+    await ipad.openProject(job!);
+    await ipad.settle();
+    await Device.waitUntilTheyAgree(desktop, ipad);
+
+    // TWO GROUPS, and a shooting order in each, and one for ALL FRAMES —
+    // Roman, 10 September: "each group has its own breaks, also each shooting
+    // order". Five flows; every one gets a break; none may show another's.
+    const barn = await desktop.makeGroup('BARN', [1, 3, 5, 7]);
+    const yard = await desktop.makeGroup('YARD', [0, 2, 4]);
+    await desktop.push();
+    await desktop.settle();
+    await Device.waitUntilGroupsAgree(desktop, ipad, barn);
+    await Device.waitUntilGroupsAgree(desktop, ipad, yard);
+
+    // One break in each flow, then every one of them named.
+    const inAll = await desktop.addStoryBreak(2, 'BREAK NAME');
+    const inBarn = await desktop.addStoryBreak(1, 'BREAK NAME', barn);
+    const inYard = await desktop.addStoryBreak(2, 'BREAK NAME', yard);
+    const allOrderId = await desktop.newSortOrder('ALL ORDER');
+    await desktop.enterGroup(barn);
+    const orderId = await desktop.newSortOrder('BARN ORDER');
+    await desktop.enterGroup(yard);
+    const yardOrderId = await desktop.newSortOrder('YARD ORDER');
+    await desktop.enterGroup(null);
+    await desktop.push();
+    await desktop.settle();
+    const inOrder = await desktop.addBreak(await desktop.orderIndexOf('BARN ORDER'), 2, 'BREAK NAME');
+    const inYardOrder = await desktop.addBreak(await desktop.orderIndexOf('YARD ORDER'), 1, 'BREAK NAME');
+    const inAllOrder = await desktop.addBreak(await desktop.orderIndexOf('ALL ORDER'), 4, 'BREAK NAME');
+    await desktop.renameBreak('__storyflow__', inAll, 'LUNCH ALL');
+    await desktop.renameBreak(`__storyflow__:${barn}`, inBarn, 'LUNCH BARN');
+    await desktop.renameBreak(`__storyflow__:${yard}`, inYard, 'LUNCH YARD');
+    await desktop.renameBreak(orderId, inOrder, 'LUNCH ORDER');
+    await desktop.renameBreak(yardOrderId, inYardOrder, 'LUNCH YARD ORDER');
+    await desktop.renameBreak(allOrderId, inAllOrder, 'LUNCH ALL ORDER');
+    await desktop.push();
+    await desktop.settle();
+
+    /** Wait until the iPad shows the flow the desktop shows. */
+    const agree = async (groupId: number | null, why: string) => {
+      const wanted = await desktop.storyFlowAsText(groupId);
+      const deadline = Date.now() + 60_000;
+      for (;;) {
+        await Device.nudgeOneAtATime(desktop, ipad);
+        const there = await ipad.storyFlowAsText(groupId);
+        if (there === wanted) { say(`${groupId === null ? 'ALL' : 'BARN'} agrees: ${wanted}`); return wanted; }
+        if (Date.now() > deadline) throw new Error(`${why}\n  desktop: ${wanted}\n  ipad:    ${there}`);
+        await ipad.page.waitForTimeout(500);
+      }
+    };
+
+    /** Exactly one break, and it is this flow's own. */
+    const onlyItsOwn = (flow: string, text: string, own: string) => {
+      expect(text, `${flow} must have its own break`).toContain(`[${own}]`);
+      expect((text.match(/\[/g) || []).length, `${flow} must hold ONE break and no other flow's`).toBe(1);
+    };
+
+    onlyItsOwn('ALL FRAMES', await agree(null, 'THE BREAK IN ALL FRAMES DID NOT REACH THE IPAD WITH ITS NAME.'), 'LUNCH ALL');
+    onlyItsOwn('the BARN story flow', await agree(barn, 'THE BREAK IN THE BARN\'S STORY FLOW DID NOT REACH THE IPAD.'), 'LUNCH BARN');
+    onlyItsOwn('the YARD story flow', await agree(yard, 'THE BREAK IN THE YARD\'S STORY FLOW DID NOT REACH THE IPAD.'), 'LUNCH YARD');
+    for (const [name, own] of [['ALL ORDER', 'LUNCH ALL ORDER'], ['BARN ORDER', 'LUNCH ORDER'], ['YARD ORDER', 'LUNCH YARD ORDER']] as const) {
+      await Device.waitUntilNamedOrdersAgree(desktop, ipad, name);
+      onlyItsOwn(name, await ipad.orderTextByName(name), own);
+    }
+
+    // And back: the iPad renames the group's break.
+    await ipad.renameBreak(`__storyflow__:${barn}`, inBarn, 'TEA BARN');
+    await ipad.push();
+    await ipad.settle();
+    {
+      const deadline = Date.now() + 60_000;
+      for (;;) {
+        await Device.nudgeOneAtATime(desktop, ipad);
+        const there = await desktop.storyFlowAsText(barn);
+        if (there.includes('[TEA BARN]')) { say(`renamed back: ${there}`); break; }
+        if (Date.now() > deadline) {
+          expect(there, 'A BREAK RENAMED ON THE IPAD DID NOT COME BACK TO THE DESKTOP.').toContain('[TEA BARN]');
+        }
+        await desktop.page.waitForTimeout(500);
+      }
+    }
+    expect(await desktop.storyFlowAsText(null), 'ALL untouched by the barn rename').toContain('[LUNCH ALL]');
 
     await desktop.close();
     await ipad.close();
@@ -924,8 +1031,12 @@ test('numbering: offline with a project open, then a new project made offline to
 
     // ── AND JOB A MUST STILL BE EVERYTHING IT WAS ────────────────────────
     say('and back to JOB A, which was left unsent when the new one was made');
+    // Send what each holds BEFORE switching (run 175): a device with unsent
+    // work is asked "discard it?" on switching, and a test cannot answer.
+    await desktop.push(); await desktop.settle();
     await desktop.openProject(jobA!);
     await desktop.settle();
+    await ipad.push(); await ipad.settle();
     await ipad.openProject(jobA!);
     await ipad.settle();
     await Device.waitUntilTheyAgree(desktop, ipad);
