@@ -860,6 +860,128 @@ export function Modals() {
           </div>
         </div>
       </div>
+
+      {/* FITTING export modal — PDF and Keynote share it (#502). Roman's text,
+          10 September. Only for fitting projects; the 9:16 modal above stays. */}
+      <div className="export-modal hidden" id="fittingExportModal">
+        <div className="export-modal-box">
+          <div className="exp-title" id="fittingExportTitle">Export as PDF</div>
+          <div className="exp-field">
+            <label>Project name</label>
+            <input type="text" id="fittingExportName" placeholder="Fitting" autoComplete="one-time-code" />
+          </div>
+          <div className="exp-field">
+            <label>LAYOUT</label>
+            <label className="exp-opt">
+              <input type="radio" name="fittingLayout" value="talent4" defaultChecked />
+              <span className="exp-opt-wrap">
+                <svg className="exp-opt-icon" width="76" height="40" viewBox="0 0 76 40">
+                  <rect x="0.5" y="0.5" width="75" height="39" rx="2" fill="#222" stroke="#555" strokeWidth="0.8" />
+                  <rect x="9" y="6" width="10" height="18" rx="1" fill="none" stroke="#ddd" strokeWidth="1.3" />
+                  <rect x="21" y="6" width="10" height="18" rx="1" fill="#aaa" stroke="#666" strokeWidth="0.9" />
+                  <rect x="33" y="6" width="10" height="18" rx="1" fill="#aaa" stroke="#666" strokeWidth="0.9" />
+                  <rect x="45" y="6" width="10" height="18" rx="1" fill="#aaa" stroke="#666" strokeWidth="0.9" />
+                  <rect x="57" y="6" width="10" height="18" rx="1" fill="#aaa" stroke="#666" strokeWidth="0.9" />
+                  <line x1="21" y1="29" x2="29" y2="29" stroke="#666" strokeWidth="0.6" strokeLinecap="round" />
+                  <line x1="33" y1="29" x2="41" y2="29" stroke="#666" strokeWidth="0.6" strokeLinecap="round" />
+                  <line x1="45" y1="29" x2="53" y2="29" stroke="#666" strokeWidth="0.6" strokeLinecap="round" />
+                  <line x1="57" y1="29" x2="65" y2="29" stroke="#666" strokeWidth="0.6" strokeLinecap="round" />
+                </svg>
+                <span className="exp-opt-text">
+                  <strong>TALENT + 4 LOOKS</strong>
+                  <span className="exp-sub">5 photos per row, the talent first</span>
+                </span>
+              </span>
+            </label>
+            <label className="exp-opt">
+              <input type="radio" name="fittingLayout" value="looks5" />
+              <span className="exp-opt-wrap">
+                <svg className="exp-opt-icon" width="76" height="40" viewBox="0 0 76 40">
+                  <rect x="0.5" y="0.5" width="75" height="39" rx="2" fill="#222" stroke="#555" strokeWidth="0.8" />
+                  <rect x="9" y="6" width="10" height="18" rx="1" fill="#aaa" stroke="#666" strokeWidth="0.9" />
+                  <rect x="21" y="6" width="10" height="18" rx="1" fill="#aaa" stroke="#666" strokeWidth="0.9" />
+                  <rect x="33" y="6" width="10" height="18" rx="1" fill="#aaa" stroke="#666" strokeWidth="0.9" />
+                  <rect x="45" y="6" width="10" height="18" rx="1" fill="#aaa" stroke="#666" strokeWidth="0.9" />
+                  <rect x="57" y="6" width="10" height="18" rx="1" fill="#aaa" stroke="#666" strokeWidth="0.9" />
+                  <line x1="9" y1="29" x2="17" y2="29" stroke="#666" strokeWidth="0.6" strokeLinecap="round" />
+                  <line x1="21" y1="29" x2="29" y2="29" stroke="#666" strokeWidth="0.6" strokeLinecap="round" />
+                  <line x1="33" y1="29" x2="41" y2="29" stroke="#666" strokeWidth="0.6" strokeLinecap="round" />
+                  <line x1="45" y1="29" x2="53" y2="29" stroke="#666" strokeWidth="0.6" strokeLinecap="round" />
+                  <line x1="57" y1="29" x2="65" y2="29" stroke="#666" strokeWidth="0.6" strokeLinecap="round" />
+                </svg>
+                <span className="exp-opt-text">
+                  <strong>5 LOOKS</strong>
+                  <span className="exp-sub">5 photos per row, no talent photo</span>
+                </span>
+              </span>
+            </label>
+          </div>
+          <div className="exp-field">
+            <label className="exp-inline">
+              <input type="checkbox" id="fittingIncludeNotes" /> Notes under each photo
+            </label>
+          </div>
+          <div className="exp-field">
+            <label>STRIPS TO INCLUDE</label>
+            <div className="exp-strip-picker">
+              <label className="exp-strip-opt"><input type="checkbox" id="fittingStripLooks" defaultChecked /> <span>LOOKS</span></label>
+              <label className="exp-strip-opt"><input type="checkbox" id="fittingStripRefs" /> <span>REFS</span></label>
+            </div>
+          </div>
+          <div className="exp-field">
+            <label>PHOTOS TO INCLUDE</label>
+            <div className="exp-strip-picker">
+              <label className="exp-strip-opt"><input type="checkbox" id="fittingStars3" defaultChecked /> <span className="exp-stars">★★★</span></label>
+              <label className="exp-strip-opt"><input type="checkbox" id="fittingStars2" defaultChecked /> <span className="exp-stars">★★</span></label>
+              <label className="exp-strip-opt"><input type="checkbox" id="fittingStars1" defaultChecked /> <span className="exp-stars">★</span></label>
+              <label className="exp-strip-opt"><input type="checkbox" id="fittingUnrated" /> <span>unrated</span></label>
+              <label className="exp-strip-opt"><input type="checkbox" id="fittingHidden" /> <span>hidden</span></label>
+            </div>
+          </div>
+          <div className="exp-field" style={{ marginTop: 18 }}>
+            <label className="exp-inline">
+              <input type="checkbox" id="fittingPaperLetter" /> US Letter paper (default A4)
+            </label>
+          </div>
+          <div className="text-modal-btns">
+            <button className="btn" id="fittingExportCancel">Cancel</button>
+            <button className="btn btn-accent" id="fittingExportGo">Export</button>
+          </div>
+        </div>
+      </div>
+
+      {/* FITTING image export modal (#502) */}
+      <div className="export-modal hidden" id="fittingImageExportModal">
+        <div className="export-modal-box">
+          <div className="exp-title">Export Images</div>
+          <div className="exp-field">
+            <label>Project name</label>
+            <input type="text" id="fittingImageExportName" placeholder="Fitting" autoComplete="one-time-code" />
+          </div>
+          <div className="exp-field">
+            <label>STRIPS TO INCLUDE</label>
+            <div className="exp-strip-picker">
+              <label className="exp-strip-opt"><input type="checkbox" id="fittingImgTalent" defaultChecked /> <span>TALENT</span></label>
+              <label className="exp-strip-opt"><input type="checkbox" id="fittingImgLooks" defaultChecked /> <span>LOOKS</span></label>
+              <label className="exp-strip-opt"><input type="checkbox" id="fittingImgRefs" /> <span>REFS</span></label>
+            </div>
+          </div>
+          <div className="exp-field">
+            <label>PHOTOS TO INCLUDE</label>
+            <div className="exp-strip-picker">
+              <label className="exp-strip-opt"><input type="checkbox" id="fittingImgStars3" defaultChecked /> <span className="exp-stars">★★★</span></label>
+              <label className="exp-strip-opt"><input type="checkbox" id="fittingImgStars2" defaultChecked /> <span className="exp-stars">★★</span></label>
+              <label className="exp-strip-opt"><input type="checkbox" id="fittingImgStars1" defaultChecked /> <span className="exp-stars">★</span></label>
+              <label className="exp-strip-opt"><input type="checkbox" id="fittingImgUnrated" /> <span>unrated</span></label>
+              <label className="exp-strip-opt"><input type="checkbox" id="fittingImgHidden" /> <span>hidden</span></label>
+            </div>
+          </div>
+          <div className="text-modal-btns">
+            <button className="btn" id="fittingImageExportCancel">Cancel</button>
+            <button className="btn btn-accent" id="fittingImageExportGo">Export</button>
+          </div>
+        </div>
+      </div>
     </>
   );
 }

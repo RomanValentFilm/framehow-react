@@ -3021,3 +3021,311 @@ export async function runPortraitImageExport(): Promise<void> {
   offerSave(blob, `${projectName}_images.zip`);
   showToast('Images ready');
 }
+
+// ---------------------------------------------------------------------------
+// FITTING export (#502) — Roman's modal, 10 September.
+//
+// Only for a FITTING project; every other project type keeps its own modals.
+// One row of five photos per page. LAYOUT 1: the talent's photo first, then
+// four looks; a talent with more looks continues on the next page with the
+// first slot EMPTY. REFS start a new page, with the talent first again.
+// LAYOUT 2: five looks per page, no talent photo; refs start a new page.
+// Photos are chosen by their stars — 3, 2, 1, unrated, hidden — each a tick.
+// Looks come in star order (the same order the screen shows, #500).
+// ---------------------------------------------------------------------------
+
+type FittingPhoto = { v: import('../store/state').Version; label: string; note: string };
+
+/** Which photos the ticks let through. `idPrefix` is 'fitting' or 'fittingImg'. */
+function fittingPhotoFilter(idPrefix: string): (v: import('../store/state').Version) => boolean {
+  const on = (id: string) => (document.getElementById(id) as HTMLInputElement | null)?.checked ?? false;
+  const s3 = on(`${idPrefix}Stars3`), s2 = on(`${idPrefix}Stars2`), s1 = on(`${idPrefix}Stars1`);
+  const unrated = on(`${idPrefix}Unrated`), hidden = on(`${idPrefix}Hidden`);
+  return (v) => {
+    if (!versionHasContent(v)) return false;
+    if (v.hidden && !hidden) return false;
+    const stars = versionStarsOf(v);
+    if (stars >= 3) return s3;
+    if (stars === 2) return s2;
+    if (stars === 1) return s1;
+    return unrated;
+  };
+}
+
+function versionStarsOf(v: import('../store/state').Version): number {
+  const n = (v as { stars?: number }).stars;
+  if (typeof n === 'number') return n;
+  return (v as { starred?: boolean }).starred ? 1 : 0;
+}
+
+function starText(n: number): string { return n > 0 ? ' ' + '★'.repeat(Math.min(3, n)) : ''; }
+
+/** The photos of one strip for one talent, in the order the screen shows them. */
+function fittingPhotosFor(f: Frame, strip: StripType, keep: (v: import('../store/state').Version) => boolean, frameLabel: string): FittingPhoto[] {
+  const s = state();
+  const def = (s.stripDefs || DEFAULT_STRIP_DEFS).find((d) => d.id === strip);
+  const sName = def ? def.defaultFrameLabel : strip;
+  const out: FittingPhoto[] = [];
+  getStripVersions(f.id, strip).forEach((v, vi) => {
+    if (!keep(v)) return;
+    out.push({
+      v,
+      label: fullVerLabel(frameLabel, `${sName} ${v.label || `v${vi + 1}`}`) + starText(versionStarsOf(v)),
+      note: (v.note || '').trim(),
+    });
+  });
+  return out;
+}
+
+/** One page's worth: up to five slots. `talent` true = the talent's photo in slot 0. */
+type FittingRow = { f: Frame; label: string; talent: boolean; photos: FittingPhoto[] };
+
+function fittingRows(frames: Frame[], layout: 'talent4' | 'looks5', strips: StripType[],
+                     keep: (v: import('../store/state').Version) => boolean): FittingRow[] {
+  const rows: FittingRow[] = [];
+  const per = layout === 'talent4' ? 4 : 5;
+  frames.forEach((f, fi) => {
+    const label = f.label || `${fi + 1}`;
+    let any = false;
+    for (const strip of strips) {
+      const photos = fittingPhotosFor(f, strip, keep, label);
+      if (photos.length === 0) continue;
+      any = true;
+      for (let i = 0; i < photos.length; i += per) {
+        // The talent's photo sits in the first slot of a strip's FIRST row only;
+        // the rows that follow leave it empty (Roman, 10 Sept).
+        rows.push({ f, label, talent: layout === 'talent4' && i === 0, photos: photos.slice(i, i + per) });
+      }
+    }
+    // A talent with no photo that passes the ticks still gets a page in layout 1,
+    // so the talent is not silently missing from the document.
+    if (!any && layout === 'talent4') rows.push({ f, label, talent: true, photos: [] });
+  });
+  return rows;
+}
+
+function fittingHeaderMeta(): ExportMeta {
+  const m = state().exportMeta || createDefaultExportMeta();
+  return { shootingOrder: '', userName: m.userName || '', version: m.version || '', date: todayStr() };
+}
+
+let _fittingExportMode: 'pdf' | 'pptx' = 'pdf';
+
+export function openFittingExportModal(mode: 'pdf' | 'pptx'): void {
+  _fittingExportMode = mode;
+  const s = state();
+  if (!s.frames.length) { showToast('No talents to export'); return; }
+  document.getElementById('fittingExportTitle')!.textContent =
+    mode === 'pdf' ? 'Export as PDF' : 'Export as Keynote / PowerPoint';
+  const nameInput = document.getElementById('fittingExportName') as HTMLInputElement;
+  if (!nameInput.value) nameInput.value = getCurrentProject().name || 'Fitting';
+  document.getElementById('fittingExportModal')!.classList.remove('hidden');
+}
+
+export async function runFittingExport(): Promise<void> {
+  if (_fittingExportMode === 'pptx') await runFittingPptxExport();
+  else await runFittingPdfExport();
+}
+
+function fittingChoices() {
+  const on = (id: string) => (document.getElementById(id) as HTMLInputElement | null)?.checked ?? false;
+  const layout = ((document.querySelector('input[name="fittingLayout"]:checked') as HTMLInputElement)?.value || 'talent4') as 'talent4' | 'looks5';
+  const strips: StripType[] = [];
+  if (on('fittingStripLooks')) strips.push('ver');
+  if (on('fittingStripRefs')) strips.push('refs');
+  return {
+    layout,
+    strips: strips.length ? strips : (['ver'] as StripType[]),
+    notes: on('fittingIncludeNotes'),
+    letter: on('fittingPaperLetter'),
+    keep: fittingPhotoFilter('fitting'),
+    projectName: ((document.getElementById('fittingExportName') as HTMLInputElement).value || 'Fitting').trim(),
+    frames: state().frames.filter((f) => !f.hidden),
+  };
+}
+
+async function runFittingPdfExport(): Promise<void> {
+  fhTrack('export_fitting_pdf');
+  const c = fittingChoices();
+  const meta = fittingHeaderMeta();
+  document.getElementById('fittingExportModal')!.classList.add('hidden');
+  showToast('Generating PDF…');
+
+  const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: c.letter ? 'letter' : 'a4' });
+  registerPdfFont(pdf);
+  const pageW = pdf.internal.pageSize.getWidth();
+  const pageH = pdf.internal.pageSize.getHeight();
+  const MARGIN = 8, HEADER_H = 10.5, FOOTER_H = 2, LABEL_H = 4.5;
+  const COLS = 5, gutterX = 3;
+  const contentW = pageW - 2 * MARGIN;
+  const aspect = 9 / 16;
+  const noteH = c.notes ? 14 : 0;
+  let frameW = (contentW - gutterX * (COLS - 1)) / COLS;
+  let frameH = frameW / aspect;
+  const maxFrameH = pageH - 2 * MARGIN - HEADER_H - FOOTER_H - LABEL_H - noteH - 4;
+  if (frameH > maxFrameH) { frameH = maxFrameH; frameW = frameH * aspect; }
+  const startX = MARGIN + (contentW - (COLS * frameW + (COLS - 1) * gutterX)) / 2;
+  const framesY = MARGIN + HEADER_H + LABEL_H;
+
+  // The same header as the main export: name centred and bold, two small rows.
+  function drawHeader() {
+    pdf.setTextColor(20); pdf.setFont(PDF_FONT, 'bold'); pdf.setFontSize(10);
+    pdf.text(c.projectName, pageW / 2, MARGIN + 2.6, { align: 'center' });
+    pdf.setFont(PDF_FONT, 'normal'); pdf.setFontSize(6); pdf.setTextColor(120);
+    if (meta.userName) pdf.text(meta.userName, pageW - MARGIN, MARGIN + 6.4, { align: 'right' });
+    if (meta.version) pdf.text(meta.version, MARGIN, MARGIN + 9.2);
+    pdf.text(meta.date, pageW - MARGIN, MARGIN + 9.2, { align: 'right' });
+    pdf.setTextColor(30);
+  }
+
+  const rows = fittingRows(c.frames, c.layout, c.strips, c.keep);
+  if (rows.length === 0) { showToast('No photos match the ticks'); return; }
+
+  for (let ri = 0; ri < rows.length; ri++) {
+    const row = rows[ri];
+    if (ri > 0) pdf.addPage();
+    drawHeader();
+    let col = 0;
+    if (c.layout === 'talent4') {
+      if (row.talent) {
+        pdf.setTextColor(0); pdf.setFont(PDF_FONT, 'bold'); pdf.setFontSize(7.5);
+        pdf.text(row.label, startX, framesY - 1.2);
+        const img = withBakedBorder(await rasterizeMain(row.f)).toDataURL('image/jpeg', 0.92);
+        pdf.addImage(img, 'JPEG', startX, framesY, frameW, frameH, undefined, 'FAST');
+      }
+      col = 1;
+    }
+    for (const p of row.photos) {
+      const x = startX + col * (frameW + gutterX);
+      pdf.setTextColor(100); pdf.setFont(PDF_FONT, 'normal'); pdf.setFontSize(7);
+      pdf.text(p.label, x, framesY - 1.2);
+      const img = withBakedBorder(await rasterizeVersion(p.v, row.f.cropW, row.f.cropH)).toDataURL('image/jpeg', 0.92);
+      pdf.addImage(img, 'JPEG', x, framesY, frameW, frameH, undefined, 'FAST');
+      if (c.notes && p.note) {
+        pdf.setTextColor(30); pdf.setFont(PDF_FONT, 'normal'); pdf.setFontSize(7.5);
+        const lines = hardWrapLines(pdf, p.note, frameW).slice(0, 4);
+        let ty = framesY + frameH + 4;
+        for (const line of lines) { pdf.text(line, x, ty); ty += 3.4; }
+      }
+      col++;
+    }
+  }
+
+  const total = pdf.getNumberOfPages();
+  for (let p = 1; p <= total; p++) {
+    pdf.setPage(p);
+    pdf.setFont(PDF_FONT, 'normal'); pdf.setFontSize(7); pdf.setTextColor(140);
+    pdf.text(`${p} / ${total}`, pageW - MARGIN, pageH - MARGIN / 2, { align: 'right' });
+  }
+  const now = new Date();
+  const fname = `${safeName(c.projectName)}_${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}.pdf`;
+  offerSave(pdf.output('blob') as Blob, fname);
+  showToast('PDF ready');
+}
+
+async function runFittingPptxExport(): Promise<void> {
+  fhTrack('export_fitting_pptx');
+  const c = fittingChoices();
+  const meta = fittingHeaderMeta();
+  document.getElementById('fittingExportModal')!.classList.add('hidden');
+  showToast('Generating presentation…');
+
+  const pptx: any = new (PptxGenJS as any)();
+  pptx.layout = 'LAYOUT_WIDE';
+  pptx.title = c.projectName;
+  const SW = 13.333, SH = 7.5, MARGIN = 0.4, COLS = 5, gapX = 0.12;
+  const aspect = 9 / 16;
+  const noteH = c.notes ? 0.6 : 0;
+  let fW = (SW - 2 * MARGIN - gapX * (COLS - 1)) / COLS;
+  let fH = fW / aspect;
+  const maxH = SH - 1.2 - noteH;
+  if (fH > maxH) { fH = maxH; fW = fH * aspect; }
+  const startX = (SW - (COLS * fW + (COLS - 1) * gapX)) / 2;
+  const framesY = 0.85;
+  const b64 = (cvs: HTMLCanvasElement) => 'image/jpeg;base64,' + cvs.toDataURL('image/jpeg', 0.92).split(',')[1];
+
+  const rows = fittingRows(c.frames, c.layout, c.strips, c.keep);
+  if (rows.length === 0) { showToast('No photos match the ticks'); return; }
+
+  for (const row of rows) {
+    const slide = pptx.addSlide();
+    slide.background = { color: 'FFFFFF' };
+    slide.addText(c.projectName, { x: MARGIN, y: 0.1, w: SW - 2 * MARGIN, h: 0.28, fontSize: 11, bold: true, align: 'center', color: '141414', fontFace: 'Arial', margin: 0 });
+    const right = [meta.userName, meta.date].filter(Boolean).join('   ');
+    slide.addText(right, { x: SW / 2, y: 0.38, w: SW / 2 - MARGIN, h: 0.2, fontSize: 7, align: 'right', color: '787878', fontFace: 'Arial', margin: 0 });
+    if (meta.version) slide.addText(meta.version, { x: MARGIN, y: 0.38, w: SW / 2, h: 0.2, fontSize: 7, color: '787878', fontFace: 'Arial', margin: 0 });
+    let col = 0;
+    if (c.layout === 'talent4') {
+      if (row.talent) {
+        slide.addText(row.label, { x: startX, y: framesY - 0.22, w: fW, h: 0.2, fontSize: 8, bold: true, color: '000000', fontFace: 'Arial', valign: 'bottom', margin: 0 });
+        slide.addImage({ data: b64(withBakedBorder(await rasterizeMain(row.f))), x: startX, y: framesY, w: fW, h: fH });
+      }
+      col = 1;
+    }
+    for (const p of row.photos) {
+      const x = startX + col * (fW + gapX);
+      slide.addText(p.label, { x, y: framesY - 0.22, w: fW, h: 0.2, fontSize: 7, color: '888888', fontFace: 'Arial', valign: 'bottom', margin: 0 });
+      slide.addImage({ data: b64(withBakedBorder(await rasterizeVersion(p.v, row.f.cropW, row.f.cropH))), x, y: framesY, w: fW, h: fH });
+      if (c.notes && p.note) {
+        slide.addText(p.note, { x, y: framesY + fH + 0.08, w: fW, h: noteH, fontSize: 7.5, color: '222222', fontFace: 'Arial', valign: 'top', wrap: true, margin: 0 });
+      }
+      col++;
+    }
+  }
+
+  const blob = await pptx.write({ outputType: 'blob' }) as Blob;
+  const now = new Date();
+  const fname = `${safeName(c.projectName)}_${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}.pptx`;
+  offerSave(blob, fname);
+  showToast('Presentation ready');
+}
+
+export function openFittingImageExportModal(): void {
+  const s = state();
+  if (!s.frames.length) { showToast('No talents to export'); return; }
+  const nameInput = document.getElementById('fittingImageExportName') as HTMLInputElement;
+  if (!nameInput.value) nameInput.value = getCurrentProject().name || 'Fitting';
+  document.getElementById('fittingImageExportModal')!.classList.remove('hidden');
+}
+
+/** Same names and numbering as the other image exports: NAME_talent.jpg and
+ *  NAME_talent~look_L1.jpg, in one zip. */
+export async function runFittingImageExport(): Promise<void> {
+  fhTrack('export_fitting_images');
+  const on = (id: string) => (document.getElementById(id) as HTMLInputElement | null)?.checked ?? false;
+  const baseName = safeName((document.getElementById('fittingImageExportName') as HTMLInputElement)?.value || 'Fitting');
+  const keep = fittingPhotoFilter('fittingImg');
+  const strips: StripType[] = [];
+  if (on('fittingImgLooks')) strips.push('ver');
+  if (on('fittingImgRefs')) strips.push('refs');
+  const includeTalent = on('fittingImgTalent');
+  document.getElementById('fittingImageExportModal')!.classList.add('hidden');
+  showToast('Generating images…');
+
+  const s = state();
+  const stripDefs = s.stripDefs || DEFAULT_STRIP_DEFS;
+  const zip = new JSZip();
+  const frames = s.frames.filter((f) => !f.hidden);
+  for (let i = 0; i < frames.length; i++) {
+    const f = frames[i];
+    const prefix = `${baseName}_${safeName(f.label || `${i + 1}`)}`;
+    if (includeTalent) {
+      zip.file(`${prefix}.jpg`, await canvasToBlob(withBakedBorder(await rasterizeMain(f))), { binary: true });
+    }
+    for (const sid of strips) {
+      const def = stripDefs.find((d) => d.id === sid);
+      if (!def) continue;
+      const vers = getStripVersions(f.id, sid);
+      for (let vi = 0; vi < vers.length; vi++) {
+        const v = vers[vi];
+        if (!keep(v)) continue;
+        const vLabel = v.label || `${def.prefix}${vi + 1}`;
+        zip.file(`${prefix}~${safeName(def.defaultFrameLabel)}_${safeName(vLabel)}.jpg`,
+          await canvasToBlob(withBakedBorder(await rasterizeVersion(v, f.cropW, f.cropH))), { binary: true });
+      }
+    }
+  }
+  const blob = await zip.generateAsync({ type: 'blob' });
+  offerSave(blob, `${baseName}_images.zip`);
+  showToast('Images ready');
+}

@@ -35,7 +35,7 @@ import type { NewProjectChoice } from './modals';
 import { handlePDF } from './pdf';
 import { handleFolderImages, startFromScratch, startPortrait, startFitting } from './files';
 import { installTestDoor } from './testHooks';
-import { openExportModal, openPptxModal, runExport, runPptxExport, openImageExportModal, runImageExport, openPortraitExportModal, runPortraitExport, openPortraitImageExportModal, runPortraitImageExport, updateExportVisibility, buildVersionPicker, buildPptxVersionPicker, lockPageScroll, unlockPageScroll } from './exports';
+import { openExportModal, openPptxModal, runExport, runPptxExport, openImageExportModal, runImageExport, openPortraitExportModal, runPortraitExport, openPortraitImageExportModal, runPortraitImageExport, openFittingExportModal, runFittingExport, openFittingImageExportModal, runFittingImageExport, updateExportVisibility, buildVersionPicker, buildPptxVersionPicker, lockPageScroll, unlockPageScroll } from './exports';
 import { wireCameraEvents } from './camera';
 // openFullscreen is now triggered by DRAW button (actions.ts), not the fs-btn
 import { toggleGroupSidebar } from './groups';
@@ -414,6 +414,8 @@ export function initFramehow(): void {
       return;
     }
     if (state().portraitMode) {
+      const title = document.querySelector('#portraitExportChooser .export-chooser-title');
+      if (title) title.textContent = state().projectType === 'fitting' ? 'Export Fitting' : 'Export 9:16 Project';
       document.getElementById('portraitExportChooser')!.classList.remove('hidden');
     } else {
       document.getElementById('exportChooser')!.classList.remove('hidden');
@@ -605,18 +607,27 @@ export function initFramehow(): void {
   document.getElementById('portraitFmtCancel')!.addEventListener('click', () =>
     document.getElementById('portraitExportChooser')!.classList.add('hidden')
   );
+  // A FITTING project shares the chooser and gets its own modals (#502). The
+  // 9:16 modals are untouched — Roman: "keep other projects as they are".
+  const fitting = () => state().projectType === 'fitting';
   document.getElementById('portraitFmtPDF')!.addEventListener('click', () => {
     document.getElementById('portraitExportChooser')!.classList.add('hidden');
-    openPortraitExportModal('pdf');
+    if (fitting()) openFittingExportModal('pdf'); else openPortraitExportModal('pdf');
   });
   document.getElementById('portraitFmtPPTX')!.addEventListener('click', () => {
     document.getElementById('portraitExportChooser')!.classList.add('hidden');
-    openPortraitExportModal('pptx');
+    if (fitting()) openFittingExportModal('pptx'); else openPortraitExportModal('pptx');
   });
   document.getElementById('portraitFmtImages')!.addEventListener('click', () => {
     document.getElementById('portraitExportChooser')!.classList.add('hidden');
-    openPortraitImageExportModal();
+    if (fitting()) openFittingImageExportModal(); else openPortraitImageExportModal();
   });
+  document.getElementById('fittingExportCancel')!.addEventListener('click', () =>
+    document.getElementById('fittingExportModal')!.classList.add('hidden'));
+  document.getElementById('fittingExportGo')!.addEventListener('click', () => { void runFittingExport(); });
+  document.getElementById('fittingImageExportCancel')!.addEventListener('click', () =>
+    document.getElementById('fittingImageExportModal')!.classList.add('hidden'));
+  document.getElementById('fittingImageExportGo')!.addEventListener('click', () => { void runFittingImageExport(); });
   document.getElementById('portraitImageExportCancel')!.addEventListener('click', () =>
     document.getElementById('portraitImageExportModal')!.classList.add('hidden')
   );
