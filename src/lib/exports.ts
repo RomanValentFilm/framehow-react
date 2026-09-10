@@ -3058,10 +3058,16 @@ function versionStarsOf(v: import('../store/state').Version): number {
   return (v as { starred?: boolean }).starred ? 1 : 0;
 }
 
+/** The talent's own note — the NOTES card's text, or the main picture's note. */
+function talentNote(f: Frame): string {
+  const fn = state().frameNotes[f.id];
+  return ((fn && fn.noteText) || f.note || '').trim();
+}
+
 function starText(n: number): string { return n > 0 ? ' ' + '★'.repeat(Math.min(3, n)) : ''; }
 
 /** The photos of one strip for one talent, in the order the screen shows them. */
-function fittingPhotosFor(f: Frame, strip: StripType, keep: (v: import('../store/state').Version) => boolean, frameLabel: string): FittingPhoto[] {
+function fittingPhotosFor(f: Frame, strip: StripType, keep: (v: import('../store/state').Version) => boolean, _frameLabel: string): FittingPhoto[] {
   const s = state();
   const def = (s.stripDefs || DEFAULT_STRIP_DEFS).find((d) => d.id === strip);
   const sName = def ? def.defaultFrameLabel : strip;
@@ -3070,7 +3076,7 @@ function fittingPhotosFor(f: Frame, strip: StripType, keep: (v: import('../store
     if (!keep(v)) return;
     out.push({
       v,
-      label: fullVerLabel(frameLabel, `${sName} ${v.label || `v${vi + 1}`}`) + starText(versionStarsOf(v)),
+      label: `${sName} ${v.label || `v${vi + 1}`}` + starText(versionStarsOf(v)),
       note: (v.note || '').trim(),
     });
   });
@@ -3190,8 +3196,14 @@ async function runFittingPdfExport(): Promise<void> {
       if (row.talent) {
         pdf.setTextColor(0); pdf.setFont(PDF_FONT, 'bold'); pdf.setFontSize(7.5);
         pdf.text(row.label, startX, framesY - 1.2);
-        const img = withBakedBorder(await rasterizeMain(row.f)).toDataURL('image/jpeg', 0.92);
+        const img = (await rasterizeMain(row.f)).toDataURL('image/jpeg', 0.92);
         pdf.addImage(img, 'JPEG', startX, framesY, frameW, frameH, undefined, 'FAST');
+        const tn = talentNote(row.f);
+        if (c.notes && tn) {
+          pdf.setTextColor(0); pdf.setFont(PDF_FONT, 'normal'); pdf.setFontSize(7.5);
+          let ty = framesY + frameH + 4;
+          for (const line of hardWrapLines(pdf, tn, frameW).slice(0, 4)) { pdf.text(line, startX, ty); ty += 3.4; }
+        }
       }
       col = 1;
     }
@@ -3199,10 +3211,10 @@ async function runFittingPdfExport(): Promise<void> {
       const x = startX + col * (frameW + gutterX);
       pdf.setTextColor(100); pdf.setFont(PDF_FONT, 'normal'); pdf.setFontSize(7);
       pdf.text(p.label, x, framesY - 1.2);
-      const img = withBakedBorder(await rasterizeVersion(p.v, row.f.cropW, row.f.cropH)).toDataURL('image/jpeg', 0.92);
+      const img = (await rasterizeVersion(p.v, row.f.cropW, row.f.cropH)).toDataURL('image/jpeg', 0.92);
       pdf.addImage(img, 'JPEG', x, framesY, frameW, frameH, undefined, 'FAST');
       if (c.notes && p.note) {
-        pdf.setTextColor(30); pdf.setFont(PDF_FONT, 'normal'); pdf.setFontSize(7.5);
+        pdf.setTextColor(0); pdf.setFont(PDF_FONT, 'normal'); pdf.setFontSize(7.5);
         const lines = hardWrapLines(pdf, p.note, frameW).slice(0, 4);
         let ty = framesY + frameH + 4;
         for (const line of lines) { pdf.text(line, x, ty); ty += 3.4; }
@@ -3258,16 +3270,20 @@ async function runFittingPptxExport(): Promise<void> {
     if (c.layout === 'talent4') {
       if (row.talent) {
         slide.addText(row.label, { x: startX, y: framesY - 0.22, w: fW, h: 0.2, fontSize: 8, bold: true, color: '000000', fontFace: 'Arial', valign: 'bottom', margin: 0 });
-        slide.addImage({ data: b64(withBakedBorder(await rasterizeMain(row.f))), x: startX, y: framesY, w: fW, h: fH });
+        slide.addImage({ data: b64((await rasterizeMain(row.f))), x: startX, y: framesY, w: fW, h: fH });
+        const tn = talentNote(row.f);
+        if (c.notes && tn) {
+          slide.addText(tn, { x: startX, y: framesY + fH + 0.08, w: fW, h: noteH, fontSize: 7.5, color: '000000', fontFace: 'Arial', valign: 'top', wrap: true, margin: 0 });
+        }
       }
       col = 1;
     }
     for (const p of row.photos) {
       const x = startX + col * (fW + gapX);
       slide.addText(p.label, { x, y: framesY - 0.22, w: fW, h: 0.2, fontSize: 7, color: '888888', fontFace: 'Arial', valign: 'bottom', margin: 0 });
-      slide.addImage({ data: b64(withBakedBorder(await rasterizeVersion(p.v, row.f.cropW, row.f.cropH))), x, y: framesY, w: fW, h: fH });
+      slide.addImage({ data: b64((await rasterizeVersion(p.v, row.f.cropW, row.f.cropH))), x, y: framesY, w: fW, h: fH });
       if (c.notes && p.note) {
-        slide.addText(p.note, { x, y: framesY + fH + 0.08, w: fW, h: noteH, fontSize: 7.5, color: '222222', fontFace: 'Arial', valign: 'top', wrap: true, margin: 0 });
+        slide.addText(p.note, { x, y: framesY + fH + 0.08, w: fW, h: noteH, fontSize: 7.5, color: '000000', fontFace: 'Arial', valign: 'top', wrap: true, margin: 0 });
       }
       col++;
     }

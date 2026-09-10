@@ -915,20 +915,18 @@ export function Modals() {
                 </span>
               </span>
             </label>
-          </div>
-          <div className="exp-field">
-            <label className="exp-inline">
+            <label className="exp-inline" style={{ marginTop: 6 }}>
               <input type="checkbox" id="fittingIncludeNotes" /> Notes under each photo
             </label>
           </div>
-          <div className="exp-field">
+          <div className="exp-field" style={{ marginTop: 18 }}>
             <label>STRIPS TO INCLUDE</label>
             <div className="exp-strip-picker">
               <label className="exp-strip-opt"><input type="checkbox" id="fittingStripLooks" defaultChecked /> <span>LOOKS</span></label>
               <label className="exp-strip-opt"><input type="checkbox" id="fittingStripRefs" /> <span>REFS</span></label>
             </div>
           </div>
-          <div className="exp-field">
+          <div className="exp-field" style={{ marginTop: 18 }}>
             <label>PHOTOS TO INCLUDE</label>
             <div className="exp-strip-picker">
               <label className="exp-strip-opt"><input type="checkbox" id="fittingStars3" defaultChecked /> <span className="exp-stars">★★★</span></label>
@@ -966,7 +964,7 @@ export function Modals() {
               <label className="exp-strip-opt"><input type="checkbox" id="fittingImgRefs" /> <span>REFS</span></label>
             </div>
           </div>
-          <div className="exp-field">
+          <div className="exp-field" style={{ marginTop: 18 }}>
             <label>PHOTOS TO INCLUDE</label>
             <div className="exp-strip-picker">
               <label className="exp-strip-opt"><input type="checkbox" id="fittingImgStars3" defaultChecked /> <span className="exp-stars">★★★</span></label>
