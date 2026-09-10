@@ -919,14 +919,14 @@ export function Modals() {
               <input type="checkbox" id="fittingIncludeNotes" /> Include notes
             </label>
           </div>
-          <div className="exp-field" style={{ marginTop: 18 }}>
+          <div className="exp-field exp-block">
             <label>STRIPS TO INCLUDE</label>
             <div className="exp-strip-picker">
               <label className="exp-strip-opt"><input type="checkbox" id="fittingStripLooks" defaultChecked /> <span>LOOKS</span></label>
               <label className="exp-strip-opt"><input type="checkbox" id="fittingStripRefs" /> <span>REFS</span></label>
             </div>
           </div>
-          <div className="exp-field" style={{ marginTop: 18 }}>
+          <div className="exp-field exp-block">
             <label>PHOTOS TO INCLUDE</label>
             <div className="exp-strip-picker">
               <label className="exp-strip-opt"><input type="checkbox" id="fittingStars3" defaultChecked /> <span className="exp-stars">★★★</span></label>
@@ -936,7 +936,7 @@ export function Modals() {
               <label className="exp-strip-opt"><input type="checkbox" id="fittingHidden" /> <span>hidden</span></label>
             </div>
           </div>
-          <div className="exp-field" style={{ marginTop: 18 }}>
+          <div className="exp-field exp-block">
             <label className="exp-inline">
               <input type="checkbox" id="fittingPaperLetter" /> US Letter paper (default A4)
             </label>
@@ -956,7 +956,7 @@ export function Modals() {
             <label>Project name</label>
             <input type="text" id="fittingImageExportName" placeholder="Fitting" autoComplete="one-time-code" />
           </div>
-          <div className="exp-field">
+          <div className="exp-field exp-block">
             <label>STRIPS TO INCLUDE</label>
             <div className="exp-strip-picker">
               <label className="exp-strip-opt"><input type="checkbox" id="fittingImgTalent" defaultChecked /> <span>TALENT</span></label>
@@ -964,7 +964,7 @@ export function Modals() {
               <label className="exp-strip-opt"><input type="checkbox" id="fittingImgRefs" /> <span>REFS</span></label>
             </div>
           </div>
-          <div className="exp-field" style={{ marginTop: 18 }}>
+          <div className="exp-field exp-block">
             <label>PHOTOS TO INCLUDE</label>
             <div className="exp-strip-picker">
               <label className="exp-strip-opt"><input type="checkbox" id="fittingImgStars3" defaultChecked /> <span className="exp-stars">★★★</span></label>

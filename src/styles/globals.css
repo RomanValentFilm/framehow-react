@@ -677,6 +677,9 @@
   .exp-group-opt input[type="radio"]{accent-color:var(--accent);}
   .exp-inline input[type="checkbox"]{accent-color:var(--accent);}
   .exp-stars{color:var(--accent);letter-spacing:1px;font-size:14px;line-height:1;}
+  /* The fitting export modal reads as blocks (#507): a thin line and a clear gap
+     before STRIPS, PHOTOS and the paper. */
+  .exp-field.exp-block{margin-top:22px;padding-top:16px;border-top:1px solid var(--border);}
   /* Tall enough for all three strips (title + button row each) without
      scrolling. Capped against the viewport so it can't outgrow the screen. */
   .exp-version-picker{max-height:min(340px,42vh);overflow-y:auto;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px;

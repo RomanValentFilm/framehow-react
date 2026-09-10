@@ -3037,13 +3037,16 @@ export async function runPortraitImageExport(): Promise<void> {
 type FittingPhoto = { v: import('../store/state').Version; label: string; note: string };
 
 /** Which photos the ticks let through. `idPrefix` is 'fitting' or 'fittingImg'. */
-function fittingPhotoFilter(idPrefix: string): (v: import('../store/state').Version) => boolean {
+function fittingPhotoFilter(idPrefix: string): (v: import('../store/state').Version, strip?: StripType) => boolean {
   const on = (id: string) => (document.getElementById(id) as HTMLInputElement | null)?.checked ?? false;
   const s3 = on(`${idPrefix}Stars3`), s2 = on(`${idPrefix}Stars2`), s1 = on(`${idPrefix}Stars1`);
   const unrated = on(`${idPrefix}Unrated`), hidden = on(`${idPrefix}Hidden`);
-  return (v) => {
+  return (v, strip) => {
     if (!versionHasContent(v)) return false;
     if (v.hidden && !hidden) return false;
+    // REFS are drawings, not rated looks — the star ticks do not apply to them
+    // (#507). Only the hidden tick does.
+    if (strip === 'refs') return true;
     const stars = versionStarsOf(v);
     if (stars >= 3) return s3;
     if (stars === 2) return s2;
@@ -3067,13 +3070,13 @@ function talentNote(f: Frame): string {
 function starText(n: number): string { return n > 0 ? ' ' + '★'.repeat(Math.min(3, n)) : ''; }
 
 /** The photos of one strip for one talent, in the order the screen shows them. */
-function fittingPhotosFor(f: Frame, strip: StripType, keep: (v: import('../store/state').Version) => boolean, _frameLabel: string): FittingPhoto[] {
+function fittingPhotosFor(f: Frame, strip: StripType, keep: (v: import('../store/state').Version, strip?: StripType) => boolean, _frameLabel: string): FittingPhoto[] {
   const s = state();
   const def = (s.stripDefs || DEFAULT_STRIP_DEFS).find((d) => d.id === strip);
   const sName = def ? def.defaultFrameLabel : strip;
   const out: FittingPhoto[] = [];
   getStripVersions(f.id, strip).forEach((v, vi) => {
-    if (!keep(v)) return;
+    if (!keep(v, strip)) return;
     out.push({
       v,
       label: `${sName} ${v.label || `v${vi + 1}`}` + starText(versionStarsOf(v)),
@@ -3087,7 +3090,7 @@ function fittingPhotosFor(f: Frame, strip: StripType, keep: (v: import('../store
 type FittingRow = { f: Frame; label: string; talent: boolean; photos: FittingPhoto[] };
 
 function fittingRows(frames: Frame[], layout: 'talent4' | 'looks5', strips: StripType[],
-                     keep: (v: import('../store/state').Version) => boolean): FittingRow[] {
+                     keep: (v: import('../store/state').Version, strip?: StripType) => boolean): FittingRow[] {
   const rows: FittingRow[] = [];
   const per = layout === 'talent4' ? 4 : 5;
   frames.forEach((f, fi) => {
@@ -3337,7 +3340,7 @@ export async function runFittingImageExport(): Promise<void> {
       const vers = getStripVersions(f.id, sid);
       for (let vi = 0; vi < vers.length; vi++) {
         const v = vers[vi];
-        if (!keep(v)) continue;
+        if (!keep(v, sid)) continue;
         const vLabel = v.label || `${def.prefix}${vi + 1}`;
         zip.file(`${prefix}~${safeName(def.defaultFrameLabel)}_${safeName(vLabel)}.jpg`,
           await canvasToBlob(withBakedBorder(await rasterizeVersion(v, f.cropW, f.cropH))), { binary: true });
