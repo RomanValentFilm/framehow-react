@@ -908,7 +908,11 @@ export class Device {
    * — so this wakes one for fifteen seconds, then the other.
    */
   static async nudgeOneAtATime(a: Device, b: Device): Promise<void> {
-    const which = Math.floor(Date.now() / 15_000) % 2 === 0 ? b : a;
+    // THIRTY SECONDS EACH, not fifteen (run 176). The lock clears only after the
+    // other device's heartbeat is ten seconds old AND the locked device has
+    // polled since (every five seconds) — fifteen-second turns left it locked
+    // almost the whole time. The receiving device (b) goes first.
+    const which = Math.floor(Date.now() / 30_000) % 2 === 0 ? b : a;
     await which.nudge();
   }
 

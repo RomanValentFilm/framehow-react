@@ -2108,6 +2108,11 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
       id: mainVersionId, frame_id: frameId, label: 'main', type: 'main',
       hidden: false, starred: false, note: null, updated_at: now,
       has_drawing: !!(f.strokes && f.strokes.length > 0),
+      // WHEN IT CHANGED, like every other version (#499). Without it the server
+      // judged the main picture by two clocks — its own write time against this
+      // device's — so a device a few seconds behind was told "older than the
+      // server" on every quick push, and each such push forced a fetch.
+      content_changed_at: frameChangedAtForSending(f.serverFrameId, f.id),
     });
     if (f.strokes && f.strokes.length > 0) {
       drawings.push({ id: uuid(), version_id: mainVersionId, drawing_data: JSON.stringify(f.strokes), updated_at: now });
@@ -2438,7 +2443,9 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   // and, worse, records itself as matching the server, so it never asks again.
   const staleCount = (res.stale_frames?.length ?? 0) + (res.stale_versions?.length ?? 0);
   if (staleCount > 0) {
-    trace(`  ${staleCount} sent item(s) were older than the server — taking its copy`);
+    trace(`  ${staleCount} sent item(s) were older than the server — taking its copy`
+      + ` (frames: ${(res.stale_frames ?? []).map((i) => i.slice(0, 6)).join(',') || 'none'}`
+      + ` · versions: ${(res.stale_versions ?? []).map((i) => i.slice(0, 6)).join(',') || 'none'})`);
     // AND MEAN IT (#307). A frame that lost must stop counting as unsent work,
     // or the pull that follows protects it and the server's newer copy never
     // lands: both devices keep their own drawing and neither ever finds out.
@@ -2584,7 +2591,19 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
     trace(`  forced fetch after a stale push · hand busy=${handIsBusy()}`
       + ` · last stroke ${since === Infinity ? 'never' : `${Math.round(since / 1000)}s ago`}`);
     lastKnownUpdatedAt = 0;
-    await tryPullFromCloud(true);
+    // NOT WHILE THE HAND IS ON THE PAGE (#499). Roman's log, 10 September:
+    // four pushes in a row, each "older than the server", each followed by
+    // this fetch with the last stroke 0–2 seconds ago — and the frame being
+    // drawn on was rebuilt from the copy pushed a second earlier, so the
+    // strokes made in between were gone. The marks are zero now (here and
+    // above), so the next ordinary fetch — heartbeat, focus — sees "newer" and
+    // takes it, and that fetch waits for the hand like every other. Nothing
+    // is lost by waiting; the server keeps its copy.
+    if (handIsBusy()) {
+      trace('  …waiting for the hand to stop before fetching it');
+    } else {
+      await tryPullFromCloud(true);
+    }
   }
 
   // Anything the server refused is simply fetched, above. There is no question

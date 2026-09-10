@@ -78,122 +78,51 @@ Why it came up: on the iPhone in portrait the whole view bar was hidden, and
 SORT BY lives in it — so inside a shooting order there was no way to switch
 orders or get out.
 
-## Open from 9 September — the day the numbering changed (#489–#495)
+## THE LIST — 10 September, evening (Roman's order)
 
-dev is **v4.9.194 · #497**. Next number: **v4.9.195 · #498**.
+dev is **v4.9.195 · #498**. Next number: **v4.9.196 · #499**.
 
-What changed: a shot's private number never leaves the device; shooting orders,
-groups and story flows travel by the shot's permanent name (#489). Then a day of
-things that broke around it. Still standing:
+### NOW
+1. **The forced fetch after a stale push while a hand is drawing** — agreed
+   first step: put it in the log before writing anything (accountFlow,
+   `if (staleCount > 0)` after a push).
+2. **iPad view bar and setup bar hiding** — needs the iPad to judge.
+3. **Preview thumbnails in the sort view.**
+4. **The ten-second lock** (waitForDeviceLock / heartbeat, accountFlow).
+5. **FITTING export modal.**
+6. **Take the sync log out** — last, Roman still reads it constantly.
 
-1. **Drag on Desktop in SORT BY** — the dragged card shows on the LEFT, not
-   under the pointer. Suspect: the clone's `left` is taken from the card's own
-   box (`setupDragAndDrop`, sortOrder.ts). Measure in a browser at desktop
-   width before touching it. Roman: "fix it when you can concentrate on it only".
-2. **Confirm on Roman's devices** (each was fixed and simulator-proven, none
-   yet confirmed by hand): the group stays selected when SORT BY switches order
-   or story flow (#493); every story flow — ALL FRAMES and each group — owns
-   its own breaks, and every shooting order owns its own (#494); the boxes
-   push once, on SORT NOW or on leaving the order, not on every tap (#495);
-   every setup is listed in the boxes (#490); a needs item nobody has ticked is
-   listed grey and NOT tappable, and becomes tappable on the next EDIT ORDER
-   after a shot has it (#491, rule confirmed #495).
-3. **A shot ticked on the OTHER device while this one has the order open**
-   must show as green when the order is next opened from the menu — the rule is
-   agreed, the two-device case is not in the simulator yet.
-4. **Two simulator tests never seen green:** "a whole project made offline" and
-   "offline with a project open, then a new project made offline too"
-   (28-numbering-across-projects). Test-door faults so far, not app faults.
-5. ~~Test helpers waiting for a save line~~ — DONE 10 Sept: `settle()` now
-   means "the local save has had its two seconds and the log is quiet" (#496,
-   run 162 proves it across the suite).
-6. **THE WHOLE DAY test** — Roman, 10 Sept: one heavy script running every
-   function of the app back and forth on three devices, so any change shows
-   at once what else it broke. Outline written: `e2e/29-THE-WHOLE-DAY.outline.md`.
-   A day's work; build it in parts, each part green before the next.
-7. **iPhone, portrait: hide the version number.**
-8. **The forced fetch after a stale push, while a hand is drawing** — agreed
-   first step: put it in the log before writing anything (older item 12).
-9. **FIX 05 — frame numbering.** New frames must be 1, 2, 3, 4 — not 1, 1#1.
-   The X#1 form exists for a reason elsewhere (a shot added after 3 is 3#1 so
-   the script's numbers stay), so find every place that reads or writes it
-   before touching it: actions.ts 'new' (the #-counter), pdf.ts, files.ts,
-   exports, the sort cards' labels. Decide with Roman what "after 3" is called.
+### LATER
+1. **Frame numbering 1, 2, 3, 4 — not 1, 1#1.** The X#1 form exists on purpose
+   (a shot added after 3 is 3#1 so the script's numbers stay). Find every
+   place that reads or writes it first: actions.ts 'new', pdf.ts, files.ts,
+   exports, the sort cards. Decide with Roman what "after 3" is called.
+2. **The whole-day test** — outline in `e2e/29-THE-WHOLE-DAY.outline.md`;
+   build in parts, each green before the next.
+3. **Unsent work of OTHER projects uploads by itself when the user uses the
+   app** — today only the open project is retried (`retryPendingSyncs`); a
+   project worked on offline and then left sits in the list as "on this device
+   — not uploaded yet" until its copy is opened. The 28 test "offline with a
+   project open, then a new project made offline too" proves it — fails on
+   exactly this, everything before is green (run 179).
+4. **Dead pictures on the server** — the cleaner needs an age guard (about 7
+   days) before it goes on the schedule; and a purged project's deletion notes
+   outlive it (one line in the purge, not a migration). Details in the older
+   notes below.
 
-## Still open (older)
-
-None of it urgent, none of it a ten-minute job.
-
-1. iPad view bar and setup bar hiding — needs the iPad to judge
-2. Preview thumbnails in the sort view
-3. The ten-second lock
-4. **Dead data on the server — three parts, and only two are worth doing.**
-   Traced on 7 September; "sweep tombstones" turned out to be aimed at the
-   smallest of them.
-
-   **4a. THE PICTURES — the only one that takes real space.** Deleting a shot
-   removes the picture's row but never the picture itself
-   (`projects.ts:1657-1674` deletes drawings, images, versions, frames — no
-   `bucket.delete` anywhere near it). So every photo from every shot ever
-   deleted is still stored. A cleaner exists and works — `POST
-   /admin/cleanup/orphans` (`cleanup.ts:19`) — but it is NOT on the daily
-   schedule; the cron only calls `purgeExpiredProjects` (`index.ts:59`).
-
-   **DO NOT simply schedule it.** It deletes any file with no row, and a photo
-   is uploaded BEFORE its row is written (`accountFlow.ts:2302`, then the rows
-   go up in the same save). If that save fails after the upload, the photo sits
-   there with no row for as long as the failures last. Give the cleaner an age
-   guard first — only files older than about 7 days — deploy that, watch
-   `GET /admin/cleanup/preview`, and only then put it on the schedule.
-
-   **4b. The notes outlive their project.** `project_deletions` is the one child
-   table whose foreign key has no `ON DELETE CASCADE`
-   (`0009_tombstones.sql:13`), so a purged project leaves its notes behind — and
-   the purge itself may be refused because of it. Do it with ONE line in the
-   purge that deletes those rows, NOT a migration: rebuilding a table on live
-   data is not worth it for this.
-
-   **4c. Do NOT sweep the notes of a live project.** This is a decision to leave
-   things alone, and it matters. The note is what stops a deleted shot coming
-   back: the push throws out any frame with a note, with no time limit at all
-   (`THE DEAD STAY DEAD`, `projects.ts:355`). Delete the note and that guard
-   goes with it. The schema comment saying "cleaned up after 30 days by cron"
-   was never true and should not be made true.
-5. FITTING export modal
-6. **FRAME → SHOT, HOW → ANGLE — the names EVERY NEW PROJECT opens with.**
-   Roman: "every new project should open with this as default." So this is
-   `DEFAULT_STRIP_DEFS` (`state.ts:400`), which today reads:
-
-       { id: 'ver', buttonLabel: 'HOW', defaultFrameLabel: 'versn', prefix: 'v' }
-
-   THREE things change together and have to be thought about as one: the button
-   says ANGLE, the cards are called something other than "versn", and the
-   PREFIX. The prefix is the letter in front of every version label — 'v'
-   today, so v1, v2, v3. ANGLE would make it 'a', renaming every version on
-   every card. Work out what the prefix touches before changing it, and decide
-   whether projects that already exist are left alone (they should be).
-
-   **AND THE BUTTONS IN EVERY VIEW.** Roman: "also the buttons in 3x2 and all
-   views need to be renamed with it." There are SIX views (`state.ts:363`):
-   `main`, `ver`, `both`, `overview`, `grid4`, `grid3x2`. The name has to be
-   right in all of them, plus the view bar itself. FIRST job is to find every
-   place the word is drawn — `grep -rn "HOW\|FRAME" src/` — and read every hit.
-   Do not change the default and hope.
-7. **A forced fetch ignores the hand-busy guard**
-   (`if (!force && handIsBusy())`, `accountFlow.ts`). Three forced fetches, not
-   five — #410 retired the dead frame picker and took two with it. Two of the
-   three cannot land while a hand is drawing: the sort-order picker (you are
-   tapping a dialog) and closing a shooting order (#380, the catching-up). The
-   third is the one that matters: **after a push the server refused as stale**
-   (~line 2431, `if (staleCount > 0)`), which fires on its own from an autosave
-   with nobody touching anything. That is the only path to change. Put it in a
-   log before writing anything — the way #407 settled the strip names in one
-   reading. **AGREED WITH ROMAN, KEEP EXACTLY THIS:**
-
-   > So the fix is narrower than "forced fetches ignore the guard". It's one
-   > path, and the honest question for it is: does it need to happen this
-   > second, or can it wait the few seconds until the hand stops?
-8. Take the sync log out — last, and Roman still reads it constantly.
+### DONE 9–10 September (for the record)
+- #489 orders/groups travel by name · #490 setups in the boxes, bars in SETUPS
+  · #491 +/- gone, needs items listed · #492 isStoryFlow crash · #493 group
+  stays on SORT BY, per-flow breaks · #494 each story flow owns its breaks
+  · #495 boxes push once · #496 iPad break rename, work changed during a push
+  is sent, the fetch's own push, the lock in the log, wrangler 4.130
+  · #497 one main picture, iPhone version hidden · #498 desktop drag.
+- Confirmed by Roman on devices: all of the above, plus the other-device
+  green mark. Agreed: a REMAINING shot that gets a new item with no box is not
+  green — nothing moved.
+- ANGLE is the default strip name (older item 11).
+- `settle()` in the simulator means "saved and quiet"; waits touch one device
+  at a time (the lock needs ten quiet seconds).
 
 ## Parked, with a reason
 
