@@ -3165,7 +3165,7 @@ async function runFittingPdfExport(): Promise<void> {
   const COLS = 5, gutterX = 3;
   const contentW = pageW - 2 * MARGIN;
   const aspect = 9 / 16;
-  const noteH = c.notes ? 14 : 0;
+  const noteH = c.notes ? 18 : 0;
   let frameW = (contentW - gutterX * (COLS - 1)) / COLS;
   let frameH = frameW / aspect;
   const maxFrameH = pageH - 2 * MARGIN - HEADER_H - FOOTER_H - LABEL_H - noteH - 4;
@@ -3200,9 +3200,9 @@ async function runFittingPdfExport(): Promise<void> {
         pdf.addImage(img, 'JPEG', startX, framesY, frameW, frameH, undefined, 'FAST');
         const tn = talentNote(row.f);
         if (c.notes && tn) {
-          pdf.setTextColor(0); pdf.setFont(PDF_FONT, 'normal'); pdf.setFontSize(7.5);
+          pdf.setTextColor(0); pdf.setFont(PDF_FONT, 'normal'); pdf.setFontSize(9.5);
           let ty = framesY + frameH + 4;
-          for (const line of hardWrapLines(pdf, tn, frameW).slice(0, 4)) { pdf.text(line, startX, ty); ty += 3.4; }
+          for (const line of hardWrapLines(pdf, tn, frameW).slice(0, 4)) { pdf.text(line, startX, ty); ty += 4.2; }
         }
       }
       col = 1;
@@ -3214,10 +3214,10 @@ async function runFittingPdfExport(): Promise<void> {
       const img = (await rasterizeVersion(p.v, row.f.cropW, row.f.cropH)).toDataURL('image/jpeg', 0.92);
       pdf.addImage(img, 'JPEG', x, framesY, frameW, frameH, undefined, 'FAST');
       if (c.notes && p.note) {
-        pdf.setTextColor(0); pdf.setFont(PDF_FONT, 'normal'); pdf.setFontSize(7.5);
+        pdf.setTextColor(0); pdf.setFont(PDF_FONT, 'normal'); pdf.setFontSize(9.5);
         const lines = hardWrapLines(pdf, p.note, frameW).slice(0, 4);
         let ty = framesY + frameH + 4;
-        for (const line of lines) { pdf.text(line, x, ty); ty += 3.4; }
+        for (const line of lines) { pdf.text(line, x, ty); ty += 4.2; }
       }
       col++;
     }
@@ -3247,7 +3247,7 @@ async function runFittingPptxExport(): Promise<void> {
   pptx.title = c.projectName;
   const SW = 13.333, SH = 7.5, MARGIN = 0.4, COLS = 5, gapX = 0.12;
   const aspect = 9 / 16;
-  const noteH = c.notes ? 0.6 : 0;
+  const noteH = c.notes ? 0.75 : 0;
   let fW = (SW - 2 * MARGIN - gapX * (COLS - 1)) / COLS;
   let fH = fW / aspect;
   const maxH = SH - 1.2 - noteH;
@@ -3273,7 +3273,7 @@ async function runFittingPptxExport(): Promise<void> {
         slide.addImage({ data: b64((await rasterizeMain(row.f))), x: startX, y: framesY, w: fW, h: fH });
         const tn = talentNote(row.f);
         if (c.notes && tn) {
-          slide.addText(tn, { x: startX, y: framesY + fH + 0.08, w: fW, h: noteH, fontSize: 7.5, color: '000000', fontFace: 'Arial', valign: 'top', wrap: true, margin: 0 });
+          slide.addText(tn, { x: startX, y: framesY + fH + 0.08, w: fW, h: noteH, fontSize: 9.5, color: '000000', fontFace: 'Arial', valign: 'top', wrap: true, margin: 0 });
         }
       }
       col = 1;
@@ -3283,7 +3283,7 @@ async function runFittingPptxExport(): Promise<void> {
       slide.addText(p.label, { x, y: framesY - 0.22, w: fW, h: 0.2, fontSize: 7, color: '888888', fontFace: 'Arial', valign: 'bottom', margin: 0 });
       slide.addImage({ data: b64((await rasterizeVersion(p.v, row.f.cropW, row.f.cropH))), x, y: framesY, w: fW, h: fH });
       if (c.notes && p.note) {
-        slide.addText(p.note, { x, y: framesY + fH + 0.08, w: fW, h: noteH, fontSize: 7.5, color: '000000', fontFace: 'Arial', valign: 'top', wrap: true, margin: 0 });
+        slide.addText(p.note, { x, y: framesY + fH + 0.08, w: fW, h: noteH, fontSize: 9.5, color: '000000', fontFace: 'Arial', valign: 'top', wrap: true, margin: 0 });
       }
       col++;
     }

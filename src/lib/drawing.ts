@@ -45,8 +45,12 @@ export function _drawStrokeItem(tctx: CanvasRenderingContext2D, st: Stroke, cH: 
 
 export function _drawStrokesLayered(ctx: CanvasRenderingContext2D, strokes: Stroke[]): void {
   if (!strokes || strokes.length === 0) return;
-  const cW = ctx.canvas.width,
-    cH = ctx.canvas.height;
+  const cW = ctx.canvas.width;
+  // THE PICTURE'S OWN HEIGHT, NOT THE PIXELS (#504). An export draws at twice
+  // the size for sharpness and scales the context by two — so the text, sized
+  // from canvas.height, came out twice as big as on screen. Divide the scale
+  // back out; on screen the scale is one and nothing changes.
+  const cH = ctx.canvas.height / (ctx.getTransform().d || 1);
   const hasEraser = strokes.some((s) => s.eraser);
   if (!hasEraser) {
     strokes.forEach((st) => _drawStrokeItem(ctx, st, cH));
