@@ -160,11 +160,18 @@ function migrateFittingNames(): void {
   if (!ver) return;
   let changed = false;
   if (ver.defaultFrameLabel === 'fit') { ver.defaultFrameLabel = 'look'; changed = true; }
-  if (ver.prefix === 'f') {
+  if (ver.prefix === 'f' || ver.prefix === 'l') {
+    // 'f' is the old name; 'l' is what Customise used to make of "look" — and
+    // "l1" reads as "11" (#505). Capital L, and the tabs renumbered under it.
     ver.prefix = 'L';
     changed = true;
-    // Existing tabs still read f1, f2 — renumber them under the new prefix.
     for (const f of s.frames) relabelStripVersions(f.id, 'ver');
+  }
+  const refs = s.stripDefs.find((d) => d.id === 'refs');
+  if (refs && refs.prefix === 'r') {
+    refs.prefix = 'R';
+    changed = true;
+    for (const f of s.frames) relabelStripVersions(f.id, 'refs');
   }
   if (changed) useStore.setState({ stripDefs: [...s.stripDefs] });
 }

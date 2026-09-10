@@ -495,7 +495,10 @@ export function initFramehow(): void {
           delete fr.stripLabels[def.id];
         }
       }
-      const newPrefix = def.defaultFrameLabel[0]?.toLowerCase() || def.prefix;
+      // A FITTING keeps CAPITAL prefixes (#505): "l1" reads as "11". Other
+      // project types keep v, s, r as they always were.
+      const first = def.defaultFrameLabel[0];
+      const newPrefix = (first ? (s.projectType === 'fitting' ? first.toUpperCase() : first.toLowerCase()) : '') || def.prefix;
       if (def.prefix !== newPrefix) {
         def.prefix = newPrefix;
         const versMap = s.stripVersions[def.id] || {};

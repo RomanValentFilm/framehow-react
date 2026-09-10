@@ -209,7 +209,7 @@ export function startFitting(): void {
   const FITTING_STRIPS: Record<string, { buttonLabel: string; defaultFrameLabel: string; prefix: string }> = {
     ver:   { buttonLabel: 'LOOKS', defaultFrameLabel: 'look',  prefix: 'L' },
     floor: { buttonLabel: 'LOOK2', defaultFrameLabel: 'fit B', prefix: 'f' },
-    refs:  { buttonLabel: 'REFS',  defaultFrameLabel: 'ref',   prefix: 'r' },
+    refs:  { buttonLabel: 'REFS',  defaultFrameLabel: 'ref',   prefix: 'R' },
   };
   s.stripDefs = s.stripDefs.map((def) => ({ ...def, ...(FITTING_STRIPS[def.id] || {}) }));
   const id = s.nextId;
