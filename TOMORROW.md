@@ -80,7 +80,7 @@ orders or get out.
 
 ## THE LIST — 10 September, evening (Roman's order)
 
-dev is **v4.9.195 · #498**. Next number: **v4.9.196 · #499**.
+dev is **v4.9.198 · #501**. Next number: **v4.9.199 · #502**.
 
 ### NOW
 1. ~~The forced fetch after a stale push while a hand is drawing~~ — DONE #499:

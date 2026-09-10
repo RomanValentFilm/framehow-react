@@ -20,7 +20,7 @@ import { APP_VERSION } from '../store/state';
  *  It is bumped BY HAND, which is why it sat at #309 through #310, #311, #312
  *  and #313 — telling the screen a version of events that was four changes out
  *  of date. Worth remembering the next time it is trusted in a log. */
-export const SYNC_BUILD_TAG = '#500';
+export const SYNC_BUILD_TAG = '#501';
 
 let box: HTMLElement | null = null;
 
@@ -56,12 +56,20 @@ function urlSays(): boolean | null {
   return location.search.includes('fhsync') ? true : null;
 }
 
+/** The address is read ONCE (#501). It used to be read every time a line was
+ *  written, so on a desktop whose address still said fhsync=1 the three taps
+ *  hid the strip and the next star or stroke brought it straight back. */
+let _addressRead = false;
+
 function enabled(): boolean {
-  const said = urlSays();
-  if (said !== null) {
-    write(SHOW_KEY, said);
-    write(DEBUG_KEY, said);
-    return said;
+  if (!_addressRead) {
+    _addressRead = true;
+    const said = urlSays();
+    if (said !== null) {
+      write(SHOW_KEY, said);
+      write(DEBUG_KEY, said);
+      return said;
+    }
   }
   return read(SHOW_KEY);
 }
