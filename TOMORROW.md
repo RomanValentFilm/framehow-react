@@ -83,14 +83,19 @@ orders or get out.
 dev is **v4.9.195 · #498**. Next number: **v4.9.196 · #499**.
 
 ### NOW
-1. **The forced fetch after a stale push while a hand is drawing** — agreed
-   first step: put it in the log before writing anything (accountFlow,
-   `if (staleCount > 0)` after a push).
-2. **iPad view bar and setup bar hiding** — needs the iPad to judge.
-3. **Preview thumbnails in the sort view.**
+1. ~~The forced fetch after a stale push while a hand is drawing~~ — DONE #499:
+   it waits for the hand; the main picture carries its change time so the
+   server no longer calls it "older" by clock difference. Roman scribbled fast
+   on #499: nothing lost.
+2. ~~iPad view bar and setup bar hiding~~ — DONE by #481, Roman confirmed on the iPad 10 Sept.
+3. ~~Preview thumbnails in the sort view~~ — already there (tap a small box on the iPad; hover on the desktop). Roman: done. Note: a shot with only a drawing and no picture shows no preview — a possible later improvement, not asked for.
 4. **The ten-second lock** (waitForDeviceLock / heartbeat, accountFlow).
-5. **FITTING export modal.**
-6. **Take the sync log out** — last, Roman still reads it constantly.
+5. **FITTING export modal.** Looked 10 Sept: nothing fitting-specific exists.
+   A fitting project uses the portrait (9:16) export — five tall cards per
+   landscape page, group + strip picker (TALENTS/LOOKS/REFS), no stars, words
+   say "frames" and "9:16". Roman to say what a fitting page should show.
+6. **Two-finger pinch to zoom in the camera** — Roman, 10 Sept.
+7. **Take the sync log out** — last, Roman still reads it constantly.
 
 ### LATER
 1. **Frame numbering 1, 2, 3, 4 — not 1, 1#1.** The X#1 form exists on purpose
@@ -109,6 +114,14 @@ dev is **v4.9.195 · #498**. Next number: **v4.9.196 · #499**.
    days) before it goes on the schedule; and a purged project's deletion notes
    outlive it (one line in the purge, not a migration). Details in the older
    notes below.
+
+### TESTS TO WRITE
+- **Fast scribble across several cards** while pushes go out and the other
+  device works; every stroke counted on both devices afterwards. Roman did it
+  by hand on #499 — green; the simulator should hold it.
+- **A shot ticked on the other device while this one has the order open** —
+  green on next opening (Roman confirmed by hand).
+- Both belong in the whole-day test (LATER 2).
 
 ### DONE 9–10 September (for the record)
 - #489 orders/groups travel by name · #490 setups in the boxes, bars in SETUPS

@@ -75,7 +75,7 @@ import { settingsForPush, adoptSettingsFromServer, applySettingsToStore, importS
 import { applySnapshotToStore, loadSnapshot, snapshotFromStore, listPending, isArchived, getPending, markPendingUploaded, saveProjectListCache, loadProjectListCache, deletePending, deleteEveryCopyOf, recoverPending, isDeletedCopy, requestDurableStorage } from './persistence';
 import type { PendingRecord } from './persistence';
 import { showThreeWayConflict, showConfirm, showToast } from './modals';
-import { saveOpenTextEdits, saveOpenTableEdits, versionStars } from './helpers';
+import { saveOpenTextEdits, saveOpenTableEdits, versionStars, inStarOrder } from './helpers';
 import { closeSortMode, refreshOpenSortView } from './sortOrder';
 import { resetStoryboardState, state, useStore, freshNeedDefinitions, DEFAULT_STRIP_DEFS, migrateNeedDefinitions, createDefaultExportMeta } from '../store/state';
 import type { Frame, Stroke, Version, FrameNeedState, FrameNoteState, NeedDefinitions, BracketNodeData, ProjectType } from '../store/state';
@@ -2907,6 +2907,7 @@ async function applyCloudTreeToStore(
               if (arriving && untouchedStrip(target[localId])) target[localId] = [];
             }
 
+            const wantPicture: Array<{ strip: 'ver' | 'floor' | 'refs'; ver: Version; r2Key: string }> = [];
             for (const sv of cloudVs) {
               const stripId = sv.type.startsWith('floor:') ? 'floor'
                 : sv.type.startsWith('refs:') ? 'refs' : 'ver';
@@ -2931,14 +2932,25 @@ async function applyCloudTreeToStore(
                 note: sv.note ?? '',
                 serverVersionId: sv.id,
                 r2Key: r2Key || undefined,
+                setupTagged: sv.tags === 'origin' || sv.tags === 'copy' ? sv.tags : undefined,
               };
               list.push(localVer);
               serverVidToLocalVer.set(sv.id, localVer);
-              if (r2Key) versionImageTasks.push({ strip: stripId, localId, versionIdx: list.length - 1, r2Key });
+              if (r2Key) wantPicture.push({ strip: stripId, ver: localVer, r2Key });
             }
-            // Renumber so the tabs read 1,2,3 after the additions.
+            // IN STAR ORDER (#500), then renumber so the tabs read 1,2,3 — and
+            // only THEN ask for the pictures, by the index each version ends
+            // up at. Same rule as the star button and as the other branch.
             for (const target of [verVersions, floorVersions, refsVersions]) {
-              if (target[localId]) target[localId] = target[localId].map((v, i) => ({ ...v, id: i + 1 }));
+              if (!target[localId]) continue;
+              target[localId] = inStarOrder(target[localId], (v) =>
+                ({ stars: versionStars(v), tagged: !!v.setupTagged, hidden: !!v.hidden }))
+                .map((v, i) => ({ ...v, id: i + 1 }));
+            }
+            for (const w of wantPicture) {
+              const target = w.strip === 'ver' ? verVersions : w.strip === 'floor' ? floorVersions : refsVersions;
+              const idx = (target[localId] ?? []).findIndex((v) => v.serverVersionId === w.ver.serverVersionId);
+              if (idx >= 0) versionImageTasks.push({ strip: w.strip, localId, versionIdx: idx, r2Key: w.r2Key });
             }
           }
           continue; // the frame itself stays local — its picture and strokes are ours
@@ -3017,7 +3029,12 @@ async function applyCloudTreeToStore(
       // Helper: map server versions to local Version[] for a specific strip
       const mapVersions = (svList: typeof sideVs, stripName: string) => {
         // TOMBSTONE: filter out versions that were explicitly deleted
-        const filtered = svList.filter((sv) => !tombstonedIds.has(sv.id));
+        // ...AND IN STAR ORDER (#500), BEFORE they are numbered, so the picture
+        // downloads below carry the right index. The server hands versions back
+        // in the order it wrote them; the order the person made with the stars
+        // is worked out from the ratings, the same way the star button does it.
+        const filtered = inStarOrder(svList.filter((sv) => !tombstonedIds.has(sv.id)),
+          (sv) => ({ stars: Number(sv.starred) || 0, tagged: sv.tags === 'origin' || sv.tags === 'copy', hidden: !!sv.hidden }));
         return filtered.map((sv, j) => {
           const r2Key = imageByVersion.get(sv.id);
           // DIFF: check if we already have this exact image locally

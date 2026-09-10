@@ -311,19 +311,32 @@ export function addNewVersion(fid: number, newVer: Version): void {
   relabelVersions(fid);
 }
 
+/**
+ * THE ORDER OF VERSIONS IS THE RATINGS (#500). Tagged ones first, in the order
+ * they were; then the visible ones, most stars first; then the hidden ones.
+ * Stable, so equal ratings keep the order they had.
+ *
+ * ONE rule, written once, for anything that holds versions — the store's
+ * lists (reorderByStars) and the rows arriving from the server (the rebuild in
+ * accountFlow). Roman, 10 September: stars put a look first, then the next
+ * fetch put it back — the order is not stored anywhere, so it is worked out
+ * from the ratings wherever versions are laid down.
+ */
+export function inStarOrder<T>(list: readonly T[],
+  read: (v: T) => { stars: number; tagged: boolean; hidden: boolean }): T[] {
+  const tagged = list.filter((v) => read(v).tagged);
+  const untagged = list.filter((v) => !read(v).tagged);
+  const visible = untagged.filter((v) => !read(v).hidden);
+  const hidden = untagged.filter((v) => read(v).hidden);
+  const byStars = (a: T, b: T) => read(b).stars - read(a).stars;
+  return [...tagged, ...[...visible].sort(byStars), ...[...hidden].sort(byStars)];
+}
+
 export function reorderByStars(fid: number, strip: StripType = 'ver'): void {
   const vers = getStripVersions(fid, strip);
   if (!vers || vers.length === 0) return;
-  // Tagged versions (origin + copy) always stay at the FRONT in their existing order
-  const tagged = vers.filter((v) => v.setupTagged);
-  const untagged = vers.filter((v) => !v.setupTagged);
-  const visible = untagged.filter((v) => !v.hidden);
-  const hidden = untagged.filter((v) => v.hidden);
-  // Highest rating first. sort() is stable, so versions on the same rating keep
-  // the order they were already in. With only 0 and 1 in play — every project
-  // type except FITTING — this is exactly the old starred-then-unstarred split.
-  const byStars = (a: Version, b: Version) => versionStars(b) - versionStars(a);
-  const newOrder = [...tagged, ...[...visible].sort(byStars), ...[...hidden].sort(byStars)];
+  const newOrder = inStarOrder(vers, (v) =>
+    ({ stars: versionStars(v), tagged: !!v.setupTagged, hidden: !!v.hidden }));
   vers.length = 0;
   newOrder.forEach((v) => vers.push(v));
 }
