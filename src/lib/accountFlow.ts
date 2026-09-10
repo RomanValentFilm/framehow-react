@@ -2929,9 +2929,19 @@ async function applyCloudTreeToStore(
 
       const allVersions = (versionsByFrame.get(sf.id) ?? []).sort((a, b) => a.updated_at - b.updated_at);
 
-      // Treat the first "main"-typed version as frame-level strokes
-      const mainV = allVersions.find((v) => v.type === 'main');
-      const sideVs = allVersions.filter((v) => v !== mainV);
+      // THE MAIN PICTURE IS NEVER A VERSION (#497). A frame should have ONE
+      // "main"; if the server holds more than one (a device that had forgotten
+      // which was its own made another — nothing deletes on a partial push),
+      // the first used to be taken as the main and the rest fell through to
+      // the ANGLE strip as v1, v2 — Roman's "main frames copied into ANGLE".
+      // The newest main is the main; every other main is left out; and it is
+      // said in the log, so the cause can be found.
+      const mains = allVersions.filter((v) => v.type === 'main');
+      const mainV = mains.length > 0 ? mains[mains.length - 1] : undefined;
+      if (mains.length > 1) {
+        trace(`  ${sf.label || sf.id.slice(0, 6)} arrived with ${mains.length} main pictures — showing the newest, the rest are not versions`);
+      }
+      const sideVs = allVersions.filter((v) => v.type !== 'main');
       const mainStrokes = mainV ? parseStrokes(drawingByVersion.get(mainV.id)) : [];
 
       // Check if main version has an image in R2

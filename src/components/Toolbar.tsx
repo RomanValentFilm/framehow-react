@@ -33,6 +33,7 @@ export function Toolbar() {
       <div className="logo">
         Frame<span>how</span>
         <span
+          className="toolbar-version"
           onClick={tapVersion}
           title="tap three times for the sync log"
           style={{fontSize:'9px',color:'#555',marginLeft:'6px',letterSpacing:'0.02em',cursor:'pointer',padding:'4px'}}

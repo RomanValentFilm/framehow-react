@@ -360,6 +360,9 @@
   @media (max-width:430px) and (orientation:portrait){.view-btn[data-view="overview"],.view-btn[data-view="grid4"]{display:none;}}
   /* iPhone portrait + landscape project: hide frame count badge */
   @media (max-width:430px) and (orientation:portrait){body:not(.portrait-mode) .frame-badge{display:none;}}
+  /* iPhone, portrait: no room for the version number (#497). Turn the phone to
+     see it, and for the three taps that open the log. */
+  @media (max-width:430px) and (orientation:portrait){.toolbar-version{display:none;}}
   .strip-scroll{padding:10px;display:flex;flex-direction:column;gap:12px;}
   .strip-scroll::-webkit-scrollbar{width:4px;}
   .strip-scroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.15);border-radius:2px;}

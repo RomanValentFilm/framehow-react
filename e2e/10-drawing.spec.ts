@@ -164,7 +164,21 @@ test('the card still shows what you drew on after a sync lands', async ({ browse
       await desktop.page.waitForTimeout(150);
     }
   })();
+  // TOUCHED WHILE IT WAITS (run 177). A device nobody touches does not ask the
+  // server — Roman's rule, and the log now says so: "nobody has touched this
+  // device for a while". The person is looking at this card, so the test moves
+  // the mouse now and then, exactly as a person does.
+  const touching = (async () => {
+    const until = Date.now() + 40_000;
+    while (!flippedAt && Date.now() < until) {
+      await desktop.nudge();
+      await desktop.page.waitForTimeout(3000);
+      if ((await desktop.log()).filter((l) => l.includes('arrangement arrived')).length
+          > mark.filter((l) => l.includes('arrangement arrived')).length) break;
+    }
+  })();
   await desktop.waitForLogAfter(mark, 'arrangement arrived', 40_000);
+  await touching;
   await desktop.page.waitForTimeout(1500);
   await watching;
 
