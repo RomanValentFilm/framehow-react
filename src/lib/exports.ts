@@ -3324,7 +3324,10 @@ export async function runFittingImageExport(): Promise<void> {
   const frames = s.frames.filter((f) => !f.hidden);
   for (let i = 0; i < frames.length; i++) {
     const f = frames[i];
-    const prefix = `${baseName}_${safeName(f.label || `${i + 1}`)}`;
+    // THE TALENT'S NUMBER IS IN THE NAME (#506). In a fitting every new talent
+    // starts as "Name", so files named by label alone overwrote each other in
+    // the zip and only the last talent came out.
+    const prefix = `${baseName}_${String(i + 1).padStart(2, '0')}_${safeName(f.label || `${i + 1}`)}`;
     if (includeTalent) {
       zip.file(`${prefix}.jpg`, await canvasToBlob(withBakedBorder(await rasterizeMain(f))), { binary: true });
     }

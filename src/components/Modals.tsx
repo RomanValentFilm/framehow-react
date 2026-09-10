@@ -916,7 +916,7 @@ export function Modals() {
               </span>
             </label>
             <label className="exp-inline" style={{ marginTop: 6 }}>
-              <input type="checkbox" id="fittingIncludeNotes" /> Notes under each photo
+              <input type="checkbox" id="fittingIncludeNotes" /> Include notes
             </label>
           </div>
           <div className="exp-field" style={{ marginTop: 18 }}>
