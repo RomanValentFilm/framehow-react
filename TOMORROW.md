@@ -80,7 +80,7 @@ orders or get out.
 
 ## THE LIST — 10 September, evening (Roman's order)
 
-dev is **v4.9.198 · #501**. Next number: **v4.9.199 · #502**.
+dev is **v4.9.204 · #507**. Next number: **v4.9.205 · #508**.
 
 ### NOW
 1. ~~The forced fetch after a stale push while a hand is drawing~~ — DONE #499:
@@ -90,10 +90,10 @@ dev is **v4.9.198 · #501**. Next number: **v4.9.199 · #502**.
 2. ~~iPad view bar and setup bar hiding~~ — DONE by #481, Roman confirmed on the iPad 10 Sept.
 3. ~~Preview thumbnails in the sort view~~ — already there (tap a small box on the iPad; hover on the desktop). Roman: done. Note: a shot with only a drawing and no picture shows no preview — a possible later improvement, not asked for.
 4. **The ten-second lock** (waitForDeviceLock / heartbeat, accountFlow).
-5. **FITTING export modal.** Looked 10 Sept: nothing fitting-specific exists.
-   A fitting project uses the portrait (9:16) export — five tall cards per
-   landscape page, group + strip picker (TALENTS/LOOKS/REFS), no stars, words
-   say "frames" and "9:16". Roman to say what a fitting page should show.
+5. ~~FITTING export modal~~ — DONE #502–#507 to Roman's text: two layouts
+   (TALENT + 4 LOOKS / 5 LOOKS), one row per page, LOOKS/REFS ticks, photos
+   by stars (looks only; refs come whole), notes, A4/Letter; PDF, Keynote,
+   images. Roman: "perfect".
 6. **Two-finger pinch to zoom in the camera** — Roman, 10 Sept.
 7. **Take the sync log out** — last, Roman still reads it constantly.
 

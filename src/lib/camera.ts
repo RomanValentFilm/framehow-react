@@ -74,6 +74,7 @@ export async function openCamera(
     document.getElementById('cameraOverlay')!.classList.remove('hidden');
     const vid = document.getElementById('cameraVideo') as HTMLVideoElement;
     vid.srcObject = cameraStream;
+    setupPinchZoom(vid);
     const posGuide = () => positionCameraGuide(ar);
     // Force layout flush, then position. iPad Safari sometimes reports
     // clientWidth=0 immediately after toggling display:none → flex.
@@ -145,10 +146,18 @@ export function captureFromViewfinder(): void {
     gt = parseInt(guide.style.top) / wh;
   const gwr = parseInt(guide.style.width) / ww,
     ghr = parseInt(guide.style.height) / wh;
-  const cropX = sx + gl * sw,
+  let cropX = sx + gl * sw,
     cropY = sy + gt * sh,
     cropW = gwr * sw,
     cropH = ghr * sh;
+  // DIGITAL ZOOM (#508): the picture on screen is scaled up around its centre,
+  // so the snap takes the same smaller, centred part of the frame. When the
+  // camera zooms itself the frames arrive zoomed and nothing is done here.
+  if (_zoomMode === 'digital' && _zoom > 1) {
+    const cx = cropX + cropW / 2, cy = cropY + cropH / 2;
+    cropW /= _zoom; cropH /= _zoom;
+    cropX = cx - cropW / 2; cropY = cy - cropH / 2;
+  }
   const cvs = document.createElement('canvas');
   cvs.width = Math.round(cropW);
   cvs.height = Math.round(cropH);
@@ -193,6 +202,7 @@ export function captureFromViewfinder(): void {
 }
 
 export function closeCamera(): void {
+  teardownPinchZoom();
   if (cameraStream) {
     cameraStream.getTracks().forEach((t) => t.stop());
     cameraStream = null;
@@ -634,4 +644,115 @@ function closeCropUI(): void {
   area.onmousedown = area.onmousemove = area.onmouseup = area.onmouseleave = null;
   area.ontouchstart = area.ontouchmove = area.ontouchend = area.ontouchcancel = null;
   cropState = null;
+}
+
+
+// ---------------------------------------------------------------------------
+// TWO-FINGER PINCH TO ZOOM (#508). Roman, 10 September.
+//
+// 1× to 4×. Where the camera can zoom itself (iPhone and iPad on a recent
+// iOS report a `zoom` capability) the real camera zoom is used — better
+// picture. Otherwise the video is scaled up on screen around its centre and
+// the snap crops the same part (see captureFromViewfinder). Every opening
+// starts at 1×; a small badge says the level while zoomed.
+// ---------------------------------------------------------------------------
+let _zoom = 1;
+let _zoomMode: 'camera' | 'digital' = 'digital';
+let _zoomRange: { min: number; max: number } = { min: 1, max: 4 };
+let _pinchStartDist = 0;
+let _pinchStartZoom = 1;
+let _pinchWrap: HTMLElement | null = null;
+let _pinchHandlers: { start: (e: TouchEvent) => void; move: (e: TouchEvent) => void; end: () => void } | null = null;
+
+function zoomBadge(): HTMLElement {
+  let b = document.getElementById('cameraZoomBadge');
+  if (!b) {
+    b = document.createElement('div');
+    b.id = 'cameraZoomBadge';
+    b.style.cssText = 'position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:3;' +
+      'background:rgba(0,0,0,.55);color:#fff;font:600 12px -apple-system,sans-serif;' +
+      'padding:3px 9px;border-radius:12px;pointer-events:none;display:none;';
+    document.getElementById('cameraVideoWrap')?.appendChild(b);
+  }
+  return b;
+}
+
+function applyZoom(z: number, vid: HTMLVideoElement): void {
+  _zoom = Math.max(_zoomRange.min, Math.min(_zoomRange.max, z));
+  if (_zoomMode === 'camera' && cameraStream) {
+    const track = cameraStream.getVideoTracks()[0];
+    // The camera's own zoom. Fire and forget; a refusal falls back to digital.
+    void (track as MediaStreamTrack & { applyConstraints(c: unknown): Promise<void> })
+      .applyConstraints({ advanced: [{ zoom: _zoom }] })
+      .catch(() => { _zoomMode = 'digital'; applyZoom(_zoom, vid); });
+    vid.style.transform = '';
+  } else {
+    vid.style.transformOrigin = '50% 50%';
+    vid.style.transform = _zoom > 1 ? `scale(${_zoom})` : '';
+  }
+  const badge = zoomBadge();
+  badge.textContent = `${_zoom.toFixed(1)}×`;
+  badge.style.display = _zoom > 1.02 ? 'block' : 'none';
+}
+
+function setupPinchZoom(vid: HTMLVideoElement): void {
+  teardownPinchZoom();
+  _zoom = 1;
+  _zoomMode = 'digital';
+  _zoomRange = { min: 1, max: 4 };
+  vid.style.transform = '';
+  // Does the camera zoom by itself?
+  try {
+    const track = cameraStream?.getVideoTracks()[0];
+    const caps = (track as MediaStreamTrack & { getCapabilities?(): Record<string, unknown> } | undefined)?.getCapabilities?.();
+    const z = caps && (caps as { zoom?: { min?: number; max?: number } }).zoom;
+    if (z && typeof z.max === 'number' && z.max > 1) {
+      _zoomMode = 'camera';
+      _zoomRange = { min: Math.max(1, z.min ?? 1), max: Math.min(4, z.max) };
+    }
+  } catch { /* no capabilities — digital it is */ }
+  const badge = zoomBadge();
+  badge.style.display = 'none';
+
+  const wrap = document.getElementById('cameraVideoWrap');
+  if (!wrap) return;
+  const dist = (e: TouchEvent) => {
+    const a = e.touches[0], b = e.touches[1];
+    return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+  };
+  const start = (e: TouchEvent) => {
+    if (e.touches.length !== 2) return;
+    _pinchStartDist = dist(e);
+    _pinchStartZoom = _zoom;
+    e.preventDefault();
+  };
+  const move = (e: TouchEvent) => {
+    if (e.touches.length !== 2 || _pinchStartDist === 0) return;
+    e.preventDefault();
+    applyZoom(_pinchStartZoom * (dist(e) / _pinchStartDist), vid);
+  };
+  const end = () => { _pinchStartDist = 0; };
+  wrap.addEventListener('touchstart', start, { passive: false });
+  wrap.addEventListener('touchmove', move, { passive: false });
+  wrap.addEventListener('touchend', end);
+  wrap.addEventListener('touchcancel', end);
+  _pinchWrap = wrap;
+  _pinchHandlers = { start, move, end };
+}
+
+function teardownPinchZoom(): void {
+  if (_pinchWrap && _pinchHandlers) {
+    _pinchWrap.removeEventListener('touchstart', _pinchHandlers.start);
+    _pinchWrap.removeEventListener('touchmove', _pinchHandlers.move);
+    _pinchWrap.removeEventListener('touchend', _pinchHandlers.end);
+    _pinchWrap.removeEventListener('touchcancel', _pinchHandlers.end);
+  }
+  _pinchWrap = null;
+  _pinchHandlers = null;
+  _pinchStartDist = 0;
+  const vid = document.getElementById('cameraVideo') as HTMLVideoElement | null;
+  if (vid) vid.style.transform = '';
+  const badge = document.getElementById('cameraZoomBadge');
+  if (badge) badge.style.display = 'none';
+  _zoom = 1;
 }
