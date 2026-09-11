@@ -1,3 +1,4 @@
+import * as fs from 'fs';
 // TWO DEVICES, REAL BROWSERS, REAL SERVER (#309).
 //
 // The benches prove the rules in one second, and they will always be the first
@@ -238,6 +239,73 @@ export class Device {
     return this.page.evaluate(() =>
       (window as never as { __fh_test: { saveThisProject(): Promise<void> } })
         .__fh_test.saveThisProject());
+  }
+
+  // --- BIG DAY (#509) --------------------------------------------------------
+
+  async newProjectOfKind(name: string, kind: 'landscape' | 'portrait' | 'fitting', frames: number): Promise<string | null> {
+    say(`${this.name}: making the ${kind} project "${name}" with ${frames} shots`);
+    return this.page.evaluate(([n, k, c]) =>
+      (window as never as { __fh_test: { newProjectOfKind(n: string, k: string, c: number): Promise<string | null> } })
+        .__fh_test.newProjectOfKind(n as string, k as string, c as number), [name, kind, frames] as [string, string, number]);
+  }
+
+  /** Import one of Roman's PDFs from e2e/fixtures (they stay on his Mac). */
+  async importPdfProject(name: string, fileName: string): Promise<string | null> {
+    const path = `${process.cwd()}/e2e/fixtures/${fileName}`;
+    if (!fs.existsSync(path)) { say(`${this.name}: no ${fileName} in e2e/fixtures — skipping`); return null; }
+    const base64 = fs.readFileSync(path).toString('base64');
+    say(`${this.name}: importing ${fileName} (${Math.round(base64.length * 0.75 / 1024)} KB) as "${name}"`);
+    return this.page.evaluate(([n, b]) =>
+      (window as never as { __fh_test: { importPdfProject(n: string, b: string): Promise<string | null> } })
+        .__fh_test.importPdfProject(n as string, b as string), [name, base64] as [string, string]);
+  }
+
+  /** Every PDF in e2e/fixtures, alphabetical. */
+  static fixturePdfs(): string[] {
+    const dir = `${process.cwd()}/e2e/fixtures`;
+    if (!fs.existsSync(dir)) return [];
+    return fs.readdirSync(dir).filter((f) => f.toLowerCase().endsWith('.pdf')).sort();
+  }
+
+  async importPicturesProject(name: string, count: number): Promise<string | null> {
+    say(`${this.name}: importing ${count} pictures as "${name}"`);
+    return this.page.evaluate(([n, c]) =>
+      (window as never as { __fh_test: { importPicturesProject(n: string, c: number): Promise<string | null> } })
+        .__fh_test.importPicturesProject(n as string, c as number), [name, count] as [string, number]);
+  }
+
+  /** The whole project, flat, as JSON text — for holding two devices against
+   *  each other. Private numbers are not in it. */
+  async whole(): Promise<string> {
+    const w = await this.page.evaluate(() => (window as never as { __fh_test: { whole(): unknown } }).__fh_test.whole());
+    return JSON.stringify(w, null, 1);
+  }
+
+  /** Wait until two devices hold the SAME whole project. On failure, say the
+   *  first line that differs, with both sides, so the fault is readable. */
+  static async waitUntilWholeAgrees(a: Device, b: Device, why: string, timeoutMs = 60_000): Promise<string> {
+    say(`waiting for ${a.name} and ${b.name} to hold the same whole project…`);
+    const deadline = Date.now() + timeoutMs;
+    let x = '', y = '';
+    for (;;) {
+      await Device.nudgeOneAtATime(a, b);
+      [x, y] = [await a.whole(), await b.whole()];
+      if (x === y) { say(`whole project agrees (${x.length} chars)`); return x; }
+      if (Date.now() > deadline) break;
+      await a.page.waitForTimeout(700);
+    }
+    const xl = x.split('\n'), yl = y.split('\n');
+    let i = 0; while (i < xl.length && i < yl.length && xl[i] === yl[i]) i++;
+    throw new Error(`${why}\n  first difference at line ${i + 1}:\n  ${a.name}: ${(xl[i] ?? '(end)').trim()}\n  ${b.name}: ${(yl[i] ?? '(end)').trim()}`
+      + `\n  around:\n${xl.slice(Math.max(0, i - 3), i + 3).map((l) => '    ' + l).join('\n')}`);
+  }
+
+  /** The projects the server lists for this account — names, alphabetical. */
+  static async projectNames(token: string): Promise<string[]> {
+    const res = await fetch(`${API}/projects`, { headers: { Authorization: `Bearer ${token}` } });
+    const body = await res.json() as { projects: Array<{ name: string; deleted_at: number | null }> };
+    return body.projects.filter((p) => !p.deleted_at).map((p) => p.name).sort();
   }
 
   async openProject(id: string): Promise<void> {
@@ -737,6 +805,96 @@ export class Device {
     return this.page.evaluate((i) =>
       (window as never as { __fh_test: { deleteFrame(i: number): void } })
         .__fh_test.deleteFrame(i as number), index);
+  }
+
+  async hideFrame(index: number): Promise<void> {
+    say(`${this.name}: hiding shot ${index + 1}`);
+    await this.page.evaluate((i) =>
+      (window as never as { __fh_test: { hideFrame(i: number): void } })
+        .__fh_test.hideFrame(i as number), index);
+  }
+
+  /** Move a shot by pressing the app's own arrow (arm, move, DONE). */
+  async moveShot(index: number, direction: 'up' | 'down', steps = 1): Promise<void> {
+    say(`${this.name}: moving shot ${index + 1} ${direction} ${steps} place${steps === 1 ? '' : 's'}`);
+    await this.page.evaluate(([i, d, n]) =>
+      (window as never as { __fh_test: { moveShot(i: number, d: 'up' | 'down', n: number): void } })
+        .__fh_test.moveShot(i as number, d as 'up' | 'down', n as number), [index, direction, steps] as [number, 'up' | 'down', number]);
+  }
+
+  /** Type into the text box under a shot and leave it — as a person does. */
+  async typeUnder(index: number, text: string): Promise<void> {
+    say(`${this.name}: typing under shot ${index + 1}: "${text}"`);
+    const fid = await this.page.evaluate((i) =>
+      (window as never as { __fh_test: { frameIdAt(i: number): number } })
+        .__fh_test.frameIdAt(i as number), index);
+    const pressPicTxt = () => this.page.evaluate((i) =>
+      (window as never as { __fh_test: { pressPicTxt(i: number): void } })
+        .__fh_test.pressPicTxt(i as number), index);
+    await pressPicTxt();                                   // PIC/TXT → the text box shows
+    const box = this.page.locator(`textarea.frame-text-edit[data-textfid="${fid}"]`).first();
+    await box.waitFor({ state: 'attached', timeout: 10_000 });
+    await box.fill(text);
+    await box.blur();                                      // leaving the box pushes
+    await pressPicTxt();                                   // and back to the picture
+  }
+
+  // ── PART 3 (#509): pictures, drawings, versions, stars, written text ──
+
+  /** Press the strip's button so its cards are on the page. */
+  async showStrip(strip: string): Promise<void> {
+    say(`${this.name}: showing the ${strip} strip`);
+    await this.page.evaluate((st) =>
+      (window as never as { __fh_test: { showStrip(st: string): void } }).__fh_test.showStrip(st as string), strip);
+    await this.page.waitForTimeout(300);
+  }
+
+  /** Press UPLOAD and hand the app's own file chooser a small picture. */
+  async uploadPicture(index: number, strip: 'main' | string, pngBase64: string): Promise<void> {
+    say(`${this.name}: UPLOAD on shot ${index + 1} (${strip})`);
+    const [chooser] = await Promise.all([
+      this.page.waitForEvent('filechooser', { timeout: 10_000 }),
+      this.page.evaluate(([i, st]) =>
+        (window as never as { __fh_test: { pressUpload(i: number, st: string): void } })
+          .__fh_test.pressUpload(i as number, st as string), [index, strip] as [number, string]),
+    ]);
+    await chooser.setFiles({ name: 'picture.png', mimeType: 'image/png', buffer: Buffer.from(pngBase64, 'base64') });
+  }
+
+  async pressStar(index: number, strip: string, versionIndex: number): Promise<void> {
+    say(`${this.name}: star on shot ${index + 1} ${strip} version ${versionIndex + 1}`);
+    await this.page.evaluate(([i, st, v]) =>
+      (window as never as { __fh_test: { pressStar(i: number, st: string, v: number): void } })
+        .__fh_test.pressStar(i as number, st as string, v as number), [index, strip, versionIndex] as [number, string, number]);
+  }
+
+  async pressNewVersion(index: number, strip: string): Promise<void> {
+    say(`${this.name}: + on shot ${index + 1} ${strip}`);
+    await this.page.evaluate(([i, st]) =>
+      (window as never as { __fh_test: { pressNewVersion(i: number, st: string): void } })
+        .__fh_test.pressNewVersion(i as number, st as string), [index, strip] as [number, string]);
+  }
+
+  async hideVersion(index: number, strip: string, versionIndex: number): Promise<void> {
+    say(`${this.name}: hiding shot ${index + 1} ${strip} version ${versionIndex + 1}`);
+    await this.page.evaluate(([i, st, v]) =>
+      (window as never as { __fh_test: { hideVersion(i: number, st: string, v: number): Promise<void> } })
+        .__fh_test.hideVersion(i as number, st as string, v as number), [index, strip, versionIndex] as [number, string, number]);
+  }
+
+  async writeOnCard(index: number, strip: 'main' | string, versionIndex: number, text: string): Promise<void> {
+    say(`${this.name}: writing "${text}" on shot ${index + 1} ${strip}${strip === 'main' ? '' : ` version ${versionIndex + 1}`}`);
+    await this.page.evaluate(([i, st, v, t]) =>
+      (window as never as { __fh_test: { writeOnCard(i: number, st: string, v: number, t: string): Promise<void> } })
+        .__fh_test.writeOnCard(i as number, st as string, v as number, t as string),
+      [index, strip, versionIndex, text] as [number, string, number, string]);
+  }
+
+  async unhideFrame(index: number): Promise<void> {
+    say(`${this.name}: un-hiding shot ${index + 1}`);
+    await this.page.evaluate((i) =>
+      (window as never as { __fh_test: { unhideFrame(i: number): void } })
+        .__fh_test.unhideFrame(i as number), index);
   }
 
   push(): Promise<void> {

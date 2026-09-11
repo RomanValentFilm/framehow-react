@@ -1873,7 +1873,7 @@ async function askAboutOpenSettingConflicts(projectId: string): Promise<void> {
  * Deliberately narrow. A version that has ever reached the server keeps its
  * name, so nothing that already exists anywhere can be dropped by this.
  */
-function untouchedStrip(vs: Version[] | undefined): boolean {
+export function untouchedStrip(vs: Version[] | undefined): boolean {
   if (!vs || vs.length !== 1) return false;
   const v = vs[0];
   return !v.serverVersionId
@@ -5680,6 +5680,12 @@ async function tryPullFromCloud(force = false): Promise<void> {
       if (settingsNeedPush()) {
         trace('  settings still unsent — will send them');
         markSomethingToSend();
+        // AND SEND THEM (#509). The mark alone raised the flag and left it
+        // there: nothing after a pull starts a push by itself, so a break
+        // added in the same breath as reconnecting sat unsent on this device
+        // until some unrelated edit took it along (test 07, red since the
+        // touch-and-catch-up rule). The frames branch above already does this.
+        setTimeout(() => void flushSyncNow(), 400);
       }
       if (progressBar) progressBar.style.width = '100%';
       setTimeout(() => {

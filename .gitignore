@@ -16,3 +16,6 @@ backend/.wrangler-e2e/
 .next/last-run
 .next/run
 .next/plan
+
+# Roman's test PDFs stay on the Mac (BIG DAY reads them there); never on GitHub.
+e2e/fixtures/*.pdf

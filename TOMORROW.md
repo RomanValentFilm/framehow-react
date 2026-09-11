@@ -80,7 +80,17 @@ orders or get out.
 
 ## THE LIST — 10 September, evening (Roman's order)
 
-dev is **v4.9.204 · #507**. Next number: **v4.9.205 · #508**.
+dev is **v4.9.206 · #509** (saved 11 September, evening). Next number: **v4.9.207 · #510**.
+
+### BIG DAY — 11 September
+`e2e/29-big-day.spec.ts`, run with `FH_RUN=<n> npm run t -- -g "big day"`.
+Parts 1, 1b, 2, 3 GREEN (run 204). Next: part 4 — strips/names, needs, notes,
+setups; then groups; shooting orders and boxes; exports; an offline day;
+RESTORE points + delete/recover; reload/switch; final flat comparison.
+Doors added today press the app's own buttons and answer its own dialogs
+(UPLOAD + file chooser, star, +, hide version, WRITE/TEXT box, PIC/TXT,
+strip buttons, arrows+DONE, hide/un-hide shot). The whole suite (run 200 + 204):
+everything green except LATER 3 (known).
 
 ### NOW
 1. ~~The forced fetch after a stale push while a hand is drawing~~ — DONE #499:
@@ -94,7 +104,7 @@ dev is **v4.9.204 · #507**. Next number: **v4.9.205 · #508**.
    (TALENT + 4 LOOKS / 5 LOOKS), one row per page, LOOKS/REFS ticks, photos
    by stars (looks only; refs come whole), notes, A4/Letter; PDF, Keynote,
    images. Roman: "perfect".
-6. **Two-finger pinch to zoom in the camera** — Roman, 10 Sept.
+6. ~~Two-finger pinch to zoom in the camera~~ — DONE #508, Roman: "love it".
 7. **Take the sync log out** — last, Roman still reads it constantly.
 
 ### LATER
@@ -116,12 +126,26 @@ dev is **v4.9.204 · #507**. Next number: **v4.9.205 · #508**.
    notes below.
 
 ### TESTS TO WRITE
+
+- A shot moved while the previous DONE is still in the air. Seen only in the
+  simulator (run 195, four DONEs in 200 ms): each reply laid the older
+  arrangement back over the newer move. Not yet seen by hand; test it alone.
 - **Fast scribble across several cards** while pushes go out and the other
   device works; every stroke counted on both devices afterwards. Roman did it
   by hand on #499 — green; the simulator should hold it.
 - **A shot ticked on the other device while this one has the order open** —
   green on next opening (Roman confirmed by hand).
 - Both belong in the whole-day test (LATER 2).
+
+### DONE 11 September
+- #509 (v4.9.206): un-hide never pushed on its own, hide pushed only by luck —
+  both push by right now · a settings change kept through a reconnect pull
+  (a break added in the same breath as coming back) is pushed, not just
+  marked · BIG DAY parts 1–3 · old tests 07/09/13 brought in line with the
+  rules that came after them (pen-down holds the fetch; two devices changing
+  the same shooting order apart is ASKED, Roman kept that rule) · door faults:
+  project-making doors left the next-free number behind; four DONEs in
+  200 ms are not what a person does.
 
 ### DONE 9–10 September (for the record)
 - #489 orders/groups travel by name · #490 setups in the boxes, bars in SETUPS

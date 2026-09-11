@@ -187,19 +187,36 @@ test('a stroke survives the page being redrawn under it', async ({ browser }) =>
   say('desktop: pen down, and left down');
   await desktop.scribbleStart(0);
 
-  // The other device works, so a pull with real content arrives and the page is
-  // rebuilt — with the pen still down.
+  // The other device works. THE PEN IS DOWN, SO NOTHING MAY ARRIVE (#371,
+  // Roman's rule: a device you write on does not pull while your pen is down).
+  // This test used to wait for the pull to land mid-stroke and check the stroke
+  // survived the redraw — the app now refuses the redraw altogether, which is
+  // the better answer, and the test asserts that instead (#509).
   const mark = await desktop.mark();
   await tablet.writeUnder(1, 'the tablet writes mid-stroke');
   await tablet.settle();
-  await desktop.waitForLogAfter(mark, 'arrangement arrived', 40_000);
+  for (let i = 0; i < 6; i++) { await desktop.nudge(); await desktop.page.waitForTimeout(1000); }
+  const arrivedMidStroke = (await desktop.log()).filter((l) => l.includes('arrangement arrived')).length
+    - mark.filter((l) => l.includes('arrangement arrived')).length;
+  expect(arrivedMidStroke, 'A PULL LANDED WHILE THE PEN WAS DOWN. The app must hold '
+    + 'its fetching until the hand is still (#371).').toBe(0);
 
-  say('desktop: pen up, on whatever layer is there now');
+  say('desktop: pen up');
   const after = await desktop.scribbleEnd(0);
+  expect(after, 'THE STROKE WAS LOST. The pen was down while the other device '
+    + 'worked, and the half-made stroke did not survive the pen coming up.').toBe(before + 1);
 
-  expect(after, 'THE STROKE WAS LOST WITH THE PAGE. The pen was down when a sync '
-    + 'redrew the 3x2 page; the app threw the scribble layer away and made a new '
-    + 'one, and the half-made stroke went with it.').toBe(before + 1);
+  // Hand still: the held fetch goes through and the tablet's text arrives.
+  say('desktop: hand still — the held fetch may go now');
+  const deadline = Date.now() + 40_000;
+  for (;;) {
+    await desktop.nudge();
+    const text = (await desktop.read()).frames[1]?.text ?? '';
+    if (text === 'the tablet writes mid-stroke') break;
+    if (Date.now() > deadline) throw new Error('THE TABLET\'S TEXT NEVER ARRIVED once the pen was up');
+    await desktop.page.waitForTimeout(1000);
+  }
+  expect(await desktop.scribbleCount(0), 'the stroke is still there after the pull').toBe(before + 1);
 
   await desktop.close();
   await tablet.close();

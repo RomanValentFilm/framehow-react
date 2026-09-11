@@ -1,4 +1,4 @@
-# 29 — THE WHOLE DAY (outline, 10 September)
+# 29 — BIG DAY (outline, 10 September; named by Roman 11 September)
 
 Roman: "a basic heavy duty test that runs all functions of the app, back and
 forth… so every time we do some change, we immediately know if we broke
@@ -9,7 +9,7 @@ change. Every check is `expect.soft`, so ONE run reports EVERY broken rule
 (the 27-the-whole-loop way). Target: about 8 minutes. Grows as the app grows;
 the numbered parts below are the order of the day.
 
-    FH_RUN=<n> npm run t -- e2e/29-the-whole-day.spec.ts
+    FH_RUN=<n> npm run t -- e2e/29-big-day.spec.ts
 
 Every step is done through the app's OWN path (a button, or a door that calls
 the same function the button calls — never a copy). Where a door is missing it

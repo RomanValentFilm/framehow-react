@@ -18,17 +18,18 @@ import { useStore, bumpRenderTick } from '../store/state';
 import type { SortOrder, StripType } from '../store/state';
 import { getVisibleFrames, createGroup, enterGroup, reorderFrameInGroup } from './groups';
 import { newFrameId } from './ids';
-import { ensureStripVersions, getStripVersions, setFrameStripLabel } from './helpers';
+import { ensureStripVersions, getStripVersions, setFrameStripLabel, setStripActiveTab, stripScrollId } from './helpers';
 import { openFullscreen, closeFullscreen } from './fullscreen';
 import { setViewMode } from './view';
 import { openSortEditView, closeSortMode, openOrderView, addNewOrder, toggleSortDropdown, addStoryFlowBreak, renameBreak } from './sortOrder';
 import { toggleScribbleMode, attachScribbleOverlays } from './scribble';
 import { trace } from './syncTrace';
-import { startFromScratch } from './files';
-import { deleteFrameForGood, handleMainAction, renameFrame } from './actions';
+import { startFromScratch, startPortrait, startFitting, handleFolderImages } from './files';
+import { handlePDF } from './pdf';
+import { deleteFrameForGood, handleMainAction, handleAction, renameFrame, hideFrame, unhideFrame } from './actions';
 import { createSetup, handleSetupFrameClick, handleStripTagClick } from './setups';
 import { renameNeedTab, renameNeedTable, renameNeedItem, ensureFrameNeeds } from './needs';
-import { saveNow, openCloudProjectById, beginNewProject } from './accountFlow';
+import { saveNow, openCloudProjectById, beginNewProject, untouchedStrip } from './accountFlow';
 import { flushSyncNow, markFrameDirty, getDirtyFrameIds, pullNow } from './currentProject';
 import { openNeedsModal } from './overview';
 import { stampChangedContent } from './changeStamps';
@@ -43,6 +44,35 @@ function on(): boolean {
 }
 
 /** Everything the browser tests are allowed to do, and nothing more. */
+/** The card for a shot on the page, or a clear complaint. */
+function mainCardOf(fid: number, index: number): HTMLElement {
+  const card = document.querySelector(`#mainScroll .frame-card[data-mfid="${fid}"]`) as HTMLElement | null;
+  if (!card) throw new Error(`shot ${index + 1} has no card on the page`);
+  return card;
+}
+function stripCardOf(fid: number, index: number, strip: StripType): HTMLElement {
+  const card = document.querySelector(`#${stripScrollId(strip)} .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
+  if (!card) throw new Error(`shot ${index + 1} has no ${strip} card on the page`);
+  return card;
+}
+
+export interface WholeProject {
+  name: string | null;
+  kind: string;
+  strips: string[];
+  shots: Array<{
+    name: string; label: string; text: string; note: string; hidden: boolean;
+    picture: boolean; strokes: number; scribbles: number; setup: string | null;
+    needsOn: string[]; counters: Record<string, number>; noteCard: string;
+    versions: Record<string, Array<{ label: string; stars: number; hidden: boolean; picture: boolean; strokes: number; note: string; tag: string | null }>>;
+  }>;
+  setups: Array<{ name: string; color: number }>;
+  categories: string[];
+  groups: Array<{ name: string; shots: string[]; hidden: string[] }>;
+  orders: Array<{ name: string; group: string | null; shots: string[]; breaks: Array<{ text: string; position: number }> }>;
+  storyBreaks: Array<{ text: string; position: number; group: string | null }>;
+}
+
 export interface TestDoor {
   /** A new project of `count` frames, named, exactly as the New Project modal
    *  makes one. Then the real save, which creates it on the server. */
@@ -58,6 +88,21 @@ export interface TestDoor {
    *  question #489 turned on — do the shots of a project built with no signal
    *  have their permanent names, so an order made there has something to say. */
   buildProjectWithoutSaving(name: string, count: number): Promise<void>;
+  // --- BIG DAY doors (#509) ---------------------------------------------------
+  /** A new project of a KIND — landscape, portrait or fitting — with `count`
+   *  shots, saved. The app's own start functions, then the same filling-in
+   *  newProject does. Returns the cloud id. */
+  newProjectOfKind(name: string, kind: 'landscape' | 'portrait' | 'fitting', count: number): Promise<string | null>;
+  /** A new project from a real PDF (base64), through the app's own PDF import
+   *  and the ADJUST window's APPLY. Returns the cloud id. */
+  importPdfProject(name: string, base64: string): Promise<string | null>;
+  /** A new project from `count` pictures made on the spot, through the app's
+   *  own folder import. Returns the cloud id. */
+  importPicturesProject(name: string, count: number): Promise<string | null>;
+  /** THE WHOLE PROJECT, FLAT — everything a person could see, in the order the
+   *  screen shows it, with no private numbers in it. Two devices holding the
+   *  same project must return the same thing. */
+  whole(): WholeProject;
   /** Save the project that is open, making it on the server if it is not there
    *  yet — what the app's own autosave does a moment after you make one.
    *  `push` is flushSyncNow, which gives up in silence when there is no project
@@ -105,6 +150,33 @@ export interface TestDoor {
   /** Delete a frame for good, by its place on screen. The same function the
    *  DELETE choice calls, tombstones and all — not a copy of it. */
   deleteFrame(index: number): void;
+  /** HIDE / UN-HIDE a frame by its place in the list — the app's own hideFrame/unhideFrame (#509). */
+  hideFrame(index: number): void;
+  unhideFrame(index: number): void;
+  /** MOVE a shot one place with the app's own arrow: press to arm, press to
+   *  move, then DONE — the three presses a person makes (#509). */
+  moveShot(index: number, direction: 'up' | 'down', steps?: number): void;
+  /** The app's private id of the shot at this place — for finding its box on the page. */
+  frameIdAt(index: number): number;
+  /** Press PIC/TXT on a shot — the app's own toggle that shows the text box under it. */
+  pressPicTxt(index: number): void;
+  /** PART 3 DOORS (#509) — every one presses the app's own button or answers
+   *  its own dialog; none of them writes into the store by hand. */
+  /** Press the strip's own button (ANGLE, SKETCH…) if that strip is not on
+   *  the page yet — a person does the same before working on it. */
+  showStrip(strip: StripType): void;
+  /** Press UPLOAD on the main card ('main') or on a strip card. The file
+   *  chooser then opens; the test hands it a picture. */
+  pressUpload(index: number, strip: 'main' | StripType): void;
+  /** Press the star on a strip card's version. */
+  pressStar(index: number, strip: StripType, versionIndex: number): void;
+  /** Press + on a strip card — a new, empty version. */
+  pressNewVersion(index: number, strip: StripType): void;
+  /** Choose HIDE for a version: the card's own clear/delete choice, answered. */
+  hideVersion(index: number, strip: StripType, versionIndex: number): Promise<void>;
+  /** WRITE on the main card ('main') or TEXT on a strip card's version — the
+   *  app's own text box, filled and OK'd. */
+  writeOnCard(index: number, strip: 'main' | StripType, versionIndex: number, text: string): Promise<void>;
   /** Make a setup, exactly as the CREATE button does. Returns its id. */
   newSetup(name: string, colorIndex?: number): string;
 
@@ -428,7 +500,10 @@ export function installTestDoor(): void {
         serverFrameId: newFrameId(),
         serverMainVersionId: undefined,
       }));
-      useStore.setState({ frames: [first, ...extra] } as never);
+      // AND THE NEXT FREE NUMBER MOVES PAST THEM (#509). Without this the app's
+      // own NEW handed out numbers already in use, and a shot vanished under
+      // the new one. The app never gets here on its own — only this door did.
+      useStore.setState({ frames: [first, ...extra], nextId: first.id + extra.length + 1 } as never);
       setProjectName(name);
       (window as never as { __fh_renderAll?: () => void }).__fh_renderAll?.();
       await saveNow();
@@ -451,9 +526,155 @@ export function installTestDoor(): void {
         serverFrameId: newFrameId(),
         serverMainVersionId: undefined,
       }));
-      useStore.setState({ frames: [first, ...extra] } as never);
+      // AND THE NEXT FREE NUMBER MOVES PAST THEM (#509). Without this the app's
+      // own NEW handed out numbers already in use, and a shot vanished under
+      // the new one. The app never gets here on its own — only this door did.
+      useStore.setState({ frames: [first, ...extra], nextId: first.id + extra.length + 1 } as never);
       setProjectName(name);
       (window as never as { __fh_renderAll?: () => void }).__fh_renderAll?.();
+    },
+
+    async newProjectOfKind(name, kind, count) {
+      await beginNewProject();
+      if (kind === 'portrait') startPortrait();
+      else if (kind === 'fitting') startFitting();
+      else startFromScratch();
+      const first = useStore.getState().frames[0];
+      if (!first) return null;
+      const extra = Array.from({ length: Math.max(0, count - 1) }, (_, i) => ({
+        ...first,
+        id: first.id + i + 1,
+        label: kind === 'landscape' ? String(i + 2) : first.label,
+        serverFrameId: newFrameId(),
+        serverMainVersionId: undefined,
+      }));
+      // AND THE NEXT FREE NUMBER MOVES PAST THEM (#509). Without this the app's
+      // own NEW handed out numbers already in use, and a shot vanished under
+      // the new one. The app never gets here on its own — only this door did.
+      useStore.setState({ frames: [first, ...extra], nextId: first.id + extra.length + 1 } as never);
+      setProjectName(name);
+      (window as never as { __fh_renderAll?: () => void }).__fh_renderAll?.();
+      await saveNow();
+      return getCurrentProject().projectId;
+    },
+
+    async importPdfProject(name, base64) {
+      await beginNewProject();
+      // ONE OF ROMAN'S OWN STORYBOARD PDFs, handed in by the test (run 184: a
+      // PDF invented here matched nothing — the import is tuned to real ones).
+      const bin = atob(base64);
+      const bytes = new Uint8Array(bin.length);
+      for (let k = 0; k < bin.length; k++) bytes[k] = bin.charCodeAt(k);
+      const file = new File([bytes], `${name}.pdf`, { type: 'application/pdf' });
+      // handlePDF finds the shots and, on an iPad or desktop, opens the ADJUST
+      // window with them; the shots are put in when APPLY is pressed there —
+      // which is what a person does next. handlePDF awaits the window's pages,
+      // so by the time it returns the button is ready.
+      await handlePDF(file);
+      // …but the window loads its pages AFTER it opens, in the background (run
+      // 186: Apply pressed too early said "the PDF document is null"). Wait
+      // until the counter reads its images — that is written once every page
+      // is rendered and the boxes are placed — then press APPLY.
+      const t0 = Date.now();
+      const counter = () => document.getElementById('pdfAdjustCounter')?.textContent ?? '';
+      while (Date.now() - t0 < 90_000 && !/Image/.test(counter())) {
+        await new Promise((r) => setTimeout(r, 200));
+      }
+      await new Promise((r) => setTimeout(r, 500));
+      const apply = document.getElementById('pdfAdjustApply') as HTMLElement | null;
+      if (apply) {
+        apply.click();
+        const t1 = Date.now();
+        while (Date.now() - t1 < 60_000 && useStore.getState().frames.length === 0) {
+          await new Promise((r) => setTimeout(r, 100));
+        }
+      }
+      setProjectName(name);
+      (window as never as { __fh_renderAll?: () => void }).__fh_renderAll?.();
+      await saveNow();
+      return getCurrentProject().projectId;
+    },
+
+    async importPicturesProject(name, count) {
+      await beginNewProject();
+      const files: File[] = [];
+      for (let i = 0; i < count; i++) {
+        const c = document.createElement('canvas'); c.width = 960; c.height = 540;
+        const ctx = c.getContext('2d')!;
+        ctx.fillStyle = `hsl(${(i * 67) % 360},60%,45%)`; ctx.fillRect(0, 0, 960, 540);
+        ctx.fillStyle = '#fff'; ctx.font = 'bold 120px sans-serif'; ctx.fillText(`PIC ${i + 1}`, 200, 320);
+        const blob = await new Promise<Blob>((r) => c.toBlob((b) => r(b!), 'image/jpeg', 0.9));
+        files.push(new File([blob], `shot_${String(i + 1).padStart(2, '0')}.jpg`, { type: 'image/jpeg' }));
+      }
+      // handleFolderImages reads the files off the input that fired the event,
+      // so give it one — the same thing the picker hands it.
+      const input = document.createElement('input'); input.type = 'file';
+      const dt = new DataTransfer(); for (const f of files) dt.items.add(f);
+      input.files = dt.files;
+      handleFolderImages({ target: input } as unknown as Event);
+      // The import reads the pictures asynchronously; wait until they are all in.
+      const t0 = Date.now();
+      while (Date.now() - t0 < 15_000) {
+        const fr = useStore.getState().frames;
+        if (fr.length === count && fr.every((f) => !!f.src)) break;
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      setProjectName(name);
+      (window as never as { __fh_renderAll?: () => void }).__fh_renderAll?.();
+      await saveNow();
+      return getCurrentProject().projectId;
+    },
+
+    whole() {
+      const s = useStore.getState();
+      const nameOf = (n: number) => s.frames.find((f) => f.id === n)?.serverFrameId ?? `?${n}`;
+      const groupName = (gid: number | null | undefined) =>
+        gid == null ? null : (s.groups.find((g) => g.id === gid)?.name ?? `?group ${gid}`);
+      const strips = ['ver', 'floor', 'refs'] as const;
+      return {
+        name: getCurrentProject().name,
+        kind: s.projectType,
+        strips: s.stripDefs.map((d) => `${d.id}:${d.buttonLabel}/${d.defaultFrameLabel}/${d.prefix}`),
+        shots: s.frames.map((f) => {
+          const needs = s.frameNeeds[f.id];
+          const on = needs ? Object.entries(needs.toggles ?? {}).filter(([, v]) => v).map(([k]) => k).sort() : [];
+          const counters: Record<string, number> = {};
+          if (needs) for (const [k, v] of Object.entries(needs.counters ?? {})) if (v) counters[k] = v as number;
+          const versions: WholeProject['shots'][number]['versions'] = {};
+          for (const st of strips) {
+            // A strip nobody has touched is nothing, by the app's own rule
+            // (#358): its one blank placeholder is neither sent nor kept, so
+            // it must not count as a difference between devices either.
+            const held = s.stripVersions[st]?.[f.id] ?? [];
+            versions[st] = (untouchedStrip(held) ? [] : held).map((v) => ({
+              label: v.label ?? '', stars: (v as { stars?: number }).stars ?? (v.starred ? 1 : 0),
+              hidden: !!v.hidden, picture: !!v.bgImage, strokes: v.strokes?.length ?? 0,
+              note: v.note ?? '', tag: v.setupTagged ?? null,
+            }));
+          }
+          return {
+            name: f.serverFrameId ?? `?${f.id}`, label: f.label ?? '', text: f.textContent ?? '',
+            note: f.note ?? '', hidden: !!f.hidden, picture: !!f.src,
+            strokes: f.strokes?.length ?? 0, scribbles: f.scribbles?.length ?? 0,
+            setup: f.setupId ? (s.setups.find((su) => su.id === f.setupId)?.name ?? f.setupId) : null,
+            needsOn: on, counters, noteCard: s.frameNotes[f.id]?.noteText ?? '',
+            versions,
+          };
+        }),
+        setups: s.setups.map((su) => ({ name: su.name, color: su.colorIndex })),
+        categories: (s.needDefinitions?.tabs ?? []).map((t) => t.name),
+        groups: s.groups.map((g) => ({
+          name: g.name,
+          shots: g.frameIds.map(nameOf),
+          hidden: g.hiddenFrameIds.map(nameOf),
+        })),
+        orders: s.sortOrders.map((o) => ({
+          name: o.name, group: groupName(o.groupId),
+          shots: o.frameOrder.map(nameOf),
+          breaks: o.breaks.map((b) => ({ text: b.text, position: b.position })),
+        })),
+        storyBreaks: (s.storyFlowBreaks ?? []).map((b) => ({ text: b.text, position: b.position, group: groupName(b.groupId) })),
+      };
     },
 
     writeUnder(index, text) {
@@ -766,6 +987,100 @@ export function installTestDoor(): void {
       if (!f) throw new Error(`no frame at ${index}`);
       deleteFrameForGood(f.id);
     },
+    hideFrame(index) {
+      const f = useStore.getState().frames[index];
+      if (!f) throw new Error(`no frame at ${index}`);
+      hideFrame(f.id);
+    },
+    unhideFrame(index) {
+      const f = useStore.getState().frames[index];
+      if (!f) throw new Error(`no frame at ${index}`);
+      unhideFrame(f.id);
+    },
+    moveShot(index, direction, steps = 1) {
+      const f = useStore.getState().frames[index];
+      if (!f) throw new Error(`no frame at ${index}`);
+      const div = document.createElement('div');
+      const action = direction === 'up' ? 'moveup' : 'movedown';
+      handleMainAction(action, f.id, div);            // arms the arrows on this shot
+      for (let i = 0; i < steps; i++) handleMainAction(action, f.id, div);   // one place per press
+      handleMainAction('reorderdone', f.id, div);     // DONE — the one push
+    },
+    frameIdAt(index) {
+      const f = useStore.getState().frames[index];
+      if (!f) throw new Error(`no frame at ${index}`);
+      return f.id;
+    },
+    pressPicTxt(index) {
+      const f = useStore.getState().frames[index];
+      if (!f) throw new Error(`no frame at ${index}`);
+      const card = document.querySelector(`#mainScroll .frame-card[data-mfid="${f.id}"]`) as HTMLElement | null;
+      if (!card) throw new Error(`shot ${index + 1} has no card on the page`);
+      handleMainAction('pictxt', f.id, card);
+    },
+    showStrip(strip) {
+      if (useStore.getState().activeStrips.includes(strip)) return;
+      const btn = document.querySelector(`.strip-toggle[data-strip="${strip}"]`) as HTMLElement | null;
+      if (!btn) throw new Error(`no button for the ${strip} strip on the page`);
+      btn.click();
+    },
+    pressUpload(index, strip) {
+      const f = useStore.getState().frames[index];
+      if (!f) throw new Error(`no frame at ${index}`);
+      if (strip === 'main') {
+        handleMainAction('upload', f.id, mainCardOf(f.id, index));
+      } else {
+        ensureStripVersions(f.id, strip);
+        handleAction('upload', f.id, stripCardOf(f.id, index, strip), false, strip);
+      }
+    },
+    pressStar(index, strip, versionIndex) {
+      const f = useStore.getState().frames[index];
+      if (!f) throw new Error(`no frame at ${index}`);
+      const btn = document.querySelector(
+        `.star-btn[data-starfid="${f.id}"][data-starvi="${versionIndex}"][data-starstrip="${strip}"]`) as HTMLElement | null;
+      if (!btn) throw new Error(`no star on shot ${index + 1} ${strip} version ${versionIndex + 1} on the page`);
+      btn.click();
+    },
+    pressNewVersion(index, strip) {
+      const f = useStore.getState().frames[index];
+      if (!f) throw new Error(`no frame at ${index}`);
+      ensureStripVersions(f.id, strip);
+      const btn = stripCardOf(f.id, index, strip).querySelector('[data-vadd]') as HTMLElement | null;
+      if (!btn) throw new Error(`no + on shot ${index + 1}'s ${strip} card`);
+      btn.click();
+    },
+    async hideVersion(index, strip, versionIndex) {
+      const f = useStore.getState().frames[index];
+      if (!f) throw new Error(`no frame at ${index}`);
+      ensureStripVersions(f.id, strip);
+      setStripActiveTab(f.id, strip, versionIndex);
+      handleAction('clear', f.id, stripCardOf(f.id, index, strip), false, strip);
+      const hide = document.querySelector('#choiceContent [data-choice="hide"]') as HTMLElement | null;
+      const ok = document.getElementById('choiceOk3');
+      if (!hide || !ok) throw new Error('the hide/delete choice did not open');
+      hide.click();
+      ok.click();
+      await new Promise((r) => setTimeout(r, 100));   // the choice resolves on the next tick
+    },
+    async writeOnCard(index, strip, versionIndex, text) {
+      const f = useStore.getState().frames[index];
+      if (!f) throw new Error(`no frame at ${index}`);
+      if (strip === 'main') {
+        handleMainAction('write', f.id, mainCardOf(f.id, index));
+      } else {
+        ensureStripVersions(f.id, strip);
+        setStripActiveTab(f.id, strip, versionIndex);
+        handleAction('text', f.id, stripCardOf(f.id, index, strip), false, strip);
+      }
+      const area = document.getElementById('textModalArea') as HTMLTextAreaElement | null;
+      const ok = document.getElementById('textModalOk');
+      if (!area || !ok) throw new Error('the text box did not open');
+      area.value = text;
+      area.dispatchEvent(new Event('input', { bubbles: true }));
+      ok.click();
+      await new Promise((r) => setTimeout(r, 100));
+    },
 
     newSetup(name, colorIndex = 0) { return createSetup(name, colorIndex); },
 
@@ -820,7 +1135,10 @@ export function installTestDoor(): void {
     async drawOnVersion(frameIndex, strip = 'ver', versionIndex = 0) {
       const f = useStore.getState().frames[frameIndex];
       if (!f) throw new Error(`no frame at ${frameIndex}`);
-      ensureStripVersions(f.id, strip);
+      // THE MAIN CARD TOO (#509): the app draws on it through the same big
+      // view, with origin 'main'; its strokes live on the shot itself.
+      const onMain = (strip as string) === 'main';
+      if (!onMain) ensureStripVersions(f.id, strip);
       closeFullscreen();                       // in case one is already up
       openFullscreen(f.id, versionIndex, strip, 'draw');
 
@@ -857,6 +1175,7 @@ export function installTestDoor(): void {
       }
       if (document.querySelector('.fs-overlay')) throw new Error('the big view would not close');
 
+      if (onMain) return useStore.getState().frames.find((x) => x.id === f.id)?.strokes?.length ?? 0;
       return getStripVersions(f.id, strip)[versionIndex]?.strokes?.length ?? 0;
     },
 

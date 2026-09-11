@@ -101,8 +101,9 @@ export function mustNotShrink(was: Snapshot, now: Snapshot, what: string): void 
 }
 
 /** Things that must never appear in the log, whatever happened. */
-export async function mustNotHaveSaid(d: Device): Promise<void> {
+export async function mustNotHaveSaid(d: Device, allowed: string[] = []): Promise<void> {
   for (const bad of ['PULL FAILED', 'FULL REPLACE', 'decision(s) waiting']) {
+    if (allowed.includes(bad)) continue;
     const hit = (await d.log()).find((l) => l.includes(bad));
     expect(hit, `${d.name} said "${bad}": ${hit}`).toBeUndefined();
   }

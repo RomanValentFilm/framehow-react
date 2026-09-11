@@ -60,6 +60,16 @@ test('a random day', async ({ browser }) => {
   const ledger = new Ledger();
   const away = { desktop: false, tablet: false };
   let orders = 0, setups = 0, written = 0;
+  // WHICH SHOOTING ORDERS EACH DEVICE CHANGED WHILE THE TWO WERE APART (#509).
+  // The server's rule for a shooting order is to ASK when both devices changed
+  // the same one without seeing each other's change — Roman kept that rule on
+  // 11 September. So a decision at the end of the day is right exactly when
+  // this says both touched the same order apart, and a fault otherwise.
+  const touchedApart = { desktop: new Set<string>(), tablet: new Set<string>() };
+  const noteOrderTouch = (byWhom: 'desktop' | 'tablet', ids: string[]) => {
+    if (!away.desktop && !away.tablet) return;
+    for (const id of ids) touchedApart[byWhom].add(id);
+  };
   /** Frames deliberately deleted — the floor drops with them. */
   let floor = 6;
 
@@ -107,6 +117,7 @@ test('a random day', async ({ browser }) => {
         const s = await who.read();
         if (s.orders.length === 0) { await who.newSortOrder(`ORDER ${++orders} ${name}`); }
         await who.addBreak(0, Math.min(2, before.frames), `BREAK ${step}`);
+        noteOrderTouch(name, [(await who.read()).orders[0]?.id ?? '?']);
         break;
       }
       case 'setup': {
@@ -130,6 +141,7 @@ test('a random day', async ({ browser }) => {
         const s0 = await who.read();
         const doomed = s0.frames[i];
         await who.deleteFrame(i);
+        noteOrderTouch(name, s0.orders.map((o) => o.id));   // a deletion changes every order
         ledger.destroyed(`frame:${doomed?.serverFrameId ?? i}`);
         if (doomed?.text) ledger.destroyed(doomed.text);
         floor--;
@@ -219,8 +231,10 @@ test('a random day', async ({ browser }) => {
   say(`checking all ${ledger.size} remembered change(s) survived, on both devices`);
   await ledger.mustAllBeOn(desktop);
   await ledger.mustAllBeOn(tablet);
-  await mustNotHaveSaid(desktop);
-  await mustNotHaveSaid(tablet);
+  const clashed = [...touchedApart.desktop].filter((id) => touchedApart.tablet.has(id));
+  if (clashed.length > 0) say(`both changed shooting order ${clashed.join(', ')} while apart — a decision is right here`);
+  await mustNotHaveSaid(desktop, clashed.length > 0 ? ['decision(s) waiting'] : []);
+  await mustNotHaveSaid(tablet, clashed.length > 0 ? ['decision(s) waiting'] : []);
 
   // And then the app must SHUT UP. This is the rule the loop broke.
   await mustGoQuiet([desktop, tablet]);

@@ -24,7 +24,7 @@ import {
 import { restoreCanvas, restoreMainCanvas, setupMainDrawing } from './drawing';
 import { renderVersionFrame } from './render';
 import { showLabelEdit, showVerLabelEdit, showDeleteChoice, showConfirm } from './modals';
-import { renameFrame } from './actions';
+import { renameFrame, unhideFrame } from './actions';
 import { getVisibleFrames, removeFrameFromGroup } from './groups';
 import { setupTagHTML, stripTagHTML } from './setups';
 import { recordTombstone } from './accountFlow';
@@ -75,8 +75,7 @@ export function renderOverviewRow(row: HTMLElement, fid: number): void {
       </div>
     </div>`;
     hiddenDiv.querySelector(`[data-unhide="${fid}"]`)!.addEventListener('click', () => {
-      f.hidden = false;
-      updateFrameBadge();
+      unhideFrame(fid);
       renderOverviewRow(row, fid);
     });
     row.appendChild(hiddenDiv);
@@ -452,8 +451,7 @@ export function renderGrid4Row(row: HTMLElement, fid: number): void {
       </div>
     </div>`;
     hiddenDiv.querySelector(`[data-unhide="${fid}"]`)!.addEventListener('click', () => {
-      f.hidden = false;
-      updateFrameBadge();
+      unhideFrame(fid);
       renderGrid4Row(row, fid);
     });
     row.appendChild(hiddenDiv);

@@ -450,6 +450,14 @@ he uses it to check you are saving what he thinks you are saving.
 
 ---
 
+## 6a. THE 4 STEPS SAVE COMMAND — the exact exclusions
+
+The copy into `framehow-react-versions/vX.Y.ZZZ` must stay under 5 MB. Exclude:
+`node_modules dist .git framehow-react-versions backend/node_modules
+backend/.wrangler backend/.wrangler-e2e e2e-report test-results e2e-log
+e2e/fixtures/*.pdf` (Roman's test PDFs live only on his Mac, ignored by git
+and left out of the copies — 11 September).
+
 ## 6b. RELEASE NOTES — ROMAN KEEPS THEM, CLAUDE WRITES THEM
 
 After EVERY deploy confirmation, before anything else, give Roman the note for

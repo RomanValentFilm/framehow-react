@@ -362,10 +362,7 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
         if (!choice) return;
         useStore.setState({ scrollHideGuard: Date.now() + 600 });
         if (choice === 'hide') {
-          f.hidden = true;
-          updateFrameBadge();
-          renderAll();
-          void flushSyncNow(); // FRM-4: hide frame
+          hideFrame(fid);
         } else {
           deleteFrameForGood(fid);
         }
@@ -426,6 +423,38 @@ export function renameFrame(fid: number, label: string): void {
   stampChangedContent(getCurrentProject().projectId);
   markSomethingToSend();
   void flushSyncNow();
+}
+
+/**
+ * HIDE A FRAME — the body of the HIDE choice, lifted out so the browser tests
+ * can reach it (#509). Exactly what the dialog did before.
+ */
+export function hideFrame(fid: number): void {
+  const f = state().frames.find((x) => x.id === fid);
+  if (!f) return;
+  f.hidden = true;
+  updateFrameBadge();
+  renderAll();
+  // The flag is flipped on the shot itself, not through the store, so nothing
+  // tells the sync there is work to send. Until #509 the dialog's scroll guard
+  // happened to — say it here, by right (#509).
+  markSomethingToSend();
+  void flushSyncNow(); // FRM-4: hide frame
+}
+
+/**
+ * UN-HIDE A FRAME — what the Un-Hide button in the overview does, lifted out
+ * for the same reason (#509). The button still redraws its own row afterwards.
+ */
+export function unhideFrame(fid: number): void {
+  const f = state().frames.find((x) => x.id === fid);
+  if (!f) return;
+  f.hidden = false;
+  updateFrameBadge();
+  // Same flag, same reason — and this one had nothing raising it at all, so an
+  // un-hide waited for the next unrelated change before it travelled (#509).
+  markSomethingToSend();
+  void flushSyncNow(); // un-hide frame
 }
 
 export function deleteFrameForGood(fid: number): void {
