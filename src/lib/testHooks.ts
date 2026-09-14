@@ -188,6 +188,9 @@ export interface TestDoor {
   setNeedCounter(index: number, itemId: string, n: number): void;
   /** Type into a shot's note card and leave it. */
   typeNote(index: number, text: string): void;
+  /** Press the ▲/▼ arrow on a card in the OPEN sort view (story flow or order),
+   *  as a person does — the sort view's own arrow, not the card's (#512). */
+  pressSortArrow(frameIndex: number, direction: 'up' | 'down'): void;
   /** Press the strip's own button (ANGLE, SKETCH…) if that strip is not on
    *  the page yet — a person does the same before working on it. */
   showStrip(strip: StripType): void;
@@ -1093,6 +1096,22 @@ export function installTestDoor(): void {
       ta.value = text;
       ta.dispatchEvent(new Event('input', { bubbles: true }));
       ta.blur();
+    },
+    pressSortArrow(frameIndex, direction) {
+      const f = useStore.getState().frames[frameIndex];
+      if (!f) throw new Error(`no frame at ${frameIndex}`);
+      const view = document.getElementById('sortEditView');
+      if (!view) throw new Error('the sort view is not open');
+      let arrow = view.querySelector(`.sort-arrow[data-sort-move="${direction}"][data-sort-fid="${f.id}"]`) as HTMLElement | null;
+      if (!arrow) {
+        // The arrows show once the card is activated — press the card's arrows button first.
+        const act = view.querySelector(`[data-sort-activate="${f.id}"]`) as HTMLElement | null;
+        if (!act) throw new Error(`shot ${frameIndex + 1} is not in the open sort view`);
+        act.click();
+        arrow = view.querySelector(`.sort-arrow[data-sort-move="${direction}"][data-sort-fid="${f.id}"]`) as HTMLElement | null;
+        if (!arrow) throw new Error(`no ${direction} arrow on shot ${frameIndex + 1} after activating it`);
+      }
+      arrow.click();
     },
     showStrip(strip) {
       if (useStore.getState().activeStrips.includes(strip)) return;

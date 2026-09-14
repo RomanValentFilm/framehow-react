@@ -1252,7 +1252,7 @@ function rerenderBracket(editViewEl: HTMLElement, bracketState: BracketState, or
 
 import { flushSyncNow, pullNow } from './currentProject';
 import { getStripVersions, escH } from './helpers';
-import { getVisibleFrames, enterGroup } from './groups';
+import { getVisibleFrames, enterGroup, reorderFrameInGroup } from './groups';
 import { rasterizeMain, rasterizeVersion, versionHasContent } from './rasterize';
 
 // ─── Helpers ──────────────────────────────────────────────────────────
@@ -2844,6 +2844,18 @@ function wireEditViewEvents(el: HTMLElement, orderId: string): void {
 function moveFrame(orderId: string, fid: number, dir: 'up' | 'down'): void {
   const s = state();
   if (isStoryFlow(orderId)) {
+    // INSIDE A GROUP, THE STORY FLOW IS THE GROUP'S OWN ORDER (#512). This
+    // moved the shot in the ALL list, and the group's view — which lists by
+    // the group's order — drew the old place back: the arrows did nothing and
+    // a drag snapped back. Roman, 14 September, iPad and desktop alike. The
+    // card arrows in the main view already move within the group; same here.
+    if (s.activeGroupId !== null) {
+      if (!reorderFrameInGroup(fid, dir)) return;
+      trace(`by hand: ${shotName(fid)} ${dir} in the group's story flow`);
+      bumpRenderTick();
+      void flushSyncNow();
+      return;
+    }
     // Move in actual frames array
     const frames = [...s.frames];
     const idx = frames.findIndex((f) => f.id === fid);
@@ -3156,7 +3168,28 @@ function setupDragAndDrop(el: HTMLElement, orderId: string): void {
           }
 
           const s = state();
-          if (isStoryFlow(orderId)) {
+          if (isStoryFlow(orderId) && s.activeGroupId !== null) {
+            // A GROUP'S STORY FLOW IS THE GROUP'S OWN ORDER (#512) — see
+            // moveFrame above. The dragged cards take their new places within
+            // the group's list; anything of the group not on screen keeps its slot.
+            const group = s.groups.find((g) => g.id === s.activeGroupId);
+            if (group) {
+              const ids = [...group.frameIds];
+              const visibleSet = new Set(newFrameOrder);
+              const slots: number[] = [];
+              for (let i = 0; i < ids.length; i++) if (visibleSet.has(ids[i])) slots.push(i);
+              for (let i = 0; i < newFrameOrder.length && i < slots.length; i++) ids[slots[i]] = newFrameOrder[i];
+              const newBreaks = (s.storyFlowBreaks || []).map((b) => {
+                const pos = newBreakPositions.get(b.id);
+                return pos !== undefined ? { ...b, position: pos } : b;
+              });
+              useStore.setState({
+                groups: s.groups.map((g) => (g.id === group.id ? { ...g, frameIds: ids } : g)),
+                storyFlowBreaks: newBreaks,
+              });
+              trace(`by hand: dragged in the group's story flow → ${ids.map(shotName).join(' ')}`);
+            }
+          } else if (isStoryFlow(orderId)) {
             // Rearrange visible frames within s.frames, preserving non-visible frame positions
             const frames = [...s.frames];
             const visibleSet = new Set(newFrameOrder);

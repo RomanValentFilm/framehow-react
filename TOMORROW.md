@@ -80,7 +80,20 @@ orders or get out.
 
 ## THE LIST — 10 September, evening (Roman's order)
 
-dev is **v4.9.207 · #510** (saved 14 September). Next number: **v4.9.208 · #511**.
+dev is **v4.9.208 · #511** (deployed 14 September — app, backend, column 0026 via d1 execute). Next number: **v4.9.209 · #512**.
+
+### FIRST THING, 15 September — the group story flow fix is NOT deployed yet
+Roman, 14 Sept 16:30, iPad and desktop: in a GROUP's story flow (SORT BY) the
+arrows did nothing and a drag snapped back. Traced in his log: each move sent
+`frameOrder/main` (the ALL list); the group's view lists by the group's own
+order. FIXED in `sortOrder.ts` (moveFrame + the drag's story-flow branch write
+the group's frameIds, via reorderFrameInGroup / the slot technique) — #512,
+uncommitted. New test in 28: "a move in a group's story flow, made in the sort
+view, sticks and travels" (presses the sort view's own arrow; door
+pressSortArrow). Run 225 was never run (an old command went instead).
+  1. `FH_RUN=225 npm run t -- -g "made in the sort view"` — must be green.
+  2. 4 STEPS SAVE as v4.9.209 · #512, then DEPLOY (app only; backend unchanged).
+  3. Then BIG DAY part 5 (groups) — this fault is exactly what it is for.
 
 ### DONE 12–14 September (v4.9.207 · #510) — app AND backend
 - Strip names travel by time (one item per strip), the blob's "sent" memory

@@ -1067,3 +1067,45 @@ test('numbering: offline with a project open, then a new project made offline to
     await desktop.close();
     await ipad.close();
   });
+
+// THE SORT VIEW'S OWN ARROWS INSIDE A GROUP'S STORY FLOW (#512). Roman, 14
+// September, iPad and desktop: "you change the frame but it returns" and the
+// arrows did nothing. The sort view wrote the move into the ALL list; a group's
+// story flow lists by the group's own order, so the old place came straight
+// back. The test presses the arrow the sort view draws, not a door of its own.
+test('numbering: a move in a group\'s story flow, made in the sort view, sticks and travels',
+  async ({ browser }) => {
+    const { token } = await freshAccount();
+    const desktop = await Device.open(browser, 'desktop', token);
+    const ipad = await Device.open(browser, 'ipad', token, true);
+
+    const job = await desktop.newProject('THE JOB', 6);
+    await desktop.settle();
+    await ipad.openProject(job!);
+    await ipad.settle();
+    await Device.waitUntilTheyAgree(desktop, ipad);
+
+    const inside = await desktop.makeGroup('INSIDE', [1, 2, 3, 4]);
+    await desktop.push();
+    await desktop.settle();
+    expect(await Device.waitUntilGroupsAgree(desktop, ipad, inside), 'the group arrives').toBe('INSIDE: 2 3 4 5');
+
+    say('desktop opens the group\'s story flow in SORT BY and moves shot 4 up with the arrow');
+    await desktop.enterGroup(inside);
+    await desktop.pickStoryFlow(inside);
+    await desktop.pressSortArrow(3, 'up');           // shot "4" (index 3) — one place up
+    const onScreen = await desktop.sortViewFrames();
+    say(`   the sort view now shows: ${onScreen.join(' ')}`);
+    expect(onScreen, 'THE MOVE DID NOT STICK — the sort view redrew the old order').toEqual(['2', '4', '3', '5']);
+    expect(await desktop.groupAsText(inside), 'the group\'s own order moved').toBe('INSIDE: 2 4 3 5');
+    // ALL is untouched: a group's order is its own (groups.ts, reorderFrameInGroup).
+    await desktop.enterGroup(null);
+    expect((await desktop.read()).frames.map((f) => f.label).join(' '), 'ALL keeps its order').toBe('1 2 3 4 5 6');
+
+    await desktop.push();
+    await desktop.settle();
+    expect(await Device.waitUntilGroupsAgree(desktop, ipad, inside), 'the moved group reaches the iPad').toBe('INSIDE: 2 4 3 5');
+
+    await desktop.close();
+    await ipad.close();
+  });

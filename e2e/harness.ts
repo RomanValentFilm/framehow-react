@@ -849,6 +849,14 @@ export class Device {
 
   // ── PART 3 (#509): pictures, drawings, versions, stars, written text ──
 
+  /** The sort view's own ▲/▼ on a shot (#512). */
+  async pressSortArrow(frameIndex: number, direction: 'up' | 'down'): Promise<void> {
+    say(`${this.name}: ${direction} arrow on shot ${frameIndex + 1} in the sort view`);
+    await this.page.evaluate(([i, d]) =>
+      (window as never as { __fh_test: { pressSortArrow(i: number, d: 'up' | 'down'): void } })
+        .__fh_test.pressSortArrow(i as number, d as 'up' | 'down'), [frameIndex, direction] as [number, 'up' | 'down']);
+  }
+
   /** Menu > Customise > Save with these names (#510). */
   async customise(values: Record<string, string>): Promise<void> {
     say(`${this.name}: Customise → ${Object.entries(values).map(([k, v]) => `${k}=${v}`).join(' ')}`);
