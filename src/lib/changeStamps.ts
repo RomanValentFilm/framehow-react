@@ -12,7 +12,7 @@
 // Kept for ONE project, and carried in the local snapshot so a restart does not
 // forget and start claiming everything changed just now.
 
-import { useStore } from '../store/state';
+import { useStore, blankNeeds, blankNote } from '../store/state';
 import type { Frame, Version, Stroke } from '../store/state';
 
 /** What the row looked like last time we looked, and when we first saw it that
@@ -140,13 +140,23 @@ export function stampChangedContent(
   const note = (key: string, fp: string) => {
     const prev = _seen.get(key);
     const cameFromServer = received?.get(key);
-    if (!prev) _seen.set(key, { fp, at: cameFromServer ?? (seeding ? 0 : now) });
-    else if (prev.fp !== fp) _seen.set(key, { fp, at: cameFromServer ?? now });
+    // SOMETHING FIRST SEEN THROUGH A PULL WAS NOT MADE HERE, NOW (#510).
+    //
+    // With a `received` map this is the pull speaking. A frame it brings that
+    // this device has never noted gets the server's time — and if the server
+    // has none, ZERO, never "now". It was "now" when the memory was not empty
+    // (another project had been open), so a fresh device opening a project
+    // dated every untouched shot the moment it arrived, then pushed them all
+    // as its own edits and beat the real one (run 209: the desktop's note on
+    // shot 4, undone by an iPad that had only written on shot 1).
+    if (!prev) _seen.set(key, { fp, at: cameFromServer ?? (received || seeding ? 0 : now) });
+    else if (prev.fp !== fp) _seen.set(key, { fp, at: cameFromServer ?? (received ? 0 : now) });
   };
 
   s.frames.forEach((f, i) => {
-    const needs = s.frameNeeds[f.id] ? JSON.stringify(s.frameNeeds[f.id]) : '';
-    const notes = s.frameNotes[f.id] ? JSON.stringify(s.frameNotes[f.id]) : '';
+    // An untouched needs/note state is nothing (#510, blankNeeds/blankNote).
+    const needs = blankNeeds(s.frameNeeds[f.id]) ? '' : JSON.stringify(s.frameNeeds[f.id]);
+    const notes = blankNote(s.frameNotes[f.id]) ? '' : JSON.stringify(s.frameNotes[f.id]);
 
     // A FRAME WITH NO SERVER ID STILL HAS A TIME (#395).
     //

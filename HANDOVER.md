@@ -176,7 +176,7 @@ or the green marks. Those are worked out on each device, by decision.
   the admin token and database ids. Read it first, every session.
 - `TOMORROW.md` holds the open list, the decisions not to reopen, and a "do not
   repeat" section of faults that came back. It is the memory between days.
-- `~/Desktop/framehow-react-versions/` holds a copy of the source at each saved
+- `~/Desktop/Framehow\ Files/framehow-react-versions/` holds a copy of the source at each saved
   version — that is what "4 steps save" fills. Each under 5MB.
 - `CHANGELOG.md` is stale (stops at v4.7.011). Do not trust it; use `git log`.
 
@@ -367,7 +367,7 @@ Rules that go with it:
 
 1. **Say the CURRENT version** in `state.ts` — not bumped, not the next one.
 2. **One command**, labelled, that does all three things: commit, push, and copy
-   the whole folder into `~/Desktop/framehow-react-versions/<version>` —
+   the whole folder into `~/Desktop/Framehow\ Files/framehow-react-versions/<version>` —
    excluding `node_modules`, `dist`, `.git`, and the test output folders. It
    must come out under 5MB. End it by printing what was saved.
 3. **He pastes the output back.**

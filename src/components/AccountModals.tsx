@@ -246,11 +246,17 @@ export function AccountModals() {
         </div>
       </div>
 
-      {/* Customise */}
+      {/* Customise — the six column names of the project (#510) */}
       <div className="account-modal hidden" id="customiseModal">
         <div className="account-card">
           <h2>Customise</h2>
-          <p className="account-hint">Strip names</p>
+          <p className="account-hint">Column names — button, and the label on the cards</p>
+          <div className="account-row">
+            <label>SHOT</label>
+            <div style={{display:'flex',alignItems:'center',gap:'10px'}}>
+              <input type="text" id="customMain" maxLength={6} autoComplete="one-time-code" style={{textTransform:'uppercase',letterSpacing:'.05em',width:'85px',flexShrink:0}} />
+            </div>
+          </div>
           <div className="account-row">
             <label>STRIP 1</label>
             <div style={{display:'flex',alignItems:'center',gap:'10px'}}>
@@ -273,6 +279,22 @@ export function AccountModals() {
               <input type="text" id="customStrip3" maxLength={6} autoComplete="one-time-code" style={{textTransform:'uppercase',letterSpacing:'.05em',width:'85px',flexShrink:0}} />
               <span style={{color:'#666',fontSize:'12px',flexShrink:0}}>label</span>
               <input type="text" id="customFrameLabel3" maxLength={6} autoComplete="one-time-code" style={{width:'70px',fontSize:'13px',padding:'5px 8px'}} />
+            </div>
+          </div>
+          <div className="account-row">
+            <label>NEEDS</label>
+            <div style={{display:'flex',alignItems:'center',gap:'10px'}}>
+              <input type="text" id="customNeeds" maxLength={6} autoComplete="one-time-code" style={{textTransform:'uppercase',letterSpacing:'.05em',width:'85px',flexShrink:0}} />
+              <span style={{color:'#666',fontSize:'12px',flexShrink:0}}>label</span>
+              <input type="text" id="customNeedsLabel" maxLength={6} autoComplete="one-time-code" style={{width:'70px',fontSize:'13px',padding:'5px 8px'}} />
+            </div>
+          </div>
+          <div className="account-row">
+            <label>NOTES</label>
+            <div style={{display:'flex',alignItems:'center',gap:'10px'}}>
+              <input type="text" id="customNotes" maxLength={6} autoComplete="one-time-code" style={{textTransform:'uppercase',letterSpacing:'.05em',width:'85px',flexShrink:0}} />
+              <span style={{color:'#666',fontSize:'12px',flexShrink:0}}>label</span>
+              <input type="text" id="customNotesLabel" maxLength={6} autoComplete="one-time-code" style={{width:'70px',fontSize:'13px',padding:'5px 8px'}} />
             </div>
           </div>
           <div className="account-btns">

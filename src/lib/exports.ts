@@ -5,7 +5,7 @@ import jsPDF from 'jspdf';
 // @ts-ignore — pptxgenjs ships its own bundled types
 import PptxGenJS from 'pptxgenjs';
 import JSZip from 'jszip';
-import { state, useStore, DEFAULT_STRIP_DEFS, createDefaultExportMeta, SETUP_COLORS } from '../store/state';
+import { state, useStore, DEFAULT_STRIP_DEFS, createDefaultExportMeta, SETUP_COLORS, columnName } from '../store/state';
 import type { Frame, StripType, ExportMeta, SortBreak, TableData } from '../store/state';
 import { rasterizeMain, rasterizeVersion, versionHasContent, canvasToBlob, withBakedBorder } from './rasterize';
 import { showToast } from './modals';
@@ -166,11 +166,17 @@ function fullVerLabel(fLabel: string, vLabel: string): string {
 
 /** Build strip picker (radio for double = single-select, checkbox for overview = multi-select) */
 /** Non-image companions the Double Strip layout can show instead of a version. */
-export const DATA_STRIPS = [
-  { id: '__needs__', label: 'NEEDS' },
-  { id: '__notes__', label: 'NOTES' },
-  { id: '__table__', label: 'TABLE' },
-];
+const DATA_STRIP_IDS = ['__needs__', '__notes__', '__table__'] as const;
+/** Read at the moment of use — NEEDS and NOTES carry the project's own names (#510). */
+function dataStrips(): Array<{ id: string; label: string }> {
+  return DATA_STRIP_IDS.map((id) => ({
+    id,
+    label: id === '__needs__' ? columnName('needs').buttonLabel
+      : id === '__notes__' ? columnName('notes').buttonLabel : 'TABLE',
+  }));
+}
+export const DATA_STRIPS = { find: (p: (d: { id: string; label: string }) => boolean) => dataStrips().find(p),
+  [Symbol.iterator]: () => dataStrips()[Symbol.iterator]() };
 
 export function buildStripPicker(
   containerId: string,

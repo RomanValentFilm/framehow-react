@@ -25,6 +25,8 @@ export interface AuthedUser {
   email: string;
   profession: string | null;
   email_verified: boolean;
+  /** The user's own defaults, as JSON text (#510). */
+  preferences?: string | null;
 }
 
 export type AppVariables = {

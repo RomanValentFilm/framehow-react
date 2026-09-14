@@ -1,7 +1,7 @@
 // Main + version strip card rendering. Ported from the original `renderMainFrame`,
 // `renderVersionFrame`, `buildMainFrame`, `buildVersionFrame`, `renderAll`.
 
-import { state, useStore, bumpRenderTick, isTouch } from '../store/state';
+import { state, useStore, bumpRenderTick, isTouch, columnName } from '../store/state';
 import { applyFittingChrome } from './fitting';
 import type { StripType } from '../store/state';
 import {
@@ -150,10 +150,16 @@ export function renderAll(): void {
     // Only suppress strip toggles in grid3x2 (it always uses ver internally)
     const isGridMode = s.currentViewMode === 'grid3x2';
     b.classList.toggle('active', !isGridMode && s.activeStrips.includes(strip));
-    // Sync button label from stripDefs
+    // Sync button label from stripDefs — and SHOT from the column names (#510)
     const def = s.stripDefs.find((d) => d.id === strip);
     if (def) b.textContent = def.buttonLabel;
+    else if ((strip as string) === 'main') b.textContent = columnName('main').buttonLabel;
   });
+  // NEEDS and NOTES carry the project's names too (#510).
+  const needsBtnEl = document.getElementById('needsStripBtn');
+  if (needsBtnEl) needsBtnEl.textContent = columnName('needs').buttonLabel;
+  const notesBtnEl = document.getElementById('notesStripBtn');
+  if (notesBtnEl) notesBtnEl.textContent = columnName('notes').buttonLabel;
   } // end if (!s.sortMode)
   // Show/hide OFF button when in 1+2V or GRID4 mode
   const offBtn = document.getElementById('vbOffBtn') as HTMLElement | null;

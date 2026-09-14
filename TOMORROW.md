@@ -80,12 +80,37 @@ orders or get out.
 
 ## THE LIST — 10 September, evening (Roman's order)
 
-dev is **v4.9.206 · #509** (saved 11 September, evening). Next number: **v4.9.207 · #510**.
+dev is **v4.9.207 · #510** (saved 14 September). Next number: **v4.9.208 · #511**.
+
+### DONE 12–14 September (v4.9.207 · #510) — app AND backend
+- Strip names travel by time (one item per strip), the blob's "sent" memory
+  taken from what was sent, local settings stamped before arriving ones are
+  judged.
+- Customise: all SIX columns (SHOT / ANGLE / SKETCH / REFS / NEEDS / NOTES,
+  button + card label), per project, remembered on the device and with the
+  account (users.preferences, migration 0026) as the default for the next
+  NEW project. 3x2 quick buttons and the export chooser read the names.
+- Shot dating: a shot that arrives by pull is never dated "now".
+- Untouched needs/note cards count as nothing in both fingerprints (#358's
+  rule for columns); the cards draw the project's label.
+- The server's order minus shots this device lacks is not a local change.
+- An order's place in the list is not a change; settings values in one fixed
+  spelling (both sides); an untouched copy is never a decision (server).
+- Opening / restoring records what arrived as matching the server; refused
+  shots the fetch has nothing newer for are recorded too (push loop, run 222).
+- A partial push of only new shots is per-frame (no blanket 409, no 80 s wait).
+- Tests: 18 one-at-a-time; part 2 pauses between NEWs; 13/09 aligned; watchdog
+  on opening; whole-agree wait 90 s.
+Full run 224: 64 green · 6 skipped · 3 red = LATER 3 (known) + 15 and part 3,
+both "the idle device did not fetch within the window" (green in 204/212/216/222).
+
+### NEXT: BIG DAY part 5 — groups; then shooting orders & boxes; exports;
+offline day; RESTORE points + delete/recover; reload/switch; final comparison.
 
 ### BIG DAY — 11 September
 `e2e/29-big-day.spec.ts`, run with `FH_RUN=<n> npm run t -- -g "big day"`.
-Parts 1, 1b, 2, 3 GREEN (run 204). Next: part 4 — strips/names, needs, notes,
-setups; then groups; shooting orders and boxes; exports; an offline day;
+Parts 1, 1b, 2, 3 GREEN (run 204). Part 4 written, red only on strip names
+(above). Then groups; shooting orders and boxes; exports; an offline day;
 RESTORE points + delete/recover; reload/switch; final flat comparison.
 Doors added today press the app's own buttons and answer its own dialogs
 (UPLOAD + file chooser, star, +, hide version, WRITE/TEXT box, PIC/TXT,
@@ -127,6 +152,11 @@ everything green except LATER 3 (known).
 
 ### TESTS TO WRITE
 
+- NEW pressed while the previous NEW's push is still in the air (run 212,
+  part 2: two NEWs within a millisecond; the reply's rebuild put 3#1 after 4).
+  Same race as the move below. Part 2 now leaves 600 ms between the presses,
+  as a person does; the race itself still needs its own test and a fix
+  (the reply of push 1 rebuilding over work made after it began).
 - A shot moved while the previous DONE is still in the air. Seen only in the
   simulator (run 195, four DONEs in 200 ms): each reply laid the older
   arrangement back over the newer move. Not yet seen by hand; test it alone.

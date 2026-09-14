@@ -24,6 +24,8 @@ export interface SessionUser {
   email: string;
   profession: string | null;
   email_verified: boolean;
+  /** The user's own defaults, as JSON text from the server (#510). */
+  preferences?: string | null;
 }
 
 const TOKEN_STORAGE_KEY = 'fh_session_token';

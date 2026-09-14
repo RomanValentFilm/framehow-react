@@ -1,5 +1,6 @@
 // Folder-image loader and "start from scratch" — port of original handlers.
 
+import { applyDefaultNames } from './userDefaults';
 import { COLORS, state, useStore, resetStoryboardState } from '../store/state';
 import { resetProjectSyncGuards } from './accountFlow';
 import { setProgress, showToast } from './modals';
@@ -20,6 +21,7 @@ export function handleFolderImages(e: Event): void {
     return;
   }
   resetStoryboardState();
+  applyDefaultNames(true);          // the user's own names (#510)
 
   const baseNames = files.map((f) => f.name.replace(/\.[^.]+$/, ''));
   const wordSets = baseNames.map(
@@ -125,6 +127,7 @@ export function startFromScratch(): void {
   resetProjectSyncGuards();
   fhTrack('start_scratch');
   resetStoryboardState();
+  applyDefaultNames(true);          // the user's own names (#510)
   useStore.setState({ portraitMode: false, projectType: 'landscape' });
   const s = state();
   const id = s.nextId;
@@ -160,6 +163,7 @@ export function startPortrait(): void {
   resetProjectSyncGuards();
   fhTrack('start_portrait');
   resetStoryboardState();
+  applyDefaultNames(false);         // column names only; portrait keeps its strips (#510)
   useStore.setState({ portraitMode: true, projectType: 'portrait' });
   // Portrait (9:16) projects default strips to costume-fitting labels
   const s = state();
@@ -202,6 +206,7 @@ export function startFitting(): void {
   resetProjectSyncGuards();
   fhTrack('start_fitting');
   resetStoryboardState();
+  applyDefaultNames(false);         // column names only; a fitting keeps its strips (#510)
   useStore.setState({ portraitMode: true, projectType: 'fitting' });
   // FITTING strips: LOOKS (looks photographed at the fitting) and REFS
   // (references loaded in). The middle strip is unused and stays hidden.

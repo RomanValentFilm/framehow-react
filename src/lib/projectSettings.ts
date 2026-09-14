@@ -64,7 +64,7 @@ function currentItems(): Array<{ kind: string; item_id: string; json: string }> 
   const s = useStore.getState();
   const out: Array<{ kind: string; item_id: string; json: string }> = [];
   const push = (kind: string, id: string, idx: number, data: unknown) =>
-    out.push({ kind, item_id: id, json: JSON.stringify({ idx, data }) });
+    out.push({ kind, item_id: id, json: stableJson({ idx, data }) });
 
   // THE STORY FLOW IS ONE THING (#294).
   //
@@ -162,6 +162,16 @@ function currentItems(): Array<{ kind: string; item_id: string; json: string }> 
   // nextSetupId no longer rides along: since #322 an id is not a count, so
   // there is nothing to agree about.
   s.setups.forEach((su, i) => push('setup', su.id, i, su));
+  // ONE ITEM PER STRIP — its names and prefix (#510). These rode only in the
+  // metadata blob, which has no change time: the last device to push won,
+  // even one that had renamed nothing. Run 206: the desktop renamed three
+  // strips and the iPad's next push, carrying its untouched copy, put the old
+  // names back on both. As an item each with a time, the later rename wins
+  // and an untouched copy cannot out-rank it. The blob copy is still written
+  // and still read, as the fallback for anything older.
+  s.stripDefs.forEach((d, i) => push('stripDef', d.id, i, d));
+  // And the other three columns — SHOT, NEEDS, NOTES — the same way (#510).
+  s.columnNames.forEach((c, i) => push('columnName', c.id, i, c));
   // One item PER BREAK, not one item for all of them. A break the other device
   // added is then simply added here, instead of losing to a newer copy of "the
   // breaks" that never knew about it. Two devices moving the SAME break still
@@ -235,6 +245,59 @@ export function forgetAnotherProjectsSettings(projectId?: string | null): void {
   }
 }
 
+/**
+ * ONE SPELLING FOR EVERY VALUE (#510, run 218). An order that has been to
+ * another device and back comes home with its fields in a different sequence
+ * — the same order, a different string. The memory compared strings, called
+ * it a change, re-sent it as an edit, and the server (comparing strings too)
+ * filed a decision between two identical orders. Fields are written sorted,
+ * so the same value is always the same text, whoever wrote it last.
+ */
+export function stableJson(value: unknown): string {
+  return JSON.stringify(sortKeys(value));
+}
+function sortKeys(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(sortKeys);
+  if (v && typeof v === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const k of Object.keys(v as Record<string, unknown>).sort()) {
+      const x = (v as Record<string, unknown>)[k];
+      if (x !== undefined) out[k] = sortKeys(x);
+    }
+    return out;
+  }
+  return v;
+}
+
+/** Equal once both are in the fixed spelling — so a value the server still
+ *  holds in the old spelling is not mistaken for a change. */
+function sameText(aJson: string, bJson: string): boolean {
+  if (aJson === bJson) return true;
+  try { return stableJson(JSON.parse(aJson)) === stableJson(JSON.parse(bJson)); } catch { return false; }
+}
+
+/** The same item, only its place in the list differs. */
+function sameButIdx(aJson: string, bJson: string): boolean {
+  try {
+    const a = JSON.parse(aJson) as { data?: unknown };
+    const b = JSON.parse(bJson) as { data?: unknown };
+    return stableJson(a.data) === stableJson(b.data);
+  } catch { return false; }
+}
+
+/** Is `shorter` the list `longer` with some ids left out, the rest in the same order? */
+function isSubsequenceOf(shorterJson: string, longerJson: string): boolean {
+  let a: string[], b: string[];
+  try {
+    a = (JSON.parse(shorterJson) as { data?: string[] }).data ?? [];
+    b = (JSON.parse(longerJson) as { data?: string[] }).data ?? [];
+  } catch { return false; }
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length >= b.length) return false;
+  let i = 0;
+  for (const id of b) if (i < a.length && a[i] === id) i++;
+  return i === a.length;
+}
+
 export function stampChangedSettings(projectId?: string | null): void {
   forgetAnotherProjectsSettings(projectId);
   // Backstop only. Every path that loads a project calls seedSettings() or
@@ -255,7 +318,29 @@ export function stampChangedSettings(projectId?: string | null): void {
       // Something the first look did not have: a genuinely new group, sort
       // order or category. That is a change, and it happened now.
       _known.set(k, { json: it.json, changed_at: now, deleted_at: null, serverAt: UNKNOWN });
-    } else if (prev.json !== it.json || prev.deleted_at !== null) {
+    } else if (!sameText(prev.json, it.json) || prev.deleted_at !== null) {
+      // THE SERVER'S ORDER MINUS SHOTS I DO NOT HAVE YET IS NOT MY CHANGE (#510).
+      //
+      // Run 214: the iPad's push reply carried the desktop's eight-shot
+      // arrangement while the iPad still held six — the two new shots had not
+      // reached it. It applied what it could, and this stamp then saw "my
+      // order differs from the server's", called it a change made now, and
+      // pushed six shots as the newest arrangement. The desktop took it, and
+      // the new shots fell in wherever the rebuild left them. A list that is
+      // the known one with some ids missing, in the same order, is that case
+      // (and after a deletion too, which the arrangement never needed to say:
+      // an id with no frame is simply skipped). It is left as it was.
+      if (it.kind === 'frameOrder' && prev.deleted_at === null && isSubsequenceOf(it.json, prev.json)) continue;
+      // A DIFFERENT PLACE IN THE LIST IS NOT A CHANGE (#510, run 217). The
+      // value carries `idx` so a new item lands where it belongs on the other
+      // device — but adding an order shifts the idx of the ones after it, and
+      // every one of them was then re-stamped and re-sent as edited. Two
+      // devices holding the orders in different places argued about all of
+      // them for ever. The new idx is kept for the wire; the time is not moved.
+      if (prev.deleted_at === null && sameButIdx(prev.json, it.json)) {
+        _known.set(k, { ...prev, json: it.json });
+        continue;
+      }
       _known.set(k, { json: it.json, changed_at: now, deleted_at: null, serverAt: prev.serverAt });
     }
   }
@@ -524,6 +609,32 @@ export function applySettingsToStore(items: SettingItem[] | undefined): void {
   const setups = mergeList('setup', setupsNow, (su: Setup) => su.id);
   if (setups) patch.setups = setups;
 
+  // Strip names, one row each (#510). Applied after the blob's copy, so the
+  // timed rows have the last word; a server with no such rows leaves the
+  // blob's copy as it is.
+  const strips = mergeList('stripDef', s.stripDefs, (d: { id: string }) => d.id);
+  if (strips) patch.stripDefs = strips;
+  const columns = mergeList('columnName', s.columnNames, (c: { id: string }) => c.id);
+  if (columns) {
+    patch.columnNames = columns;
+    // A card label that changed re-labels every card here, as renaming it on
+    // this device would have (#510) — the cards no longer carry it as a change.
+    const arrived = (id: string) => (columns as Array<{ id: string; cardLabel: string }>).find((c) => c.id === id)?.cardLabel;
+    const held = (id: string) => s.columnNames.find((c) => c.id === id)?.cardLabel;
+    const needsLabel = arrived('needs');
+    if (needsLabel && needsLabel !== held('needs')) {
+      const next: typeof s.frameNeeds = {};
+      for (const [fid, ft] of Object.entries(s.frameNeeds)) next[+fid] = { ...ft, label: needsLabel };
+      patch.frameNeeds = next;
+    }
+    const notesLabel = arrived('notes');
+    if (notesLabel && notesLabel !== held('notes')) {
+      const next: typeof s.frameNotes = {};
+      for (const [fid, fn] of Object.entries(s.frameNotes)) next[+fid] = { ...fn, label: notesLabel };
+      patch.frameNotes = next;
+    }
+  }
+
   // Story-flow breaks merge one by one, like groups and orders (#343, back to
   // how it was). A break only this device has stays; one only the other device
   // has is added; one both know at different positions takes the newer.
@@ -679,6 +790,8 @@ export interface MySettings {
   /** The frame arrangement as server ids, so it can be re-applied to whatever
    *  frames the pull ends up with. */
   frameOrder: string[];
+  stripDefs: unknown[];
+  columnNames: unknown[];
 }
 
 /** What this device is holding right now, before a pull rebuilds the store. */
@@ -693,6 +806,8 @@ export function captureMySettings(): MySettings {
     nextSetupId: s.nextSetupId,
     storyFlowBreaks: [...(s.storyFlowBreaks ?? [])],
     frameOrder: s.frames.map((f) => f.serverFrameId).filter(Boolean) as string[],
+    stripDefs: [...s.stripDefs],
+    columnNames: [...s.columnNames],
   };
 }
 
@@ -773,6 +888,13 @@ export function keepMyUnsentSettings(before: MySettings, arrivedItems?: SettingI
   const setups = restore('setup', before.setups as { id: string }[],
     s.setups as { id: string }[], (su) => su.id);
   if (setups) patch.setups = setups;
+
+  const strips = restore('stripDef', (before.stripDefs ?? []) as { id: string }[],
+    s.stripDefs as { id: string }[], (d) => d.id);
+  if (strips) patch.stripDefs = strips;
+  const columns = restore('columnName', (before.columnNames ?? []) as { id: string }[],
+    s.columnNames as { id: string }[], (c) => c.id);
+  if (columns) patch.columnNames = columns;
   // The old whole-palette row, for anything still travelling that way.
   if (iHoldUnsent('setupPalette', 'setupPalette', arrived)) {
     patch.setups = before.setups;

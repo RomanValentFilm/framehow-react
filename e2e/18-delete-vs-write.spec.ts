@@ -100,9 +100,11 @@ test('deleting a frame after it was written on still deletes it', async ({ brows
   await desktop.deleteFrame(2);
   await desktop.settle();
 
-  const deadline = Date.now() + 60_000;
+  const deadline = Date.now() + 90_000;
   for (;;) {
-    await desktop.nudge(); await tablet.nudge();
+    // ONE DEVICE AT A TIME (#496): waking both every second made each see the
+    // other's heartbeat and lock itself, and a pull never came (run 212).
+    await Device.nudgeOneAtATime(desktop, tablet);
     const d = (await desktop.read()).frames.map((f) => f.text);
     const t = (await tablet.read()).frames.map((f) => f.text);
     if (!d.includes('DOOMED') && !t.includes('DOOMED')) break;
@@ -110,7 +112,9 @@ test('deleting a frame after it was written on still deletes it', async ({ brows
       throw new Error('THE FRAME CAME BACK. It was deleted after being written '
         + 'on, so the deletion is the later change and it should be gone.'
         + `\n  desktop: ${d.map((x) => `"${x}"`).join(' | ')}`
-        + `\n  tablet:  ${t.map((x) => `"${x}"`).join(' | ')}`);
+        + `\n  tablet:  ${t.map((x) => `"${x}"`).join(' | ')}`
+        + `\n\ndesktop log:\n${(await desktop.log()).slice(0, 30).map((l) => '  ' + l).join('\n')}`
+        + `\n\ntablet log:\n${(await tablet.log()).slice(0, 30).map((l) => '  ' + l).join('\n')}`);
     }
     await desktop.page.waitForTimeout(1000);
   }

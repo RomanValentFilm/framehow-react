@@ -148,7 +148,7 @@ auth.post("/login", async (c) => {
 
   const user = await c.env.DB
     .prepare(
-      `SELECT id, name, email, password_hash, profession, email_verified
+      `SELECT id, name, email, password_hash, profession, email_verified, preferences
          FROM users WHERE LOWER(email) = LOWER(?) AND deleted_at IS NULL LIMIT 1`,
     )
     .bind(email)
@@ -159,6 +159,7 @@ auth.post("/login", async (c) => {
       password_hash: string;
       profession: string | null;
       email_verified: number;
+      preferences: string | null;
     }>();
 
   // Always do the password verify work to mitigate user-enumeration via timing.
@@ -189,6 +190,7 @@ auth.post("/login", async (c) => {
       email: user.email,
       profession: user.profession,
       email_verified: user.email_verified === 1,
+      preferences: user.preferences ?? null,
     },
     session: { token: sessionToken, expires_at: sessionExpiresAt },
   });

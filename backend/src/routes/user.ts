@@ -49,14 +49,28 @@ user.put("/me", async (c) => {
     }
   }
 
+  // The user's own defaults — a small JSON object, or null to clear (#510).
+  let preferences = me.preferences ?? null;
+  if (b.preferences !== undefined) {
+    if (b.preferences === null) {
+      preferences = null;
+    } else if (typeof b.preferences === "object" && !Array.isArray(b.preferences)) {
+      const json = JSON.stringify(b.preferences);
+      if (json.length > 8_000) return jsonError(c, 400, "invalid_preferences", "Preferences are too large.");
+      preferences = json;
+    } else {
+      return jsonError(c, 400, "invalid_preferences", "Preferences must be an object.");
+    }
+  }
+
   const now = Date.now();
   await c.env.DB
-    .prepare("UPDATE users SET name = ?, profession = ?, updated_at = ? WHERE id = ?")
-    .bind(name, profession, now, me.id)
+    .prepare("UPDATE users SET name = ?, profession = ?, preferences = ?, updated_at = ? WHERE id = ?")
+    .bind(name, profession, preferences, now, me.id)
     .run();
 
   return c.json({
-    user: { ...me, name, profession },
+    user: { ...me, name, profession, preferences },
   });
 });
 

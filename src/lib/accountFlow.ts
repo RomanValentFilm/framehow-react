@@ -77,7 +77,7 @@ import type { PendingRecord } from './persistence';
 import { showThreeWayConflict, showConfirm, showToast } from './modals';
 import { saveOpenTextEdits, saveOpenTableEdits, versionStars, inStarOrder } from './helpers';
 import { closeSortMode, refreshOpenSortView } from './sortOrder';
-import { resetStoryboardState, state, useStore, freshNeedDefinitions, DEFAULT_STRIP_DEFS, migrateNeedDefinitions, createDefaultExportMeta } from '../store/state';
+import { resetStoryboardState, state, useStore, freshNeedDefinitions, DEFAULT_STRIP_DEFS, migrateNeedDefinitions, createDefaultExportMeta, blankNeeds, blankNote } from '../store/state';
 import type { Frame, Stroke, Version, FrameNeedState, FrameNoteState, NeedDefinitions, BracketNodeData, ProjectType } from '../store/state';
 import { clearRectsForProject } from './pdfAdjust';
 
@@ -1216,6 +1216,13 @@ async function loadCloudProject(p: CloudProject): Promise<void> {
     updateLastKnownTimestamp(tree.project.updated_at);
     takenFromServerAt = tree.project.updated_at;   // opening a project IS taking (#299)
     setCurrentProject({ projectId: p.id, name: p.name, lastSavedAt: tree.project.updated_at });
+    // WHAT JUST ARRIVED IS WHAT THE SERVER HOLDS (#510, run 222). The rebuild
+    // clears the record of what matches the server and, unlike a pull, opening
+    // never wrote it again — "saving: 0 frame(s) remembered as matching". So
+    // the next push sent every shot as changed, dated zero (this device never
+    // touched them); the server refused them all as older; the forced fetch
+    // took its copy; that counted as a change; and it pushed again, for ever.
+    adoptFingerprintsFromStore();
     clearDirtyState(); // Fresh project load — nothing dirty
     fhTrack('project_opened', { name: p.name });
     (window as any).__fh_renderAll?.();
@@ -1564,6 +1571,12 @@ export async function beginNewProject(): Promise<void> {
   // last failed push having happened to catch everything.
   await flushSyncNow();
 
+  // THE USER'S OWN NAMES MAY HAVE CHANGED ON ANOTHER DEVICE (#510). Refresh the
+  // profile quietly — at most a moment; offline, what was remembered stands.
+  if (getToken()) {
+    await Promise.race([loadCurrentUser().catch(() => null), new Promise((r) => setTimeout(r, 1500))]);
+  }
+
   resetStoryboardState();
   resetProjectSyncGuards();
   useStore.setState({ portraitMode: false, projectType: 'landscape' });
@@ -1797,6 +1810,10 @@ async function askAboutOpenSettingConflicts(projectId: string): Promise<void> {
       } catch { /* fall back to '?' */ }
       const mine = state().sortOrders.find((o) => o.id === c.item_id);
       if (mine?.name) name = mine.name;
+      // WHICH ORDER, WHO AGAINST WHOM, AND WHAT THE LOSING COPY SAYS (#510) —
+      // a false decision can only be traced if the log names it.
+      trace(`  decision on "${name}" (${c.item_id.slice(0, 12)}): ${c.device_name ?? '?'}@${c.made_at ?? '?'}`
+        + ` vs ${c.winner_device ?? '?'}@${c.winner_made_at ?? '?'} · losing: ${c.losing_json.slice(0, 160)}`);
 
       const choice = await showSortOrderConflict({
         orderName: name,
@@ -1843,6 +1860,7 @@ async function askAboutOpenSettingConflicts(projectId: string): Promise<void> {
           continue;
         }
         trace(`  sort order decided: ${choice}`);
+        stampChangedSettings(projectId);
         applySettingsToStore(res.settings);
         adoptSettingsFromServer(res.settings, projectId);
         (window as any).__fh_renderAll?.();
@@ -2300,6 +2318,7 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
 
   const metadata = JSON.stringify({
     stripDefs: s.stripDefs,
+    columnNames: s.columnNames,
     groups: metaGroups,
     nextGroupId: s.nextGroupId,
     portraitMode: s.portraitMode,
@@ -2471,6 +2490,7 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   // server's where they were not. Take both the values and their stamps, or
   // this device would keep pushing its older copy for ever.
   if (res.settings) {
+    stampChangedSettings(cp.projectId);   // a change made while this push was in the air is later than its reply (#510)
     applySettingsToStore(res.settings);
     adoptSettingsFromServer(res.settings, cp.projectId);
   }
@@ -2506,8 +2526,12 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
     if (staleFrameIds.has(k)) continue;
     _lastPushedFingerprints.set(k, v);
   }
-  // The project's settings went up with it.
-  _lastPushedMeta = projectMetaFingerprint(state());
+  // The project's settings went up with it — THE ONES THAT WENT UP (#510).
+  // This read the state AFTER the push. A change made while the push was in
+  // the air (the second of three strip renames, run 206) was then remembered
+  // as sent, and the "sending again" push said "nothing changed". The blob was
+  // built from `s`, so `s` is what the server holds.
+  _lastPushedMeta = projectMetaFingerprint(s);
 
   // ---------------------------------------------------------------------------
   // Persist server IDs + r2Keys back to the Zustand store so the next push
@@ -2603,6 +2627,22 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
       trace('  …waiting for the hand to stop before fetching it');
     } else {
       await tryPullFromCloud(true);
+      // AND IF THE FETCH HAD NOTHING NEWER, WHAT IS HERE IS THE SERVER'S COPY
+      // (#510, run 222). The fetch asks for rows newer than the last pull —
+      // and the refused shots' server copies arrived in that pull already;
+      // only the record of them matching was thrown away above. With nothing
+      // to rebuild, nothing re-recorded them, and the next push sent the same
+      // shots again, refused again, for ever (1,673 pushes in nine minutes).
+      // A shot the fetch brought nothing newer for is recorded as matching.
+      const s2 = state();
+      let recorded = 0;
+      s2.frames.forEach((f, i) => {
+        if (!f.serverFrameId || !staleFrameIds.has(f.serverFrameId)) return;
+        if (_lastPushedFingerprints.has(f.serverFrameId)) return;   // the rebuild recorded it
+        _lastPushedFingerprints.set(f.serverFrameId, frameFingerprint(f, i, s2));
+        recorded++;
+      });
+      if (recorded > 0) trace(`  ${recorded} refused shot(s) recorded as the server's copy — nothing newer to fetch`);
     }
   }
 
@@ -3097,6 +3137,7 @@ async function applyCloudTreeToStore(
 
   // Parse project metadata to restore stripDefs, groups, portraitMode, nextGroupId
   let restoredStripDefs: import('../store/state').StripDef[] | undefined;
+  let restoredColumnNames: import('../store/state').ColumnName[] | undefined;
   let restoredGroups: import('../store/state').FrameGroup[] = [];
   let restoredNextGroupId = 1;
   let restoredSetups: import('../store/state').Setup[] = [];
@@ -3149,6 +3190,9 @@ async function applyCloudTreeToStore(
             if (def.defaultFrameLabel === old.frame) def.defaultFrameLabel = current.defaultFrameLabel;
           }
         }
+      }
+      if (Array.isArray(meta.columnNames) && meta.columnNames.length > 0) {
+        restoredColumnNames = meta.columnNames;   // SHOT / NEEDS / NOTES names (#510)
       }
       if (meta.portraitMode != null) {
         isPortrait = !!meta.portraitMode;
@@ -3470,6 +3514,7 @@ async function applyCloudTreeToStore(
     refsPrevFrameState: refsPFS,
     // StripDefs & groups from metadata (or defaults)
     ...(restoredStripDefs ? { stripDefs: restoredStripDefs } : {}),
+    ...(restoredColumnNames ? { columnNames: restoredColumnNames } : {}),
     groups: restoredGroups,
     // ...and which group you are looking at (#353). It is put back below only
     // if the group still exists after the merge.
@@ -4070,6 +4115,7 @@ async function performRestore(projectId: string, snapshotId: string): Promise<vo
     });
 
     if (progressBar) progressBar.style.width = '100%';
+    adoptFingerprintsFromStore();   // the restored copy is what the server holds now (#510)
     clearDirtyState();
     (window as any).__fh_renderAll?.();
     // After the rebuild, not before — otherwise renderAll has the last word
@@ -4735,6 +4781,7 @@ function projectMetaFingerprint(s: ReturnType<typeof state>): string {
     // every push, but nothing here counted them, so renaming one and touching
     // nothing else came out as "nothing changed — not sending".
     s.stripDefs,
+    s.columnNames,
   ]);
 }
 
@@ -4892,12 +4939,13 @@ function frameFingerprint(f: Frame, _sortOrder: number, s: { stripVersions: Reco
       }
     }
   }
-  // Include per-frame needs state
+  // Include per-frame needs state — unless it is the untouched one every card
+  // gets when the column is shown (#510, blankNeeds/blankNote).
   const fn = s.frameNeeds[f.id];
-  if (fn) parts.push('needs:' + JSON.stringify(fn));
+  if (fn && !blankNeeds(fn)) parts.push('needs:' + JSON.stringify(fn));
   // Include per-frame notes state
   const fnote = s.frameNotes[f.id];
-  if (fnote) parts.push('notes:' + JSON.stringify(fnote));
+  if (fnote && !blankNote(fnote)) parts.push('notes:' + JSON.stringify(fnote));
   return parts.join('\x00');
 }
 
@@ -5529,6 +5577,14 @@ async function tryPullFromCloud(force = false): Promise<void> {
       // in place. The five other places that close it — opening another project,
       // logging out, deleting the account, starting a new one, restoring a
       // snapshot — are untouched: those really do replace the project.
+      // GIVE WHAT THIS DEVICE HOLDS ITS TIME BEFORE ANYTHING ARRIVING IS
+      // JUDGED AGAINST IT (#510). A settings change made since the last stamp
+      // — the autosave has not run, no push has started — had no time at all,
+      // so an arriving row at the OLD time was "not older than what I hold"
+      // and painted over it. Run 207: three strips renamed in a moment, the
+      // second and third were undone by the reply to the first. Stamped now,
+      // the local change is later than anything the server can send back.
+      stampChangedSettings(cp.projectId);
       // System action: all setState calls inside are NOT user changes
       beginSystemAction();
       try {

@@ -63,7 +63,7 @@ export interface Setup {
 
 /** 12-colour palette for setups. */
 /** App version — bump before every deploy. */
-export const APP_VERSION = 'v4.9.206';
+export const APP_VERSION = 'v4.9.207';
 
 /** Free-text fields printed in the header of every exported page. */
 export interface ExportMeta {
@@ -333,10 +333,36 @@ export function migrateNeedDefinitions(saved: NeedDefinitions): NeedDefinitions 
   return { tabs: resultTabs, locations: saved.locations ?? defaults.locations };
 }
 
+/**
+ * NOTHING A PERSON MADE (#510). Showing the NEEDS or NOTES column gives every
+ * card a state object so it has something to draw — as showing a strip gives
+ * it a blank version (#358). That is not work: nothing is ticked, nothing is
+ * written, the label is the project's own. The fingerprints treat it as
+ * nothing, or every card counts as "changed now" the moment the column is
+ * shown, and this device then out-dates real edits made elsewhere.
+ */
+export function blankNeeds(ft: FrameNeedState | undefined): boolean {
+  if (!ft) return true;
+  if (Object.values(ft.toggles ?? {}).some(Boolean)) return false;
+  if (Object.values(ft.counters ?? {}).some((n) => n > 0)) return false;
+  if (Object.values(ft.locationToggles ?? {}).some(Boolean)) return false;
+  if (Object.values(ft.memos ?? {}).some((m) => m && m.trim().length > 0)) return false;
+  const own = columnName('needs').cardLabel || 'needs';
+  return !ft.label || ft.label === own;
+}
+export function blankNote(fn: FrameNoteState | undefined): boolean {
+  if (!fn) return true;
+  if (fn.noteText && fn.noteText.trim().length > 0) return false;
+  const t = fn.tableData;
+  if (t && (t.headers.some((h) => h) || t.rows.some((r) => r.some((c) => c)))) return false;
+  const own = columnName('notes').cardLabel || 'note';
+  return !fn.label || fn.label === own;
+}
+
 /** Create default per-frame need state (all toggles off, no memos). */
 export function createDefaultFrameNeedState(): FrameNeedState {
   return {
-    label: 'needs',
+    label: columnName('needs').cardLabel || 'needs',
     activeTabId: DEFAULT_NEED_DEFINITIONS.tabs[0]?.id ?? '',
     toggles: {},
     counters: {},
@@ -358,7 +384,7 @@ export interface FrameNoteState {
 /** Create default per-frame note state. */
 export function createDefaultFrameNoteState(): FrameNoteState {
   return {
-    label: 'note',
+    label: columnName('notes').cardLabel || 'note',
     mode: 'note',
     noteText: '',
     tableData: { headers: ['', '', ''], rows: [['', '', ''], ['', '', ''], ['', '', '']] },
@@ -405,6 +431,28 @@ export interface StripDef {
 // STRIP2 = 'floor' (originally "floor plan")
 // STRIP3 = 'refs'  (originally "references")
 // The buttonLabel is what users see and can rename via Customise.
+/**
+ * THE OTHER THREE COLUMNS (#510) — SHOT, NEEDS and NOTES have no versions, so
+ * they are not StripDefs, but their names are the user's to choose just the
+ * same (Roman, 12 September: "all 6"). The button, and for NEEDS and NOTES the
+ * label on every card. Per project, saved with it, travelling by time.
+ */
+export interface ColumnName {
+  id: 'main' | 'needs' | 'notes';
+  buttonLabel: string;
+  /** The label on the cards ("needs", "note"). SHOT has none. */
+  cardLabel: string;
+}
+export const DEFAULT_COLUMN_NAMES: ColumnName[] = [
+  { id: 'main',  buttonLabel: 'SHOT',  cardLabel: '' },
+  { id: 'needs', buttonLabel: 'NEEDS', cardLabel: 'needs' },
+  { id: 'notes', buttonLabel: 'NOTES', cardLabel: 'note' },
+];
+export function columnName(id: ColumnName['id']): ColumnName {
+  return useStore.getState().columnNames.find((c) => c.id === id)
+    ?? DEFAULT_COLUMN_NAMES.find((c) => c.id === id)!;
+}
+
 export const DEFAULT_STRIP_DEFS: StripDef[] = [
   // FRAME → SHOT and HOW → ANGLE, the names every NEW project opens with
   // (#477). Only the DEFAULTS change: a project that already exists carries
@@ -508,6 +556,7 @@ export interface FrameHowState {
   refsPrevFrameState: Record<number, FrameSnapshot | null>;
   /** Strip definitions — user-configurable button labels & defaults */
   stripDefs: StripDef[];
+  columnNames: ColumnName[];
   /** Which strips are selected in the middle buttons (ordered) */
   activeStrips: StripType[];
   /** Layout mode from the right buttons */
@@ -646,6 +695,7 @@ const initial: FrameHowState = {
   frames: [],
   ...initialStrips,
   stripDefs: DEFAULT_STRIP_DEFS,
+  columnNames: DEFAULT_COLUMN_NAMES,
   activeStrips: ['main', 'ver'],
   layoutMode: 'auto',
   drawColor: {},
@@ -719,6 +769,7 @@ export function resetStoryboardState(): void {
     frames: [],
     ...freshStrips,
     stripDefs: DEFAULT_STRIP_DEFS,
+  columnNames: DEFAULT_COLUMN_NAMES,
     activeStrips: ['main', 'ver'],
     layoutMode: 'auto',
     drawColor: {},

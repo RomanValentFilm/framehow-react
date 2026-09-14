@@ -3,7 +3,7 @@
  * Each card has a Note/Table toggle: free-text note or editable table.
  */
 
-import { state, useStore, createDefaultFrameNoteState } from '../store/state';
+import { state, useStore, createDefaultFrameNoteState, columnName } from '../store/state';
 import type { FrameNoteState, TableData } from '../store/state';
 import { showVerLabelEdit } from './modals';
 
@@ -98,7 +98,7 @@ export function renderNotesCard(div: HTMLElement, fid: number): void {
 
   div.innerHTML = `
     <div class="notes-header">
-      <span class="frame-label-tag notes-label-combo" data-notes-editlabel="${fid}">${escapeHtml(frameLabel)}&thinsp;<span class="notes-label-part">${escapeHtml(fn.label)}</span></span>
+      <span class="frame-label-tag notes-label-combo" data-notes-editlabel="${fid}">${escapeHtml(frameLabel)}&thinsp;<span class="notes-label-part">${escapeHtml(columnName('notes').cardLabel || fn.label)}</span></span>
       <button class="vtab pictxt-btn notes-mode-btn" data-notes-modetoggle="${fid}">${isNote ? '<span class="ptt-bold">Note</span>/Table' : 'Note/<span class="ptt-bold">Table</span>'}</button>
     </div>
     <div class="notes-body">
@@ -423,18 +423,28 @@ function wireNotesCard(container: HTMLElement, fid: number): void {
       const f = s.frames.find((fr) => fr.id === fid);
       if (!f) return;
       const fn = ensureFrameNote(fid);
-      const result = await showVerLabelEdit(f.label || String(fid), fn.label);
+      const result = await showVerLabelEdit(f.label || String(fid), columnName('notes').cardLabel || fn.label);
       if (result === null) return;
-      // Update label on ALL frames' notes (project-wide rename)
-      const allNotes = s.frameNotes;
-      for (const key of Object.keys(allNotes)) {
-        allNotes[+key].label = result;
-      }
-      bumpRenderTick();
-      rerenderAllNotesCards();
-      flushDebouncedNoteSync();
+      renameNotesLabel(result);
     });
   });
+}
+
+/** RENAME THE NOTE LABEL ON EVERY CARD — what tapping a card's label does,
+ *  lifted out so Customise and the browser tests can call it (#510). The
+ *  project's own label is set too, so a NEW card is born with it. */
+export function renameNotesLabel(result: string): void {
+  const s = state();
+  const allNotes = s.frameNotes;
+  for (const key of Object.keys(allNotes)) {
+    allNotes[+key].label = result;
+  }
+  useStore.setState({
+    columnNames: s.columnNames.map((c) => (c.id === 'notes' ? { ...c, cardLabel: result } : c)),
+  });
+  bumpRenderTick();
+  rerenderAllNotesCards();
+  flushDebouncedNoteSync();
 }
 
 /** Open Table Settings modal — share table structure across all notes. */

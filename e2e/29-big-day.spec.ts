@@ -139,6 +139,7 @@ test('big day, part 2: shots made, named, moved, hidden and deleted on both devi
     // ── desktop: two new shots — one after the last, one in between ──────
     say('── desktop makes shots: NEW after the last, NEW after the 3rd ──');
     await desktop.newFrameAfter(5);
+    await desktop.page.waitForTimeout(600);     // a person sees the card before pressing again
     await desktop.newFrameAfter(2);
     const rightAfter = shotsOf(await desktop.whole()).map((s) => s.label);
     say(`desktop, straight after the two presses: ${rightAfter.join(' · ')}`);
@@ -151,7 +152,8 @@ test('big day, part 2: shots made, named, moved, hidden and deleted on both devi
     const rightOrder = ['1', '2', '3', '3#1', '4', '5', '6', '6#1'];
     expect.soft(rightAfter, 'the app itself puts the new shots where NEW was pressed').toEqual(rightOrder);
     if (agreed.map((s) => s.label).join() !== rightOrder.join()) {
-      say(`desktop log:\n${(await desktop.log()).slice(-40).map((l) => '    ' + l).join('\n')}`);
+      say(`desktop log (newest first):\n${(await desktop.log()).slice(0, 60).map((l) => '    ' + l).join('\n')}`);
+      say(`ipad log (newest first):\n${(await ipad.log()).slice(0, 60).map((l) => '    ' + l).join('\n')}`);
     }
     expect.soft(agreed.map((s) => s.label), 'after the sync the new shots still sit where NEW was pressed')
       .toEqual(rightOrder);
@@ -328,6 +330,179 @@ test('big day, part 3: pictures, drawings, versions and stars, held on both devi
     await desktop.settle();
     const fresh = shotsOf(await Device.waitUntilWholeAgrees(desktop, ipad, 'CARDS: AFTER A RELOAD THE TWO DEVICES DIFFER.'));
     expect.soft(fresh, 'a reload changes nothing').toEqual(agreed);
+
+    await desktop.close();
+    await ipad.close();
+  });
+
+// PART 4 — the words around the shots. Strip names, the needs (a category
+// renamed, a column and an item renamed, ticks and counters on shots), note
+// cards, setups made and put on shots, a version tagged for its setup — from
+// both sides, held on both.
+test('big day, part 4: strips, needs, notes and setups, held on both devices',
+  async ({ browser }) => {
+    const { token } = await freshAccount();
+    const desktop = await Device.open(browser, 'desktop', token);
+    const ipad = await Device.open(browser, 'ipad', token, true);
+    type Shot = { label: string; setup: string | null; needsOn: string[]; counters: Record<string, number>; noteCard: string;
+      versions: Record<string, Array<{ tag: string | null }>> };
+    type Whole = { shots: Shot[]; strips: string[]; categories: string[]; setups: Array<{ name: string; color: number }> };
+    const parse = (w: string) => JSON.parse(w) as Whole;
+
+    const id = await desktop.newProjectOfKind('BIG DAY — WORDS', 'landscape', 4);
+    await desktop.settle();
+    expect(id, 'the project must reach the server').not.toBeNull();
+    await ipad.openProject(id!);
+    await ipad.settle();
+    await Device.waitUntilWholeAgrees(desktop, ipad, 'WORDS: THE IPAD DOES NOT HOLD THE FOUR SHOTS.');
+
+    // ── strip names ──────────────────────────────────────────────────────
+    say('── desktop renames the strips: LOOKS, PLAN, MOOD ──');
+    await desktop.renameStrip('ver', 'LOOKS');
+    await desktop.renameStrip('floor', 'PLAN');
+    await desktop.renameStrip('refs', 'MOOD');
+    say(`   desktop straight after: ${parse(await desktop.whole()).strips.join(' · ')}`);
+    await desktop.settle();
+    let w = parse(await Device.waitUntilWholeAgrees(desktop, ipad, 'WORDS: THE STRIP NAMES DID NOT REACH THE IPAD.'));
+    say(`   strips on both: ${w.strips.join(' · ')}`);
+    if (!w.strips.join(' ').includes('LOOKS')) {
+      say(`desktop log:\n${(await desktop.log()).slice(0, 40).map((l) => '    ' + l).join('\n')}`);
+      say(`ipad log:\n${(await ipad.log()).slice(0, 25).map((l) => '    ' + l).join('\n')}`);
+    }
+    expect.soft(w.strips.join(' '), 'LOOKS travelled').toContain('LOOKS');
+    expect.soft(w.strips.join(' '), 'PLAN travelled').toContain('PLAN');
+    expect.soft(w.strips.join(' '), 'MOOD travelled').toContain('MOOD');
+
+    // ── Customise: all six columns, saved with the project (#510) ────────
+    say('── desktop: Customise → six names; iPad must show them; a NEW project on the iPad opens with them ──');
+    const six = {
+      main: 'FRAME', ver: 'TAKES', floor: 'PLAN', refs: 'MOOD', needs: 'WANTS', notes: 'MEMO',
+      verLabel: 'take', floorLabel: 'plan', refsLabel: 'mood', needsLabel: 'wants', notesLabel: 'memo',
+    };
+    await desktop.customise(six);
+    await desktop.settle();
+    w = parse(await Device.waitUntilWholeAgrees(desktop, ipad, 'WORDS: THE SIX NAMES DID NOT REACH THE IPAD.'));
+    say(`   columns on both: ${(w as unknown as { columns: string[] }).columns.join(' · ')} | strips: ${w.strips.join(' · ')}`);
+    const cols = (w as unknown as { columns: string[] }).columns.join(' ');
+    expect.soft(cols, 'SHOT button renamed').toContain('main:FRAME/');
+    expect.soft(cols, 'NEEDS button + card label renamed').toContain('needs:WANTS/wants');
+    expect.soft(cols, 'NOTES button + card label renamed').toContain('notes:MEMO/memo');
+    expect.soft(w.strips.join(' '), 'ANGLE renamed').toContain('ver:TAKES/take/t');
+    expect.soft(w.strips.join(' '), 'SKETCH renamed').toContain('floor:PLAN/plan/p');
+    expect.soft(w.strips.join(' '), 'REFS renamed').toContain('refs:MOOD/mood/m');
+
+    // A NEW project on the OTHER device — the names follow the account.
+    const nextId = await ipad.newProjectOfKind('BIG DAY — NEXT ONE', 'landscape', 2);
+    await ipad.settle();
+    expect(nextId, 'the new project must reach the server').not.toBeNull();
+    const next = parse(await ipad.whole());
+    say(`   the iPad's new project: ${(next as unknown as { columns: string[] }).columns.join(' · ')} | ${next.strips.join(' · ')}`);
+    if (!(next as unknown as { columns: string[] }).columns.join(' ').includes('main:FRAME/')) {
+      say(`desktop log (names):\n${(await desktop.log()).filter((l) => /default names|new project:/.test(l)).map((l) => '    ' + l).join('\n')}`);
+      say(`ipad log (names):\n${(await ipad.log()).filter((l) => /default names|new project:/.test(l)).map((l) => '    ' + l).join('\n')}`);
+    }
+    expect.soft((next as unknown as { columns: string[] }).columns.join(' '), 'NEW project: SHOT name follows the account').toContain('main:FRAME/');
+    expect.soft(next.strips.join(' '), 'NEW project: strip names follow the account').toContain('ver:TAKES/take/t');
+    // Back to the project of the day, on both.
+    await ipad.openProject(id!);
+    await ipad.settle();
+    await desktop.openProject(id!);
+    await desktop.settle();
+    w = parse(await Device.waitUntilWholeAgrees(desktop, ipad, 'WORDS: BACK ON THE PROJECT, THE TWO DEVICES DIFFER.'));
+
+    // ── the needs: names ─────────────────────────────────────────────────
+    const layout = await desktop.needsLayout();
+    expect(layout.length, 'the project has need categories').toBeGreaterThan(0);
+    const cat = layout[0];
+    const toggleTable = cat.tables.find((t) => t.type === 'toggle' && t.items.length > 0);
+    const counterTable = layout.flatMap((c) => c.tables.map((t) => ({ c, t }))).find(({ t }) => t.type === 'counter' && t.items.length > 0);
+    say(`   needs: ${layout.map((c) => `${c.name} (${c.tables.map((t) => `${t.name}:${t.type}×${t.items.length}`).join(', ')})`).join(' | ')}`);
+    expect(toggleTable, 'a column with toggles to tick').toBeTruthy();
+
+    say('── desktop renames the first category, a column and an item ──');
+    await desktop.renameCategory(0, 'CAMERA DEPT');
+    await desktop.renameNeedTable(toggleTable!.id, 'RIGS');
+    await desktop.renameNeedItem(toggleTable!.id, toggleTable!.items[0].id, 'DOLLY');
+    await desktop.settle();
+    w = parse(await Device.waitUntilWholeAgrees(desktop, ipad, 'WORDS: THE NEEDS NAMES DID NOT REACH THE IPAD.'));
+    say(`   categories on both: ${w.categories.join(' | ')}`);
+    expect.soft(w.categories[0], 'the category name').toContain('CAMERA DEPT');
+    expect.soft(w.categories[0], 'the column name').toContain('RIGS[');
+    expect.soft(w.categories[0], 'the item name').toContain('DOLLY');
+
+    // ── the needs: ticks and counters on shots, from both sides ──────────
+    say('── desktop ticks DOLLY on shot 1 and 3; iPad ticks the second item on shot 2 and sets a counter ──');
+    await desktop.showNeeds();
+    await desktop.pressNeedsTab(0, cat.id);
+    await desktop.pressNeed(0, toggleTable!.items[0].id, 'DOLLY');
+    await desktop.pressNeedsTab(2, cat.id);
+    await desktop.pressNeed(2, toggleTable!.items[0].id, 'DOLLY');
+    await desktop.settle();
+    w = parse(await Device.waitUntilWholeAgrees(desktop, ipad, 'WORDS: THE TICKS DID NOT REACH THE IPAD.'));
+    expect.soft(w.shots[0].needsOn, 'shot 1 has DOLLY on both').toContain(toggleTable!.items[0].id);
+    expect.soft(w.shots[2].needsOn, 'shot 3 has DOLLY on both').toContain(toggleTable!.items[0].id);
+
+    await ipad.showNeeds();
+    await ipad.pressNeedsTab(1, cat.id);
+    const second = toggleTable!.items[1] ?? toggleTable!.items[0];
+    await ipad.pressNeed(1, second.id, second.name);
+    if (counterTable) {
+      await ipad.pressNeedsTab(1, counterTable.c.id);
+      await ipad.setNeedCounter(1, counterTable.t.items[0].id, 3, counterTable.t.items[0].name);
+    }
+    await ipad.settle();
+    w = parse(await Device.waitUntilWholeAgrees(desktop, ipad, "WORDS: THE IPAD'S TICK OR COUNTER DID NOT REACH THE DESKTOP."));
+    expect.soft(w.shots[1].needsOn, 'shot 2 has the iPad\'s tick on both').toContain(second.id);
+    if (counterTable) expect.soft(w.shots[1].counters[counterTable.t.items[0].id], 'shot 2 counter = 3 on both').toBe(3);
+    expect.soft(w.shots[0].needsOn, 'shot 1 still has DOLLY').toContain(toggleTable!.items[0].id);
+
+    // ── note cards ───────────────────────────────────────────────────────
+    say('── desktop writes a note on shot 4; iPad writes one on shot 1 ──');
+    await desktop.showNotes();
+    await desktop.typeNote(3, 'golden hour only');
+    say(`   desktop shot 4 note straight after typing: "${parse(await desktop.whole()).shots[3].noteCard}"`);
+    await desktop.settle();
+    say(`   desktop shot 4 note after settling: "${parse(await desktop.whole()).shots[3].noteCard}"`);
+    await ipad.showNotes();
+    say(`   ipad shot 4 note before it types its own: "${parse(await ipad.whole()).shots[3].noteCard}"`);
+    await ipad.typeNote(0, 'bring the 50mm');
+    await ipad.settle();
+    w = parse(await Device.waitUntilWholeAgrees(desktop, ipad, 'WORDS: THE NOTES DID NOT MEET.'));
+    if (w.shots[3].noteCard !== 'golden hour only') {
+      say(`desktop log:\n${(await desktop.log()).slice(0, 45).map((l) => '    ' + l).join('\n')}`);
+      say(`ipad log:\n${(await ipad.log()).slice(0, 30).map((l) => '    ' + l).join('\n')}`);
+    }
+    expect.soft(w.shots[3].noteCard, 'shot 4 note on both').toBe('golden hour only');
+    expect.soft(w.shots[0].noteCard, 'shot 1 note on both').toBe('bring the 50mm');
+
+    // ── setups ───────────────────────────────────────────────────────────
+    say('── desktop makes setup A and puts it on shots 1–2; iPad makes setup B for shot 3, tags a version ──');
+    const setupA = await desktop.newSetup('A — KITCHEN');
+    await desktop.putSetupOnFrame(0, setupA);
+    await desktop.putSetupOnFrame(1, setupA);
+    await desktop.settle();
+    w = parse(await Device.waitUntilWholeAgrees(desktop, ipad, 'WORDS: SETUP A DID NOT REACH THE IPAD.'));
+    expect.soft(w.setups.map((s) => s.name), 'setup A on both').toContain('A — KITCHEN');
+    expect.soft(w.shots[0].setup, 'shot 1 in setup A on both').toBe('A — KITCHEN');
+    expect.soft(w.shots[1].setup, 'shot 2 in setup A on both').toBe('A — KITCHEN');
+
+    const setupB = await ipad.newSetup('B — GARDEN');
+    await ipad.putSetupOnFrame(2, setupB);
+    await ipad.tagVersion(2, 'ver', 0);
+    await ipad.settle();
+    w = parse(await Device.waitUntilWholeAgrees(desktop, ipad, 'WORDS: SETUP B OR THE TAG DID NOT REACH THE DESKTOP.'));
+    expect.soft(w.setups.map((s) => s.name).sort(), 'both setups on both').toEqual(['A — KITCHEN', 'B — GARDEN']);
+    expect.soft(w.shots[2].setup, 'shot 3 in setup B on both').toBe('B — GARDEN');
+    expect.soft(w.shots[2].versions.ver?.[0]?.tag, 'shot 3 version 1 tagged on both').toBeTruthy();
+
+    // ── reload both ──────────────────────────────────────────────────────
+    await desktop.reload();
+    await ipad.reload();
+    await desktop.openProject(id!);
+    await ipad.openProject(id!);
+    await desktop.settle();
+    const fresh = parse(await Device.waitUntilWholeAgrees(desktop, ipad, 'WORDS: AFTER A RELOAD THE TWO DEVICES DIFFER.'));
+    expect.soft(fresh, 'a reload changes nothing').toEqual(w);
 
     await desktop.close();
     await ipad.close();

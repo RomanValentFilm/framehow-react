@@ -16,6 +16,7 @@ interface UserRow {
   email: string;
   profession: string | null;
   email_verified: number;
+  preferences: string | null;
 }
 
 function readBearer(c: Context): string | null {
@@ -44,7 +45,7 @@ async function loadSession(
   if (session.expires_at <= Date.now()) return null;
   const user = await c.env.DB
     .prepare(
-      "SELECT id, name, email, profession, email_verified FROM users WHERE id = ? AND deleted_at IS NULL",
+      "SELECT id, name, email, profession, email_verified, preferences FROM users WHERE id = ? AND deleted_at IS NULL",
     )
     .bind(session.user_id)
     .first<UserRow>();
@@ -68,6 +69,7 @@ export const requireUser: MiddlewareHandler<{ Bindings: Env; Variables: AppVaria
     email: result.user.email,
     profession: result.user.profession,
     email_verified: result.user.email_verified === 1,
+    preferences: result.user.preferences ?? null,   // the user's own defaults (#510)
   });
   c.set("sessionId", result.session.id);
   await next();

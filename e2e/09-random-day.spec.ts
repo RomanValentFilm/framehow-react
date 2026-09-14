@@ -232,6 +232,12 @@ test('a random day', async ({ browser }) => {
   await ledger.mustAllBeOn(desktop);
   await ledger.mustAllBeOn(tablet);
   const clashed = [...touchedApart.desktop].filter((id) => touchedApart.tablet.has(id));
+  for (const d of [desktop, tablet]) {
+    const lines = (await d.log()).filter((l) => /sortOrder|decision on|sending:|back online|going offline/.test(l));
+    if (lines.some((l) => l.includes('decision'))) {
+      say(`${d.name} log (orders, newest first):\n${lines.slice(0, 40).map((l) => '    ' + l).join('\n')}`);
+    }
+  }
   if (clashed.length > 0) say(`both changed shooting order ${clashed.join(', ')} while apart — a decision is right here`);
   await mustNotHaveSaid(desktop, clashed.length > 0 ? ['decision(s) waiting'] : []);
   await mustNotHaveSaid(tablet, clashed.length > 0 ? ['decision(s) waiting'] : []);

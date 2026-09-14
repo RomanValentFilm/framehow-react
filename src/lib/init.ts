@@ -1,6 +1,7 @@
 // Top-level wiring — installs all global event handlers, button click
 // handlers, file inputs, and exposes cross-module render hooks via
 // window.__fh_* (used to break circular import cycles between render,
+import { applyCustomise, currentCustomiseValues } from './customise';
 // overview, actions, and helpers).
 
 import { state, useStore, isTouch, resetStoryboardState } from '../store/state';
@@ -22,7 +23,6 @@ import {
   addNewStripVersion,
   stripScrollId,
   stripTabPrefix,
-  relabelStripVersions,
   setVersionStars,
 } from './helpers';
 import type { StripType } from '../store/state';
@@ -455,61 +455,30 @@ export function initFramehow(): void {
   // Customise modal
   document.getElementById('menuCustomise')!.addEventListener('click', () => {
     document.getElementById('mainMenu')!.classList.remove('open');
-    const s = state();
-    // Populate inputs with current strip labels
-    const inp1 = document.getElementById('customStrip1') as HTMLInputElement;
-    const inp2 = document.getElementById('customStrip2') as HTMLInputElement;
-    const inp3 = document.getElementById('customStrip3') as HTMLInputElement;
-    inp1.value = s.stripDefs[0]?.buttonLabel || 'STRIP1';
-    inp2.value = s.stripDefs[1]?.buttonLabel || 'STRIP2';
-    inp3.value = s.stripDefs[2]?.buttonLabel || 'STRIP3';
-    (document.getElementById('customFrameLabel1') as HTMLInputElement).value = s.stripDefs[0]?.defaultFrameLabel || 'vers';
-    (document.getElementById('customFrameLabel2') as HTMLInputElement).value = s.stripDefs[1]?.defaultFrameLabel || 'floor';
-    (document.getElementById('customFrameLabel3') as HTMLInputElement).value = s.stripDefs[2]?.defaultFrameLabel || 'refs';
+    // Populate the six rows with the project's names now (#510).
+    const v = currentCustomiseValues();
+    const put = (id: string, val: string) => { (document.getElementById(id) as HTMLInputElement).value = val; };
+    put('customMain', v.main);
+    put('customStrip1', v.ver);   put('customFrameLabel1', v.verLabel);
+    put('customStrip2', v.floor); put('customFrameLabel2', v.floorLabel);
+    put('customStrip3', v.refs);  put('customFrameLabel3', v.refsLabel);
+    put('customNeeds', v.needs);  put('customNeedsLabel', v.needsLabel);
+    put('customNotes', v.notes);  put('customNotesLabel', v.notesLabel);
     document.getElementById('customiseModal')!.classList.remove('hidden');
   });
   document.getElementById('customiseCancel')!.addEventListener('click', () => {
     document.getElementById('customiseModal')!.classList.add('hidden');
   });
   document.getElementById('customiseSave')!.addEventListener('click', () => {
-    const inp1 = document.getElementById('customStrip1') as HTMLInputElement;
-    const inp2 = document.getElementById('customStrip2') as HTMLInputElement;
-    const inp3 = document.getElementById('customStrip3') as HTMLInputElement;
-    const fl1 = document.getElementById('customFrameLabel1') as HTMLInputElement;
-    const fl2 = document.getElementById('customFrameLabel2') as HTMLInputElement;
-    const fl3 = document.getElementById('customFrameLabel3') as HTMLInputElement;
-    const s = state();
-    const newDefs = s.stripDefs.map((def, i) => {
-      const raw = i === 0 ? inp1.value : i === 1 ? inp2.value : inp3.value;
-      const flRaw = i === 0 ? fl1.value : i === 1 ? fl2.value : fl3.value;
-      const label = raw.toUpperCase().replace(/[^A-Z0-9 ]/g, '').slice(0, 6) || def.buttonLabel;
-      const frameLabel = flRaw.trim().slice(0, 6) || def.defaultFrameLabel;
-      return { ...def, buttonLabel: label, defaultFrameLabel: frameLabel };
+    const get = (id: string) => (document.getElementById(id) as HTMLInputElement).value;
+    applyCustomise({
+      main: get('customMain'),
+      ver: get('customStrip1'), floor: get('customStrip2'), refs: get('customStrip3'),
+      needs: get('customNeeds'), notes: get('customNotes'),
+      verLabel: get('customFrameLabel1'), floorLabel: get('customFrameLabel2'), refsLabel: get('customFrameLabel3'),
+      needsLabel: get('customNeedsLabel'), notesLabel: get('customNotesLabel'),
     });
-    useStore.setState({ stripDefs: newDefs });
-    // Update prefix + relabel tabs, and clear per-frame overrides
-    for (const def of newDefs) {
-      // Clear all per-frame stripLabels so every frame uses the new default
-      for (const fr of s.frames) {
-        if (fr.stripLabels && fr.stripLabels[def.id]) {
-          delete fr.stripLabels[def.id];
-        }
-      }
-      // A FITTING keeps CAPITAL prefixes (#505): "l1" reads as "11". Other
-      // project types keep v, s, r as they always were.
-      const first = def.defaultFrameLabel[0];
-      const newPrefix = (first ? (s.projectType === 'fitting' ? first.toUpperCase() : first.toLowerCase()) : '') || def.prefix;
-      if (def.prefix !== newPrefix) {
-        def.prefix = newPrefix;
-        const versMap = s.stripVersions[def.id] || {};
-        for (const fid of Object.keys(versMap)) {
-          relabelStripVersions(+fid, def.id);
-        }
-      }
-    }
     document.getElementById('customiseModal')!.classList.add('hidden');
-    renderAll();
-    void flushSyncNow(); // CUS-1: customise strip labels → Save
   });
   // Close customise on backdrop click
   document.getElementById('customiseModal')!.addEventListener('click', (e) => {

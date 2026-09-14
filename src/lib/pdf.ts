@@ -9,6 +9,7 @@ import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { createWorker } from 'tesseract.js';
 
 import { COLORS, state, useStore, resetStoryboardState } from '../store/state';
+import { applyDefaultNames } from './userDefaults';
 import { setProgress, showToast } from './modals';
 import { fhTrack } from './tracking';
 import { updateFrameBadge } from './helpers';
@@ -643,6 +644,7 @@ export async function handlePDF(file: File): Promise<void> {
   fhTrack('pdf_loaded');
   const lastPdfName = file.name.replace(/\.pdf$/i, '');
   resetStoryboardState();
+  applyDefaultNames(true);          // the user's own names (#510)
   useStore.setState({ lastPdfName });
   document.getElementById('progressOverlay')!.classList.remove('hidden');
   setProgress(0, 'Loading PDF…');
@@ -1363,6 +1365,7 @@ export async function handlePDF(file: File): Promise<void> {
     const phoneMode = Math.min(window.innerWidth, window.innerHeight) <= 430;
     if (phoneMode) {
       resetStoryboardState();
+      applyDefaultNames(true);
       useStore.setState({ lastPdfName: file.name });
       const s = state();
       let nextId = s.nextId;

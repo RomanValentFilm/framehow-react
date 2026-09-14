@@ -3,7 +3,7 @@
  * Handles toggles, counters, tab switching, location, setup pill.
  */
 
-import { state, useStore, createDefaultFrameNeedState, SETUP_COLORS } from '../store/state';
+import { state, useStore, createDefaultFrameNeedState, SETUP_COLORS, columnName } from '../store/state';
 import { trace } from './syncTrace';
 import type { FrameNeedState, NeedTable } from '../store/state';
 import { showVerLabelEdit } from './modals';
@@ -81,7 +81,11 @@ export function renameNeedsLabel(label: string): void {
   const s = state();
   const next: Record<number, FrameNeedState> = {};
   for (const [fid, ft] of Object.entries(s.frameNeeds)) next[+fid] = { ...ft, label };
-  useStore.setState({ frameNeeds: next });
+  // The project's own label too, so a NEW card is born with it (#510).
+  useStore.setState({
+    frameNeeds: next,
+    columnNames: s.columnNames.map((c) => (c.id === 'needs' ? { ...c, cardLabel: label } : c)),
+  });
   for (const f of state().frames) if (f.serverFrameId) markFrameDirty(f.serverFrameId);
   stampChangedContent(getCurrentProject().projectId);
   markSomethingToSend();
@@ -194,7 +198,7 @@ export function renderNeedsCard(div: HTMLElement, fid: number): void {
 
   div.innerHTML = `
     <div class="needs-header">
-      <span class="frame-label-tag needs-label-combo" data-needs-editlabel="${fid}">${escapeHtml(frameLabel)}&thinsp;<span class="needs-label-part">${escapeHtml(ft.label)}</span></span>
+      <span class="frame-label-tag needs-label-combo" data-needs-editlabel="${fid}">${escapeHtml(frameLabel)}&thinsp;<span class="needs-label-part">${escapeHtml(columnName('needs').cardLabel || ft.label)}</span></span>
     </div>
     <div class="needs-tabs">${tabsHTML}</div>
     <div class="needs-body">
@@ -463,7 +467,7 @@ function wireNeedsCard(container: HTMLElement, fid: number): void {
       const f = s.frames.find((fr) => fr.id === fid);
       if (!f) return;
       const ft = ensureFrameNeeds(fid);
-      const result = await showVerLabelEdit(f.label || String(fid), ft.label);
+      const result = await showVerLabelEdit(f.label || String(fid), columnName('needs').cardLabel || ft.label);
       if (result === null) return;
       // Project-wide rename, on every frame's needs at once (#388).
       renameNeedsLabel(result);

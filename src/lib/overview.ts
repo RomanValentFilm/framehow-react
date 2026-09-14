@@ -1,6 +1,6 @@
 // Full Overview rendering — main + grid of versions for each frame, side-by-side.
 
-import { state, useStore, isTouch, bumpRenderTick } from '../store/state';
+import { state, useStore, isTouch, bumpRenderTick, columnName } from '../store/state';
 import type { StripType } from '../store/state';
 import {
   drawToolbarHTML,
@@ -1221,18 +1221,25 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
 function quickBtnsFor(fid: number, has: Record<string, string>, short: boolean): string {
   const b = (cls: string, attr: string, label: string) =>
     `<button class="g3-quick-btn${cls}" ${attr}="${fid}">${label}</button>`;
-  if (state().projectType === 'fitting') {
+  // THE PROJECT'S OWN NAMES (#510) — these read ANGLE/SKETCH/REFS/NEEDS/NOTES
+  // whatever the strips were called; Roman, 12 September. Where the card is
+  // narrow the name is cut to five letters, as SKTCH/NEED/NOTE were.
+  const st = state();
+  const strip = (id: StripType) => st.stripDefs.find((d) => d.id === id)?.buttonLabel ?? id.toUpperCase();
+  const col = (id: 'needs' | 'notes') => columnName(id).buttonLabel;
+  const fit = (label: string) => (short && label.length > 5 ? label.slice(0, 5) : label);
+  if (st.projectType === 'fitting') {
     return `<div class="g3-quick-btns">${
-      b(has.ver, 'data-g3versn', 'LOOKS')}${
-      b(has.refs, 'data-g3refs', 'REFS')}${
-      b(has.notes, 'data-g3notes', short ? 'NOTE' : 'NOTES')}</div>`;
+      b(has.ver, 'data-g3versn', fit(strip('ver')))}${
+      b(has.refs, 'data-g3refs', fit(strip('refs')))}${
+      b(has.notes, 'data-g3notes', fit(col('notes')))}</div>`;
   }
   return `<div class="g3-quick-btns">${
-    b(has.ver, 'data-g3versn', 'ANGLE')}${
-    b(has.floor, 'data-g3sketch', short ? 'SKTCH' : 'SKETCH')}${
-    b(has.refs, 'data-g3refs', 'REFS')}${
-    b(has.needs, 'data-g3needs', short ? 'NEED' : 'NEEDS')}${
-    b(has.notes, 'data-g3notes', short ? 'NOTE' : 'NOTES')}</div>`;
+    b(has.ver, 'data-g3versn', fit(strip('ver')))}${
+    b(has.floor, 'data-g3sketch', fit(strip('floor')))}${
+    b(has.refs, 'data-g3refs', fit(strip('refs')))}${
+    b(has.needs, 'data-g3needs', fit(col('needs')))}${
+    b(has.notes, 'data-g3notes', fit(col('notes')))}</div>`;
 }
 
 function _commitGrid3x2Order(newFids: number[]): void {

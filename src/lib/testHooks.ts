@@ -25,6 +25,7 @@ import { openSortEditView, closeSortMode, openOrderView, addNewOrder, toggleSort
 import { toggleScribbleMode, attachScribbleOverlays } from './scribble';
 import { trace } from './syncTrace';
 import { startFromScratch, startPortrait, startFitting, handleFolderImages } from './files';
+import { applyCustomise } from './customise';
 import { handlePDF } from './pdf';
 import { deleteFrameForGood, handleMainAction, handleAction, renameFrame, hideFrame, unhideFrame } from './actions';
 import { createSetup, handleSetupFrameClick, handleStripTagClick } from './setups';
@@ -50,6 +51,13 @@ function mainCardOf(fid: number, index: number): HTMLElement {
   if (!card) throw new Error(`shot ${index + 1} has no card on the page`);
   return card;
 }
+function needsCardOf(index: number): HTMLElement {
+  const f = useStore.getState().frames[index];
+  if (!f) throw new Error(`no frame at ${index}`);
+  const card = document.querySelector(`#needsScroll .needs-card[data-needs-fid="${f.id}"]`) as HTMLElement | null;
+  if (!card) throw new Error(`shot ${index + 1} has no needs card on the page`);
+  return card;
+}
 function stripCardOf(fid: number, index: number, strip: StripType): HTMLElement {
   const card = document.querySelector(`#${stripScrollId(strip)} .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
   if (!card) throw new Error(`shot ${index + 1} has no ${strip} card on the page`);
@@ -60,6 +68,8 @@ export interface WholeProject {
   name: string | null;
   kind: string;
   strips: string[];
+  /** SHOT / NEEDS / NOTES — button and card label (#510). */
+  columns: string[];
   shots: Array<{
     name: string; label: string; text: string; note: string; hidden: boolean;
     picture: boolean; strokes: number; scribbles: number; setup: string | null;
@@ -162,6 +172,22 @@ export interface TestDoor {
   pressPicTxt(index: number): void;
   /** PART 3 DOORS (#509) — every one presses the app's own button or answers
    *  its own dialog; none of them writes into the store by hand. */
+  /** PART 4 DOORS (#509): needs and notes, through their own buttons and boxes. */
+  /** Menu > Customise > Save, with these six names — the app's own save (#510). */
+  customise(values: import('./customise').CustomiseValues): void;
+  /** Press NEEDS / NOTES in the view bar if that column is not showing. */
+  showNeeds(): void;
+  showNotes(): void;
+  /** The needs, as defined: every category, its columns and their items, with ids. */
+  needsLayout(): Array<{ id: string; name: string; tables: Array<{ id: string; name: string; type: string; items: Array<{ id: string; name: string }> }> }>;
+  /** Press a category tab on a shot's needs card. */
+  pressNeedsTab(index: number, tabId: string): void;
+  /** Press a toggle dot on a shot's needs card. */
+  pressNeed(index: number, itemId: string): void;
+  /** Type a number into a counter on a shot's needs card. */
+  setNeedCounter(index: number, itemId: string, n: number): void;
+  /** Type into a shot's note card and leave it. */
+  typeNote(index: number, text: string): void;
   /** Press the strip's own button (ANGLE, SKETCH…) if that strip is not on
    *  the page yet — a person does the same before working on it. */
   showStrip(strip: StripType): void;
@@ -635,6 +661,7 @@ export function installTestDoor(): void {
         name: getCurrentProject().name,
         kind: s.projectType,
         strips: s.stripDefs.map((d) => `${d.id}:${d.buttonLabel}/${d.defaultFrameLabel}/${d.prefix}`),
+        columns: s.columnNames.map((c) => `${c.id}:${c.buttonLabel}/${c.cardLabel}`),
         shots: s.frames.map((f) => {
           const needs = s.frameNeeds[f.id];
           const on = needs ? Object.entries(needs.toggles ?? {}).filter(([, v]) => v).map(([k]) => k).sort() : [];
@@ -662,7 +689,9 @@ export function installTestDoor(): void {
           };
         }),
         setups: s.setups.map((su) => ({ name: su.name, color: su.colorIndex })),
-        categories: (s.needDefinitions?.tabs ?? []).map((t) => t.name),
+        // The category, its columns and their items — names are work too.
+        categories: (s.needDefinitions?.tabs ?? []).map((t) =>
+          `${t.name}: ${t.tables.map((tb) => `${tb.name}[${tb.items.map((i) => i.name).join(',')}]`).join(' ')}`),
         groups: s.groups.map((g) => ({
           name: g.name,
           shots: g.frameIds.map(nameOf),
@@ -1017,6 +1046,53 @@ export function installTestDoor(): void {
       const card = document.querySelector(`#mainScroll .frame-card[data-mfid="${f.id}"]`) as HTMLElement | null;
       if (!card) throw new Error(`shot ${index + 1} has no card on the page`);
       handleMainAction('pictxt', f.id, card);
+    },
+    customise(values) { applyCustomise(values); },
+    showNeeds() {
+      if (useStore.getState().needsStripVisible) return;
+      const btn = document.getElementById('needsStripBtn');
+      if (!btn) throw new Error('no NEEDS button on the page');
+      btn.click();
+    },
+    showNotes() {
+      if (useStore.getState().notesStripVisible) return;
+      const btn = document.getElementById('notesStripBtn');
+      if (!btn) throw new Error('no NOTES button on the page');
+      btn.click();
+    },
+    needsLayout() {
+      return (useStore.getState().needDefinitions?.tabs ?? []).map((t) => ({
+        id: t.id, name: t.name,
+        tables: t.tables.map((tb) => ({ id: tb.id, name: tb.name, type: tb.type, items: tb.items.map((i) => ({ id: i.id, name: i.name })) })),
+      }));
+    },
+    pressNeedsTab(index, tabId) {
+      const btn = needsCardOf(index).querySelector(`[data-needs-tab="${tabId}"]`) as HTMLElement | null;
+      if (!btn) throw new Error(`no tab ${tabId} on shot ${index + 1}'s needs card`);
+      btn.click();
+    },
+    pressNeed(index, itemId) {
+      const dot = needsCardOf(index).querySelector(`[data-needs-toggle="${itemId}"]`) as HTMLElement | null;
+      if (!dot) throw new Error(`no dot ${itemId} on shot ${index + 1}'s needs card (is its tab open?)`);
+      dot.click();
+    },
+    setNeedCounter(index, itemId, n) {
+      const inp = needsCardOf(index).querySelector(`[data-needs-counter="${itemId}"]`) as HTMLInputElement | null;
+      if (!inp) throw new Error(`no counter ${itemId} on shot ${index + 1}'s needs card (is its tab open?)`);
+      inp.focus();
+      inp.value = String(n);
+      inp.dispatchEvent(new Event('input', { bubbles: true }));
+      inp.blur();
+    },
+    typeNote(index, text) {
+      const f = useStore.getState().frames[index];
+      if (!f) throw new Error(`no frame at ${index}`);
+      const ta = document.querySelector(`#notesScroll .notes-card[data-notes-fid="${f.id}"] [data-notes-text]`) as HTMLTextAreaElement | null;
+      if (!ta) throw new Error(`shot ${index + 1} has no note card on the page`);
+      ta.focus();
+      ta.value = text;
+      ta.dispatchEvent(new Event('input', { bubbles: true }));
+      ta.blur();
     },
     showStrip(strip) {
       if (useStore.getState().activeStrips.includes(strip)) return;

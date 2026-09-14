@@ -13,6 +13,32 @@ import { decideFrame, decideVersion } from "../lib/syncDecide";
  * for ever, with the device retrying every few seconds. Ask in batches. (#276)
  */
 const SQL_VARS = 90;
+/** The same shooting order, whatever its place in the list (#510): the value
+ *  carries `idx` for placing a new order on another device, and two devices
+ *  holding the orders in different places must not be told they disagree. */
+function sameArrangement(a: string | null, b: string | null | undefined): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  try {
+    const x = JSON.parse(a) as { data?: unknown };
+    const y = JSON.parse(b) as { data?: unknown };
+    return JSON.stringify(sortKeys(x.data)) === JSON.stringify(sortKeys(y.data));
+  } catch { return false; }
+}
+/** Fields in one fixed sequence, so the same value is the same text (#510). */
+function sortKeys(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(sortKeys);
+  if (v && typeof v === "object") {
+    const out: Record<string, unknown> = {};
+    for (const k of Object.keys(v as Record<string, unknown>).sort()) {
+      const x = (v as Record<string, unknown>)[k];
+      if (x !== undefined) out[k] = sortKeys(x);
+    }
+    return out;
+  }
+  return v;
+}
+
 function inChunks<T>(items: T[]): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < items.length; i += SQL_VARS) out.push(items.slice(i, i + SQL_VARS));
@@ -319,7 +345,14 @@ projects.post("/:id/sync", async (c) => {
   // That is exactly the deadlock described below, reached by a settings-only
   // push instead of a frame one. Settings merge item by item and need no
   // blanket conflict.
-  const perFrame = payload.frames.length === 0
+  // AND A PUSH OF ONLY NEW SHOTS IS PER-FRAME TOO (#510, run 222). A shot
+  // made offline has never been seen, so it carries no "what I last saw" time
+  // — the one signal this test looked for. Coming back online with only such
+  // shots, after the other device had pushed, the device was answered with the
+  // blanket 409 and waited 80 seconds to try again. A partial push is a
+  // per-frame client by definition; nothing in it needs the whole-project check.
+  const perFrame = payload.partial
+    || payload.frames.length === 0
     || payload.frames.some((f) => f.base_updated_at !== undefined);
   // ALWAYS EMPTY since #303. Kept so the answer still carries the field an
   // older app looks for, and so the "a merging push cannot also be a wholesale
@@ -560,8 +593,15 @@ projects.post("/:id/sync", async (c) => {
     for (const it of orders) {
       const mine = held.get(it.item_id);
       if (!mine || it.base_changed_at === undefined) continue;   // new, or an older client
+      // NOT CHANGED SINCE IT LAST HEARD FROM US IS NOT A CHANGE (#510, run
+      // 220). A device sends every setting it knows on every push. One that
+      // was away, missed the other's edit, and pushed on reconnect before its
+      // pull landed sent its untouched, older copy — and was told it had
+      // edited blind. changed_at at or below the base means: nothing done
+      // here since; the WHERE below refuses it anyway, and nobody is asked.
+      if (it.changed_at <= it.base_changed_at) continue;
       if (mine.changed_at <= it.base_changed_at) continue;       // built on top of theirs
-      if (mine.value === it.value) continue;                     // same arrangement, nothing to argue
+      if (sameArrangement(mine.value, it.value)) continue;       // same arrangement, nothing to argue
       contestedOrders.add(it.item_id);
       conflictStmts.push(
         c.env.DB.prepare(

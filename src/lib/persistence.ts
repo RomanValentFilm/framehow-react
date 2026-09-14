@@ -6,8 +6,8 @@
 // active tab) — UI-only state (drawActive, hover, etc.) is omitted. On
 // restore we merge the payload back into the live store.
 
-import type { Frame, Version, FrameGroup, StripDef, Setup, NeedDefinitions, FrameNeedState, FrameNoteState, SortOrder, SortBreak, ProjectType } from '../store/state';
-import { useStore, DEFAULT_STRIP_DEFS, freshNeedDefinitions, migrateNeedDefinitions, createDefaultExportMeta } from '../store/state';
+import type { Frame, Version, FrameGroup, StripDef, ColumnName, Setup, NeedDefinitions, FrameNeedState, FrameNoteState, SortOrder, SortBreak, ProjectType } from '../store/state';
+import { useStore, DEFAULT_STRIP_DEFS, DEFAULT_COLUMN_NAMES, freshNeedDefinitions, migrateNeedDefinitions, createDefaultExportMeta } from '../store/state';
 
 const DB_NAME = 'framehow';
 const DB_VERSION = 2;
@@ -89,6 +89,7 @@ export interface CurrentProjectSnapshot {
   refsActiveTab?: Record<number, number>;
   /** Strip definitions (v4.0+) */
   stripDefs?: StripDef[];
+  columnNames?: ColumnName[];
   /** Setups — colour-coded labels (v4.6+) */
   setups?: Setup[];
   nextSetupId?: number;
@@ -191,6 +192,7 @@ export function snapshotFromStore(projectId: string | null, name: string | null)
     refsVersions: s.stripVersions.refs || {},
     refsActiveTab: s.stripActiveTab.refs || {},
     stripDefs: s.stripDefs,
+    columnNames: s.columnNames,
     setups: s.setups,
     nextSetupId: s.nextSetupId,
     stripTagInfoDismissed: s.stripTagInfoDismissed || undefined,
@@ -264,6 +266,7 @@ export function applySnapshotToStore(snap: CurrentProjectSnapshot): void {
     groups: snap.groups ?? [],
     nextGroupId: snap.nextGroupId ?? 1,
     stripDefs: snap.stripDefs ?? DEFAULT_STRIP_DEFS,
+    columnNames: snap.columnNames ?? DEFAULT_COLUMN_NAMES,
     setups: snap.setups ?? [],
     nextSetupId: snap.nextSetupId ?? 1,
     stripTagInfoDismissed: snap.stripTagInfoDismissed ?? false,

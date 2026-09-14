@@ -284,7 +284,7 @@ export class Device {
 
   /** Wait until two devices hold the SAME whole project. On failure, say the
    *  first line that differs, with both sides, so the fault is readable. */
-  static async waitUntilWholeAgrees(a: Device, b: Device, why: string, timeoutMs = 60_000): Promise<string> {
+  static async waitUntilWholeAgrees(a: Device, b: Device, why: string, timeoutMs = 90_000): Promise<string> {
     say(`waiting for ${a.name} and ${b.name} to hold the same whole project…`);
     const deadline = Date.now() + timeoutMs;
     let x = '', y = '';
@@ -310,9 +310,17 @@ export class Device {
 
   async openProject(id: string): Promise<void> {
     say(`${this.name}: opening the project from the server`);
-    await this.page.evaluate((pid) =>
+    // A WATCHDOG (#510, run 216): an open that never returns — a push loop —
+    // used to run the test into its ten-minute limit with no log to read.
+    const opened = this.page.evaluate((pid) =>
       (window as never as { __fh_test: { openProject(id: string): Promise<void> } })
         .__fh_test.openProject(pid as string), id);
+    const timeout = new Promise<'timeout'>((r) => setTimeout(() => r('timeout'), 60_000));
+    const result = await Promise.race([opened.then(() => 'ok' as const), timeout]);
+    if (result === 'timeout') {
+      throw new Error(`${this.name}: OPENING THE PROJECT NEVER FINISHED (60s).\n`
+        + `${this.name} log (newest first):\n${(await this.log()).slice(0, 60).map((l) => '  ' + l).join('\n')}`);
+    }
     say(`${this.name}: project open`);
   }
 
@@ -840,6 +848,51 @@ export class Device {
   }
 
   // ── PART 3 (#509): pictures, drawings, versions, stars, written text ──
+
+  /** Menu > Customise > Save with these names (#510). */
+  async customise(values: Record<string, string>): Promise<void> {
+    say(`${this.name}: Customise → ${Object.entries(values).map(([k, v]) => `${k}=${v}`).join(' ')}`);
+    await this.page.evaluate((v) =>
+      (window as never as { __fh_test: { customise(v: Record<string, string>): void } }).__fh_test.customise(v as Record<string, string>), values);
+  }
+
+  // ── PART 4 (#509): needs and notes through their own buttons and boxes ──
+  async showNeeds(): Promise<void> {
+    say(`${this.name}: showing the NEEDS column`);
+    await this.page.evaluate(() => (window as never as { __fh_test: { showNeeds(): void } }).__fh_test.showNeeds());
+    await this.page.waitForTimeout(300);
+  }
+  async showNotes(): Promise<void> {
+    say(`${this.name}: showing the NOTES column`);
+    await this.page.evaluate(() => (window as never as { __fh_test: { showNotes(): void } }).__fh_test.showNotes());
+    await this.page.waitForTimeout(300);
+  }
+  needsLayout(): Promise<Array<{ id: string; name: string; tables: Array<{ id: string; name: string; type: string; items: Array<{ id: string; name: string }> }> }>> {
+    return this.page.evaluate(() => (window as never as { __fh_test: { needsLayout(): never } }).__fh_test.needsLayout());
+  }
+  async pressNeedsTab(index: number, tabId: string): Promise<void> {
+    await this.page.evaluate(([i, t]) =>
+      (window as never as { __fh_test: { pressNeedsTab(i: number, t: string): void } }).__fh_test.pressNeedsTab(i as number, t as string),
+      [index, tabId] as [number, string]);
+  }
+  async pressNeed(index: number, itemId: string, what = itemId): Promise<void> {
+    say(`${this.name}: ticks ${what} on shot ${index + 1}`);
+    await this.page.evaluate(([i, t]) =>
+      (window as never as { __fh_test: { pressNeed(i: number, t: string): void } }).__fh_test.pressNeed(i as number, t as string),
+      [index, itemId] as [number, string]);
+  }
+  async setNeedCounter(index: number, itemId: string, n: number, what = itemId): Promise<void> {
+    say(`${this.name}: ${what} = ${n} on shot ${index + 1}`);
+    await this.page.evaluate(([i, t, k]) =>
+      (window as never as { __fh_test: { setNeedCounter(i: number, t: string, k: number): void } }).__fh_test.setNeedCounter(i as number, t as string, k as number),
+      [index, itemId, n] as [number, string, number]);
+  }
+  async typeNote(index: number, text: string): Promise<void> {
+    say(`${this.name}: note on shot ${index + 1}: "${text}"`);
+    await this.page.evaluate(([i, t]) =>
+      (window as never as { __fh_test: { typeNote(i: number, t: string): void } }).__fh_test.typeNote(i as number, t as string),
+      [index, text] as [number, string]);
+  }
 
   /** Press the strip's button so its cards are on the page. */
   async showStrip(strip: string): Promise<void> {

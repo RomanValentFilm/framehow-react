@@ -104,8 +104,12 @@ export function mustNotShrink(was: Snapshot, now: Snapshot, what: string): void 
 export async function mustNotHaveSaid(d: Device, allowed: string[] = []): Promise<void> {
   for (const bad of ['PULL FAILED', 'FULL REPLACE', 'decision(s) waiting']) {
     if (allowed.includes(bad)) continue;
-    const hit = (await d.log()).find((l) => l.includes(bad));
-    expect(hit, `${d.name} said "${bad}": ${hit}`).toBeUndefined();
+    const lines = await d.log();
+    const hit = lines.find((l) => l.includes(bad));
+    // The lines that explain it, so the fault can be read rather than guessed.
+    const why = hit ? lines.filter((l) => /sortOrder|decision|conflict|settings changed|push start|back online|pull:/.test(l))
+      .slice(0, 40).map((l) => '  ' + l).join('\n') : '';
+    expect(hit, `${d.name} said "${bad}": ${hit}\n${why}`).toBeUndefined();
   }
 }
 
