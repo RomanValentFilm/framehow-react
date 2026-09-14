@@ -5924,7 +5924,7 @@ export async function bootstrapAccountSystem(): Promise<void> {
         adoptLocalProjectId(snap.localId);   // keep the same key across restarts
         adoptDirtyFrameIds(snap.dirtyFrameIds);  // protect them from the first pull
         adoptPushedFingerprints(snap.pushedFingerprints);  // no needless full push
-        importSettingStamps(snap.settingStamps);   // remember when settings changed
+        importSettingStamps(snap.settingStamps, snap.projectId ?? null);   // remember when settings changed — and whose
         importChangeStamps(snap.contentStamps);    // ...and when frames/versions did
         adoptHeardAt(snap.heardAt);                // ...and when we last heard (#284)
         adoptPendingTombstones(snap.pendingTombstones);  // deleting is final (#327)

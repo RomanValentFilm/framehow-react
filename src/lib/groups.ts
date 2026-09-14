@@ -448,14 +448,10 @@ function openGroupEditor(existing: FrameGroup | null): void {
   // Delete
   box.querySelector('.group-delete-btn')?.addEventListener('click', () => {
     if (existing) {
-      const s = state();
-      const newGroups = s.groups.filter(g => g.id !== existing.id);
-      const newActiveId = s.activeGroupId === existing.id ? null : s.activeGroupId;
-      useStore.setState({ groups: newGroups, activeGroupId: newActiveId });
+      deleteGroup(existing.id);
       closeEditor();
       refreshSidebar();
       triggerRerender();
-      void flushSyncNow(); // GRP-3: delete group → confirm
     }
   });
 
@@ -472,21 +468,32 @@ function openGroupEditor(existing: FrameGroup | null): void {
       checkedIds.push(parseInt((cb as HTMLElement).dataset.fid!));
     });
 
-    const s = state();
-    if (existing) {
-      // Update existing
-      const newGroups = s.groups.map(g =>
-        g.id === existing.id ? { ...g, name, frameIds: checkedIds, hiddenFrameIds: [] } : g
-      );
-      useStore.setState({ groups: newGroups });
-    } else {
-      createGroup(name, checkedIds);
-    }
+    if (existing) saveGroupEdit(existing.id, name, checkedIds);
+    else createGroup(name, checkedIds);
     closeEditor();
     refreshSidebar();
     triggerRerender();
     void flushSyncNow(); // GRP-1/GRP-2: create or edit group → Save
   });
+}
+
+/** SAVE an existing group's name and shots — the editor's Save, lifted out so
+ *  the browser tests press the same thing (#513). Un-hides everything, as the
+ *  editor always did (a fresh membership starts with nothing hidden). */
+export function saveGroupEdit(groupId: number, name: string, frameIds: number[]): void {
+  const s = state();
+  useStore.setState({
+    groups: s.groups.map(g => (g.id === groupId ? { ...g, name, frameIds, hiddenFrameIds: [] } : g)),
+  });
+}
+
+/** DELETE a group — the editor's Delete, lifted out for the same reason (#513). */
+export function deleteGroup(groupId: number): void {
+  const s = state();
+  const newGroups = s.groups.filter(g => g.id !== groupId);
+  const newActiveId = s.activeGroupId === groupId ? null : s.activeGroupId;
+  useStore.setState({ groups: newGroups, activeGroupId: newActiveId });
+  void flushSyncNow(); // GRP-3: delete group → confirm
 }
 
 function closeEditor(): void {

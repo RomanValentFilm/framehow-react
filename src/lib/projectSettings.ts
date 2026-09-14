@@ -700,8 +700,14 @@ export function exportSettingStamps(): SettingItem[] { return settingsForPush();
  * remembered with its time, but no longer remembered as unsent: after closing
  * and reopening the app it never pushed. (#267)
  */
-export function importSettingStamps(items: SettingItem[] | undefined): void {
+export function importSettingStamps(items: SettingItem[] | undefined, projectId?: string | null): void {
   if (!items || items.length === 0) return;
+  // AND WHOSE MEMORY IT IS (#513, run 227). Restored without the project's
+  // name, the first stamp after a restart read "a different project", threw
+  // the memory away and re-seeded everything as changed NOW — so the device
+  // pushed every setting it held as newer than anything on the server, and a
+  // group deleted elsewhere came back to life on both devices.
+  if (projectId !== undefined) _projectId = projectId;
   _known.clear();
   for (const it of items) {
     _known.set(key(it.kind, it.item_id), {

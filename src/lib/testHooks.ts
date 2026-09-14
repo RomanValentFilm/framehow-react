@@ -16,16 +16,17 @@
 
 import { useStore, bumpRenderTick } from '../store/state';
 import type { SortOrder, StripType } from '../store/state';
-import { getVisibleFrames, createGroup, enterGroup, reorderFrameInGroup } from './groups';
+import { getVisibleFrames, createGroup, enterGroup, reorderFrameInGroup, saveGroupEdit, deleteGroup, hideFrameInGroup, removeFrameFromGroup } from './groups';
 import { newFrameId } from './ids';
 import { ensureStripVersions, getStripVersions, setFrameStripLabel, setStripActiveTab, stripScrollId } from './helpers';
 import { openFullscreen, closeFullscreen } from './fullscreen';
 import { setViewMode } from './view';
-import { openSortEditView, closeSortMode, openOrderView, addNewOrder, toggleSortDropdown, addStoryFlowBreak, renameBreak } from './sortOrder';
+import { openSortEditView, closeSortMode, openOrderView, addNewOrder, toggleSortDropdown, addStoryFlowBreak, renameBreak, deleteSortOrder } from './sortOrder';
 import { toggleScribbleMode, attachScribbleOverlays } from './scribble';
 import { trace } from './syncTrace';
 import { startFromScratch, startPortrait, startFitting, handleFolderImages } from './files';
 import { applyCustomise } from './customise';
+import { openExportModal, openPptxModal, openImageExportModal, openPortraitExportModal, openPortraitImageExportModal, openFittingExportModal, openFittingImageExportModal } from './exports';
 import { handlePDF } from './pdf';
 import { deleteFrameForGood, handleMainAction, handleAction, renameFrame, hideFrame, unhideFrame } from './actions';
 import { createSetup, handleSetupFrameClick, handleStripTagClick } from './setups';
@@ -188,6 +189,24 @@ export interface TestDoor {
   setNeedCounter(index: number, itemId: string, n: number): void;
   /** Type into a shot's note card and leave it. */
   typeNote(index: number, text: string): void;
+  /** PART 7 (#513): open an export window the way the menu does and press its
+   *  GO — the app's own modal and its own button; the file leaves as a download. */
+  exportVia(kind: 'pdf' | 'pptx' | 'images' | 'portrait-pdf' | 'portrait-pptx' | 'portrait-images'
+    | 'fitting-pdf' | 'fitting-pptx' | 'fitting-images'): void;
+  /** Delete a shooting order — the confirm's Yes (#513). */
+  deleteOrder(orderIndex: number): void;
+  /** PART 5 DOORS (#513): groups, through the app's own functions. */
+  /** The editor's Save on an existing group: name and shots (by place in ALL). */
+  editGroup(groupId: number, name: string, frameIndexes: number[]): void;
+  /** The editor's Delete. */
+  deleteGroup(groupId: number): void;
+  /** Hide a shot inside the OPEN group (place = in the group's list). */
+  hideInGroup(frameIndex: number): void;
+  /** Take a shot out of the OPEN group (place = in the group's list); it stays in ALL. */
+  removeFromGroup(frameIndex: number): void;
+  /** DRAG a card in the OPEN sort view from one place to another — the real
+   *  mouse sequence on the real cards. */
+  dragInSortView(fromIndex: number, toIndex: number): Promise<void>;
   /** Press the ▲/▼ arrow on a card in the OPEN sort view (story flow or order),
    *  as a person does — the sort view's own arrow, not the card's (#512). */
   pressSortArrow(frameIndex: number, direction: 'up' | 'down'): void;
@@ -1096,6 +1115,84 @@ export function installTestDoor(): void {
       ta.value = text;
       ta.dispatchEvent(new Event('input', { bubbles: true }));
       ta.blur();
+    },
+    exportVia(kind) {
+      const press = (id: string) => {
+        const b = document.getElementById(id) as HTMLElement | null;
+        if (!b) throw new Error(`no ${id} button — is the export window open?`);
+        b.click();
+      };
+      switch (kind) {
+        case 'pdf': openExportModal(); press('exportGo'); break;
+        case 'pptx': openPptxModal(); press('pptxGo'); break;
+        case 'images': openImageExportModal(); press('imageExportGo'); break;
+        case 'portrait-pdf': openPortraitExportModal('pdf'); press('portraitExportGo'); break;
+        case 'portrait-pptx': openPortraitExportModal('pptx'); press('portraitExportGo'); break;
+        case 'portrait-images': openPortraitImageExportModal(); press('portraitImageExportGo'); break;
+        case 'fitting-pdf': openFittingExportModal('pdf'); press('fittingExportGo'); break;
+        case 'fitting-pptx': openFittingExportModal('pptx'); press('fittingExportGo'); break;
+        case 'fitting-images': openFittingImageExportModal(); press('fittingImageExportGo'); break;
+      }
+    },
+    deleteOrder(orderIndex) {
+      const o = useStore.getState().sortOrders[orderIndex];
+      if (!o) throw new Error(`no shooting order at ${orderIndex}`);
+      deleteSortOrder(o.id);
+    },
+    editGroup(groupId, name, frameIndexes) {
+      const s = useStore.getState();
+      const ids = frameIndexes.map((i) => {
+        const f = s.frames[i];
+        if (!f) throw new Error(`no frame at ${i}`);
+        return f.id;
+      });
+      saveGroupEdit(groupId, name, ids);
+      void flushSyncNow();
+    },
+    deleteGroup(groupId) { deleteGroup(groupId); },
+    hideInGroup(frameIndex) {
+      const fid = getVisibleFrames()[frameIndex]?.id;
+      if (fid === undefined) throw new Error(`no frame at ${frameIndex} in this group`);
+      hideFrameInGroup(fid);
+      (window as never as { __fh_renderAll?: () => void }).__fh_renderAll?.();
+    },
+    removeFromGroup(frameIndex) {
+      const fid = getVisibleFrames()[frameIndex]?.id;
+      if (fid === undefined) throw new Error(`no frame at ${frameIndex} in this group`);
+      removeFrameFromGroup(fid);
+      (window as never as { __fh_renderAll?: () => void }).__fh_renderAll?.();
+      void flushSyncNow();
+    },
+    async dragInSortView(fromIndex, toIndex) {
+      const view = document.getElementById('sortEditView');
+      if (!view) throw new Error('the sort view is not open');
+      const cards = () => Array.from(view.querySelectorAll('.sort-card')) as HTMLElement[];
+      const from = cards()[fromIndex];
+      const to = cards()[toIndex];
+      if (!from || !to) throw new Error(`no card at ${fromIndex} or ${toIndex} in the sort view`);
+      // The drag handle is the ACTIVE card — activate it first, as a person does.
+      const fid = from.dataset.sortFid!;
+      if (!view.querySelector(`.sort-arrow[data-sort-fid="${fid}"]`)) {
+        (view.querySelector(`[data-sort-activate="${fid}"]`) as HTMLElement | null)?.click();
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      const active = cards().find((c) => c.dataset.sortFid === fid)!;
+      const target = cards()[toIndex];
+      const a = active.getBoundingClientRect();
+      const t = target.getBoundingClientRect();
+      const x = a.left + a.width / 2;
+      const y0 = a.top + a.height / 2;
+      // Past the target's midpoint, in the direction of travel.
+      const y1 = toIndex > fromIndex ? t.top + t.height * 0.75 : t.top + t.height * 0.25;
+      const ev = (type: string, cy: number) => new MouseEvent(type, { clientX: x, clientY: cy, bubbles: true, cancelable: true });
+      active.dispatchEvent(ev('mousedown', y0));
+      const steps = 6;
+      for (let i = 1; i <= steps; i++) {
+        document.dispatchEvent(ev('mousemove', y0 + ((y1 - y0) * i) / steps));
+        await new Promise((r) => setTimeout(r, 30));
+      }
+      document.dispatchEvent(ev('mouseup', y1));
+      await new Promise((r) => setTimeout(r, 100));
     },
     pressSortArrow(frameIndex, direction) {
       const f = useStore.getState().frames[frameIndex];

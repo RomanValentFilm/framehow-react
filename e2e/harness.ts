@@ -849,6 +849,58 @@ export class Device {
 
   // ── PART 3 (#509): pictures, drawings, versions, stars, written text ──
 
+  /** Run an export through the app's own window and catch the file it saves.
+   *  Returns the file name and its first bytes and size, for the test to judge. */
+  async exportAndCatch(kind: string): Promise<{ name: string; size: number; head: string }> {
+    say(`${this.name}: export ${kind}`);
+    const [download] = await Promise.all([
+      this.page.waitForEvent('download', { timeout: 120_000 }),
+      this.page.evaluate((k) =>
+        (window as never as { __fh_test: { exportVia(k: string): void } }).__fh_test.exportVia(k as string), kind),
+    ]);
+    const path = await download.path();
+    if (!path) throw new Error(`${kind}: the download had no file`);
+    const buf = fs.readFileSync(path);
+    const head = buf.subarray(0, 4).toString('latin1');
+    say(`   ${download.suggestedFilename()} · ${Math.round(buf.length / 1024)} KB · starts "${head.replace(/[^\x20-\x7e]/g, '.')}"`);
+    return { name: download.suggestedFilename(), size: buf.length, head };
+  }
+
+  async deleteOrder(orderIndex: number): Promise<void> {
+    say(`${this.name}: deleting shooting order ${orderIndex + 1}`);
+    await this.page.evaluate((i) =>
+      (window as never as { __fh_test: { deleteOrder(i: number): void } }).__fh_test.deleteOrder(i as number), orderIndex);
+  }
+
+  // ── PART 5 (#513): groups ──
+  async editGroup(groupId: number, name: string, frameIndexes: number[]): Promise<void> {
+    say(`${this.name}: group ${groupId} → "${name}" with shots ${frameIndexes.map((i) => i + 1).join(',')}`);
+    await this.page.evaluate(([g, n, f]) =>
+      (window as never as { __fh_test: { editGroup(g: number, n: string, f: number[]): void } })
+        .__fh_test.editGroup(g as number, n as string, f as number[]), [groupId, name, frameIndexes] as [number, string, number[]]);
+  }
+  async deleteGroup(groupId: number): Promise<void> {
+    say(`${this.name}: deleting group ${groupId}`);
+    await this.page.evaluate((g) =>
+      (window as never as { __fh_test: { deleteGroup(g: number): void } }).__fh_test.deleteGroup(g as number), groupId);
+  }
+  async hideInGroup(frameIndex: number): Promise<void> {
+    say(`${this.name}: hiding place ${frameIndex + 1} inside the group`);
+    await this.page.evaluate((i) =>
+      (window as never as { __fh_test: { hideInGroup(i: number): void } }).__fh_test.hideInGroup(i as number), frameIndex);
+  }
+  async removeFromGroup(frameIndex: number): Promise<void> {
+    say(`${this.name}: taking place ${frameIndex + 1} out of the group`);
+    await this.page.evaluate((i) =>
+      (window as never as { __fh_test: { removeFromGroup(i: number): void } }).__fh_test.removeFromGroup(i as number), frameIndex);
+  }
+  async dragInSortView(fromIndex: number, toIndex: number): Promise<void> {
+    say(`${this.name}: dragging place ${fromIndex + 1} to place ${toIndex + 1} in the sort view`);
+    await this.page.evaluate(([a, b]) =>
+      (window as never as { __fh_test: { dragInSortView(a: number, b: number): Promise<void> } })
+        .__fh_test.dragInSortView(a as number, b as number), [fromIndex, toIndex] as [number, number]);
+  }
+
   /** The sort view's own ▲/▼ on a shot (#512). */
   async pressSortArrow(frameIndex: number, direction: 'up' | 'down'): Promise<void> {
     say(`${this.name}: ${direction} arrow on shot ${frameIndex + 1} in the sort view`);

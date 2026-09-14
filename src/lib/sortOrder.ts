@@ -1687,12 +1687,7 @@ function renderDropdown(el: HTMLElement): void {
       modal.querySelector('.sort-bracket-confirm-yes')!.addEventListener('click', (ev) => {
         ev.stopPropagation();
         modal.remove();
-        const s2 = state();
-        const updated = s2.sortOrders.filter((o) => o.id !== delId);
-        const newActive = s2.activeSortOrderId === delId ? null : s2.activeSortOrderId;
-        useStore.setState({ sortOrders: updated, activeSortOrderId: newActive });
-        bumpRenderTick();
-        void flushSyncNow();
+        deleteSortOrder(delId);
         renderDropdown(el);
       });
       modal.querySelector('.sort-bracket-confirm-no')!.addEventListener('click', (ev) => {
@@ -1819,6 +1814,17 @@ export function openOrderView(orderId: string): void {
  *
  * The button itself passes nothing and names orders as it always did.
  */
+/** DELETE A SHOOTING ORDER — the body of the confirm's Yes, lifted out so the
+ *  browser tests press the same thing (#513). */
+export function deleteSortOrder(orderId: string): void {
+  const s2 = state();
+  const updated = s2.sortOrders.filter((o) => o.id !== orderId);
+  const newActive = s2.activeSortOrderId === orderId ? null : s2.activeSortOrderId;
+  useStore.setState({ sortOrders: updated, activeSortOrderId: newActive });
+  bumpRenderTick();
+  void flushSyncNow();
+}
+
 export function addNewOrder(name?: string): void {
   const s = state();
   const id = genId('sort', s.nextSortOrderId);

@@ -80,20 +80,27 @@ orders or get out.
 
 ## THE LIST — 10 September, evening (Roman's order)
 
-dev is **v4.9.208 · #511** (deployed 14 September — app, backend, column 0026 via d1 execute). Next number: **v4.9.209 · #512**.
+dev is **v4.9.209 · #512** (deployed 14 September evening). Next number: **v4.9.210 · #513**.
 
-### FIRST THING, 15 September — the group story flow fix is NOT deployed yet
-Roman, 14 Sept 16:30, iPad and desktop: in a GROUP's story flow (SORT BY) the
-arrows did nothing and a drag snapped back. Traced in his log: each move sent
-`frameOrder/main` (the ALL list); the group's view lists by the group's own
-order. FIXED in `sortOrder.ts` (moveFrame + the drag's story-flow branch write
-the group's frameIds, via reorderFrameInGroup / the slot technique) — #512,
-uncommitted. New test in 28: "a move in a group's story flow, made in the sort
-view, sticks and travels" (presses the sort view's own arrow; door
-pressSortArrow). Run 225 was never run (an old command went instead).
-  1. `FH_RUN=225 npm run t -- -g "made in the sort view"` — must be green.
-  2. 4 STEPS SAVE as v4.9.209 · #512, then DEPLOY (app only; backend unchanged).
-  3. Then BIG DAY part 5 (groups) — this fault is exactly what it is for.
+### FIRST THING, 15 September — save, then BIG DAY parts 8 and 9
+Uncommitted since 209: BIG DAY parts 5, 6, 7 (all GREEN: runs 228, 230, 231),
+`e2e/boxes.ts` (27's helpers shared), doors (groups, order delete, sort-view
+drag, exports), lifts in groups.ts (saveGroupEdit/deleteGroup) and sortOrder.ts
+(deleteSortOrder), and ONE APP FIX: after a restart the settings memory did not
+know its project, so the first stamp threw it away and re-seeded everything as
+"changed now" — a deleted group came back on both devices (run 227). Fixed:
+importSettingStamps takes the project id. → 4 STEPS SAVE as v4.9.210 · #513,
+then DEPLOY (app only).
+Then: part 8 (an offline day: both devices apart for a long stretch doing
+everything, coming back, no loss, no question unless the same order), part 9
+(RESTORE points + delete/recover a project), then reload/switch and the final
+identical-on-all-devices pass over everything the day made.
+
+### DONE 14 September evening — v4.9.209 · #512 (app only), deployed
+Group story flow in SORT BY: arrows and drag now write the group's own order
+(they wrote ALL; the group's view lists by its own order, so the move snapped
+back). Test in 28 presses the sort view's arrow. Roman found it by hand.
+Next: BIG DAY part 5 (groups) — this is exactly the class it must catch.
 
 ### DONE 12–14 September (v4.9.207 · #510) — app AND backend
 - Strip names travel by time (one item per strip), the blob's "sent" memory
@@ -122,8 +129,7 @@ offline day; RESTORE points + delete/recover; reload/switch; final comparison.
 
 ### BIG DAY — 11 September
 `e2e/29-big-day.spec.ts`, run with `FH_RUN=<n> npm run t -- -g "big day"`.
-Parts 1, 1b, 2, 3 GREEN (run 204). Part 4 written, red only on strip names
-(above). Then groups; shooting orders and boxes; exports; an offline day;
+Parts 1–7 GREEN (runs 204–231). Left: part 8 (offline day), part 9 (restore, delete/recover), reload/switch, final pass. 
 RESTORE points + delete/recover; reload/switch; final flat comparison.
 Doors added today press the app's own buttons and answer its own dialogs
 (UPLOAD + file chooser, star, +, hide version, WRITE/TEXT box, PIC/TXT,

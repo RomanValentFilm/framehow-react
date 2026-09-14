@@ -507,3 +507,320 @@ test('big day, part 4: strips, needs, notes and setups, held on both devices',
     await desktop.close();
     await ipad.close();
   });
+
+// PART 5 — groups. Made on one device, seen on the other; shots added and
+// taken out; a shot hidden inside the group; NEW inside the group; the
+// group's story flow moved with the sort view's own arrow AND by drag (this
+// is the fault Roman found by hand on 14 September — #512); renamed; deleted.
+// ALL must stay exactly as it was throughout: a group's order is its own.
+test('big day, part 5: groups, made, changed, moved and deleted on both devices',
+  async ({ browser }) => {
+    const { token } = await freshAccount();
+    const desktop = await Device.open(browser, 'desktop', token);
+    const ipad = await Device.open(browser, 'ipad', token, true);
+    type Whole = { shots: Array<{ label: string }>; groups: Array<{ name: string; shots: string[]; hidden: string[] }> };
+    const parse = (w: string) => JSON.parse(w) as Whole;
+    const labelsOf = async (d: Device) => (await d.read()).frames.map((f) => f.label).join(' ');
+
+    const id = await desktop.newProjectOfKind('BIG DAY — GROUPS', 'landscape', 8);
+    await desktop.settle();
+    expect(id, 'the project must reach the server').not.toBeNull();
+    await ipad.openProject(id!);
+    await ipad.settle();
+    await Device.waitUntilWholeAgrees(desktop, ipad, 'GROUPS: THE IPAD DOES NOT HOLD THE EIGHT SHOTS.');
+    const allBefore = await labelsOf(desktop);
+
+    // ── two groups, one from each device ─────────────────────────────────
+    say('── desktop makes KITCHEN (2,3,4,5); iPad makes GARDEN (6,7) ──');
+    const kitchen = await desktop.makeGroup('KITCHEN', [1, 2, 3, 4]);
+    await desktop.settle();
+    const garden = await ipad.makeGroup('GARDEN', [5, 6]);
+    await ipad.settle();
+    let w = parse(await Device.waitUntilWholeAgrees(desktop, ipad, 'GROUPS: THE TWO GROUPS DID NOT MEET.'));
+    say(`   groups on both: ${w.groups.map((g) => `${g.name}[${g.shots.length}]`).join(' · ')}`);
+    expect.soft(w.groups.map((g) => g.name).sort(), 'both groups on both').toEqual(['GARDEN', 'KITCHEN']);
+    expect.soft(await Device.waitUntilGroupsAgree(desktop, ipad, kitchen), 'KITCHEN as made').toBe('KITCHEN: 2 3 4 5');
+    expect.soft(await Device.waitUntilGroupsAgree(desktop, ipad, garden), 'GARDEN as made').toBe('GARDEN: 6 7');
+
+    // ── the group's story flow: the sort view's own arrow, then a drag ───
+    say('── desktop: in KITCHEN\'s story flow, arrow 5 up; then drag 2 to the end ──');
+    await desktop.enterGroup(kitchen);
+    await desktop.pickStoryFlow(kitchen);
+    await desktop.pressSortArrow(4, 'up');            // shot "5" (index 4 in ALL) one place up → 2 3 5 4
+    expect.soft(await desktop.sortViewFrames(), 'the arrow move shows at once').toEqual(['2', '3', '5', '4']);
+    await desktop.dragInSortView(0, 3);              // "2" dragged to the end → 3 5 4 2
+    const afterDrag = await desktop.sortViewFrames();
+    say(`   after the drag the sort view shows: ${afterDrag.join(' ')}`);
+    expect.soft(afterDrag, 'THE DRAG DID NOT STICK in the group\'s story flow').toEqual(['3', '5', '4', '2']);
+    await desktop.enterGroup(null);
+    expect.soft(await labelsOf(desktop), 'ALL untouched by moves inside the group').toBe(allBefore);
+    await desktop.push();
+    await desktop.settle();
+    expect.soft(await Device.waitUntilGroupsAgree(desktop, ipad, kitchen), 'KITCHEN\'s new order reaches the iPad').toBe('KITCHEN: 3 5 4 2');
+
+    // ── hide inside the group (iPad), take one out (desktop) ─────────────
+    say('── iPad hides the first shot inside KITCHEN; desktop takes shot 2 out of it ──');
+    await ipad.enterGroup(kitchen);
+    await ipad.hideInGroup(0);                       // "3" hidden inside KITCHEN
+    await ipad.settle();
+    w = parse(await Device.waitUntilWholeAgrees(desktop, ipad, 'GROUPS: THE HIDE INSIDE THE GROUP DID NOT REACH THE DESKTOP.'));
+    let k = w.groups.find((g) => g.name === 'KITCHEN')!;
+    expect.soft(k.hidden.length, 'one shot hidden inside KITCHEN on both').toBe(1);
+    expect.soft(k.shots.length, 'hiding keeps it in the group').toBe(4);
+    await desktop.enterGroup(kitchen);
+    await desktop.removeFromGroup(3);                // "2" (last in the group's order) out
+    await desktop.settle();
+    await desktop.enterGroup(null);
+    w = parse(await Device.waitUntilWholeAgrees(desktop, ipad, 'GROUPS: TAKING A SHOT OUT DID NOT REACH THE IPAD.'));
+    k = w.groups.find((g) => g.name === 'KITCHEN')!;
+    expect.soft(k.shots.length, 'three shots left in KITCHEN on both').toBe(3);
+    expect.soft(w.shots.length, 'the shot itself is still in the project').toBe(8);
+
+    // ── NEW inside a group ───────────────────────────────────────────────
+    say('── iPad presses NEW inside GARDEN ──');
+    await ipad.enterGroup(garden);
+    await ipad.newFrameAfter(5);                     // after shot "6" (index 5 in ALL)
+    await ipad.settle();
+    await ipad.enterGroup(null);
+    w = parse(await Device.waitUntilWholeAgrees(desktop, ipad, 'GROUPS: THE NEW SHOT MADE INSIDE A GROUP DID NOT MEET.'));
+    expect.soft(w.shots.length, 'nine shots now').toBe(9);
+    expect.soft(w.groups.find((g) => g.name === 'GARDEN')!.shots.length, 'the new shot joined GARDEN on both').toBe(3);
+    expect.soft(w.shots.map((s) => s.label), 'the new shot sits after 6 in ALL').toEqual(['1', '2', '3', '4', '5', '6', '6#1', '7', '8']);
+
+    // ── rename (desktop) and delete (iPad) ───────────────────────────────
+    say('── desktop renames GARDEN to YARD and adds shot 8; iPad deletes KITCHEN ──');
+    await desktop.editGroup(garden, 'YARD', [5, 6, 7, 8]);
+    await desktop.settle();
+    w = parse(await Device.waitUntilWholeAgrees(desktop, ipad, 'GROUPS: THE RENAME DID NOT REACH THE IPAD.'));
+    expect.soft(w.groups.map((g) => g.name).sort(), 'YARD on both').toEqual(['KITCHEN', 'YARD']);
+    expect.soft(w.groups.find((g) => g.name === 'YARD')!.shots.length, 'YARD holds four').toBe(4);
+    await ipad.deleteGroup(kitchen);
+    await ipad.settle();
+    w = parse(await Device.waitUntilWholeAgrees(desktop, ipad, 'GROUPS: THE DELETED GROUP CAME BACK.'));
+    expect.soft(w.groups.map((g) => g.name), 'only YARD left, on both').toEqual(['YARD']);
+    expect.soft(w.shots.length, 'deleting a group deletes no shot').toBe(9);
+
+    // ── reload both ──────────────────────────────────────────────────────
+    await desktop.reload();
+    await ipad.reload();
+    await desktop.openProject(id!);
+    await ipad.openProject(id!);
+    await desktop.settle();
+    const fresh = parse(await Device.waitUntilWholeAgrees(desktop, ipad, 'GROUPS: AFTER A RELOAD THE TWO DEVICES DIFFER.'));
+    if (fresh.groups.length !== w.groups.length) {
+      say(`   groups after the reload: ${fresh.groups.map((g) => g.name).join(', ')} (before: ${w.groups.map((g) => g.name).join(', ')})`);
+      for (const d of [desktop, ipad]) {
+        const lines = (await d.log()).filter((l) => /group|unsent|kept|restor|deletion|settings arrived|snapshot|offline cache|boot/i.test(l));
+        say(`${d.name} log (groups, newest first):\n${lines.slice(0, 45).map((l) => '    ' + l.slice(0, 200)).join('\n')}`);
+      }
+    }
+    expect.soft(fresh, 'a reload changes nothing').toEqual(w);
+
+    await desktop.close();
+    await ipad.close();
+  });
+
+// PART 6 — shooting orders and the boxes, across two devices. The needs set
+// on shots; an order made and sorted by the boxes; a needs change made on the
+// OTHER device shows as a green mark on this one and DONE clears it (the mark
+// Roman confirmed by hand on 11 September, now held); arrows, a break named,
+// moved; a group order made on the iPad; both devices editing DIFFERENT orders
+// while apart, nobody asked anything; an order deleted. Pressed with the same
+// helpers as Roman's own loop test (27), from e2e/boxes.ts.
+import { setNeeds, buildFullSheet, sortNow, look, moveTo, approve } from './boxes';
+
+test('big day, part 6: shooting orders and the boxes, on both devices',
+  async ({ browser }) => {
+    const { token } = await freshAccount();
+    const desktop = await Device.open(browser, 'desktop', token);
+    const ipad = await Device.open(browser, 'ipad', token, true);
+    type Whole = { orders: Array<{ name: string; group: string | null; shots: string[]; breaks: Array<{ text: string; position: number }> }> };
+    const parse = (w: string) => JSON.parse(w) as Whole;
+
+    const id = await desktop.newProjectOfKind('BIG DAY — ORDERS', 'landscape', 8);
+    await desktop.settle();
+    expect(id, 'the project must reach the server').not.toBeNull();
+    await ipad.openProject(id!);
+    await ipad.settle();
+    await Device.waitUntilWholeAgrees(desktop, ipad, 'ORDERS: THE IPAD DOES NOT HOLD THE EIGHT SHOTS.');
+
+    // ── needs on the shots (desktop), seen on the iPad ───────────────────
+    say('── desktop sets SHOOT DAY on six shots: 1-3 day 1, 4-5 day 2, 6 day 3 ──');
+    for (const [i, day] of [[0, 'ti_day1'], [1, 'ti_day1'], [2, 'ti_day1'], [3, 'ti_day2'], [4, 'ti_day2'], [5, 'ti_day3']] as Array<[number, string]>) {
+      await setNeeds(desktop.page, i, [day]);
+    }
+    await desktop.settle();
+    await Device.waitUntilWholeAgrees(desktop, ipad, 'ORDERS: THE NEEDS DID NOT REACH THE IPAD.');
+
+    // ── an order, sorted by the boxes (desktop) ──────────────────────────
+    say('── desktop makes DAY ORDER, builds the sheet by day, SORT NOW ──');
+    await desktop.newSortOrder('DAY ORDER');
+    await desktop.settle();
+    await desktop.openOrder(0);
+    await desktop.page.waitForTimeout(600);
+    await buildFullSheet(desktop.page);
+    await sortNow(desktop.page);
+    let seen = await look(desktop.page);
+    say(`   sorted: ${seen.order.join(' ')} · green: ${seen.greenCards.join(' ') || 'none'}`);
+    expect.soft(seen.order.length, 'the order holds all eight').toBe(8);
+    expect.soft(seen.order.slice(0, 3).sort(), 'day 1 shots first').toEqual(['1', '2', '3']);
+    expect.soft(seen.greenCards, 'SORT NOW marks nothing green').toEqual([]);
+    await desktop.closeOrder();
+    await desktop.settle();
+    const sortedText = await desktop.orderTextByName('DAY ORDER');
+    expect.soft(await Device.waitUntilNamedOrdersAgree(desktop, ipad, 'DAY ORDER'), 'the sorted order reaches the iPad').toBe(sortedText);
+
+    // ── the OTHER device changes a need; this one sees the green mark ─────
+    say('── iPad gives shot 8 SHOOT DAY 1; desktop opens the order: 8 moved into day 1, green ──');
+    await setNeeds(ipad.page, 7, ['ti_day1']);
+    await ipad.settle();
+    await Device.waitUntilWholeAgrees(desktop, ipad, "ORDERS: THE IPAD'S NEED DID NOT REACH THE DESKTOP.");
+    await desktop.openOrder(0);
+    await desktop.page.waitForTimeout(900);
+    seen = await look(desktop.page);
+    say(`   desktop sees: ${seen.order.join(' ')} · green cards: ${seen.greenCards.join(' ') || 'none'} · green icons: ${seen.greenIcons.join(' ') || 'none'}`);
+    expect.soft(seen.order.indexOf('8'), 'shot 8 moved up into the day 1 box').toBeLessThan(4);
+    expect.soft(seen.greenCards, 'shot 8 is marked green on the desktop').toContain('8');
+    await approve(desktop.page, '8');
+    seen = await look(desktop.page);
+    expect.soft(seen.greenCards, 'DONE clears the green').toEqual([]);
+    await desktop.closeOrder();
+    await desktop.settle();
+    await Device.waitUntilNamedOrdersAgree(desktop, ipad, 'DAY ORDER');
+
+    // ── arrows and a break (desktop) ─────────────────────────────────────
+    say('── desktop moves shot 1 to third place with the arrows; adds, names and moves a break ──');
+    await desktop.openOrder(0);
+    await desktop.page.waitForTimeout(600);
+    await moveTo(desktop.page, '1', 3);
+    seen = await look(desktop.page);
+    expect.soft(seen.order[2], 'shot 1 sits third').toBe('1');
+    expect.soft(seen.redIcons, 'a move WITHIN its box is not red').toEqual([]);
+    await moveTo(desktop.page, '6', 1);          // a day-3 shot to the front — out of its box
+    seen = await look(desktop.page);
+    expect.soft(seen.redIcons, 'a shot moved out of its box goes red — shot 6').toContain('6');
+    await desktop.closeOrder();
+    const dayIdx = await desktop.orderIndexOf('DAY ORDER');
+    const brk = await desktop.addBreak(dayIdx, 4, 'LUNCH');
+    const dayOrderId = (await desktop.read()).orders[dayIdx].id;
+    await desktop.renameBreak(dayOrderId, brk, 'LUNCH 60');
+    await desktop.moveBreak(dayIdx, 0, 3);
+    await desktop.push();
+    await desktop.settle();
+    const withBreak = await desktop.orderTextByName('DAY ORDER');
+    say(`   desktop: ${withBreak}`);
+    expect.soft(withBreak, 'the break is named and at place 3').toContain('[LUNCH 60]');
+    expect.soft(await Device.waitUntilNamedOrdersAgree(desktop, ipad, 'DAY ORDER'), 'arrows and the break reach the iPad').toBe(withBreak);
+
+    // ── a group order, made on the iPad ──────────────────────────────────
+    say('── iPad makes group CREW (5,6,7) and an order inside it ──');
+    const crew = await ipad.makeGroup('CREW', [4, 5, 6]);
+    await ipad.enterGroup(crew);
+    await ipad.newSortOrder('CREW ORDER');
+    await ipad.push();
+    await ipad.settle();
+    await ipad.enterGroup(null);
+    const crewText = await ipad.orderTextByName('CREW ORDER');
+    say(`   iPad: ${crewText}`);
+    expect.soft(await Device.waitUntilNamedOrdersAgree(desktop, ipad, 'CREW ORDER'), 'the group order reaches the desktop').toBe(crewText);
+    const w1 = parse(await Device.waitUntilWholeAgrees(desktop, ipad, 'ORDERS: AFTER THE GROUP ORDER THE DEVICES DIFFER.'));
+    expect.soft(w1.orders.find((o) => o.name === 'CREW ORDER')?.group, 'CREW ORDER belongs to CREW on both').toBe('CREW');
+
+    // ── apart: each edits a DIFFERENT order; nobody is asked ─────────────
+    say('── both go offline: desktop moves in DAY ORDER, iPad adds a break in CREW ORDER; both return ──');
+    await desktop.offline(true);
+    await ipad.offline(true);
+    await desktop.page.waitForTimeout(3000);
+    await desktop.openOrder(await desktop.orderIndexOf('DAY ORDER'));
+    await desktop.page.waitForTimeout(600);
+    await moveTo(desktop.page, '2', 5);
+    await desktop.closeOrder();
+    const crewIdx = await ipad.orderIndexOf('CREW ORDER');
+    await ipad.addBreak(crewIdx, 1, 'TEA');
+    await ipad.push().catch(() => {});
+    await desktop.push().catch(() => {});
+    const dayMine = await desktop.orderTextByName('DAY ORDER');
+    const crewMine = await ipad.orderTextByName('CREW ORDER');
+    await desktop.offline(false);
+    await ipad.offline(false);
+    await desktop.page.waitForTimeout(3000);
+    expect.soft(await Device.waitUntilNamedOrdersAgree(desktop, ipad, 'DAY ORDER'), "the desktop's move survived").toBe(dayMine);
+    expect.soft(await Device.waitUntilNamedOrdersAgree(desktop, ipad, 'CREW ORDER'), "the iPad's break survived").toBe(crewMine);
+    for (const d of [desktop, ipad]) {
+      const asked = (await d.log()).find((l) => l.includes('decision(s) waiting'));
+      expect.soft(asked, `${d.name} was asked about an order nobody clashed on: ${asked}`).toBeUndefined();
+    }
+
+    // ── delete an order (iPad) ───────────────────────────────────────────
+    say('── iPad deletes DAY ORDER ──');
+    await ipad.deleteOrder(await ipad.orderIndexOf('DAY ORDER'));
+    await ipad.settle();
+    const w2 = parse(await Device.waitUntilWholeAgrees(desktop, ipad, 'ORDERS: THE DELETED ORDER CAME BACK.'));
+    expect.soft(w2.orders.map((o) => o.name), 'only CREW ORDER left, on both').toEqual(['CREW ORDER']);
+
+    // ── reload both ──────────────────────────────────────────────────────
+    await desktop.reload();
+    await ipad.reload();
+    await desktop.openProject(id!);
+    await ipad.openProject(id!);
+    await desktop.settle();
+    const fresh = parse(await Device.waitUntilWholeAgrees(desktop, ipad, 'ORDERS: AFTER A RELOAD THE TWO DEVICES DIFFER.'));
+    expect.soft(fresh, 'a reload changes nothing').toEqual(w2);
+
+    await desktop.close();
+    await ipad.close();
+  });
+
+// PART 7 — exports. Every export the app offers, through its own window and
+// its own GO, in every project type it applies to; the file it saves is
+// caught and judged by what it is: a PDF starts with %PDF, a Keynote/PPTX and
+// a set of images are zips (PK). Done on the desktop, where saving is a
+// download (iOS shows a share sheet instead).
+test('big day, part 7: every export produces its file',
+  async ({ browser }) => {
+    const { token } = await freshAccount();
+    const desktop = await Device.open(browser, 'desktop', token);
+
+    const expectFile = (got: { name: string; size: number; head: string }, kind: string, head: string, ext: string) => {
+      expect.soft(got.head.startsWith(head), `${kind}: the file is a ${ext} (starts "${head}")`).toBe(true);
+      expect.soft(got.size, `${kind}: the file has something in it`).toBeGreaterThan(2_000);
+      expect.soft(got.name.toLowerCase().endsWith(ext), `${kind}: named .${ext}`).toBe(true);
+    };
+
+    // ── landscape: pictures on the shots, a drawing, needs, an order ─────
+    say('── a landscape project with pictures, a drawing, needs and an order ──');
+    const land = await desktop.importPicturesProject('BIG DAY — EXPORTS', 5);
+    await desktop.settle();
+    expect(land, 'the project must reach the server').not.toBeNull();
+    await desktop.draw(1, 'ver', 0);
+    await setNeeds(desktop.page, 0, ['ti_day1']);
+    await setNeeds(desktop.page, 1, ['ti_day2']);
+    await desktop.newSortOrder('EXPORT ORDER');
+    await desktop.settle();
+
+    expectFile(await desktop.exportAndCatch('pdf'), 'PDF', '%PDF', 'pdf');
+    expectFile(await desktop.exportAndCatch('pptx'), 'Keynote/PowerPoint', 'PK', 'pptx');
+    expectFile(await desktop.exportAndCatch('images'), 'images', 'PK', 'zip');
+
+    // ── portrait ─────────────────────────────────────────────────────────
+    say('── a portrait project ──');
+    await desktop.newProjectOfKind('BIG DAY — PORTRAIT EXPORT', 'portrait', 3);
+    await desktop.settle();
+    await desktop.uploadPicture(0, 'main', RED_PNG);
+    await desktop.settle();
+    expectFile(await desktop.exportAndCatch('portrait-pdf'), 'portrait PDF', '%PDF', 'pdf');
+    expectFile(await desktop.exportAndCatch('portrait-pptx'), 'portrait Keynote/PowerPoint', 'PK', 'pptx');
+    expectFile(await desktop.exportAndCatch('portrait-images'), 'portrait images', 'PK', 'zip');
+
+    // ── fitting ──────────────────────────────────────────────────────────
+    say('── a fitting ──');
+    await desktop.newProjectOfKind('BIG DAY — FITTING EXPORT', 'fitting', 2);
+    await desktop.settle();
+    await desktop.uploadPicture(0, 'ver', RED_PNG);
+    await desktop.settle();
+    expectFile(await desktop.exportAndCatch('fitting-pdf'), 'fitting PDF', '%PDF', 'pdf');
+    expectFile(await desktop.exportAndCatch('fitting-pptx'), 'fitting Keynote/PowerPoint', 'PK', 'pptx');
+    expectFile(await desktop.exportAndCatch('fitting-images'), 'fitting images', 'PK', 'zip');
+
+    await desktop.close();
+  });
