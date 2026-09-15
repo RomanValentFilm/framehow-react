@@ -156,6 +156,19 @@ test('a random day', async ({ browser }) => {
           await who.waitForLogAfter(mark, 'back online', 20_000).catch(() => {});
           away[name] = false;
         } else {
+          // WHAT THIS DEVICE HAS NOT RECEIVED YET IS "APART" TOO (run 245): the
+          // tablet's break landed three seconds before the desktop went away —
+          // unseen — and the desktop's own break on that order while away was
+          // rightly a clash. Any order the two disagree on at departure counts
+          // as touched by the other side.
+          const mineNow = (await who.read()).orders;
+          const theirsNow = (await other.read()).orders;
+          for (const o of theirsNow) {
+            const here = mineNow.find((x) => x.id === o.id);
+            const same = here && here.frames.join(',') === o.frames.join(',')
+              && JSON.stringify(here.breaks) === JSON.stringify(o.breaks) && here.name === o.name;
+            if (!same) touchedApart[other.name as 'desktop' | 'tablet'].add(o.id);
+          }
           await who.offline(true);
           await who.page.waitForTimeout(4000);      // long enough to be noticed
           away[name] = true;

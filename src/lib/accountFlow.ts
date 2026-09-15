@@ -2833,6 +2833,43 @@ async function applyCloudTreeToStore(
   // tombstones (deletions on this device not yet pushed). Any frame or version
   // whose server ID is in this set gets filtered out during structure build.
   // ---------------------------------------------------------------------------
+  /**
+   * ONE DECISION PER VERSION (#514). Whatever happened to the shot's own record,
+   * its versions are settled one by one: a version only this device holds
+   * stays (drawn here, not sent yet); a version both hold takes the later by
+   * its own time; a version deleted elsewhere goes. `built` is the server's
+   * side already turned into local versions; `local` is what this device had.
+   */
+  const mergeVersionsPerVersion = (
+    built: Version[],
+    local: Version[] | undefined,
+    cloudTime: (serverVersionId: string) => number | undefined,
+    tombstoned: ReadonlySet<string>,
+  ): Version[] => {
+    if (!local || local.length === 0) return built;
+    const out = [...built];
+    for (const lv of local) {
+      if (!lv.serverVersionId) continue;                               // nothing to match it by
+      if (tombstoned.has(lv.serverVersionId)) continue;               // deleted elsewhere
+      const i = out.findIndex((v) => v.serverVersionId === lv.serverVersionId);
+      if (i < 0) {
+        // The server does not hold it. Blank placeholders are nothing (#358);
+        // anything with work on it was made here and not sent — it stays.
+        const blank = lv.type === 'empty' && !(lv.strokes && lv.strokes.length > 0) && !lv.bgImage
+          && !lv.r2Key && !lv.note && !lv.setupTagged && !lv.hidden && !versionStars(lv);
+        if (!blank) out.push(lv);
+        continue;
+      }
+      const mineAt = versionChangedAt(lv.serverVersionId);
+      const theirsAt = cloudTime(lv.serverVersionId);
+      // Same rule as a frame: the later change wins; a copy that knows when it
+      // changed beats one that does not; a tie keeps the local one.
+      const takeMine = theirsAt === undefined ? true : mineAt === undefined ? false : mineAt >= theirsAt;
+      if (takeMine) out[i] = { ...lv, id: out[i].id, bgImage: lv.bgImage ?? out[i].bgImage };
+    }
+    return out;
+  };
+
   const tombstonedIds = new Set<string>();
   if (tree.deletions) {
     for (const d of tree.deletions) tombstonedIds.add(d.entity_id);
@@ -2954,7 +2991,33 @@ async function applyCloudTreeToStore(
               const target = stripId === 'ver' ? verVersions
                 : stripId === 'floor' ? floorVersions : refsVersions;
               const list = target[localId] ?? (target[localId] = []);
-              if (list.some((v) => v.serverVersionId === sv.id)) continue;   // already here
+              const heldAt = list.findIndex((v) => v.serverVersionId === sv.id);
+              if (heldAt >= 0) {
+                // BOTH HOLD IT: THE LATER ONE BY ITS OWN TIME (#514). The shot's
+                // record stayed local, but this version is judged on its own.
+                const mineAt = versionChangedAt(sv.id);
+                const theirsAt = sv.content_changed_at ?? undefined;
+                const takeTheirs = theirsAt !== undefined && (mineAt === undefined || theirsAt > mineAt);
+                if (!takeTheirs) continue;
+                const held = list[heldAt];
+                const colon = sv.type.indexOf(':');
+                const raw = colon === -1 ? sv.type : sv.type.slice(colon + 1);
+                const key = imageByVersion.get(sv.id);
+                const sameImage = key && held.r2Key === key && held.bgImage;
+                list[heldAt] = {
+                  ...held,
+                  label: sv.label ?? '',
+                  type: (raw === 'drawing' || raw === 'upload' || raw === 'empty') ? raw as 'drawing' | 'upload' | 'empty' : 'empty',
+                  strokes: parseStrokes(drawingByVersion.get(sv.id)),
+                  bgImage: sameImage ? held.bgImage : null,
+                  hidden: !!sv.hidden, starred: !!sv.starred, stars: Number(sv.starred) || 0,
+                  note: sv.note ?? '', r2Key: key || undefined,
+                  setupTagged: sv.tags === 'origin' || sv.tags === 'copy' ? sv.tags : undefined,
+                };
+                serverVidToLocalVer.set(sv.id, list[heldAt]);
+                if (key && !sameImage) wantPicture.push({ strip: stripId, ver: list[heldAt], r2Key: key });
+                continue;
+              }
 
               const colonIdx = sv.type.indexOf(':');
               const rawType = colonIdx === -1 ? sv.type : sv.type.slice(colonIdx + 1);
@@ -3118,9 +3181,21 @@ async function applyCloudTreeToStore(
         });
       };
 
-      verVersions[localId] = mapVersions(verVers, 'ver');
-      floorVersions[localId] = mapVersions(floorVers, 'floor');
-      refsVersions[localId] = mapVersions(refsVers, 'refs');
+      {
+        const existingFrame = existingFrameByServerId.get(sf.id);
+        const cloudTime = (vid: string) => {
+          const row = sideVs.find((v) => v.id === vid);
+          return row?.content_changed_at ?? undefined;
+        };
+        const mine = (strip: string) => (existingFrame ? prev.stripVersions[strip]?.[existingFrame.id] : undefined);
+        const settle = (built: Version[], strip: 'ver' | 'floor' | 'refs') =>
+          inStarOrder(mergeVersionsPerVersion(built, mine(strip), cloudTime, tombstonedIds),
+            (v) => ({ stars: versionStars(v), tagged: !!v.setupTagged, hidden: !!v.hidden }))
+            .map((v, i) => ({ ...v, id: i + 1 }));
+        verVersions[localId] = settle(mapVersions(verVers, 'ver'), 'ver');
+        floorVersions[localId] = settle(mapVersions(floorVers, 'floor'), 'floor');
+        refsVersions[localId] = settle(mapVersions(refsVers, 'refs'), 'refs');
+      }
       // Put back what this card was showing, if it is still there (#341).
       const wasViewing = sf.id ? viewedBefore.get(sf.id) : undefined;
       const clamp = (want: number, have: number) =>
@@ -5450,7 +5525,13 @@ async function tryPullFromCloud(force = false): Promise<void> {
         const keepMine = new Set<string>();
         const takeTheirs: string[] = [];
         for (const sfId of dirtyIds) {
-          const mine = myWorkChangedAt(sfId);           // undefined = age unknown
+          // THE SHOT'S OWN TIME, NOT ITS VERSIONS' (#514, run 233). This took the
+          // latest time of the shot OR any of its versions — so a drawing made
+          // here on ANGLE v1 made "mine newer" and the whole shot stayed local,
+          // throwing away the text the other device had written under it. The
+          // shot's record and each version are judged apart now; the versions
+          // are merged one by one below, whichever way this goes.
+          const mine = frameChangedAt(sfId);            // undefined = age unknown
           const theirs = cloudChangedAt.get(sfId);
           // Nothing on the server for it, or we cannot tell when theirs changed:
           // keep ours. Unsent work is never dropped on a guess.
@@ -5856,19 +5937,7 @@ async function tryPullFromCloud(force = false): Promise<void> {
  * the newest thing I have done to it, whether that is the frame or one of its
  * looks.
  */
-function myWorkChangedAt(serverFrameId: string): number | undefined {
-  let latest = frameChangedAt(serverFrameId);
-  const s = state();
-  const frame = s.frames.find((f) => f.serverFrameId === serverFrameId);
-  if (!frame) return latest;
-  for (const stripId of Object.keys(s.stripVersions)) {
-    for (const v of s.stripVersions[stripId]?.[frame.id] ?? []) {
-      const at = versionChangedAt(v.serverVersionId);
-      if (at !== undefined && (latest === undefined || at > latest)) latest = at;
-    }
-  }
-  return latest;
-}
+// myWorkChangedAt is gone (#514): a shot is judged by its own time, its versions by theirs.
 
 /** Called after a successful save/load so we know what "current" means. */
 function updateLastKnownTimestamp(ts: number): void {

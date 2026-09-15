@@ -149,8 +149,15 @@ export function stampChangedContent(
     // dated every untouched shot the moment it arrived, then pushed them all
     // as its own edits and beat the real one (run 209: the desktop's note on
     // shot 4, undone by an iPad that had only written on shot 1).
-    if (!prev) _seen.set(key, { fp, at: cameFromServer ?? (received || seeding ? 0 : now) });
-    else if (prev.fp !== fp) _seen.set(key, { fp, at: cameFromServer ?? (received ? 0 : now) });
+    // ...BUT ONLY FOR WHAT THE SERVER ACTUALLY SENT (#514, run 238). A pull's
+    // stamp used to date EVERY changed fingerprint as the server's — and a
+    // picture put on a shot just before an (offline, failed) pull was a local
+    // change the server had never seen. Dated zero, it lost to an untouched
+    // copy from the other device. A key the pull did not bring is local work:
+    // it is dated now, as any other change.
+    const sentByServer = received?.has(key) ?? false;
+    if (!prev) _seen.set(key, { fp, at: cameFromServer ?? (sentByServer || seeding ? 0 : now) });
+    else if (prev.fp !== fp) _seen.set(key, { fp, at: cameFromServer ?? (sentByServer ? 0 : now) });
   };
 
   s.frames.forEach((f, i) => {

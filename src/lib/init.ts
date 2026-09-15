@@ -1042,6 +1042,12 @@ export function initFramehow(): void {
     const f = s.frames.find((fr) => fr.id === fid);
     if (!f) return;
     const reader = new FileReader();
+    // SAY IT WHEN A PICTURE CANNOT BE READ (#514). It failed in silence before;
+    // the card simply stayed as it was.
+    reader.onerror = () => {
+      trace(`picture: could not read "${file.name}" — ${reader.error?.name ?? 'unknown error'}: ${reader.error?.message ?? ''}`);
+      showToast('Could not read that picture.');
+    };
     reader.onload = (ev) => {
       snapshotFrame(fid, 'main');
       if (toVersion) {
@@ -1093,6 +1099,10 @@ export function initFramehow(): void {
     const total = files.length;
     for (let i = 0; i < total; i++) {
       const reader = new FileReader();
+      reader.onerror = () => {
+        trace(`picture: could not read "${files[i].name}" — ${reader.error?.name ?? 'unknown error'}: ${reader.error?.message ?? ''}`);
+        showToast('Could not read that picture.');
+      };
       reader.onload = (ev) => {
         const dataURL = (ev.target as FileReader).result as string;
         if (i === 0) {

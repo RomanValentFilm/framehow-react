@@ -1802,6 +1802,12 @@ async function applySyncPartial(db: D1Database, projectId: string, payload: Sync
  * be — and now is — device time. That one decides who wins. This one only
  * decides who gets told.
  */
+// THE WRITE KEEPS THE RULE TOO (#514, run 236). decideFrame/decideVersion read
+// what is held, decide, and only then the batch writes — two pushes arriving
+// in the same second read the same old row and BOTH decided "accept"; the one
+// written last won, undated over dated. The WHERE on each upsert below is
+// the same rule at the moment of writing, atomically: a dated row is never
+// overwritten by an undated or older one, whatever the decision read.
 function appendFrameInserts(db: D1Database, stmts: D1PreparedStatement[], payload: SyncPayload, now: number) {
   for (const f of payload.frames) {
     stmts.push(
@@ -1817,7 +1823,9 @@ function appendFrameInserts(db: D1Database, stmts: D1PreparedStatement[], payloa
            strip_labels = excluded.strip_labels, hidden = excluded.hidden,
            note = excluded.note, scribbles = excluded.scribbles,
            updated_at = excluded.updated_at, changed_offline = excluded.changed_offline,
-           needs = excluded.needs, notes = excluded.notes, setup_id = excluded.setup_id`,
+           needs = excluded.needs, notes = excluded.notes, setup_id = excluded.setup_id
+         WHERE frames.content_changed_at IS NULL
+            OR (excluded.content_changed_at IS NOT NULL AND excluded.content_changed_at >= frames.content_changed_at)`,
       ).bind(f.id, f.strip_id, f.label, f.sort_order, f.crop_w, f.crop_h, f.text_content, f.table_data, f.version_label, f.strip_labels, f.hidden ? 1 : 0, f.note ?? null, f.scribbles ?? null, now, f.changed_offline ? 1 : 0, f.needs ?? null, f.notes ?? null, f.setup_id ?? null, f.content_changed_at ?? null),
     );
   }
@@ -1830,7 +1838,9 @@ function appendFrameInserts(db: D1Database, stmts: D1PreparedStatement[], payloa
            content_changed_at = excluded.content_changed_at,
            frame_id = excluded.frame_id, label = excluded.label, type = excluded.type,
            hidden = excluded.hidden, starred = excluded.starred, note = excluded.note,
-           updated_at = excluded.updated_at, tags = excluded.tags`,
+           updated_at = excluded.updated_at, tags = excluded.tags
+         WHERE versions.content_changed_at IS NULL
+            OR (excluded.content_changed_at IS NOT NULL AND excluded.content_changed_at >= versions.content_changed_at)`,
       ).bind(v.id, v.frame_id, v.label, v.type, v.hidden ? 1 : 0, Number(v.starred) || 0, v.note ?? null, now, v.tags ?? null, v.content_changed_at ?? null),
     );
   }

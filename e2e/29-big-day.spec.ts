@@ -824,3 +824,143 @@ test('big day, part 7: every export produces its file',
 
     await desktop.close();
   });
+
+// PART 8 — an offline day. Both devices lose the signal at once and work on
+// the same project for a while, each on its own shots: a new shot, names,
+// text, a picture, a drawing, needs, a note, a group, an order with a break.
+// Then both come back. Nothing may be lost, nothing may be asked (they never
+// touched the same order), and afterwards both hold the same whole project.
+test('big day, part 8: an offline day — both work apart, both come back, nothing lost',
+  async ({ browser }) => {
+    const { token } = await freshAccount();
+    const desktop = await Device.open(browser, 'desktop', token);
+    const ipad = await Device.open(browser, 'ipad', token, true);
+    type Shot = { label: string; text: string; picture: boolean; strokes: number; needsOn: string[]; noteCard: string;
+      versions: Record<string, Array<{ strokes: number }>> };
+    type Whole = { shots: Shot[]; groups: Array<{ name: string; shots: string[] }>;
+      orders: Array<{ name: string; breaks: Array<{ text: string }> }> };
+    const parse = (w: string) => JSON.parse(w) as Whole;
+
+    const id = await desktop.newProjectOfKind('BIG DAY — OFFLINE', 'landscape', 8);
+    await desktop.settle();
+    expect(id, 'the project must reach the server').not.toBeNull();
+    await ipad.openProject(id!);
+    await ipad.settle();
+    await Device.waitUntilWholeAgrees(desktop, ipad, 'OFFLINE: THE IPAD DOES NOT HOLD THE EIGHT SHOTS.');
+
+    // ── the signal goes ──────────────────────────────────────────────────
+    say('── both devices go offline ──');
+    await desktop.offline(true);
+    await ipad.offline(true);
+    await desktop.page.waitForTimeout(3000);
+
+    // ── the desktop's afternoon ──────────────────────────────────────────
+    say('── desktop, offline: NEW after 2, names, text, picture, drawing, needs, note, group, order ──');
+    await desktop.newFrameAfter(1);                            // 2#1 → nine shots
+    await desktop.renameFrame(0, 'OPENING');
+    await desktop.typeUnder(3, 'desk: wide');                   // shot "3" (index 3 now)
+    // THE SIMULATOR CANNOT READ A FILE WHILE ITS AIRPLANE MODE IS ON (runs
+    // 241–243: "NotReadableError: The I/O read operation failed" — the test's
+    // file lives on the runner side and WebKit fetches it through a channel the
+    // offline flag cuts; a real iPad reads a local file fine). So the picture
+    // goes on through the store door here. What this part tests still holds:
+    // a picture made offline is uploaded and reaches the other device.
+    await desktop.putPicture(4, 'data:image/png;base64,' + RED_PNG);   // shot "4"
+    await desktop.draw(5, 'ver', 0);                            // shot "5"
+    await setNeeds(desktop.page, 6, ['ti_day1']);               // shot "6"
+    await desktop.showNotes();
+    await desktop.typeNote(7, 'desk note');                     // shot "7"
+    const setA = await desktop.makeGroup('SET A', [0, 1]);
+    await desktop.newSortOrder('DESK ORDER');
+    const deskIdx = await desktop.orderIndexOf('DESK ORDER');
+    await desktop.addBreak(deskIdx, 2, 'DESK BREAK');
+    const deskMine = {
+      whole: parse(await desktop.whole()),
+      order: await desktop.orderTextByName('DESK ORDER'),
+      group: await desktop.groupAsText(setA),
+    };
+    say(`   desktop holds ${deskMine.whole.shots.length} shots · ${deskMine.order} · ${deskMine.group}`);
+
+    // ── the iPad's afternoon ─────────────────────────────────────────────
+    say('── iPad, offline: names, text, drawing on ANGLE, needs, note, group, order ──');
+    // Different SHOTS from the desktop's, except shot 3 — where the desktop
+    // wrote text (the shot's record) and the iPad draws on ANGLE (a version):
+    // two records, both must survive (#514). Two edits to the SAME record are
+    // settled by the later one, by the rule, so the test does not do that here.
+    await ipad.renameFrame(7, 'CLOSING');                       // shot "8"
+    await ipad.setView('main');                                 // the iPad opens in 3x2; the text box lives on the main card
+    await ipad.typeUnder(1, 'pad: close-up');                   // shot "2"
+    await ipad.showStrip('floor');
+    await ipad.draw(2, 'floor', 0);                             // shot "3" ANGLE — the desktop wrote under 3
+    await setNeeds(ipad.page, 4, ['ti_day2']);                  // shot "5" (the iPad has no 2#1 yet, so index 4) — the desktop drew on 5's VER version
+    await ipad.showNotes();
+    await ipad.typeNote(1, 'pad note');                         // shot "2" (its own text is there too)
+    const setB = await ipad.makeGroup('SET B', [5, 6]);
+    await ipad.newSortOrder('PAD ORDER');
+    const padMine = {
+      order: await ipad.orderTextByName('PAD ORDER'),
+      group: await ipad.groupAsText(setB),
+    };
+    say(`   iPad: ${padMine.order} · ${padMine.group}`);
+    await desktop.push().catch(() => {});
+    await ipad.push().catch(() => {});
+
+    // ── the signal returns ───────────────────────────────────────────────
+    say('── both come back online ──');
+    await desktop.offline(false);
+    await ipad.offline(false);
+    await desktop.page.waitForTimeout(3000);
+    const w = parse(await Device.waitUntilWholeAgrees(desktop, ipad, 'OFFLINE: THE TWO AFTERNOONS DID NOT MEET.', 120_000));
+    const byLabel = (l: string) => w.shots.find((s) => s.label === l);
+    say(`   shots on both: ${w.shots.map((s) => s.label).join(' ')}`);
+    if (!byLabel('OPENING') || byLabel('4')?.picture !== true) {
+      for (const d of [desktop, ipad]) {
+        const lines = (await d.log()).filter((l) => /push|pull|change times|sending frames|accepted|older than|keep|mine\(newer\)|taking theirs|back online|offline|image|upload|picture|delta/i.test(l));
+        say(`${d.name} log (newest first):\n${lines.slice(0, 50).map((l) => '    ' + l.slice(0, 190)).join('\n')}`);
+      }
+    }
+
+    expect.soft(w.shots.length, 'nine shots: the desktop\'s NEW survived').toBe(9);
+    expect.soft(byLabel('OPENING'), 'desktop\'s rename of 1').toBeTruthy();
+    expect.soft(byLabel('CLOSING'), 'iPad\'s rename of 8').toBeTruthy();
+    expect.soft(byLabel('3')?.text, 'desktop\'s text under 3').toBe('desk: wide');
+    expect.soft(byLabel('2')?.text, 'iPad\'s text under 2').toBe('pad: close-up');
+    expect.soft(byLabel('4')?.picture, 'desktop\'s picture on 4').toBe(true);
+    expect.soft(byLabel('5')?.versions.ver?.[0]?.strokes ?? 0, 'desktop\'s drawing on 5').toBeGreaterThan(0);
+    expect.soft(byLabel('3')?.versions.floor?.[0]?.strokes ?? 0, 'iPad\'s ANGLE drawing on 3').toBeGreaterThan(0);
+    expect.soft(byLabel('6')?.needsOn, 'desktop\'s need on 6').toContain('ti_day1');
+    expect.soft(byLabel('5')?.needsOn, 'iPad\'s need on 5 (the desktop drew on its version)').toContain('ti_day2');
+    expect.soft(byLabel('7')?.noteCard, 'desktop\'s note on 7').toBe('desk note');
+    expect.soft(byLabel('2')?.noteCard, 'iPad\'s note on 2').toBe('pad note');
+    expect.soft(w.groups.map((g) => g.name).sort(), 'both groups').toEqual(['SET A', 'SET B']);
+    expect.soft(w.orders.map((o) => o.name).sort(), 'both orders').toEqual(['DESK ORDER', 'PAD ORDER']);
+    // The labels in an order's text follow the shots' names — and the OTHER
+    // side renamed two shots — so the text is judged by its shape, not by the
+    // text taken before the meet.
+    const deskNow = await Device.waitUntilNamedOrdersAgree(desktop, ipad, 'DESK ORDER');
+    expect.soft(deskNow, 'DESK ORDER keeps its break').toContain('[DESK BREAK]');
+    expect.soft(deskNow, 'DESK ORDER keeps the new shot').toContain('2#1');
+    const orderShots = async (name: string) => (await desktop.read()).orders.find((o) => o.name === name)?.frames.length ?? -1;
+    expect.soft(await orderShots('DESK ORDER'), 'DESK ORDER holds nine shots').toBe(9);
+    await Device.waitUntilNamedOrdersAgree(desktop, ipad, 'PAD ORDER');
+    expect.soft(await orderShots('PAD ORDER'), 'PAD ORDER holds its eight shots').toBe(8);
+    for (const d of [desktop, ipad]) {
+      const asked = (await d.log()).find((l) => l.includes('decision(s) waiting'));
+      expect.soft(asked, `${d.name} was asked a question though nobody touched the same order: ${asked}`).toBeUndefined();
+      const lost = (await d.log()).find((l) => /FULL REPLACE|PULL FAILED/.test(l));
+      expect.soft(lost, `${d.name} said something that must never be said: ${lost}`).toBeUndefined();
+    }
+
+    // ── reload both ──────────────────────────────────────────────────────
+    await desktop.reload();
+    await ipad.reload();
+    await desktop.openProject(id!);
+    await ipad.openProject(id!);
+    await desktop.settle();
+    const fresh = parse(await Device.waitUntilWholeAgrees(desktop, ipad, 'OFFLINE: AFTER A RELOAD THE TWO DEVICES DIFFER.'));
+    expect.soft(fresh, 'a reload changes nothing').toEqual(w);
+
+    await desktop.close();
+    await ipad.close();
+  });
+

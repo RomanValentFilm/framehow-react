@@ -80,18 +80,35 @@ orders or get out.
 
 ## THE LIST — 10 September, evening (Roman's order)
 
-dev is **v4.9.209 · #512** (deployed 14 September evening). Next number: **v4.9.210 · #513**.
+dev is **v4.9.210 · #513** (deployed 14 September, late). Next number: **v4.9.211 · #514**.
 
-### FIRST THING, 15 September — save, then BIG DAY parts 8 and 9
-Uncommitted since 209: BIG DAY parts 5, 6, 7 (all GREEN: runs 228, 230, 231),
+### DONE 14 September, late — v4.9.210 · #513 saved and deployed (app only)
+It carried: BIG DAY parts 5, 6, 7 (all GREEN: runs 228, 230, 231),
 `e2e/boxes.ts` (27's helpers shared), doors (groups, order delete, sort-view
 drag, exports), lifts in groups.ts (saveGroupEdit/deleteGroup) and sortOrder.ts
 (deleteSortOrder), and ONE APP FIX: after a restart the settings memory did not
 know its project, so the first stamp threw it away and re-seeded everything as
 "changed now" — a deleted group came back on both devices (run 227). Fixed:
-importSettingStamps takes the project id. → 4 STEPS SAVE as v4.9.210 · #513,
-then DEPLOY (app only).
-Then: part 8 (an offline day: both devices apart for a long stretch doing
+importSettingStamps takes the project id.
+
+### FIRST THING, 15 September — a version's time must not decide the shot (BIG DAY part 8, run 233)
+Both offline. Desktop wrote TEXT under shot 3 at T1. iPad DREW on shot 3's
+ANGLE version at T2 > T1. Both back: the iPad's pull decided shot 3 "mine is
+newer" — `myWorkChangedAt` (accountFlow ~5859) takes the LATEST of the frame
+AND its versions — kept its whole local shot 3 and dropped the arriving row,
+so the desktop's text was lost on the iPad; the two never agreed (120 s).
+Two edits that do not overlap; one thrown away. The rule to write (and bench
+in sessionRules / test/resort-bench or its own bench): the frame ROW (label,
+text, note, needs, hidden, setup, scribbles) is judged by the frame's own
+time; each VERSION by its own time (the server already does decideVersion per
+version). Check what the rebuild does with a kept-local frame's versions and
+with an arriving frame's versions when the ROW is taken from the server but a
+local version is newer — the drawing must survive too. Then run part 8 again
+(`-g "big day, part 8"`); everything before the meet was green.
+Part 8 is written (offline afternoon on both, all kinds of work, no question,
+reload). Part 9 (RESTORE points + delete/recover) and the final pass remain.
+
+### THEN: part 8 (an offline day: both devices apart for a long stretch doing
 everything, coming back, no loss, no question unless the same order), part 9
 (RESTORE points + delete/recover a project), then reload/switch and the final
 identical-on-all-devices pass over everything the day made.

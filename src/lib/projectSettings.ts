@@ -285,6 +285,48 @@ function sameButIdx(aJson: string, bJson: string): boolean {
   } catch { return false; }
 }
 
+/**
+ * THE SAME THING MINUS SHOTS THIS DEVICE DOES NOT HAVE YET (#514, run 234) —
+ * for the story flow, a shooting order, a group. A shooting order arrived on
+ * the iPad before the new shot it named had; the iPad's copy came out one shot
+ * short, the memory called that a change of its own, and the short order went
+ * up as the newest — the shot was gone from the order on both devices. If
+ * every list of shots in the value is the known one with some left out, in the
+ * same sequence, and everything else is the same, nothing was changed here.
+ */
+function isProjectionOf(kind: string, curJson: string, prevJson: string): boolean {
+  const lists: Record<string, string[]> = {
+    frameOrder: [],                                   // the data IS the list
+    sortOrder: ['frameOrder', 'sortedSnapshot'],
+    group: ['frameIds', 'hiddenFrameIds'],
+  };
+  const fields = lists[kind];
+  if (!fields) return false;
+  if (kind === 'frameOrder') return isSubsequenceOf(curJson, prevJson);
+  try {
+    const cur = (JSON.parse(curJson) as { data?: Record<string, unknown> }).data ?? {};
+    const prev = (JSON.parse(prevJson) as { data?: Record<string, unknown> }).data ?? {};
+    let shorter = false;
+    for (const f of fields) {
+      const a = cur[f], b = prev[f];
+      if (a === undefined && b === undefined) continue;
+      if (!Array.isArray(a) || !Array.isArray(b)) return false;
+      if (a.length > b.length) return false;
+      if (a.length < b.length) shorter = true;
+      let i = 0;
+      for (const id of b) if (i < a.length && a[i] === id) i++;
+      if (i !== a.length) return false;
+    }
+    if (!shorter) return false;
+    const rest = (d: Record<string, unknown>) => {
+      const o = { ...d };
+      for (const f of fields) delete o[f];
+      return stableJson(o);
+    };
+    return rest(cur) === rest(prev);
+  } catch { return false; }
+}
+
 /** Is `shorter` the list `longer` with some ids left out, the rest in the same order? */
 function isSubsequenceOf(shorterJson: string, longerJson: string): boolean {
   let a: string[], b: string[];
@@ -330,7 +372,7 @@ export function stampChangedSettings(projectId?: string | null): void {
       // the known one with some ids missing, in the same order, is that case
       // (and after a deletion too, which the arrangement never needed to say:
       // an id with no frame is simply skipped). It is left as it was.
-      if (it.kind === 'frameOrder' && prev.deleted_at === null && isSubsequenceOf(it.json, prev.json)) continue;
+      if (prev.deleted_at === null && isProjectionOf(it.kind, it.json, prev.json)) continue;
       // A DIFFERENT PLACE IN THE LIST IS NOT A CHANGE (#510, run 217). The
       // value carries `idx` so a new item lands where it belongs on the other
       // device — but adding an order shifts the idx of the ones after it, and

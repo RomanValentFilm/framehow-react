@@ -842,7 +842,7 @@ export class Device {
     await pressPicTxt();                                   // PIC/TXT → the text box shows
     const box = this.page.locator(`textarea.frame-text-edit[data-textfid="${fid}"]`).first();
     await box.waitFor({ state: 'attached', timeout: 10_000 });
-    await box.fill(text);
+    await box.fill(text, { timeout: 10_000 });   // a box that is there but not usable must say so, not hang
     await box.blur();                                      // leaving the box pushes
     await pressPicTxt();                                   // and back to the picture
   }
