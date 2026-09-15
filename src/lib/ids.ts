@@ -67,3 +67,30 @@ export function uniqueNumericId(): number {
 export function newFrameId(): string {
   return crypto.randomUUID();
 }
+
+/**
+ * THE SAME FOR A VERSION (#516).
+ *
+ * A version had no server name until its first push named it, and change times
+ * are filed by name — so every new version went up as time zero, the oldest
+ * time there is, and lost to whatever the server held. For a picture tagged
+ * into a setup that meant the copies made here were thrown out in favour of the
+ * other device's, and the pills came and went. Named when it becomes work
+ * (see stampChangedContent), dated the moment it is noticed.
+ */
+export function newVersionId(): string {
+  return crypto.randomUUID();
+}
+
+/** The text a version's tag travels as: `origin`, `copy`, or `copy:<origin id>`. */
+export function tagText(v: { setupTagged?: 'origin' | 'copy'; copyOf?: string }): string | null {
+  if (!v.setupTagged) return null;
+  return v.setupTagged === 'copy' && v.copyOf ? `copy:${v.copyOf}` : v.setupTagged;
+}
+
+/** ...and read back. Anything else is no tag. */
+export function readTagText(t: unknown): { setupTagged?: 'origin' | 'copy'; copyOf?: string } {
+  if (t === 'origin' || t === 'copy') return { setupTagged: t };
+  if (typeof t === 'string' && t.startsWith('copy:')) return { setupTagged: 'copy', copyOf: t.slice(5) };
+  return {};
+}

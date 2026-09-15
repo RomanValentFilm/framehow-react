@@ -758,6 +758,12 @@ export function autoPhoneMainView(): void {
   } else if (!s.portraitMode) {
     // Landscape project: default to 3x2 grid view
     if (s.currentViewMode !== 'grid3x2') setViewMode('grid3x2');
+  } else if (!s.activeStrips.includes('main') && s.currentViewMode !== 'grid3x2') {
+    // A 9:16 PORTRAIT PROJECT OPENS WITH ITS SHOT COLUMN (#516, run 262).
+    // It had no rule of its own, so it opened in whatever the project before
+    // it had left — after a fitting, the LOOKS strip alone, with SHOT hidden.
+    useStore.setState({ activeStrips: ['main'], currentViewMode: 'main' });
+    setViewMode('main');
   }
 }
 
@@ -798,9 +804,24 @@ function adjacentCrossStrip(fid: number, currentStrip: StripType, dir: 'next' | 
   return null;
 }
 
+/** Where this card sits on screen right now — so it can be put back there
+ *  after a change, instead of being centred (#516). */
+function whereOnScreen(fid: number): number | null {
+  const target = anchorTargetFor(fid);
+  if (!target) return null;
+  const r = target.getBoundingClientRect();
+  if (r.height <= 0) return null;
+  return Math.max(-1, Math.min(2, -r.top / r.height));
+}
+
 export function navigateStrip(fid: number, fromStrip: StripType, dir: 'left' | 'right'): void {
   saveOpenTextEdits();
   saveOpenTableEdits();
+  // THE PAGE STAYS WHERE IT IS (#516, Roman by hand, 15 September). An arrow
+  // on a version used to centre that row on screen; the row goes back to
+  // exactly where it was, even if the new version's picture is taller.
+  const wasAt = whereOnScreen(fid);
+  const putBack = () => requestAnimationFrame(() => scrollAnchorToRel(fid, wasAt));
   const s = state();
   const cur = fromStrip === 'main' ? (s.crossCompare[fid] ?? -1) : (getStripCrossCompare(fid, fromStrip) ?? -1);
   const ccStrip = s.crossCompareStrip[fid] || 'ver';
@@ -825,7 +846,7 @@ export function navigateStrip(fid: number, fromStrip: StripType, dir: 'left' | '
       const div = document.querySelector(`#${scrollId} .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
       if (div && renderVer) renderVer(div, fid, fromStrip);
     }
-    requestAnimationFrame(() => scrollAnchorTo(fid));
+    putBack();
     return;
   }
   // Single-column main: cross-compare swipe across strips
@@ -909,7 +930,7 @@ export function navigateStrip(fid: number, fromStrip: StripType, dir: 'left' | '
       }
     }
   }
-  requestAnimationFrame(() => scrollAnchorTo(fid));
+  putBack();
 }
 
 export function addNavArrows(wrapEl: HTMLElement, fid: number, fromStrip: StripType): void {
@@ -1004,15 +1025,17 @@ export function addCrossSwipe(el: HTMLElement, fid: number, fromStrip: StripType
       } else if (fromStrip === 'ver' && s.currentViewMode === 'ver') {
         // Ver strip cross-compare to main (swipe right to show main inline)
         if (dx > 0 && cur < 0) {
+          const wasAt = whereOnScreen(fid);                 // stays put (#516)
           s.crossCompare[fid] = 0;
           const div = document.querySelector(`#versionsScroll .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
           if (div && renderVer) renderVer(div, fid);
-          requestAnimationFrame(() => scrollAnchorTo(fid));
+          requestAnimationFrame(() => scrollAnchorToRel(fid, wasAt));
         } else if (dx < 0 && cur >= 0) {
+          const wasAt = whereOnScreen(fid);
           s.crossCompare[fid] = -1;
           const div = document.querySelector(`#versionsScroll .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
           if (div && renderVer) renderVer(div, fid);
-          requestAnimationFrame(() => scrollAnchorTo(fid));
+          requestAnimationFrame(() => scrollAnchorToRel(fid, wasAt));
         }
       }
       // Floor/refs strips don't do main-inline cross-compare

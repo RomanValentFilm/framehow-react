@@ -67,8 +67,9 @@ import {
 } from './currentProject';
 import { makeGoneRegister, whatWentWrong } from './projectGone';
 import { trace } from './syncTrace';
-import { frameChangedAt, versionChangedAt, frameChangedAtForSending, versionChangedAtForSending, importChangeStamps, stampChangedContent, seedContentStamps, pictureFp, strokesFp } from './changeStamps';
+import { frameChangedAt, versionChangedAt, frameChangedAtForSending, versionChangedAtForSending, importChangeStamps, stampChangedContent, seedContentStamps, pictureFp, strokesFp, untouchedStrip } from './changeStamps';
 import { shouldSendOnlyChanges } from './pushMode';
+import { tagText, readTagText } from './ids';
 import { serverHasSomethingNew, whoseFrameWins, type DeviceMemory } from './sessionRules';
 import { mergeDelta, lastMergeRefusal, answerIsSafeToApply, untouchedByDelta, type MergeableTree } from './deltaMerge';
 import { settingsForPush, adoptSettingsFromServer, applySettingsToStore, importSettingStamps, stampChangedSettings, seedSettings, settingsNeedPush, reconcileRestoredSettings, captureMySettings, keepMyUnsentSettings, unsentSettingNames, type SettingItem } from './projectSettings';
@@ -425,7 +426,7 @@ function openResetModal(token: string): Promise<boolean> {
 // Project list
 // ---------------------------------------------------------------------------
 
-interface CloudProject {
+export interface CloudProject {
   id: string;
   name: string;
   created_at: number;
@@ -443,6 +444,80 @@ interface CloudProject {
 // ---------------------------------------------------------------------------
 
 const _goneRegister = makeGoneRegister();
+
+/**
+ * DELETE A PROJECT ON THE SERVER — the body of the list's Delete after its two
+ * confirms, lifted out so the browser tests press the same thing (#515).
+ */
+export async function deleteCloudProject(p: CloudProject): Promise<void> {
+  await api.delete(`/projects/${encodeURIComponent(p.id)}`, getToken());
+  p.deleted_at = Date.now();
+  clearRectsForProject(p.id);
+  // THE ONE YOU WERE LOOKING AT (#471).
+  //
+  // #470 called startFromScratch() here and it was wrong twice over.
+  // startFromScratch is the "new blank project" the signpost offers — it
+  // BUILDS a project, one empty frame and all, so deleting the open
+  // project left an untitled project sitting there as if you had asked
+  // for one. And clearCurrentProject() runs newLocalProjectIdentity(),
+  // so the `localProjectId()` read on the next line was already a fresh
+  // id belonging to nothing: the real device copy, filed under the OLD
+  // one, survived and reappeared in the list as an offline copy.
+  //
+  // So: take the key FIRST, drop the copies, and let go of the project
+  // without inventing another one. Nothing is filed, nothing is pushed,
+  // and the project list stays in front of you to choose from.
+  if (getCurrentProject().projectId === p.id) {
+    const oldLocalKey = localProjectId();
+    const gone = await deleteEveryCopyOf(p.id, [oldLocalKey]);
+    trace(`deleted the project that was open — closed it,`
+      + ` and dropped ${gone} copy(ies) from this device`);
+    // AND IT MUST NOT STILL BE ON SCREEN (#472). Roman: "once you delete,
+    // then the project cannot be showing anymore". So the storyboard is
+    // emptied — NOT replaced by a new one, which was #470's mistake.
+    // Nothing is left to draw, nothing is filed (a copy with no frames is
+    // refused), and the project list is already in front, which is where
+    // you choose what to open next. Zero frames is a state the app knows:
+    // it is what it launches into.
+    // The same three steps logout has always used to put the app back to
+    // nothing — including closing a shooting order, which must not be
+    // left standing over a storyboard that no longer exists.
+    beginSystemAction();
+    try {
+      if (state().sortEditingId) closeSortMode();
+      resetStoryboardState();
+      clearCurrentProject();
+      clearPushedFingerprints();
+    } finally {
+      endSystemAction();
+    }
+    (window as any).__fh_renderAll?.();
+  }
+}
+
+/** RECOVER A DELETED PROJECT — the list's Recover after its confirm (#515). */
+export async function recoverCloudProject(p: CloudProject): Promise<void> {
+  await api.post(`/projects/${encodeURIComponent(p.id)}/recover`, undefined, getToken());
+  p.deleted_at = null;
+}
+
+/** MAKE A RESTORE POINT where the project is now — what opening the restore
+ *  list does first, so "you are here" is in it (#515). */
+export async function makeRestorePoint(projectId: string): Promise<void> {
+  await api.post(`/projects/${encodeURIComponent(projectId)}/snapshots`, undefined, getToken());
+}
+
+/** The restore points the server holds for a project (#515). */
+export async function listRestorePoints(projectId: string): Promise<Array<{ id: string; created_at: number; reason?: string }>> {
+  const res = await api.get<{ snapshots: Array<{ id: string; created_at: number; reason?: string }> }>(
+    `/projects/${encodeURIComponent(projectId)}/snapshots`, getToken());
+  return res.snapshots;
+}
+
+/** RESTORE to a point — the modal's choice, lifted (#515). */
+export async function restoreToPoint(projectId: string, snapshotId: string): Promise<void> {
+  await performRestore(projectId, snapshotId);
+}
 
 async function askAboutTheDeletedProject(projectId: string): Promise<void> {
   if (!_goneRegister.shouldAsk(projectId)) return;
@@ -700,49 +775,7 @@ export async function openProjectList(): Promise<void> {
       const accepted = await promptDeleteNotice();
       if (!accepted) { show('projectListModal'); return; }
       try {
-        await api.delete(`/projects/${encodeURIComponent(p.id)}`, getToken());
-        p.deleted_at = Date.now();
-        clearRectsForProject(p.id);
-        // THE ONE YOU WERE LOOKING AT (#471).
-        //
-        // #470 called startFromScratch() here and it was wrong twice over.
-        // startFromScratch is the "new blank project" the signpost offers — it
-        // BUILDS a project, one empty frame and all, so deleting the open
-        // project left an untitled project sitting there as if you had asked
-        // for one. And clearCurrentProject() runs newLocalProjectIdentity(),
-        // so the `localProjectId()` read on the next line was already a fresh
-        // id belonging to nothing: the real device copy, filed under the OLD
-        // one, survived and reappeared in the list as an offline copy.
-        //
-        // So: take the key FIRST, drop the copies, and let go of the project
-        // without inventing another one. Nothing is filed, nothing is pushed,
-        // and the project list stays in front of you to choose from.
-        if (getCurrentProject().projectId === p.id) {
-          const oldLocalKey = localProjectId();
-          const gone = await deleteEveryCopyOf(p.id, [oldLocalKey]);
-          trace(`deleted the project that was open — closed it,`
-            + ` and dropped ${gone} copy(ies) from this device`);
-          // AND IT MUST NOT STILL BE ON SCREEN (#472). Roman: "once you delete,
-          // then the project cannot be showing anymore". So the storyboard is
-          // emptied — NOT replaced by a new one, which was #470's mistake.
-          // Nothing is left to draw, nothing is filed (a copy with no frames is
-          // refused), and the project list is already in front, which is where
-          // you choose what to open next. Zero frames is a state the app knows:
-          // it is what it launches into.
-          // The same three steps logout has always used to put the app back to
-          // nothing — including closing a shooting order, which must not be
-          // left standing over a storyboard that no longer exists.
-          beginSystemAction();
-          try {
-            if (state().sortEditingId) closeSortMode();
-            resetStoryboardState();
-            clearCurrentProject();
-            clearPushedFingerprints();
-          } finally {
-            endSystemAction();
-          }
-          (window as any).__fh_renderAll?.();
-        }
+        await deleteCloudProject(p);
         // Whatever was deleted, the offline rows on screen are now out of date.
         await refreshLocalCopies();
       } catch (e) {
@@ -757,8 +790,7 @@ export async function openProjectList(): Promise<void> {
       const confirmed = await promptRecoverConfirm();
       if (!confirmed) { show('projectListModal'); return; }
       try {
-        await api.post(`/projects/${encodeURIComponent(p.id)}/recover`, undefined, getToken());
-        p.deleted_at = null;
+        await recoverCloudProject(p);
       } catch (e) {
         showToast(asMessage(e, 'Could not recover project.'));
       }
@@ -1891,19 +1923,7 @@ async function askAboutOpenSettingConflicts(projectId: string): Promise<void> {
  * Deliberately narrow. A version that has ever reached the server keeps its
  * name, so nothing that already exists anywhere can be dropped by this.
  */
-export function untouchedStrip(vs: Version[] | undefined): boolean {
-  if (!vs || vs.length !== 1) return false;
-  const v = vs[0];
-  return !v.serverVersionId
-    && v.type === 'empty'
-    && !(v.strokes && v.strokes.length > 0)
-    && !v.bgImage
-    && !v.r2Key
-    && !v.note
-    && !v.setupTagged
-    && !v.hidden
-    && !versionStars(v);
-}
+export { untouchedStrip };   // lives in changeStamps.ts now (#516), same rule
 
 async function syncCurrentToServer(projectId: string): Promise<void> {
   // Safety net: refuse to push zero frames — prevents wiping a project on the server
@@ -2048,7 +2068,7 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   // Map local frame id → server frame UUID (needed for group remapping)
   const localToServerFrame = new Map<number, string>();
   // Map version UUID → setupTagged value (stored in metadata to avoid D1 schema change)
-  const versionTags: Record<string, 'origin' | 'copy'> = {};
+  const versionTags: Record<string, string> = {};
 
   // Track which local frames/versions got which server UUIDs so we can
   // persist them back to the store after a successful push.
@@ -2172,7 +2192,7 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
           id: vid, frame_id: frameId, label: lv.label || null, type: fullType,
           hidden: !!lv.hidden, starred: versionStars(lv) as unknown as boolean, note: lv.note || null, updated_at: now,
           // The tag belongs to the version, same reasoning as needs and notes.
-          tags: lv.setupTagged ?? null,
+          tags: tagText(lv),
           content_changed_at: versionChangedAtForSending(lv.serverVersionId),
           // Same as the main card above (#475).
           has_drawing: !!(lv.strokes && lv.strokes.length > 0),
@@ -2193,7 +2213,7 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
         }
         // Track strip-tag state for metadata (avoids D1 schema change)
         if (lv.setupTagged) {
-          versionTags[vid] = lv.setupTagged;
+          versionTags[vid] = tagText(lv)!;
         }
       });
     };
@@ -2216,7 +2236,7 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
       if (!vers) continue;
       for (const lv of vers) {
         if (lv.setupTagged && lv.serverVersionId) {
-          versionTags[lv.serverVersionId] = lv.setupTagged;
+          versionTags[lv.serverVersionId] = tagText(lv)!;
         }
       }
     }
@@ -2408,6 +2428,12 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   } else {
     trace('  story flow: not being sent');
   }
+  // WHAT THIS PUSH CARRIES IS WHAT ITS SUCCESS MAY CLEAR (#515, run 249). A
+  // deletion recorded while a push was in the air was cleared along with the
+  // sent ones when that push came back OK — and the "sending again" push had
+  // nothing left to carry. The shot stayed on the server and came back on
+  // the next pull. Same fault as #496, for deletions.
+  const sentTombstones = [..._pendingTombstones];
   const res = await api.post<CloudProjectTree & {
     conflict?: boolean;
     /** Frames the server would not take because they changed elsewhere.
@@ -2433,7 +2459,7 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
       versions,
       images,
       drawings,
-      deletions: _pendingTombstones.map((t) => ({
+      deletions: sentTombstones.map((t) => ({
         id: t.id,
         entity_type: t.entity_type,
         entity_id: t.entity_id,
@@ -2507,8 +2533,15 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   // Record counts after a successful push so the next guard comparisons are accurate.
   _lastKnownImageCount = countCurrentImages();
   _lastKnownFrameCount = state().frames.length;
-  // Clear pending tombstones after successful push
-  _pendingTombstones = [];
+  // Clear the tombstones THIS push carried; anything recorded since stays.
+  {
+    const carried = new Set(sentTombstones.map((t) => t.id));
+    _pendingTombstones = _pendingTombstones.filter((t) => !carried.has(t.id));
+    if (_pendingTombstones.length > 0) {
+      trace(`  ${_pendingTombstones.length} deletion(s) recorded while the push was in the air — sending again`);
+      markSomethingToSend();
+    }
+  }
 
   // Store fingerprints for all frames (including clean ones) so the next
   // push can detect what changed. We store ALL frames, not just dirty ones,
@@ -2845,6 +2878,7 @@ async function applyCloudTreeToStore(
     local: Version[] | undefined,
     cloudTime: (serverVersionId: string) => number | undefined,
     tombstoned: ReadonlySet<string>,
+    cloudTag: (serverVersionId: string) => string | undefined = () => undefined,
   ): Version[] => {
     if (!local || local.length === 0) return built;
     const out = [...built];
@@ -2865,6 +2899,12 @@ async function applyCloudTreeToStore(
       // Same rule as a frame: the later change wins; a copy that knows when it
       // changed beats one that does not; a tie keeps the local one.
       const takeMine = theirsAt === undefined ? true : mineAt === undefined ? false : mineAt >= theirsAt;
+      // The built version has no tag yet — the row's tag is put on afterwards —
+      // so ask the row itself.
+      const theirTag = cloudTag(lv.serverVersionId) ?? 'none';
+      if ((lv.setupTagged ?? 'none') !== theirTag) {
+        trace(`    version ${lv.serverVersionId.slice(0, 6)}: tag mine "${lv.setupTagged ?? 'none'}" theirs "${theirTag}" · mine@${mineAt ?? 'none'} theirs@${theirsAt ?? 'none'} → ${takeMine ? 'keeping mine' : 'taking theirs'}`);
+      }
       if (takeMine) out[i] = { ...lv, id: out[i].id, bgImage: lv.bgImage ?? out[i].bgImage };
     }
     return out;
@@ -2885,8 +2925,6 @@ async function applyCloudTreeToStore(
 
   // Map server frame UUID → local numeric id (for group remapping on download)
   const serverToLocalFrame = new Map<string, number>();
-  // Map server version UUID → local Version object (for restoring setupTagged from metadata)
-  const serverVidToLocalVer = new Map<string, import('../store/state').Version>();
 
   for (const strip of stripsSorted) {
     const stripFrames = (framesByStrip.get(strip.id) ?? []).sort((a, b) => a.sort_order - b.sort_order);
@@ -2998,6 +3036,9 @@ async function applyCloudTreeToStore(
                 const mineAt = versionChangedAt(sv.id);
                 const theirsAt = sv.content_changed_at ?? undefined;
                 const takeTheirs = theirsAt !== undefined && (mineAt === undefined || theirsAt > mineAt);
+                if ((list[heldAt].setupTagged ?? '') !== (readTagText(sv.tags).setupTagged ?? '')) {
+                  trace(`    version ${sv.id.slice(0, 6)}: tag mine "${list[heldAt].setupTagged ?? 'none'}" theirs "${readTagText(sv.tags).setupTagged ?? 'none'}" · mine@${mineAt ?? 'none'} theirs@${theirsAt ?? 'none'} → ${takeTheirs ? 'taking theirs' : 'keeping mine'}`);
+                }
                 if (!takeTheirs) continue;
                 const held = list[heldAt];
                 const colon = sv.type.indexOf(':');
@@ -3012,9 +3053,11 @@ async function applyCloudTreeToStore(
                   bgImage: sameImage ? held.bgImage : null,
                   hidden: !!sv.hidden, starred: !!sv.starred, stars: Number(sv.starred) || 0,
                   note: sv.note ?? '', r2Key: key || undefined,
-                  setupTagged: sv.tags === 'origin' || sv.tags === 'copy' ? sv.tags : undefined,
+                  // The server's word on the tag, INCLUDING "none" (#516) — or
+                  // an untag made elsewhere never arrived here.
+                  setupTagged: undefined, copyOf: undefined,
+                  ...readTagText(sv.tags),
                 };
-                serverVidToLocalVer.set(sv.id, list[heldAt]);
                 if (key && !sameImage) wantPicture.push({ strip: stripId, ver: list[heldAt], r2Key: key });
                 continue;
               }
@@ -3035,10 +3078,9 @@ async function applyCloudTreeToStore(
                 note: sv.note ?? '',
                 serverVersionId: sv.id,
                 r2Key: r2Key || undefined,
-                setupTagged: sv.tags === 'origin' || sv.tags === 'copy' ? sv.tags : undefined,
+                ...readTagText(sv.tags),
               };
               list.push(localVer);
-              serverVidToLocalVer.set(sv.id, localVer);
               if (r2Key) wantPicture.push({ strip: stripId, ver: localVer, r2Key });
             }
             // IN STAR ORDER (#500), then renumber so the tabs read 1,2,3 — and
@@ -3137,7 +3179,7 @@ async function applyCloudTreeToStore(
         // in the order it wrote them; the order the person made with the stars
         // is worked out from the ratings, the same way the star button does it.
         const filtered = inStarOrder(svList.filter((sv) => !tombstonedIds.has(sv.id)),
-          (sv) => ({ stars: Number(sv.starred) || 0, tagged: sv.tags === 'origin' || sv.tags === 'copy', hidden: !!sv.hidden }));
+          (sv) => ({ stars: Number(sv.starred) || 0, tagged: !!readTagText(sv.tags).setupTagged, hidden: !!sv.hidden }));
         return filtered.map((sv, j) => {
           const r2Key = imageByVersion.get(sv.id);
           // DIFF: check if we already have this exact image locally
@@ -3175,8 +3217,14 @@ async function applyCloudTreeToStore(
             // Persist server ID + r2Key for diff-based sync
             serverVersionId: sv.id,
             r2Key: r2Key || undefined,
+            // THE TAG RIDES IN THE ROW, HERE (#516, run 256). It used to be put
+            // on afterwards, by a loop over the objects made here — but settle()
+            // below copies every version to renumber it, so the tag landed on
+            // objects nobody kept. A tag made on the other device never arrived
+            // through this path: Roman's pills that "were, then one did not,
+            // then again", by hand, on 15 September.
+            ...readTagText(sv.tags),
           };
-          serverVidToLocalVer.set(sv.id, localVer);
           return localVer;
         });
       };
@@ -3187,9 +3235,10 @@ async function applyCloudTreeToStore(
           const row = sideVs.find((v) => v.id === vid);
           return row?.content_changed_at ?? undefined;
         };
+        const cloudTag = (vid: string) => readTagText(sideVs.find((v) => v.id === vid)?.tags).setupTagged;
         const mine = (strip: string) => (existingFrame ? prev.stripVersions[strip]?.[existingFrame.id] : undefined);
         const settle = (built: Version[], strip: 'ver' | 'floor' | 'refs') =>
-          inStarOrder(mergeVersionsPerVersion(built, mine(strip), cloudTime, tombstonedIds),
+          inStarOrder(mergeVersionsPerVersion(built, mine(strip), cloudTime, tombstonedIds, cloudTag),
             (v) => ({ stars: versionStars(v), tagged: !!v.setupTagged, hidden: !!v.hidden }))
             .map((v, i) => ({ ...v, id: i + 1 }));
         verVersions[localId] = settle(mapVersions(verVers, 'ver'), 'ver');
@@ -3313,15 +3362,11 @@ async function applyCloudTreeToStore(
       if (meta.frameSetups && typeof meta.frameSetups === 'object') {
         restoredFrameSetups = meta.frameSetups;
       }
-      // Restore strip-tag state (origin/copy) from version UUID map
-      if (meta.versionTags && typeof meta.versionTags === 'object') {
-        for (const [vid, tag] of Object.entries(meta.versionTags)) {
-          const localVer = serverVidToLocalVer.get(vid);
-          if (localVer && (tag === 'origin' || tag === 'copy')) {
-            localVer.setupTagged = tag;
-          }
-        }
-      }
+      // The project-wide versionTags list is no longer read (#516): a version's
+      // tag travels on its own row and is set the moment the version is built
+      // from it, judged per version like everything else on it. The list was
+      // only rewritten when the settings travelled, so it went stale after an
+      // untag and put the old tag back.
       // Restore stripTagInfoDismissed
       if (meta.stripTagInfoDismissed) {
         restoredStripTagInfoDismissed = true;
@@ -3408,12 +3453,9 @@ async function applyCloudTreeToStore(
   // The list is still read first so nothing written by an older build is lost;
   // whatever is on the frame then overrides it. Once every device has pushed
   // once, the list is dead weight and comes out.
-  // Same for tags: the version's own tag wins over the project-wide list.
-  for (const cv of tree.versions) {
-    if (!cv.tags) continue;
-    const localVer = serverVidToLocalVer.get(cv.id);
-    if (localVer && (cv.tags === 'origin' || cv.tags === 'copy')) localVer.setupTagged = cv.tags;
-  }
+  // (Version tags: set where the version is built from its row — see
+  // mapVersions and the kept-local branch. Nothing is put on afterwards, so a
+  // tag the merge decided to keep local stays kept.)
 
   for (const cf of tree.frames) {
     const localId = serverToLocalFrame.get(cf.id);
@@ -5804,10 +5846,18 @@ async function tryPullFromCloud(force = false): Promise<void> {
       if (stillToSend.length > 0) {
         for (const id of stillToSend) forgetPushedFingerprint(id);
         trace(`  ${stillToSend.length} kept-local frame(s) still to send`);
-        setTimeout(() => void flushSyncNow(), 400);
       }
 
       clearDirtyState(); // Pull is not a user change — prevent stale push
+      // ...BUT THE KEPT-LOCAL FRAMES ARE (#516, run 253). The push asked for
+      // above used to be scheduled BEFORE this line cleared the flag, so it
+      // arrived, found nothing marked, and left without a word — and a tag
+      // put on a version a second before a pull sat on the desktop until some
+      // unrelated edit carried it. Mark after clearing, then send.
+      if (stillToSend.length > 0) {
+        markSomethingToSend();
+        setTimeout(() => void flushSyncNow(), 400);
+      }
       // ...but a SETTINGS change this device is still holding is a user change,
       // and clearing the flag above was leaving it with nothing to carry it
       // (#324). A frame keeps its own record of being unsent; a shooting order,

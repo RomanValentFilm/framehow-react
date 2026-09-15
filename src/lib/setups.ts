@@ -3,7 +3,8 @@
 // Frames can belong to at most one setup. A colour tag shows on the canvas in all views.
 
 import { state, useStore, SETUP_COLORS, bumpRenderTick } from '../store/state';
-import { uniqueId } from './ids';
+import { uniqueId, newVersionId } from './ids';
+import { recordTombstone } from './accountFlow';
 import type { Setup, StripType } from '../store/state';
 import { getStripVersions, ensureStripVersions, stripTabPrefix, relabelStripVersions, reorderByStars, getStripActiveTab, setStripActiveTab } from './helpers';
 import { showToast, showConfirm } from './modals';
@@ -613,17 +614,51 @@ function clearCopyTaggedVersions(fid: number): void {
     const vers = getStripVersions(fid, strip);
     if (!vers) continue;
     for (const v of vers) {
-      if (v.setupTagged === 'copy') {
-        v.bgImage = null;
-        v.strokes = [];
-        v.type = 'empty';
-        v.setupTagged = undefined;
-      } else if (v.setupTagged === 'origin') {
+      if (v.setupTagged === 'origin') {
         // Origin becomes regular content — no longer participates in tag propagation
         v.setupTagged = undefined;
       }
     }
+    // A copy is REMOVED, not emptied (#516) — an emptied copy stayed on as a
+    // blank version with a tab of its own. Removed the same way a deleted
+    // version is: told to the server, so it does not come back on the next pull.
+    removeVersions(fid, strip, (v) => v.setupTagged === 'copy');
   }
+}
+
+/** Take versions out of a strip for good: spliced out, told to the server,
+ *  the strip left with at least one version, labels and the open tab kept
+ *  honest. The one way a copy leaves (#516). */
+function removeVersions(fid: number, strip: StripType, gone: (v: import('../store/state').Version) => boolean): number {
+  const vers = getStripVersions(fid, strip);
+  if (!vers) return 0;
+  let removed = 0;
+  for (let i = vers.length - 1; i >= 0; i--) {
+    if (!gone(vers[i])) continue;
+    recordTombstone('version', vers[i].serverVersionId);
+    vers.splice(i, 1);
+    removed++;
+  }
+  if (removed === 0) return 0;
+  if (vers.length === 0) {
+    vers.push({ id: 1, label: '', type: 'empty' as const, strokes: [], bgImage: null });
+  }
+  reorderByStars(fid, strip);
+  relabelStripVersions(fid, strip);
+  // Clamp activeTab — splicing may have left it pointing past the array end
+  const curTab = getStripActiveTab(fid, strip);
+  if (curTab >= vers.length) {
+    setStripActiveTab(fid, strip, Math.max(0, vers.length - 1));
+  }
+  return removed;
+}
+
+/** Is `v` a copy of this origin? By the link when it has one; by the picture
+ *  for copies made before the link existed. */
+function isCopyOf(v: import('../store/state').Version, origin: import('../store/state').Version): boolean {
+  if (v.setupTagged !== 'copy') return false;
+  if (v.copyOf && origin.serverVersionId) return v.copyOf === origin.serverVersionId;
+  return !!v.bgImage && v.bgImage === origin.bgImage;
 }
 
 /** Re-propagate all existing strip tags across every frame in a setup.
@@ -766,34 +801,29 @@ function executeUntag(fid: number, strip: StripType, ver: import('../store/state
   const setupId = mainFrame?.setupId;
   const setupFrames = setupId ? s.frames.filter((f) => f.setupId === setupId) : [mainFrame!];
 
-  // 1) Find and untag the origin (could be on this frame or another)
-  for (const sf of setupFrames) {
-    const vers = getStripVersions(sf.id, strip);
-    for (const v of vers) {
-      if (v.setupTagged === 'origin' && v.bgImage === targetImage) {
-        v.setupTagged = undefined; // becomes regular user content
+  // 1) Find the origin (could be on this frame or another — the pill may have
+  //    been pressed on a copy) and untag it: it becomes regular user content.
+  let origin: import('../store/state').Version | undefined;
+  if (ver.setupTagged === 'origin') origin = ver;
+  else {
+    for (const sf of setupFrames) {
+      for (const v of getStripVersions(sf.id, strip)) {
+        if (v.setupTagged === 'origin' && (v.serverVersionId && v.serverVersionId === ver.copyOf || v.bgImage === targetImage)) origin = v;
       }
     }
   }
+  const originForMatch = origin ?? ver;
+  if (origin) origin.setupTagged = undefined;
+  sayTagChange(`untag: origin ${origin?.serverVersionId?.slice(0, 6) ?? '?'} stays on its frame, copies go`);
 
-  // 2) Remove ALL copies of this image from ALL setup frames
+  // 2) Remove ALL copies of this origin from ALL setup frames — told to the
+  //    server (#516), or they came straight back on the next pull.
   for (const sf of setupFrames) {
-    const vers = getStripVersions(sf.id, strip);
-    for (let i = vers.length - 1; i >= 0; i--) {
-      if (vers[i].setupTagged === 'copy' && vers[i].bgImage === targetImage) {
-        vers.splice(i, 1);
-      }
-    }
-    if (vers.length === 0) {
-      vers.push({ id: 1, label: '', type: 'empty' as const, strokes: [], bgImage: null });
-    }
+    removeVersions(sf.id, strip, (v) => isCopyOf(v, originForMatch));
+    // The origin's own frame loses nothing but changes order: the untagged
+    // version now sorts among the plain ones, so its tabs are re-numbered too.
     reorderByStars(sf.id, strip);
     relabelStripVersions(sf.id, strip);
-    // Clamp activeTab — splicing may have left it pointing past the array end
-    const curTab = getStripActiveTab(sf.id, strip);
-    if (curTab >= vers.length) {
-      setStripActiveTab(sf.id, strip, Math.max(0, vers.length - 1));
-    }
   }
 
   bumpRenderTick();
@@ -861,6 +891,8 @@ function applyStripTag(fid: number, vi: number, strip: StripType): void {
   // Mark this version as the origin
   sayTagChange(`frame ${fid} ${strip} ${vi + 1} becomes an origin of ${mainFrame.setupId.slice(0, 10)}`);
   ver.setupTagged = 'origin';
+  // An origin has a name from this moment (#516): its copies point at it.
+  if (!ver.serverVersionId) ver.serverVersionId = newVersionId();
 
   // Re-apply ALL origins for this frame+strip so slots are assigned in order
   reapplyStripTags(fid, strip);
@@ -918,8 +950,19 @@ function reapplyStripTags(fid: number, strip: StripType): void {
         // Own origins stay as real origin objects
         for (const orig of ownOrigins) taggedFront.push(orig);
       } else {
-        // Foreign origins → fresh copy versions
+        // Foreign origins → the copy this frame ALREADY HOLDS of that origin,
+        // or a fresh one if it has none (#516). It used to be a fresh one every
+        // time, which threw away the copy's server name: the next push sent it
+        // as a new version, the old row stayed on the server, and the next pull
+        // brought both back — v1 and v2 of the same picture.
         for (const orig of srcOrigins) {
+          if (!orig.serverVersionId) orig.serverVersionId = newVersionId();
+          const held = targetVers.find((v) => isCopyOf(v, orig));
+          if (held) {
+            held.copyOf = orig.serverVersionId;
+            taggedFront.push(held);
+            continue;
+          }
           taggedFront.push({
             id: 0,
             label: '',
@@ -927,6 +970,8 @@ function reapplyStripTags(fid: number, strip: StripType): void {
             strokes: orig.strokes.map((st) => ({ ...st })),
             type: (orig.bgImage ? 'upload' : orig.strokes.length > 0 ? 'drawing' : 'empty') as 'empty' | 'drawing' | 'upload',
             setupTagged: 'copy' as const,
+            copyOf: orig.serverVersionId,
+            serverVersionId: newVersionId(),
           });
         }
       }
@@ -936,9 +981,7 @@ function reapplyStripTags(fid: number, strip: StripType): void {
     // Keep them so the image survives; they'll be cleaned up when
     // this frame itself leaves the setup.
     const orphanedCopies = targetVers.filter(
-      (v) =>
-        v.setupTagged === 'copy' &&
-        !taggedFront.some((tf) => tf.bgImage === v.bgImage)
+      (v) => v.setupTagged === 'copy' && !taggedFront.includes(v)
     );
 
     // Rebuild: tagged front, then orphaned copies, then user content

@@ -31,7 +31,7 @@ import { handlePDF } from './pdf';
 import { deleteFrameForGood, handleMainAction, handleAction, renameFrame, hideFrame, unhideFrame } from './actions';
 import { createSetup, handleSetupFrameClick, handleStripTagClick } from './setups';
 import { renameNeedTab, renameNeedTable, renameNeedItem, ensureFrameNeeds } from './needs';
-import { saveNow, openCloudProjectById, beginNewProject, untouchedStrip } from './accountFlow';
+import { saveNow, openCloudProjectById, beginNewProject, untouchedStrip, makeRestorePoint, listRestorePoints, restoreToPoint, deleteCloudProject, recoverCloudProject } from './accountFlow';
 import { flushSyncNow, markFrameDirty, getDirtyFrameIds, pullNow } from './currentProject';
 import { openNeedsModal } from './overview';
 import { stampChangedContent } from './changeStamps';
@@ -193,6 +193,14 @@ export interface TestDoor {
    *  GO — the app's own modal and its own button; the file leaves as a download. */
   exportVia(kind: 'pdf' | 'pptx' | 'images' | 'portrait-pdf' | 'portrait-pptx' | 'portrait-images'
     | 'fitting-pdf' | 'fitting-pptx' | 'fitting-images'): void;
+  /** PART 9 (#515): restore points, delete and recover — the app's own functions. */
+  makeRestorePoint(): Promise<void>;
+  restorePoints(): Promise<Array<{ id: string; created_at: number; reason?: string }>>;
+  restoreTo(snapshotId: string): Promise<void>;
+  /** Delete the OPEN project (the list's Delete after its confirms). */
+  deleteThisProject(): Promise<void>;
+  /** Recover a deleted project by id (the list's Recover after its confirm). */
+  recoverProject(projectId: string): Promise<void>;
   /** Delete a shooting order — the confirm's Yes (#513). */
   deleteOrder(orderIndex: number): void;
   /** PART 5 DOORS (#513): groups, through the app's own functions. */
@@ -233,6 +241,9 @@ export interface TestDoor {
   /** Put the currently chosen setup on a frame, as tapping the frame in SETUPS
    *  mode does. Choosing which setup is active is part of it. */
   putSetupOnFrame(frameIndex: number, setupId: string): void;
+  /** Leave SETUPS mode, as pressing the SETUPS button does. The strips are
+   *  locked while the setup bar is open, so a person closes it first. */
+  leaveSetups(): void;
 
   /** Tag a version with the frame's setup, as tapping its TAG pill does. */
   tagVersion(frameIndex: number, strip?: StripType, versionIndex?: number): void;
@@ -1116,6 +1127,29 @@ export function installTestDoor(): void {
       ta.dispatchEvent(new Event('input', { bubbles: true }));
       ta.blur();
     },
+    async makeRestorePoint() {
+      const id = getCurrentProject().projectId;
+      if (!id) throw new Error('no project on the server to make a restore point of');
+      await makeRestorePoint(id);
+    },
+    async restorePoints() {
+      const id = getCurrentProject().projectId;
+      if (!id) throw new Error('no project on the server');
+      return listRestorePoints(id);
+    },
+    async restoreTo(snapshotId) {
+      const id = getCurrentProject().projectId;
+      if (!id) throw new Error('no project on the server');
+      await restoreToPoint(id, snapshotId);
+    },
+    async deleteThisProject() {
+      const cp = getCurrentProject();
+      if (!cp.projectId) throw new Error('no project on the server to delete');
+      await deleteCloudProject({ id: cp.projectId, name: cp.name ?? '', deleted_at: null } as never);
+    },
+    async recoverProject(projectId) {
+      await recoverCloudProject({ id: projectId, name: '', deleted_at: Date.now() } as never);
+    },
     exportVia(kind) {
       const press = (id: string) => {
         const b = document.getElementById(id) as HTMLElement | null;
@@ -1288,6 +1322,12 @@ export function installTestDoor(): void {
       } as never);
       handleSetupFrameClick(f.id);
     },
+    leaveSetups() {
+      if (!useStore.getState().setupMode) return;
+      const btn = document.getElementById('setupsBtn');
+      if (!btn) throw new Error('no SETUPS button on the page');
+      btn.click();
+    },
 
     tagVersion(frameIndex, strip = 'ver', versionIndex = 0) {
       const f = useStore.getState().frames[frameIndex];
@@ -1295,7 +1335,9 @@ export function installTestDoor(): void {
       ensureStripVersions(f.id, strip);
       // The pill asks for confirmation the first time; a person who has said
       // "don't ask again" gets the tag straight away, and so does this.
-      useStore.setState({ stripTagInfoDismissed: true } as never);
+      // Both the tag and the untag confirmation (#516) — the pill is one
+      // button, and it untags when the version already carries a tag.
+      useStore.setState({ stripTagInfoDismissed: true, stripUntagInfoDismissed: true } as never);
       handleStripTagClick(f.id, versionIndex, strip);
     },
 

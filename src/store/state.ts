@@ -63,7 +63,7 @@ export interface Setup {
 
 /** 12-colour palette for setups. */
 /** App version — bump before every deploy. */
-export const APP_VERSION = 'v4.9.211';
+export const APP_VERSION = 'v4.9.212';
 
 /** Free-text fields printed in the header of every exported page. */
 export interface ExportMeta {
@@ -123,6 +123,11 @@ export interface Version {
    *  'origin' = the source version where the user clicked TAG.
    *  'copy'   = image propagated from an origin to other same-SETUP frames. */
   setupTagged?: 'origin' | 'copy';
+  /** For a copy: the server id of the origin it was copied from (#516). A copy
+   *  used to be found by its picture, and after one round trip through the
+   *  server every copy has a picture file of its own — so untag could not find
+   *  them, and a re-tag could not reuse them and made new ones. */
+  copyOf?: string;
   /** Server UUID — persists across syncs so we can diff local vs cloud. */
   serverVersionId?: string;
   /** R2 object key for this version's image. Null/undefined = local or empty. */

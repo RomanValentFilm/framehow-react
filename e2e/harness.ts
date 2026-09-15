@@ -297,6 +297,14 @@ export class Device {
     }
     const xl = x.split('\n'), yl = y.split('\n');
     let i = 0; while (i < xl.length && i < yl.length && xl[i] === yl[i]) i++;
+    // Both logs, so the fault is readable without a re-run.
+    for (const d of [a, b]) {
+      const all = await d.log().catch(() => [] as string[]);
+      const lines = all.slice(0, 60);
+      say(`${d.name} log (newest first):\n${lines.map((l) => '    ' + l.slice(0, 220)).join('\n')}`);
+      const tagLines = all.filter((l) => /tag[: ]/.test(l)).slice(0, 25);
+      if (tagLines.length) say(`${d.name} tag lines:\n${tagLines.map((l) => '    ' + l.slice(0, 220)).join('\n')}`);
+    }
     throw new Error(`${why}\n  first difference at line ${i + 1}:\n  ${a.name}: ${(xl[i] ?? '(end)').trim()}\n  ${b.name}: ${(yl[i] ?? '(end)').trim()}`
       + `\n  around:\n${xl.slice(Math.max(0, i - 3), i + 3).map((l) => '    ' + l).join('\n')}`);
   }
@@ -510,6 +518,12 @@ export class Device {
       (window as never as { __fh_test: { putSetupOnFrame(i: number, id: string): void } })
         .__fh_test.putSetupOnFrame(i as number, id as string),
       [frameIndex, setupId] as [number, string]);
+  }
+
+  /** Leave SETUPS mode by its own button. */
+  async leaveSetups(): Promise<void> {
+    await this.page.evaluate(() =>
+      (window as never as { __fh_test: { leaveSetups(): void } }).__fh_test.leaveSetups());
   }
 
   /** Tag a version with the frame's setup. */
@@ -839,15 +853,52 @@ export class Device {
     const pressPicTxt = () => this.page.evaluate((i) =>
       (window as never as { __fh_test: { pressPicTxt(i: number): void } })
         .__fh_test.pressPicTxt(i as number), index);
-    await pressPicTxt();                                   // PIC/TXT → the text box shows
-    const box = this.page.locator(`textarea.frame-text-edit[data-textfid="${fid}"]`).first();
-    await box.waitFor({ state: 'attached', timeout: 10_000 });
+    // The VISIBLE box: a card can be drawn in more than one place (a hidden
+    // grid keeps its own copy), and the first copy in the page is not always
+    // the one on screen (run 261, a portrait project).
+    const box = this.page.locator(`textarea.frame-text-edit[data-textfid="${fid}"]:visible`).first();
+    // A pull landing between the press and the typing redraws the card as it
+    // was — showing the picture again (run 259, part 10). A person presses
+    // PIC/TXT once more; so does this, up to three times.
+    let shown = false;
+    for (let attempt = 0; attempt < 3 && !shown; attempt++) {
+      await pressPicTxt();                                 // PIC/TXT → the text box shows
+      shown = await box.waitFor({ state: 'visible', timeout: 3_000 }).then(() => true, () => false);
+      if (!shown) say(`${this.name}: the text box did not show (try ${attempt + 1}) — pressing PIC/TXT again`);
+    }
     await box.fill(text, { timeout: 10_000 });   // a box that is there but not usable must say so, not hang
     await box.blur();                                      // leaving the box pushes
     await pressPicTxt();                                   // and back to the picture
   }
 
   // ── PART 3 (#509): pictures, drawings, versions, stars, written text ──
+
+  // ── PART 9 (#515): restore points, delete, recover ──
+  async makeRestorePoint(): Promise<void> {
+    say(`${this.name}: making a restore point`);
+    await this.page.evaluate(() => (window as never as { __fh_test: { makeRestorePoint(): Promise<void> } }).__fh_test.makeRestorePoint());
+  }
+  restorePoints(): Promise<Array<{ id: string; created_at: number; reason?: string }>> {
+    return this.page.evaluate(() => (window as never as { __fh_test: { restorePoints(): Promise<never> } }).__fh_test.restorePoints());
+  }
+  async restoreTo(snapshotId: string): Promise<void> {
+    say(`${this.name}: restoring to point ${snapshotId.slice(0, 8)}`);
+    await this.page.evaluate((id) => (window as never as { __fh_test: { restoreTo(id: string): Promise<void> } }).__fh_test.restoreTo(id as string), snapshotId);
+  }
+  async deleteThisProject(): Promise<void> {
+    say(`${this.name}: deleting the open project`);
+    await this.page.evaluate(() => (window as never as { __fh_test: { deleteThisProject(): Promise<void> } }).__fh_test.deleteThisProject());
+  }
+  async recoverProject(projectId: string): Promise<void> {
+    say(`${this.name}: recovering project ${projectId.slice(0, 8)}`);
+    await this.page.evaluate((id) => (window as never as { __fh_test: { recoverProject(id: string): Promise<void> } }).__fh_test.recoverProject(id as string), projectId);
+  }
+  /** The server's list, deleted ones included, with their state. */
+  static async projectsWithState(token: string): Promise<Array<{ name: string; deleted: boolean }>> {
+    const res = await fetch(`${API}/projects`, { headers: { Authorization: `Bearer ${token}` } });
+    const body = await res.json() as { projects: Array<{ name: string; deleted_at: number | null }> };
+    return body.projects.map((p) => ({ name: p.name, deleted: !!p.deleted_at })).sort((a, b) => a.name.localeCompare(b.name));
+  }
 
   /** Run an export through the app's own window and catch the file it saves.
    *  Returns the file name and its first bytes and size, for the test to judge. */

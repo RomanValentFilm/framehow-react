@@ -80,7 +80,7 @@ orders or get out.
 
 ## THE LIST — 10 September, evening (Roman's order)
 
-dev is **v4.9.210 · #513** (deployed 14 September, late). Next number: **v4.9.211 · #514**.
+dev is **v4.9.211 · #514** (deployed 15 September, app and backend). Next number: **v4.9.212 · #515**.
 
 ### DONE 14 September, late — v4.9.210 · #513 saved and deployed (app only)
 It carried: BIG DAY parts 5, 6, 7 (all GREEN: runs 228, 230, 231),
@@ -91,27 +91,62 @@ know its project, so the first stamp threw it away and re-seeded everything as
 "changed now" — a deleted group came back on both devices (run 227). Fixed:
 importSettingStamps takes the project id.
 
-### FIRST THING, 15 September — a version's time must not decide the shot (BIG DAY part 8, run 233)
-Both offline. Desktop wrote TEXT under shot 3 at T1. iPad DREW on shot 3's
-ANGLE version at T2 > T1. Both back: the iPad's pull decided shot 3 "mine is
-newer" — `myWorkChangedAt` (accountFlow ~5859) takes the LATEST of the frame
-AND its versions — kept its whole local shot 3 and dropped the arriving row,
-so the desktop's text was lost on the iPad; the two never agreed (120 s).
-Two edits that do not overlap; one thrown away. The rule to write (and bench
-in sessionRules / test/resort-bench or its own bench): the frame ROW (label,
-text, note, needs, hidden, setup, scribbles) is judged by the frame's own
-time; each VERSION by its own time (the server already does decideVersion per
-version). Check what the rebuild does with a kept-local frame's versions and
-with an arriving frame's versions when the ROW is taken from the server but a
-local version is newer — the drawing must survive too. Then run part 8 again
-(`-g "big day, part 8"`); everything before the meet was green.
-Part 8 is written (offline afternoon on both, all kinds of work, no question,
-reload). Part 9 (RESTORE points + delete/recover) and the final pass remain.
+### DONE 15 September morning — v4.9.211 · #514 saved and deployed (app AND backend)
+- Pull: the shot's own record and each version judged separately, versions
+  merged one by one by their own times in both branches (myWorkChangedAt gone).
+- Server: the frame/version upsert refuses an older or undated copy at write
+  time (two devices reconnecting in the same second raced read-then-write).
+- Stamps: during a pull only what the server sent is server-dated; a local
+  change made just before a failed pull is dated now.
+- Orders and groups short of shots this device lacks are not a local change
+  (the story-flow rule, generalised).
+- A picture that cannot be read says so (toast + log line).
+- BIG DAY part 8 green (run 244). SIMULATOR LIMIT: a file cannot be read while
+  the simulated airplane mode is on (NotReadableError) — part 8 puts its
+  offline picture on through the store door, reason written in the test.
+- Random day: a change the other device had not received at departure counts
+  as "apart" (run 245's real clash).
+Full run 245: 60 green · 6 skipped · 3 red = LATER 3 (known) + 15 (idle-device
+timing, seen in 224 too) + random day (now fixed, green in 246).
 
-### THEN: part 8 (an offline day: both devices apart for a long stretch doing
-everything, coming back, no loss, no question unless the same order), part 9
-(RESTORE points + delete/recover a project), then reload/switch and the final
-identical-on-all-devices pass over everything the day made.
+### 15 September afternoon/evening — v4.9.212 · #515 (NOT yet saved/deployed; app AND backend)
+BIG DAY IS COMPLETE: all ten parts exist and have been green (9: run 250;
+4 with the setup-tag check: run 258; 10: run 264). Full run 265 pending.
+App faults found and fixed today, all by the simulator:
+- Delete during a push in flight: the tombstone was cleared by the push that
+  did not carry it — kept now until a push actually carries it (part 9).
+- Setup tagging, from Roman's by-hand notes: (1) a re-tag made fresh copies
+  every time, so the old rows came back as v1+v2 of the same picture — copies
+  are reused, linked to their origin (`copy:<origin id>` in the tag column);
+  (2) untag removed copies only locally — now told to the server (tombstones);
+  (3) new versions went up as time zero — named+dated the moment they are
+  work (stampChangedContent; untouchedStrip moved to changeStamps.ts);
+  (4) a tag arriving from the other device landed on version objects the
+  pull threw away (settle() renumbers by copying) — the tag rides in the row
+  now, both late tag loops and the versionTags list are gone; (5) a change
+  made just as a pull arrives was scheduled to push and then the pull cleared
+  the flag — marked after clearing now (accountFlow, kept-local branch).
+  Also: leaving a setup REMOVES copies (was: emptied them, blank tabs stayed);
+  untag re-sorts every frame in the setup so tabs renumber.
+- Text typed under a shot was never sent on its own (mutated in place, nothing
+  marked) — noteTextEdit marks the shot; tables the same.
+- A 9:16 portrait project opened in whatever view the previous project left
+  (after a fitting: LOOKS only, SHOT hidden) — opens with SHOT now.
+Test/harness: leaveSetups door; tag door answers the untag dialog too; the
+whole-agree wait dumps both logs + tag lines on failure; typeUnder retries
+PIC/TXT and types into the VISIBLE box.
+Rules confirmed with Roman: a shot's own versions are never touched by
+tagging; on untag only the origin stays (as a plain version on its frame).
+
+STILL OPEN from Roman's by-hand notes (15 Sept):
+- An arrow pressed on a version in the strips scrolls that row to mid-screen
+  — keep the scroll where it is (look for the centring on version change).
+- The text box under a PORTRAIT shot on the iPad did not show in the simulator
+  (run 260) — check by hand on the iPad; part 10 types on the desktop for B.
+NEXT: full run 265 → 4 STEPS SAVE v4.9.212 · #515 → deploy app AND backend
+(restore endpoint, NOT EXISTS guard on inserts).
+
+### THEN (was): part 8 … part 9 … the closing pass — all DONE, see above.
 
 ### DONE 14 September evening — v4.9.209 · #512 (app only), deployed
 Group story flow in SORT BY: arrows and drag now write the group's own order
@@ -173,8 +208,7 @@ everything green except LATER 3 (known).
    (a shot added after 3 is 3#1 so the script's numbers stay). Find every
    place that reads or writes it first: actions.ts 'new', pdf.ts, files.ts,
    exports, the sort cards. Decide with Roman what "after 3" is called.
-2. **The whole-day test** — outline in `e2e/29-THE-WHOLE-DAY.outline.md`;
-   build in parts, each green before the next.
+2. ~~The whole-day test~~ — DONE 15 September: `e2e/29-big-day.spec.ts`, ten parts.
 3. **Unsent work of OTHER projects uploads by itself when the user uses the
    app** — today only the open project is retried (`retryPendingSyncs`); a
    project worked on offline and then left sits in the list as "on this device

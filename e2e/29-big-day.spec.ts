@@ -345,7 +345,7 @@ test('big day, part 4: strips, needs, notes and setups, held on both devices',
     const desktop = await Device.open(browser, 'desktop', token);
     const ipad = await Device.open(browser, 'ipad', token, true);
     type Shot = { label: string; setup: string | null; needsOn: string[]; counters: Record<string, number>; noteCard: string;
-      versions: Record<string, Array<{ tag: string | null }>> };
+      versions: Record<string, Array<{ label: string; picture: boolean; tag: string | null }>> };
     type Whole = { shots: Shot[]; strips: string[]; categories: string[]; setups: Array<{ name: string; color: number }> };
     const parse = (w: string) => JSON.parse(w) as Whole;
 
@@ -485,6 +485,68 @@ test('big day, part 4: strips, needs, notes and setups, held on both devices',
     expect.soft(w.setups.map((s) => s.name), 'setup A on both').toContain('A — KITCHEN');
     expect.soft(w.shots[0].setup, 'shot 1 in setup A on both').toBe('A — KITCHEN');
     expect.soft(w.shots[1].setup, 'shot 2 in setup A on both').toBe('A — KITCHEN');
+
+    // ── a picture tagged into setup A (#516, Roman by hand, 15 September) ──
+    // Every shot in the setup gets ONE copy; a shot's own versions are never
+    // touched; a second tag from the other device adds one more copy, not a
+    // second of the first; untag takes every copy away and leaves the origin
+    // as a plain version on its frame.
+    type Ver = { label: string; picture: boolean; tag: string | null };
+    const verOf = (shot: { versions: Record<string, Ver[]> }) => shot.versions.ver ?? [];
+    const show = (vs: Ver[]) => vs.map((v) => `${v.label}${v.picture ? '📷' : ''}${v.tag ? `[${v.tag}]` : ''}`).join(' · ');
+    const copies = (vs: Ver[]) => vs.filter((v) => v.tag === 'copy').length;
+    const own = (vs: Ver[]) => vs.filter((v) => !v.tag).length;
+
+    say('── desktop: shot 2 gets two own versions; shot 1 gets a picture, tagged into setup A ──');
+    await desktop.leaveSetups();
+    await desktop.showStrip('ver');
+    await desktop.pressNewVersion(1, 'ver');
+    await desktop.writeOnCard(1, 'ver', 0, 'MINE ONE');
+    await desktop.writeOnCard(1, 'ver', 1, 'MINE TWO');
+    await desktop.uploadPicture(0, 'ver', RED_PNG);
+    await desktop.settle();
+    await desktop.tagVersion(0, 'ver', 0);
+    await desktop.settle();
+    w = parse(await Device.waitUntilWholeAgrees(desktop, ipad, 'WORDS: THE TAGGED PICTURE DID NOT MEET ON BOTH DEVICES.'));
+    say(`   shot 1 VER on both: ${show(verOf(w.shots[0]))}`);
+    say(`   shot 2 VER on both: ${show(verOf(w.shots[1]))}`);
+    expect.soft(verOf(w.shots[0]).filter((v) => v.tag === 'origin').length, 'shot 1 holds the origin').toBe(1);
+    expect.soft(copies(verOf(w.shots[1])), 'shot 2 holds exactly one copy').toBe(1);
+    expect.soft(verOf(w.shots[1]).find((v) => v.tag === 'copy')?.picture, 'the copy has the picture').toBe(true);
+    expect.soft(own(verOf(w.shots[1])), 'shot 2 keeps its own two versions').toBe(2);
+
+    say('── desktop puts shot 4 into setup A; iPad tags a picture of its own on shot 4 ──');
+    await desktop.putSetupOnFrame(3, setupA);
+    await desktop.leaveSetups();
+    await desktop.settle();
+    w = parse(await Device.waitUntilWholeAgrees(desktop, ipad, 'WORDS: SHOT 4 JOINING THE SETUP DID NOT MEET.'));
+    say(`   shot 4 VER on both: ${show(verOf(w.shots[3]))}`);
+    expect.soft(copies(verOf(w.shots[3])), 'shot 4 got exactly one copy on joining').toBe(1);
+    await ipad.showStrip('ver');
+    await ipad.pressNewVersion(3, 'ver');
+    const shot4 = await ipad.versionLabels(3, 'ver');
+    await ipad.uploadPicture(3, 'ver', RED_PNG);
+    await ipad.settle();
+    await ipad.tagVersion(3, 'ver', shot4.length - 1);
+    await ipad.settle();
+    w = parse(await Device.waitUntilWholeAgrees(desktop, ipad, "WORDS: THE IPAD'S TAG DID NOT MEET."));
+    for (const i of [0, 1, 3]) say(`   shot ${i + 1} VER on both: ${show(verOf(w.shots[i]))}`);
+    expect.soft(copies(verOf(w.shots[0])), 'shot 1: one copy (of the iPad\'s)').toBe(1);
+    expect.soft(copies(verOf(w.shots[1])), 'shot 2: two copies, one of each origin').toBe(2);
+    expect.soft(copies(verOf(w.shots[3])), 'shot 4: still one copy (of the desktop\'s)').toBe(1);
+    expect.soft(own(verOf(w.shots[1])), 'shot 2 still keeps its own two').toBe(2);
+    expect.soft(verOf(w.shots[3]).filter((v) => v.tag === 'origin').length, 'shot 4 holds its origin').toBe(1);
+
+    say('── desktop untags its picture on shot 1: the copies go, the origin stays as a plain version ──');
+    await desktop.tagVersion(0, 'ver', verOf(parse(await desktop.whole()).shots[0]).findIndex((v) => v.tag === 'origin'));
+    await desktop.settle();
+    w = parse(await Device.waitUntilWholeAgrees(desktop, ipad, 'WORDS: THE UNTAG DID NOT MEET.'));
+    for (const i of [0, 1, 3]) say(`   shot ${i + 1} VER on both: ${show(verOf(w.shots[i]))}`);
+    expect.soft(verOf(w.shots[0]).filter((v) => v.tag === 'origin').length, 'shot 1: no origin any more').toBe(0);
+    expect.soft(verOf(w.shots[0]).filter((v) => !v.tag && v.picture).length, 'shot 1: the picture stays as its own version').toBe(1);
+    expect.soft(copies(verOf(w.shots[1])), 'shot 2: one copy left (the iPad\'s)').toBe(1);
+    expect.soft(copies(verOf(w.shots[3])), 'shot 4: no copy left').toBe(0);
+    expect.soft(own(verOf(w.shots[1])), 'shot 2 still keeps its own two').toBe(2);
 
     const setupB = await ipad.newSetup('B — GARDEN');
     await ipad.putSetupOnFrame(2, setupB);
@@ -964,3 +1026,204 @@ test('big day, part 8: an offline day — both work apart, both come back, nothi
     await ipad.close();
   });
 
+
+// PART 9 — restore points, delete and recover. A restore point made, more work
+// done and seen on the iPad, then the desktop goes back to the point: the
+// iPad follows. The project deleted on the desktop leaves the list on the
+// server; recovered from the iPad, it is back whole on both.
+test('big day, part 9: restore points, delete and recover a project, on both devices',
+  async ({ browser }) => {
+    const { token } = await freshAccount();
+    const desktop = await Device.open(browser, 'desktop', token);
+    const ipad = await Device.open(browser, 'ipad', token, true);
+    type Whole = { shots: Array<{ label: string; text: string }> };
+    const parse = (w: string) => JSON.parse(w) as Whole;
+
+    const id = await desktop.newProjectOfKind('BIG DAY — RESTORE', 'landscape', 5);
+    await desktop.settle();
+    expect(id, 'the project must reach the server').not.toBeNull();
+    await ipad.openProject(id!);
+    await ipad.settle();
+    await Device.waitUntilWholeAgrees(desktop, ipad, 'RESTORE: THE IPAD DOES NOT HOLD THE FIVE SHOTS.');
+
+    // ── a point to come back to ──────────────────────────────────────────
+    say('── desktop names shot 1 BEFORE and makes a restore point ──');
+    await desktop.renameFrame(0, 'BEFORE');
+    await desktop.push();
+    await desktop.settle();
+    await desktop.makeRestorePoint();
+    const points = await desktop.restorePoints();
+    say(`   restore points: ${points.length}`);
+    expect(points.length, 'a restore point exists').toBeGreaterThan(0);
+    const point = points.reduce((a, b) => (a.created_at >= b.created_at ? a : b));   // the newest = "here"
+    const before = parse(await Device.waitUntilWholeAgrees(desktop, ipad, 'RESTORE: BEFORE DID NOT REACH THE IPAD.'));
+    expect.soft(before.shots[0].label, 'BEFORE on both').toBe('BEFORE');
+
+    // ── more work, seen on the iPad ──────────────────────────────────────
+    say('── desktop: shot 1 → AFTER, text under 2, delete shot 5 ──');
+    await desktop.renameFrame(0, 'AFTER');
+    await desktop.typeUnder(1, 'later work');
+    await desktop.deleteFrame(4);
+    say(`   desktop straight after the delete: ${parse(await desktop.whole()).shots.length} shots`);
+    await desktop.push();
+    await desktop.settle();
+    say(`   desktop after the push: ${parse(await desktop.whole()).shots.length} shots`);
+    const after = parse(await Device.waitUntilWholeAgrees(desktop, ipad, 'RESTORE: THE LATER WORK DID NOT REACH THE IPAD.'));
+    if (after.shots.length !== 4) {
+      for (const d of [desktop, ipad]) {
+        const lines = (await d.log()).filter((l) => /delet|tombstone|rescued|vanish|keep|push|pull|accepted|frames changed/i.test(l));
+        say(`${d.name} log (newest first):\n${lines.slice(0, 40).map((l) => '    ' + l.slice(0, 190)).join('\n')}`);
+      }
+    }
+    expect.soft(after.shots.length, 'four shots after the delete, on both').toBe(4);
+    expect.soft(after.shots[0].label, 'AFTER on both').toBe('AFTER');
+
+    // ── back to the point; the iPad follows ──────────────────────────────
+    say('── desktop restores to the point ──');
+    await desktop.restoreTo(point.id);
+    await desktop.settle();
+    const restored = parse(await Device.waitUntilWholeAgrees(desktop, ipad, 'RESTORE: THE IPAD DID NOT FOLLOW THE RESTORE.', 120_000));
+    say(`   after the restore, both hold: ${restored.shots.map((s) => s.label).join(' ')}`);
+    expect.soft(restored.shots.length, 'five shots again on both').toBe(5);
+    expect.soft(restored.shots[0].label, 'BEFORE again on both').toBe('BEFORE');
+    expect.soft(restored.shots[1].text, 'the later text is gone on both').toBe('');
+
+    // ── delete on the desktop, recover from the iPad ─────────────────────
+    say('── iPad moves to another project; desktop deletes RESTORE; iPad recovers it ──');
+    const other = await ipad.newProjectOfKind('BIG DAY — OTHER', 'landscape', 2);
+    await ipad.settle();
+    expect(other, 'the other project must reach the server').not.toBeNull();
+    await desktop.deleteThisProject();
+    await desktop.page.waitForTimeout(1500);
+    let listed = await Device.projectsWithState(token);
+    say(`   the server's list: ${listed.map((p) => `${p.name}${p.deleted ? ' (deleted)' : ''}`).join(' · ')}`);
+    expect.soft(listed.find((p) => p.name === 'BIG DAY — RESTORE')?.deleted, 'RESTORE is deleted on the server').toBe(true);
+    expect.soft((await desktop.read()).frames.length, 'the desktop shows nothing of it any more').toBe(0);
+
+    await ipad.recoverProject(id!);
+    await ipad.page.waitForTimeout(1000);
+    listed = await Device.projectsWithState(token);
+    expect.soft(listed.find((p) => p.name === 'BIG DAY — RESTORE')?.deleted, 'RESTORE is back on the server').toBe(false);
+    await ipad.openProject(id!);
+    await ipad.settle();
+    await desktop.openProject(id!);
+    await desktop.settle();
+    const back = parse(await Device.waitUntilWholeAgrees(desktop, ipad, 'RESTORE: THE RECOVERED PROJECT DIFFERS BETWEEN THE DEVICES.'));
+    expect.soft(back, 'the recovered project is what it was').toEqual(restored);
+
+    await desktop.close();
+    await ipad.close();
+  });
+
+// PART 10 — the closing pass. Three projects of three kinds, made from both
+// sides; each worked on by the device that did NOT make it, while the other
+// device is on a different project; then switched around, then both devices
+// reloaded — and every project must read identically on both, and exactly as
+// it did before the reload. The day ends with nothing left on one device only.
+test('big day, part 10: the closing pass — switching, reloading, every project identical on both devices',
+  async ({ browser }) => {
+    const { token } = await freshAccount();
+    const desktop = await Device.open(browser, 'desktop', token);
+    const ipad = await Device.open(browser, 'ipad', token, true);
+    type Whole = { name: string | null; kind: string; shots: Array<{ label: string; text: string; picture: boolean }>;
+      groups: Array<{ name: string; shots: string[] }> };
+    const parse = (w: string) => JSON.parse(w) as Whole;
+    const agreed: Record<string, string> = {};   // the last agreed text of each project
+
+    // ── three projects, from both sides ──────────────────────────────────
+    say('── desktop makes A (landscape) and C (fitting); iPad makes B (portrait) ──');
+    const A = await desktop.newProjectOfKind('BIG DAY — A LANDSCAPE', 'landscape', 4);
+    await desktop.settle();
+    const B = await ipad.newProjectOfKind('BIG DAY — B PORTRAIT', 'portrait', 3);
+    await ipad.settle();
+    const C = await desktop.newProjectOfKind('BIG DAY — C FITTING', 'fitting', 3);
+    await desktop.settle();
+    expect(A, 'A must reach the server').not.toBeNull();
+    expect(B, 'B must reach the server').not.toBeNull();
+    expect(C, 'C must reach the server').not.toBeNull();
+
+    // ── each worked on by the OTHER device, while the two are on different projects ──
+    say('── iPad works on A while the desktop works on C ──');
+    await ipad.openProject(A!);
+    await ipad.settle();
+    await ipad.setView('main');
+    await ipad.renameFrame(0, 'A ONE');
+    await ipad.typeUnder(1, 'from the ipad');
+    await ipad.putPicture(2, 'data:image/png;base64,' + RED_PNG);
+    await ipad.settle();
+    await desktop.renameFrame(0, 'C ONE');
+    await desktop.typeUnder(1, 'fitting notes');
+    await desktop.settle();
+
+    say('── desktop comes to A: the iPad\'s work is there ──');
+    await desktop.openProject(A!);
+    await desktop.settle();
+    let w = parse(agreed.A = await Device.waitUntilWholeAgrees(desktop, ipad, 'CLOSING: A DIFFERS BETWEEN THE DEVICES.'));
+    say(`   A on both: ${w.shots.map((s) => `${s.label}${s.text ? `(${s.text})` : ''}${s.picture ? '📷' : ''}`).join(' · ')}`);
+    expect.soft(w.name, 'A keeps its name').toBe('BIG DAY — A LANDSCAPE');
+    expect.soft(w.shots[0].label, 'A ONE on both').toBe('A ONE');
+    expect.soft(w.shots[1].text, 'the iPad\'s text on both').toBe('from the ipad');
+    expect.soft(w.shots[2].picture, 'the iPad\'s picture on both').toBe(true);
+
+    say('── both come to C: the desktop\'s work is there ──');
+    await ipad.openProject(C!);
+    await ipad.settle();
+    await desktop.openProject(C!);
+    await desktop.settle();
+    w = parse(agreed.C = await Device.waitUntilWholeAgrees(desktop, ipad, 'CLOSING: C DIFFERS BETWEEN THE DEVICES.'));
+    say(`   C on both: ${w.shots.map((s) => `${s.label}${s.text ? `(${s.text})` : ''}`).join(' · ')}`);
+    expect.soft(w.kind, 'C stays a fitting').toBe('fitting');
+    expect.soft(w.shots[0].label, 'C ONE on both').toBe('C ONE');
+    expect.soft(w.shots[1].text, 'the desktop\'s text on both').toBe('fitting notes');
+
+    say('── both come to B: desktop renames and makes a group; iPad types ──');
+    await desktop.openProject(B!);
+    await desktop.settle();
+    await ipad.openProject(B!);
+    await ipad.settle();
+    await ipad.setView('main');
+    await desktop.renameFrame(0, 'B ONE');
+    await desktop.makeGroup('B GROUP', [0, 1]);
+    await desktop.settle();
+    await ipad.typeUnder(2, 'last words');
+    await ipad.settle();
+    w = parse(agreed.B = await Device.waitUntilWholeAgrees(desktop, ipad, 'CLOSING: B DIFFERS BETWEEN THE DEVICES.'));
+    say(`   B on both: ${w.shots.map((s) => `${s.label}${s.text ? `(${s.text})` : ''}`).join(' · ')} | groups: ${w.groups.map((g) => `${g.name}[${g.shots.join(',')}]`).join(' ')}`);
+    expect.soft(w.kind, 'B stays a portrait').toBe('portrait');
+    expect.soft(w.shots[0].label, 'B ONE on both').toBe('B ONE');
+    expect.soft(w.groups.map((g) => g.name), 'B GROUP on both').toContain('B GROUP');
+    expect.soft(w.shots[2].text, 'last words on both').toBe('last words');
+
+    // ── work done on A while the other device is elsewhere must be there when it comes ──
+    say('── desktop goes back to A and renames shot 2 while the iPad stays on B ──');
+    await desktop.openProject(A!);
+    await desktop.settle();
+    await desktop.renameFrame(1, 'A TWO');
+    await desktop.settle();
+    await ipad.openProject(A!);
+    await ipad.settle();
+    w = parse(agreed.A = await Device.waitUntilWholeAgrees(desktop, ipad, 'CLOSING: A TWO DID NOT REACH THE IPAD.'));
+    expect.soft(w.shots[1].label, 'A TWO on both').toBe('A TWO');
+    expect.soft(w.shots[1].text, 'the iPad\'s text survived the rename').toBe('from the ipad');
+
+    // ── reload both; every project identical, and exactly as before ──────
+    say('── both devices reload; every project must read as it did ──');
+    await desktop.reload();
+    await ipad.reload();
+    for (const [name, id] of [['A', A!], ['B', B!], ['C', C!]] as Array<[string, string]>) {
+      await desktop.openProject(id);
+      await desktop.settle();
+      await ipad.openProject(id);
+      await ipad.settle();
+      const now = await Device.waitUntilWholeAgrees(desktop, ipad, `CLOSING: AFTER THE RELOAD, ${name} DIFFERS BETWEEN THE DEVICES.`);
+      expect.soft(now, `${name} after the reload is exactly what it was`).toBe(agreed[name]);
+    }
+
+    const listed = await Device.projectNames(token);
+    for (const n of ['BIG DAY — A LANDSCAPE', 'BIG DAY — B PORTRAIT', 'BIG DAY — C FITTING']) {
+      expect.soft(listed, `"${n}" is on the server's list`).toContain(n);
+    }
+
+    await desktop.close();
+    await ipad.close();
+  });

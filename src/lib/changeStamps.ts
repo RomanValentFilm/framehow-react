@@ -14,6 +14,33 @@
 
 import { useStore, blankNeeds, blankNote } from '../store/state';
 import type { Frame, Version, Stroke } from '../store/state';
+import { newVersionId } from './ids';
+
+/**
+ * IS THIS STRIP STILL EMPTY — as in, has anyone ever put anything in it (#358).
+ *
+ * True only for the single blank version the app makes for itself when a strip
+ * is first shown, so the card has something to draw. Nobody made it. Anything at
+ * all — a stroke, a picture, a note, a star, a setup tag, a hidden flag, or a
+ * second version — makes it work, and work is both sent and kept.
+ *
+ * Deliberately narrow. A version that has ever reached the server keeps its
+ * name, so nothing that already exists anywhere can be dropped by this.
+ */
+export function untouchedStrip(vs: Version[] | undefined): boolean {
+  if (!vs || vs.length !== 1) return false;
+  const v = vs[0];
+  const stars = typeof v.stars === 'number' ? v.stars : (v.starred ? 1 : 0);
+  return !v.serverVersionId
+    && v.type === 'empty'
+    && !(v.strokes && v.strokes.length > 0)
+    && !v.bgImage
+    && !v.r2Key
+    && !v.note
+    && !v.setupTagged
+    && !v.hidden
+    && !stars;
+}
 
 /** What the row looked like last time we looked, and when we first saw it that
  *  way. */
@@ -189,7 +216,20 @@ export function stampChangedContent(
     if (!f.serverFrameId) return;   // versions below are keyed by server id
 
     for (const stripId of Object.keys(s.stripVersions)) {
-      for (const v of s.stripVersions[stripId]?.[f.id] ?? []) {
+      const held = s.stripVersions[stripId]?.[f.id];
+      // A NEW VERSION IS NAMED THE MOMENT IT IS WORK (#516).
+      //
+      // Change times are filed by server name, and a version had none until its
+      // first push handed one out — so a version made here went up as time zero,
+      // the oldest time there is, and lost to whatever the server held. Copies
+      // made by tagging a picture into a setup were thrown out that way, and the
+      // pills came and went. A blank placeholder in an untouched strip is not
+      // work (#358) and stays nameless; everything else is named here, on this
+      // device, and dated the moment it is noticed — as a shot is (#405).
+      if (held && !untouchedStrip(held)) {
+        for (const v of held) if (!v.serverVersionId) v.serverVersionId = newVersionId();
+      }
+      for (const v of held ?? []) {
         if (v.serverVersionId) note(`v/${v.serverVersionId}`, versionFp(v));
       }
     }

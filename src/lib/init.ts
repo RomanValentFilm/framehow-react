@@ -24,6 +24,7 @@ import {
   stripScrollId,
   stripTabPrefix,
   setVersionStars,
+  noteTextEdit,
 } from './helpers';
 import type { StripType } from '../store/state';
 import { isDebugDevice, trace } from './syncTrace';
@@ -190,7 +191,10 @@ export function initFramehow(): void {
     if (target.matches('textarea.frame-text-edit[data-textfid]')) {
       const fid = parseInt(target.dataset.textfid!);
       const f = state().frames.find((fr) => fr.id === fid);
-      if (f) f.textContent = (target as HTMLTextAreaElement).value;
+      if (f) {
+        noteTextEdit(f, f.textContent !== (target as HTMLTextAreaElement).value);   // #516
+        f.textContent = (target as HTMLTextAreaElement).value;
+      }
       _resetTextFlushTimer();
     }
   });

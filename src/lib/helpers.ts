@@ -240,6 +240,22 @@ export function tableHTML(fid: number, td?: TableData | null): string {
   return h;
 }
 
+/**
+ * WORDS TYPED UNDER A SHOT ARE A CHANGE (#516, run 263).
+ *
+ * The text box writes straight into the shot as you type — no store update,
+ * so nothing told the sync there was something to send. The push on leaving
+ * the box found nothing marked and left without a word; the next pull then
+ * recorded the shot as matching the server, and the words never went up until
+ * some other change happened to carry them. Every other edit marks its shot;
+ * so does this one, and the table the same way.
+ */
+export function noteTextEdit(f: Frame, changed: boolean): void {
+  if (!changed) return;
+  if (f.serverFrameId) markFrameDirty(f.serverFrameId);
+  markSomethingToSend();
+}
+
 export function saveTableFromDOM(tbl: HTMLElement): void {
   const fid = parseInt((tbl as HTMLElement).dataset.tblfid!);
   const f = state().frames.find((fr) => fr.id === fid);
@@ -252,14 +268,19 @@ export function saveTableFromDOM(tbl: HTMLElement): void {
     tr.querySelectorAll('textarea').forEach((ta) => cells.push((ta as HTMLTextAreaElement).value));
     rows.push(cells);
   });
+  const before = JSON.stringify(f.tableData ?? null);
   f.tableData = { headers, rows };
+  noteTextEdit(f, before !== JSON.stringify(f.tableData));
 }
 
 export function saveOpenTextEdits(): void {
   document.querySelectorAll('textarea.frame-text-edit[data-textfid]').forEach((ta) => {
     const fid = parseInt((ta as HTMLElement).dataset.textfid!);
     const f = state().frames.find((fr) => fr.id === fid);
-    if (f) f.textContent = (ta as HTMLTextAreaElement).value;
+    if (!f) return;
+    const value = (ta as HTMLTextAreaElement).value;
+    noteTextEdit(f, f.textContent !== value);
+    f.textContent = value;
   });
 }
 

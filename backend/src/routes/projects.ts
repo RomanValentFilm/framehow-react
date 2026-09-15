@@ -1127,17 +1127,26 @@ projects.post("/:id/restore/:snapshotId", async (c) => {
   for (const f of tree.frames) {
     stmts.push(
       c.env.DB.prepare(
-        `INSERT INTO frames (id, strip_id, label, sort_order, crop_w, crop_h, text_content, table_data, version_label, strip_labels, hidden, note, scribbles, updated_at, needs, notes, setup_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).bind(f.id, f.strip_id, f.label, f.sort_order, f.crop_w, f.crop_h, f.text_content, f.table_data, f.version_label, f.strip_labels, f.hidden, f.note ?? null, f.scribbles ?? null, now, f.needs ?? null, f.notes ?? null, f.setup_id ?? null),
+        // A RESTORE IS A CHANGE MADE NOW (#515, run 248). The rows came back
+        // with no change time: the other device's dated copies then beat them
+        // on its next push, and a shot deleted before the restore still had
+        // its deletion record, so it was deleted again on arrival. Dated now,
+        // and the deletion records of what comes back are cleared below.
+        `INSERT INTO frames (id, strip_id, label, sort_order, crop_w, crop_h, text_content, table_data, version_label, strip_labels, hidden, note, scribbles, updated_at, needs, notes, setup_id, content_changed_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(f.id, f.strip_id, f.label, f.sort_order, f.crop_w, f.crop_h, f.text_content, f.table_data, f.version_label, f.strip_labels, f.hidden, f.note ?? null, f.scribbles ?? null, now, f.needs ?? null, f.notes ?? null, f.setup_id ?? null, now),
     );
+    stmts.push(c.env.DB.prepare(
+      "DELETE FROM project_deletions WHERE project_id = ? AND entity_type = 'frame' AND entity_id = ?").bind(project.id, f.id));
   }
   for (const v of tree.versions) {
     stmts.push(
       c.env.DB.prepare(
-        "INSERT INTO versions (id, frame_id, label, type, hidden, starred, note, updated_at, tags) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      ).bind(v.id, v.frame_id, v.label, v.type, v.hidden, v.starred, v.note ?? null, now, v.tags ?? null),
+        "INSERT INTO versions (id, frame_id, label, type, hidden, starred, note, updated_at, tags, content_changed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      ).bind(v.id, v.frame_id, v.label, v.type, v.hidden, v.starred, v.note ?? null, now, v.tags ?? null, now),
     );
+    stmts.push(c.env.DB.prepare(
+      "DELETE FROM project_deletions WHERE project_id = ? AND entity_type = 'version' AND entity_id = ?").bind(project.id, v.id));
   }
   for (const img of tree.images) {
     stmts.push(
@@ -1813,7 +1822,8 @@ function appendFrameInserts(db: D1Database, stmts: D1PreparedStatement[], payloa
     stmts.push(
       db.prepare(
         `INSERT INTO frames (id, strip_id, label, sort_order, crop_w, crop_h, text_content, table_data, version_label, strip_labels, hidden, note, scribbles, updated_at, changed_offline, needs, notes, setup_id, content_changed_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+         WHERE NOT EXISTS (SELECT 1 FROM project_deletions WHERE entity_type = 'frame' AND entity_id = ?)
          ON CONFLICT(id) DO UPDATE SET
            content_changed_at = excluded.content_changed_at,
            strip_id = excluded.strip_id, label = excluded.label,
@@ -1826,14 +1836,15 @@ function appendFrameInserts(db: D1Database, stmts: D1PreparedStatement[], payloa
            needs = excluded.needs, notes = excluded.notes, setup_id = excluded.setup_id
          WHERE frames.content_changed_at IS NULL
             OR (excluded.content_changed_at IS NOT NULL AND excluded.content_changed_at >= frames.content_changed_at)`,
-      ).bind(f.id, f.strip_id, f.label, f.sort_order, f.crop_w, f.crop_h, f.text_content, f.table_data, f.version_label, f.strip_labels, f.hidden ? 1 : 0, f.note ?? null, f.scribbles ?? null, now, f.changed_offline ? 1 : 0, f.needs ?? null, f.notes ?? null, f.setup_id ?? null, f.content_changed_at ?? null),
+      ).bind(f.id, f.strip_id, f.label, f.sort_order, f.crop_w, f.crop_h, f.text_content, f.table_data, f.version_label, f.strip_labels, f.hidden ? 1 : 0, f.note ?? null, f.scribbles ?? null, now, f.changed_offline ? 1 : 0, f.needs ?? null, f.notes ?? null, f.setup_id ?? null, f.content_changed_at ?? null, f.id),
     );
   }
   for (const v of payload.versions) {
     stmts.push(
       db.prepare(
         `INSERT INTO versions (id, frame_id, label, type, hidden, starred, note, updated_at, tags, content_changed_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+         WHERE NOT EXISTS (SELECT 1 FROM project_deletions WHERE entity_type = 'version' AND entity_id = ?)
          ON CONFLICT(id) DO UPDATE SET
            content_changed_at = excluded.content_changed_at,
            frame_id = excluded.frame_id, label = excluded.label, type = excluded.type,
@@ -1841,7 +1852,7 @@ function appendFrameInserts(db: D1Database, stmts: D1PreparedStatement[], payloa
            updated_at = excluded.updated_at, tags = excluded.tags
          WHERE versions.content_changed_at IS NULL
             OR (excluded.content_changed_at IS NOT NULL AND excluded.content_changed_at >= versions.content_changed_at)`,
-      ).bind(v.id, v.frame_id, v.label, v.type, v.hidden ? 1 : 0, Number(v.starred) || 0, v.note ?? null, now, v.tags ?? null, v.content_changed_at ?? null),
+      ).bind(v.id, v.frame_id, v.label, v.type, v.hidden ? 1 : 0, Number(v.starred) || 0, v.note ?? null, now, v.tags ?? null, v.content_changed_at ?? null, v.id),
     );
   }
   for (const img of payload.images) {
