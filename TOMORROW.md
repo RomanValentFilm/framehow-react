@@ -80,7 +80,10 @@ orders or get out.
 
 ## THE LIST — 10 September, evening (Roman's order)
 
-dev is **v4.9.213 · #516** (deployed 16 September 14:45, app only; commit 8bc8339). Backend last deployed with 212. Next number: **v4.9.214 · #517**.
+dev is **v4.9.214 · #517** (deployed 16 September 15:00, app only; commit e9534a5). Backend last deployed with 212. Next number: **v4.9.215 · #518**.
+
+### 16 September, 15:00 — v4.9.214 · #517
+Shooting order: unchanged cards are REUSED (cloned, thumbnails included; `reuseUnchangedItems`), only the changed card is built; drawn thumbnails not re-rasterised (`data-rastered`); the page's scroll position is kept across a rebuild (the neighbour-anchor idea nudged the page by one card — gone); the active card/break is framed with a box-shadow, not a 3px border (it grew 4 px on activation and everything below jumped). Part 6 green (273). Full suite still due.
 
 ### 16 September afternoon — v4.9.213 · #516 (Roman's by-hand remarks on 212)
 - Card follows the tagged photo (tag and untag) — the photo moves to the front, the card stayed on the old slot.

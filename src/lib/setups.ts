@@ -8,7 +8,8 @@ import { recordTombstone } from './accountFlow';
 import type { Setup, StripType } from '../store/state';
 import { getStripVersions, ensureStripVersions, stripTabPrefix, relabelStripVersions, reorderByStars, getStripActiveTab, setStripActiveTab } from './helpers';
 import { showToast, showConfirm } from './modals';
-import { flushSyncNow } from './currentProject';
+import { flushSyncNow, getCurrentProject } from './currentProject';
+import { stampChangedContent } from './changeStamps';
 import { trace } from './syncTrace';
 
 // ─── Setup bar rendering ───────────────────────────────────────────────
@@ -636,6 +637,7 @@ function removeVersions(fid: number, strip: StripType, gone: (v: import('../stor
   for (let i = vers.length - 1; i >= 0; i--) {
     if (!gone(vers[i])) continue;
     recordTombstone('version', vers[i].serverVersionId);
+    sayTagChange(`copy ${vers[i].serverVersionId?.slice(0, 6) ?? '(unnamed)'} removed from frame ${fid}`);
     vers.splice(i, 1);
     removed++;
   }
@@ -828,6 +830,7 @@ function executeUntag(fid: number, strip: StripType, ver: import('../store/state
   // The card stays on the photo it was showing, wherever it now sorts (#517).
   const stillAt = getStripVersions(fid, strip).indexOf(ver);
   if (stillAt >= 0) setStripActiveTab(fid, strip, stillAt);
+  stampChangedContent(getCurrentProject().projectId);   // (#518)
 
   bumpRenderTick();
   const renderAll = (window as any).__fh_renderAll;
@@ -904,6 +907,7 @@ function applyStripTag(fid: number, vi: number, strip: StripType): void {
   // card stayed on slot 3, showing some other picture. It stays on the photo.
   const nowAt = getStripVersions(fid, strip).indexOf(ver);
   if (nowAt >= 0) setStripActiveTab(fid, strip, nowAt);
+  stampChangedContent(getCurrentProject().projectId);   // the honest "when", now — not the autosave's (#518)
 
   bumpRenderTick();
   const renderAll = (window as any).__fh_renderAll;

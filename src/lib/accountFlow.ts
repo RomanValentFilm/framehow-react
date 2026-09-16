@@ -2434,6 +2434,7 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   // nothing left to carry. The shot stayed on the server and came back on
   // the next pull. Same fault as #496, for deletions.
   const sentTombstones = [..._pendingTombstones];
+  if (sentTombstones.length) trace(`  deletions sent: ${sentTombstones.map((t) => `${t.entity_type} ${t.entity_id.slice(0, 6)}`).join(', ')}`);
   const res = await api.post<CloudProjectTree & {
     conflict?: boolean;
     /** Frames the server would not take because they changed elsewhere.
@@ -2873,6 +2874,14 @@ async function applyCloudTreeToStore(
    * its own time; a version deleted elsewhere goes. `built` is the server's
    * side already turned into local versions; `local` is what this device had.
    */
+  // VERSIONS THE MERGE KEPT AS MINE (#518, run 274). The stamp after a pull
+  // dates every version the server sent with the server's time — right for
+  // what was taken from the server, wrong for a version this device had just
+  // changed and the merge KEPT: an untag made in the second before a pull was
+  // dated with the server's old time, went up as "not newer", and the other
+  // device kept its tag. Frames kept local were already left out; versions
+  // kept local are now too.
+  const keptMineVersionIds = new Set<string>();
   const mergeVersionsPerVersion = (
     built: Version[],
     local: Version[] | undefined,
@@ -2905,7 +2914,10 @@ async function applyCloudTreeToStore(
       if ((lv.setupTagged ?? 'none') !== theirTag) {
         trace(`    version ${lv.serverVersionId.slice(0, 6)}: tag mine "${lv.setupTagged ?? 'none'}" theirs "${theirTag}" · mine@${mineAt ?? 'none'} theirs@${theirsAt ?? 'none'} → ${takeMine ? 'keeping mine' : 'taking theirs'}`);
       }
-      if (takeMine) out[i] = { ...lv, id: out[i].id, bgImage: lv.bgImage ?? out[i].bgImage };
+      if (takeMine) {
+        keptMineVersionIds.add(lv.serverVersionId);
+        out[i] = { ...lv, id: out[i].id, bgImage: lv.bgImage ?? out[i].bgImage };
+      }
     }
     return out;
   };
@@ -2913,6 +2925,7 @@ async function applyCloudTreeToStore(
   const tombstonedIds = new Set<string>();
   if (tree.deletions) {
     for (const d of tree.deletions) tombstonedIds.add(d.entity_id);
+    if (tree.deletions.length) trace(`  deletions arrived: ${tree.deletions.map((d) => `${d.entity_type} ${d.entity_id.slice(0, 6)}`).join(', ')}`);
   }
   for (const t of _pendingTombstones) tombstonedIds.add(t.entity_id);
 
@@ -3039,7 +3052,7 @@ async function applyCloudTreeToStore(
                 if ((list[heldAt].setupTagged ?? '') !== (readTagText(sv.tags).setupTagged ?? '')) {
                   trace(`    version ${sv.id.slice(0, 6)}: tag mine "${list[heldAt].setupTagged ?? 'none'}" theirs "${readTagText(sv.tags).setupTagged ?? 'none'}" · mine@${mineAt ?? 'none'} theirs@${theirsAt ?? 'none'} → ${takeTheirs ? 'taking theirs' : 'keeping mine'}`);
                 }
-                if (!takeTheirs) continue;
+                if (!takeTheirs) { keptMineVersionIds.add(sv.id); continue; }
                 const held = list[heldAt];
                 const colon = sv.type.indexOf(':');
                 const raw = colon === -1 ? sv.type : sv.type.slice(colon + 1);
@@ -3781,10 +3794,18 @@ async function applyCloudTreeToStore(
       receivedTimes.set(`f/${sf.id}`, sf.content_changed_at);
     }
     for (const sv of tree.versions) {
+      if (keptMineVersionIds.has(sv.id)) continue;      // kept ours — our own stamp stands (#518)
       if (sv.content_changed_at == null) continue;
       receivedTimes.set(`v/${sv.id}`, sv.content_changed_at);
     }
-    stampChangedContent(undefined, receivedTimes);
+    // UNDER THIS PROJECT'S NAME (#518, run 277). Left as "whatever project the
+    // memory had", opening another project stamped its shots under the OLD
+    // project's name; the first stamp under the new one — the autosave, or the
+    // first edit — then wiped the memory as a first look and dated everything
+    // zero, that edit included. It went up as the oldest thing there is, was
+    // refused, and the fetch put the old value back. Whether it bit depended
+    // on whether the autosave or the edit came first.
+    stampChangedContent(tree.project?.id ?? undefined, receivedTimes);
   }
 
   (window as any).__fh_renderAll?.();
@@ -5045,10 +5066,15 @@ function frameFingerprint(f: Frame, _sortOrder: number, s: { stripVersions: Reco
     f.note || '',
     String(f.scribbles?.length || 0),
   ];
-  // Include versions for each strip
+  // Include versions for each strip — unless it is the one blank placeholder
+  // a strip gets when it is first shown (#518, Roman's log 16 September).
+  // The push never sends that placeholder (#358), but it counted here: showing
+  // a strip made every shot look changed, 41 rows went up with no time, the
+  // server refused them all, and a forced fetch repainted everything. That was
+  // the "slower" strip button and the flash after it.
   for (const stripType of ['ver', 'floor', 'refs']) {
     const vers = s.stripVersions[stripType]?.[f.id];
-    if (vers) {
+    if (vers && !untouchedStrip(vers)) {
       for (const v of vers) {
         parts.push(
           `${stripType}:${v.label}|${v.type}|${v.hidden ? 1 : 0}|${versionStars(v)}|${v.setupTagged || ''}|${pictureFp(v.r2Key, v.bgImage)}|${strokesFp(v.strokes)}|${v.note || ''}`,
