@@ -80,7 +80,15 @@ orders or get out.
 
 ## THE LIST — 10 September, evening (Roman's order)
 
-dev is **v4.9.214 · #517** (deployed 16 September 15:00, app only; commit e9534a5). Backend last deployed with 212. Next number: **v4.9.215 · #518**.
+dev is **v4.9.215 · #518** (deployed 16 September 15:35, app only; commit 11764b5). Backend last deployed with 212. Next number: **v4.9.216 · #519**.
+
+### 16 September, 15:35 — v4.9.215 · #518 (from Roman's log of the strip presses)
+- frameFingerprint left the blank placeholder of a shown strip out (it counted; the push never sent it): every strip press pushed 41 shots undated → refused → forced fetch → full repaint. THE slow strip button.
+- Versions the merge KEPT as mine are left out of the server-dated set after a pull (keptMineVersionIds) — an untag made the second before a pull was dated with the server's old time and lost (run 274).
+- Tag/untag call stampChangedContent at once.
+- applyCloudTreeToStore stamps under tree.project.id: opening another project left the content-stamp memory on the OLD project; the first stamp under the new id wiped it as a first look → the first edit after switching went up dated 0 and lost (run 277, intermittent — autosave vs edit order).
+- Traces: deletions recorded / sent / arrived. Run 275 saw a copy stay on the iPad after an untag once (not reproduced in 276) — read these lines if it comes back.
+- Redraw of 44 shots measures 100–140 ms on a strip press (Roman's log) — trim later.
 
 ### 16 September, 15:00 — v4.9.214 · #517
 Shooting order: unchanged cards are REUSED (cloned, thumbnails included; `reuseUnchangedItems`), only the changed card is built; drawn thumbnails not re-rasterised (`data-rastered`); the page's scroll position is kept across a rebuild (the neighbour-anchor idea nudged the page by one card — gone); the active card/break is framed with a box-shadow, not a 3px border (it grew 4 px on activation and everything below jumped). Part 6 green (273). Full suite still due.

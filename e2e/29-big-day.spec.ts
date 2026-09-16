@@ -548,6 +548,22 @@ test('big day, part 4: strips, needs, notes and setups, held on both devices',
     expect.soft(copies(verOf(w.shots[3])), 'shot 4: no copy left').toBe(0);
     expect.soft(own(verOf(w.shots[1])), 'shot 2 still keeps its own two').toBe(2);
 
+    // Untag pressed on a COPY (#519, Roman by hand: five presses on copies did
+    // nothing). The iPad presses the pill on shot 2's remaining copy — of the
+    // iPad's own origin on shot 4 — and every copy of it goes, the origin stays.
+    say('── iPad untags by pressing the pill on the COPY on shot 2 ──');
+    const copyAt = verOf(parse(await ipad.whole()).shots[1]).findIndex((v) => v.tag === 'copy');
+    expect(copyAt, 'shot 2 holds a copy to press').toBeGreaterThanOrEqual(0);
+    await ipad.tagVersion(1, 'ver', copyAt);
+    await ipad.settle();
+    w = parse(await Device.waitUntilWholeAgrees(desktop, ipad, 'WORDS: THE UNTAG ON A COPY DID NOT MEET.'));
+    for (const i of [0, 1, 3]) say(`   shot ${i + 1} VER on both: ${show(verOf(w.shots[i]))}`);
+    expect.soft(copies(verOf(w.shots[1])), 'shot 2: no copy left').toBe(0);
+    expect.soft(copies(verOf(w.shots[0])), 'shot 1: no copy left').toBe(0);
+    expect.soft(verOf(w.shots[3]).filter((v) => v.tag === 'origin').length, 'shot 4: no origin any more').toBe(0);
+    expect.soft(verOf(w.shots[3]).filter((v) => !v.tag && v.picture).length, 'shot 4: its picture stays as a plain version').toBe(1);
+    expect.soft(own(verOf(w.shots[1])), 'shot 2 still keeps its own two').toBe(2);
+
     const setupB = await ipad.newSetup('B — GARDEN');
     await ipad.putSetupOnFrame(2, setupB);
     await ipad.tagVersion(2, 'ver', 0);

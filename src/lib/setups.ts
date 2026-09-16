@@ -805,27 +805,40 @@ function executeUntag(fid: number, strip: StripType, ver: import('../store/state
 
   // 1) Find the origin (could be on this frame or another — the pill may have
   //    been pressed on a copy) and untag it: it becomes regular user content.
+  //    Looked for on EVERY frame, by the copy's link first, then by picture
+  //    (copies made before the link existed) — and if it cannot be found at
+  //    all, the untag still goes through (#519, Roman: "the untagging does not
+  //    work" — five presses on old copies did nothing, "origin ?").
   let origin: import('../store/state').Version | undefined;
   if (ver.setupTagged === 'origin') origin = ver;
   else {
-    for (const sf of setupFrames) {
-      for (const v of getStripVersions(sf.id, strip)) {
-        if (v.setupTagged === 'origin' && (v.serverVersionId && v.serverVersionId === ver.copyOf || v.bgImage === targetImage)) origin = v;
+    for (const f of s.frames) {
+      for (const v of getStripVersions(f.id, strip)) {
+        if (v.setupTagged !== 'origin') continue;
+        if ((ver.copyOf && v.serverVersionId === ver.copyOf) || (!!targetImage && v.bgImage === targetImage)) { origin = v; break; }
       }
+      if (origin) break;
     }
   }
-  const originForMatch = origin ?? ver;
+  const originId = origin?.serverVersionId ?? ver.copyOf;
   if (origin) origin.setupTagged = undefined;
-  sayTagChange(`untag: origin ${origin?.serverVersionId?.slice(0, 6) ?? '?'} stays on its frame, copies go`);
+  sayTagChange(`untag pressed on ${ver === origin ? 'the origin' : 'a copy'}: origin ${originId?.slice(0, 6) ?? 'not found'} stays on its frame, copies go`);
 
-  // 2) Remove ALL copies of this origin from ALL setup frames — told to the
-  //    server (#516), or they came straight back on the next pull.
-  for (const sf of setupFrames) {
-    removeVersions(sf.id, strip, (v) => isCopyOf(v, originForMatch));
+  // 2) Remove the copies — the one pressed, every sibling linked to the same
+  //    origin, and any with the same picture — from ALL setup frames, told to
+  //    the server (#516), or they came straight back on the next pull.
+  const isOneOfThem = (v: import('../store/state').Version): boolean =>
+    v === ver && v.setupTagged === 'copy'
+    || (v.setupTagged === 'copy' && !!originId && v.copyOf === originId)
+    || (!!origin && isCopyOf(v, origin));
+  const touched = new Set<number>(setupFrames.map((f) => f.id));
+  touched.add(fid);
+  for (const sfId of touched) {
+    removeVersions(sfId, strip, isOneOfThem);
     // The origin's own frame loses nothing but changes order: the untagged
     // version now sorts among the plain ones, so its tabs are re-numbered too.
-    reorderByStars(sf.id, strip);
-    relabelStripVersions(sf.id, strip);
+    reorderByStars(sfId, strip);
+    relabelStripVersions(sfId, strip);
   }
   // The card stays on the photo it was showing, wherever it now sorts (#517).
   const stillAt = getStripVersions(fid, strip).indexOf(ver);
