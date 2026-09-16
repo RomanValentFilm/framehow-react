@@ -825,6 +825,9 @@ function executeUntag(fid: number, strip: StripType, ver: import('../store/state
     reorderByStars(sf.id, strip);
     relabelStripVersions(sf.id, strip);
   }
+  // The card stays on the photo it was showing, wherever it now sorts (#517).
+  const stillAt = getStripVersions(fid, strip).indexOf(ver);
+  if (stillAt >= 0) setStripActiveTab(fid, strip, stillAt);
 
   bumpRenderTick();
   const renderAll = (window as any).__fh_renderAll;
@@ -896,6 +899,11 @@ function applyStripTag(fid: number, vi: number, strip: StripType): void {
 
   // Re-apply ALL origins for this frame+strip so slots are assigned in order
   reapplyStripTags(fid, strip);
+  // THE CARD FOLLOWS THE PHOTO (#517, Roman by hand, 16 September). Tagged
+  // versions go to the front, so the photo tagged on v3 is now v1 — and the
+  // card stayed on slot 3, showing some other picture. It stays on the photo.
+  const nowAt = getStripVersions(fid, strip).indexOf(ver);
+  if (nowAt >= 0) setStripActiveTab(fid, strip, nowAt);
 
   bumpRenderTick();
   const renderAll = (window as any).__fh_renderAll;

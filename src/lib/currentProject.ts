@@ -46,7 +46,7 @@ import { useStore } from '../store/state';
 import { trace } from './syncTrace';
 import { clearSnapshot, saveSnapshot, snapshotFromStore, savePending, clearPending, listPending, markPendingWarned, markPendingUploaded, sweepUploaded, isArchived, storageEstimate } from './persistence';
 import { isLoggedIn } from './session';
-import { stampChangedSettings, exportSettingStamps } from './projectSettings';
+import { stampChangedSettings, exportSettingStamps, settingsNeedPush } from './projectSettings';
 import { stampChangedContent, exportChangeStamps } from './changeStamps';
 import { makeRetryClock } from './retryWait';
 import { whatWentWrong } from './projectGone';
@@ -543,7 +543,18 @@ export async function flushSyncNow(askedByTheFetch = false): Promise<void> {
   if (cloudSyncInFlight) { if (_dirty) traceOnce('push skipped: a push is already running'); return; }
   if (_pullInFlight && !askedByTheFetch) { if (_dirty) traceOnce('push skipped: a fetch is running'); return; }
   if (_projectSwitchInFlight) { if (_dirty) traceOnce('push skipped: switching project'); return; }
-  if (!_dirty) return;              // nothing dirty, nothing to send
+  // A CHANGE MADE WHILE A SYNC WAS BEING APPLIED IS STILL A CHANGE (#517,
+  // run 270). While a pull is applied — pictures fetched and all — every
+  // store update is taken for the sync's own and not marked as work. A group
+  // made in that window left "nothing to send" behind, and stayed on one
+  // device. The settings memory knows a new or changed item by its content,
+  // flag or no flag: ask it.
+  if (!_dirty) {
+    stampChangedSettings(cp.projectId);
+    if (!settingsNeedPush()) return;            // nothing dirty, nothing to send
+    trace('  settings changed while a sync was being applied — sending them');
+    markSomethingToSend();
+  }
   const pid = cp.projectId;
   cloudSyncInFlight = true;
   const began = pushBegan();

@@ -80,7 +80,7 @@ orders or get out.
 
 ## THE LIST — 10 September, evening (Roman's order)
 
-dev is **v4.9.211 · #514** (deployed 15 September, app and backend). Next number: **v4.9.212 · #515**.
+dev is **v4.9.212 · #515** (deployed 16 September 11:20, app AND backend; commit 9552865). Full run 266: 60 green · 6 skipped · 3 red = 15 (idle-device timing, known), 18 and 28 (local test server dropped the sign-up — not the app). Next number: **v4.9.213 · #516**.
 
 ### DONE 14 September, late — v4.9.210 · #513 saved and deployed (app only)
 It carried: BIG DAY parts 5, 6, 7 (all GREEN: runs 228, 230, 231),
@@ -109,7 +109,7 @@ importSettingStamps takes the project id.
 Full run 245: 60 green · 6 skipped · 3 red = LATER 3 (known) + 15 (idle-device
 timing, seen in 224 too) + random day (now fixed, green in 246).
 
-### 15 September afternoon/evening — v4.9.212 · #515 (NOT yet saved/deployed; app AND backend)
+### 15 September — v4.9.212 · #515 saved 18:20, deployed 16 September (app AND backend)
 BIG DAY IS COMPLETE: all ten parts exist and have been green (9: run 250;
 4 with the setup-tag check: run 258; 10: run 264). Full run 265 pending.
 App faults found and fixed today, all by the simulator:
@@ -143,8 +143,10 @@ STILL OPEN from Roman's by-hand notes (15 Sept):
   — keep the scroll where it is (look for the centring on version change).
 - The text box under a PORTRAIT shot on the iPad did not show in the simulator
   (run 260) — check by hand on the iPad; part 10 types on the desktop for B.
-NEXT: full run 265 → 4 STEPS SAVE v4.9.212 · #515 → deploy app AND backend
-(restore endpoint, NOT EXISTS guard on inserts).
+DONE 16 Sept: full run 266, deploy 212, release notes given.
+Deploying a saved-but-bumped tree: `git stash -q` → build → deploy → `git stash pop -q`.
+The version copy: remove backend/.wrangler and .wrangler-e2e from copies (36M of
+throwaway test databases) — add them to the rsync excludes in the save command.
 
 ### THEN (was): part 8 … part 9 … the closing pass — all DONE, see above.
 

@@ -1963,6 +1963,11 @@ export function refreshOpenSortView(): void {
   // keyboard, so the page was left stuck with nothing on screen to let go of
   // it. The fetch's work is not lost: the next redraw shows it.
   if (breakBeingNamed()) { trace('  not redrawing the order — a break is being named'); return; }
+  // NOR WHILE SOMETHING IS BEING DRAGGED (#517). A redraw mid-drag takes the
+  // card or break out of the page under the hand; its ghost then reads its
+  // position as zero and jumps to the edge of the screen. Roman: the break,
+  // grabbed on the grey part, "jumps to the side". The next redraw shows it.
+  if (el.classList.contains('sort-dragging')) { trace('  not redrawing the order — something is being dragged'); return; }
   renderSortEditView(el, orderId);
 }
 
@@ -2130,7 +2135,50 @@ function renderSortEditView(el: HTMLElement, orderId: string): void {
   if (bracketActive) html += `</div>`;
 
   html += `</div>`;
+  // NOTHING CHANGED, NOTHING REDRAWN (#517, Roman: "in the shooting order the
+  // flashing was annoying"). The list was rebuilt from scratch on every action
+  // AND on every sync — the pull after our own push too — even when the result
+  // was the same list. The same words (and the same pill colours, which are
+  // painted after the build) leave the screen exactly as it is.
+  {
+    const sortedForPills = isStoryFlow(orderId) ? null : s.sortOrders.find((o) => o.id === orderId);
+    const signature = html + '\u0000' + JSON.stringify({
+      waiting: [...waitingToBeSeen].sort(),
+      canJudge: !!sortedForPills?.sortedSnapshot && !sheetChangedSinceSort(el),
+      snapshot: sortedForPills?.sortedSnapshot ?? null,
+      bracket: sortedForPills?.bracketTree ?? null,
+    });
+    if ((el as any).__lastDrawn === signature && el.childElementCount > 0) {
+      trace('  not redrawing the order — nothing in it changed');
+      return;
+    }
+    (el as any).__lastDrawn = signature;
+  }
+  // THE PAGE STAYS WHERE IT IS (#517, Roman by hand, 16 September). This
+  // rebuilds the whole list, and the page landed wherever the new layout put
+  // it — an arrow, a new break or DONE made it jump. The first shot or break on
+  // screen that is NOT the one being moved is measured before, found again
+  // after, and the page nudged so it sits exactly where it sat.
+  const anchor = (() => {
+    const items = Array.from(el.querySelectorAll('.sort-card, .sort-break-card')) as HTMLElement[];
+    for (const it of items) {
+      if (it.classList.contains('sort-card-active') || it.classList.contains('sort-break-active')) continue;
+      const r = it.getBoundingClientRect();
+      if (r.bottom <= 0) continue;
+      const key = it.dataset.sortFid ? `.sort-card[data-sort-fid="${it.dataset.sortFid}"]`
+        : it.dataset.breakId ? `.sort-break-card[data-break-id="${it.dataset.breakId}"]` : null;
+      if (key) return { key, top: r.top };
+    }
+    return null;
+  })();
   el.innerHTML = html;
+  if (anchor) {
+    const again = el.querySelector(anchor.key) as HTMLElement | null;
+    if (again) {
+      const moved = Math.round(again.getBoundingClientRect().top - anchor.top);
+      if (Math.abs(moved) > 1) window.scrollBy(0, moved);
+    }
+  }
 
   // THE THREE STATES OF AN ICON (#427).
   //
@@ -3128,12 +3176,14 @@ function setupDragAndDrop(el: HTMLElement, orderId: string): void {
         dragClone.style.width = `${activeCard.offsetWidth}px`;
         dragClone.style.pointerEvents = 'none';
         dragClone.style.zIndex = '9999';
+        // The column it came from, taken ONCE (#517): re-read on every move, it
+        // read zero the moment the card was no longer on the page.
+        dragClone.style.left = `${activeCard.getBoundingClientRect().left}px`;
         document.body.appendChild(dragClone);
         scrollRAF = requestAnimationFrame(autoScroll);
       }
       if (dragging && dragClone) {
         dragClone.style.top = `${moveY - cloneOffset}px`;
-        dragClone.style.left = `${activeCard.getBoundingClientRect().left}px`;
         updateDropIndex();
       }
     };

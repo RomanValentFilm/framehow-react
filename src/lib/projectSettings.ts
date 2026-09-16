@@ -294,7 +294,15 @@ function sameButIdx(aJson: string, bJson: string): boolean {
  * every list of shots in the value is the known one with some left out, in the
  * same sequence, and everything else is the same, nothing was changed here.
  */
-function isProjectionOf(kind: string, curJson: string, prevJson: string): boolean {
+/**
+ * ...BUT ONLY SHOTS THIS DEVICE DOES NOT HAVE (#517, run 267). A shot taken
+ * OUT of a group by hand is also "the known list with one left out, in the
+ * same sequence" — and the rule above swallowed it: the removal was never
+ * called a change and never went up (BIG DAY part 5, green before #514, red
+ * after). A list is a projection only when every id it lacks is a shot this
+ * device does not hold; lacking a shot it does hold is a change made here.
+ */
+function isProjectionOf(kind: string, curJson: string, prevJson: string, held: ReadonlySet<string>): boolean {
   const lists: Record<string, string[]> = {
     frameOrder: [],                                   // the data IS the list
     sortOrder: ['frameOrder', 'sortedSnapshot'],
@@ -302,7 +310,7 @@ function isProjectionOf(kind: string, curJson: string, prevJson: string): boolea
   };
   const fields = lists[kind];
   if (!fields) return false;
-  if (kind === 'frameOrder') return isSubsequenceOf(curJson, prevJson);
+  if (kind === 'frameOrder') return isSubsequenceOf(curJson, prevJson, held);
   try {
     const cur = (JSON.parse(curJson) as { data?: Record<string, unknown> }).data ?? {};
     const prev = (JSON.parse(prevJson) as { data?: Record<string, unknown> }).data ?? {};
@@ -314,7 +322,10 @@ function isProjectionOf(kind: string, curJson: string, prevJson: string): boolea
       if (a.length > b.length) return false;
       if (a.length < b.length) shorter = true;
       let i = 0;
-      for (const id of b) if (i < a.length && a[i] === id) i++;
+      for (const id of b) {
+        if (i < a.length && a[i] === id) i++;
+        else if (held.has(String(id))) return false;   // left out on purpose
+      }
       if (i !== a.length) return false;
     }
     if (!shorter) return false;
@@ -328,7 +339,7 @@ function isProjectionOf(kind: string, curJson: string, prevJson: string): boolea
 }
 
 /** Is `shorter` the list `longer` with some ids left out, the rest in the same order? */
-function isSubsequenceOf(shorterJson: string, longerJson: string): boolean {
+function isSubsequenceOf(shorterJson: string, longerJson: string, held: ReadonlySet<string>): boolean {
   let a: string[], b: string[];
   try {
     a = (JSON.parse(shorterJson) as { data?: string[] }).data ?? [];
@@ -336,7 +347,10 @@ function isSubsequenceOf(shorterJson: string, longerJson: string): boolean {
   } catch { return false; }
   if (!Array.isArray(a) || !Array.isArray(b) || a.length >= b.length) return false;
   let i = 0;
-  for (const id of b) if (i < a.length && a[i] === id) i++;
+  for (const id of b) {
+    if (i < a.length && a[i] === id) i++;
+    else if (held.has(String(id))) return false;       // left out on purpose
+  }
   return i === a.length;
 }
 
@@ -351,6 +365,9 @@ export function stampChangedSettings(projectId?: string | null): void {
   if (!_seeded) seedSettings(_projectId ?? null, _baseline);
   const now = Date.now();
   const seen = new Set<string>();
+  // The shots this device holds, by the names the lists use (#517).
+  const held = new Set<string>();
+  for (const f of useStore.getState().frames) if (f.serverFrameId) held.add(f.serverFrameId);
 
   for (const it of currentItems()) {
     const k = key(it.kind, it.item_id);
@@ -372,7 +389,7 @@ export function stampChangedSettings(projectId?: string | null): void {
       // the known one with some ids missing, in the same order, is that case
       // (and after a deletion too, which the arrangement never needed to say:
       // an id with no frame is simply skipped). It is left as it was.
-      if (prev.deleted_at === null && isProjectionOf(it.kind, it.json, prev.json)) continue;
+      if (prev.deleted_at === null && isProjectionOf(it.kind, it.json, prev.json, held)) continue;
       // A DIFFERENT PLACE IN THE LIST IS NOT A CHANGE (#510, run 217). The
       // value carries `idx` so a new item lands where it belongs on the other
       // device — but adding an order shifts the idx of the ones after it, and

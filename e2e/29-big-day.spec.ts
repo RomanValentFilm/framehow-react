@@ -635,6 +635,11 @@ test('big day, part 5: groups, made, changed, moved and deleted on both devices'
     await desktop.enterGroup(null);
     w = parse(await Device.waitUntilWholeAgrees(desktop, ipad, 'GROUPS: TAKING A SHOT OUT DID NOT REACH THE IPAD.'));
     k = w.groups.find((g) => g.name === 'KITCHEN')!;
+    if (k.shots.length !== 3) {
+      for (const d of [desktop, ipad]) {
+        say(`${d.name} log (newest first):\n${(await d.log()).slice(0, 50).map((l) => '    ' + l.slice(0, 200)).join('\n')}`);
+      }
+    }
     expect.soft(k.shots.length, 'three shots left in KITCHEN on both').toBe(3);
     expect.soft(w.shots.length, 'the shot itself is still in the project').toBe(8);
 

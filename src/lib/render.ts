@@ -3,6 +3,7 @@
 
 import { state, useStore, bumpRenderTick, isTouch, columnName } from '../store/state';
 import { applyFittingChrome } from './fitting';
+import { trace } from './syncTrace';
 import type { StripType } from '../store/state';
 import {
   drawToolbarHTML,
@@ -54,6 +55,20 @@ function windowedTabIndices(tabs: any[], _activeIdx: number, _isPortrait: boolea
 const _scrollBackTimers: number[] = [];
 
 export function renderAll(): void {
+  // SAY HOW LONG A REDRAW TAKES (#517). Roman: "a bit slower on the strip
+  // buttons and NEEDS". A number instead of a feeling: one line whenever a
+  // whole redraw takes longer than 100 ms, with who asked for it.
+  const began = performance.now();
+  const who = new Error().stack?.split('\n')[2]?.trim().replace(/^at /, '') ?? '?';
+  try {
+    renderAllNow();
+  } finally {
+    const took = Math.round(performance.now() - began);
+    if (took > 100) trace(`redraw: ${state().frames.length} shots in ${took} ms   (${who.slice(0, 60)})`);
+  }
+}
+
+function renderAllNow(): void {
   saveOpenTextEdits();
   saveOpenTableEdits();
 
