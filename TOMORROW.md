@@ -80,7 +80,29 @@ orders or get out.
 
 ## THE LIST — 10 September, evening (Roman's order)
 
-dev is **v4.9.215 · #518** (deployed 16 September 15:35, app only; commit 11764b5). Backend last deployed with 212. Next number: **v4.9.216 · #519**.
+dev is **v4.9.216 · #519** (deployed 16 September 15:50, app only; commit 813b8bf). Backend last deployed with 212. v4.9.217 · #520 = 216 + test lines only (saved, not deployed). Next number: **v4.9.218 · #521**.
+
+## ROMAN, 16 September evening: "I need to proceed and not fix only marginal
+## scenarios that happen if ever to 0.1% — I need to finish the app and give it
+## to people to test." → Priority from now: what testers will hit. No more
+## optimisations of the sync's plumbing unless a person sees the fault.
+
+### TRIED AND TAKEN OUT, 16 September evening (push storm)
+Two DONEs = twelve pushes + three pulls of the device's own push (Roman's log).
+Tried: (a) reply's settings applied as a system action (no "sending again"
+after every push); (b) blob re-sent once more only when the reply rearranged
+the lists; (c) server returns previous_updated_at so a device can count its
+own push as taken. Result: part 8 red 3 of 4 runs — the groups/orders lists
+came back in another order after a reload. The self-pull was, by accident,
+what put every device on the server's list order; the lists have NO canonical
+order. Reverted to 216. If ever taken up again: FIRST one canonical order for
+groups and shooting orders (e.g. by creation time carried in the item), then
+(a)(b)(c). Cost today of leaving it: a repaint after each own action.
+
+
+### 16 September, 15:50 — v4.9.216 · #519
+Untag pressed on a COPY: Roman's log showed five presses on old copies doing nothing ("origin ?" — copies made before the copy→origin link existed, pictures differ after a round trip). Now: the pressed copy goes, every copy linked to the same origin goes, the origin (found on ANY frame, by link then by picture) becomes a plain version; if the origin cannot be found the untag still removes what it can. RULE (Roman): untag anywhere → no copies anywhere, only the original stays on the frame it was made in. Part 4 holds the copy-press case (run 279 green).
+OPEN: detail/strip bar vanished once on the iPad (came back on reload) — cause unknown; bars never hide on iPad by #481. Ask Roman for the two presses before it.
 
 ### 16 September, 15:35 — v4.9.215 · #518 (from Roman's log of the strip presses)
 - frameFingerprint left the blank placeholder of a shown strip out (it counted; the push never sent it): every strip press pushed 41 shots undated → refused → forced fetch → full repaint. THE slow strip button.

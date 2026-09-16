@@ -1035,12 +1035,20 @@ test('big day, part 8: an offline day — both work apart, both come back, nothi
     }
 
     // ── reload both ──────────────────────────────────────────────────────
+    say(`   before the reload — groups: ${w.groups.map((g) => g.name).join(' · ')} | orders: ${w.orders.map((o) => o.name).join(' · ')}`);
+    const before = { desktop: (await desktop.log()).slice(0, 40), ipad: (await ipad.log()).slice(0, 40) };
     await desktop.reload();
     await ipad.reload();
     await desktop.openProject(id!);
     await ipad.openProject(id!);
     await desktop.settle();
     const fresh = parse(await Device.waitUntilWholeAgrees(desktop, ipad, 'OFFLINE: AFTER A RELOAD THE TWO DEVICES DIFFER.'));
+    say(`   after the reload — groups: ${fresh.groups.map((g) => g.name).join(' · ')} | orders: ${fresh.orders.map((o) => o.name).join(' · ')}`);
+    if (JSON.stringify(fresh) !== JSON.stringify(w)) {
+      for (const d of ['desktop', 'ipad'] as const) {
+        say(`${d} log before the reload (newest first):\n${before[d].map((l) => '    ' + l.slice(0, 200)).join('\n')}`);
+      }
+    }
     expect.soft(fresh, 'a reload changes nothing').toEqual(w);
 
     await desktop.close();
