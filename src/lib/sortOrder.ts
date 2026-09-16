@@ -1993,6 +1993,52 @@ function unlockBodyAfterBreakRename(): void {
   window.scrollTo(0, lockY);
 }
 
+/**
+ * Put `html` into `el`, but keep every card and break whose built HTML has
+ * not changed since it was last built — the node itself, with the thumbnail
+ * the raster step painted into it. Reused nodes are CLONED so that no click
+ * handler is bound twice when the events are wired again afterwards.
+ */
+function reuseUnchangedItems(el: HTMLElement, html: string): void {
+  const fresh = document.createElement('div');
+  fresh.innerHTML = html;
+  const keyOf = (n: Element): string | null =>
+    (n as HTMLElement).dataset.sortFid ? `f:${(n as HTMLElement).dataset.sortFid}`
+      : (n as HTMLElement).dataset.breakId ? `b:${(n as HTMLElement).dataset.breakId}` : null;
+  const held = new Map<string, HTMLElement>();
+  for (const n of el.querySelectorAll('.sort-card, .sort-break-card')) {
+    const k = keyOf(n);
+    if (k) held.set(k, n as HTMLElement);
+  }
+  let reused = 0;
+  for (const n of Array.from(fresh.querySelectorAll('.sort-card, .sort-break-card'))) {
+    const k = keyOf(n);
+    const built = n.outerHTML;
+    const old = k ? held.get(k) : undefined;
+    if (old && (old as any).__built === built) {
+      const clone = old.cloneNode(true) as HTMLElement;
+      (clone as any).__built = built;
+      n.replaceWith(clone);
+      reused++;
+    } else {
+      (n as any).__built = built;
+    }
+  }
+  el.replaceChildren(...Array.from(fresh.childNodes));
+  if (reused) trace(`  order redrawn: ${reused} card(s) kept as they were`);
+}
+
+/** Whatever scrolls around this element — a column, or nothing (the window). */
+function scrollerOf(el: HTMLElement): HTMLElement | null {
+  let node: HTMLElement | null = el.parentElement;
+  while (node) {
+    const how = getComputedStyle(node).overflowY;
+    if ((how === 'auto' || how === 'scroll') && node.scrollHeight > node.clientHeight + 4) return node;
+    node = node.parentElement;
+  }
+  return null;
+}
+
 function renderSortEditView(el: HTMLElement, orderId: string): void {
   unlockBodyAfterBreakRename();
   const s = state();
@@ -2156,29 +2202,26 @@ function renderSortEditView(el: HTMLElement, orderId: string): void {
   }
   // THE PAGE STAYS WHERE IT IS (#517, Roman by hand, 16 September). This
   // rebuilds the whole list, and the page landed wherever the new layout put
-  // it — an arrow, a new break or DONE made it jump. The first shot or break on
-  // screen that is NOT the one being moved is measured before, found again
-  // after, and the page nudged so it sits exactly where it sat.
-  const anchor = (() => {
-    const items = Array.from(el.querySelectorAll('.sort-card, .sort-break-card')) as HTMLElement[];
-    for (const it of items) {
-      if (it.classList.contains('sort-card-active') || it.classList.contains('sort-break-active')) continue;
-      const r = it.getBoundingClientRect();
-      if (r.bottom <= 0) continue;
-      const key = it.dataset.sortFid ? `.sort-card[data-sort-fid="${it.dataset.sortFid}"]`
-        : it.dataset.breakId ? `.sort-break-card[data-break-id="${it.dataset.breakId}"]` : null;
-      if (key) return { key, top: r.top };
-    }
-    return null;
-  })();
-  el.innerHTML = html;
-  if (anchor) {
-    const again = el.querySelector(anchor.key) as HTMLElement | null;
-    if (again) {
-      const moved = Math.round(again.getBoundingClientRect().top - anchor.top);
-      if (Math.abs(moved) > 1) window.scrollBy(0, moved);
-    }
-  }
+  // it — an arrow, a new break or DONE made it jump. The scroll position is
+  // taken before and put back after, and once more on the next frame for the
+  // thumbnails settling in. (First try held a NEIGHBOUR still, which nudged
+  // the page by one card whenever the moved card swapped past it — Roman:
+  // "still jumps a little bit up and down".)
+  const scroller = scrollerOf(el);
+  const wasAt = scroller ? scroller.scrollTop : window.scrollY;
+  const putBack = () => {
+    if (scroller) { if (scroller.scrollTop !== wasAt) scroller.scrollTop = wasAt; }
+    else if (window.scrollY !== wasAt) window.scrollTo(0, wasAt);
+  };
+  // ONLY WHAT CHANGED IS BUILT (#517, Roman: "I did not change anything yet,
+  // I just pressed a button"). Activating a card changes ONE card, and the
+  // whole list of 44 was built again and every drawn thumbnail rasterised
+  // again — placeholder first, picture a moment later: the millimetre jump.
+  // A card or break whose built HTML is the same as last time is reused as it
+  // stands, thumbnail included; only changed ones are made new.
+  reuseUnchangedItems(el, html);
+  putBack();
+  requestAnimationFrame(putBack);
 
   // THE THREE STATES OF AN ICON (#427).
   //
@@ -2381,9 +2424,11 @@ async function fillRasterizedImages(el: HTMLElement): Promise<void> {
     const fid = parseInt((container as HTMLElement).dataset.rasterMain!, 10);
     const f = s.frames.find((fr) => fr.id === fid);
     if (!f) continue;
+    if ((container as HTMLElement).dataset.rastered) continue;   // reused as it was (#517)
     try {
       const canvas = await rasterizeMain(f, 1);
       const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+      (container as HTMLElement).dataset.rastered = '1';
       const placeholder = container.querySelector('.sort-main-placeholder');
       const existingImg = container.querySelector('img');
       if (placeholder) {
@@ -2405,9 +2450,11 @@ async function fillRasterizedImages(el: HTMLElement): Promise<void> {
     const ver = vers?.[0];
     const f = s.frames.find((fr) => fr.id === fid);
     if (!ver || !f) continue;
+    if ((container as HTMLElement).dataset.rastered) continue;   // reused as it was (#517)
     try {
       const canvas = await rasterizeVersion(ver, f.cropW || 960, f.cropH || 540, 1);
       const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+      (container as HTMLElement).dataset.rastered = '1';
       const placeholder = container.querySelector('.sort-ver-placeholder');
       const existingImg = container.querySelector('img');
       if (placeholder) {
@@ -2430,9 +2477,11 @@ async function fillRasterizedImages(el: HTMLElement): Promise<void> {
     const vers = getStripVersions(fid, 'floor');
     const ver = vers?.[0];
     if (!ver) continue;
+    if ((container as HTMLElement).dataset.rastered) continue;   // reused as it was (#517)
     try {
       const canvas = await rasterizeVersion(ver, f.cropW || 960, f.cropH || 540, 1);
       const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+      (container as HTMLElement).dataset.rastered = '1';
       // If there's a placeholder (stroke-only), replace it; if there's an img (bgImage+strokes), update src
       const placeholder = container.querySelector('.sort-sketch-placeholder');
       const existingImg = container.querySelector('img');

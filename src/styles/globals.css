@@ -1294,7 +1294,8 @@
 
   /* Frame set cards */
   .sort-card{background:#d9d9d9;border-radius:4px;padding:8px 9px 8px 3px;margin-bottom:6px;border:1px solid #aaa;transition:border-color .15s,transform .18s ease;}
-  .sort-card-active{border:3px solid var(--accent);cursor:grab;touch-action:none;-webkit-user-select:none;user-select:none;}
+  /* The red frame is drawn OUTSIDE the box (#517): a 3px border on a 1px card made it 4px taller on activation, and everything below jumped. */
+  .sort-card-active{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent);cursor:grab;touch-action:none;-webkit-user-select:none;user-select:none;}
   .sort-dragging{-webkit-user-select:none;user-select:none;}
   .sort-card-dragging{visibility:hidden;transition:none;}
   .sort-card-drag-clone{visibility:visible;border:2px solid var(--accent);border-radius:4px;background:#fff;box-shadow:0 8px 24px rgba(0,0,0,.25);}
@@ -1335,7 +1336,7 @@
 
   /* Break cards */
   .sort-break-card{background:#808080;border-radius:4px;padding:4px 9px 4px 10px;margin-bottom:6px;border:1px solid #666;display:flex;align-items:center;justify-content:space-between;transition:transform .18s ease;}
-  .sort-break-active{border:3px solid var(--accent);cursor:grab;touch-action:none;-webkit-user-select:none;user-select:none;}
+  .sort-break-active{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent);cursor:grab;touch-action:none;-webkit-user-select:none;user-select:none;}
   .sort-break-text{font-size:14px;font-weight:600;color:#fff;border:none;background:transparent;padding:2px 4px;outline:none;font-family:inherit;flex:0 1 60%;min-width:0;pointer-events:none;}
   .sort-break-active .sort-break-text{pointer-events:auto;box-shadow:inset 0 0 0 1px rgba(255,255,255,.35);border-radius:3px;background:rgba(255,255,255,.1);}
   .sort-break-arrows{display:flex;align-items:center;justify-content:center;}

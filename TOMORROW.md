@@ -80,7 +80,14 @@ orders or get out.
 
 ## THE LIST — 10 September, evening (Roman's order)
 
-dev is **v4.9.212 · #515** (deployed 16 September 11:20, app AND backend; commit 9552865). Full run 266: 60 green · 6 skipped · 3 red = 15 (idle-device timing, known), 18 and 28 (local test server dropped the sign-up — not the app). Next number: **v4.9.213 · #516**.
+dev is **v4.9.213 · #516** (deployed 16 September 14:45, app only; commit 8bc8339). Backend last deployed with 212. Next number: **v4.9.214 · #517**.
+
+### 16 September afternoon — v4.9.213 · #516 (Roman's by-hand remarks on 212)
+- Card follows the tagged photo (tag and untag) — the photo moves to the front, the card stayed on the old slot.
+- Shooting order: the page stays put on arrows / add break / DONE (anchor on the first unmoved item); NOT redrawn when the rebuilt list is identical (flash on every sync gone); no redraw mid-drag; drag ghost's column fixed once at start.
+- REAL SYNC FAULTS found by part 5 on the way: (1) the #514 projection rule swallowed a shot taken OUT of a group by hand — a projection only when the missing shots are not held here; (2) a change made while a pull was being applied (system-action window with awaits) was never marked — flushSyncNow now asks the settings memory by content when the flag is off. Frames changed in that window are NOT yet covered (LATER: make the system flag not swallow user changes).
+- Redraw timing line: "redraw: N shots in M ms (who)" when > 100 ms — Roman: strips/NEEDS feel slower on 212; read his log next.
+- OPEN: the repaint after a pull touches every card (the flash Roman sees with tags) — make it card-by-card. Full suite (267 partial: 4,5,6 green after fixes; 272: 1,2,3,8,9,10 green) — full run still due before the next deploy.
 
 ### DONE 14 September, late — v4.9.210 · #513 saved and deployed (app only)
 It carried: BIG DAY parts 5, 6, 7 (all GREEN: runs 228, 230, 231),
