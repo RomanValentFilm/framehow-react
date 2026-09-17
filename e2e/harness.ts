@@ -121,7 +121,8 @@ export class Device {
     page.on('pageerror', (e) => console.log(`  [${name} PAGE ERROR] ${e.message}`));
     say(`opening ${name}…`);
     await page.goto(`${APP}/app/?fhtest=1&fhsync=1`);
-    await page.waitForFunction(() => Boolean((window as never as { __fh_test?: unknown }).__fh_test),
+    await page.waitForFunction(() => Boolean((window as never as { __fh_test?: unknown }).__fh_test)
+        && Boolean((window as never as { __fh_booted?: boolean }).__fh_booted),
       undefined, { timeout: 30_000 });
     say(`${name} is open and signed in`);
     return new Device(name, ctx, page);
@@ -165,8 +166,11 @@ export class Device {
   async reload(): Promise<void> {
     say(`${this.name}: reloading`);
     await this.page.reload();
+    // Up means BOOTED — the project restored (or the list shown) — not merely
+    // the door on the page (#523, run 289: test 03 typed before the frames were back).
     await this.page.waitForFunction(
-      () => Boolean((window as never as { __fh_test?: unknown }).__fh_test),
+      () => Boolean((window as never as { __fh_test?: unknown; __fh_booted?: boolean }).__fh_test)
+        && Boolean((window as never as { __fh_booted?: boolean }).__fh_booted),
       undefined, { timeout: 30_000 });
     say(`${this.name}: back up after the reload`);
   }
@@ -874,11 +878,19 @@ export class Device {
   // ── PART 3 (#509): pictures, drawings, versions, stars, written text ──
 
   // ── PART 9 (#515): restore points, delete, recover ──
+  async saveRestorePoint(label: string): Promise<void> {
+    say(`${this.name}: SAVE RESTORE POINT "${label}"`);
+    await this.page.evaluate((l) => (window as never as { __fh_test: { saveRestorePoint(l: string): Promise<void> } }).__fh_test.saveRestorePoint(l as string), label);
+  }
+  async deleteRestorePoint(id: string): Promise<void> {
+    say(`${this.name}: deleting the saved restore point ${id.slice(0, 8)}`);
+    await this.page.evaluate((i) => (window as never as { __fh_test: { deleteRestorePoint(i: string): Promise<void> } }).__fh_test.deleteRestorePoint(i as string), id);
+  }
   async makeRestorePoint(): Promise<void> {
     say(`${this.name}: making a restore point`);
     await this.page.evaluate(() => (window as never as { __fh_test: { makeRestorePoint(): Promise<void> } }).__fh_test.makeRestorePoint());
   }
-  restorePoints(): Promise<Array<{ id: string; created_at: number; reason?: string }>> {
+  restorePoints(): Promise<Array<{ id: string; created_at: number; reason?: string; label?: string | null }>> {
     return this.page.evaluate(() => (window as never as { __fh_test: { restorePoints(): Promise<never> } }).__fh_test.restorePoints());
   }
   async restoreTo(snapshotId: string): Promise<void> {

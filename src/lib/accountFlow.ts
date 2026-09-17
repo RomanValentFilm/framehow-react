@@ -29,6 +29,7 @@ import {
   clearDirtyState,
   pushBegan,
   pushSucceeded,
+  registerUnsentCheck,
   markSaved,
   isLoadInFlight,
   isPullIncomplete,
@@ -75,7 +76,7 @@ import { mergeDelta, lastMergeRefusal, answerIsSafeToApply, untouchedByDelta, ty
 import { settingsForPush, adoptSettingsFromServer, applySettingsToStore, importSettingStamps, stampChangedSettings, seedSettings, settingsNeedPush, reconcileRestoredSettings, captureMySettings, keepMyUnsentSettings, unsentSettingNames, type SettingItem } from './projectSettings';
 import { applySnapshotToStore, loadSnapshot, snapshotFromStore, listPending, isArchived, getPending, markPendingUploaded, saveProjectListCache, loadProjectListCache, deletePending, deleteEveryCopyOf, recoverPending, isDeletedCopy, requestDurableStorage } from './persistence';
 import type { PendingRecord } from './persistence';
-import { showThreeWayConflict, showConfirm, showToast } from './modals';
+import { showThreeWayConflict, showConfirm, showToast, showLabelEdit } from './modals';
 import { saveOpenTextEdits, saveOpenTableEdits, versionStars, inStarOrder } from './helpers';
 import { closeSortMode, refreshOpenSortView } from './sortOrder';
 import { resetStoryboardState, state, useStore, freshNeedDefinitions, DEFAULT_STRIP_DEFS, migrateNeedDefinitions, createDefaultExportMeta, blankNeeds, blankNote } from '../store/state';
@@ -508,10 +509,20 @@ export async function makeRestorePoint(projectId: string): Promise<void> {
 }
 
 /** The restore points the server holds for a project (#515). */
-export async function listRestorePoints(projectId: string): Promise<Array<{ id: string; created_at: number; reason?: string }>> {
-  const res = await api.get<{ snapshots: Array<{ id: string; created_at: number; reason?: string }> }>(
+export async function listRestorePoints(projectId: string): Promise<Array<{ id: string; created_at: number; reason?: string; label?: string | null }>> {
+  const res = await api.get<{ snapshots: Array<{ id: string; created_at: number; reason?: string; label?: string | null }> }>(
     `/projects/${encodeURIComponent(projectId)}/snapshots`, getToken());
   return res.snapshots;
+}
+
+/** SAVE A RESTORE POINT by hand, with a name — kept for ever until deleted (#523). */
+export async function saveRestorePoint(projectId: string, label: string): Promise<void> {
+  await api.post(`/projects/${encodeURIComponent(projectId)}/snapshots`, { reason: 'saved', label }, getToken());
+}
+
+/** ...and delete one the user saved (#523). */
+export async function deleteRestorePoint(projectId: string, snapshotId: string): Promise<void> {
+  await api.delete(`/projects/${encodeURIComponent(projectId)}/snapshots/${encodeURIComponent(snapshotId)}`, getToken());
 }
 
 /** RESTORE to a point — the modal's choice, lifted (#515). */
@@ -1224,6 +1235,30 @@ async function loadCloudProject(p: CloudProject): Promise<void> {
     if (progressBar) progressBar.style.width = '20%';
     // 2. Pause auto-sync to prevent cross-contamination during load
     setProjectSwitchInFlight(true);
+
+    // AN UNSENT COPY OF THIS PROJECT ON THIS DEVICE COMES FIRST (#522, launch
+    // item 1). Work done on it with no signal, then left for another project,
+    // sat on the device until its COPY was opened from the list — opening the
+    // project itself loaded the server's version over it. Now the copy is put
+    // in place with its memory (when each thing changed, what the server has),
+    // the ordinary pull merges it with the server — newer wins per item — and
+    // the push carries what is still unsent. Nothing done offline is lost by
+    // opening the project the normal way.
+    if (await startFromUnsentCopy(p, progressLabel)) {
+      setProjectSwitchInFlight(false);
+      if (progressBar) progressBar.style.width = '60%';
+      try { await tryPullFromCloud(); } catch { /* the copy stands; the pull is tried again by the heartbeat */ }
+      if (progressBar) progressBar.style.width = '90%';
+      markSomethingToSend();
+      void flushSyncNow();
+      fhTrack('project_opened', { name: p.name });
+      (window as any).__fh_renderAll?.();
+      autoPhoneMainView();
+      if (progressBar) progressBar.style.width = '100%';
+      setTimeout(() => { if (progressEl) progressEl.classList.add('hidden'); }, 300);
+      return;
+    }
+
     // 3. Load new project from cloud
     if (progressLabel) progressLabel.textContent = 'Downloading…';
     const tree = await api.get<CloudProjectTree>(`/projects/${encodeURIComponent(p.id)}/sync`, getToken());
@@ -1273,6 +1308,92 @@ async function loadCloudProject(p: CloudProject): Promise<void> {
     // 5. Resume auto-sync
     setProjectSwitchInFlight(false);
   }
+}
+
+/**
+ * Put an unsent copy of project `p` in place — the project and its memory —
+ * so the pull that follows can merge it honestly. False when there is none,
+ * or it carries no memory (a copy filed by an older build: opening it from the
+ * list is the way for those, as before).
+ */
+async function startFromUnsentCopy(p: CloudProject, progressLabel: HTMLElement | null): Promise<boolean> {
+  const rec = await getPending(p.id).catch(() => null);
+  if (!rec || isArchived(rec) || !rec.snapshot?.frames?.length) return false;
+  const snap = rec.snapshot;
+  if (!snap.contentStamps || Object.keys(snap.contentStamps).length === 0) {
+    trace('  an unsent copy of this project is on the device, but without its memory — left for the list');
+    return false;
+  }
+  trace(`  an unsent copy of this project is on the device (${new Date(rec.savedAt).toLocaleTimeString()}) — starting from it, then syncing`);
+  if (progressLabel) progressLabel.textContent = 'Your unsent work first…';
+  if (state().sortEditingId) closeSortMode();
+  beginSystemAction();
+  try {
+    adoptLocalProjectId(rec.key);
+    adoptDirtyFrameIds(snap.dirtyFrameIds);
+    adoptPushedFingerprints(snap.pushedFingerprints);
+    importSettingStamps(snap.settingStamps, p.id);
+    importChangeStamps(snap.contentStamps);
+    adoptHeardAt(snap.heardAt);
+    adoptPendingTombstones(snap.pendingTombstones);
+    applySnapshotToStore(snap);
+  } finally {
+    endSystemAction();
+  }
+  setCurrentProject({ projectId: p.id, name: p.name, lastSavedAt: snap.lastModified ?? null });
+  return true;
+}
+
+async function uploadUnsentCopiesAtStart(): Promise<void> {
+  if (!isLoggedIn() || !navigator.onLine) return;
+  let recs: PendingRecord[] = [];
+  try { recs = (await listPending()).filter((r) => !isArchived(r)); } catch { return; }
+  const current = (await loadSnapshot().catch(() => null))?.projectId ?? null;
+  const copies = recs.filter((r) => r.projectId && r.projectId !== current
+    && r.snapshot?.frames?.length && r.snapshot.contentStamps && Object.keys(r.snapshot.contentStamps).length > 0);
+  if (copies.length === 0) return;
+  const line = document.getElementById('startupLoadingLine');
+  for (const rec of copies) {
+    const pid = rec.projectId!;
+    trace(`unsent copy of "${rec.name ?? pid.slice(0, 8)}" (${new Date(rec.savedAt).toLocaleTimeString()}) — uploading it first`);
+    if (line) line.textContent = `Uploading unsent work: ${rec.name ?? 'a project'}…`;
+    const snap = rec.snapshot;
+    beginSystemAction();
+    try {
+      adoptLocalProjectId(rec.key);
+      adoptDirtyFrameIds(snap.dirtyFrameIds);
+      adoptPushedFingerprints(snap.pushedFingerprints);
+      importSettingStamps(snap.settingStamps, pid);
+      importChangeStamps(snap.contentStamps);
+      adoptHeardAt(snap.heardAt);
+      adoptPendingTombstones(snap.pendingTombstones);
+      applySnapshotToStore(snap);
+    } finally {
+      endSystemAction();
+    }
+    setCurrentProject({ projectId: pid, name: rec.name, lastSavedAt: snap.lastModified ?? null });
+    try {
+      // Take the server's newer bits first (newer wins per item), then send.
+      await tryPullFromCloud();
+      markSomethingToSend();
+      await syncCurrentToServer(pid);
+      await markPendingUploaded(pid);
+      await markPendingUploaded(rec.key);
+      trace(`  unsent copy of "${rec.name ?? pid.slice(0, 8)}" is in the cloud`);
+    } catch (e) {
+      trace(`  unsent copy of "${rec.name ?? pid.slice(0, 8)}" could not be sent — kept on the device (${asMessage(e, 'no answer')})`);
+    }
+  }
+  // Leave nothing of the last copy behind for the project restored next.
+  beginSystemAction();
+  try {
+    resetStoryboardState();
+    clearCurrentProject();
+    clearPushedFingerprints();
+  } finally {
+    endSystemAction();
+  }
+  if (line) line.textContent = 'Loading…';
 }
 
 async function confirmReplaceUnsaved(): Promise<boolean> {
@@ -3967,9 +4088,13 @@ export async function flowRestoreProject(): Promise<void> {
 // Restore Project modal — shows available snapshots grouped by time buckets
 // ---------------------------------------------------------------------------
 
+function escapeHtml(t: string): string {
+  return t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 async function openRestoreModal(projectId: string): Promise<void> {
   // Fetch available snapshots from the server
-  let snapshots: Array<{ id: string; created_at: number; reason?: string; continued_at?: number | null }>;
+  let snapshots: Array<{ id: string; created_at: number; reason?: string; continued_at?: number | null; label?: string | null }>;
   let currentSnapshotId: string | null = null;
   // Capture where the user is right now, so it is in the list as "you are here"
   // and they can always come back to it after experimenting.
@@ -3978,7 +4103,7 @@ async function openRestoreModal(projectId: string): Promise<void> {
   } catch { /* listing still works without it */ }
   try {
     const res = await api.get<{
-      snapshots: Array<{ id: string; created_at: number; reason?: string; continued_at?: number | null }>;
+      snapshots: Array<{ id: string; created_at: number; reason?: string; continued_at?: number | null; label?: string | null }>;
       currentSnapshotId?: string | null;
     }>(
       `/projects/${encodeURIComponent(projectId)}/snapshots`,
@@ -4027,8 +4152,10 @@ async function openRestoreModal(projectId: string): Promise<void> {
     ? currentSnapshotId
     : newestId;
 
+  // Every point at its time, "left off" ones included (#523) — they are
+  // ordinary points now and move down the list like the rest.
+  void keepLeftOff;
   const matched = [...snapshots]
-    .filter((sn) => sn.reason !== 'pre_restore' || sn.id === hereId || keepLeftOff.has(sn.id))
     .sort((a, b) => b.created_at - a.created_at)   // most recent first
     .map((sn) => ({
       snapshot: sn,
@@ -4036,6 +4163,8 @@ async function openRestoreModal(projectId: string): Promise<void> {
       timeAgo: formatTimeAgo(now - sn.created_at),
       isLeftOff: sn.reason === 'pre_restore' && sn.id !== hereId,
       isCurrent: sn.id === hereId,
+      isSaved: sn.reason === 'saved',
+      label: sn.label ?? null,
       continuedAt: sn.continued_at ? formatClockTime(sn.continued_at) : null,
     }));
 
@@ -4075,15 +4204,20 @@ async function openRestoreModal(projectId: string): Promise<void> {
         `border:1px solid ${m.isCurrent ? '#d52632' : '#444'};border-radius:8px;` +
         'color:#fff;font-size:14px;cursor:pointer;text-align:left;' +
         'transition:background 0.15s;';
+      const savedTag = m.isSaved
+        ? `<span style="color:#e8c547;margin-left:8px;font-size:11px;">${m.label ? escapeHtml(m.label) + ' · ' : ''}saved</span>` : '';
       const tag = m.isCurrent
-        ? '<span style="color:#d52632;margin-left:8px;font-size:11px;">you are here</span>'
-        : m.continuedAt
-          ? `<span style="color:#888;margin-left:8px;font-size:11px;">continued at ${m.continuedAt}</span>`
-          : m.isLeftOff
-            ? `<span style="color:#d52632;margin-left:8px;font-size:11px;">left off at ${m.clockTime}</span>`
-            : '';
+        ? '<span style="color:#d52632;margin-left:8px;font-size:11px;">you are here</span>' + savedTag
+        : m.isSaved
+          ? savedTag
+          : m.continuedAt
+            ? `<span style="color:#888;margin-left:8px;font-size:11px;">continued at ${m.continuedAt}</span>`
+            : m.isLeftOff
+              ? `<span style="color:#d52632;margin-left:8px;font-size:11px;">left off at ${m.clockTime}</span>`
+              : '';
       btn.innerHTML = `<span style="color:#fff;">${m.clockTime}</span>${tag}` +
         `<span style="float:right;color:#888;font-size:12px;">${m.timeAgo}</span>`;
+      if (m.isSaved) btn.style.borderColor = '#7a6a2a';
       btn.addEventListener('mouseenter', () => { btn.style.background = m.isCurrent ? '#4a3233' : '#333'; });
       btn.addEventListener('mouseleave', () => { btn.style.background = m.isCurrent ? '#3a2a2b' : '#2a2a2a'; });
       btn.addEventListener('click', async () => {
@@ -4096,7 +4230,61 @@ async function openRestoreModal(projectId: string): Promise<void> {
         await performRestore(projectId, m.snapshot.id);
         resolve();
       });
-      modal.appendChild(btn);
+      if (m.isSaved) {
+        // A point saved by the user is deleted only by the user (#523): a small
+        // ✕ on its row, with a question.
+        const row = document.createElement('div');
+        row.style.cssText = 'position:relative;';
+        const x = document.createElement('button');
+        x.textContent = '✕';
+        x.title = 'Delete this saved restore point';
+        x.style.cssText = 'position:absolute;right:8px;top:6px;background:transparent;border:none;' +
+          'color:#777;font-size:12px;cursor:pointer;padding:4px 6px;';
+        x.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          overlay.style.display = 'none';
+          const ok = await showConfirm(`Delete the saved restore point "${m.label || m.clockTime}"?`);
+          overlay.style.display = 'flex';
+          if (!ok) return;
+          try {
+            await deleteRestorePoint(projectId, m.snapshot.id);
+            row.remove();
+            showToast('Saved restore point deleted.');
+          } catch { showToast('Could not delete it.'); }
+        });
+        btn.querySelector('span:last-child')!.setAttribute('style', 'float:right;color:#888;font-size:12px;margin-right:22px;');
+        row.appendChild(btn);
+        row.appendChild(x);
+        modal.appendChild(row);
+      } else {
+        modal.appendChild(btn);
+      }
+      // SAVE RESTORE POINT (#523) — under "you are here", set off to the right
+      // so it reads as a different thing from the rows: it makes a point of
+      // NOW, with a name, kept for ever until deleted.
+      if (m.isCurrent) {
+        const saveRow = document.createElement('div');
+        saveRow.style.cssText = 'text-align:right;margin:-2px 0 12px;';
+        const save = document.createElement('button');
+        save.textContent = 'SAVE RESTORE POINT';
+        save.style.cssText =
+          'padding:8px 14px;background:transparent;border:1px solid #e8c547;border-radius:8px;' +
+          'color:#e8c547;font-size:12px;letter-spacing:.04em;cursor:pointer;';
+        save.addEventListener('click', async () => {
+          overlay.style.display = 'none';
+          const name = await showLabelEdit('');
+          if (name === null) { overlay.style.display = 'flex'; return; }
+          try {
+            await saveRestorePoint(projectId, name);
+            showToast(name ? `Restore point "${name}" saved.` : 'Restore point saved.');
+          } catch { showToast('Could not save the restore point.'); }
+          overlay.remove();
+          resolve();
+          void openRestoreModal(projectId);     // the list again, with the new row in it
+        });
+        saveRow.appendChild(save);
+        modal.appendChild(saveRow);
+      }
     }
 
     // Offline copies held on this device for this project. Italic and grey —
@@ -4697,7 +4885,20 @@ function isDeviceLocked(): boolean {
  * Gate function: check heartbeat, show overlay if another device is active,
  * wait until it stops, then pull and unlock. Returns when safe to proceed.
  */
+/**
+ * THE TEN-SECOND LOCK IS OFF (#521, Roman, 16 September evening). It was put
+ * in when a sync could land on top of what the person was doing. The sync now
+ * judges every shot, version and setting by when it was changed, waits for a
+ * drawing hand, leaves an order being dragged or a break being named alone,
+ * and asks only when two people change the same shooting order apart — so
+ * two people simply work, and the sync merges. The overnight full run of 16
+ * September is the proof either way; the switch below puts it back in one
+ * line if the night says otherwise.
+ */
+const DEVICE_LOCK_ON = false;
+
 async function waitForDeviceLock(): Promise<void> {
+  if (!DEVICE_LOCK_ON) return;
   const lockedBy = await checkHeartbeat();
   if (!lockedBy) return; // no other device active — proceed
 
@@ -4975,6 +5176,19 @@ export function importPushedFingerprints(m: Record<string, string>): void {
   for (const id of [..._serverFrameTimes.keys()]) if (!known.has(id)) _serverFrameTimes.delete(id);
   trace(`  restored ${_lastPushedFingerprints.size} frames known to be on the server` +
         ` · ${_serverFrameTimes.size} with a timestamp`);
+}
+
+/** Any shot whose content differs from what the server was last given (#521).
+ *  Only asked when nothing is marked — a change made while a sync was being
+ *  applied. Cheap: the same fingerprints the push computes. */
+export function anyShotUnsent(): boolean {
+  if (_lastPushedFingerprints.size === 0) return false;    // never pushed: not this question
+  const s = state();
+  stampChangedContent(getCurrentProject().projectId);
+  return s.frames.some((f, i) => {
+    const key = f.serverFrameId || `new_${f.id}`;
+    return _lastPushedFingerprints.get(key) !== frameFingerprint(f, i, s);
+  });
 }
 
 /** Mark one frame as no longer known to match the server. */
@@ -5863,12 +6077,30 @@ async function tryPullFromCloud(force = false): Promise<void> {
       // as matching told the app its own work was already in the cloud, so it
       // never pushed them: no conflict, no picker, and the two devices quietly
       // diverged. Keep them marked as outstanding.
+      //
+      // "UNTOUCHED BY THE ANSWER" IS NOT "UNCHANGED HERE" (#521, night run 285,
+      // part 4 with the lock off). The iPad tagged a picture: copies made on
+      // shots 1 and 2, and a second later a sync arrived that did not mention
+      // those shots. They were kept as untouched, recorded as matching the
+      // server, and the push sent shot 4 alone — the copies never went. So,
+      // BEFORE recording, every kept shot the answer left alone is compared
+      // with what the server was last given; one that differs is local work.
+      const changedHere = new Set<string>();
+      {
+        const now = state();
+        now.frames.forEach((f, i) => {
+          if (!f.serverFrameId || !untouched?.has(f.serverFrameId)) return;
+          const was = _lastPushedFingerprints.get(f.serverFrameId);
+          if (was !== undefined && was !== frameFingerprint(f, i, now)) changedHere.add(f.serverFrameId);
+        });
+      }
       adoptFingerprintsFromStore();
       // Only the frames that really are unsent get marked as outstanding. A
       // frame kept because the delta did not mention it MATCHES the server —
       // marking it would push the whole project back up on every pull and undo
-      // the saving entirely (#285).
-      const stillToSend = [...(keepLocalIds ?? [])].filter((id) => !untouched?.has(id));
+      // the saving entirely (#285) — unless it was changed here meanwhile.
+      const stillToSend = [...(keepLocalIds ?? [])].filter((id) => !untouched?.has(id) || changedHere.has(id));
+      if (changedHere.size > 0) trace(`  ${changedHere.size} kept shot(s) changed here since the last push — still to send`);
       if (stillToSend.length > 0) {
         for (const id of stillToSend) forgetPushedFingerprint(id);
         trace(`  ${stillToSend.length} kept-local frame(s) still to send`);
@@ -6028,6 +6260,7 @@ export async function bootstrapAccountSystem(): Promise<void> {
   // 0. Register cloud sync and pull-on-focus.
   registerCloudSync(syncCurrentToServer);
   registerFingerprintBridge(exportPushedFingerprints, importPushedFingerprints);
+  registerUnsentCheck(anyShotUnsent);   // (#521)
   registerTombstoneBridge(exportPendingTombstones);   // deleting is final (#327)
   registerHeardAtBridge(getHeardAt);
   // Ask iOS not to clear our storage after a week of not opening the app —
@@ -6058,6 +6291,14 @@ export async function bootstrapAccountSystem(): Promise<void> {
 
   // 1. Validate any saved session.
   await loadCurrentUser();
+
+  // 1b. UNSENT COPIES OF OTHER PROJECTS GO UP FIRST (#522, launch item 1).
+  // Before anything is on screen, every copy filed on this device for a
+  // project that could not be sent — worked on with no signal, then left for
+  // another — is put in place with its memory, synced, and archived. The one
+  // matching the project about to be restored below is left to the ordinary
+  // retry, which handles the open project.
+  await uploadUnsentCopiesAtStart();
 
   // 2. Restore unsaved local project from IndexedDB if present.
   try {
@@ -6148,6 +6389,9 @@ export async function bootstrapAccountSystem(): Promise<void> {
   }
 
   // 4. If logged in and no current project, surface the project list.
+  // Said out loud FIRST (#523): the simulator waits for this before it acts,
+  // because the project list below can stay open for as long as it likes.
+  (window as any).__fh_booted = true;
   if (isLoggedIn() && state().frames.length === 0) {
     dismissNewProjectModal();
     // Hide startup loading line before opening the (potentially long-lived) modal

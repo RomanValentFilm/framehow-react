@@ -80,7 +80,23 @@ orders or get out.
 
 ## THE LIST — 10 September, evening (Roman's order)
 
-dev is **v4.9.216 · #519** (deployed 16 September 15:50, app only; commit 813b8bf). Backend last deployed with 212. v4.9.217 · #520 = 216 + test lines only (saved, not deployed). Next number: **v4.9.218 · #521**.
+dev is **v4.9.216 · #519** (deployed 16 September 15:50, app only; commit 813b8bf). Backend last deployed with 212. v4.9.217 · #520 = 216 + test lines only (saved 20:25, commit 60cc9af, not deployed). Next number: **v4.9.218 · #521**.
+
+### 16 September, 20:45 — in the tree for the night run 285 (NOT saved yet)
+- The ten-second lock is OFF: `DEVICE_LOCK_ON = false` in accountFlow (waitForDeviceLock returns at once). Roman: no lock, no countdown; two people work, the sync merges. Put back with one line if the night says loss.
+- Launch item 2: `anyShotUnsent()` (accountFlow) asked by flushSyncNow when the flag is off — a shot changed while a sync was being applied is found by fingerprint and sent. Watch for spurious "a shot changed while a sync was being applied" pushes in the morning's logs.
+- Sync log: OFF on framehow.com, ON on dev (triple-click only on dev) — Roman's decision, not yet done.
+- Frame numbering 1/1#1: later, not a must. Housekeeping: later.
+
+### THE LAUNCH SET (agreed 16 September evening — soft launch to film colleagues who must never lose work)
+1. Unsent work of OTHER projects uploads by itself (LATER 3 → NOW). ~half a day. Test 28 proves it.
+2. A drawing/text made while a sync is being applied is still sent (system-action window) — settings covered #517, shots/versions not. ~1 h.
+3. "Save a restore point" reachable from the main menu, one line. ~1 h.
+4. Full suite green, then deploy the launch build (app + backend: backend has the restore fix and NOT EXISTS guard since 212 — already deployed).
+5. Take the sync log out (last).
+DISCUSS with Roman: the ten-second lock — what should happen when two people work on the same project at once: wait, or both work and the sync sorts it out?
+DECIDE with Roman: frame numbering (what is a shot added after 3 called?).
+LATER (comfort, not loss): repaint after a sync card-by-card; push storm + canonical list order; 100 ms redraw; dead-picture cleaner; NEW/move races (simulator-only); iPad bar sighting (wait for a second one).
 
 ## ROMAN, 16 September evening: "I need to proceed and not fix only marginal
 ## scenarios that happen if ever to 0.1% — I need to finish the app and give it

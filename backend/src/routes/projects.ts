@@ -1039,11 +1039,11 @@ projects.get("/:id/snapshots", async (c) => {
 
   const result = await c.env.DB
     .prepare(
-      `SELECT id, created_at, reason, continued_at FROM project_snapshots
+      `SELECT id, created_at, reason, continued_at, label FROM project_snapshots
        WHERE project_id = ? ORDER BY created_at DESC`,
     )
     .bind(project.id)
-    .all<{ id: string; created_at: number; reason: string; continued_at: number | null }>();
+    .all<{ id: string; created_at: number; reason: string; continued_at: number | null; label: string | null }>();
 
   const cur = await c.env.DB
     .prepare("SELECT restored_snapshot_id FROM projects WHERE id = ?")
@@ -1066,16 +1066,37 @@ projects.post("/:id/snapshots", async (c) => {
 
   // Work made offline is stamped with the time it was actually made, not the
   // time it reached us — otherwise the restore list would misreport it.
-  let reason: 'pre_restore' | 'offline' = 'pre_restore';
+  let reason: 'pre_restore' | 'offline' | 'saved' = 'pre_restore';
   let at = Date.now();
+  let label: string | null = null;
   try {
-    const b = (await c.req.json()) as { reason?: string; madeAt?: number };
+    const b = (await c.req.json()) as { reason?: string; madeAt?: number; label?: string };
     if (b?.reason === 'offline') reason = 'offline';
+    // SAVED BY THE USER (#523): a named point, kept for ever until deleted.
+    if (b?.reason === 'saved') {
+      reason = 'saved';
+      label = typeof b.label === 'string' ? b.label.trim().slice(0, 60) || null : null;
+    }
     if (typeof b?.madeAt === 'number' && b.madeAt > 0 && b.madeAt <= Date.now()) at = b.madeAt;
   } catch { /* no body — ordinary "where you are now" point */ }
 
-  await forceCreateSnapshot(c.env.DB, project.id, at, reason);
-  return c.json({ ok: true });
+  const made = await forceCreateSnapshot(c.env.DB, project.id, at, reason, label);
+  return c.json({ ok: true, id: made });
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /projects/:id/snapshots/:snapshotId — only a point the user saved
+// can be deleted by hand; the app's own points come and go by the rules.
+// ---------------------------------------------------------------------------
+projects.delete("/:id/snapshots/:snapshotId", async (c) => {
+  const me = c.get("user");
+  const project = await loadOwnedProject(c.env.DB, me.id, c.req.param("id"));
+  if (!project) return jsonError(c, 404, "not_found", "Project not found.");
+  const res = await c.env.DB
+    .prepare("DELETE FROM project_snapshots WHERE id = ? AND project_id = ? AND reason = 'saved'")
+    .bind(c.req.param("snapshotId"), project.id)
+    .run();
+  return c.json({ ok: true, deleted: res.meta?.changes ?? 0 });
 });
 
 // ---------------------------------------------------------------------------
@@ -1936,11 +1957,12 @@ async function forceCreateSnapshot(
   db: D1Database,
   projectId: string,
   now: number,
-  reason: 'auto' | 'pre_restore' | 'offline' = 'auto',
-): Promise<void> {
+  reason: 'auto' | 'pre_restore' | 'offline' | 'saved' = 'auto',
+  label: string | null = null,
+): Promise<string | null> {
   const tree = await loadProjectTree(db, projectId);
   // Skip snapshot if project is empty (no frames)
-  if (tree.frames.length === 0) return;
+  if (tree.frames.length === 0) return null;
 
   const json = JSON.stringify(tree);
 
@@ -1962,7 +1984,7 @@ async function forceCreateSnapshot(
   if (json.length > MAX_SNAPSHOT_BYTES) {
     console.warn(`[snapshot] project ${projectId} is ${Math.round(json.length / 1024)}KB `
       + `— too large for a restore point. The push itself is unaffected.`);
-    return;
+    return null;
   }
 
   // Don't stack up identical "where you left off" points. Opening the restore
@@ -1975,13 +1997,14 @@ async function forceCreateSnapshot(
     const same = await db.prepare(
       "SELECT 1 AS hit FROM project_snapshots WHERE project_id = ? AND tree_json = ? LIMIT 1",
     ).bind(projectId, json).first<{ hit: number }>();
-    if (same) return;
+    if (same) return null;
   }
 
   const id = newId();
   await db.prepare(
-    "INSERT INTO project_snapshots (id, project_id, tree_json, created_at, reason) VALUES (?, ?, ?, ?, ?)",
-  ).bind(id, projectId, json, now, reason).run();
+    "INSERT INTO project_snapshots (id, project_id, tree_json, created_at, reason, label) VALUES (?, ?, ?, ?, ?, ?)",
+  ).bind(id, projectId, json, now, reason, label).run();
+  return id;
 }
 
 /**
@@ -2003,12 +2026,16 @@ async function thinSnapshots(db: D1Database, projectId: string, now: number): Pr
 
   const keep = new Set<string>();
 
-  // Pre-restore points are the user's way back out of a restore. Keep every one
-  // of them for the full 48h window — they are never thinned into a bucket.
+  // A point SAVED BY THE USER is kept for ever, until the user deletes it (#523).
+  // "Where you left off" points follow the same rules as the automatic ones
+  // (Roman, 17 September: an ordinary point, at its time, moving down the
+  // list) — only, within an hour's bucket, one of them is preferred over an
+  // automatic point, so the way back out of a restore survives the thinning.
   for (const s of snaps) {
-    if ((s.reason === 'pre_restore' || s.reason === 'offline')
-        && now - s.created_at <= 48 * 60 * 60 * 1000) keep.add(s.id);
+    if (s.reason === 'saved') keep.add(s.id);
   }
+  const isLeftOff = (r: string) => r === 'pre_restore' || r === 'offline';
+  const pick = (from: typeof snaps) => [...from].sort((a, b) => (isLeftOff(b.reason) ? 1 : 0) - (isLeftOff(a.reason) ? 1 : 0))[0];
 
   // Bucket boundaries in ms
   const ONE_HOUR   = 60 * 60 * 1000;
@@ -2032,32 +2059,32 @@ async function thinSnapshots(db: D1Database, projectId: string, now: number): Pr
   for (let h = 1; h < 4; h++) {
     const bucketStart = now - (h + 1) * ONE_HOUR;
     const bucketEnd   = now - h * ONE_HOUR;
-    const best = snaps.find((s) => s.created_at > bucketStart && s.created_at <= bucketEnd);
+    const best = pick(snaps.filter((s) => s.created_at > bucketStart && s.created_at <= bucketEnd));
     if (best) keep.add(best.id);
   }
 
   // 5–24 hours — one per 4 hours (buckets at ~5h and ~15h roughly)
   // Bucket 1: 4–12 hours
-  const b1 = snaps.find((s) => {
+  const b1 = pick(snaps.filter((s) => {
     const age = now - s.created_at;
     return age > FOUR_HOURS && age <= 12 * ONE_HOUR;
-  });
+  }));
   if (b1) keep.add(b1.id);
 
   // Bucket 2: 12–24 hours
-  const b2 = snaps.find((s) => {
+  const b2 = pick(snaps.filter((s) => {
     const age = now - s.created_at;
     return age > 12 * ONE_HOUR && age <= TWENTY_FOUR_HOURS;
-  });
+  }));
   if (b2) keep.add(b2.id);
 
   // Older than 24h — keep the most recent one
-  const yesterday = snaps.find((s) => (now - s.created_at) > TWENTY_FOUR_HOURS);
+  const yesterday = pick(snaps.filter((s) => (now - s.created_at) > TWENTY_FOUR_HOURS));
   if (yesterday) keep.add(yesterday.id);
 
   // Delete everything not in keep, plus anything older than 48h
   const toDelete = snaps.filter((s) =>
-    !keep.has(s.id) || (now - s.created_at) > FORTY_EIGHT_HOURS,
+    s.reason !== 'saved' && (!keep.has(s.id) || (now - s.created_at) > FORTY_EIGHT_HOURS),
   );
   if (toDelete.length === 0) return;
 

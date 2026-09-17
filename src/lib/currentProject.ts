@@ -307,6 +307,11 @@ export function registerFingerprintBridge(
   _fingerprintsIn = into;
 }
 
+/** "Does any shot differ from what the server was last given?" — answered by
+ *  accountFlow, which keeps that record; asked here when the flag is off (#521). */
+let _anyShotUnsent: (() => boolean) | null = null;
+export function registerUnsentCheck(fn: () => boolean): void { _anyShotUnsent = fn; }
+
 /** The server's clock at the last answer, read the same indirect way (#284). */
 let _heardAtOut: (() => number) | null = null;
 export function registerHeardAtBridge(out: () => number): void { _heardAtOut = out; }
@@ -532,7 +537,7 @@ export async function flushSyncNow(askedByTheFetch = false): Promise<void> {
       // Filed for safety, but silent: a project the user has not saved yet is
       // not "failing to reach the cloud" — it was never sent anywhere. The
       // notice belongs to the explicit Save that fails.
-      void noticeUnsent(null, cp.name, snapshotFromStore(cp.projectId, cp.name), unsentKey(), false);
+      void noticeUnsent(null, cp.name, withMemory(snapshotFromStore(cp.projectId, cp.name)), unsentKey(), false);
     }
     return;
   }
@@ -551,8 +556,12 @@ export async function flushSyncNow(askedByTheFetch = false): Promise<void> {
   // flag or no flag: ask it.
   if (!_dirty) {
     stampChangedSettings(cp.projectId);
-    if (!settingsNeedPush()) return;            // nothing dirty, nothing to send
-    trace('  settings changed while a sync was being applied — sending them');
+    const settingsWaiting = settingsNeedPush();
+    // ...AND THE SHOTS THE SAME WAY (#521): a drawing or text made in that
+    // window is found by comparing the shot with what the server was given.
+    const shotsWaiting = !settingsWaiting && !!_anyShotUnsent && _anyShotUnsent();
+    if (!settingsWaiting && !shotsWaiting) return;            // nothing dirty, nothing to send
+    trace(`  ${settingsWaiting ? 'settings' : 'a shot'} changed while a sync was being applied — sending`);
     markSomethingToSend();
   }
   const pid = cp.projectId;
@@ -605,7 +614,7 @@ export async function flushSyncNow(askedByTheFetch = false): Promise<void> {
         setTimeout(() => void flushSyncNow(), 500);
       } catch {
         _pendingSyncIds.add(pid);
-        void noticeUnsent(pid, cp.name, snapshotFromStore(pid, cp.name), pid);
+        void noticeUnsent(pid, cp.name, withMemory(snapshotFromStore(pid, cp.name)), pid);
       }
       return; // skip the finally's cloudSyncInFlight = false (already cleared)
     }
@@ -617,11 +626,11 @@ export async function flushSyncNow(askedByTheFetch = false): Promise<void> {
     if (whatWentWrong(err?.status, (e as { code?: string })?.code) === 'gone') {
       // NOT an outage. No "you seem to be working offline" — that message was
       // untrue, and no amount of retrying will make this succeed (#465).
-      void noticeUnsent(pid, cp.name, snapshotFromStore(pid, cp.name), pid, false);
+      void noticeUnsent(pid, cp.name, withMemory(snapshotFromStore(pid, cp.name)), pid, false);
       noteTheProjectIsGone(pid);
       return;
     }
-    void noticeUnsent(pid, cp.name, snapshotFromStore(pid, cp.name), pid);
+    void noticeUnsent(pid, cp.name, withMemory(snapshotFromStore(pid, cp.name)), pid);
   } finally {
     cloudSyncInFlight = false;
   }
@@ -822,6 +831,25 @@ function scheduleAutosave(): void {
 export async function saveLocalNow(): Promise<void> {
   if (autosaveTimer !== null) { clearTimeout(autosaveTimer); autosaveTimer = null; }
   await runAutosave();
+}
+
+/**
+ * THE MEMORY RIDES WITH THE COPY (#522). A snapshot of the project alone —
+ * frames, versions, settings — says nothing about WHEN each thing changed or
+ * what the server already has. The local autosave has always added that;
+ * the unsent copies filed for a project that could not be sent did not, so
+ * whoever pushed such a copy later sent everything aged zero and lost to any
+ * dated copy on the server. One place adds it now, for both.
+ */
+export function withMemory(snap: ReturnType<typeof snapshotFromStore>): ReturnType<typeof snapshotFromStore> {
+  snap.localId = _localId;
+  snap.dirtyFrameIds = [..._dirtyFrameIds];
+  if (_fingerprintsOut) snap.pushedFingerprints = _fingerprintsOut();
+  snap.settingStamps = exportSettingStamps();
+  snap.contentStamps = exportChangeStamps();
+  if (_tombstonesOut) snap.pendingTombstones = _tombstonesOut();
+  if (_heardAtOut) snap.heardAt = _heardAtOut();
+  return snap;
 }
 
 let _autosaveInFlight = false;

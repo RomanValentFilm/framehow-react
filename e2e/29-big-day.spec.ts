@@ -1117,6 +1117,22 @@ test('big day, part 9: restore points, delete and recover a project, on both dev
     expect.soft(restored.shots[0].label, 'BEFORE again on both').toBe('BEFORE');
     expect.soft(restored.shots[1].text, 'the later text is gone on both').toBe('');
 
+    // ── a restore point SAVED by hand, named, kept, and deletable (#523) ──
+    say('── desktop saves a restore point "BEFORE CUT"; it is in the list on both; then deletes it ──');
+    await desktop.saveRestorePoint('BEFORE CUT');
+    let saved = (await desktop.restorePoints()).filter((p) => p.reason === 'saved');
+    expect.soft(saved.map((p) => p.label), 'the saved point is listed with its name').toContain('BEFORE CUT');
+    const savedOnIpad = (await ipad.restorePoints()).filter((p) => p.reason === 'saved');
+    expect.soft(savedOnIpad.map((p) => p.label), 'the iPad sees the saved point too').toContain('BEFORE CUT');
+    const auto = (await desktop.restorePoints()).find((p) => p.reason !== 'saved');
+    if (auto) {
+      await desktop.deleteRestorePoint(auto.id);      // the ✕ is for saved points only
+      expect.soft((await desktop.restorePoints()).some((p) => p.id === auto.id), 'an automatic point cannot be deleted by hand').toBe(true);
+    }
+    await desktop.deleteRestorePoint(saved[0].id);
+    saved = (await desktop.restorePoints()).filter((p) => p.reason === 'saved');
+    expect.soft(saved.length, 'the saved point is gone after its ✕').toBe(0);
+
     // ── delete on the desktop, recover from the iPad ─────────────────────
     say('── iPad moves to another project; desktop deletes RESTORE; iPad recovers it ──');
     const other = await ipad.newProjectOfKind('BIG DAY — OTHER', 'landscape', 2);

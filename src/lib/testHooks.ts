@@ -31,7 +31,7 @@ import { handlePDF } from './pdf';
 import { deleteFrameForGood, handleMainAction, handleAction, renameFrame, hideFrame, unhideFrame } from './actions';
 import { createSetup, handleSetupFrameClick, handleStripTagClick } from './setups';
 import { renameNeedTab, renameNeedTable, renameNeedItem, ensureFrameNeeds } from './needs';
-import { saveNow, openCloudProjectById, beginNewProject, untouchedStrip, makeRestorePoint, listRestorePoints, restoreToPoint, deleteCloudProject, recoverCloudProject } from './accountFlow';
+import { saveNow, openCloudProjectById, beginNewProject, untouchedStrip, makeRestorePoint, listRestorePoints, restoreToPoint, deleteCloudProject, recoverCloudProject, saveRestorePoint, deleteRestorePoint } from './accountFlow';
 import { flushSyncNow, markFrameDirty, getDirtyFrameIds, pullNow } from './currentProject';
 import { openNeedsModal } from './overview';
 import { stampChangedContent } from './changeStamps';
@@ -195,7 +195,11 @@ export interface TestDoor {
     | 'fitting-pdf' | 'fitting-pptx' | 'fitting-images'): void;
   /** PART 9 (#515): restore points, delete and recover — the app's own functions. */
   makeRestorePoint(): Promise<void>;
-  restorePoints(): Promise<Array<{ id: string; created_at: number; reason?: string }>>;
+  restorePoints(): Promise<Array<{ id: string; created_at: number; reason?: string; label?: string | null }>>;
+  /** SAVE RESTORE POINT with a name, as the button in the Restore modal does (#523). */
+  saveRestorePoint(label: string): Promise<void>;
+  /** ...and delete a saved one, as its ✕ does. */
+  deleteRestorePoint(id: string): Promise<void>;
   restoreTo(snapshotId: string): Promise<void>;
   /** Delete the OPEN project (the list's Delete after its confirms). */
   deleteThisProject(): Promise<void>;
@@ -1131,6 +1135,16 @@ export function installTestDoor(): void {
       const id = getCurrentProject().projectId;
       if (!id) throw new Error('no project on the server to make a restore point of');
       await makeRestorePoint(id);
+    },
+    async saveRestorePoint(label) {
+      const id = getCurrentProject().projectId;
+      if (!id) throw new Error('no project on the server to save a restore point of');
+      await saveRestorePoint(id, label);
+    },
+    async deleteRestorePoint(snapshotId) {
+      const id = getCurrentProject().projectId;
+      if (!id) throw new Error('no project on the server');
+      await deleteRestorePoint(id, snapshotId);
     },
     async restorePoints() {
       const id = getCurrentProject().projectId;
