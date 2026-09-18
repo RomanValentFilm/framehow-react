@@ -168,7 +168,13 @@ function renderAllNow(): void {
     // Sync button label from stripDefs — and SHOT from the column names (#510)
     const def = s.stripDefs.find((d) => d.id === strip);
     if (def) b.textContent = def.buttonLabel;
-    else if ((strip as string) === 'main') b.textContent = columnName('main').buttonLabel;
+    else if ((strip as string) === 'main') {
+      // A FITTING project's main column is TALENTS (#530). The column name
+      // (#510) overwrote the fitting wording on every render, so the button
+      // read SHOT. The project's own name still wins when it was changed.
+      const own = columnName('main').buttonLabel;
+      b.textContent = (s.projectType === 'fitting' && own === 'SHOT') ? 'TALENTS' : own;
+    }
   });
   // NEEDS and NOTES carry the project's names too (#510).
   const needsBtnEl = document.getElementById('needsStripBtn');

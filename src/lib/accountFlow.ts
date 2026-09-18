@@ -1483,6 +1483,7 @@ function putCopyInPlace(rec: PendingRecord, projectId: string | null, name: stri
 // ---------------------------------------------------------------------------
 
 let _uploadingCopies = false;
+let _goesFirstTraced = 0;
 const _namelessTraced = new Set<string>();
 let _copiesCheckTimer: number | null = null;
 let _lastCopiesCheck = 0;
@@ -1559,6 +1560,9 @@ function putOpenProjectBack(h: HeldOpenProject): void {
   } finally {
     endSystemAction();
   }
+  // A project not yet in the cloud is unsent by definition: keep it marked so
+  // the retry still creates it when its name or its minute comes (#529).
+  if (!pid) markSomethingToSend();
 }
 
 let _unsentNotice: HTMLElement | null = null;
@@ -1628,8 +1632,18 @@ async function uploadUnsentCopies(reason: 'start' | 'reconnect'): Promise<void> 
   // is tried now — the next save asks again. A project not yet in the cloud
   // (made offline, no id) is created by the retry; its save asks for us.
   if (reason === 'reconnect' && state().frames.length > 0) {
-    if (!getCurrentProject().projectId) {
-      trace(`${copies.length} unsent copy(ies) of other projects waiting — the open project is not in the cloud yet, it goes first`);
+    const open = getCurrentProject();
+    // THE OPEN PROJECT GOES FIRST, NAMED OR NOT (Roman, #530). One without a
+    // cloud id is created by the retry — seconds away. An UNNAMED one would
+    // wait for its minute of work, and if the iPad is put down that minute
+    // never comes and the copies behind it wait for ever: so at reconnect it
+    // is counted as offered and goes up as "Untitled …" now.
+    if (!open.projectId) {
+      if (!open.name) markSaveOffered();          // → retry now, as Untitled
+      if (Date.now() - _goesFirstTraced > 60_000) {
+        _goesFirstTraced = Date.now();
+        trace(`${copies.length} unsent copy(ies) of other projects waiting — the open project is not in the cloud yet, it goes first${open.name ? '' : ' (as Untitled)'}`);
+      }
       lookForUnsentCopiesSoon(5_000);
       return;
     }
@@ -4948,7 +4962,13 @@ async function checkServerAfterReconnect(): Promise<void> {
   // save, which asks for them (#523). ASKED NOW, not at the timer's next tick
   // (#524): the iPad never fires the browser's "online" event, so the retry
   // waited up to forty seconds here while the unsent copy waited behind it.
-  if (!cp.projectId) { retryNow(); lookForUnsentCopiesSoon(6_000); return; }
+  // NAMED OR NOT (#530): made offline, it goes up as "Untitled …" at once.
+  if (!cp.projectId) {
+    if (!cp.name && state().frames.length > 0) markSaveOffered();
+    retryNow();
+    lookForUnsentCopiesSoon(6_000);
+    return;
+  }
 
   trace('back online — asking the server what it has');
   // A device that STARTED offline never learned who it was, and everything that

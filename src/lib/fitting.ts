@@ -31,9 +31,12 @@ const CANONICAL: [string, string[]][] = [
 ];
 
 /** Original button wording, restored alongside the original positions. */
+// The main strip's label is NOT judged here (#530): it belongs to the column
+// names (#510) and is written by render on every pass — SHOT, the project's
+// own name, or TALENTS in a fitting project. Judging it against "SHOT" made
+// a renamed column look non-canonical on every render.
 const CANONICAL_TEXT: [string, string][] = [
   ['.view-btn[data-view="3x2"]', '3×2VIEW'],
-  ['.strip-toggle[data-strip="main"]', 'SHOT'],
   ['.view-btn[data-view="grid4"]', 'M+3'],
 ];
 
@@ -50,7 +53,6 @@ const HIDDEN_IN_FITTING = [
 /** Fitting wording. */
 const FITTING_TEXT: [string, string][] = [
   ['.view-btn[data-view="3x2"]', 'CAST BOARD'],
-  ['.strip-toggle[data-strip="main"]', 'TALENTS'],
   ['.view-btn[data-view="grid4"]', 'LOOKS GALLERY'],
 ];
 
