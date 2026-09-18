@@ -494,6 +494,27 @@ function scrollerAround(el: HTMLElement): HTMLElement | null {
   return null;
 }
 
+/**
+ * WHERE THE CONTENT STARTS: the bottom of the lowest bar on screen (#528).
+ *
+ * A card's place was remembered and put back as a distance from the TOP OF
+ * THE WINDOW. The cards sit under the bars, and at open the bars are not
+ * always at their final height when the place is put back — so the sum came
+ * out a bar's height off, and every project opened with its first card
+ * tucked under the bars (desktop) or its button row half hidden (iPad).
+ * Measured from the bars' bottom on both ends, the bars cancel out.
+ */
+function contentTop(): number {
+  let top = 0;
+  for (const id of ['mainToolbar', 'detailBar']) {
+    const el = document.getElementById(id);
+    if (el && getComputedStyle(el).display !== 'none') top = Math.max(top, el.getBoundingClientRect().bottom);
+  }
+  const vb = document.querySelector('.view-bar') as HTMLElement | null;
+  if (vb && getComputedStyle(vb).display !== 'none') top = Math.max(top, vb.getBoundingClientRect().bottom);
+  return Math.max(0, top);
+}
+
 export function scrollAnchorToRel(fid: string | number | null, rel: number | null): void {
   if (!fid) return;
   sayWhoScrolled(`back to where it was, on ${fid}`);
@@ -506,7 +527,7 @@ export function scrollAnchorToRel(fid: string | number | null, rel: number | nul
   // from the top of the document: in 3x2 the storyboard scrolls inside a column,
   // not in the window, so a document position moved nothing at all while the
   // rebuild quietly shifted the column — which is precisely what was happening.
-  const move = Math.round(rect.top + rel * rect.height);
+  const move = Math.round((rect.top - contentTop()) + rel * rect.height);
   if (Math.abs(move) < 2) return;
   const scroller = scrollerAround(target);
   if (scroller) scroller.scrollTop += move; else window.scrollBy(0, move);
@@ -538,7 +559,7 @@ export function captureFrameAnchor(): { fid: string; rel: number } | null {
   const fid = best.dataset.mfid || best.dataset.vfid || best.dataset.ofid
            || best.dataset.g3fid || best.dataset.notesFid || best.dataset.needsFid;
   if (!fid || r.height <= 0) return null;
-  return { fid, rel: Math.max(-1, Math.min(2, -r.top / r.height)) };
+  return { fid, rel: Math.max(-1, Math.min(2, -(r.top - contentTop()) / r.height)) };
 }
 
 /**

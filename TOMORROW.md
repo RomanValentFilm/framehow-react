@@ -80,7 +80,7 @@ orders or get out.
 
 ## THE LIST — 10 September, evening (Roman's order)
 
-dev is **v4.9.216 · #519** (deployed 16 September 15:50, app only; commit 813b8bf). Backend last deployed with 212. v4.9.218 · #521 DEPLOYED 17 September 14:00 — app AND backend AND migration 0027 (snapshot label) on the live database; commit 2956a52. Full run 289: 73 green · 6 skipped · 2 red (15 known idle timing; 03 = reload timing, fixed after, green in 290). Next number: **v4.9.219 · #522**.
+dev is **v4.9.224 · #527** (app; backend last deployed with 219 · #522, 18 Sept 11:45 — sign-in renewal, shot guard, restore dedupe). Next number: **v4.9.225 · #528**. Deploys today: 219 (app+backend), 220, 221, 222, 223, 224 (app).
 
 ### DONE 17 September — the launch set (v4.9.218 · #521)
 1. Unsent copies of other projects: carry their memory (`withMemory`); opening a project with an unsent copy starts from the copy then syncs (`startFromUnsentCopy`); at app start every unsent copy of another project is put in place, synced, archived (`uploadUnsentCopiesAtStart`, "Uploading unsent work: …"). Test 28 green (red since run 179).
@@ -113,9 +113,11 @@ Roman's two by-hand offline scenarios (iPad + desktop), traced from his logs:
 - SETUP names: 12 letters (was 7); input 140px wide.
 - iPad DETAIL BAR missing at open (2 sightings): the bar is fixed at "under the view bar" by measurement (`_fhSyncDetailTop`); a project opened from an EMPTY screen measured while the view bar was hidden (no height) → bar parked behind the toolbar until rotate/reload. render.ts re-measures when the view bar comes back.
 - iPad keyboard: shooting-order rename in the sticky header no longer freezes the page on a physical keyboard (freezing un-stuck the header → "jumped to the top"); break rename ignores a second tap while the page is already frozen (it re-measured with scroll=0 → jumped).
-### 18 September, 15:00 — in the tree for v4.9.224 · #527 (app only)
+### 18 September, 15:00 — v4.9.224 · #527 DEPLOYED 15:20, app only (commit 1244bbc; next number v4.9.225 · #528). Run 298 BIG DAY 11/11.
 - LOAD on a version strip (ver/floor/refs, in the card and in fullscreen; NOT main; DESKTOP only — touch devices open the picker directly) opens a sheet: drop zone "Drop your pictures here" + "Choose from your files…" (the old picker) + Cancel. One loader for both doors: `loadPicturesIntoVersions` in `src/lib/loadPictures.ts` (the body the picker's change handler had in init.ts). Several pictures → several versions, as before. Harness `uploadPicture` presses the sheet's button for non-main strips.
 - iPad break rename: a tap into the field that already has the cursor is left to iOS (cursor lands where the finger is).
+### 18 September, 15:40 — in the tree for v4.9.225 · #528 (app only)
+- A project opened slightly scrolled (first card under the bars on the desktop, button row half hidden on the iPad): the "back to where it was" anchor was measured from the window's top edge, and at open the bars are not at their final height yet, so the nudge came out a bar's height off. `captureFrameAnchor`/`scrollAnchorToRel` now measure from the bars' bottom (`contentTop()` in view.ts). A place remembered by an older build restores once a bar's height too LOW, then corrects itself at the next save.
 OPEN: where the PDF project made offline on the iPad went (asked Roman: OPEN → is there a row for it). UI items from 18 Sept still to do: DETAIL BAR missing on iPad at open (2nd sighting); shooting-order rename scrolls to the very top on iPad; break rename field jumps on the 2nd tap; GROUP modal CANCEL/SAVE in the SELECT ALL row, right-aligned; SETUPS names 12 letters.
 
 ### LATER (Roman, 18 September) — a version's marks and its content travel apart (~half a day)

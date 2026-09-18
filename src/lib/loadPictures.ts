@@ -119,12 +119,16 @@ export function openLoadPicturesSheet(): void {
   box.innerHTML = `
     <div style="font-weight:700;font-size:15px;margin-bottom:12px;">Load pictures</div>
     <div class="load-drop-zone" style="
-      border:2px dashed #555;border-radius:12px;padding:34px 16px;text-align:center;
-      color:#aaa;font-size:14px;margin-bottom:14px;transition:border-color .15s,background .15s;">
-      Drop your pictures here<br>
-      <span style="font-size:12px;color:#777;">several at once open as several versions</span>
+      border:2px dashed #555;border-radius:12px;height:200px;display:flex;align-items:center;
+      justify-content:center;text-align:center;color:#aaa;font-size:15px;
+      transition:border-color .15s,background .15s;">
+      Drop your pictures here
     </div>
-    <div style="display:flex;gap:10px;justify-content:flex-end;align-items:center;">
+    <div style="text-align:center;font-size:12px;color:#777;margin:8px 0 14px;">
+      several at once open as several versions
+    </div>
+    <div style="text-align:center;font-size:13px;color:#888;margin-bottom:10px;">or</div>
+    <div style="display:flex;gap:10px;justify-content:center;align-items:center;">
       <button class="load-cancel-btn" style="
         padding:9px 16px;border-radius:8px;border:1px solid #555;background:#2a2a2a;
         color:#ccc;font-size:13px;font-weight:500;cursor:pointer;
