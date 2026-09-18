@@ -2,6 +2,7 @@
 // in a large overlay with the same drawing toolbar.
 
 import { COLORS, state, useStore, bumpRenderTick } from '../store/state';
+import { openLoadPicturesSheet } from './loadPictures';
 import type { StripType } from '../store/state';
 import { drawToolbarHTML, starHTML, toggleStar, getStripVersions, stripTabPrefix, stripScrollId, ensureStripVersions, getStripActiveTab, setStripActiveTab, addNewStripVersion, relabelStripVersions, revealActiveVersionTab } from './helpers';
 import { restoreCanvas, restoreMainCanvas, setupDrawing, setupMainDrawing, snapshotFrame } from './drawing';
@@ -358,8 +359,7 @@ export function openFullscreen(
       btn.addEventListener('click', () => {
         exitReorder();
         useStore.setState({ imgTarget: { fid, div: overlay, fromCompare: false, stripType: strip } });
-        (document.getElementById('imgInput') as HTMLInputElement).removeAttribute('capture');
-        (document.getElementById('imgInput') as HTMLInputElement).click();
+        openLoadPicturesSheet();          // drop zone + the file picker (#527)
       })
     );
     // Hide button — hide current version (same as strip Hide)

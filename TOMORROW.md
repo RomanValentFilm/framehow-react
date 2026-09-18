@@ -108,11 +108,14 @@ Roman's two by-hand offline scenarios (iPad + desktop), traced from his logs:
 - Named or not: the save reminder comes after ONE minute of work (was five); once it has been shown, an unnamed project goes up by itself under "Untitled <day> <mon> <hh:mm>" (`markSaveOffered` → `_saveOffered` in currentProject, reset by clearCurrentProject). Not yet driven by the simulator (its doors always name a project).
 ### 18 September, 13:40 — v4.9.222 · #525 DEPLOYED 13:55, app only (commit 6465db8; next number v4.9.223 · #526). Run 296 (offline cases): 9 green.
 - Copies of other projects: `uploadUnsentCopies('reconnect')` now WAITS (up to 10 s) for a running push/fetch instead of stepping back, and the waits are 2 s after a save / 5 s "trying later" / 3 s cooldown (were 4 / 15 / 10). Roman's FR 1 took 55 s to go up while he kept editing the open project.
-### 18 September, 14:10 — in the tree for v4.9.223 · #526 (app only)
+### 18 September, 14:10 — v4.9.223 · #526 DEPLOYED 14:30, app only (commit 935a104; next number v4.9.224 · #527). Run 297 (04/16/17/19): 8 green, 1 skipped.
 - GROUP editor: CANCEL and SAVE in the SELECT ALL / DESELECT ALL row, right-aligned; DELETE alone at the bottom for an existing group. Saving a NEW group enters it (`enterGroup(createGroup(...))`) — it used to drop back to ALL.
 - SETUP names: 12 letters (was 7); input 140px wide.
 - iPad DETAIL BAR missing at open (2 sightings): the bar is fixed at "under the view bar" by measurement (`_fhSyncDetailTop`); a project opened from an EMPTY screen measured while the view bar was hidden (no height) → bar parked behind the toolbar until rotate/reload. render.ts re-measures when the view bar comes back.
 - iPad keyboard: shooting-order rename in the sticky header no longer freezes the page on a physical keyboard (freezing un-stuck the header → "jumped to the top"); break rename ignores a second tap while the page is already frozen (it re-measured with scroll=0 → jumped).
+### 18 September, 15:00 — in the tree for v4.9.224 · #527 (app only)
+- LOAD on a version strip (ver/floor/refs, in the card and in fullscreen; NOT main; DESKTOP only — touch devices open the picker directly) opens a sheet: drop zone "Drop your pictures here" + "Choose from your files…" (the old picker) + Cancel. One loader for both doors: `loadPicturesIntoVersions` in `src/lib/loadPictures.ts` (the body the picker's change handler had in init.ts). Several pictures → several versions, as before. Harness `uploadPicture` presses the sheet's button for non-main strips.
+- iPad break rename: a tap into the field that already has the cursor is left to iOS (cursor lands where the finger is).
 OPEN: where the PDF project made offline on the iPad went (asked Roman: OPEN → is there a row for it). UI items from 18 Sept still to do: DETAIL BAR missing on iPad at open (2nd sighting); shooting-order rename scrolls to the very top on iPad; break rename field jumps on the 2nd tap; GROUP modal CANCEL/SAVE in the SELECT ALL row, right-aligned; SETUPS names 12 letters.
 
 ### LATER (Roman, 18 September) — a version's marks and its content travel apart (~half a day)

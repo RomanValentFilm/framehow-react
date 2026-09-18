@@ -1036,12 +1036,23 @@ export class Device {
   /** Press UPLOAD and hand the app's own file chooser a small picture. */
   async uploadPicture(index: number, strip: 'main' | string, pngBase64: string): Promise<void> {
     say(`${this.name}: UPLOAD on shot ${index + 1} (${strip})`);
-    const [chooser] = await Promise.all([
-      this.page.waitForEvent('filechooser', { timeout: 10_000 }),
-      this.page.evaluate(([i, st]) =>
-        (window as never as { __fh_test: { pressUpload(i: number, st: string): void } })
-          .__fh_test.pressUpload(i as number, st as string), [index, strip] as [number, string]),
-    ]);
+    const press = () => this.page.evaluate(([i, st]) =>
+      (window as never as { __fh_test: { pressUpload(i: number, st: string): void } })
+        .__fh_test.pressUpload(i as number, st as string), [index, strip] as [number, string]);
+    let chooser;
+    if (strip === 'main') {
+      [chooser] = await Promise.all([this.page.waitForEvent('filechooser', { timeout: 10_000 }), press()]);
+    } else {
+      // A version strip's LOAD opens the load sheet first on a desktop (#527):
+      // drop zone and a "Choose from your files…" button — the simulator
+      // presses the button the person presses. On a touch device (the
+      // simulator's iPad) the picker opens straight away.
+      const waiting = this.page.waitForEvent('filechooser', { timeout: 10_000 });
+      await press();
+      const choose = this.page.locator('#loadPicturesSheet .load-choose-btn');
+      if (await choose.isVisible().catch(() => false)) await choose.click();
+      chooser = await waiting;
+    }
     await chooser.setFiles({ name: 'picture.png', mimeType: 'image/png', buffer: Buffer.from(pngBase64, 'base64') });
   }
 

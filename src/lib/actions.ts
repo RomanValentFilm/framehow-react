@@ -38,6 +38,7 @@ import { drawFit } from './drawing';
 import { openCamera, getCameraTarget, clearCameraTarget, setOnCapturedImage } from './camera';
 import { recordTombstone } from './accountFlow';
 import { openFullscreen } from './fullscreen';
+import { openLoadPicturesSheet } from './loadPictures';
 import { markAppScroll, showBarsNow } from './view';
 import { flushSyncNow, markSomethingToSend, getCurrentProject } from './currentProject';
 import { stampChangedContent } from './changeStamps';
@@ -524,8 +525,7 @@ export function handleAction(action: string, fid: number, div: HTMLElement, from
     openFullscreen(fid, ai, strip, 'draw');
   } else if (action === 'upload') {
     useStore.setState({ imgTarget: { fid, div, fromCompare, stripType: strip } });
-    (document.getElementById('imgInput') as HTMLInputElement).removeAttribute('capture');
-    (document.getElementById('imgInput') as HTMLInputElement).click();
+    openLoadPicturesSheet();          // drop zone + the file picker (#527)
   } else if (action === 'camera') {
     openCamera(fid, div, !!fromCompare, false, strip);
   } else if (action === 'text') {

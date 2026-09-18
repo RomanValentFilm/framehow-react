@@ -38,6 +38,7 @@ import { handleFolderImages, startFromScratch, startPortrait, startFitting } fro
 import { installTestDoor } from './testHooks';
 import { openExportModal, openPptxModal, runExport, runPptxExport, openImageExportModal, runImageExport, openPortraitExportModal, runPortraitExport, openPortraitImageExportModal, runPortraitImageExport, openFittingExportModal, runFittingExport, openFittingImageExportModal, runFittingImageExport, updateExportVisibility, buildVersionPicker, buildPptxVersionPicker, lockPageScroll, unlockPageScroll } from './exports';
 import { wireCameraEvents } from './camera';
+import { loadPicturesIntoVersions } from './loadPictures';
 // openFullscreen is now triggered by DRAW button (actions.ts), not the fs-btn
 import { toggleGroupSidebar } from './groups';
 import { toggleSetupMode, handleSetupFrameClick, handleSetupRemoveClick, handleStripTagClick, showSetupPillHint } from './setups';
@@ -1097,64 +1098,9 @@ export function initFramehow(): void {
   });
 
   document.getElementById('imgInput')!.addEventListener('change', (e) => {
-    const files = (e.target as HTMLInputElement).files;
-    const s = state();
-    if (!files || files.length === 0 || !s.imgTarget) return;
-    const { fid, div, fromCompare } = s.imgTarget;
-    const strip: StripType = s.imgTarget.stripType || 'ver';
-    const scrollId = stripScrollId(strip);
-    snapshotFrame(fid, strip);
-    let loaded = 0;
-    const total = files.length;
-    for (let i = 0; i < total; i++) {
-      const reader = new FileReader();
-      reader.onerror = () => {
-        trace(`picture: could not read "${files[i].name}" — ${reader.error?.name ?? 'unknown error'}: ${reader.error?.message ?? ''}`);
-        showToast('Could not read that picture.');
-      };
-      reader.onload = (ev) => {
-        const dataURL = (ev.target as FileReader).result as string;
-        if (i === 0) {
-          // First file: use autoNewStripVersionIfNeeded (respects current tab state)
-          const target = autoNewStripVersionIfNeeded(fid, strip);
-          target.type = 'upload';
-          target.bgImage = dataURL;
-          target.r2Key = undefined; // Clear so sync uploads the new image
-        } else {
-          // Additional files: create new version tabs (new versions have no r2Key by default)
-          const allVers = getStripVersions(fid, strip);
-          const n = allVers.length + 1;
-          const prefix = stripTabPrefix(strip);
-          const newVer = { id: n, label: `${prefix}${n}`, type: 'upload' as const, strokes: [], bgImage: dataURL };
-          allVers.push(newVer);
-          setStripActiveTab(fid, strip, allVers.length - 1);
-        }
-        loaded++;
-        if (loaded === total) {
-          // All files loaded — re-render once
-          if (fromCompare) {
-            setStripCrossCompare(fid, strip, getStripActiveTab(fid, strip));
-            renderMainFrame(div, fid);
-            const vd = document.querySelector(`#${scrollId} .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
-            if (vd) renderVersionFrame(vd, fid, strip);
-          } else {
-            renderVersionFrame(div, fid, strip);
-          }
-          if (state().currentViewMode === 'grid3x2') {
-            const cw = document.querySelector(`#overviewScroll .grid3x2-card-wrap[data-g3fid="${fid}"]`) as HTMLElement | null;
-            if (cw) renderGrid3x2Card(cw, fid);
-          } else if (state().currentViewMode === 'overview' || state().currentViewMode === 'grid4') {
-            const ovRow = document.querySelector(`#overviewScroll .overview-row[data-ofid="${fid}"]`) as HTMLElement | null;
-            if (ovRow) { state().currentViewMode === 'grid4' ? renderGrid4Row(ovRow, fid) : renderOverviewRow(ovRow, fid); }
-          }
-          useStore.setState({ overviewAction: false });
-          // Refresh fullscreen overlay if open
-          if (document.querySelector('.fs-overlay')) window.dispatchEvent(new Event('fs-refresh'));
-          void flushSyncNow(); // VER-3/VER-4: upload to version → file(s) loaded
-        }
-      };
-      reader.readAsDataURL(files[i]);
-    }
+    // The body of this handler lives in loadPictures.ts now (#527), so a
+    // dropped picture and a picked picture take the same path.
+    loadPicturesIntoVersions((e.target as HTMLInputElement).files ?? []);
     (e.target as HTMLInputElement).value = '';
   });
 

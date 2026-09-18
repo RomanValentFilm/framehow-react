@@ -2878,6 +2878,12 @@ function wireEditViewEvents(el: HTMLElement, orderId: string): void {
     } else if (hasTouchScreen) {
       // iPad: prevent iOS scroll, focus manually without scrolling
       inp.addEventListener('touchstart', (e) => {
+        // A TAP INTO A FIELD THAT ALREADY HAS THE CURSOR IS THE PERSON PLACING
+        // THE CURSOR (#527). Swallowing it kept the cursor at the end: "you
+        // cannot tap into the middle of the name's text … you have to delete
+        // the second word to get to the first". Left to iOS, which puts the
+        // cursor where the finger is; the page is already settled by then.
+        if (document.activeElement === inp) return;
         e.preventDefault();
         inp.removeAttribute('readonly');
         inp.focus({ preventScroll: true });
