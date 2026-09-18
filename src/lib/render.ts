@@ -181,7 +181,18 @@ function renderAllNow(): void {
   if (offBtn) offBtn.style.display = (s.currentViewMode === 'overview' || s.currentViewMode === 'grid4') ? '' : 'none';
   // Show/hide view-bar based on whether we have frames
   const viewBarEl = document.querySelector('.view-bar') as HTMLElement | null;
-  if (viewBarEl) viewBarEl.style.display = s.frames.length ? '' : 'none';
+  if (viewBarEl) {
+    const wasHidden = viewBarEl.style.display === 'none';
+    viewBarEl.style.display = s.frames.length ? '' : 'none';
+    // THE DETAIL BAR IS PLACED BY MEASURING THE VIEW BAR (#526). On the iPad
+    // it is fixed at "just under the view bar", and that height was last
+    // measured whenever the bars were wired or the device rotated. A project
+    // opened from an EMPTY screen — where the view bar is hidden and has no
+    // height — left the detail bar parked at the top edge, behind the
+    // toolbar, until a reload. Roman saw it twice. Re-measure the moment the
+    // view bar comes back.
+    if (wasHidden && s.frames.length) (window as any)._fhSyncDetailTop?.();
+  }
   // Show/hide setup-bar based on setup mode
   const setupBarEl = document.getElementById('setupBar') as HTMLElement | null;
   if (setupBarEl && !s.setupMode) setupBarEl.style.display = 'none';

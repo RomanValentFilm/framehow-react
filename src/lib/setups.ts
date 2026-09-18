@@ -1,5 +1,5 @@
 // Setups — colour-coded lighting/time-of-day labels for main frame cards.
-// Each setup has a name (max 7 chars, UPPERCASE) and a colour from the 12-colour palette.
+// Each setup has a name (max 12 chars, UPPERCASE) and a colour from the 12-colour palette.
 // Frames can belong to at most one setup. A colour tag shows on the canvas in all views.
 
 import { state, useStore, SETUP_COLORS, bumpRenderTick } from '../store/state';
@@ -177,7 +177,7 @@ function _showInlineCreateForm(bar: HTMLElement): void {
   const row = document.createElement('div');
   row.className = 'setup-create-row';
   row.innerHTML = `
-    <input class="setup-name-input" id="setupInlineNameInput" type="text" maxlength="7" placeholder="NAME" autocomplete="one-time-code" />
+    <input class="setup-name-input" id="setupInlineNameInput" type="text" maxlength="12" placeholder="NAME" autocomplete="one-time-code" />
     <div class="setup-color-picker">${colorsHTML}</div>
     <button class="setup-create-btn" id="setupInlineCreateBtn">CREATE</button>
     <button class="setup-cancel-btn" id="setupInlineCancelBtn">CANCEL</button>
@@ -201,7 +201,7 @@ function _showInlineCreateForm(bar: HTMLElement): void {
     const input = document.getElementById('setupInlineNameInput') as HTMLInputElement;
     const name = input.value.trim().toUpperCase();
     if (!name) { showToast('Enter a name'); return; }
-    if (name.length > 7) { showToast('Max 7 characters'); return; }
+    if (name.length > 12) { showToast('Max 12 characters'); return; }
     const latest = state();
     if (latest.setups.some((su) => su.name === name)) { showToast('Name already used'); return; }
 
@@ -244,7 +244,7 @@ function _showInlineEditForm(bar: HTMLElement): void {
   const row = document.createElement('div');
   row.className = 'setup-create-row';
   row.innerHTML = `
-    <input class="setup-name-input" id="setupInlineEditNameInput" type="text" maxlength="7" value="${su.name}" autocomplete="one-time-code" />
+    <input class="setup-name-input" id="setupInlineEditNameInput" type="text" maxlength="12" value="${su.name}" autocomplete="one-time-code" />
     <div class="setup-color-picker">${colorsHTML}</div>
     <button class="setup-create-btn" id="setupInlineEditSaveBtn">SAVE</button>
     <button class="setup-delete-btn" id="setupInlineEditDeleteBtn">DELETE</button>
@@ -269,7 +269,7 @@ function _showInlineEditForm(bar: HTMLElement): void {
     const input = document.getElementById('setupInlineEditNameInput') as HTMLInputElement;
     const name = input.value.trim().toUpperCase();
     if (!name) { showToast('Enter a name'); return; }
-    if (name.length > 7) { showToast('Max 7 characters'); return; }
+    if (name.length > 12) { showToast('Max 12 characters'); return; }
     const latest = state();
     if (latest.setups.some((x) => x.name === name && x.id !== su.id)) { showToast('Name already used'); return; }
 
@@ -317,7 +317,7 @@ function renderSetupEditForm(bar: HTMLElement, setupId: string): void {
 
   bar.innerHTML = `
     <div class="setup-bar-inner setup-edit-form">
-      <input class="setup-name-input" id="setupEditNameInput" type="text" maxlength="7" value="${su.name}" autocomplete="one-time-code" />
+      <input class="setup-name-input" id="setupEditNameInput" type="text" maxlength="12" value="${su.name}" autocomplete="one-time-code" />
       <div class="setup-color-picker">${colorsHTML}</div>
       <button class="setup-create-btn" id="setupEditSaveBtn">SAVE</button>
       <button class="setup-delete-btn" id="setupEditDeleteBtn">DELETE</button>
@@ -341,7 +341,7 @@ function renderSetupEditForm(bar: HTMLElement, setupId: string): void {
     const input = document.getElementById('setupEditNameInput') as HTMLInputElement;
     const name = input.value.trim().toUpperCase();
     if (!name) { showToast('Enter a name'); return; }
-    if (name.length > 7) { showToast('Max 7 characters'); return; }
+    if (name.length > 12) { showToast('Max 12 characters'); return; }
     // Check duplicate (exclude self)
     const latest = state();
     if (latest.setups.some((x) => x.name === name && x.id !== setupId)) { showToast('Name already used'); return; }
@@ -385,7 +385,7 @@ function renderSetupCreateForm(bar: HTMLElement): void {
 
   bar.innerHTML = `
     <div class="setup-bar-inner setup-create-form">
-      <input class="setup-name-input" id="setupNameInput" type="text" maxlength="7" placeholder="NAME" autocomplete="one-time-code" />
+      <input class="setup-name-input" id="setupNameInput" type="text" maxlength="12" placeholder="NAME" autocomplete="one-time-code" />
       <div class="setup-color-picker">${colorsHTML}</div>
       <button class="setup-create-btn" id="setupCreateBtn">CREATE</button>
       <button class="setup-cancel-btn" id="setupCancelBtn">CANCEL</button>
@@ -415,7 +415,7 @@ function renderSetupCreateForm(bar: HTMLElement): void {
     const input = document.getElementById('setupNameInput') as HTMLInputElement;
     const name = input.value.trim().toUpperCase();
     if (!name) { showToast('Enter a name'); return; }
-    if (name.length > 7) { showToast('Max 7 characters'); return; }
+    if (name.length > 12) { showToast('Max 12 characters'); return; }
     // Check duplicate name
     const latest = state();
     if (latest.setups.some((su) => su.name === name)) { showToast('Name already used'); return; }

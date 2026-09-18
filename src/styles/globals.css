@@ -92,7 +92,7 @@
   @media (hover:hover){.setup-dd-edit:hover{color:#ccc;border-color:var(--border-strong);}}
   .setup-edit-form{flex-wrap:wrap;align-items:center;}
   .setup-create-form{flex-wrap:wrap;align-items:center;}
-  .setup-name-input{font-family:var(--mono);font-size:13px;font-weight:700;letter-spacing:.05em;padding:3px 8px;border:1px solid var(--border);border-radius:3px;background:var(--surface2);color:#fff;width:90px;text-transform:uppercase;line-height:1;}
+  .setup-name-input{font-family:var(--mono);font-size:13px;font-weight:700;letter-spacing:.05em;padding:3px 8px;border:1px solid var(--border);border-radius:3px;background:var(--surface2);color:#fff;width:140px;text-transform:uppercase;line-height:1;}
   .setup-name-input::placeholder{color:#666;text-transform:none;}
   .setup-color-picker{display:flex;gap:4px;align-items:center;flex-wrap:wrap;}
   .setup-color-circle{width:20px;height:20px;border-radius:3px;border:2px solid transparent;cursor:pointer;padding:0;transition:border-color .15s;}

@@ -2543,18 +2543,13 @@ function wireEditViewEvents(el: HTMLElement, orderId: string): void {
           if (rect.bottom > vv.height) {
             useStore.setState({ scrollHideGuard: Date.now() + 800 });
             nameInput.scrollIntoView({ block: 'center', behavior: 'smooth' });
-          } else {
-            // Physical keyboard — scroll header to 25% then freeze body
-            const header = nameInput.closest('.sort-edit-header');
-            useStore.setState({ scrollHideGuard: Date.now() + 800 });
-            const headerTop = header ? header.getBoundingClientRect().top + window.scrollY : window.scrollY;
-            const lockY = Math.max(0, headerTop - window.innerHeight * 0.25);
-            window.scrollTo(0, lockY);
-            document.body.style.position = 'fixed';
-            document.body.style.top = `-${lockY}px`;
-            document.body.style.width = '100%';
-            document.body.style.overflow = 'hidden';
           }
+          // Physical keyboard: NOTHING (#526). This header is sticky — it is on
+          // screen wherever the page is. The old branch scrolled "to 25%" and
+          // froze the page, and freezing the page un-sticks the header: it fell
+          // back to its place at the top of the order, above the frozen
+          // viewport. Roman: "the page scroll jumped to the top of the screen
+          // and I could not see the field I'm typing in".
         }, 500);
       } else {
         nameInput.focus();
@@ -2893,6 +2888,12 @@ function wireEditViewEvents(el: HTMLElement, orderId: string): void {
         setTimeout(() => {
           const vv = window.visualViewport;
           if (!vv) return;
+          // ALREADY FROZEN — LEAVE IT (#526). A second tap into the same field
+          // (to place the cursor) measured the card again while the page was
+          // frozen: with the body fixed, the page's scroll reads as zero, the
+          // "25% from the top" came out wrong, and the card jumped elsewhere.
+          // Roman: "when I tap into the rename field again, it jumps down".
+          if (document.body.style.position === 'fixed') return;
           const rect = inp.getBoundingClientRect();
           if (rect.bottom > vv.height) {
             // Software keyboard covers input — scroll into view (don't touch, working)

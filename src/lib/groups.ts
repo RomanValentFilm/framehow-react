@@ -364,7 +364,7 @@ function openGroupEditor(existing: FrameGroup | null): void {
         background:#2a2a2a;color:#fff;font-size:14px;outline:none;
         font-family:-apple-system,BlinkMacSystemFont,sans-serif;">
     </div>
-    <div style="display:flex;gap:8px;margin-bottom:10px;">
+    <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;">
       <button class="group-select-all-btn" style="
         padding:6px 14px;border-radius:6px;border:1px solid #555;
         background:#2a2a2a;color:#ccc;font-size:12px;font-weight:500;cursor:pointer;
@@ -375,28 +375,31 @@ function openGroupEditor(existing: FrameGroup | null): void {
         background:#2a2a2a;color:#ccc;font-size:12px;font-weight:500;cursor:pointer;
         font-family:-apple-system,BlinkMacSystemFont,sans-serif;
       ">Deselect All</button>
+      <!-- CANCEL and SAVE up here, on the right (#525, Roman 18 September): the
+           list of shots can be long, and the buttons that finish the job must
+           not be a scroll away. -->
+      <button class="group-cancel-btn" style="
+        margin-left:auto;padding:8px 16px;border-radius:8px;border:1px solid #555;
+        background:#2a2a2a;color:#ccc;font-size:13px;font-weight:500;cursor:pointer;
+        font-family:-apple-system,BlinkMacSystemFont,sans-serif;
+      ">Cancel</button>
+      <button class="group-save-btn" style="
+        padding:8px 16px;border-radius:8px;border:none;
+        background:#d52632;color:#fff;font-size:13px;font-weight:600;cursor:pointer;
+        font-family:-apple-system,BlinkMacSystemFont,sans-serif;
+      ">Save</button>
     </div>
     <div class="group-frames-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:16px;">
       ${framesHTML}
     </div>
-    <div style="display:flex;gap:10px;justify-content:flex-end;">
-      ${existing ? `<button class="group-delete-btn" style="
+    ${existing ? `<div style="display:flex;gap:10px;justify-content:flex-start;">
+      <button class="group-delete-btn" style="
         padding:10px 18px;border-radius:8px;border:1px solid #d52632;
         background:transparent;color:#d52632;font-size:14px;font-weight:600;
-        cursor:pointer;margin-right:auto;
+        cursor:pointer;
         font-family:-apple-system,BlinkMacSystemFont,sans-serif;
-      ">Delete</button>` : ''}
-      <button class="group-cancel-btn" style="
-        padding:10px 18px;border-radius:8px;border:1px solid #555;
-        background:#2a2a2a;color:#ccc;font-size:14px;font-weight:500;cursor:pointer;
-        font-family:-apple-system,BlinkMacSystemFont,sans-serif;
-      ">Cancel</button>
-      <button class="group-save-btn" style="
-        padding:10px 18px;border-radius:8px;border:none;
-        background:#d52632;color:#fff;font-size:14px;font-weight:600;cursor:pointer;
-        font-family:-apple-system,BlinkMacSystemFont,sans-serif;
-      ">Save</button>
-    </div>`;
+      ">Delete</button>
+    </div>` : ''}`;
 
   overlay.appendChild(box);
   document.body.appendChild(overlay);
@@ -468,8 +471,14 @@ function openGroupEditor(existing: FrameGroup | null): void {
       checkedIds.push(parseInt((cb as HTMLElement).dataset.fid!));
     });
 
-    if (existing) saveGroupEdit(existing.id, name, checkedIds);
-    else createGroup(name, checkedIds);
+    if (existing) {
+      saveGroupEdit(existing.id, name, checkedIds);
+    } else {
+      // AND GO INTO IT (#525). Roman, iPad: "the view jumps to ALL instead
+      // of the just created group — we want it to be in the just created
+      // group". enterGroup is the one switch and redraws itself.
+      enterGroup(createGroup(name, checkedIds));
+    }
     closeEditor();
     refreshSidebar();
     triggerRerender();
