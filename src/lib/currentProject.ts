@@ -127,6 +127,7 @@ export function clearCurrentProject(): void {
   _dirty = false;
   _dirtyFrameIds.clear();
   _saveOffered = false;                       // the next project gets its own reminder first (#524)
+  _unnamedTraced = false;
   // The next project is a different thing on this device and must be filed
   // separately — otherwise two projects that never reached the cloud would
   // share one key and the second would overwrite the first.
@@ -755,7 +756,12 @@ async function restorePendingFromDevice(): Promise<void> {
 /** The save reminder has been shown for the open project: from here on an
  *  unnamed project may go up under a provisional name (#524). */
 let _saveOffered = false;
-export function markSaveOffered(): void { _saveOffered = true; }
+let _unnamedTraced = false;
+export function markSaveOffered(): void {
+  if (_saveOffered) return;
+  _saveOffered = true;
+  void retryPendingSyncs('now');   // and go up now if there is signal, not at the timer's next tick
+}
 
 /** The connection is back — try now, not at the timer's next tick (#524). The
  *  browser's own "online" event never comes on the iPad; the watch that
@@ -779,6 +785,11 @@ async function retryPendingSyncs(why: 'timer' | 'now' = 'timer'): Promise<void> 
   // the user's to give: the reminder comes after a minute of work.
   const unsavedWaiting = !cp.projectId && _dirty && (!!cp.name || _saveOffered) && !!_createAndSyncFn
     && useStore.getState().frames.length > 0;
+  // SAY WHY AN UNNAMED PROJECT STAYS (#529) — once, not on every tick.
+  if (!cp.projectId && _dirty && !cp.name && !_saveOffered && useStore.getState().frames.length > 0 && !_unnamedTraced) {
+    _unnamedTraced = true;
+    trace('an unnamed project waits: it goes up as "Untitled …" after a minute of work, or the moment it is named');
+  }
   if (_pendingSyncIds.size === 0 && !unsavedWaiting) return;
   if (cloudSyncInFlight || _projectSwitchInFlight || _localSavesHeld) return;
   if (why === 'timer' && !_retryClock.mayTry(Date.now())) return;

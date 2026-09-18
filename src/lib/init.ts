@@ -51,9 +51,9 @@ import {
   flowRestoreProject,
   flowSaveProject,
   isToasterShowing,
-  showSaveToaster, resetProjectSyncGuards, beginNewProject } from './accountFlow';
+  showSaveToaster, resetSaveToaster, resetProjectSyncGuards, beginNewProject } from './accountFlow';
 import { getActiveMs, onActivityTick, startActivityTracking } from './activity';
-import { startAutosave, getCurrentProject, clearCurrentProject, flushSyncNow, subscribe as subscribeProject } from './currentProject';
+import { startAutosave, getCurrentProject, clearCurrentProject, flushSyncNow, markSaveOffered, subscribe as subscribeProject } from './currentProject';
 import { subscribe as subscribeSession, isLoggedIn } from './session';
 
 let initialized = false;
@@ -1247,17 +1247,37 @@ export function initFramehow(): void {
     useStore.subscribe(tryStart);
     tryStart();
   } else {
-    // Standard production trigger: 5 min of active use + storyboard loaded.
-    onActivityTick((ms) => {
-      if (ms >= FIVE_MIN) maybeFireToaster();
-    });
-    // Also re-evaluate when the storyboard becomes non-empty after the
-    // 5-minute mark has already passed.
-    useStore.subscribe(() => {
-      if (state().frames.length > 0 && getActiveMs() >= FIVE_MIN) {
-        maybeFireToaster();
+    // ONE MINUTE OF WORK ON THIS PROJECT — NOT ON THE APP (#529). The clock
+    // used to run from the app's start and the reminder fired once per
+    // session: an iPad running all day never reminded about a project made
+    // in the afternoon, and the "Untitled" upload, tied to the reminder,
+    // never came either (Roman: "untitled seems not to travel"). Now the
+    // clock restarts whenever a new unsaved project begins, and after the
+    // minute the project counts as offered whether or not the reminder is
+    // on screen — it goes up as Untitled either way.
+    let projectBeganAtMs = getActiveMs();
+    let wasUnsavedProject = false;
+    const armForNewProject = () => {
+      const cp = getCurrentProject();
+      const unsaved = !cp.projectId && state().frames.length > 0;
+      if (unsaved && !wasUnsavedProject) {
+        projectBeganAtMs = getActiveMs();
+        toasterFired = false;
+        resetSaveToaster();
       }
+      wasUnsavedProject = unsaved;
+    };
+    const minuteOfWork = () => getActiveMs() - projectBeganAtMs >= FIVE_MIN;
+    onActivityTick(() => {
+      if (!minuteOfWork()) return;
+      if (!getCurrentProject().projectId && state().frames.length > 0) markSaveOffered();
+      maybeFireToaster();
     });
+    useStore.subscribe(() => {
+      armForNewProject();
+      if (state().frames.length > 0 && minuteOfWork()) maybeFireToaster();
+    });
+    subscribeProject(armForNewProject);
   }
 
   // THE DETAIL BAR IS ALWAYS OPEN, ON EVERY DEVICE (#483). `detail-open` is

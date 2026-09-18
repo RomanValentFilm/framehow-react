@@ -80,7 +80,7 @@ orders or get out.
 
 ## THE LIST — 10 September, evening (Roman's order)
 
-dev is **v4.9.224 · #527** (app; backend last deployed with 219 · #522, 18 Sept 11:45 — sign-in renewal, shot guard, restore dedupe). Next number: **v4.9.225 · #528**. Deploys today: 219 (app+backend), 220, 221, 222, 223, 224 (app).
+dev is **v4.9.225 · #528** (app; backend last deployed with 219 · #522, 18 Sept 11:45 — sign-in renewal, shot guard, restore dedupe). Next number: **v4.9.226 · #529**. Deploys today: 219 (app+backend), 220–225 (app).
 
 ### DONE 17 September — the launch set (v4.9.218 · #521)
 1. Unsent copies of other projects: carry their memory (`withMemory`); opening a project with an unsent copy starts from the copy then syncs (`startFromUnsentCopy`); at app start every unsent copy of another project is put in place, synced, archived (`uploadUnsentCopiesAtStart`, "Uploading unsent work: …"). Test 28 green (red since run 179).
@@ -116,9 +116,11 @@ Roman's two by-hand offline scenarios (iPad + desktop), traced from his logs:
 ### 18 September, 15:00 — v4.9.224 · #527 DEPLOYED 15:20, app only (commit 1244bbc; next number v4.9.225 · #528). Run 298 BIG DAY 11/11.
 - LOAD on a version strip (ver/floor/refs, in the card and in fullscreen; NOT main; DESKTOP only — touch devices open the picker directly) opens a sheet: drop zone "Drop your pictures here" + "Choose from your files…" (the old picker) + Cancel. One loader for both doors: `loadPicturesIntoVersions` in `src/lib/loadPictures.ts` (the body the picker's change handler had in init.ts). Several pictures → several versions, as before. Harness `uploadPicture` presses the sheet's button for non-main strips.
 - iPad break rename: a tap into the field that already has the cursor is left to iOS (cursor lands where the finger is).
-### 18 September, 15:40 — in the tree for v4.9.225 · #528 (app only)
+### 18 September, 15:40 — v4.9.225 · #528 DEPLOYED 15:55, app only (commit 7bbc95f; next number v4.9.226 · #529). Run 299 (01/12/14/23): 3 green, 4 skipped. Load sheet reshaped (tall drop area, note, 'or', centred buttons).
 - A project opened slightly scrolled (first card under the bars on the desktop, button row half hidden on the iPad): the "back to where it was" anchor was measured from the window's top edge, and at open the bars are not at their final height yet, so the nudge came out a bar's height off. `captureFrameAnchor`/`scrollAnchorToRel` now measure from the bars' bottom (`contentTop()` in view.ts). A place remembered by an older build restores once a bar's height too LOW, then corrects itself at the next save.
-OPEN: where the PDF project made offline on the iPad went (asked Roman: OPEN → is there a row for it). UI items from 18 Sept still to do: DETAIL BAR missing on iPad at open (2nd sighting); shooting-order rename scrolls to the very top on iPad; break rename field jumps on the 2nd tap; GROUP modal CANCEL/SAVE in the SELECT ALL row, right-aligned; SETUPS names 12 letters.
+### 18 September, 16:15 — in the tree for v4.9.226 · #529 (app only)
+- "Untitled seems not to travel": the save reminder fired once per SESSION (an iPad running all day never reminded about an afternoon project), and the Untitled upload was tied to it. Now the minute-of-work clock restarts with every new unsaved project (init.ts `armForNewProject`, `resetSaveToaster`), after the minute `markSaveOffered()` is called whether or not the reminder shows (and it asks the retry at once), and the retry traces once why an unnamed project waits.
+OPEN: where the PDF project made offline on the iPad went — CLOSED, Roman deleted all earlier projects. (asked Roman: OPEN → is there a row for it). UI items from 18 Sept still to do: DETAIL BAR missing on iPad at open (2nd sighting); shooting-order rename scrolls to the very top on iPad; break rename field jumps on the 2nd tap; GROUP modal CANCEL/SAVE in the SELECT ALL row, right-aligned; SETUPS names 12 letters.
 
 ### LATER (Roman, 18 September) — a version's marks and its content travel apart (~half a day)
 Today one version = one record (label, type, hidden, stars, note, tag, picture, drawing): two devices changing the SAME version within a sync gap → the later change wins whole, the other is overwritten (a star on the iPad vs a drawing on the desktop). Plan:

@@ -1844,6 +1844,8 @@ function openChangePasswordModal(): Promise<boolean> {
 // ---------------------------------------------------------------------------
 
 let toasterDismissCount = 0;
+/** A new unsaved project starts with a clean slate: reminded again, twice at most (#529). */
+export function resetSaveToaster(): void { toasterDismissCount = 0; }
 let toasterShowing = false;
 let toasterRescheduleId: number | null = null;
 
