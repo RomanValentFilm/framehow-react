@@ -61,6 +61,9 @@ import {
   handIsBusy,
   msSinceLastStroke,
   registerProjectGone,
+  registerAfterSaved,
+  standInForAnotherProject,
+  withMemory,
   registerProjectAlive,
   projectIsBackFromTheDead,
   noteTheProjectIsGone,
@@ -73,13 +76,13 @@ import { shouldSendOnlyChanges } from './pushMode';
 import { tagText, readTagText } from './ids';
 import { serverHasSomethingNew, whoseFrameWins, type DeviceMemory } from './sessionRules';
 import { mergeDelta, lastMergeRefusal, answerIsSafeToApply, untouchedByDelta, type MergeableTree } from './deltaMerge';
-import { settingsForPush, adoptSettingsFromServer, applySettingsToStore, importSettingStamps, stampChangedSettings, seedSettings, settingsNeedPush, reconcileRestoredSettings, captureMySettings, keepMyUnsentSettings, unsentSettingNames, type SettingItem } from './projectSettings';
+import { settingsForPush, adoptSettingsFromServer, applySettingsToStore, importSettingStamps, stampChangedSettings, seedSettings, forgetAnotherProjectsSettings, settingsNeedPush, reconcileRestoredSettings, captureMySettings, keepMyUnsentSettings, unsentSettingNames, type SettingItem } from './projectSettings';
 import { applySnapshotToStore, loadSnapshot, snapshotFromStore, listPending, isArchived, getPending, markPendingUploaded, saveProjectListCache, loadProjectListCache, deletePending, deleteEveryCopyOf, recoverPending, isDeletedCopy, requestDurableStorage } from './persistence';
 import type { PendingRecord } from './persistence';
 import { showThreeWayConflict, showConfirm, showToast, showLabelEdit } from './modals';
 import { saveOpenTextEdits, saveOpenTableEdits, versionStars, inStarOrder } from './helpers';
-import { closeSortMode, refreshOpenSortView } from './sortOrder';
-import { resetStoryboardState, state, useStore, freshNeedDefinitions, DEFAULT_STRIP_DEFS, migrateNeedDefinitions, createDefaultExportMeta, blankNeeds, blankNote } from '../store/state';
+import { closeSortMode, refreshOpenSortView, removeFrameFromSortOrders } from './sortOrder';
+import { resetStoryboardState, state, useStore, bumpRenderTick, freshNeedDefinitions, DEFAULT_STRIP_DEFS, migrateNeedDefinitions, createDefaultExportMeta, blankNeeds, blankNote } from '../store/state';
 import type { Frame, Stroke, Version, FrameNeedState, FrameNoteState, NeedDefinitions, BracketNodeData, ProjectType } from '../store/state';
 import { clearRectsForProject } from './pdfAdjust';
 
@@ -530,6 +533,24 @@ export async function restoreToPoint(projectId: string, snapshotId: string): Pro
   await performRestore(projectId, snapshotId);
 }
 
+/**
+ * CARRY ON WITH WHAT IS ON SCREEN AS A PROJECT THE SERVER HAS NEVER SEEN.
+ *
+ * The cloud id goes first, then everything this device remembers about what
+ * the server held — otherwise the push sends a handful of changed frames and
+ * leaves the rest behind. What SAVE AS NEW does on a deleted project, and the
+ * one state that produced Roman's doubled "uboot" (#523): a project still
+ * holding another's shots, saved as new. The simulator uses this very path.
+ */
+export async function carryOnAsNewProject(name: string): Promise<void> {
+  const was = getCurrentProject().projectId;
+  setCurrentProject({ projectId: null, name });
+  forgetTheServerEverHadIt();
+  if (was) projectIsBackFromTheDead(was);
+  markSomethingToSend();
+  await saveNow();
+}
+
 async function askAboutTheDeletedProject(projectId: string): Promise<void> {
   if (!_goneRegister.shouldAsk(projectId)) return;
   // ONLY ABOUT THE PROJECT IN FRONT OF YOU (#469). The dialog talks about "this
@@ -582,11 +603,7 @@ async function askAboutTheDeletedProject(projectId: string): Promise<void> {
     }
     trace(`the deleted project: saving it as a new one — "${name}"`);
     const oldLocalKey = localProjectId();
-    setCurrentProject({ projectId: null, name });
-    forgetTheServerEverHadIt();
-    projectIsBackFromTheDead(projectId);
-    markSomethingToSend();
-    await saveNow();
+    await carryOnAsNewProject(name);
     // NOTHING is thrown away until the work is known to be up. If saveNow could
     // not reach the server, the copies on this device are the only copies there
     // are, and they stay.
@@ -712,13 +729,8 @@ export async function openProjectList(): Promise<void> {
       if (!ok) return;
       cleanup();
       if (!rec.snapshot?.frames?.length) { showToast('That copy is empty — nothing to open.'); return; }
-      beginSystemAction();
-      try {
-        applySnapshotToStore(rec.snapshot);
-        setCurrentProject({ projectId: rec.projectId, name: rec.name });
-      } finally {
-        endSystemAction();
-      }
+      if (state().sortEditingId) closeSortMode();
+      putCopyInPlace(rec, rec.projectId ?? null, rec.name);
       // The user picked this version, so it wins and gets uploaded. Without
       // this the next pull replaced it with the cloud copy seconds later.
       claimStoreAsLocalWork();
@@ -731,17 +743,11 @@ export async function openProjectList(): Promise<void> {
       if (editMode) return;
       cleanup();
       if (!rec.snapshot?.frames?.length) { showToast('That copy is empty — nothing to open.'); return; }
-      beginSystemAction();
-      try {
-        applySnapshotToStore(rec.snapshot);
-        setCurrentProject({ projectId: rec.projectId, name: rec.name });
-        // Keep the identity this copy is already filed under. Otherwise the
-        // project would be filed a second time under a fresh key, and the
-        // clear-on-confirmation would remove the wrong one.
-        adoptLocalProjectId(rec.key);
-      } finally {
-        endSystemAction();
-      }
+      if (state().sortEditingId) closeSortMode();
+      // Keeps the identity this copy is already filed under. Otherwise the
+      // project would be filed a second time under a fresh key, and the
+      // clear-on-confirmation would remove the wrong one.
+      putCopyInPlace(rec, rec.projectId ?? null, rec.name);
       claimStoreAsLocalWork();
       (window as any).__fh_renderAll?.();
       // Put it in the cloud now if we can. saveNow() creates the project and
@@ -1311,6 +1317,80 @@ async function loadCloudProject(p: CloudProject): Promise<void> {
 }
 
 /**
+ * SHOTS THAT BELONG TO ANOTHER PROJECT LEAVE THIS ONE (#523).
+ *
+ * The server never touches a shot that lives under another project, and says
+ * which. Such a shot got here by a project being saved as new while it still
+ * held an old one's shots. It is dropped from this project without a deletion
+ * record — it exists, untouched, where it belongs — and forgotten by the
+ * unsent list and the fingerprints, so nothing tries to send it again.
+ */
+function dropShotsOfAnotherProject(frameIds: string[], versionIds: string[]): void {
+  const s = state();
+  const foreignF = new Set(frameIds);
+  const foreignV = new Set(versionIds);
+  const goneFids: number[] = [];
+  for (const f of s.frames) {
+    if (f.serverFrameId && foreignF.has(f.serverFrameId)) goneFids.push(f.id);
+  }
+  // Foreign VERSIONS on a shot that is ours: the version alone goes.
+  let versionsGone = 0;
+  if (foreignV.size > 0) {
+    for (const stripId of Object.keys(s.stripVersions)) {
+      const perFrame = s.stripVersions[stripId];
+      if (!perFrame) continue;
+      for (const fidText of Object.keys(perFrame)) {
+        const fid = Number(fidText);
+        if (goneFids.includes(fid)) continue;
+        const vers = perFrame[fid];
+        if (!vers) continue;
+        const kept = vers.filter((v) => !(v.serverVersionId && foreignV.has(v.serverVersionId)));
+        if (kept.length !== vers.length) {
+          versionsGone += vers.length - kept.length;
+          perFrame[fid] = kept.length > 0 ? kept : vers.slice(0, 1);
+          if (s.activeTab[fid] !== undefined && s.activeTab[fid] >= perFrame[fid].length) s.activeTab[fid] = 0;
+        }
+      }
+    }
+  }
+  if (goneFids.length === 0 && versionsGone === 0) return;
+  trace(`  ${goneFids.length} shot(s) and ${versionsGone} version(s) belong to ANOTHER project — leaving this one (they are untouched there): ${frameIds.map((i) => i.slice(0, 6)).join(',') || 'none'}`);
+  beginSystemAction();
+  try {
+    for (const fid of goneFids) {
+      removeFrameFromSortOrders(fid);
+      const idx = s.frames.findIndex((x) => x.id === fid);
+      if (idx >= 0) s.frames.splice(idx, 1);
+      delete s.versions[fid];
+      delete s.activeTab[fid];
+      for (const stripId of Object.keys(s.stripVersions)) delete s.stripVersions[stripId]?.[fid];
+      delete s.frameNeeds[fid];
+      delete s.frameNotes[fid];
+    }
+    if (goneFids.length > 0) {
+      const gone = new Set(goneFids);
+      useStore.setState({
+        frames: [...s.frames],
+        groups: s.groups.map((g) => ({
+          ...g,
+          frameIds: g.frameIds.filter((id) => !gone.has(id)),
+          hiddenFrameIds: (g.hiddenFrameIds ?? []).filter((id) => !gone.has(id)),
+        })),
+      });
+    }
+    for (const id of frameIds) { dropDirtyFrame(id); forgetPushedFingerprint(id); }
+  } finally {
+    endSystemAction();
+  }
+  bumpRenderTick();
+  (window as any).__fh_renderAll?.();
+  // The arrangement and the lists changed by their leaving — that IS this
+  // project's work, and it goes up with the next push. Unless nothing is
+  // left: an empty project is never pushed, so there is nothing to send.
+  if (state().frames.length > 0) markSomethingToSend();
+}
+
+/**
  * Put an unsent copy of project `p` in place — the project and its memory —
  * so the pull that follows can merge it honestly. False when there is none,
  * or it carries no memory (a copy filed by an older build: opening it from the
@@ -1327,73 +1407,268 @@ async function startFromUnsentCopy(p: CloudProject, progressLabel: HTMLElement |
   trace(`  an unsent copy of this project is on the device (${new Date(rec.savedAt).toLocaleTimeString()}) — starting from it, then syncing`);
   if (progressLabel) progressLabel.textContent = 'Your unsent work first…';
   if (state().sortEditingId) closeSortMode();
-  beginSystemAction();
-  try {
-    adoptLocalProjectId(rec.key);
-    adoptDirtyFrameIds(snap.dirtyFrameIds);
-    adoptPushedFingerprints(snap.pushedFingerprints);
-    importSettingStamps(snap.settingStamps, p.id);
-    importChangeStamps(snap.contentStamps);
-    adoptHeardAt(snap.heardAt);
-    adoptPendingTombstones(snap.pendingTombstones);
-    applySnapshotToStore(snap);
-  } finally {
-    endSystemAction();
-  }
-  setCurrentProject({ projectId: p.id, name: p.name, lastSavedAt: snap.lastModified ?? null });
+  putCopyInPlace(rec, p.id, p.name);
   return true;
 }
 
-async function uploadUnsentCopiesAtStart(): Promise<void> {
-  if (!isLoggedIn() || !navigator.onLine) return;
-  let recs: PendingRecord[] = [];
-  try { recs = (await listPending()).filter((r) => !isArchived(r)); } catch { return; }
-  const current = (await loadSnapshot().catch(() => null))?.projectId ?? null;
-  const copies = recs.filter((r) => r.projectId && r.projectId !== current
-    && r.snapshot?.frames?.length && r.snapshot.contentStamps && Object.keys(r.snapshot.contentStamps).length > 0);
-  if (copies.length === 0) return;
-  const line = document.getElementById('startupLoadingLine');
-  for (const rec of copies) {
-    const pid = rec.projectId!;
-    trace(`unsent copy of "${rec.name ?? pid.slice(0, 8)}" (${new Date(rec.savedAt).toLocaleTimeString()}) — uploading it first`);
-    if (line) line.textContent = `Uploading unsent work: ${rec.name ?? 'a project'}…`;
-    const snap = rec.snapshot;
-    beginSystemAction();
-    try {
-      adoptLocalProjectId(rec.key);
-      adoptDirtyFrameIds(snap.dirtyFrameIds);
-      adoptPushedFingerprints(snap.pushedFingerprints);
-      importSettingStamps(snap.settingStamps, pid);
-      importChangeStamps(snap.contentStamps);
-      adoptHeardAt(snap.heardAt);
-      adoptPendingTombstones(snap.pendingTombstones);
-      applySnapshotToStore(snap);
-    } finally {
-      endSystemAction();
-    }
-    setCurrentProject({ projectId: pid, name: rec.name, lastSavedAt: snap.lastModified ?? null });
-    try {
-      // Take the server's newer bits first (newer wins per item), then send.
-      await tryPullFromCloud();
-      markSomethingToSend();
-      await syncCurrentToServer(pid);
-      await markPendingUploaded(pid);
-      await markPendingUploaded(rec.key);
-      trace(`  unsent copy of "${rec.name ?? pid.slice(0, 8)}" is in the cloud`);
-    } catch (e) {
-      trace(`  unsent copy of "${rec.name ?? pid.slice(0, 8)}" could not be sent — kept on the device (${asMessage(e, 'no answer')})`);
-    }
-  }
-  // Leave nothing of the last copy behind for the project restored next.
+/**
+ * PUT A DEVICE COPY IN PLACE, WITH ITS MEMORY (#523).
+ *
+ * The one way a filed copy becomes the open project — whichever door it came
+ * through: opened from the project list, started from at load, or sent up at
+ * boot. Two of those doors applied the copy alone and left its memory behind,
+ * so every shot in it went up "@none" and lost to the server's older copy.
+ * The memory is which shots are unsent, what the server last took, when each
+ * shot and setting changed, what was deleted, and when we last heard.
+ */
+function putCopyInPlace(rec: PendingRecord, projectId: string | null, name: string | null | undefined): void {
+  const snap = rec.snapshot;
   beginSystemAction();
   try {
-    resetStoryboardState();
-    clearCurrentProject();
-    clearPushedFingerprints();
+    // Nothing of the project that was here before: not its counts (the
+    // "looks empty" guard would refuse the copy's push), not its held tree,
+    // not its deletions, not its fingerprints — the copy's own follow.
+    resetProjectSyncGuards();
+    clearDirtyState();
+    lastKnownUpdatedAt = null;
+    takenFromServerAt = null;
+    forgetAnotherProjectsSettings(projectId);
+    adoptLocalProjectId(rec.key);
+    adoptDirtyFrameIds(snap.dirtyFrameIds);
+    adoptPushedFingerprints(snap.pushedFingerprints);
+    importSettingStamps(snap.settingStamps, projectId);
+    importChangeStamps(snap.contentStamps, projectId);
+    adoptHeardAt(snap.heardAt);
+    adoptPendingTombstones(snap.pendingTombstones);
+    applySnapshotToStore(snap);
+    // A copy filed by an older build carries no memory of when its shots
+    // changed: the first look is taken here, as at boot — age unknown, not
+    // "changed just now", and not the last project's memory either.
+    if (!snap.contentStamps || Object.keys(snap.contentStamps).length === 0) seedContentStamps(projectId);
+    if (!snap.settingStamps || snap.settingStamps.length === 0) seedSettings(projectId, snap.lastModified);
   } finally {
     endSystemAction();
   }
-  if (line) line.textContent = 'Loading…';
+  setCurrentProject({ projectId, name: name ?? null, lastSavedAt: snap.lastModified ?? null });
+}
+
+// ---------------------------------------------------------------------------
+// UNSENT COPIES OF OTHER PROJECTS GO UP BY THEMSELVES (#522, #523).
+//
+// Roman's day: project A open on the iPad, no signal, work on A, then a new
+// project B made from scratch. Back in the office the iPad comes online with B
+// on screen. B goes up (it is the open one). A's unsent copy used to wait for
+// the next app start or for A to be opened from the list — "the users never
+// do that, there is no need to refresh the app and the user does not know he
+// has to do it". So it goes up now, the moment the device is online and B is
+// sent: the copy is put in place under a notice, merged with the server and
+// sent, and B is put back exactly as it was, memory and all. The desktop's old
+// A hears about it on its next heartbeat.
+//
+// Not while a hand is on the page, not inside a shooting order, not while a
+// push or fetch is running, and never while the open project still has unsent
+// work of its own — that goes first, or it would be filed as a copy in turn.
+// ---------------------------------------------------------------------------
+
+let _uploadingCopies = false;
+let _copiesCheckTimer: number | null = null;
+let _lastCopiesCheck = 0;
+
+/** Ask for a look, soon. Debounced: many saves in a row make one look. */
+function lookForUnsentCopiesSoon(delayMs = 4_000): void {
+  if (_copiesCheckTimer !== null) window.clearTimeout(_copiesCheckTimer);
+  _copiesCheckTimer = window.setTimeout(() => {
+    _copiesCheckTimer = null;
+    void uploadUnsentCopies('reconnect');
+  }, delayMs);
+}
+
+/** Everything that makes the open project what it is on this device, so it can
+ *  be put back after another project's copy has stood in its place. */
+interface HeldOpenProject {
+  cp: ReturnType<typeof getCurrentProject>;
+  store: ReturnType<typeof useStore.getState>;
+  memory: ReturnType<typeof snapshotFromStore>;
+  lastKnownUpdatedAt: number | null;
+  takenFromServerAt: number | null;
+  lastPushedMeta: string;
+  heldTree: CloudProjectTree | null;
+  heldTreeProjectId: string | null;
+  heardAt: number;
+  lastKnownImageCount: number;
+  lastKnownFrameCount: number;
+  /** Where the page and the columns were scrolled — put back after the redraw. */
+  scrolls: Array<[HTMLElement | null, number]>;
+}
+
+function holdOpenProject(): HeldOpenProject {
+  const cp = getCurrentProject();
+  return {
+    cp: { ...cp },
+    store: useStore.getState(),
+    memory: withMemory(snapshotFromStore(cp.projectId, cp.name)),
+    lastKnownUpdatedAt, takenFromServerAt,
+    lastPushedMeta: _lastPushedMeta,
+    heldTree: _heldTree, heldTreeProjectId: _heldTreeProjectId, heardAt: _heardAt,
+    lastKnownImageCount: _lastKnownImageCount, lastKnownFrameCount: _lastKnownFrameCount,
+    scrolls: [
+      [null, window.scrollY],
+      ...Array.from(document.querySelectorAll<HTMLElement>('[id$="Scroll"]')).map((el) => [el, el.scrollTop] as [HTMLElement, number]),
+    ],
+  };
+}
+
+function putOpenProjectBack(h: HeldOpenProject): void {
+  const pid = h.cp.projectId ?? null;
+  beginSystemAction();
+  try {
+    resetProjectSyncGuards();        // nothing of the copy's memory stays behind
+    clearDirtyState();
+    useStore.setState(h.store, true);
+    adoptLocalProjectId(h.memory.localId);
+    adoptDirtyFrameIds(h.memory.dirtyFrameIds);
+    adoptPushedFingerprints(h.memory.pushedFingerprints ?? {});
+    forgetAnotherProjectsSettings(pid);
+    importSettingStamps(h.memory.settingStamps, pid);
+    if (h.memory.contentStamps && Object.keys(h.memory.contentStamps).length > 0) {
+      importChangeStamps(h.memory.contentStamps, pid);
+    } else {
+      seedContentStamps(pid);
+    }
+    adoptPendingTombstones(h.memory.pendingTombstones);
+    _heldTree = h.heldTree; _heldTreeProjectId = h.heldTreeProjectId; _heardAt = h.heardAt;
+    lastKnownUpdatedAt = h.lastKnownUpdatedAt;
+    takenFromServerAt = h.takenFromServerAt;
+    _lastPushedMeta = h.lastPushedMeta;
+    _lastKnownImageCount = h.lastKnownImageCount;
+    _lastKnownFrameCount = h.lastKnownFrameCount;
+    setCurrentProject({ projectId: pid, name: h.cp.name, lastSavedAt: h.cp.lastSavedAt });
+  } finally {
+    endSystemAction();
+  }
+}
+
+let _unsentNotice: HTMLElement | null = null;
+function showUnsentNotice(text: string): void {
+  if (!_unsentNotice) {
+    const el = document.createElement('div');
+    el.id = 'unsentUploadNotice';
+    el.style.cssText =
+      'position:fixed;inset:0;z-index:999998;background:rgba(0,0,0,0.82);' +
+      'display:flex;align-items:center;justify-content:center;' +
+      'font-family:-apple-system,BlinkMacSystemFont,sans-serif;color:#fff;text-align:center;' +
+      'font-size:15px;font-weight:600;touch-action:none;';
+    const stop = (e: Event) => { e.preventDefault(); e.stopPropagation(); };
+    el.addEventListener('wheel', stop, { passive: false });
+    el.addEventListener('touchmove', stop, { passive: false });
+    document.body.appendChild(el);
+    _unsentNotice = el;
+  }
+  _unsentNotice.textContent = text;
+  _unsentNotice.style.display = 'flex';
+}
+function hideUnsentNotice(): void {
+  if (_unsentNotice) _unsentNotice.style.display = 'none';
+}
+
+/**
+ * Put every unsent copy of ANOTHER project in place, sync it, archive it — and
+ * put the open project back. At start nothing is open yet, so the startup line
+ * says what is happening and the store is simply emptied afterwards.
+ */
+async function uploadUnsentCopies(reason: 'start' | 'reconnect'): Promise<void> {
+  if (_uploadingCopies) return;
+  if (!isLoggedIn() || !navigator.onLine) return;
+  if (reason === 'reconnect') {
+    if (Date.now() - _lastCopiesCheck < 10_000) return;
+    _lastCopiesCheck = Date.now();
+    if (pullInFlight || isPushInFlight() || isLoadInFlight()) { lookForUnsentCopiesSoon(8_000); return; }
+    if (handIsBusy() || state().sortEditingId) { lookForUnsentCopiesSoon(8_000); return; }
+  }
+  let recs: PendingRecord[] = [];
+  try { recs = (await listPending()).filter((r) => !isArchived(r)); } catch { return; }
+  const current = reason === 'start'
+    ? ((await loadSnapshot().catch(() => null))?.projectId ?? null)
+    : getCurrentProject().projectId;
+  const copies = recs.filter((r) => r.projectId && r.projectId !== current
+    && r.snapshot?.frames?.length && r.snapshot.contentStamps && Object.keys(r.snapshot.contentStamps).length > 0);
+  if (copies.length === 0) return;
+
+  // The open project's own unsent work goes first. If it cannot, nothing else
+  // is tried now — the next save asks again. A project not yet in the cloud
+  // (made offline, no id) is created by the retry; its save asks for us.
+  if (reason === 'reconnect' && state().frames.length > 0) {
+    if (!getCurrentProject().projectId) {
+      trace(`${copies.length} unsent copy(ies) of other projects waiting — the open project is not in the cloud yet, it goes first`);
+      lookForUnsentCopiesSoon(15_000);
+      return;
+    }
+    try { await flushSyncNow(); } catch { /* unreachable — the next save asks again */ }
+    if (getDirtyFrameIds().size > 0 || isPushInFlight()) {
+      trace(`${copies.length} unsent copy(ies) of other projects waiting — the open project is not up yet, trying later`);
+      lookForUnsentCopiesSoon(15_000);
+      return;
+    }
+  }
+
+  _uploadingCopies = true;
+  const line = document.getElementById('startupLoadingLine');
+  const held = reason === 'reconnect' ? holdOpenProject() : null;
+  standInForAnotherProject(true);
+  try {
+    for (const rec of copies) {
+      const pid = rec.projectId!;
+      const who = rec.name ?? pid.slice(0, 8);
+      trace(`unsent copy of "${who}" (${new Date(rec.savedAt).toLocaleTimeString()}) — uploading it ${reason === 'start' ? 'first' : 'now, while the open project waits'}`);
+      if (reason === 'start') { if (line) line.textContent = `Uploading unsent work: ${rec.name ?? 'a project'}…`; }
+      else showUnsentNotice(`Uploading unsent work: ${rec.name ?? 'a project'}…`);
+      if (state().sortEditingId) closeSortMode();
+      putCopyInPlace(rec, pid, rec.name);
+      try {
+        // Take the server's newer bits first (newer wins per item), then send.
+        await tryPullFromCloud();
+        markSomethingToSend();
+        setCloudSyncInFlight(true);
+        try { await syncCurrentToServer(pid); } finally { setCloudSyncInFlight(false); }
+        await markPendingUploaded(pid);
+        await markPendingUploaded(rec.key);
+        trace(`  unsent copy of "${who}" is in the cloud`);
+      } catch (e) {
+        trace(`  unsent copy of "${who}" could not be sent — kept on the device (${asMessage(e, 'no answer')})`);
+      }
+    }
+  } finally {
+    if (held) {
+      try {
+        putOpenProjectBack(held);
+        (window as any).__fh_renderAll?.();
+        setViewMode(state().currentViewMode);
+        requestAnimationFrame(() => {
+          for (const [el, top] of held.scrolls) {
+            if (el) el.scrollTop = top; else window.scrollTo(0, top);
+          }
+        });
+        trace(`back to "${held.cp.name ?? 'the open project'}" — as it was`);
+      } catch (e) {
+        trace(`could not put the open project back — ${asMessage(e, 'unknown fault')}`);
+        console.error('[unsent copies] putting the open project back', e);
+      }
+      hideUnsentNotice();
+    } else {
+      // Leave nothing of the last copy behind for the project restored next.
+      beginSystemAction();
+      try {
+        resetStoryboardState();
+        clearCurrentProject();
+        clearPushedFingerprints();
+      } finally {
+        endSystemAction();
+      }
+      if (line) line.textContent = 'Loading…';
+    }
+    standInForAnotherProject(false);
+    _uploadingCopies = false;
+  }
 }
 
 async function confirmReplaceUnsaved(): Promise<boolean> {
@@ -2564,6 +2839,9 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
     /** Sent, but not written: the server's copy was changed more recently. */
     stale_frames?: string[];
     stale_versions?: string[];
+    /** Shots (and versions) that live in ANOTHER project — not touched (#523). */
+    foreign_frames?: string[];
+    foreign_versions?: string[];
   }>(
     `/projects/${encodeURIComponent(projectId)}/sync`,
     {
@@ -2604,6 +2882,15 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   // Update lastKnownUpdatedAt so that the pull-on-focus mechanism doesn't
   // see our own push as a "newer remote version" and try to apply it.
   lastKnownUpdatedAt = now;
+
+  // SHOTS OF ANOTHER PROJECT (#523). The server left them alone — they live,
+  // safe and unchanged, in the project they were born in. Here they are in the
+  // wrong one, and would be "rescued" and sent again every ten seconds for
+  // ever. So they leave this project, with no deletion recorded: nothing is
+  // deleted anywhere, they were simply never this project's.
+  if ((res.foreign_frames?.length ?? 0) > 0 || (res.foreign_versions?.length ?? 0) > 0) {
+    dropShotsOfAnotherProject(res.foreign_frames ?? [], res.foreign_versions ?? []);
+  }
 
   // Some of what we just sent was older than the server's copy, so it was not
   // written. Take the server's version — otherwise this device keeps its own
@@ -4196,6 +4483,37 @@ async function openRestoreModal(projectId: string): Promise<void> {
     subtitle.style.cssText = 'font-size:13px;color:#aaa;margin-bottom:16px;';
     modal.appendChild(subtitle);
 
+    // SAVE RESTORE POINT (#523) — at the top, always, set off to the right so
+    // it reads as a different thing from the rows: it makes a point of NOW —
+    // the project as it is this moment — with a name, kept for ever until
+    // deleted. Roman: "you can save the project only NOW in the current
+    // moment", so it never sits under an older row.
+    {
+      const saveRow = document.createElement('div');
+      saveRow.style.cssText = 'text-align:right;margin:-4px 0 12px;';
+      const save = document.createElement('button');
+      save.textContent = 'SAVE RESTORE POINT';
+      save.style.cssText =
+        'padding:8px 14px;background:transparent;border:1px solid #e8c547;border-radius:8px;' +
+        'color:#e8c547;font-size:12px;letter-spacing:.04em;cursor:pointer;';
+      save.addEventListener('click', async () => {
+        overlay.style.display = 'none';
+        const name = await showLabelEdit('');
+        if (name === null) { overlay.style.display = 'flex'; return; }
+        try {
+          // NOW means what is on screen — anything unsent goes up first.
+          try { await flushSyncNow(); } catch { /* the server's copy is what gets saved */ }
+          await saveRestorePoint(projectId, name);
+          showToast(name ? `Restore point "${name}" saved.` : 'Restore point saved.');
+        } catch { showToast('Could not save the restore point.'); }
+        overlay.remove();
+        resolve();
+        void openRestoreModal(projectId);     // the list again, with the new row in it
+      });
+      saveRow.appendChild(save);
+      modal.appendChild(saveRow);
+    }
+
     for (const m of matched) {
       const btn = document.createElement('button');
       btn.style.cssText =
@@ -4258,32 +4576,6 @@ async function openRestoreModal(projectId: string): Promise<void> {
         modal.appendChild(row);
       } else {
         modal.appendChild(btn);
-      }
-      // SAVE RESTORE POINT (#523) — under "you are here", set off to the right
-      // so it reads as a different thing from the rows: it makes a point of
-      // NOW, with a name, kept for ever until deleted.
-      if (m.isCurrent) {
-        const saveRow = document.createElement('div');
-        saveRow.style.cssText = 'text-align:right;margin:-2px 0 12px;';
-        const save = document.createElement('button');
-        save.textContent = 'SAVE RESTORE POINT';
-        save.style.cssText =
-          'padding:8px 14px;background:transparent;border:1px solid #e8c547;border-radius:8px;' +
-          'color:#e8c547;font-size:12px;letter-spacing:.04em;cursor:pointer;';
-        save.addEventListener('click', async () => {
-          overlay.style.display = 'none';
-          const name = await showLabelEdit('');
-          if (name === null) { overlay.style.display = 'flex'; return; }
-          try {
-            await saveRestorePoint(projectId, name);
-            showToast(name ? `Restore point "${name}" saved.` : 'Restore point saved.');
-          } catch { showToast('Could not save the restore point.'); }
-          overlay.remove();
-          resolve();
-          void openRestoreModal(projectId);     // the list again, with the new row in it
-        });
-        saveRow.appendChild(save);
-        modal.appendChild(saveRow);
       }
     }
 
@@ -4472,7 +4764,22 @@ export async function flowAccountOrSignIn(): Promise<void> {
     if (isLoggedIn()) {
       const cp = getCurrentProject();
       if (!cp.projectId && state().frames.length > 0) {
-        await saveNow();
+        // NEVER SILENTLY, WHEN THE CLOUD ALREADY KNOWS THESE SHOTS (#523).
+        // Roman's iPad logged in holding a project whose shots the server
+        // already had — under its cloud id, which the device had lost — and
+        // this line saved it as a second "uboot". A project the server has
+        // heard of is asked about; one made from scratch goes up as before.
+        if (serverKnowsTheseShots()) {
+          trace(`this project has no cloud id, but ${_serverFrameTimes.size || _lastPushedFingerprints.size} of its shots are known to the cloud — asking before saving it as new`);
+          const ok = await showConfirm(
+            `Save "${cp.name ?? 'this project'}" to the cloud as a NEW project?\n\n` +
+            'Its shots already belong to a project in the cloud. If you meant to ' +
+            'continue that one, open it from the project list instead.',
+          );
+          if (ok) await saveNow();
+        } else {
+          await saveNow();
+        }
       }
       // If a cloud project is already loaded, pull latest changes from server.
       // This covers the case where the user was browsing a project while signed
@@ -4597,9 +4904,13 @@ let _lastReconnectCheck = 0;
 async function checkServerAfterReconnect(): Promise<void> {
   const cp = getCurrentProject();
   // NOT gated on being signed in — that is one of the things this repairs (#304).
-  if (!cp.projectId || !navigator.onLine || !getToken()) return;
+  if (!navigator.onLine || !getToken()) return;
   if (Date.now() - _lastReconnectCheck < 3000) return;   // event AND watch fired
   _lastReconnectCheck = Date.now();
+  // A project made offline has no cloud id yet: its own upload is the retry's
+  // job (it creates the project first). Other projects' copies wait for that
+  // save, which asks for them (#523).
+  if (!cp.projectId) { lookForUnsentCopiesSoon(6_000); return; }
 
   trace('back online — asking the server what it has');
   // A device that STARTED offline never learned who it was, and everything that
@@ -4610,6 +4921,9 @@ async function checkServerAfterReconnect(): Promise<void> {
     trace(`  who am I: ${isLoggedIn() ? 'signed in now' : 'still unknown'}`);
   }
   if (!isLoggedIn()) return;
+  // And whatever OTHER projects left unsent on this device go up too, once
+  // the open one is settled (#523).
+  lookForUnsentCopiesSoon(6_000);
   // Send first. Anything made offline goes up now rather than in forty seconds,
   // and the pull that follows is not held back by our own unsent work.
   try { await flushSyncNow(); } catch { /* still unreachable */ }
@@ -5226,6 +5540,12 @@ export function clearPushedFingerprints(): void {
  * three frames of thirty-three and quietly leave the rest behind — the work
  * would look saved and would not be.
  */
+/** Does this device remember the server holding any of the shots on screen?
+ *  Empty for a project made from scratch; full for a cloud project (#523). */
+export function serverKnowsTheseShots(): boolean {
+  return _serverFrameTimes.size > 0 || _lastPushedFingerprints.size > 0;
+}
+
 export function forgetTheServerEverHadIt(): void {
   _serverFrameTimes.clear();
   resetProjectSyncGuards();
@@ -6284,6 +6604,7 @@ export async function bootstrapAccountSystem(): Promise<void> {
   // be created first. saveNow() does exactly that, then uploads.
   registerCreateAndSync(saveNow);
   registerProjectGone(askAboutTheDeletedProject);           // #465
+  registerAfterSaved(() => lookForUnsentCopiesSoon());       // #523: other projects' unsent copies
   registerProjectAlive((pid) => _goneRegister.cameBack(pid));  // #468
   registerPullFn(tryPullFromCloud);
   registerConnectionWatch(watchForTheConnectionComingBack);   // #298
@@ -6298,7 +6619,7 @@ export async function bootstrapAccountSystem(): Promise<void> {
   // another — is put in place with its memory, synced, and archived. The one
   // matching the project about to be restored below is left to the ordinary
   // retry, which handles the open project.
-  await uploadUnsentCopiesAtStart();
+  await uploadUnsentCopies('start');
 
   // 2. Restore unsaved local project from IndexedDB if present.
   try {
@@ -6311,7 +6632,7 @@ export async function bootstrapAccountSystem(): Promise<void> {
         adoptDirtyFrameIds(snap.dirtyFrameIds);  // protect them from the first pull
         adoptPushedFingerprints(snap.pushedFingerprints);  // no needless full push
         importSettingStamps(snap.settingStamps, snap.projectId ?? null);   // remember when settings changed — and whose
-        importChangeStamps(snap.contentStamps);    // ...and when frames/versions did
+        importChangeStamps(snap.contentStamps, snap.projectId ?? null);    // ...and when frames/versions did — and whose (#523)
         adoptHeardAt(snap.heardAt);                // ...and when we last heard (#284)
         adoptPendingTombstones(snap.pendingTombstones);  // deleting is final (#327)
         applySnapshotToStore(snap);
@@ -6364,6 +6685,13 @@ export async function bootstrapAccountSystem(): Promise<void> {
       trace(snap.projectId
         ? `project: ${snap.name ?? 'unnamed'} · cloud id ${snap.projectId.slice(0, 8)} · signed in: ${isLoggedIn() ? 'yes' : 'NO'}`
         : `project: ${snap.name ?? 'unnamed'} · NOT ON THE SERVER — nothing can sync until it is saved`);
+      // A PROJECT WITHOUT A CLOUD ID WHOSE SHOTS THE CLOUD KNOWS (#523). This
+      // is the state that made the doubled "uboot", and nothing had written
+      // it down. Said here, at every start, so the next time it happens the
+      // log shows when it began.
+      if (!snap.projectId && serverKnowsTheseShots()) {
+        trace(`  ...but ${_serverFrameTimes.size || _lastPushedFingerprints.size} of its shots are known to the cloud — this project has LOST its cloud id`);
+      }
       clearDirtyState(); // IDB restore is not a user change
 
       // Kick off a cloud pull now that projectId is set.

@@ -17,6 +17,8 @@
 
 import { api } from './api';
 import { setTrackingUser } from './tracking';
+import { trace } from './syncTrace';
+import { showToast } from './modals';
 
 export interface SessionUser {
   id: string;
@@ -125,8 +127,18 @@ export async function loadCurrentUser(): Promise<SessionUser | null> {
     emit();
     return user;
   } catch (e) {
-    const err = e as { status?: number };
-    if (err.status === 401) clearSession();
+    const err = e as { status?: number; code?: string };
+    if (err.status === 401) {
+      // SAY SO (#523). This used to happen without a word: the app carried on
+      // looking signed in until OPEN or SAVE asked for an account, and nobody
+      // could tell afterwards when or why. The only thing that signs you out
+      // is the server saying no — a sign-in that has run out, or one ended
+      // elsewhere. Not being offline: that returns below with the user kept.
+      trace(`signed out: the server no longer accepts this sign-in (${err.code ?? '401'}) — please log in again`);
+      clearSession();
+      showToast('Please log in again.');
+      return null;
+    }
     // Unreachable: the remembered user stands, so an offline start can still
     // save, queue and sync the moment the connection returns.
     return user;

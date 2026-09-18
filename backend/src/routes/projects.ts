@@ -310,6 +310,61 @@ projects.post("/:id/sync", async (c) => {
   }
   const payload = parsed.value;
 
+  // A SHOT STAYS IN THE PROJECT IT WAS BORN IN (#523).
+  //
+  // Shots were filed by their name alone: a push carrying a shot that already
+  // lives in ANOTHER project of the same user moved it across (the row's strip
+  // was simply overwritten), and a deletion did the same to the other
+  // project's row. Roman, 18 September: an iPad saved a project as new while
+  // it still held the shots of the old one — the server then moved 34 shots
+  // back and forth between the two "uboot"s on every push, doubling the one
+  // and emptying the other, for ever.
+  // A shot found under another LIVE project is not touched by this push at all
+  // — not written, not deleted, and its versions, pictures and drawings with
+  // it — and the pusher is told, so it can drop the shot from the wrong
+  // project. A shot under a DELETED project is not guarded: SAVE AS NEW on a
+  // project you deleted carries its shots into the new one on purpose, and
+  // moving the rows is what keeps their pictures out of the sweep.
+  const foreignFrames: string[] = [];
+  const foreignVersions: string[] = [];
+  {
+    const frameIds = [...new Set([
+      ...payload.frames.map((f) => f.id),
+      ...payload.versions.map((v) => v.frame_id),
+      ...payload.deletions.filter((d) => d.entity_type === "frame").map((d) => d.entity_id),
+    ])];
+    for (const part of inChunks(frameIds)) {
+      const rows = await c.env.DB.prepare(
+        `SELECT f.id FROM frames f JOIN strips s ON s.id = f.strip_id JOIN projects p ON p.id = s.project_id
+          WHERE f.id IN (${part.map(() => "?").join(",")}) AND s.project_id != ? AND p.deleted_at IS NULL`,
+      ).bind(...part, project.id).all<{ id: string }>();
+      for (const r of rows.results) foreignFrames.push(r.id);
+    }
+    const versionIds = [...new Set([
+      ...payload.versions.map((v) => v.id),
+      ...payload.deletions.filter((d) => d.entity_type === "version").map((d) => d.entity_id),
+    ])];
+    for (const part of inChunks(versionIds)) {
+      const rows = await c.env.DB.prepare(
+        `SELECT v.id FROM versions v JOIN frames f ON f.id = v.frame_id JOIN strips s ON s.id = f.strip_id JOIN projects p ON p.id = s.project_id
+          WHERE v.id IN (${part.map(() => "?").join(",")}) AND s.project_id != ? AND p.deleted_at IS NULL`,
+      ).bind(...part, project.id).all<{ id: string }>();
+      for (const r of rows.results) foreignVersions.push(r.id);
+    }
+    if (foreignFrames.length > 0 || foreignVersions.length > 0) {
+      const ff = new Set(foreignFrames);
+      const fv = new Set(foreignVersions);
+      payload.frames = payload.frames.filter((f) => !ff.has(f.id));
+      payload.versions = payload.versions.filter((v) => !ff.has(v.frame_id) && !fv.has(v.id));
+      const keptVersionIds = new Set(payload.versions.map((v) => v.id));
+      payload.images = payload.images.filter((i) => keptVersionIds.has(i.version_id));
+      payload.drawings = payload.drawings.filter((d) => keptVersionIds.has(d.version_id));
+      payload.deletions = payload.deletions.filter((d) =>
+        !(d.entity_type === "frame" && ff.has(d.entity_id))
+        && !(d.entity_type === "version" && fv.has(d.entity_id)));
+    }
+  }
+
   // Conflict detection: if the client sends a base_updated_at that is older
   // than the server's updated_at AND the push is from a different device,
   // that means the client hasn't seen the latest server version. Reject so
@@ -645,15 +700,19 @@ projects.post("/:id/sync", async (c) => {
 
 
   const tree = await loadProjectTree(c.env.DB, project.id);
+  // Shots of another project, left untouched (#523) — said only when there are any.
+  const foreign = (foreignFrames.length > 0 || foreignVersions.length > 0)
+    ? { foreign_frames: foreignFrames, foreign_versions: foreignVersions }
+    : {};
   // Some frames were refused because they moved underneath this device. The
   // rest went in. The client shows the picker for these and nothing else.
   if (rejectedFrames.length > 0) {
-    return c.json({ ...tree, rejected_frames: rejectedFrames, stale_frames: staleFrames, stale_versions: staleVersions });
+    return c.json({ ...tree, ...foreign, rejected_frames: rejectedFrames, stale_frames: staleFrames, stale_versions: staleVersions });
   }
   if (staleFrames.length > 0 || staleVersions.length > 0) {
-    return c.json({ ...tree, stale_frames: staleFrames, stale_versions: staleVersions });
+    return c.json({ ...tree, ...foreign, stale_frames: staleFrames, stale_versions: staleVersions });
   }
-  return c.json(tree);
+  return c.json({ ...tree, ...foreign });
 });
 
 // ---------------------------------------------------------------------------
@@ -1079,6 +1138,20 @@ projects.post("/:id/snapshots", async (c) => {
     }
     if (typeof b?.madeAt === 'number' && b.madeAt > 0 && b.madeAt <= Date.now()) at = b.madeAt;
   } catch { /* no body — ordinary "where you are now" point */ }
+
+  // NOT TWICE FOR THE SAME MOMENT (#523). Opening the restore list asks for a
+  // "where you are now" point every time — reopened three times in a minute,
+  // it made three identical rows saying "now". If nothing has changed since
+  // the newest point was taken, that point IS now; hand it back.
+  if (reason === 'pre_restore') {
+    const newest = await c.env.DB
+      .prepare("SELECT id, created_at FROM project_snapshots WHERE project_id = ? ORDER BY created_at DESC LIMIT 1")
+      .bind(project.id)
+      .first<{ id: string; created_at: number }>();
+    if (newest && newest.created_at >= project.updated_at) {
+      return c.json({ ok: true, id: newest.id, unchanged: true });
+    }
+  }
 
   const made = await forceCreateSnapshot(c.env.DB, project.id, at, reason, label);
   return c.json({ ok: true, id: made });

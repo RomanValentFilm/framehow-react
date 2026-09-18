@@ -245,6 +245,14 @@ export class Device {
         .__fh_test.saveThisProject());
   }
 
+  /** SAVE AS NEW on what is on screen (#523). */
+  saveAsNewProject(name: string): Promise<void> {
+    say(`${this.name}: saving what is on screen as a NEW project "${name}"`);
+    return this.page.evaluate((n) =>
+      (window as never as { __fh_test: { saveAsNewProject(n: string): Promise<void> } })
+        .__fh_test.saveAsNewProject(n as string), name);
+  }
+
   // --- BIG DAY (#509) --------------------------------------------------------
 
   async newProjectOfKind(name: string, kind: 'landscape' | 'portrait' | 'fitting', frames: number): Promise<string | null> {

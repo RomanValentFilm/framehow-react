@@ -119,6 +119,7 @@ export function markSaved(projectId: string): void {
   cp = { ...cp, projectId, lastSavedAt: Date.now(), dirty: false };
   scheduleAutosave();
   emit();
+  try { _afterSaved?.(); } catch { /* never in the way of a save */ }
 }
 
 export function clearCurrentProject(): void {
@@ -742,7 +743,7 @@ async function retryPendingSyncs(why: 'timer' | 'now' = 'timer'): Promise<void> 
   if (why === 'now') _retryClock.wokeUp();
   if (!_syncFn || !isLoggedIn() || !navigator.onLine) return;
   if (_pendingSyncIds.size === 0) return;
-  if (cloudSyncInFlight || _projectSwitchInFlight) return;
+  if (cloudSyncInFlight || _projectSwitchInFlight || _localSavesHeld) return;
   if (why === 'timer' && !_retryClock.mayTry(Date.now())) return;
   _retryClock.tried(Date.now());
   // Made offline and never uploaded: it needs creating on the server first.
@@ -853,10 +854,31 @@ export function withMemory(snap: ReturnType<typeof snapshotFromStore>): ReturnTy
 }
 
 let _autosaveInFlight = false;
+/**
+ * NOT WHILE ANOTHER PROJECT'S COPY IS STANDING IN (#523). While an unsent copy
+ * of another project is put in place to be sent, the store holds THAT project
+ * — and the local save writes whatever the store holds as "the open project".
+ * Two seconds into the upload it would have written the copy over the open
+ * project's own save, and the next start would have opened the wrong one.
+ */
+let _localSavesHeld = false;
+/** ...and no timer-driven push or retry either: they read "the open project"
+ *  and would push the stand-in, or create it, on their own account. Explicit
+ *  calls (the fetch's own flush, the upload's push) are not held. */
+export function standInForAnotherProject(on: boolean): void {
+  _localSavesHeld = on;
+  if (!on) scheduleAutosave();
+}
+export function isStandingIn(): boolean { return _localSavesHeld; }
+/** Told after every save that reached the server (a push, a pull's mark, or
+ *  SAVE) — the moment to look for unsent copies of OTHER projects (#523). */
+let _afterSaved: (() => void) | null = null;
+export function registerAfterSaved(fn: () => void): void { _afterSaved = fn; }
+
 async function runAutosave(): Promise<void> {
   autosaveTimer = null;
   if (_autosaveInFlight) return;              // Don't overlap heavy IDB writes
-  if (_pullInFlight || _projectSwitchInFlight) {
+  if (_pullInFlight || _projectSwitchInFlight || _localSavesHeld) {
     scheduleAutosave();
     return;
   }
@@ -966,6 +988,7 @@ async function runCloudSync(): Promise<void> {
   if (cloudSyncInFlight) return;
   if (_pullInFlight) return;
   if (_projectSwitchInFlight) return;
+  if (_localSavesHeld) return;               // another project's copy stands in (#523)
   if (!_dirty) return;
 
   cloudSyncInFlight = true;

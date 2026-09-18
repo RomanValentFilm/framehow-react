@@ -5,7 +5,7 @@ import { APP_VERSION } from '../store/state';
 // which meant three taps and a strip covering the buttons to answer "which build
 // am I holding?".
 import { SYNC_BUILD_TAG } from '../lib/syncTrace';
-import { toggleSyncLog } from '../lib/syncTrace';
+import { toggleSyncLog, logAllowedHere } from '../lib/syncTrace';
 
 export function Toolbar() {
   // Three taps on the version number turn the sync log on or off. The log used
@@ -19,6 +19,7 @@ export function Toolbar() {
     tapTimer = window.setTimeout(() => { taps = 0; }, 1500);
     if (taps >= 3) {
       taps = 0;
+      if (!logAllowedHere()) return;          // not on the public address (#522)
       const on = toggleSyncLog();
       // Debug mode also decides whether the offline cache may run on the dev
       // address, and that is only read when the app starts (#274).
@@ -35,7 +36,7 @@ export function Toolbar() {
         <span
           className="toolbar-version"
           onClick={tapVersion}
-          title="tap three times for the sync log"
+          title={logAllowedHere() ? 'tap three times for the sync log' : undefined}
           style={{fontSize:'9px',color:'#555',marginLeft:'6px',letterSpacing:'0.02em',cursor:'pointer',padding:'4px'}}
         >{APP_VERSION} · {SYNC_BUILD_TAG}</span>
       </div>

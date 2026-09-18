@@ -19,6 +19,11 @@ interface UserRow {
   preferences: string | null;
 }
 
+function sessionTtlMs(env: Env): number {
+  const days = Number(env.SESSION_TTL_DAYS);
+  return (Number.isFinite(days) && days > 0 ? days : 30) * 24 * 60 * 60 * 1000;
+}
+
 function readBearer(c: Context): string | null {
   const header = c.req.header("Authorization");
   if (!header) return null;
@@ -63,6 +68,18 @@ export const requireUser: MiddlewareHandler<{ Bindings: Env; Variables: AppVaria
 ) => {
   const result = await loadSession(c);
   if (!result) return jsonError(c, 401, "unauthorized", "Authentication required.");
+  // A SIGN-IN IN USE NEVER RUNS OUT (#523). It lasted 30 days from the day
+  // you signed in, whatever you did since — so a device used every day was
+  // signed out one morning without a word. Now every visit past the halfway
+  // mark pushes the end another 30 days out. Written at most once a day per
+  // session, so the ordinary request costs nothing extra.
+  const ttl = sessionTtlMs(c.env);
+  const now = Date.now();
+  if (result.session.expires_at - now < ttl / 2) {
+    const renew = c.env.DB.prepare("UPDATE sessions SET expires_at = ? WHERE id = ?")
+      .bind(now + ttl, result.session.id).run().then(() => undefined, () => undefined);
+    try { c.executionCtx.waitUntil(renew); } catch { void renew; }
+  }
   c.set("user", {
     id: result.user.id,
     name: result.user.name,

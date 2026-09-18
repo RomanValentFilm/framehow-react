@@ -302,7 +302,23 @@ export function exportChangeStamps(): Record<string, { fp: string; at: number }>
   return Object.fromEntries(_seen);
 }
 
-export function importChangeStamps(m: Record<string, { fp: string; at: number }> | undefined): void {
+/**
+ * ...AND WHOSE MEMORY IT IS (#523).
+ *
+ * The memory is kept for one project, and forgotten the moment a stamp is
+ * asked for a different one. Importing a saved memory used to fill it in
+ * without saying which project it belonged to — so the first stamp after a
+ * restart, or after an unsent copy was put in place, saw "a different project"
+ * and wiped it clean. Everything was then recorded as age unknown, and the
+ * changes made offline went up with no time at all: Roman's iPad, back in the
+ * office, sent its five renamed shots "@none", the server called them older
+ * than its own, and the renames stayed on the iPad.
+ */
+export function importChangeStamps(
+  m: Record<string, { fp: string; at: number }> | undefined,
+  projectId?: string | null,
+): void {
+  if (projectId !== undefined) _projectId = projectId;
   if (!m) return;
   _seen.clear();
   for (const [k, v] of Object.entries(m)) _seen.set(k, v);

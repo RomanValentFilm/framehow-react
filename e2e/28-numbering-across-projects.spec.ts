@@ -980,6 +980,13 @@ test('numbering: offline with a project open, then a new project made offline to
     await desktop.moveInOrder(i, 0, 4);
     await desktop.addBreak(i, 3, 'BREAK ON A');
     const groupA = await desktop.makeGroup('A — INSIDE', [0, 1, 2]);
+    // ...AND SHOTS RENAMED, WHICH IS CONTENT, NOT ARRANGEMENT (#523). Roman,
+    // 18 September: renamed shots on the iPad with no signal, made a new
+    // project, came back — the renames went up "@none" and the server kept its
+    // own. The memory of when each shot changed was wiped by the first stamp
+    // after the unsent copy was put in place.
+    await desktop.renameFrame(5, 'RENAMED OFFLINE ONE');
+    await desktop.renameFrame(6, 'RENAMED OFFLINE TWO');
     const wantedA = await desktop.orderTextByName('A — DAY 1');
     const wantedGroupA = await desktop.groupAsText(groupA);
     const wantedFlowA = await desktop.storyFlowAsText();
@@ -1017,6 +1024,35 @@ test('numbering: offline with a project open, then a new project made offline to
     expect(jobB, 'and it must be a project of its own, not JOB A').not.toBe(jobA);
     await desktop.settle();
 
+    // ── JOB A GOES UP BY ITSELF, WITH JOB B STILL ON SCREEN (#523) ────────
+    // Roman: "the users never do that, there is no need to refresh the app and
+    // the user does not know he has to do it." So the desktop never restarts
+    // and never opens JOB A here — and the iPad, sitting on JOB A all along,
+    // must still receive the work made on it with no signal.
+    say('desktop: JOB B stays on screen — JOB A must go up on its own');
+    await desktop.waitForLog('unsent copy of "JOB A"', 60_000);
+    await desktop.waitForLog('is in the cloud', 90_000);
+    expect((await desktop.read()).projectId, 'the desktop must be back on JOB B').toBe(jobB);
+    expect((await desktop.read()).orders.map((o) => o.name),
+      'JOB B must be exactly as it was after JOB A went up').toEqual(['B — DAY 1']);
+    expect(await desktop.orderTextByName('B — DAY 1'), "JOB B's order must be untouched").toBe(wantedB);
+    {
+      const deadline = Date.now() + 90_000;
+      let onPad = '';
+      for (;;) {
+        await ipad.nudge();
+        await ipad.push();
+        onPad = await ipad.orderTextByName('A — DAY 1');
+        const labels = (await ipad.read()).frames.map((f) => f.label);
+        if (onPad === wantedA && labels.includes('RENAMED OFFLINE ONE')) break;
+        if (Date.now() > deadline) break;
+        await ipad.page.waitForTimeout(2000);
+      }
+      expect(onPad, "the iPad, never leaving JOB A, must receive the order edited with no signal — without the desktop restarting or opening JOB A").toBe(wantedA);
+      expect((await ipad.read()).frames.map((f) => f.label),
+        'and the shots renamed with no signal').toEqual(expect.arrayContaining(['RENAMED OFFLINE ONE', 'RENAMED OFFLINE TWO']));
+    }
+
     // JOB B, seen by a device that has never held it.
     await ipad.openProject(jobB!);
     await ipad.settle();
@@ -1051,6 +1087,12 @@ test('numbering: offline with a project open, then a new project made offline to
     expect((await ipad.read()).orders.map((o) => o.name),
       'JOB A must hold ONLY its own order — anything of JOB B here is a leak')
       .toEqual(['A — DAY 1']);
+    for (const [who, dev] of [['desktop', desktop], ['ipad', ipad]] as const) {
+      const labels = (await dev.read()).frames.map((f) => f.label);
+      expect(labels, `${who}: the shots renamed on JOB A with no signal must keep `
+        + 'their names once the copy is sent (#523)')
+        .toEqual(expect.arrayContaining(['RENAMED OFFLINE ONE', 'RENAMED OFFLINE TWO']));
+    }
 
     for (const [who, dev] of [['desktop', desktop], ['ipad', ipad]] as const) {
       const st = await dev.read();

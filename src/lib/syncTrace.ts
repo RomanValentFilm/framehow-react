@@ -20,7 +20,7 @@ import { APP_VERSION } from '../store/state';
  *  It is bumped BY HAND, which is why it sat at #309 through #310, #311, #312
  *  and #313 — telling the screen a version of events that was four changes out
  *  of date. Worth remembering the next time it is trusted in a log. */
-export const SYNC_BUILD_TAG = '#521';
+export const SYNC_BUILD_TAG = '#522';
 
 let box: HTMLElement | null = null;
 
@@ -61,7 +61,22 @@ function urlSays(): boolean | null {
  *  hid the strip and the next star or stroke brought it straight back. */
 let _addressRead = false;
 
+/**
+ * NOT ON THE PUBLIC ADDRESS (#522, Roman, 17 September). The sync log is for
+ * us: dev, the simulator, a local build. On framehow.com (and any address
+ * that is not dev/local) it never shows and the three taps do nothing —
+ * unless the address says ?fhsync=1, which is how we would read a tester's
+ * device if we ever had to.
+ */
+export function logAllowedHere(): boolean {
+  if (typeof window === 'undefined') return false;
+  const host = window.location.hostname;
+  if (host.startsWith('dev.') || ['localhost', '127.0.0.1', '0.0.0.0'].includes(host)) return true;
+  return urlSays() === true;
+}
+
 function enabled(): boolean {
+  if (!logAllowedHere()) return false;
   if (!_addressRead) {
     _addressRead = true;
     const said = urlSays();
@@ -85,6 +100,7 @@ export function isDebugDevice(): boolean {
 
 /** Turn the log on or off on THIS device, and say which it now is. */
 export function toggleSyncLog(): boolean {
+  if (!logAllowedHere()) return false;
   const on = !enabled();
   write(SHOW_KEY, on);
   // Showing it once puts the device in debug mode; hiding it again does NOT

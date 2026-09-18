@@ -31,7 +31,7 @@ import { handlePDF } from './pdf';
 import { deleteFrameForGood, handleMainAction, handleAction, renameFrame, hideFrame, unhideFrame } from './actions';
 import { createSetup, handleSetupFrameClick, handleStripTagClick } from './setups';
 import { renameNeedTab, renameNeedTable, renameNeedItem, ensureFrameNeeds } from './needs';
-import { saveNow, openCloudProjectById, beginNewProject, untouchedStrip, makeRestorePoint, listRestorePoints, restoreToPoint, deleteCloudProject, recoverCloudProject, saveRestorePoint, deleteRestorePoint } from './accountFlow';
+import { saveNow, carryOnAsNewProject, openCloudProjectById, beginNewProject, untouchedStrip, makeRestorePoint, listRestorePoints, restoreToPoint, deleteCloudProject, recoverCloudProject, saveRestorePoint, deleteRestorePoint } from './accountFlow';
 import { flushSyncNow, markFrameDirty, getDirtyFrameIds, pullNow } from './currentProject';
 import { openNeedsModal } from './overview';
 import { stampChangedContent } from './changeStamps';
@@ -119,6 +119,7 @@ export interface TestDoor {
    *  `push` is flushSyncNow, which gives up in silence when there is no project
    *  on the server to flush TO, so it cannot stand in for this. */
   saveThisProject(): Promise<void>;
+  saveAsNewProject(name: string): Promise<void>;
   /** Write under a frame, by its place on screen (0 = first). The same store
    *  write the text editor makes, followed by the same stamping the autosave
    *  does — so the change carries an honest time. */
@@ -1672,6 +1673,8 @@ export function installTestDoor(): void {
     async push() { await flushSyncNow(); },
 
     async saveThisProject() { await saveNow(); },
+    /** SAVE AS NEW, on whatever is on screen — the app's own path (#523). */
+    async saveAsNewProject(name: string) { await carryOnAsNewProject(name); },
 
     /** Start a fetch and DO NOT wait for it (#425).
      *
