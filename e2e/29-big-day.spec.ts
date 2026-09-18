@@ -292,6 +292,20 @@ test('big day, part 3: pictures, drawings, versions and stars, held on both devi
     expect.soft(v3.some((v) => v.stars > 0), 'a starred version on both').toBe(true);
     expect.soft(v3.some((v) => v.strokes > 0), 'a drawn version on both').toBe(true);
 
+    // ── THE ORDER OF VERSIONS TRAVELS (#531) ─────────────────────────────
+    // Roman, 18 September, desktop: reordered versions in M+2 and "they
+    // somewhat jumped back". The server had no order for versions; the pull
+    // lined them up by creation. The starred, drawn version goes FIRST here,
+    // and must be first on the iPad and after a reload.
+    say('── desktop moves shot 3\'s starred version to the front ──');
+    await desktop.moveVersion(2, 'ver', 1, 'left');
+    labels = await desktop.versionLabels(2, 'ver');
+    say(`   shot 3 VER on the desktop now: ${labels.join(' · ')}`);
+    await desktop.settle();
+    agreed = shotsOf(await Device.waitUntilWholeAgrees(desktop, ipad, 'CARDS: THE VERSION ORDER DID NOT REACH THE IPAD.'));
+    expect.soft(agreed[2].versions.ver[0].stars, 'the starred version is FIRST on both (order travels)').toBeGreaterThan(0);
+    expect.soft(agreed[2].versions.ver[0].strokes, 'and it is the drawn one').toBeGreaterThan(0);
+
     // ── the other strips: ANGLE (floor) and SKETCH (refs) on shot 4 ──────
     say('── desktop draws on shot 4 ANGLE and SKETCH, uploads a picture to SKETCH ──');
     await desktop.showStrip('floor');
@@ -308,12 +322,15 @@ test('big day, part 3: pictures, drawings, versions and stars, held on both devi
     expect.soft(agreed[3].versions.refs.some((v) => v.picture), 'SKETCH picture on both').toBe(true);
 
     // ── iPad hides shot 3's first version; desktop must see it hidden ────
-    say('── iPad hides shot 3 VER version 1 ──');
+    say('── iPad hides shot 3 VER version 1 (the starred one, now first) ──');
     await ipad.hideVersion(2, 'ver', 0);
     await ipad.settle();
     agreed = shotsOf(await Device.waitUntilWholeAgrees(desktop, ipad, 'CARDS: THE HIDDEN VERSION DID NOT REACH THE DESKTOP.'));
     expect.soft(agreed[2].versions.ver.filter((v) => v.hidden).length, 'one hidden version on both').toBe(1);
     expect.soft(agreed[2].versions.ver.length, 'hiding keeps the version').toBe(2);
+    // Hiding moves the version to the END — that is an order too (#531).
+    expect.soft(agreed[2].versions.ver[1].hidden, 'the hidden version sits last on both').toBe(true);
+    expect.soft(agreed[2].versions.ver[1].stars, 'and it is still the starred one').toBeGreaterThan(0);
 
     // ── iPad writes on shot 1's main card; desktop must hold the text ────
     say('── iPad writes on shot 1 main card ──');

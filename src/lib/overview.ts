@@ -8,6 +8,7 @@ import {
   addNewStripVersion,
   unhideVersion,
   relabelStripVersions,
+  moveStripVersion,
   ovCollapseExpanded,
   updateFrameBadge,
   getStripVersions,
@@ -344,16 +345,8 @@ export function renderOverviewRow(row: HTMLElement, fid: number): void {
       b.addEventListener('click', () => {
         for (const k in s.drawActive) s.drawActive[+k] = null;
         useStore.setState({ reorderFid: null, swipeHighlightFid: null });
-        const dir = (b as HTMLElement).dataset.ovmove!;
-        const curAi = getStripActiveTab(fid, companionStrip);
-        if (dir === 'left' && curAi > 0) {
-          [tabs[curAi - 1], tabs[curAi]] = [tabs[curAi], tabs[curAi - 1]];
-          setStripActiveTab(fid, companionStrip, curAi - 1);
-        } else if (dir === 'right' && curAi < tabs.length - 1) {
-          [tabs[curAi], tabs[curAi + 1]] = [tabs[curAi + 1], tabs[curAi]];
-          setStripActiveTab(fid, companionStrip, curAi + 1);
-        }
-        relabelStripVersions(fid, companionStrip);
+        const dir = (b as HTMLElement).dataset.ovmove! as 'left' | 'right';
+        moveStripVersion(fid, companionStrip, dir);     // the one path (#531)
         useStore.setState({ verReorderFid: fid, verReorderStrip: companionStrip });
         renderOverviewRow(row, fid);
       })
@@ -684,16 +677,8 @@ export function renderGrid4Row(row: HTMLElement, fid: number): void {
         e.stopPropagation();
         for (const k in s.drawActive) s.drawActive[+k] = null;
         useStore.setState({ reorderFid: null, swipeHighlightFid: null });
-        const dir = (b as HTMLElement).dataset.ovmove!;
-        const curAi = getStripActiveTab(fid, companionStrip);
-        if (dir === 'left' && curAi > 0) {
-          [tabs[curAi - 1], tabs[curAi]] = [tabs[curAi], tabs[curAi - 1]];
-          setStripActiveTab(fid, companionStrip, curAi - 1);
-        } else if (dir === 'right' && curAi < tabs.length - 1) {
-          [tabs[curAi], tabs[curAi + 1]] = [tabs[curAi + 1], tabs[curAi]];
-          setStripActiveTab(fid, companionStrip, curAi + 1);
-        }
-        relabelStripVersions(fid, companionStrip);
+        const dir = (b as HTMLElement).dataset.ovmove! as 'left' | 'right';
+        moveStripVersion(fid, companionStrip, dir);     // the one path (#531)
         useStore.setState({ verReorderFid: fid, verReorderStrip: companionStrip });
         renderGrid4Row(row, fid);
       })

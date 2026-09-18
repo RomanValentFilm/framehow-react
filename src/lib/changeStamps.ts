@@ -229,9 +229,13 @@ export function stampChangedContent(
       if (held && !untouchedStrip(held)) {
         for (const v of held) if (!v.serverVersionId) v.serverVersionId = newVersionId();
       }
-      for (const v of held ?? []) {
-        if (v.serverVersionId) note(`v/${v.serverVersionId}`, versionFp(v));
-      }
+      // ITS PLACE IS PART OF IT (#531): moving a version among its siblings
+      // is a change to that version, dated now, or the server (which judges
+      // per version by time) would keep the old place for a version whose
+      // picture and marks did not change.
+      (held ?? []).forEach((v, vi) => {
+        if (v.serverVersionId) note(`v/${v.serverVersionId}`, `${versionFp(v)}|@${vi}`);
+      });
     }
   });
 }

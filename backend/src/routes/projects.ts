@@ -1236,8 +1236,8 @@ projects.post("/:id/restore/:snapshotId", async (c) => {
   for (const v of tree.versions) {
     stmts.push(
       c.env.DB.prepare(
-        "INSERT INTO versions (id, frame_id, label, type, hidden, starred, note, updated_at, tags, content_changed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      ).bind(v.id, v.frame_id, v.label, v.type, v.hidden, v.starred, v.note ?? null, now, v.tags ?? null, now),
+        "INSERT INTO versions (id, frame_id, label, type, hidden, starred, note, updated_at, tags, content_changed_at, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      ).bind(v.id, v.frame_id, v.label, v.type, v.hidden, v.starred, v.note ?? null, now, v.tags ?? null, now, v.sort_order ?? null),
     );
     stmts.push(c.env.DB.prepare(
       "DELETE FROM project_deletions WHERE project_id = ? AND entity_type = 'version' AND entity_id = ?").bind(project.id, v.id));
@@ -1291,7 +1291,7 @@ interface ProjectTree {
     /** Owned by the frame, not by a project-wide list. */
     needs: string | null; notes: string | null; setup_id: string | null;
     content_changed_at: number | null }>;
-  versions: Array<{ id: string; frame_id: string; label: string | null; type: string; hidden: number; starred: number; note: string | null; updated_at: number; tags: string | null; content_changed_at: number | null }>;
+  versions: Array<{ id: string; frame_id: string; label: string | null; type: string; hidden: number; starred: number; note: string | null; updated_at: number; tags: string | null; content_changed_at: number | null; sort_order: number | null }>;
   images: Array<{
     id: string;
     version_id: string;
@@ -1364,7 +1364,7 @@ async function loadProjectTree(db: D1Database, projectId: string, since?: number
         ORDER BY sort_order`,
     ).bind(projectId, ...arg),
     db.prepare(
-      `SELECT id, frame_id, label, type, hidden, starred, note, updated_at, tags, content_changed_at
+      `SELECT id, frame_id, label, type, hidden, starred, note, updated_at, tags, content_changed_at, sort_order
          FROM versions WHERE frame_id IN (
            SELECT f.id FROM frames f JOIN strips s ON s.id = f.strip_id WHERE s.project_id = ?
          )${only('updated_at')} ORDER BY updated_at`,
@@ -1468,6 +1468,8 @@ interface SyncPayload {
      *  stamped at push time, so it orders reconnections, not edits. */
     content_changed_at?: number | null }>;
   versions: Array<{ id: string; frame_id: string; label: string | null; type: string; hidden: boolean; starred: number; note: string | null; updated_at: number; tags?: string | null; content_changed_at?: number | null;
+    /** The version's place among its shot's versions (#531). Null from an older app: keep whatever the row has. */
+    sort_order?: number | null;
     /** Does this card still have a drawing on it? (#475)
      *
      *  A drawing is only sent when it has strokes, and this server deletes
@@ -1601,7 +1603,8 @@ function parseSyncPayload(body: unknown): Parsed<SyncPayload> {
     // is carried through; anything else — missing, null, a string — stays
     // undefined and changes nothing, which is what an older app sends.
     const hasDrawing = r.has_drawing === true ? true : r.has_drawing === false ? false : undefined;
-    versions.push({ id, frame_id, label, type, hidden, starred, note, updated_at, tags, content_changed_at: verChangedAt, has_drawing: hasDrawing });
+    const sortOrder = typeof r.sort_order === "number" && Number.isFinite(r.sort_order) ? Math.floor(r.sort_order) : null;
+    versions.push({ id, frame_id, label, type, hidden, starred, note, updated_at, tags, content_changed_at: verChangedAt, has_drawing: hasDrawing, sort_order: sortOrder });
   }
 
   const versionIdSet = new Set(versions.map((v) => v.id));
@@ -1936,17 +1939,18 @@ function appendFrameInserts(db: D1Database, stmts: D1PreparedStatement[], payloa
   for (const v of payload.versions) {
     stmts.push(
       db.prepare(
-        `INSERT INTO versions (id, frame_id, label, type, hidden, starred, note, updated_at, tags, content_changed_at)
-         SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+        `INSERT INTO versions (id, frame_id, label, type, hidden, starred, note, updated_at, tags, content_changed_at, sort_order)
+         SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
          WHERE NOT EXISTS (SELECT 1 FROM project_deletions WHERE entity_type = 'version' AND entity_id = ?)
          ON CONFLICT(id) DO UPDATE SET
            content_changed_at = excluded.content_changed_at,
            frame_id = excluded.frame_id, label = excluded.label, type = excluded.type,
            hidden = excluded.hidden, starred = excluded.starred, note = excluded.note,
-           updated_at = excluded.updated_at, tags = excluded.tags
+           updated_at = excluded.updated_at, tags = excluded.tags,
+           sort_order = COALESCE(excluded.sort_order, versions.sort_order)
          WHERE versions.content_changed_at IS NULL
             OR (excluded.content_changed_at IS NOT NULL AND excluded.content_changed_at >= versions.content_changed_at)`,
-      ).bind(v.id, v.frame_id, v.label, v.type, v.hidden ? 1 : 0, Number(v.starred) || 0, v.note ?? null, now, v.tags ?? null, v.content_changed_at ?? null, v.id),
+      ).bind(v.id, v.frame_id, v.label, v.type, v.hidden ? 1 : 0, Number(v.starred) || 0, v.note ?? null, now, v.tags ?? null, v.content_changed_at ?? null, v.sort_order ?? null, v.id),
     );
   }
   for (const img of payload.images) {

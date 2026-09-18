@@ -806,6 +806,31 @@ export function setStripPrevFrameState(fid: number, strip: StripType, snap: Fram
 }
 
 /** Relabel versions for any strip type */
+/**
+ * MOVE THE VERSION ON SHOW ONE PLACE LEFT OR RIGHT (#531). The overview's
+ * ◀ ▶ did this inline; lifted so the simulator can press the same thing and
+ * prove the order travels. Swaps the two versions, relabels, follows the moved
+ * one, and marks the shot as work — the debounced push takes it from there.
+ */
+export function moveStripVersion(fid: number, strip: StripType, dir: 'left' | 'right'): boolean {
+  const tabs = getStripVersions(fid, strip);
+  const curAi = getStripActiveTab(fid, strip);
+  if (dir === 'left' && curAi > 0) {
+    [tabs[curAi - 1], tabs[curAi]] = [tabs[curAi], tabs[curAi - 1]];
+    setStripActiveTab(fid, strip, curAi - 1);
+  } else if (dir === 'right' && curAi < tabs.length - 1) {
+    [tabs[curAi], tabs[curAi + 1]] = [tabs[curAi + 1], tabs[curAi]];
+    setStripActiveTab(fid, strip, curAi + 1);
+  } else {
+    return false;
+  }
+  relabelStripVersions(fid, strip);
+  const f = state().frames.find((x) => x.id === fid);
+  if (f?.serverFrameId) markFrameDirty(f.serverFrameId);
+  markSomethingToSend();
+  return true;
+}
+
 export function relabelStripVersions(fid: number, strip: StripType): void {
   const vers = getStripVersions(fid, strip);
   if (!vers) return;

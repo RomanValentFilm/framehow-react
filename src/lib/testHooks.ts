@@ -18,7 +18,7 @@ import { useStore, bumpRenderTick } from '../store/state';
 import type { SortOrder, StripType } from '../store/state';
 import { getVisibleFrames, createGroup, enterGroup, reorderFrameInGroup, saveGroupEdit, deleteGroup, hideFrameInGroup, removeFrameFromGroup } from './groups';
 import { newFrameId } from './ids';
-import { ensureStripVersions, getStripVersions, setFrameStripLabel, setStripActiveTab, stripScrollId } from './helpers';
+import { ensureStripVersions, getStripVersions, setFrameStripLabel, setStripActiveTab, stripScrollId, moveStripVersion } from './helpers';
 import { openFullscreen, closeFullscreen } from './fullscreen';
 import { setViewMode } from './view';
 import { openSortEditView, closeSortMode, openOrderView, addNewOrder, toggleSortDropdown, addStoryFlowBreak, renameBreak, deleteSortOrder } from './sortOrder';
@@ -235,6 +235,8 @@ export interface TestDoor {
   pressNewVersion(index: number, strip: StripType): void;
   /** Choose HIDE for a version: the card's own clear/delete choice, answered. */
   hideVersion(index: number, strip: StripType, versionIndex: number): Promise<void>;
+  /** Move the version on show one place (#531) — the overview's ◀ ▶, the app's own path. */
+  moveVersion(index: number, strip: StripType, versionIndex: number, dir: 'left' | 'right'): void;
   /** WRITE on the main card ('main') or TEXT on a strip card's version — the
    *  app's own text box, filled and OK'd. */
   writeOnCard(index: number, strip: 'main' | StripType, versionIndex: number, text: string): Promise<void>;
@@ -1290,6 +1292,14 @@ export function installTestDoor(): void {
       const btn = stripCardOf(f.id, index, strip).querySelector('[data-vadd]') as HTMLElement | null;
       if (!btn) throw new Error(`no + on shot ${index + 1}'s ${strip} card`);
       btn.click();
+    },
+    moveVersion(index, strip, versionIndex, dir) {
+      const f = useStore.getState().frames[index];
+      if (!f) throw new Error(`no frame at ${index}`);
+      ensureStripVersions(f.id, strip);
+      setStripActiveTab(f.id, strip, versionIndex);
+      if (!moveStripVersion(f.id, strip, dir)) throw new Error(`cannot move version ${versionIndex + 1} ${dir} on shot ${index + 1}`);
+      (window as never as { __fh_renderAll?: () => void }).__fh_renderAll?.();
     },
     async hideVersion(index, strip, versionIndex) {
       const f = useStore.getState().frames[index];

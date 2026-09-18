@@ -1070,6 +1070,14 @@ export class Device {
         .__fh_test.pressNewVersion(i as number, st as string), [index, strip] as [number, string]);
   }
 
+  /** Move a version one place left/right — the overview's ◀ ▶ (#531). */
+  async moveVersion(index: number, strip: string, versionIndex: number, dir: 'left' | 'right'): Promise<void> {
+    say(`${this.name}: moving shot ${index + 1} ${strip} version ${versionIndex + 1} ${dir}`);
+    await this.page.evaluate(([i, st, v, d]) =>
+      (window as never as { __fh_test: { moveVersion(i: number, st: string, v: number, d: string): void } })
+        .__fh_test.moveVersion(i as number, st as string, v as number, d as string), [index, strip, versionIndex, dir] as [number, string, number, string]);
+  }
+
   async hideVersion(index: number, strip: string, versionIndex: number): Promise<void> {
     say(`${this.name}: hiding shot ${index + 1} ${strip} version ${versionIndex + 1}`);
     await this.page.evaluate(([i, st, v]) =>

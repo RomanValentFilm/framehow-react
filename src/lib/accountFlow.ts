@@ -2176,7 +2176,7 @@ interface CloudProjectTree {
     needs?: string | null; notes?: string | null; setup_id?: string | null;
     /** When the change was MADE, not when it was sent. Absent on older rows. */
     content_changed_at?: number | null }>;
-  versions: Array<{ id: string; frame_id: string; label: string | null; type: string; hidden: number; starred: number; note: string | null; updated_at: number; tags?: string | null; content_changed_at?: number | null }>;
+  versions: Array<{ id: string; frame_id: string; label: string | null; type: string; hidden: number; starred: number; note: string | null; updated_at: number; tags?: string | null; content_changed_at?: number | null; sort_order?: number | null }>;
   images: Array<{ id: string; version_id: string; r2_key: string; width: number | null; height: number | null; size_bytes: number | null; content_type: string | null; updated_at: number }>;
   drawings: Array<{ id: string; version_id: string; drawing_data: string; updated_at: number }>;
   deletions?: Array<{ id: string; entity_type: string; entity_id: string; deleted_at: number; device_id: string | null }>;
@@ -2494,7 +2494,7 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   const versions: Array<{ id: string; frame_id: string; label: string | null; type: string; hidden: boolean; starred: boolean; note: string | null; updated_at: number; tags?: string | null; content_changed_at?: number;
     /** Does this card still have a drawing on it? Sent for every card in this
      *  push, so "rubbed out" can be told apart from "I do not know" (#475). */
-    has_drawing?: boolean }> = [];
+    has_drawing?: boolean; sort_order?: number }> = [];
   const drawings: Array<{ id: string; version_id: string; drawing_data: string; updated_at: number }> = [];
   const imageUploads: Array<{
     versionId: string; src: string;
@@ -2640,6 +2640,10 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
           content_changed_at: versionChangedAtForSending(lv.serverVersionId),
           // Same as the main card above (#475).
           has_drawing: !!(lv.strokes && lv.strokes.length > 0),
+          // ITS PLACE (#531). The order of a shot's versions never travelled:
+          // a reorder swapped and relabelled them, the labels went up, and the
+          // pull lined them up by creation again — "they jumped back".
+          sort_order: vi,
         });
         if (lv.strokes && lv.strokes.length > 0) {
           drawings.push({ id: uuid(), version_id: vid, drawing_data: JSON.stringify(lv.strokes), updated_at: now });
@@ -3572,7 +3576,13 @@ async function applyCloudTreeToStore(
         // If no existing local frame (shouldn't happen), fall through to cloud
       }
 
-      const allVersions = (versionsByFrame.get(sf.id) ?? []).sort((a, b) => a.updated_at - b.updated_at);
+      // BY THEIR PLACE FIRST (#531), then by the time they were sent for rows
+      // written before places existed (or by an older app).
+      const allVersions = (versionsByFrame.get(sf.id) ?? []).sort((a, b) => {
+        const pa = typeof a.sort_order === 'number' ? a.sort_order : Number.MAX_SAFE_INTEGER;
+        const pb = typeof b.sort_order === 'number' ? b.sort_order : Number.MAX_SAFE_INTEGER;
+        return pa !== pb ? pa - pb : a.updated_at - b.updated_at;
+      });
 
       // THE MAIN PICTURE IS NEVER A VERSION (#497). A frame should have ONE
       // "main"; if the server holds more than one (a device that had forgotten
