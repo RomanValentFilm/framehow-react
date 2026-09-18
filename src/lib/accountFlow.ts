@@ -1488,7 +1488,7 @@ let _copiesCheckTimer: number | null = null;
 let _lastCopiesCheck = 0;
 
 /** Ask for a look, soon. Debounced: many saves in a row make one look. */
-function lookForUnsentCopiesSoon(delayMs = 4_000): void {
+function lookForUnsentCopiesSoon(delayMs = 2_000): void {
   if (_copiesCheckTimer !== null) window.clearTimeout(_copiesCheckTimer);
   _copiesCheckTimer = window.setTimeout(() => {
     _copiesCheckTimer = null;
@@ -1593,10 +1593,17 @@ async function uploadUnsentCopies(reason: 'start' | 'reconnect'): Promise<void> 
   if (_uploadingCopies) return;
   if (!isLoggedIn() || !navigator.onLine) return;
   if (reason === 'reconnect') {
-    if (Date.now() - _lastCopiesCheck < 10_000) return;
+    if (Date.now() - _lastCopiesCheck < 3_000) return;
     _lastCopiesCheck = Date.now();
-    if (pullInFlight || isPushInFlight() || isLoadInFlight()) { lookForUnsentCopiesSoon(8_000); return; }
-    if (handIsBusy() || state().sortEditingId) { lookForUnsentCopiesSoon(8_000); return; }
+    // A push or fetch in the air is WAITED FOR, not stepped back from (#525).
+    // Roman's FR 1 took 55 seconds to go up because every push of the open
+    // project — he kept working — sent this away to "try later". Up to ten
+    // seconds of waiting here costs nothing; nothing else can start meanwhile.
+    for (let i = 0; i < 50 && (pullInFlight || isPushInFlight() || isLoadInFlight()); i++) {
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    if (pullInFlight || isPushInFlight() || isLoadInFlight()) { lookForUnsentCopiesSoon(3_000); return; }
+    if (handIsBusy() || state().sortEditingId) { lookForUnsentCopiesSoon(3_000); return; }
   }
   let recs: PendingRecord[] = [];
   try { recs = (await listPending()).filter((r) => !isArchived(r)); } catch { return; }
@@ -1623,13 +1630,14 @@ async function uploadUnsentCopies(reason: 'start' | 'reconnect'): Promise<void> 
   if (reason === 'reconnect' && state().frames.length > 0) {
     if (!getCurrentProject().projectId) {
       trace(`${copies.length} unsent copy(ies) of other projects waiting — the open project is not in the cloud yet, it goes first`);
-      lookForUnsentCopiesSoon(15_000);
+      lookForUnsentCopiesSoon(5_000);
       return;
     }
     try { await flushSyncNow(); } catch { /* unreachable — the next save asks again */ }
+    for (let i = 0; i < 50 && isPushInFlight(); i++) await new Promise((r) => setTimeout(r, 200));
     if (getDirtyFrameIds().size > 0 || isPushInFlight()) {
       trace(`${copies.length} unsent copy(ies) of other projects waiting — the open project is not up yet, trying later`);
-      lookForUnsentCopiesSoon(15_000);
+      lookForUnsentCopiesSoon(5_000);
       return;
     }
   }
