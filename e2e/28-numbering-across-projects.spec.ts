@@ -494,19 +494,22 @@ test('numbering: a whole project made offline, with a shooting order in it befor
     await desktop.offline(false);
     await desktop.page.waitForTimeout(4000);
 
+    // NOBODY PRESSES SAVE (#524). This loop used to call saveThisProject —
+    // which hid the fact that a named project made offline, alone, never went
+    // up by itself: the retry only woke for projects whose push had failed,
+    // and one that never had a cloud id was never pushed. Roman's FR 2 went up
+    // only because another project's copy was waiting beside it. Now the
+    // device is merely touched, and the project must reach the server anyway.
     let madeOffline: string | null = null;
     const deadline = Date.now() + 90_000;
     for (;;) {
       madeOffline = (await desktop.read()).projectId;
       if (madeOffline) break;
       if (Date.now() > deadline) break;
-      // saveThisProject, not push: push is flushSyncNow, which gives up in
-      // silence when there is no project on the server to flush to. RUN 143 sat
-      // in this loop for ninety seconds calling something that could not work.
-      await desktop.saveThisProject();
+      await desktop.nudge();
       await desktop.page.waitForTimeout(1000);
     }
-    expect(madeOffline, 'THE PROJECT MADE WITH NO SIGNAL NEVER REACHED THE SERVER.')
+    expect(madeOffline, 'THE PROJECT MADE WITH NO SIGNAL NEVER REACHED THE SERVER BY ITSELF — nobody pressed SAVE, and nobody should have to.')
       .toBeTruthy();
     await desktop.settle();
 

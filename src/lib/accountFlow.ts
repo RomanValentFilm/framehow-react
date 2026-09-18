@@ -62,6 +62,8 @@ import {
   msSinceLastStroke,
   registerProjectGone,
   registerAfterSaved,
+  retryNow,
+  markSaveOffered,
   standInForAnotherProject,
   withMemory,
   registerProjectAlive,
@@ -1864,6 +1866,7 @@ export function showSaveToaster(): void {
   setText('saveToasterMsg', msg);
   show('saveToaster');
   toasterShowing = true;
+  markSaveOffered();                          // waved away, it still goes up — as "Untitled …" (#524)
 
   const saveBtn = el<HTMLButtonElement>('saveToasterSave');
   const laterBtn = el<HTMLButtonElement>('saveToasterLater');
@@ -4504,14 +4507,15 @@ async function openRestoreModal(projectId: string): Promise<void> {
     subtitle.style.cssText = 'font-size:13px;color:#aaa;margin-bottom:16px;';
     modal.appendChild(subtitle);
 
-    // SAVE RESTORE POINT (#523) — at the top, always, set off to the right so
-    // it reads as a different thing from the rows: it makes a point of NOW —
-    // the project as it is this moment — with a name, kept for ever until
-    // deleted. Roman: "you can save the project only NOW in the current
-    // moment", so it never sits under an older row.
-    {
+    // SAVE RESTORE POINT (#523/#524) — directly under the first row, which is
+    // NOW (the newest point; the server makes no second one for the same
+    // moment), set off to the right so it reads as a different thing from the
+    // rows: it makes a point of the project as it is this moment, with a
+    // name, kept for ever until deleted. Roman: "just below the open project"
+    // — never under an older row, wherever "you are here" happens to be.
+    const appendSaveRow = (): void => {
       const saveRow = document.createElement('div');
-      saveRow.style.cssText = 'text-align:right;margin:-4px 0 12px;';
+      saveRow.style.cssText = 'text-align:right;margin:-2px 0 12px;';
       const save = document.createElement('button');
       save.textContent = 'SAVE RESTORE POINT';
       save.style.cssText =
@@ -4533,7 +4537,7 @@ async function openRestoreModal(projectId: string): Promise<void> {
       });
       saveRow.appendChild(save);
       modal.appendChild(saveRow);
-    }
+    };
 
     for (const m of matched) {
       const btn = document.createElement('button');
@@ -4598,6 +4602,7 @@ async function openRestoreModal(projectId: string): Promise<void> {
       } else {
         modal.appendChild(btn);
       }
+      if (m === matched[0]) appendSaveRow();
     }
 
     // Offline copies held on this device for this project. Italic and grey —
@@ -4930,8 +4935,10 @@ async function checkServerAfterReconnect(): Promise<void> {
   _lastReconnectCheck = Date.now();
   // A project made offline has no cloud id yet: its own upload is the retry's
   // job (it creates the project first). Other projects' copies wait for that
-  // save, which asks for them (#523).
-  if (!cp.projectId) { lookForUnsentCopiesSoon(6_000); return; }
+  // save, which asks for them (#523). ASKED NOW, not at the timer's next tick
+  // (#524): the iPad never fires the browser's "online" event, so the retry
+  // waited up to forty seconds here while the unsent copy waited behind it.
+  if (!cp.projectId) { retryNow(); lookForUnsentCopiesSoon(6_000); return; }
 
   trace('back online — asking the server what it has');
   // A device that STARTED offline never learned who it was, and everything that

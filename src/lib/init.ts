@@ -1257,7 +1257,11 @@ export function initFramehow(): void {
   //   ?toaster=now    → fire immediately
   //   ?toaster=test   → fire 5s after a storyboard is loaded
   // ------------------------------------------------------------------------
-  const FIVE_MIN = 5 * 60 * 1000;
+  // ONE MINUTE, NOT FIVE (#524). Roman: the moment that asks to save a project
+  // made with no signal "should happen earlier". A minute of work is a real
+  // project; after that the reminder shows, and if it is waved away the
+  // project goes up by itself under a provisional name when there is signal.
+  const FIVE_MIN = 60 * 1000;
   const TEST_DELAY = 5 * 1000;
   const isDevOrPreview =
     import.meta.env.DEV ||

@@ -126,6 +126,7 @@ export function clearCurrentProject(): void {
   cp = { projectId: null, name: null, lastSavedAt: null, dirty: false };
   _dirty = false;
   _dirtyFrameIds.clear();
+  _saveOffered = false;                       // the next project gets its own reminder first (#524)
   // The next project is a different thing on this device and must be filed
   // separately — otherwise two projects that never reached the cloud would
   // share one key and the second would overwrite the first.
@@ -751,21 +752,50 @@ async function restorePendingFromDevice(): Promise<void> {
  *             back, or the app was just opened. Goes at once, and the growing
  *             wait is forgotten.
  */
+/** The save reminder has been shown for the open project: from here on an
+ *  unnamed project may go up under a provisional name (#524). */
+let _saveOffered = false;
+export function markSaveOffered(): void { _saveOffered = true; }
+
+/** The connection is back — try now, not at the timer's next tick (#524). The
+ *  browser's own "online" event never comes on the iPad; the watch that
+ *  notices instead lives in accountFlow and asks here. */
+export function retryNow(): void { void retryPendingSyncs('now'); }
+
 async function retryPendingSyncs(why: 'timer' | 'now' = 'timer'): Promise<void> {
   if (why === 'now') _retryClock.wokeUp();
   if (!_syncFn || !isLoggedIn() || !navigator.onLine) return;
-  if (_pendingSyncIds.size === 0) return;
+  // A PROJECT MADE OFFLINE, ALONE, WENT UP ONLY WHEN SOMETHING ELSE WAS
+  // WAITING TOO (#524). The list of failed pushes is what wakes this — and a
+  // project that has never had a cloud id was never pushed, so it is not in
+  // that list. With no other project's copy waiting, it sat on the device
+  // until somebody pressed SAVE. Roman's FR 2 went up only because FR 1's
+  // copy was waiting beside it.
+  // NAMED OR NOT (#524). An unnamed project used to wait for its name — for
+  // ever, if nobody pressed SAVE — and only the device held it. Roman: "named
+  // or not named". Once the save reminder has been offered and waved away, it
+  // goes up under a provisional name ("Untitled 18 Sep 12:40") and can be
+  // renamed later like any project. Before the reminder, the name is still
+  // the user's to give: the reminder comes after a minute of work.
+  const unsavedWaiting = !cp.projectId && _dirty && (!!cp.name || _saveOffered) && !!_createAndSyncFn
+    && useStore.getState().frames.length > 0;
+  if (_pendingSyncIds.size === 0 && !unsavedWaiting) return;
   if (cloudSyncInFlight || _projectSwitchInFlight || _localSavesHeld) return;
   if (why === 'timer' && !_retryClock.mayTry(Date.now())) return;
   _retryClock.tried(Date.now());
   // Made offline and never uploaded: it needs creating on the server first.
   // Only when it already has a name — otherwise saving would have to stop and
   // ask for one, and this runs in the background.
-  if (!cp.projectId && _dirty && cp.name && _createAndSyncFn
-      && useStore.getState().frames.length > 0) {
+  if (unsavedWaiting) {
+    if (!cp.name) {
+      const d = new Date();
+      const provisional = `Untitled ${d.getDate()} ${d.toLocaleString('en', { month: 'short' })} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+      trace(`unnamed project going up as "${provisional}" — rename it any time`);
+      setProjectName(provisional);
+    }
     cloudSyncInFlight = true;
     try {
-      await _createAndSyncFn();
+      await _createAndSyncFn!();
       _retryClock.succeeded();
     } catch { _retryClock.failed(); /* still unreachable — the device copy stays put */ }
     finally { cloudSyncInFlight = false; }
