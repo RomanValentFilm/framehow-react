@@ -597,6 +597,18 @@ export async function flushSyncNow(askedByTheFetch = false): Promise<void> {
     // opinion is often wrong. Start watching for the connection to come back
     // (#298), so the check happens the moment it does.
     if (!err?.status) _watchForConnection?.();
+    // THE STORE IS NOT THE PROJECT THAT WAS PUSHED (#524). Everything below
+    // files "the unsent copy" from what the store holds NOW — and if another
+    // project was put on screen while this push was in the air, that is the
+    // other project's content under this project's name, with this project's
+    // settings memory reading "deleted" for everything the new one lacks. A
+    // copy like that, sent later, would wipe the project's groups, orders and
+    // setups. The copy filed before the switch stands; nothing is filed here.
+    if (cp.projectId !== pid) {
+      trace(`  the project changed while this push was in the air — not filing a copy of "${pid.slice(0, 8)}" from what is on screen now`);
+      _pendingSyncIds.add(pid);
+      return;
+    }
     if (err?.status === 409 && _pullFn) {
       // 409 conflict: another device pushed since our last sync.
       // Pull to merge (our _dirtyFrameIds protect local changes),

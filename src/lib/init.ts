@@ -50,7 +50,7 @@ import {
   flowRestoreProject,
   flowSaveProject,
   isToasterShowing,
-  showSaveToaster, resetProjectSyncGuards } from './accountFlow';
+  showSaveToaster, resetProjectSyncGuards, beginNewProject } from './accountFlow';
 import { getActiveMs, onActivityTick, startActivityTracking } from './activity';
 import { startAutosave, getCurrentProject, clearCurrentProject, flushSyncNow, subscribe as subscribeProject } from './currentProject';
 import { subscribe as subscribeSession, isLoggedIn } from './session';
@@ -376,13 +376,20 @@ export function initFramehow(): void {
     const cp = getCurrentProject();
     const hadFrames = state().frames.length > 0;
 
-    // Helper: clear current work right before starting the new project
-    const clearBeforeNew = () => {
+    // Helper: clear current work right before starting the new project.
+    //
+    // THE SAME PATH AS EVERY OTHER "NEW PROJECT" — AND WAITED FOR (#524).
+    // This used to fire the outgoing push and reset the storyboard in the
+    // same breath. Offline, the push failed a moment LATER, and its failure
+    // handler filed "the unsent copy" of the OLD project from what the store
+    // held by then: the new project's one empty frame, with the old project's
+    // settings memory marking every group, order and setup as deleted. It
+    // overwrote the good copy filed a minute before. Roman's Workflow edits
+    // made on the iPad with no signal, 18 September 12:11–12:14, were lost
+    // that way. beginNewProject waits for the push to come back first.
+    const clearBeforeNew = async () => {
       if (!hadFrames) return;
-      if (cp.projectId) void flushSyncNow();
-      resetStoryboardState();
-      resetProjectSyncGuards();
-      clearCurrentProject();
+      await beginNewProject();
       renderAll();
       updateFrameBadge();
     };
@@ -397,8 +404,7 @@ export function initFramehow(): void {
         // Show modal — clear only if user picks something (not cancel)
         showNewProjectModal((choice: NewProjectChoice) => {
           if (choice === 'cancel') return;
-          clearBeforeNew();
-          openNewProjectModal_dispatch(choice);
+          void clearBeforeNew().then(() => openNewProjectModal_dispatch(choice));
         });
       })();
       return;
@@ -407,8 +413,7 @@ export function initFramehow(): void {
     // Show modal — clear only if user picks something (not cancel)
     showNewProjectModal((choice: NewProjectChoice) => {
       if (choice === 'cancel') return;
-      clearBeforeNew();
-      openNewProjectModal_dispatch(choice);
+      void clearBeforeNew().then(() => openNewProjectModal_dispatch(choice));
     });
   });
   document.getElementById('menuExport')!.addEventListener('click', () => {

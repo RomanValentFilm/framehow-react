@@ -947,7 +947,12 @@ function renderProjectList(
   const localRow = (rec: PendingRecord, archivedCopy: boolean): HTMLElement => {
     const row = document.createElement('button');
     row.type = 'button';
-    row.className = 'project-list-row';
+    // A COPY IS NOT A PROJECT (#524). Roman: rows that look the same as the
+    // projects are confusing. A copy sits to the right, four-fifths wide and a
+    // touch smaller — an indent under its project, saying "work waiting to go
+    // up", not a second project.
+    row.className = 'project-list-row project-list-copy';
+    row.style.cssText = 'width:80%;margin-left:auto;padding:8px 12px;font-size:13px;';
     const name = document.createElement('span');
     name.className = 'project-list-name';
     name.textContent = rec.name || 'Unnamed project';
@@ -986,7 +991,12 @@ function renderProjectList(
     entries.push(e);
   };
 
-  for (const rec of archived) fileCopy(rec, () => localRow(rec, true));
+  // COPIES ALREADY IN THE CLOUD STAY OUT OF THE LIST (#524). They are a
+  // 24-hour safety net, reachable in the project's Restore modal ("offline
+  // copy on this device"), and their upload made a restore point on the
+  // server too. In the list they only doubled every project. Edit mode still
+  // shows them, greyed, so one can be deleted by hand.
+  if (editMode) for (const rec of archived) fileCopy(rec, () => localRow(rec, true));
   if (editMode) {
     for (const rec of deletedCopies) fileCopy(rec, () => {
         const row = document.createElement('button');
@@ -1471,6 +1481,7 @@ function putCopyInPlace(rec: PendingRecord, projectId: string | null, name: stri
 // ---------------------------------------------------------------------------
 
 let _uploadingCopies = false;
+const _namelessTraced = new Set<string>();
 let _copiesCheckTimer: number | null = null;
 let _lastCopiesCheck = 0;
 
@@ -1590,7 +1601,17 @@ async function uploadUnsentCopies(reason: 'start' | 'reconnect'): Promise<void> 
   const current = reason === 'start'
     ? ((await loadSnapshot().catch(() => null))?.projectId ?? null)
     : getCurrentProject().projectId;
-  const copies = recs.filter((r) => r.projectId && r.projectId !== current
+  // A cloud project always has a name. A copy filed without one was filed by
+  // a push that failed after the project had left the screen (#524) — it is
+  // another project's content under this one's id, and must never be sent.
+  const nameless = recs.filter((r) => r.projectId && r.projectId !== current && !r.name);
+  for (const r of nameless) {
+    if (!_namelessTraced.has(r.key)) {
+      _namelessTraced.add(r.key);
+      trace(`a filed copy of "${r.projectId!.slice(0, 8)}" has no name — filed by a push that failed after the project left the screen; not sending it`);
+    }
+  }
+  const copies = recs.filter((r) => r.projectId && r.projectId !== current && r.name
     && r.snapshot?.frames?.length && r.snapshot.contentStamps && Object.keys(r.snapshot.contentStamps).length > 0);
   if (copies.length === 0) return;
 
