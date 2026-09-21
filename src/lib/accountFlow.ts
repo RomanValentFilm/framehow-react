@@ -831,6 +831,10 @@ export async function openProjectList(): Promise<void> {
         await refreshLocalCopies();
         showToast(`"${p.name}" deleted. ${storageLineText(lastStorageFigure())}`);
       } catch (e) {
+        // SAID IN THE LOG TOO (21 Sept): a toast alone left "it does not delete"
+        // with nothing to trace.
+        const err = e as { status?: number; code?: string; message?: string };
+        trace(`delete now FAILED for "${p.name}": status=${err?.status ?? '(no response)'} ${err?.code ?? ''} ${err?.message ?? ''}`);
         showToast(asMessage(e, 'Could not delete project.'));
       }
       show('projectListModal');

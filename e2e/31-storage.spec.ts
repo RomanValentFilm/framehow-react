@@ -64,9 +64,15 @@ test('storage: the figure, the 80/90/95 % notices, full, DELETE NOW, and the wai
 
   // ── A SMALL PROJECT TO DELETE LATER ─────────────────────────────────────
   say('desktop: project "OLD" with 5 pictures (about 1 MB)');
-  const oldId = await desktop.newProject('OLD', 2);
+  const oldId = await desktop.newProject('OLD', 3);
   await desktop.settle();
   await desktop.uploadPictures(0, 'ver', [PICTURE(), PICTURE(), PICTURE(), PICTURE(), PICTURE()]);
+  await desktop.settle();
+  // A DELETED SHOT leaves a deletion record on the server (Roman's Uboot and
+  // Workflow, 21 Sept): the record did not go with the project, so the
+  // database refused to delete the project at all. OLD carries one.
+  await desktop.deleteFrame(2);
+  await desktop.push();
   await desktop.settle();
   let st = await desktop.storage();
   expect(st.figure, 'the push answer must carry the storage figure').toBeTruthy();

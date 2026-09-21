@@ -80,7 +80,7 @@ orders or get out.
 
 ## THE LIST — 10 September, evening (Roman's order)
 
-dev is **v4.9.229 · #532**, app AND backend (deployed 21 Sept ~14:35; no migration). Next number: **v4.9.230 · #533**. Deploys 21 Sept: 229 (app+backend). Runs 21 Sept: 303 full on 228 (75 green · 6 skipped · 1 red = 15 idle-timing), 304–309 storage (309 green), 310 (part 3, 9, offline cases) 11 green.
+dev is **v4.9.230 · #533**, app AND backend (commit 8660809, deployed 21 Sept ~18:00; no migration). Next number: **v4.9.231 · #534**. Deploys 21 Sept: 229, 230 (both app+backend). Runs 21 Sept: 303 full on 228 (75 green · 6 skipped · 1 red = 15 idle-timing), 304–313 storage (313 green), 310 and 314 (BIG DAY parts + offline) all green. NEXT: the dead-picture cleaner in COUNTING mode.
 
 ### DONE 17 September — the launch set (v4.9.218 · #521)
 1. Unsent copies of other projects: carry their memory (`withMemory`); opening a project with an unsent copy starts from the copy then syncs (`startFromUnsentCopy`); at app start every unsent copy of another project is put in place, synced, archived (`uploadUnsentCopiesAtStart`, "Uploading unsent work: …"). Test 28 green (red since run 179).
@@ -141,13 +141,18 @@ OPEN: where the PDF project made offline on the iPad went — CLOSED, Roman dele
 - Analytics token was reset by Roman (`wrangler secret put ADMIN_API_TOKEN`).
 - NEXT: the dead-picture cleaner in COUNTING mode (rules agreed: unnamed by any live project, any recoverable project, any restore point of either; never younger than 24 h; counts first, Roman says go, then deletes; restore-a-point-after-cleaning test).
 
-### 21 September — v4.9.230 · #533 (app AND backend, no migration) — storage, second round
+### 21 September — v4.9.230 · #533 DEPLOYED ~18:00, app AND backend, no migration — storage, second round; next number v4.9.231 · #534
 - DELETE NOW only where Roman wants it: on a greyed (deleted) cloud row always; on a live row only from 80 % storage; on a deleted DEVICE copy ("deleted copy from …") too — off the device at once (`clearPending`), no cloud involved. Below 80 % Edit mode reads Edit, Delete as before. Two confirms in Roman's words. Test 31 counts them at 16 % (0) and 81 % (≥2).
 - ROOM AGAIN judged with the waiting weight (run 308): the refusal carries `storage.pending`; the app calls it room only when server figure + pending < limit.
 - PULL WHILE A PICTURE WAITS (run 312): a push refused for storage, then a pull; the shot's record went to the server's copy, the per-version merge kept the picture (a version only this device holds) — and the pull's bookkeeping recorded the shot as matching the server, so Delete now freed space and nothing was sent. Now `_framesWithKeptVersions` (shots holding a version the server has not got: local-only, or kept-mine and newer) are added to `stillToSend` after a pull; and the retry asks `anyShotUnsent()` when the flag is clear. Test 31 provokes it (iPad renames, desktop pulls while the refused picture waits).
 - STORAGE FULL note: "…or Delete it first and then DELETE NOW on the greyed row."
 - Runs: 311 (storage) green; 312 red (the pull case) → fixed; 313 (storage) green; 314 (part 3, 4, 9, 10) 4 green.
 - Roman's iPad: many grey unnamed rows with Recover only = deleted device copies (24-h window); Delete now on them now. Uboot/Workflow "cannot delete": ask what the row tag says.
+
+### 21 September — v4.9.231 · #534 (backend AND app, no migration) — "Uboot and Workflow do not want to delete"
+- FOUND: `project_deletions` (deletion records of shots/versions) references projects WITHOUT ON DELETE CASCADE (migration 0009). Deleting a project holding any such record failed at the database → Delete now answered 500 ("Something went wrong", no log line), and the NIGHTLY SWEEP has been failing the same way for every such project — likely why 114 deleted projects sit in the window. `deleteProjectForGood` now deletes the records first (batch), then the project. Test 31: OLD deletes a shot before Delete now (run 315 green).
+- App: a failed Delete now is traced ("delete now FAILED for … status= …").
+- Roman recovered Uboot on the iPad ("no shots loaded" — the device copy had 34 shots and the server's copy 44; not investigated), deleted it again; with 231 on dev, Delete now on the greyed rows works.
 
 ### 21 September — keep an eye on
 - Roman: a NEEDS category renamed (actor 1 / actor 2 renamed) and then "suddenly not visible" — possibly the iPad was offline and he expected it there; not confirmed as a fault. If it shows again: which device renamed, was the other online, did the rename arrive after reconnect.
