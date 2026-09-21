@@ -79,7 +79,7 @@ import { tagText, readTagText } from './ids';
 import { serverHasSomethingNew, whoseFrameWins, type DeviceMemory } from './sessionRules';
 import { mergeDelta, lastMergeRefusal, answerIsSafeToApply, untouchedByDelta, type MergeableTree } from './deltaMerge';
 import { settingsForPush, adoptSettingsFromServer, applySettingsToStore, importSettingStamps, stampChangedSettings, seedSettings, forgetAnotherProjectsSettings, settingsNeedPush, reconcileRestoredSettings, captureMySettings, keepMyUnsentSettings, unsentSettingNames, type SettingItem } from './projectSettings';
-import { applySnapshotToStore, loadSnapshot, snapshotFromStore, listPending, isArchived, getPending, markPendingUploaded, saveProjectListCache, loadProjectListCache, deletePending, deleteEveryCopyOf, recoverPending, isDeletedCopy, requestDurableStorage } from './persistence';
+import { applySnapshotToStore, loadSnapshot, snapshotFromStore, listPending, isArchived, getPending, markPendingUploaded, saveProjectListCache, loadProjectListCache, deletePending, deleteEveryCopyOf, recoverPending, isDeletedCopy, requestDurableStorage, clearPending } from './persistence';
 import type { PendingRecord } from './persistence';
 import { showThreeWayConflict, showConfirm, showConfirmDefaultNo, showToast, showLabelEdit } from './modals';
 import { saveOpenTextEdits, saveOpenTableEdits, versionStars, inStarOrder } from './helpers';
@@ -811,7 +811,7 @@ export async function openProjectList(): Promise<void> {
       renderProjectList(projects, editMode, onPick, onEdit, onDelete, onRecover,
                         deviceOnly, onPickDevice, archived, onPickArchived,
                         offlineListing, onDeleteLocal, deletedCopies, onRecoverLocal,
-                        onDeleteNow);
+                        onDeleteNow, onDeleteLocalNow);
     }
 
     /** DELETE NOW (#533): frees the project's space at once; no recovery. */
@@ -919,6 +919,21 @@ export async function openProjectList(): Promise<void> {
       renderList();
     }
 
+    /** DELETE NOW on a deleted device copy (#533, Roman 21 Sept): gone from
+     *  this device at once instead of after its 24 hours. Nothing in the cloud
+     *  is touched. */
+    async function onDeleteLocalNow(rec: PendingRecord): Promise<void> {
+      const ok = await showConfirmDefaultNo(
+        `Remove the deleted copy of "${rec.name || 'this project'}" from ${formatClockTime(rec.savedAt)} now?\n\n` +
+        'It goes from this device at once and cannot be recovered.',
+      );
+      if (!ok) return;
+      await clearPending(rec.key);
+      trace(`deleted copy "${rec.name ?? ''}" (${rec.key.slice(0, 8)}) removed from this device now`);
+      deletedCopies = deletedCopies.filter((r) => r.key !== rec.key);
+      renderList();
+    }
+
     /** Remove an offline copy the user does not want to keep. */
     async function onDeleteLocal(rec: PendingRecord): Promise<void> {
       const ok = await showConfirm(
@@ -990,6 +1005,8 @@ function renderProjectList(
   onRecoverLocal?: (rec: PendingRecord) => void,
   /** DELETE NOW (#533): at once, no recovery — on live and on deleted rows. */
   onDeleteNow?: (p: CloudProject) => void,
+  /** ...and on a deleted device copy: off this device at once. */
+  onDeleteLocalNow?: (rec: PendingRecord) => void,
 ): void {
   const content = el('projectListContent');
   content.innerHTML = '';
@@ -1093,6 +1110,15 @@ function renderProjectList(
         rec2.style.cssText = 'color:#6b9aff;font-size:12px;margin-left:auto;cursor:pointer;';
         rec2.onclick = (e) => { e.stopPropagation(); onRecoverLocal?.(rec); };
         row.appendChild(rec2);
+        if (onDeleteLocalNow) {
+          const now = document.createElement('span');
+          now.className = 'project-list-delete-now';
+          now.textContent = 'Delete now';
+          now.title = 'Off this device at once — no 24-hour recovery';
+          now.style.cssText = 'color:#ff6b6b;font-size:12px;font-weight:600;margin-left:12px;cursor:pointer;';
+          now.onclick = (e) => { e.stopPropagation(); onDeleteLocalNow(rec); };
+          row.appendChild(now);
+        }
         return row;
     });
   }
@@ -1210,7 +1236,10 @@ function renderProjectList(
         delBtn.style.color = '#ff6b6b';
         delBtn.onclick = (e) => { e.stopPropagation(); void onDelete(p); };
         actions.append(editBtn, delBtn);
-        if (onDeleteNow) actions.appendChild(deleteNowBtn());
+        // ON A LIVE ROW ONLY WHEN SPACE IS SHORT (Roman, 21 Sept): two red
+        // words side by side confuse. Below 80 % the row reads Edit, Delete
+        // as it always did; a greyed (deleted) row always offers Delete now.
+        if (onDeleteNow && storageIsHigh(lastStorageFigure())) actions.appendChild(deleteNowBtn());
       }
       row.appendChild(actions);
     } else {
@@ -3241,6 +3270,10 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
  *   local version (image, strokes, versions) instead of taking the cloud version.
  *   This enables per-frame merge: dirty frames stay local, clean frames take cloud.
  */
+/** Server ids of shots that, after the last pull, hold a version the server
+ *  has not got (#533). Read by the pull's bookkeeping right after applying. */
+const _framesWithKeptVersions = new Set<string>();
+
 async function applyCloudTreeToStore(
   tree: CloudProjectTree,
   keepLocalFrameIds?: ReadonlySet<string>,
@@ -3435,6 +3468,12 @@ async function applyCloudTreeToStore(
   // device kept its tag. Frames kept local were already left out; versions
   // kept local are now too.
   const keptMineVersionIds = new Set<string>();
+  // SHOTS THAT ENDED UP HOLDING A VERSION THE SERVER HAS NOT GOT (#533, run
+  // 312): a version only this device holds, or one the merge kept as mine.
+  // The pull's bookkeeping below must not record such a shot as "matching
+  // the server", or nothing sends it until some unrelated edit does.
+  _framesWithKeptVersions.clear();
+  let _keptInThisShot = false;
   const mergeVersionsPerVersion = (
     built: Version[],
     local: Version[] | undefined,
@@ -3453,7 +3492,7 @@ async function applyCloudTreeToStore(
         // anything with work on it was made here and not sent — it stays.
         const blank = lv.type === 'empty' && !(lv.strokes && lv.strokes.length > 0) && !lv.bgImage
           && !lv.r2Key && !lv.note && !lv.setupTagged && !lv.hidden && !versionStars(lv);
-        if (!blank) out.push(lv);
+        if (!blank) { out.push(lv); _keptInThisShot = true; }
         continue;
       }
       const mineAt = versionChangedAt(lv.serverVersionId);
@@ -3469,6 +3508,8 @@ async function applyCloudTreeToStore(
       }
       if (takeMine) {
         keptMineVersionIds.add(lv.serverVersionId);
+        // Kept as mine AND different from theirs: the server has not got it.
+        if (theirsAt === undefined || (mineAt !== undefined && mineAt > theirsAt)) _keptInThisShot = true;
         out[i] = { ...lv, id: out[i].id, bgImage: lv.bgImage ?? out[i].bgImage };
       }
     }
@@ -3813,9 +3854,11 @@ async function applyCloudTreeToStore(
           inStarOrder(mergeVersionsPerVersion(built, mine(strip), cloudTime, tombstonedIds, cloudTag),
             (v) => ({ stars: versionStars(v), tagged: !!v.setupTagged, hidden: !!v.hidden }))
             .map((v, i) => ({ ...v, id: i + 1 }));
+        _keptInThisShot = false;
         verVersions[localId] = settle(mapVersions(verVers, 'ver'), 'ver');
         floorVersions[localId] = settle(mapVersions(floorVers, 'floor'), 'floor');
         refsVersions[localId] = settle(mapVersions(refsVers, 'refs'), 'refs');
+        if (_keptInThisShot) _framesWithKeptVersions.add(sf.id);
       }
       // Put back what this card was showing, if it is still there (#341).
       const wasViewing = sf.id ? viewedBefore.get(sf.id) : undefined;
@@ -6585,6 +6628,12 @@ async function tryPullFromCloud(force = false): Promise<void> {
       // the saving entirely (#285) — unless it was changed here meanwhile.
       const stillToSend = [...(keepLocalIds ?? [])].filter((id) => !untouched?.has(id) || changedHere.has(id));
       if (changedHere.size > 0) trace(`  ${changedHere.size} kept shot(s) changed here since the last push — still to send`);
+      // ...AND A SHOT WHOSE RECORD WENT TO THE SERVER'S COPY BUT WHICH STILL
+      // HOLDS A VERSION THE SERVER HAS NOT GOT (#533, run 312): a picture
+      // refused for storage a second before the pull. Its shot was "taken
+      // theirs", the version rightly kept — and then recorded as matching.
+      for (const id of _framesWithKeptVersions) if (!stillToSend.includes(id)) stillToSend.push(id);
+      if (_framesWithKeptVersions.size > 0) trace(`  ${_framesWithKeptVersions.size} shot(s) hold a version the server has not got — still to send`);
       if (stillToSend.length > 0) {
         for (const id of stillToSend) forgetPushedFingerprint(id);
         trace(`  ${stillToSend.length} kept-local frame(s) still to send`);

@@ -77,6 +77,8 @@ test('storage: the figure, the 80/90/95 % notices, full, DELETE NOW, and the wai
   const line0 = await desktop.readStorageLine();
   expect(line0.text).toMatch(/^Storage \d+(\.\d)? of 6 MB · \d+ %$/);
   expect(line0.red, 'grey below 80 %').toBe(false);
+  // Below 80 % a live row offers no Delete now (Roman, 21 Sept).
+  expect((await desktop.countDeleteNow()).live, 'no Delete now on live rows below 80 %').toBe(0);
 
   // ── THE BIG PROJECT ──────────────────────────────────────────────────────
   say('desktop: project "BIG" — 20 pictures at once → past 80 %');
@@ -100,6 +102,8 @@ test('storage: the figure, the 80/90/95 % notices, full, DELETE NOW, and the wai
   expect(st.noticedStep, 'the 80 % notice').toBe(80);
   const lineHigh = await desktop.readStorageLine();
   expect(lineHigh.red, 'red from 80 %').toBe(true);
+  // From 80 % every live row offers Delete now.
+  expect((await desktop.countDeleteNow()).live, 'Delete now on live rows from 80 %').toBeGreaterThanOrEqual(2);
 
   say('desktop: 3 more → past 90 %');
   await desktop.uploadPictures(1, 'ver', [PICTURE(), PICTURE(), PICTURE()]);
@@ -142,6 +146,20 @@ test('storage: the figure, the 80/90/95 % notices, full, DELETE NOW, and the wai
   const asks = (await desktop.log()).slice(0, Math.max(since, 0)).filter((l) => l.includes('retry push start')).length;
   expect(asks, 'no retry while the account is full').toBe(0);
   expect((await desktop.read()).frames.length, 'nothing lost on screen').toBe(3);
+
+  // A PULL LANDS WHILE THE PICTURE WAITS (run 312): the iPad changes a shot,
+  // the desktop pulls. The refused picture must survive the pull AND still be
+  // sent once there is room — the pull used to record its shot as matching.
+  say('ipad: renames a shot; desktop pulls while the refused picture is waiting');
+  const markPull = await desktop.mark();
+  await ipad.renameFrame(0, 'WHILE FULL');
+  await ipad.push();
+  await ipad.settle();
+  await desktop.startPullWithoutWaiting();
+  await desktop.waitForLogAfter(markPull, 'arrangement arrived', 30_000);
+  await desktop.waitForLogAfter(markPull, 'the server has not got', 10_000);
+  const whole26 = JSON.parse(await desktop.whole()) as { shots: Array<{ versions: Record<string, unknown[]> }> };
+  expect(whole26.shots[2].versions['ver']?.length ?? 0, 'the refused picture survives the pull').toBe(3);
 
   // ── DELETE NOW ──────────────────────────────────────────────────────────
   say('desktop: DELETE NOW on "OLD" — space at once, and the waiting picture goes up by itself');

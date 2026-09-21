@@ -842,6 +842,16 @@ async function retryPendingSyncs(why: 'timer' | 'now' = 'timer'): Promise<void> 
   const currentPid = cp.projectId;
   // A project the server does not have is not coming back by asking again.
   if (currentPid && _goneProjectIds.has(currentPid)) return;
+  // A SHOT THE SERVER NEVER GOT IS STILL TO SEND (#533, run 312). A push
+  // refused for storage, then a pull a second later: the pull gave the shot's
+  // record to the server's copy and cleared the flag, while the per-version
+  // merge rightly KEPT the picture only this device holds. Space freed, the
+  // retry saw "nothing to send" and the picture sat on the device. The
+  // ordinary push already asks the shots themselves (#521); so does this.
+  if (currentPid && _pendingSyncIds.has(currentPid) && !_dirty && _anyShotUnsent && _anyShotUnsent()) {
+    trace('retry: a shot differs from what the server was given — sending');
+    markSomethingToSend();
+  }
   if (currentPid && _pendingSyncIds.has(currentPid) && _dirty) {
     // Success below is the server's answer, not the browser's opinion.
     cloudSyncInFlight = true;

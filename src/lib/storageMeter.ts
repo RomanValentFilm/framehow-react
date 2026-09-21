@@ -101,7 +101,8 @@ export function storageFullFromServer(f: (StorageFigure & { pending?: number }) 
       'STORAGE FULL',
       'The beta version of Framehow has limited storage, and this account is full. ' +
       'Your work stays safe on this device, but it cannot upload until space is freed. ' +
-      'Open the project list, press Edit Projects and use DELETE NOW on a project you no longer need.',
+      'Open the project list, press Edit Projects and use DELETE NOW on a project you no longer need — ' +
+      'or Delete it first and then DELETE NOW on the greyed row.',
     );
     const { openProjectList } = await import('./accountFlow');
     void openProjectList();

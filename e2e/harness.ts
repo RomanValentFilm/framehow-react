@@ -937,6 +937,26 @@ export class Device {
     say(`   the list says "${text}" (${color})`);
     return { text, red: color === 'rgb(213, 38, 50)' };
   }
+  /** How many "Delete now" the list offers in Edit mode, on live and on greyed rows (#533). */
+  async countDeleteNow(): Promise<{ live: number; deleted: number }> {
+    await this.page.evaluate(() => { void (window as never as { __fh_test: { openProjectList(): Promise<void> } }).__fh_test.openProjectList(); });
+    await this.page.waitForFunction(() => (document.getElementById('projectListStorage')?.textContent ?? '').includes('Storage'), undefined, { timeout: 15_000 });
+    await this.page.locator('#projectListEdit').click();
+    await this.page.waitForTimeout(300);
+    const counts = await this.page.evaluate(() => {
+      const rows = Array.from(document.querySelectorAll('#projectListContent .project-list-row'));
+      let live = 0, deleted = 0;
+      for (const r of rows) {
+        const n = r.querySelectorAll('.project-list-delete-now').length;
+        if ((r as HTMLElement).style.opacity === '0.35') deleted += n; else live += n;
+      }
+      return { live, deleted };
+    });
+    await this.page.locator('#projectListClose').click();   // leaves Edit mode
+    await this.page.locator('#projectListClose').click();   // closes
+    say(`   Delete now offered on ${counts.live} live and ${counts.deleted} greyed row(s)`);
+    return counts;
+  }
   async recoverProject(projectId: string): Promise<void> {
     say(`${this.name}: recovering project ${projectId.slice(0, 8)}`);
     await this.page.evaluate((id) => (window as never as { __fh_test: { recoverProject(id: string): Promise<void> } }).__fh_test.recoverProject(id as string), projectId);

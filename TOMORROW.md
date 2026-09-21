@@ -80,7 +80,7 @@ orders or get out.
 
 ## THE LIST — 10 September, evening (Roman's order)
 
-dev is **v4.9.228 · #531**, app AND backend AND live DB column `versions.sort_order` (commit f2eda52, deployed 18 Sept ~18:10). Next number: **v4.9.229 · #532**. Deploys today: 219 (app+backend), 220–227 (app), 228 (app+backend+migration 0028). Run 302 (BIG DAY part 3 with the version-order checks) green. FULL RUN 301 on 227: 75 green · 6 skipped · 1 red (15 both-rearrange, the known idle-timing one: the tablet was not touched and did not ask — same as 289 and 293). A full run on 228 is still owed (FH_RUN=303).
+dev is **v4.9.229 · #532**, app AND backend (deployed 21 Sept ~14:35; no migration). Next number: **v4.9.230 · #533**. Deploys 21 Sept: 229 (app+backend). Runs 21 Sept: 303 full on 228 (75 green · 6 skipped · 1 red = 15 idle-timing), 304–309 storage (309 green), 310 (part 3, 9, offline cases) 11 green.
 
 ### DONE 17 September — the launch set (v4.9.218 · #521)
 1. Unsent copies of other projects: carry their memory (`withMemory`); opening a project with an unsent copy starts from the copy then syncs (`startFromUnsentCopy`); at app start every unsent copy of another project is put in place, synced, archived (`uploadUnsentCopiesAtStart`, "Uploading unsent work: …"). Test 28 green (red since run 179).
@@ -128,7 +128,7 @@ LIVE DB: column added 18 Sept ~18:10 (`--file` import failed with a Cloudflare a
 (was) VERSION ORDER DOES NOT TRAVEL (Roman, 18 Sept evening; traced): reordering versions (overview ▲▼ / strip) swaps the objects in the strip's array and relabels them (`relabelStripVersions`); the labels travel, but the server has NO order column for versions and the pull sorts a shot's versions by `updated_at` (equal after one push → stable → row/creation order). After any sync the pictures sit in creation order with swapped labels — "jumped back". Fix: migration 0028 `ALTER TABLE versions ADD COLUMN sort_order INTEGER`; push sends each version's index; `appendFrameInserts` writes it; pull (`loadProjectTree` + `mapVersions`/the `allVersions.sort`) orders by sort_order then updated_at; a reorder must stamp the moved versions (versionFp includes position). Simulator: a door that reorders (the overview ▲/▼ path) + a check in BIG DAY part 3 that the order travels and survives a reload. Nothing in the simulator reordered versions before, which is why it never showed.
 OPEN: where the PDF project made offline on the iPad went — CLOSED, Roman deleted all earlier projects. (asked Roman: OPEN → is there a row for it). UI items from 18 Sept still to do: DETAIL BAR missing on iPad at open (2nd sighting); shooting-order rename scrolls to the very top on iPad; break rename field jumps on the 2nd tap; GROUP modal CANCEL/SAVE in the SELECT ALL row, right-aligned; SETUPS names 12 letters.
 
-### 21 September — v4.9.229 · #532 (app AND backend, no migration) — STORAGE (#533)
+### 21 September — v4.9.229 · #532 DEPLOYED ~14:35, app AND backend, no migration — STORAGE (#533); next number v4.9.230 · #533
 - OPEN modal: the account's storage between Edit Projects and Close ("Storage 12 of 350 MB · 3 %"), grey below 80 %, red from 80 %. Figure comes from the server with every push answer and with the project list (`storage: {used, limit}`), never guessed (`src/lib/storageMeter.ts`).
 - Notices at 80 / 90 / 95 % (toast, once per step; again only after dropping below 80 %).
 - STORAGE FULL: the server refuses the push (413 `storage_full`, with `storage.pending` = what the push weighs); the app says so once (important note), opens the project list, files the work on the device (no "working offline" note), and holds every push and retry (`isStorageFull()` in flushSyncNow and retryPendingSyncs) until "room again" — judged as server figure + waiting weight < limit (run 308: a list answer a second after the refusal read 5.9 of 6 and was taken for room).
@@ -140,6 +140,14 @@ OPEN: where the PDF project made offline on the iPad went — CLOSED, Roman dele
 - Analytics page: "Storage" button → `/analytics/storage?token=`: totals (live, recoverable-deleted with the first sweep day, bucket files and size, files named by no project row = the cleaner's upper bound, rows without size) and per account.
 - Analytics token was reset by Roman (`wrangler secret put ADMIN_API_TOKEN`).
 - NEXT: the dead-picture cleaner in COUNTING mode (rules agreed: unnamed by any live project, any recoverable project, any restore point of either; never younger than 24 h; counts first, Roman says go, then deletes; restore-a-point-after-cleaning test).
+
+### 21 September — v4.9.230 · #533 (app AND backend, no migration) — storage, second round
+- DELETE NOW only where Roman wants it: on a greyed (deleted) cloud row always; on a live row only from 80 % storage; on a deleted DEVICE copy ("deleted copy from …") too — off the device at once (`clearPending`), no cloud involved. Below 80 % Edit mode reads Edit, Delete as before. Two confirms in Roman's words. Test 31 counts them at 16 % (0) and 81 % (≥2).
+- ROOM AGAIN judged with the waiting weight (run 308): the refusal carries `storage.pending`; the app calls it room only when server figure + pending < limit.
+- PULL WHILE A PICTURE WAITS (run 312): a push refused for storage, then a pull; the shot's record went to the server's copy, the per-version merge kept the picture (a version only this device holds) — and the pull's bookkeeping recorded the shot as matching the server, so Delete now freed space and nothing was sent. Now `_framesWithKeptVersions` (shots holding a version the server has not got: local-only, or kept-mine and newer) are added to `stillToSend` after a pull; and the retry asks `anyShotUnsent()` when the flag is clear. Test 31 provokes it (iPad renames, desktop pulls while the refused picture waits).
+- STORAGE FULL note: "…or Delete it first and then DELETE NOW on the greyed row."
+- Runs: 311 (storage) green; 312 red (the pull case) → fixed; 313 (storage) green; 314 (part 3, 4, 9, 10) 4 green.
+- Roman's iPad: many grey unnamed rows with Recover only = deleted device copies (24-h window); Delete now on them now. Uboot/Workflow "cannot delete": ask what the row tag says.
 
 ### 21 September — keep an eye on
 - Roman: a NEEDS category renamed (actor 1 / actor 2 renamed) and then "suddenly not visible" — possibly the iPad was offline and he expected it there; not confirmed as a fault. If it shows again: which device renamed, was the other online, did the rename arrive after reconnect.
