@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { D1Database } from "@cloudflare/workers-types";
 import type { AppVariables, Env } from "../types";
 import { loadOwnedProject, requireUser, wasDeletedByOwner } from "../lib/auth";
+import { deleteProjectForGood, fillImageSizes, storageFigure, storageLimitBytes, sumProjectImageBytesOutsideFrames, sumUserImageBytes } from "../lib/storage";
 import { newId } from "../lib/crypto";
 import { isNonEmptyString, jsonError } from "../lib/response";
 import { decideFrame, decideVersion } from "../lib/syncDecide";
@@ -45,8 +46,8 @@ function inChunks<T>(items: T[]): T[][] {
   return out;
 }
 
-// Per-account storage limit (beta), see ACCOUNT_SYNC_SPEC.md.
-const ACCOUNT_STORAGE_LIMIT_BYTES = 350 * 1024 * 1024;
+// Per-account storage limit (beta): src/lib/storage.ts (#533).
+const STORAGE_HEADER = "X-FH-Storage-Limit-MB";
 
 const MAX_PROJECT_NAME_LEN = 200;
 const MAX_LABEL_LEN = 200;
@@ -75,7 +76,10 @@ projects.get("/", async (c) => {
     )
     .bind(me.id, cutoff)
     .all<{ id: string; name: string; created_at: number; updated_at: number; deleted_at: number | null }>();
-  return c.json({ projects: result.results });
+  // The account's storage figure travels with the list (#533): the OPEN modal
+  // shows it at the bottom, so it must be right even when nothing was pushed.
+  const storage = await storageFigure(c.env.DB, c.env, me.id, c.req.header(STORAGE_HEADER));
+  return c.json({ projects: result.results, storage });
 });
 
 // ---------------------------------------------------------------------------
@@ -178,6 +182,27 @@ projects.post("/:id/recover", async (c) => {
     .bind(now, row.id)
     .run();
   return c.json({ ok: true });
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /projects/:id/now — delete FOR GOOD, at once (#533). Skips the 7-day
+// recovery window: the owner is freeing space. Works on a live project and on
+// one already in the window. Picture files go too — unless another project or
+// restore point of this account still names them (src/lib/storage.ts).
+// ---------------------------------------------------------------------------
+projects.delete("/:id/now", async (c) => {
+  const me = c.get("user");
+  const id = c.req.param("id");
+  if (!c.env.IMAGES_BUCKET) return jsonError(c, 503, "r2_unavailable", "Storage is not available.");
+  const row = await c.env.DB
+    .prepare("SELECT id, name FROM projects WHERE id = ? AND user_id = ?")
+    .bind(id, me.id)
+    .first<{ id: string; name: string }>();
+  if (!row) return jsonError(c, 404, "not_found", "Project not found.");
+  const r = await deleteProjectForGood(c.env.DB, c.env.IMAGES_BUCKET, me.id, row.id);
+  console.log(`[storage] delete now: "${row.name}" (${row.id}) — files=${r.deletedFiles} keptShared=${r.keptShared} freed=${r.bytesFreed}B`);
+  const storage = await storageFigure(c.env.DB, c.env, me.id, c.req.header(STORAGE_HEADER));
+  return c.json({ ok: true, deleted_files: r.deletedFiles, kept_shared: r.keptShared, storage });
 });
 
 // ---------------------------------------------------------------------------
@@ -553,15 +578,28 @@ projects.post("/:id/sync", async (c) => {
   // Storage quota: total of new images + existing images on this user's other
   // projects. We delete + reinsert the syncing project's images, so its old
   // bytes don't count; everyone else's do.
-  const otherImagesUsed = await sumOtherProjectImageBytes(c.env.DB, me.id, project.id);
+  const storageLimit = storageLimitBytes(c.env, c.req.header(STORAGE_HEADER));
+  await fillImageSizes(c.env.DB, c.env.IMAGES_BUCKET, payload.images);   // a re-sent picture keeps its size (#533)
+  const otherImagesUsed = await sumUserImageBytes(c.env.DB, me.id, project.id)
+    // ...plus this project's pictures the push does NOT replace (partial pushes
+    // carry only the changed shots — run 305 walked straight past the limit).
+    + (payload.partial
+      ? await sumProjectImageBytesOutsideFrames(c.env.DB, project.id, payload.frames.map((f) => f.id))
+      : 0);
   const incomingBytes = payload.images.reduce((sum, img) => sum + (img.size_bytes ?? 0), 0);
-  if (otherImagesUsed + incomingBytes > ACCOUNT_STORAGE_LIMIT_BYTES) {
-    return jsonError(
-      c,
-      413,
-      "storage_full",
-      "Storage full — the beta version of Framehow has limited storage. Delete a project to free up space.",
-    );
+  if (otherImagesUsed + incomingBytes > storageLimit) {
+    // The figure travels with the refusal too (#533), so the app can show
+    // "X of Y MB" and open the list with Delete now.
+    return c.json({
+      error: {
+        code: "storage_full",
+        message: "Storage full — the beta version of Framehow has limited storage. Delete a project to free up space.",
+      },
+      // `pending` is what this push carries: the app counts it on top of every
+      // figure that follows, so a list answer (which cannot know about the
+      // refused pictures) is not mistaken for "room again" (run 308).
+      storage: { used: otherImagesUsed + incomingBytes, limit: storageLimit, pending: incomingBytes },
+    }, 413);
   }
 
   const now = Date.now();
@@ -704,15 +742,18 @@ projects.post("/:id/sync", async (c) => {
   const foreign = (foreignFrames.length > 0 || foreignVersions.length > 0)
     ? { foreign_frames: foreignFrames, foreign_versions: foreignVersions }
     : {};
+  // The account's storage figure, as it stands after this push (#533). One
+  // small sum; the app shows it and raises the 80/90/95 % notices from it.
+  const storage = { used: await sumUserImageBytes(c.env.DB, me.id), limit: storageLimit };
   // Some frames were refused because they moved underneath this device. The
   // rest went in. The client shows the picker for these and nothing else.
   if (rejectedFrames.length > 0) {
-    return c.json({ ...tree, ...foreign, rejected_frames: rejectedFrames, stale_frames: staleFrames, stale_versions: staleVersions });
+    return c.json({ ...tree, ...foreign, storage, rejected_frames: rejectedFrames, stale_frames: staleFrames, stale_versions: staleVersions });
   }
   if (staleFrames.length > 0 || staleVersions.length > 0) {
-    return c.json({ ...tree, ...foreign, stale_frames: staleFrames, stale_versions: staleVersions });
+    return c.json({ ...tree, ...foreign, storage, stale_frames: staleFrames, stale_versions: staleVersions });
   }
-  return c.json({ ...tree, ...foreign });
+  return c.json({ ...tree, ...foreign, storage });
 });
 
 // ---------------------------------------------------------------------------
@@ -1424,27 +1465,6 @@ async function loadProjectTree(db: D1Database, projectId: string, since?: number
   };
 }
 
-async function sumOtherProjectImageBytes(
-  db: D1Database,
-  userId: string,
-  excludeProjectId: string,
-): Promise<number> {
-  const row = await db
-    .prepare(
-      `SELECT COALESCE(SUM(i.size_bytes), 0) AS used
-         FROM images i
-         JOIN versions v ON v.id = i.version_id
-         JOIN frames   f ON f.id = v.frame_id
-         JOIN strips   s ON s.id = f.strip_id
-         JOIN projects p ON p.id = s.project_id
-        WHERE p.user_id = ?
-          AND p.id != ?
-          AND p.deleted_at IS NULL`,
-    )
-    .bind(userId, excludeProjectId)
-    .first<{ used: number }>();
-  return row?.used ?? 0;
-}
 
 // ---------------------------------------------------------------------------
 // Sync payload parsing + apply

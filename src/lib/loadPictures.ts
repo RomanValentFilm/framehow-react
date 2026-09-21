@@ -29,10 +29,28 @@ import { flushSyncNow } from './currentProject';
 /** Put these pictures into the card LOAD was pressed on (`imgTarget`). */
 export function loadPicturesIntoVersions(files: ArrayLike<File>): void {
   const s = state();
-  if (!files || files.length === 0 || !s.imgTarget) return;
-  const { fid, div, fromCompare } = s.imgTarget;
+  if (!files || files.length === 0) return;
+  // SAY IT when the pictures have nowhere to go (#533) — never silently.
+  if (!s.imgTarget) {
+    trace(`LOAD: ${files.length} picture(s) chosen but no card to put them on — dropped`);
+    showToast('Could not place the pictures — please press LOAD again.');
+    return;
+  }
+  const { fid, fromCompare } = s.imgTarget;
   const strip: StripType = s.imgTarget.stripType || 'ver';
   const scrollId = stripScrollId(strip);
+  if (!s.frames.some((f) => f.id === fid)) {
+    trace(`LOAD: the shot LOAD was pressed on is no longer in the project — ${files.length} picture(s) dropped`);
+    showToast('That shot is no longer in the project.');
+    useStore.setState({ imgTarget: null });
+    return;
+  }
+  // The card may have been redrawn while the picker was open (a pull landed):
+  // find it again by its shot id rather than trusting the element remembered.
+  const remembered = s.imgTarget.div;
+  const div = (document.contains(remembered)
+    ? remembered
+    : document.querySelector(`#${scrollId} .frame-card[data-vfid="${fid}"]`) as HTMLElement | null) ?? remembered;
   snapshotFrame(fid, strip);
   let loaded = 0;
   const total = files.length;

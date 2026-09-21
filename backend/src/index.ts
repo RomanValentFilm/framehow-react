@@ -17,7 +17,7 @@ app.use("*", async (c, next) => {
   if (allowed) {
     c.header("Access-Control-Allow-Origin", allowed);
     c.header("Access-Control-Allow-Credentials", "true");
-    c.header("Access-Control-Allow-Headers", "Authorization, Content-Type");
+    c.header("Access-Control-Allow-Headers", "Authorization, Content-Type, X-FH-Storage-Limit-MB");
     c.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
   }
   if (c.req.method === "OPTIONS") return c.body(null, 204);

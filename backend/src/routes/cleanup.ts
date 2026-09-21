@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import type { Env, AppVariables } from "../types";
+import { deleteProjectForGood } from "../lib/storage";
 
 const cleanup = new Hono<{ Bindings: Env; Variables: AppVariables }>();
 
@@ -125,50 +126,34 @@ export default cleanup;
 async function purgeExpiredProjects(
   db: import("@cloudflare/workers-types").D1Database,
   bucket: import("@cloudflare/workers-types").R2Bucket,
-): Promise<{ purgedProjects: number; deletedImages: number; bytesFreed: number; mbFreed: number }> {
+): Promise<{ purgedProjects: number; deletedImages: number; keptShared: number; bytesFreed: number; mbFreed: number }> {
   const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000; // 7 days ago
 
   // Find expired projects
   const expired = await db
     .prepare(
-      `SELECT id FROM projects WHERE deleted_at IS NOT NULL AND deleted_at < ?`,
+      `SELECT id, user_id FROM projects WHERE deleted_at IS NOT NULL AND deleted_at < ?`,
     )
     .bind(cutoff)
-    .all<{ id: string }>();
+    .all<{ id: string; user_id: string }>();
 
   let deletedImages = 0;
+  let keptShared = 0;
   let bytesFreed = 0;
 
+  // ONE PATH for deleting a project for good (#533): files first, unless
+  // another project or restore point still names them, then the rows.
   for (const project of expired.results) {
-    // 1. Collect all R2 keys for this project's images
-    const images = await db
-      .prepare(
-        `SELECT i.r2_key, i.size_bytes FROM images i
-         JOIN versions v ON i.version_id = v.id
-         JOIN frames f ON v.frame_id = f.id
-         JOIN strips s ON f.strip_id = s.id
-         WHERE s.project_id = ?`,
-      )
-      .bind(project.id)
-      .all<{ r2_key: string; size_bytes: number | null }>();
-
-    // 2. Delete R2 objects in parallel
-    const keys = images.results.map((i) => i.r2_key).filter(Boolean);
-    for (let i = 0; i < keys.length; i += 100) {
-      const batch = keys.slice(i, i + 100);
-      await Promise.all(batch.map((key) => bucket.delete(key)));
-    }
-    deletedImages += keys.length;
-    bytesFreed += images.results.reduce((sum, i) => sum + (i.size_bytes ?? 0), 0);
-
-    // 3. Delete project from D1 (CASCADE removes strips, frames, versions, images, drawings, snapshots)
-    await db.prepare(`DELETE FROM projects WHERE id = ?`).bind(project.id).run();
+    const r = await deleteProjectForGood(db, bucket, project.user_id, project.id);
+    deletedImages += r.deletedFiles;
+    keptShared += r.keptShared;
+    bytesFreed += r.bytesFreed;
   }
 
   const mbFreed = Math.round(bytesFreed / 1024 / 1024);
   console.log(
-    `[cleanup] expired projects: purged=${expired.results.length}, images=${deletedImages}, freed=${mbFreed}MB`,
+    `[cleanup] expired projects: purged=${expired.results.length}, images=${deletedImages}, keptShared=${keptShared}, freed=${mbFreed}MB`,
   );
 
-  return { purgedProjects: expired.results.length, deletedImages, bytesFreed, mbFreed };
+  return { purgedProjects: expired.results.length, deletedImages, keptShared, bytesFreed, mbFreed };
 }

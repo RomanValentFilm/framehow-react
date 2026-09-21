@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import type { Env, AppVariables } from "../types";
+import { storageLimitBytes } from "../lib/storage";
 
 const router = new Hono<{ Bindings: Env; Variables: AppVariables }>();
 
@@ -371,6 +372,7 @@ router.get("/analytics", async (c) => {
   <a href="/analytics/device-users?device=tablet&pwa=1&token=${token}" class="expand-btn" style="font-size:13px;padding:8px 14px">PWA Tablet (${pwaTabletUsers} users)</a>
   <a href="/analytics/device-users?device=phone&pwa=1&token=${token}" class="expand-btn" style="font-size:13px;padding:8px 14px">PWA iPhone (${pwaPhoneUsers} users)</a>
   <a href="/analytics/browser-mobile?token=${token}" class="expand-btn" style="font-size:13px;padding:8px 14px">Browser Mobile (${browserMobileSessions})</a>
+  <a href="/analytics/storage?token=${token}" class="expand-btn" style="font-size:13px;padding:8px 14px">Storage</a>
 </div>
 
 <h2>Funnel <span style="font-size:12px;color:#666;font-weight:400">(unique sessions per step, since tracking deployed)</span></h2>
@@ -850,6 +852,117 @@ ${sessions.map((s: any) => {
 
 </body></html>`;
 
+  return c.html(html);
+});
+
+// ---------------------------------------------------------------------------
+// STORAGE (#533) — per account, totals, and what sits in the bucket that no
+// project row names. Read-only: this page deletes nothing.
+// ---------------------------------------------------------------------------
+router.get("/analytics/storage", async (c) => {
+  const token = c.req.query("token");
+  if (!token || token !== c.env.ADMIN_API_TOKEN) return c.json({ error: "unauthorized" }, 401);
+
+  const db = c.env.DB;
+  const limit = storageLimitBytes(c.env);
+  const mb = (b: number) => (b / 1048576).toFixed(b < 10 * 1048576 ? 1 : 0);
+  const fmtDay = (ts: number) => new Date(ts).toISOString().slice(0, 10);
+
+  const [perUserR, liveR, deletedR, unknownR] = await Promise.all([
+    db.prepare(
+      `SELECT u.email, u.name,
+              COUNT(DISTINCT CASE WHEN p.deleted_at IS NULL THEN p.id END) AS live_projects,
+              COUNT(DISTINCT CASE WHEN p.deleted_at IS NOT NULL THEN p.id END) AS deleted_projects,
+              COUNT(CASE WHEN p.deleted_at IS NULL THEN i.id END) AS pictures,
+              COALESCE(SUM(CASE WHEN p.deleted_at IS NULL THEN i.size_bytes END), 0) AS live_bytes,
+              COALESCE(SUM(CASE WHEN p.deleted_at IS NOT NULL THEN i.size_bytes END), 0) AS deleted_bytes,
+              SUM(CASE WHEN p.deleted_at IS NULL AND i.id IS NOT NULL AND i.size_bytes IS NULL THEN 1 ELSE 0 END) AS unknown_size
+         FROM users u
+         LEFT JOIN projects p ON p.user_id = u.id
+         LEFT JOIN strips s ON s.project_id = p.id
+         LEFT JOIN frames f ON f.strip_id = s.id
+         LEFT JOIN versions v ON v.frame_id = f.id
+         LEFT JOIN images i ON i.version_id = v.id
+        GROUP BY u.id ORDER BY live_bytes DESC`,
+    ).all<{ email: string; name: string | null; live_projects: number; deleted_projects: number; pictures: number; live_bytes: number; deleted_bytes: number; unknown_size: number }>(),
+    db.prepare(
+      `SELECT COUNT(DISTINCT p.id) AS projects, COUNT(i.id) AS pictures, COALESCE(SUM(i.size_bytes), 0) AS bytes
+         FROM projects p
+         LEFT JOIN strips s ON s.project_id = p.id LEFT JOIN frames f ON f.strip_id = s.id
+         LEFT JOIN versions v ON v.frame_id = f.id LEFT JOIN images i ON i.version_id = v.id
+        WHERE p.deleted_at IS NULL`,
+    ).first<{ projects: number; pictures: number; bytes: number }>(),
+    db.prepare(
+      `SELECT COUNT(DISTINCT p.id) AS projects, COUNT(i.id) AS pictures, COALESCE(SUM(i.size_bytes), 0) AS bytes,
+              MIN(p.deleted_at) AS oldest, MAX(p.deleted_at) AS newest
+         FROM projects p
+         LEFT JOIN strips s ON s.project_id = p.id LEFT JOIN frames f ON f.strip_id = s.id
+         LEFT JOIN versions v ON v.frame_id = f.id LEFT JOIN images i ON i.version_id = v.id
+        WHERE p.deleted_at IS NOT NULL`,
+    ).first<{ projects: number; pictures: number; bytes: number; oldest: number | null; newest: number | null }>(),
+    db.prepare(`SELECT COUNT(*) AS n FROM images WHERE size_bytes IS NULL`).first<{ n: number }>(),
+  ]);
+
+  // THE BUCKET ITSELF: every file with its size, against every key a project
+  // row names. Files named by nothing are what the cleaner would remove —
+  // restore points are not checked here (the cleaner checks them), so this is
+  // an upper bound.
+  let bucketObjects = 0, bucketBytes = 0, unnamedObjects = 0, unnamedBytes = 0, namedBytes = 0;
+  let bucketNote = "";
+  if (c.env.IMAGES_BUCKET) {
+    const named = new Set<string>();
+    const keysR = await db.prepare(`SELECT DISTINCT r2_key FROM images`).all<{ r2_key: string }>();
+    for (const r of keysR.results) named.add(r.r2_key);
+    let cursor: string | undefined;
+    let pages = 0;
+    do {
+      const listed = await c.env.IMAGES_BUCKET.list({ limit: 1000, cursor });
+      for (const o of listed.objects) {
+        bucketObjects++; bucketBytes += o.size;
+        if (named.has(o.key)) namedBytes += o.size; else { unnamedObjects++; unnamedBytes += o.size; }
+      }
+      cursor = listed.truncated ? listed.cursor : undefined;
+      pages++;
+    } while (cursor && pages < 50);
+    if (cursor) bucketNote = " (stopped after 50,000 files — the rest not counted)";
+  } else {
+    bucketNote = " (no bucket bound)";
+  }
+
+  const sweepDay = deletedR?.oldest ? fmtDay(deletedR.oldest + 7 * 24 * 60 * 60 * 1000) : "—";
+  const rows = perUserR.results.map((u) => {
+    const pct = limit > 0 ? Math.round((u.live_bytes / limit) * 100) : 0;
+    const color = pct >= 80 ? "#ff6b6b" : "#ccc";
+    return `<tr>
+      <td>${esc(u.name || u.email)}<div class="meta">${esc(u.email)}</div></td>
+      <td>${u.live_projects}${u.deleted_projects ? ` <span class="meta">+${u.deleted_projects} deleted</span>` : ""}</td>
+      <td>${u.pictures}${u.unknown_size ? ` <span class="meta">(${u.unknown_size} size unknown)</span>` : ""}</td>
+      <td style="color:${color}">${mb(u.live_bytes)} MB</td>
+      <td style="color:${color}">${pct} %</td>
+      <td class="meta">${u.deleted_bytes ? `${mb(u.deleted_bytes)} MB` : ""}</td>
+    </tr>`;
+  }).join("");
+
+  const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Framehow Storage</title><style>${PAGE_STYLES}</style></head><body>
+<p><a href="/analytics?token=${token}" style="color:#4fc3f7">← Analytics</a></p>
+<h1>Storage</h1>
+<p class="meta">Limit per account: ${mb(limit)} MB. Sizes are what the server has recorded; pictures uploaded before sizes were kept count as 0 until they are re-sent or measured.</p>
+
+<div class="cards">
+  <div class="card"><div class="num">${mb(liveR?.bytes ?? 0)} MB</div><div class="label">Live projects (${liveR?.projects ?? 0} projects, ${liveR?.pictures ?? 0} pictures)</div></div>
+  <div class="card"><div class="num">${mb(deletedR?.bytes ?? 0)} MB</div><div class="label">Deleted, recoverable (${deletedR?.projects ?? 0} projects, ${deletedR?.pictures ?? 0} pictures) · first sweep ${sweepDay}</div></div>
+  <div class="card"><div class="num">${mb(bucketBytes)} MB</div><div class="label">In the bucket: ${bucketObjects} files${bucketNote}</div></div>
+  <div class="card"><div class="num">${mb(unnamedBytes)} MB</div><div class="label">Named by no project row: ${unnamedObjects} files — what the cleaner would look at (restore points not yet checked)</div></div>
+  <div class="card"><div class="num">${unknownR?.n ?? 0}</div><div class="label">Picture rows without a size</div></div>
+</div>
+
+<h2>Per account</h2>
+<table><thead><tr><th>Account</th><th>Projects</th><th>Pictures</th><th>Used</th><th>Of limit</th><th>In deleted</th></tr></thead>
+<tbody>${rows}</tbody></table>
+<p class="meta">Named files in the bucket: ${mb(namedBytes)} MB.</p>
+</body></html>`;
   return c.html(html);
 });
 

@@ -31,7 +31,8 @@ import { handlePDF } from './pdf';
 import { deleteFrameForGood, handleMainAction, handleAction, renameFrame, hideFrame, unhideFrame } from './actions';
 import { createSetup, handleSetupFrameClick, handleStripTagClick } from './setups';
 import { renameNeedTab, renameNeedTable, renameNeedItem, ensureFrameNeeds } from './needs';
-import { saveNow, carryOnAsNewProject, openCloudProjectById, beginNewProject, untouchedStrip, makeRestorePoint, listRestorePoints, restoreToPoint, deleteCloudProject, recoverCloudProject, saveRestorePoint, deleteRestorePoint } from './accountFlow';
+import { saveNow, carryOnAsNewProject, openCloudProjectById, beginNewProject, untouchedStrip, makeRestorePoint, listRestorePoints, restoreToPoint, deleteCloudProject, recoverCloudProject, saveRestorePoint, deleteRestorePoint, deleteCloudProjectNow, openProjectList } from './accountFlow';
+import { storageState } from './storageMeter';
 import { flushSyncNow, markFrameDirty, getDirtyFrameIds, pullNow } from './currentProject';
 import { openNeedsModal } from './overview';
 import { stampChangedContent } from './changeStamps';
@@ -206,6 +207,12 @@ export interface TestDoor {
   deleteThisProject(): Promise<void>;
   /** Recover a deleted project by id (the list's Recover after its confirm). */
   recoverProject(projectId: string): Promise<void>;
+  /** DELETE NOW by id (the list's Delete now after its confirm) (#533). */
+  deleteProjectNow(projectId: string): Promise<void>;
+  /** The storage meter as the app holds it (#533). */
+  storage(): { figure: { used: number; limit: number } | null; full: boolean; noticedStep: number };
+  /** Open the project list (the OPEN button) — resolves when it closes (#533). */
+  openProjectList(): Promise<void>;
   /** Delete a shooting order — the confirm's Yes (#513). */
   deleteOrder(orderIndex: number): void;
   /** PART 5 DOORS (#513): groups, through the app's own functions. */
@@ -1167,6 +1174,11 @@ export function installTestDoor(): void {
     async recoverProject(projectId) {
       await recoverCloudProject({ id: projectId, name: '', deleted_at: Date.now() } as never);
     },
+    async deleteProjectNow(projectId) {
+      await deleteCloudProjectNow({ id: projectId, name: '', deleted_at: null } as never);
+    },
+    storage() { return storageState(); },
+    openProjectList() { return openProjectList(); },
     exportVia(kind) {
       const press = (id: string) => {
         const b = document.getElementById(id) as HTMLElement | null;

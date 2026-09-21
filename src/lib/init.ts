@@ -1047,10 +1047,21 @@ export function initFramehow(): void {
   document.getElementById('mainImgInput')!.addEventListener('change', (e) => {
     const file = (e.target as HTMLInputElement).files?.[0];
     const s = state();
-    if (!file || !s.mainImgTarget) return;
-    const { fid, div, toVersion } = s.mainImgTarget;
+    if (!file) return;
+    if (!s.mainImgTarget) {
+      trace('LOAD: a picture was chosen but no card to put it on — dropped');
+      showToast('Could not place the picture — please press LOAD again.');
+      return;
+    }
+    const { fid, toVersion } = s.mainImgTarget;
     const f = s.frames.find((fr) => fr.id === fid);
-    if (!f) return;
+    if (!f) { trace('LOAD: the shot is no longer in the project — picture dropped'); showToast('That shot is no longer in the project.'); return; }
+    // The card may have been redrawn while the picker was open (#533): find
+    // it again by its shot id rather than trusting the element remembered.
+    const remembered = s.mainImgTarget.div;
+    const div = (document.contains(remembered)
+      ? remembered
+      : document.querySelector(`#mainScroll .frame-card[data-mfid="${fid}"]`) as HTMLElement | null) ?? remembered;
     const reader = new FileReader();
     // SAY IT WHEN A PICTURE CANNOT BE READ (#514). It failed in silence before;
     // the card simply stayed as it was.

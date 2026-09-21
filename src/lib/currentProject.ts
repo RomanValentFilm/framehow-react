@@ -49,6 +49,7 @@ import { isLoggedIn } from './session';
 import { stampChangedSettings, exportSettingStamps, settingsNeedPush } from './projectSettings';
 import { stampChangedContent, exportChangeStamps } from './changeStamps';
 import { makeRetryClock } from './retryWait';
+import { isStorageFull, storageFullFromServer, onStorageFreed } from './storageMeter';
 import { whatWentWrong } from './projectGone';
 
 interface CurrentProject {
@@ -549,6 +550,17 @@ export async function flushSyncNow(askedByTheFetch = false): Promise<void> {
   // push asked for just before that line was turned away here without a word.
   // Only when there IS something to send, so a quiet device stays quiet.
   if (cloudSyncInFlight) { if (_dirty) traceOnce('push skipped: a push is already running'); return; }
+  // THE ACCOUNT IS FULL (#533): the server has said no, and every try would
+  // upload the pictures again for the same no. The work is filed on the
+  // device instead, and goes up by itself the moment space is freed.
+  if (isStorageFull()) {
+    if (_dirty) {
+      traceOnce('push held: storage full — the work stays on this device until a project is deleted');
+      _pendingSyncIds.add(cp.projectId);
+      void noticeUnsent(cp.projectId, cp.name, withMemory(snapshotFromStore(cp.projectId, cp.name)), cp.projectId, false);
+    }
+    return;
+  }
   if (_pullInFlight && !askedByTheFetch) { if (_dirty) traceOnce('push skipped: a fetch is running'); return; }
   if (_projectSwitchInFlight) { if (_dirty) traceOnce('push skipped: switching project'); return; }
   // A CHANGE MADE WHILE A SYNC WAS BEING APPLIED IS STILL A CHANGE (#517,
@@ -638,6 +650,15 @@ export async function flushSyncNow(askedByTheFetch = false): Promise<void> {
     // is filed either way — including when the project is gone, because SAVE AS
     // NEW has to have something to save.
     _pendingSyncIds.add(pid);
+    // STORAGE FULL (#533). Not an outage and not a deleted project: the server
+    // said no because the account is at its limit. The work is filed on the
+    // device without the "working offline" note (untrue), the user is told
+    // once, and pushes wait until a project is deleted.
+    if (err?.status === 413 && (e as { code?: string })?.code === 'storage_full') {
+      void noticeUnsent(pid, cp.name, withMemory(snapshotFromStore(pid, cp.name)), pid, false);
+      storageFullFromServer((e as { storage?: { used: number; limit: number; pending?: number } }).storage);
+      return;
+    }
     if (whatWentWrong(err?.status, (e as { code?: string })?.code) === 'gone') {
       // NOT an outage. No "you seem to be working offline" — that message was
       // untrue, and no amount of retrying will make this succeed (#465).
@@ -707,6 +728,8 @@ const RETRY_INTERVAL_MS = 40_000;
 /** How long to wait before trying again, and the remembering behind it. The
  *  rule itself lives in retryWait.ts, where the bench can drive it (#463). */
 const _retryClock = makeRetryClock();
+// Space freed (Delete now): go at once, not at the next timer tick (#533).
+onStorageFreed(() => { forgetRetryFailures(); void retryPendingSyncs('now'); });
 
 /** Anything that gets through puts the growing wait back to nothing. */
 export function forgetRetryFailures(): void { _retryClock.succeeded(); }
@@ -791,6 +814,9 @@ async function retryPendingSyncs(why: 'timer' | 'now' = 'timer'): Promise<void> 
     trace('an unnamed project waits: it goes up as "Untitled …" after a minute of work, or the moment it is named');
   }
   if (_pendingSyncIds.size === 0 && !unsavedWaiting) return;
+  // The account is full (#533): asking again gets the same no. The retry
+  // wakes the moment Delete now frees space (onStorageFreed → retryNow).
+  if (isStorageFull()) return;
   if (cloudSyncInFlight || _projectSwitchInFlight || _localSavesHeld) return;
   if (why === 'timer' && !_retryClock.mayTry(Date.now())) return;
   _retryClock.tried(Date.now());

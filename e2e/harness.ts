@@ -88,7 +88,14 @@ export class Device {
    *   every push and shows up in the log, which is how we tell the two apart.
    */
   static async open(browser: Browser, name: string, token: string,
-                    asTablet = false): Promise<Device> {
+                    asTablet = false,
+                    /** A SMALL STORAGE LIMIT for this device's requests (#533): the
+                     *  simulator's local worker honours the header, the live one
+                     *  ignores it. So a test can fill an account in seconds. */
+                    opts: { storageLimitMb?: number } = {}): Promise<Device> {
+    const extra = opts.storageLimitMb
+      ? { extraHTTPHeaders: { 'X-FH-Storage-Limit-MB': String(opts.storageLimitMb) } }
+      : {};
     const ctx = await browser.newContext(asTablet
       ? {
         viewport: { width: 1180, height: 820 },
@@ -97,8 +104,9 @@ export class Device {
         hasTouch: true,
         isMobile: false,
         deviceScaleFactor: 2,
+        ...extra,
       }
-      : { viewport: { width: 1440, height: 900 } });
+      : { viewport: { width: 1440, height: 900 }, ...extra });
     const page = await ctx.newPage();
     // The app reads these at startup. Seeded before the first load so the app
     // comes up signed in, exactly as it does for a returning user.
@@ -909,6 +917,26 @@ export class Device {
     say(`${this.name}: deleting the open project`);
     await this.page.evaluate(() => (window as never as { __fh_test: { deleteThisProject(): Promise<void> } }).__fh_test.deleteThisProject());
   }
+  /** DELETE NOW (#533): the list's Delete now, after its confirm. */
+  async deleteProjectNow(projectId: string): Promise<void> {
+    say(`${this.name}: DELETE NOW on project ${projectId.slice(0, 8)}`);
+    await this.page.evaluate((id) => (window as never as { __fh_test: { deleteProjectNow(id: string): Promise<void> } }).__fh_test.deleteProjectNow(id as string), projectId);
+  }
+  /** The storage meter as the app holds it (#533). */
+  async storage(): Promise<{ figure: { used: number; limit: number } | null; full: boolean; noticedStep: number }> {
+    return this.page.evaluate(() => (window as never as { __fh_test: { storage(): { figure: { used: number; limit: number } | null; full: boolean; noticedStep: number } } }).__fh_test.storage());
+  }
+  /** Open the project list and read its storage line and colour, then close it (#533). */
+  async readStorageLine(): Promise<{ text: string; red: boolean }> {
+    await this.page.evaluate(() => { void (window as never as { __fh_test: { openProjectList(): Promise<void> } }).__fh_test.openProjectList(); });
+    const line = this.page.locator('#projectListStorage');
+    await this.page.waitForFunction(() => (document.getElementById('projectListStorage')?.textContent ?? '').includes('Storage'), undefined, { timeout: 15_000 });
+    const text = (await line.textContent()) ?? '';
+    const color = await line.evaluate((e) => getComputedStyle(e).color);
+    await this.page.locator('#projectListClose').click();
+    say(`   the list says "${text}" (${color})`);
+    return { text, red: color === 'rgb(213, 38, 50)' };
+  }
   async recoverProject(projectId: string): Promise<void> {
     say(`${this.name}: recovering project ${projectId.slice(0, 8)}`);
     await this.page.evaluate((id) => (window as never as { __fh_test: { recoverProject(id: string): Promise<void> } }).__fh_test.recoverProject(id as string), projectId);
@@ -1035,7 +1063,13 @@ export class Device {
 
   /** Press UPLOAD and hand the app's own file chooser a small picture. */
   async uploadPicture(index: number, strip: 'main' | string, pngBase64: string): Promise<void> {
-    say(`${this.name}: UPLOAD on shot ${index + 1} (${strip})`);
+    await this.uploadPictures(index, strip, [pngBase64]);
+  }
+
+  /** SEVERAL PICTURES AT ONCE (#533): on a version strip each opens a version
+   *  of its own, in one push — the way the load sheet takes a handful of files. */
+  async uploadPictures(index: number, strip: 'main' | string, pngsBase64: string[]): Promise<void> {
+    say(`${this.name}: UPLOAD ${pngsBase64.length === 1 ? '' : `${pngsBase64.length} pictures `}on shot ${index + 1} (${strip})`);
     const press = () => this.page.evaluate(([i, st]) =>
       (window as never as { __fh_test: { pressUpload(i: number, st: string): void } })
         .__fh_test.pressUpload(i as number, st as string), [index, strip] as [number, string]);
@@ -1053,7 +1087,36 @@ export class Device {
       if (await choose.isVisible().catch(() => false)) await choose.click();
       chooser = await waiting;
     }
-    await chooser.setFiles({ name: 'picture.png', mimeType: 'image/png', buffer: Buffer.from(pngBase64, 'base64') });
+    await chooser.setFiles(pngsBase64.map((b, i) =>
+      ({ name: `picture${i + 1}.png`, mimeType: 'image/png', buffer: Buffer.from(b, 'base64') })));
+  }
+
+  /**
+   * PICTURES CHOSEN WHILE A SYNC LANDS (#533, run 307). The picker is open,
+   * the OTHER device changes a shot and pushes, this device pulls — and only
+   * then are the files handed over. The pull used to clear the card LOAD was
+   * pressed on, and the pictures were dropped without a word.
+   */
+  async uploadPicturesDuringPull(index: number, strip: string, pngsBase64: string[], other: Device): Promise<void> {
+    say(`${this.name}: UPLOAD ${pngsBase64.length} pictures on shot ${index + 1} (${strip}) — a pull lands while the picker is open`);
+    const press = () => this.page.evaluate(([i, st]) =>
+      (window as never as { __fh_test: { pressUpload(i: number, st: string): void } })
+        .__fh_test.pressUpload(i as number, st as string), [index, strip] as [number, string]);
+    const waiting = this.page.waitForEvent('filechooser', { timeout: 10_000 });
+    await press();
+    const choose = this.page.locator('#loadPicturesSheet .load-choose-btn');
+    if (await choose.isVisible().catch(() => false)) await choose.click();
+    const chooser = await waiting;
+    // The picker is open. Now the world moves on.
+    const mark = await this.mark();
+    await other.renameFrame(index === 0 ? 1 : 0, 'MEANWHILE');
+    await other.push();
+    await other.settle();
+    await this.startPullWithoutWaiting();
+    await this.waitForLogAfter(mark, 'arrangement arrived', 30_000);
+    // ...and only then does the person press Open in the picker.
+    await chooser.setFiles(pngsBase64.map((b, i) =>
+      ({ name: `picture${i + 1}.png`, mimeType: 'image/png', buffer: Buffer.from(b, 'base64') })));
   }
 
   async pressStar(index: number, strip: string, versionIndex: number): Promise<void> {

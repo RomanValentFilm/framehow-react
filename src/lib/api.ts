@@ -12,10 +12,13 @@ export interface ApiError {
   status: number;
   code: string;
   message: string;
+  /** The account's storage figure, when the refusal is about storage (#533). */
+  storage?: { used: number; limit: number; pending?: number };
 }
 
 interface ServerErrorEnvelope {
   error?: { code?: string; message?: string };
+  storage?: { used: number; limit: number; pending?: number };
 }
 
 function toApiError(status: number, body: unknown, fallbackMessage = 'Something went wrong.'): ApiError {
@@ -24,6 +27,7 @@ function toApiError(status: number, body: unknown, fallbackMessage = 'Something 
     status,
     code: env.error?.code ?? 'unknown',
     message: env.error?.message ?? fallbackMessage,
+    ...(env.storage ? { storage: env.storage } : {}),
   };
 }
 

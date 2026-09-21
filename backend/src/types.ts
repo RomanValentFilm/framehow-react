@@ -12,6 +12,10 @@ export interface Env {
   PASSWORD_RESET_TTL_HOURS: string;
   EMAIL_VERIFY_TTL_HOURS: string;
   ADMIN_EMAIL: string;
+  // Storage (#533): per-account limit in MB (default 350); FH_E2E="1" only on
+  // the simulator's local worker — lets a test lower the limit per request.
+  STORAGE_LIMIT_MB?: string;
+  FH_E2E?: string;
 
   // Secrets (set via `wrangler secret put`)
   EMAIL_API_KEY?: string;

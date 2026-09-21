@@ -136,8 +136,10 @@ export function AccountModals() {
           <div className="project-list" id="projectListContent">
             {/* populated dynamically */}
           </div>
-          <div className="account-btns" style={{justifyContent:'space-between'}}>
+          <div className="account-btns" style={{justifyContent:'space-between',alignItems:'center'}}>
             <button className="btn" id="projectListEdit" type="button" style={{fontSize:'12px'}}>Edit Projects</button>
+            {/* The account's storage, as the server last said it (#533): grey below 80 %, red from 80 %. */}
+            <span id="projectListStorage" style={{fontSize:'11px',color:'#888',textAlign:'center'}}></span>
             <button className="btn" id="projectListClose" type="button">Close</button>
           </div>
         </div>

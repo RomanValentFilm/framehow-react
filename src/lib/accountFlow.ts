@@ -81,12 +81,13 @@ import { mergeDelta, lastMergeRefusal, answerIsSafeToApply, untouchedByDelta, ty
 import { settingsForPush, adoptSettingsFromServer, applySettingsToStore, importSettingStamps, stampChangedSettings, seedSettings, forgetAnotherProjectsSettings, settingsNeedPush, reconcileRestoredSettings, captureMySettings, keepMyUnsentSettings, unsentSettingNames, type SettingItem } from './projectSettings';
 import { applySnapshotToStore, loadSnapshot, snapshotFromStore, listPending, isArchived, getPending, markPendingUploaded, saveProjectListCache, loadProjectListCache, deletePending, deleteEveryCopyOf, recoverPending, isDeletedCopy, requestDurableStorage } from './persistence';
 import type { PendingRecord } from './persistence';
-import { showThreeWayConflict, showConfirm, showToast, showLabelEdit } from './modals';
+import { showThreeWayConflict, showConfirm, showConfirmDefaultNo, showToast, showLabelEdit } from './modals';
 import { saveOpenTextEdits, saveOpenTableEdits, versionStars, inStarOrder } from './helpers';
 import { closeSortMode, refreshOpenSortView, removeFrameFromSortOrders } from './sortOrder';
 import { resetStoryboardState, state, useStore, bumpRenderTick, freshNeedDefinitions, DEFAULT_STRIP_DEFS, migrateNeedDefinitions, createDefaultExportMeta, blankNeeds, blankNote } from '../store/state';
 import type { Frame, Stroke, Version, FrameNeedState, FrameNoteState, NeedDefinitions, BracketNodeData, ProjectType } from '../store/state';
 import { clearRectsForProject } from './pdfAdjust';
+import { noteStorage, storageLineText, storageIsHigh, storageFigure as lastStorageFigure } from './storageMeter';
 
 // ---------------------------------------------------------------------------
 // Device identification — persistent ID + human-readable name
@@ -501,6 +502,37 @@ export async function deleteCloudProject(p: CloudProject): Promise<void> {
   }
 }
 
+/**
+ * DELETE NOW (#533): the project and its pictures go at once — no 7-day window.
+ * Works on a live project and on one already deleted and waiting. The server
+ * keeps a picture file that another project or restore point still names.
+ * The same closing steps as an ordinary delete when it is the open project.
+ */
+export async function deleteCloudProjectNow(p: CloudProject): Promise<void> {
+  const res = await api.delete<{ ok: boolean; deleted_files: number; kept_shared: number; storage?: { used: number; limit: number } }>(
+    `/projects/${encodeURIComponent(p.id)}/now`, getToken());
+  trace(`delete now: "${p.name}" — ${res.deleted_files} picture file(s) gone, ${res.kept_shared} kept (named elsewhere)`);
+  p.deleted_at = Date.now();
+  clearRectsForProject(p.id);
+  noteStorage(res.storage);
+  const wasOpen = getCurrentProject().projectId === p.id;
+  const oldLocalKey = wasOpen ? localProjectId() : null;
+  const gone = await deleteEveryCopyOf(p.id, oldLocalKey ? [oldLocalKey] : []);
+  if (gone) trace(`  dropped ${gone} copy(ies) of it from this device`);
+  if (wasOpen) {
+    beginSystemAction();
+    try {
+      if (state().sortEditingId) closeSortMode();
+      resetStoryboardState();
+      clearCurrentProject();
+      clearPushedFingerprints();
+    } finally {
+      endSystemAction();
+    }
+    (window as any).__fh_renderAll?.();
+  }
+}
+
 /** RECOVER A DELETED PROJECT — the list's Recover after its confirm (#515). */
 export async function recoverCloudProject(p: CloudProject): Promise<void> {
   await api.post(`/projects/${encodeURIComponent(p.id)}/recover`, undefined, getToken());
@@ -670,6 +702,20 @@ export async function openProjectList(): Promise<void> {
   const editBtn = el<HTMLButtonElement>('projectListEdit');
   editBtn.textContent = 'Edit Projects';
 
+  // THE STORAGE LINE (#533): between Edit Projects and Close, grey below
+  // 80 %, red from 80 %. Drawn from the last figure at once, then from every
+  // figure that arrives while the modal is open (list answer, push, Delete now).
+  const storageLine = document.getElementById('projectListStorage');
+  const drawStorage = (): void => {
+    if (!storageLine) return;
+    storageLine.textContent = storageLineText(lastStorageFigure());
+    storageLine.style.color = storageIsHigh(lastStorageFigure()) ? '#d52632' : '#888';
+    storageLine.style.fontWeight = storageIsHigh(lastStorageFigure()) ? '600' : '400';
+  };
+  drawStorage();
+  const onStorage = (): void => drawStorage();
+  window.addEventListener('fh:storage', onStorage);
+
   return new Promise((resolve) => {
     const closeBtn = el<HTMLButtonElement>('projectListClose');
     const newBtn = el<HTMLButtonElement>('projectListNew');
@@ -693,6 +739,7 @@ export async function openProjectList(): Promise<void> {
       editBtn.onclick = null;
       editMode = false;
       setEditModeUI(false);
+      window.removeEventListener('fh:storage', onStorage);
       hide('projectListModal');
       resolve();
     }
@@ -763,7 +810,31 @@ export async function openProjectList(): Promise<void> {
     function renderList(): void {
       renderProjectList(projects, editMode, onPick, onEdit, onDelete, onRecover,
                         deviceOnly, onPickDevice, archived, onPickArchived,
-                        offlineListing, onDeleteLocal, deletedCopies, onRecoverLocal);
+                        offlineListing, onDeleteLocal, deletedCopies, onRecoverLocal,
+                        onDeleteNow);
+    }
+
+    /** DELETE NOW (#533): frees the project's space at once; no recovery. */
+    async function onDeleteNow(p: CloudProject): Promise<void> {
+      hide('projectListModal');
+      // TWICE, as Roman asked (21 Sept): there is no way back from this one.
+      const sure = await showConfirmDefaultNo(
+        `Are you sure you want to delete project "${p.name}" and all its files?\n\n` +
+        'This cannot be undone.',
+      );
+      if (!sure) { show('projectListModal'); return; }
+      const ok = await showConfirmDefaultNo(`Deleting project "${p.name}"?`);
+      if (!ok) { show('projectListModal'); return; }
+      try {
+        await deleteCloudProjectNow(p);
+        projects = projects.filter((x) => x.id !== p.id);
+        await refreshLocalCopies();
+        showToast(`"${p.name}" deleted. ${storageLineText(lastStorageFigure())}`);
+      } catch (e) {
+        showToast(asMessage(e, 'Could not delete project.'));
+      }
+      show('projectListModal');
+      renderList();
     }
 
     function onPick(p: CloudProject): void {
@@ -879,8 +950,9 @@ export async function openProjectList(): Promise<void> {
         deviceOnly = allLocal.filter((r) => !isArchived(r) && !isDeletedCopy(r));
         archived = allLocal.filter((r) => isArchived(r) && !isDeletedCopy(r));
         deletedCopies = allLocal.filter((r) => isDeletedCopy(r));
-        const res = await api.get<{ projects: CloudProject[] }>('/projects', getToken());
+        const res = await api.get<{ projects: CloudProject[]; storage?: { used: number; limit: number } }>('/projects', getToken());
         projects = res.projects;
+        noteStorage(res.storage);
         void saveProjectListCache(projects);   // so the list is not empty offline
         renderList();
       } catch (e) {
@@ -916,6 +988,8 @@ function renderProjectList(
    *  a Recover option, exactly as a deleted project is. */
   deletedCopies: PendingRecord[] = [],
   onRecoverLocal?: (rec: PendingRecord) => void,
+  /** DELETE NOW (#533): at once, no recovery — on live and on deleted rows. */
+  onDeleteNow?: (p: CloudProject) => void,
 ): void {
   const content = el('projectListContent');
   content.innerHTML = '';
@@ -1107,6 +1181,15 @@ function renderProjectList(
       actions.className = 'project-list-meta';
       actions.style.display = 'flex';
       actions.style.gap = '12px';
+      const deleteNowBtn = (): HTMLElement => {
+        const b = document.createElement('span');
+        b.className = 'project-list-delete-now';
+        b.textContent = 'Delete now';
+        b.title = 'Frees its storage at once — no 7-day recovery';
+        b.style.cssText = 'cursor:pointer;color:#ff6b6b;font-weight:600;';
+        b.onclick = (e) => { e.stopPropagation(); onDeleteNow?.(p); };
+        return b;
+      };
       if (isDeleted) {
         const recoverBtn = document.createElement('span');
         recoverBtn.textContent = 'Recover';
@@ -1114,6 +1197,7 @@ function renderProjectList(
         recoverBtn.style.color = '#6b9aff';
         recoverBtn.onclick = (e) => { e.stopPropagation(); void onRecover(p); };
         actions.appendChild(recoverBtn);
+        if (onDeleteNow) actions.appendChild(deleteNowBtn());
       } else {
         const editBtn = document.createElement('span');
         editBtn.textContent = 'Edit';
@@ -1126,6 +1210,7 @@ function renderProjectList(
         delBtn.style.color = '#ff6b6b';
         delBtn.onclick = (e) => { e.stopPropagation(); void onDelete(p); };
         actions.append(editBtn, delBtn);
+        if (onDeleteNow) actions.appendChild(deleteNowBtn());
       }
       row.appendChild(actions);
     } else {
@@ -2894,6 +2979,8 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
     /** Shots (and versions) that live in ANOTHER project — not touched (#523). */
     foreign_frames?: string[];
     foreign_versions?: string[];
+    /** The account's storage after this push (#533). */
+    storage?: { used: number; limit: number };
   }>(
     `/projects/${encodeURIComponent(projectId)}/sync`,
     {
@@ -2934,6 +3021,7 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   // Update lastKnownUpdatedAt so that the pull-on-focus mechanism doesn't
   // see our own push as a "newer remote version" and try to apply it.
   lastKnownUpdatedAt = now;
+  noteStorage(res.storage);   // the figure, the 80/90/95 % notices (#533)
 
   // SHOTS OF ANOTHER PROJECT (#523). The server left them alone — they live,
   // safe and unchanged, in the project they were born in. Here they are in the
@@ -3195,6 +3283,11 @@ async function applyCloudTreeToStore(
       verReorderFid: st.verReorderFid,
       verReorderStrip: st.verReorderStrip,
       stripClipboard: st.stripClipboard,
+      // ...NOR THE CARD LOAD WAS PRESSED ON (#533, run 307). With the file
+      // picker open, a pull cleared this; the pictures chosen a second later
+      // had nowhere to go and were dropped without a word.
+      imgTarget: st.imgTarget,
+      mainImgTarget: st.mainImgTarget,
       activeSortOrderId: st.activeSortOrderId,
       activeStrips: st.activeStrips,
     };
@@ -4155,8 +4248,11 @@ async function applyCloudTreeToStore(
     // ...and it does not empty your clipboard (#355). Copy a frame, wait a
     // moment, and there was nothing left to paste.
     stripClipboard: prevView.stripClipboard,
-    imgTarget: null,
-    mainImgTarget: null,
+    // ...and it does not forget which card LOAD was pressed on (#533): the
+    // file picker may be open right now. The loader finds the card again by
+    // its shot id, so a redrawn card is no problem.
+    imgTarget: prevView.imgTarget,
+    mainImgTarget: prevView.mainImgTarget,
     // WHAT YOU ARE LOOKING AT IS NOT THE PROJECT (#347).
     //
     // These four were being reset on EVERY pull. The view went back to a
