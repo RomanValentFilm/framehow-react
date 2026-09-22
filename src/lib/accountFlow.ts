@@ -78,7 +78,7 @@ import { shouldSendOnlyChanges } from './pushMode';
 import { tagText, readTagText } from './ids';
 import { serverHasSomethingNew, whoseFrameWins, type DeviceMemory } from './sessionRules';
 import { mergeDelta, lastMergeRefusal, answerIsSafeToApply, untouchedByDelta, type MergeableTree } from './deltaMerge';
-import { settingsForPush, adoptSettingsFromServer, applySettingsToStore, importSettingStamps, stampChangedSettings, seedSettings, forgetAnotherProjectsSettings, settingsNeedPush, reconcileRestoredSettings, captureMySettings, keepMyUnsentSettings, unsentSettingNames, type SettingItem } from './projectSettings';
+import { settingsForPush, adoptSettingsFromServer, applySettingsToStore, importSettingStamps, stampChangedSettings, seedSettings, forgetAnotherProjectsSettings, settingsNeedPush, reconcileRestoredSettings, captureMySettings, keepMyUnsentSettings, unsentSettingNames, settingsMemorySummary, type SettingItem } from './projectSettings';
 import { applySnapshotToStore, loadSnapshot, snapshotFromStore, listPending, isArchived, getPending, markPendingUploaded, saveProjectListCache, loadProjectListCache, deletePending, deleteEveryCopyOf, recoverPending, isDeletedCopy, requestDurableStorage, clearPending } from './persistence';
 import type { PendingRecord } from './persistence';
 import { showThreeWayConflict, showConfirm, showConfirmDefaultNo, showToast, showLabelEdit } from './modals';
@@ -495,6 +495,10 @@ export async function deleteCloudProject(p: CloudProject): Promise<void> {
       resetStoryboardState();
       clearCurrentProject();
       clearPushedFingerprints();
+      // ...and the settings memory goes with it (22 Sept, run 320): left
+      // standing, the next local save stamped the empty screen's default
+      // names as this device's own change, made now.
+      forgetAnotherProjectsSettings(null);
     } finally {
       endSystemAction();
     }
@@ -526,6 +530,10 @@ export async function deleteCloudProjectNow(p: CloudProject): Promise<void> {
       resetStoryboardState();
       clearCurrentProject();
       clearPushedFingerprints();
+      // ...and the settings memory goes with it (22 Sept, run 320): left
+      // standing, the next local save stamped the empty screen's default
+      // names as this device's own change, made now.
+      forgetAnotherProjectsSettings(null);
     } finally {
       endSystemAction();
     }
@@ -1576,6 +1584,7 @@ function putCopyInPlace(rec: PendingRecord, projectId: string | null, name: stri
     // "changed just now", and not the last project's memory either.
     if (!snap.contentStamps || Object.keys(snap.contentStamps).length === 0) seedContentStamps(projectId);
     if (!snap.settingStamps || snap.settingStamps.length === 0) seedSettings(projectId, snap.lastModified);
+    else trace(`  settings memory: restored from the copy, ${settingsMemorySummary()}`);
   } finally {
     endSystemAction();
   }
@@ -3283,6 +3292,26 @@ async function applyCloudTreeToStore(
   keepLocalFrameIds?: ReadonlySet<string>,
   onImageProgress?: (loaded: number, total: number) => void,
 ): Promise<void> {
+  // ANOTHER PROJECT'S MEMORY MUST NOT JUDGE THIS ONE (22 Sept, run 320).
+  //
+  // Roman's iPad, 21 Sept: opened a project, deleted it while open, opened
+  // Workflow → the renamed actors, the category and the location were back
+  // to ACTOR 1, TALENTS, LOCATION 1 — on every device, because the iPad then
+  // pushed them. The empty screen after the delete had been stamped by the
+  // local save as "changed just now" (default names, no project), and the
+  // NEEDS categories, the locations and the strip names carry the same fixed
+  // names in every project. So when Workflow arrived, the merge below asked
+  // "is mine newer and unsent?" of a memory that was not Workflow's at all,
+  // answered yes, and put the defaults back over the renames:
+  //
+  //     setting needCategory/tab_talents: PUT BACK mine@11:46:16 over theirs@11:45:50
+  //
+  // #490 found the same thing for the story flow on the pull path and moved
+  // the forgetting before the judging; opening a project from the list never
+  // got that. It is here now, before anything is captured or weighed: a
+  // memory that belongs to a different project (or to no project) is emptied
+  // first. A pull of the SAME project is untouched.
+  forgetAnotherProjectsSettings(tree.project.id);
   // What this device is holding BEFORE any of this runs. The rebuild below
   // takes groups, setups, needs, shooting orders and the arrangement straight
   // from the project's metadata blob — the old whole-project layer — and the
@@ -6865,7 +6894,7 @@ export async function bootstrapAccountSystem(): Promise<void> {
           // are reading tea leaves again.
           trace('  settings memory: SEEDED FRESH (the save carried none)');
         } else {
-          trace(`  settings memory: restored, ${snap.settingStamps.length} item(s)`);
+          trace(`  settings memory: restored, ${settingsMemorySummary()}`);
         }
         // ...and the same for the frames' own memory (#289). With stamps in the
         // snapshot there is nothing to seed — they say when each frame changed,

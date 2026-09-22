@@ -80,7 +80,7 @@ orders or get out.
 
 ## THE LIST — 10 September, evening (Roman's order)
 
-dev is **v4.9.230 · #533**, app AND backend (commit 8660809, deployed 21 Sept ~18:00; no migration). Next number: **v4.9.231 · #534**. Deploys 21 Sept: 229, 230 (both app+backend). Runs 21 Sept: 303 full on 228 (75 green · 6 skipped · 1 red = 15 idle-timing), 304–313 storage (313 green), 310 and 314 (BIG DAY parts + offline) all green. NEXT: the dead-picture cleaner in COUNTING mode.
+dev is **v4.9.231 · #534**, app AND backend (commit e0483f0, deployed 21 Sept ~19:35; no migration). Next number: **v4.9.232 · #535**. Deploys 21 Sept: 229, 230, 231 (all app+backend). Runs 21 Sept: 303 full on 228 (75 green · 6 skipped · 1 red = 15 idle-timing), 304–315 storage (315 green), 310 and 314 (BIG DAY parts + offline) all green. NEXT: the dead-picture cleaner in COUNTING mode; then a full run.
 
 ### DONE 17 September — the launch set (v4.9.218 · #521)
 1. Unsent copies of other projects: carry their memory (`withMemory`); opening a project with an unsent copy starts from the copy then syncs (`startFromUnsentCopy`); at app start every unsent copy of another project is put in place, synced, archived (`uploadUnsentCopiesAtStart`, "Uploading unsent work: …"). Test 28 green (red since run 179).
@@ -149,10 +149,28 @@ OPEN: where the PDF project made offline on the iPad went — CLOSED, Roman dele
 - Runs: 311 (storage) green; 312 red (the pull case) → fixed; 313 (storage) green; 314 (part 3, 4, 9, 10) 4 green.
 - Roman's iPad: many grey unnamed rows with Recover only = deleted device copies (24-h window); Delete now on them now. Uboot/Workflow "cannot delete": ask what the row tag says.
 
-### 21 September — v4.9.231 · #534 (backend AND app, no migration) — "Uboot and Workflow do not want to delete"
+### 21 September — v4.9.231 · #534 DEPLOYED ~19:35, app AND backend, no migration — "Uboot and Workflow do not want to delete"; next number v4.9.232 · #535
 - FOUND: `project_deletions` (deletion records of shots/versions) references projects WITHOUT ON DELETE CASCADE (migration 0009). Deleting a project holding any such record failed at the database → Delete now answered 500 ("Something went wrong", no log line), and the NIGHTLY SWEEP has been failing the same way for every such project — likely why 114 deleted projects sit in the window. `deleteProjectForGood` now deletes the records first (batch), then the project. Test 31: OLD deletes a shot before Delete now (run 315 green).
 - App: a failed Delete now is traced ("delete now FAILED for … status= …").
 - Roman recovered Uboot on the iPad ("no shots loaded" — the device copy had 34 shots and the server's copy 44; not investigated), deleted it again; with 231 on dev, Delete now on the greyed rows works.
+
+### 21 September, 19:55 — LOST WORK, FIRST THING TOMORROW: renamed NEEDS categories + Locations reverted to defaults
+Roman renamed the talents category items (actors) and Locations; they survived several reloads (so they were on the server). At 19:55 they were back to default on every device. Desktop log (other device = Tablet):
+- 19:53:24 launch from offline cache — NO "settings memory: restored" line this time (the 19:17 launch had one), "saving: 0 frame(s) remembered as matching the server".
+- 19:53:37 pull, settings arrived 17 items; the LAST three in the arrived list: stripDef/refs, needCategory/tab_talents, needCategory/tab_shoot (= most recently changed on the server).
+- 19:54:08 "closing: frame 1 version 0 … maps still the same: NO — replaced under us".
+- 19:54:09 push: "project settings changed — sending: stripDef/refs, needCategory/tab_talents, needCategory/tab_shoot" — Roman renamed nothing; the device sent its stale copies of exactly those three as its own changes, and the server took them (19:54:14 pull from Tablet shows them at the end again = newest).
+Hypothesis (NOT yet traced): a launch with no settings memory lets `stampChangedSettings` treat differences between the (stale, cached) store and what the pull adopted as changes made now — or the pull kept "mine" because the restored/seeded stamps were newer than the server's. Same fault as this morning's sighting.
+TO DO: (1) settings log lines like the shots have — per item sent: its time; per item the answer changes: mine@/theirs@ → kept/taken; and at launch: whether the settings memory was restored, seeded old, or missing. (2) simulator: device A renames a category and pushes; device B launches from cache without settings memory, pulls, must NOT push the old name; then B renames while A holds the old one. (3) fix. Rule: a device with no memory never dates what it merely holds as new.
+Workaround told to Roman: rename again on the device in use — newest wins.
+ROMAN'S RECIPE (20:05, fits the log): a plain RELOAD keeps the names; OPENING ANOTHER PROJECT AND RE-OPENING THIS ONE loses them (iPad: recovered/opened Uboot, deleted it, re-opened Workflow → defaults). Same family as the desktop launching from the offline cache: the settings memory is thrown away on the switch, rebuilt from the device's stored copy, and the stale copy is dated as a change made now. → The simulator test: A renames a category + a location and pushes; B (which holds the old names) opens ANOTHER project, then re-opens this one; the names must survive on both devices. Then the same with B launching from its offline cache.
+
+### 21 September, evening — FOUND, for tomorrow's list
+1. NO EMAIL IS EVER SENT. `backend/src/lib/email.ts` `send()` is a stub: with no provider key it logs "[email:stub]" and returns; even with one it logs "[email:not-implemented]". Traced, not guessed. So:
+   - No verification mail has ever gone out; `users.email_verified` is 0 for everyone and means nothing. (Signing up and signing in do NOT require it — an account works at once — which is why nobody noticed.)
+   - FORGOT PASSWORD IS DEAD: a tester who loses their password cannot get back in, and is told nothing. A launch item for a beta where people must not lose work.
+   - To do: an email provider account (free tier is enough), the two secrets, finish `send()`, then check by hand: register → mail arrives → the link marks the account verified; forgot password → mail arrives → the link sets a new password. About an hour plus the account.
+2. The analytics page puts the password straight into every link's address, so a password with `&`, `+`, `#`, `?`, `/` or a space breaks every link on the page (Roman hit this tonight; worked around with a simple word). Small backend change: encode it in the links. Same deploy as the emails.
 
 ### 21 September — keep an eye on
 - Roman: a NEEDS category renamed (actor 1 / actor 2 renamed) and then "suddenly not visible" — possibly the iPad was offline and he expected it there; not confirmed as a fault. If it shows again: which device renamed, was the other online, did the rename arrive after reconnect.

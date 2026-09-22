@@ -43,10 +43,10 @@ export function renameNeedTable(tableId: string, name: string): void {
   void flushSyncNow();
 }
 
-/** A whole category. Nothing on screen renames one today — the tabs are only
- *  switched between — so this exists for the tests and for whatever gives the
- *  tabs a rename later. It stamps and marks like the other two, so it cannot
- *  drift away from them again. */
+/** A whole category — the double-tap on a tab (below) and the test door both
+ *  come through here. It stamps and marks like the other two, so it cannot
+ *  drift away from them again. (Until 22 Sept the double-tap wrote the name
+ *  onto the tab object directly and never came here.) */
 export function renameNeedTab(tabId: string, name: string): void {
   const s = state();
   const tabs = s.needDefinitions.tabs.map((t) => (t.id === tabId ? { ...t, name } : t));
@@ -631,9 +631,13 @@ function wireNeedsCard(container: HTMLElement, fid: number): void {
 
       const commit = () => {
         const newName = (input.value.trim() || currentName).toUpperCase();
-        const defs = state().needDefinitions;
-        const tab = defs.tabs.find((t) => t.id === tabId);
-        if (tab) tab.name = newName;
+        // THROUGH THE SAME DOOR AS THE OTHER TWO (22 Sept). This wrote the
+        // name straight onto the tab object — no stamp, nothing marked as
+        // unsent — the very thing #388 fixed for the column and the item.
+        // The comment on renameNeedTab said nothing on screen renames a
+        // category; this did. Roman's renamed category went up only if
+        // something else happened to push, and dated as whenever that was.
+        renameNeedTab(tabId, newName);
         rerenderAllNeedsCards();
         flushDebouncedSync();
       };

@@ -59,6 +59,24 @@ let _seeded = false;
 
 function key(kind: string, id: string): string { return `${kind}/${id}`; }
 
+/** A stamp as the log reads it: "19:40:02.153", or "none" for age unknown. */
+function when(t: number): string {
+  if (!t || t <= UNKNOWN) return 'none';
+  const d = new Date(t);
+  const p = (n: number, w = 2) => String(n).padStart(w, '0');
+  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.${p(d.getMilliseconds(), 3)}`;
+}
+
+/** The memory in one line: how many items, how many of them unsent. */
+export function settingsMemorySummary(): string { return memoryCounts(); }
+function memoryCounts(): string {
+  let unsent = 0;
+  for (const v of _known.values()) {
+    if (v.deleted_at !== null ? v.deleted_at > v.serverAt : v.changed_at > v.serverAt) unsent++;
+  }
+  return `${_known.size} item(s), ${unsent} unsent`;
+}
+
 /** Every settings item the store currently holds, in the user's order. */
 function currentItems(): Array<{ kind: string; item_id: string; json: string }> {
   const s = useStore.getState();
@@ -207,6 +225,8 @@ export function seedSettings(projectId: string | null, createdAt?: number): void
       { json: it.json, changed_at: _baseline, deleted_at: null, serverAt: UNKNOWN });
   }
   _seeded = true;
+  trace(`  settings memory: seeded ${_known.size} item(s) as changed at ${when(_baseline)}`
+    + `${createdAt && createdAt > 0 ? '' : ' (no project time given — now)'}, project ${projectId ?? 'local'}`);
 }
 
 /**
@@ -239,6 +259,9 @@ export function seedSettings(projectId: string | null, createdAt?: number): void
  */
 export function forgetAnotherProjectsSettings(projectId?: string | null): void {
   if (projectId !== undefined && projectId !== _projectId) {
+    if (_known.size > 0) {
+      trace(`  settings memory: cleared — it was project ${_projectId ?? 'local'}'s (${memoryCounts()}); now ${projectId ?? 'local'}`);
+    }
     _known.clear();
     _projectId = projectId;
     _seeded = false;
@@ -362,7 +385,10 @@ export function stampChangedSettings(projectId?: string | null): void {
   // is all we know. Recorded as project-old, because the alternative (calling
   // it all a change made now) would let merely opening a project overwrite real
   // work on the other device.
-  if (!_seeded) seedSettings(_projectId ?? null, _baseline);
+  if (!_seeded) {
+    trace('  settings memory: NOT SEEDED when a change was stamped — seeding now (backstop)');
+    seedSettings(_projectId ?? null, _baseline);
+  }
   const now = Date.now();
   const seen = new Set<string>();
   // The shots this device holds, by the names the lists use (#517).
@@ -469,6 +495,7 @@ export function adoptSettingsFromServer(items: SettingItem[] | undefined, projec
       // Keep our value and our time; only learn what the server holds, so the
       // next push is judged against the right base.
       _known.set(k, { ...prev, serverAt: it.changed_at });
+      trace(`    setting ${k}: still mine to send — mine@${when(prev.changed_at)} is later than theirs@${when(it.changed_at)}`);
       continue;
     }
     _known.set(k, {
@@ -625,7 +652,14 @@ export function applySettingsToStore(items: SettingItem[] | undefined): void {
     for (const r of mine.filter((x) => !x.deleted).sort((a, b) => a.changed_at - b.changed_at)) {
       const i = at(r.item_id);
       if (i >= 0) {
-        if (r.changed_at > UNKNOWN && !localIsNewerAndUnsent(kind, r.item_id, r.changed_at)) out[i] = r.data as T;
+        const differs = stableJson(out[i]) !== stableJson(r.data);
+        if (r.changed_at > UNKNOWN && !localIsNewerAndUnsent(kind, r.item_id, r.changed_at)) {
+          out[i] = r.data as T;
+          if (differs) trace(`    setting ${kind}/${r.item_id}: theirs@${when(r.changed_at)} → taken`);
+        } else if (differs) {
+          trace(`    setting ${kind}/${r.item_id}: theirs@${when(r.changed_at)} mine@${when(_known.get(key(kind, r.item_id))?.changed_at ?? UNKNOWN)}`
+            + ` → KEPT MINE (${r.changed_at > UNKNOWN ? 'mine is newer and unsent' : 'theirs has no age'})`);
+        }
       } else {
         out.splice(Math.min(r.idx, out.length), 0, r.data as T);
       }
@@ -646,6 +680,15 @@ export function applySettingsToStore(items: SettingItem[] | undefined): void {
   const tabs = mergeList('needCategory', s.needDefinitions.tabs, (t) => t.id);
   const locRow = rows.find((r) => r.kind === 'needLocations' && !r.deleted && r.changed_at > UNKNOWN
     && !localIsNewerAndUnsent('needLocations', 'needLocations', r.changed_at));
+  {
+    const anyLoc = rows.find((r) => r.kind === 'needLocations' && !r.deleted);
+    if (anyLoc && stableJson(anyLoc.data) !== stableJson(s.needDefinitions.locations)) {
+      trace(locRow
+        ? `    setting needLocations: theirs@${when(locRow.changed_at)} → taken`
+        : `    setting needLocations: theirs@${when(anyLoc.changed_at)} mine@${when(_known.get('needLocations/needLocations')?.changed_at ?? UNKNOWN)}`
+          + ` → KEPT MINE (${anyLoc.changed_at > UNKNOWN ? 'mine is newer and unsent' : 'theirs has no age'})`);
+    }
+  }
   if (tabs || locRow) {
     patch.needDefinitions = {
       tabs: tabs ?? s.needDefinitions.tabs,
@@ -732,9 +775,11 @@ export function applySettingsToStore(items: SettingItem[] | undefined): void {
  *  and the device pushes for ever. This says which one. */
 export function unsentSettingNames(): string[] {
   const out: string[] = [];
+  // With the times (22 Sept): when this device says it changed the item, and
+  // what the server had — so a stale copy dated as new can be seen in the log.
   for (const [k, v] of _known) {
-    if (v.deleted_at !== null && v.deleted_at > v.serverAt) out.push(`${k} (deleted)`);
-    else if (v.changed_at > v.serverAt) out.push(k);
+    if (v.deleted_at !== null && v.deleted_at > v.serverAt) out.push(`${k} (deleted @${when(v.deleted_at)}, server had @${when(v.serverAt)})`);
+    else if (v.changed_at > v.serverAt) out.push(`${k} (mine @${when(v.changed_at)}, server had @${when(v.serverAt)})`);
   }
   return out;
 }
@@ -919,8 +964,11 @@ export function keepMyUnsentSettings(before: MySettings, arrivedItems?: SettingI
     for (const item of mine) {
       if (!iHoldUnsent(kind, idOf(item), arrived)) continue;
       const i = out.findIndex((x) => idOf(x) === idOf(item));
+      if (i >= 0 && stableJson(out[i]) === stableJson(item)) continue;   // the same already
       if (i >= 0) { out[i] = item; } else { out.push(item); }
       changed = true;
+      const k = key(kind, idOf(item));
+      trace(`    setting ${k}: PUT BACK mine@${when(_known.get(k)?.changed_at ?? UNKNOWN)} over theirs@${when(arrived.get(k) ?? UNKNOWN)} (unsent)`);
     }
     return changed ? out : null;
   }
@@ -940,6 +988,10 @@ export function keepMyUnsentSettings(before: MySettings, arrivedItems?: SettingI
   const tabs = restore('needCategory', before.tabs as { id: string }[],
     (s.needDefinitions?.tabs ?? []) as { id: string }[], (t) => t.id);
   const locsMine = iHoldUnsent('needLocations', 'needLocations', arrived);
+  if (locsMine && stableJson(before.locations) !== stableJson(s.needDefinitions?.locations ?? [])) {
+    trace(`    setting needLocations: PUT BACK mine@${when(_known.get('needLocations/needLocations')?.changed_at ?? UNKNOWN)}`
+      + ` over theirs@${when(arrived.get('needLocations/needLocations') ?? UNKNOWN)} (unsent)`);
+  }
   if (tabs || locsMine) {
     patch.needDefinitions = {
       ...s.needDefinitions,
