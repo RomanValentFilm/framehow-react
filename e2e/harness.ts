@@ -917,6 +917,11 @@ export class Device {
     say(`${this.name}: deleting the open project`);
     await this.page.evaluate(() => (window as never as { __fh_test: { deleteThisProject(): Promise<void> } }).__fh_test.deleteThisProject());
   }
+  /** Strip the settings memory from this device's save (22 Sept). */
+  async forgetSettingsMemoryInSave(): Promise<number> {
+    say(`${this.name}: the save loses its settings memory`);
+    return this.page.evaluate(() => (window as never as { __fh_test: { forgetSettingsMemoryInSave(): Promise<number> } }).__fh_test.forgetSettingsMemoryInSave());
+  }
   /** DELETE NOW (#533): the list's Delete now, after its confirm. */
   async deleteProjectNow(projectId: string): Promise<void> {
     say(`${this.name}: DELETE NOW on project ${projectId.slice(0, 8)}`);

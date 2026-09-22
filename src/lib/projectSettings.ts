@@ -230,6 +230,33 @@ export function seedSettings(projectId: string | null, createdAt?: number): void
 }
 
 /**
+ * A COPY WITH NO MEMORY DATES NOTHING AS NEW (22 Sept).
+ *
+ * A save or a device copy from before the settings memory existed — or one
+ * that lost it — used to be seeded with "everything changed when this was
+ * saved". That time can be later than a rename made on the other device,
+ * so the stale copy won and went up as the newest. Roman's rule: a device
+ * with no memory never dates what it merely holds as new.
+ *
+ * So for a project the server knows, the first look records every item as
+ * AGE UNKNOWN — the same as reconcileRestoredSettings does for kinds an old
+ * memory never heard of, and the same as the shots' own memory. It cannot
+ * outrank anything; the next real edit stamps it properly; a pull takes the
+ * server's word. Only a project the server has never seen keeps the old
+ * seed (seedSettings): there is nothing to conflict with, and its settings
+ * must travel on the first save.
+ */
+export function seedSettingsAgeUnknown(projectId: string | null): void {
+  _projectId = projectId;
+  _known.clear();
+  for (const it of currentItems()) {
+    _known.set(key(it.kind, it.item_id), { json: it.json, changed_at: UNKNOWN, deleted_at: null, serverAt: UNKNOWN });
+  }
+  _seeded = true;
+  trace(`  settings memory: none in the save — ${_known.size} item(s) recorded as AGE UNKNOWN, not as changed now (project ${projectId ?? 'local'})`);
+}
+
+/**
  * EMPTY THE MEMORY IF THIS IS A DIFFERENT PROJECT (#490).
  *
  * Everything here is remembered for ONE project. Opening another one must start

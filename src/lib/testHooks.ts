@@ -213,6 +213,9 @@ export interface TestDoor {
   storage(): { figure: { used: number; limit: number } | null; full: boolean; noticedStep: number };
   /** Open the project list (the OPEN button) — resolves when it closes (#533). */
   openProjectList(): Promise<void>;
+  /** Strip the settings memory from the local save — a save from before the
+   *  memory existed, or one that lost it (22 Sept). Reload afterwards. */
+  forgetSettingsMemoryInSave(): Promise<number>;
   /** Delete a shooting order — the confirm's Yes (#513). */
   deleteOrder(orderIndex: number): void;
   /** PART 5 DOORS (#513): groups, through the app's own functions. */
@@ -1179,6 +1182,15 @@ export function installTestDoor(): void {
     },
     storage() { return storageState(); },
     openProjectList() { return openProjectList(); },
+    async forgetSettingsMemoryInSave() {
+      const { loadSnapshot, saveSnapshot } = await import('./persistence');
+      const snap = await loadSnapshot();
+      if (!snap) return 0;
+      const n = snap.settingStamps?.length ?? 0;
+      delete snap.settingStamps;
+      await saveSnapshot(snap);
+      return n;
+    },
     exportVia(kind) {
       const press = (id: string) => {
         const b = document.getElementById(id) as HTMLElement | null;

@@ -80,7 +80,7 @@ orders or get out.
 
 ## THE LIST — 10 September, evening (Roman's order)
 
-dev is **v4.9.233 · #536**, app AND backend (deployed 22 Sept ~14:45; no migration). Next number: **v4.9.234 · #537**. Deploys 22 Sept: 232 (app), 233 (app+backend). Runs 22 Sept: 316–321 test 32 (320 red = fault reproduced, 321 green), 322 numbering + big day 9/10 green, 323 test 33 green. NEXT: Roman opens Analytics → Storage → Dead pictures and we read the numbers; then a full run on 233; then the cleaner's DELETE mode (only after the numbers are read).
+dev is **v4.9.236 · #539**, app AND backend (deployed 22 Sept ~15:25; no migration). Next number: **v4.9.237 · #540**. Deploys 22 Sept: 232 (app), 233, 234, 235, 236 (app+backend). Runs 22 Sept: 316–321 test 32 (320 red, 321 green), 322 numbering + big day 9/10 green, 323/325/326/327 test 33 green. NEXT: (a) the FULL RUN on 236 — start it before bed, nobody at the keyboard, Mac awake: `FH_RUN=328 npm run t` (~70 min); (b) emails actually sending (provider + secrets + finish send(); verify + forgot-password by hand); (c) LATER list.
 
 ### DONE 17 September — the launch set (v4.9.218 · #521)
 1. Unsent copies of other projects: carry their memory (`withMemory`); opening a project with an unsent copy starts from the copy then syncs (`startFromUnsentCopy`); at app start every unsent copy of another project is put in place, synced, archived (`uploadUnsentCopiesAtStart`, "Uploading unsent work: …"). Test 28 green (red since run 179).
@@ -148,6 +148,13 @@ OPEN: where the PDF project made offline on the iPad went — CLOSED, Roman dele
 - STORAGE FULL note: "…or Delete it first and then DELETE NOW on the greyed row."
 - Runs: 311 (storage) green; 312 red (the pull case) → fixed; 313 (storage) green; 314 (part 3, 4, 9, 10) 4 green.
 - Roman's iPad: many grey unnamed rows with Recover only = deleted device copies (24-h window); Delete now on them now. Uboot/Workflow "cannot delete": ask what the row tag says.
+
+### 22 September — 234/235/236 DEPLOYED, app AND backend — the cleaner DELETES; next number v4.9.237 · #540
+- 234: DELETE mode — a red button per account on the Dead pictures page, browser confirm, POST `/analytics/dead-pictures/delete` (token, owner required, `now` FH_E2E only), decision taken afresh at that moment, every key logged.
+- 235: the cleaner runs in the NIGHTLY 3 a.m. sweep after the expired projects, ALL accounts, same rule (Roman: "I don't want to press buttons"). Local worker: `--test-scheduled`; test 33 fires `/__scheduled?cron=0+3+*+*+*` and proves a fresh orphan survives it (24 h rule).
+- 236: Roman's first live press on 1452 files → "Something went wrong": one head + one delete per file ≈ 3000 subrequests > the worker's ~1000. Now sizes come from the listing and deletes go as `bucket.delete([...100 keys])` — 15 calls for 1452. Test 33 deletes 151 orphans.
+- LIVE NUMBERS before cleaning (22 Sept 14:50): bucket 793 MB / 3709 files; in use 385 MB / 2250; dead 408 MB / 1459 (Roman Testman 1452 files 408 MB; DLSparks 7 files 0.1 MB — Roman: "if he can't see or access them we delete them"; the nightly sweep takes them). 226 restore points checked.
+- Roman pressed the Roman Testman button after 236 — CHECK TOMORROW: Dead pictures page should show ~0 dead for that account; bucket ≈ 385 MB.
 
 ### 22 September — v4.9.233 · #536 DEPLOYED ~14:45, app AND backend, no migration — the dead-picture cleaner, COUNTING MODE; next number v4.9.234 · #537
 - `backend/src/lib/cleaner.ts`: countDeadPictures — a file is dead only when NO images row (any project, deleted ones included) names it, NO restore point names it (regex over every tree_json, one at a time), and it is older than 24 h. Returns in-use / young / dead with bytes, dead per owner, a sample and the full dead key list (JSON). Nothing deletes.

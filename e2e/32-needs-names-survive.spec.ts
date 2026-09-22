@@ -176,12 +176,34 @@ test('needs names: renamed tab, table, item and location survive the other devic
   await desktop.settle();
   await expectNames(desktop, round2, 'the desktop must still hold round 2 (nothing pushed over it)');
 
+  // ── ROUND 6: B's save has NO settings memory (an old save, or one that
+  // lost it) and B restarts from it after A renamed once more. The stale
+  // names must not be dated as new: A's names arrive, nothing goes back.
+  say('desktop: renames all four a third time; ipad loses its settings memory and restarts');
+  await desktop.renameCategory(TAB, 'ENSEMBLE');
+  await desktop.renameNeedTable(TABLE, 'ROLES');
+  await desktop.renameNeedItem(TABLE, ACTOR, 'PETRA');
+  await desktop.renameNeedItem(LOC_TABLE, LOC, 'ROOFTOP');
+  await desktop.push();
+  await desktop.settle();
+  const round3 = 'tab=ENSEMBLE table=ROLES actor=PETRA location=ROOFTOP';
+  await ipad.page.waitForTimeout(3_000);          // the local save has run since the last pull
+  const stripped = await ipad.forgetSettingsMemoryInSave();
+  expect(stripped, 'the save had a memory to lose').toBeGreaterThan(0);
+  await ipad.reload();
+  await ipad.settle();
+  await sayDecisions(ipad, 'restarted with no settings memory');
+  expect((await ipad.log()).some((l) => l.includes('AGE UNKNOWN')), 'the log says the memory was seeded age unknown').toBe(true);
+  await expectNames(ipad, round3, 'with no memory, the ipad takes the desktop\'s names');
+  await desktop.settle();
+  await expectNames(desktop, round3, 'nothing stale went back over the desktop');
+
   // Nothing went back over them: the server holds A's names.
   const tree = await (await fetch(`http://127.0.0.1:8787/projects/${namesId}/sync`, { headers: { Authorization: `Bearer ${token}` } })).json() as
     { settings: Array<{ kind: string; item_id: string; value: string | null }> };
   const talents = tree.settings.find((s) => s.kind === 'needCategory' && s.item_id === 'tab_talents');
-  expect(talents?.value ?? '', 'the server holds the renamed category').toContain('PLAYERS');
-  expect(talents?.value ?? '').toContain('JONAS');
+  expect(talents?.value ?? '', 'the server holds the renamed category').toContain('ENSEMBLE');
+  expect(talents?.value ?? '').toContain('PETRA');
 
   await desktop.close();
   await ipad.close();

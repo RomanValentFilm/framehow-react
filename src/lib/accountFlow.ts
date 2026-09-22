@@ -78,7 +78,7 @@ import { shouldSendOnlyChanges } from './pushMode';
 import { tagText, readTagText } from './ids';
 import { serverHasSomethingNew, whoseFrameWins, type DeviceMemory } from './sessionRules';
 import { mergeDelta, lastMergeRefusal, answerIsSafeToApply, untouchedByDelta, type MergeableTree } from './deltaMerge';
-import { settingsForPush, adoptSettingsFromServer, applySettingsToStore, importSettingStamps, stampChangedSettings, seedSettings, forgetAnotherProjectsSettings, settingsNeedPush, reconcileRestoredSettings, captureMySettings, keepMyUnsentSettings, unsentSettingNames, settingsMemorySummary, type SettingItem } from './projectSettings';
+import { settingsForPush, adoptSettingsFromServer, applySettingsToStore, importSettingStamps, stampChangedSettings, seedSettings, forgetAnotherProjectsSettings, settingsNeedPush, reconcileRestoredSettings, captureMySettings, keepMyUnsentSettings, unsentSettingNames, settingsMemorySummary, seedSettingsAgeUnknown, type SettingItem } from './projectSettings';
 import { applySnapshotToStore, loadSnapshot, snapshotFromStore, listPending, isArchived, getPending, markPendingUploaded, saveProjectListCache, loadProjectListCache, deletePending, deleteEveryCopyOf, recoverPending, isDeletedCopy, requestDurableStorage, clearPending } from './persistence';
 import type { PendingRecord } from './persistence';
 import { showThreeWayConflict, showConfirm, showConfirmDefaultNo, showToast, showLabelEdit } from './modals';
@@ -1583,8 +1583,11 @@ function putCopyInPlace(rec: PendingRecord, projectId: string | null, name: stri
     // changed: the first look is taken here, as at boot — age unknown, not
     // "changed just now", and not the last project's memory either.
     if (!snap.contentStamps || Object.keys(snap.contentStamps).length === 0) seedContentStamps(projectId);
-    if (!snap.settingStamps || snap.settingStamps.length === 0) seedSettings(projectId, snap.lastModified);
-    else trace(`  settings memory: restored from the copy, ${settingsMemorySummary()}`);
+    if (!snap.settingStamps || snap.settingStamps.length === 0) {
+      // A copy with no memory dates nothing as new (22 Sept) — unless the
+      // server has never seen the project, where the old seed is right.
+      if (projectId) seedSettingsAgeUnknown(projectId); else seedSettings(projectId, snap.lastModified);
+    } else trace(`  settings memory: restored from the copy, ${settingsMemorySummary()}`);
   } finally {
     endSystemAction();
   }
@@ -6887,12 +6890,15 @@ export async function bootstrapAccountSystem(): Promise<void> {
         // changes in the meantime is recorded as having always been that way and
         // can never travel.
         if (!snap.settingStamps || snap.settingStamps.length === 0) {
-          seedSettings(snap.projectId ?? null, snap.lastModified);
-          // Seeded fresh means the device has NO memory of when its settings
-          // changed, so the first save stamps them all "now" and they fight the
-          // other device for no reason. Say which of the two happened, or we
-          // are reading tea leaves again.
-          trace('  settings memory: SEEDED FRESH (the save carried none)');
+          // A save with no memory dates nothing as new (22 Sept): for a
+          // project the server knows, every item is AGE UNKNOWN, so the
+          // pull takes the server's word and nothing stale goes up. A
+          // project never saved keeps the old seed — nothing to conflict with.
+          if (snap.projectId) seedSettingsAgeUnknown(snap.projectId);
+          else {
+            seedSettings(null, snap.lastModified);
+            trace('  settings memory: SEEDED FRESH (the save carried none; project not on the server)');
+          }
         } else {
           trace(`  settings memory: restored, ${settingsMemorySummary()}`);
         }
