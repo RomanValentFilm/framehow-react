@@ -88,6 +88,17 @@ test('dead pictures: the count calls only the truly dead files dead, and a resto
   const up = await fetch(`${API}/upload`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'image/png' }, body: new Uint8Array(noisePng(64, 48)) });
   expect(up.status).toBe(201);
   const orphan = (await up.json() as { r2_key: string }).r2_key;
+  // ...AND 150 MORE (Roman's first live press failed on 1452 files: one call
+  // per file was too many for one worker request). The delete must go in
+  // bundles, so the test gives it more than one bundle's worth.
+  const more: string[] = [];
+  for (let i = 0; i < 150; i += 10) {
+    const batch = await Promise.all(Array.from({ length: 10 }, () =>
+      fetch(`${API}/upload`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'image/png' }, body: new Uint8Array(noisePng(16, 12)) })
+        .then((r) => r.json() as Promise<{ r2_key: string }>)));
+    for (const b of batch) more.push(b.r2_key);
+  }
+  expect(more.length).toBe(150);
 
   // The local bucket keeps files from earlier runs (their rows are wiped at
   // start), so the counts are read by NAME, never as exact totals.
@@ -117,6 +128,8 @@ test('dead pictures: the count calls only the truly dead files dead, and a resto
   const deleted = await del.json() as { deleted: number; keys: string[] };
   say(`   deleted ${deleted.deleted} file(s)`);
   expect(deleted.keys, 'the orphan was deleted').toContain(orphan);
+  for (const k of more) expect(deleted.keys, 'every one of the 150 was deleted').toContain(k);
+  expect(deleted.deleted, 'at least the 151 orphans').toBeGreaterThanOrEqual(151);
   for (const k of liveKeys) expect(deleted.keys, `a live picture was NOT deleted: ${k}`).not.toContain(k);
   expect(deleted.keys, 'the restore point picture was NOT deleted').not.toContain(pointOnly[0]);
   for (const k of deleted.keys) expect(k.startsWith(`users/${meId}/`), `only this account's files: ${k}`).toBe(true);

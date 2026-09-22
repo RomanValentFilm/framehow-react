@@ -33,6 +33,8 @@ export interface DeadCount {
   deadSample: string[];
   /** Every dead key (the simulator checks names; the page shows the sample). */
   deadKeys: string[];
+  /** ...with their sizes, so deleting needs no second look at each file. */
+  deadFiles: Array<{ key: string; size: number }>;
   /** The listing stopped early (too many files for one pass). */
   truncated: boolean;
   restorePoints: number;
@@ -78,7 +80,7 @@ export async function countDeadPictures(
   // 3. The bucket, page by page.
   const out: DeadCount = {
     files: 0, bytes: 0, inUse: 0, inUseBytes: 0, young: 0, youngBytes: 0, dead: 0, deadBytes: 0,
-    deadByOwner: [], deadSample: [], deadKeys: [], truncated: false, restorePoints: ids.results.length,
+    deadByOwner: [], deadSample: [], deadKeys: [], deadFiles: [], truncated: false, restorePoints: ids.results.length,
   };
   const byOwner = new Map<string, { files: number; bytes: number }>();
   let cursor: string | undefined;
@@ -95,6 +97,7 @@ export async function countDeadPictures(
         b.files++; b.bytes += o.size; byOwner.set(owner, b);
         if (out.deadSample.length < 20) out.deadSample.push(o.key);
         out.deadKeys.push(o.key);
+        out.deadFiles.push({ key: o.key, size: o.size });
       } else {
         out.inUse++; out.inUseBytes += o.size;
         if (!named.has(o.key)) { out.young++; out.youngBytes += o.size; }
@@ -128,16 +131,18 @@ export async function deleteDeadPictures(
   now = Date.now(),
 ): Promise<DeleteResult> {
   const count = await countDeadPictures(db, bucket, now);
-  const keys = count.deadKeys.filter((k) => ownerId === null || ownerOfKey(k) === ownerId);
-  // Sizes for the report: the count did not keep per-key sizes, so a second
-  // look at the listing is not worth it — heads are cheap and exact.
+  const files = count.deadFiles.filter((f) => ownerId === null || ownerOfKey(f.key) === ownerId);
+  // IN BUNDLES (22 Sept, Roman's first press: "Something went wrong"). One
+  // call per file — a size look-up and then the delete — was nearly 3000
+  // calls for 1452 files, and a worker may make about a thousand in one go.
+  // The listing already knows every size, and storage deletes a hundred
+  // keys in ONE call; 1452 files are fifteen calls now.
   let bytesFreed = 0;
   const done: string[] = [];
-  for (let i = 0; i < keys.length; i += 50) {
-    const batch = keys.slice(i, i + 50);
-    const heads = await Promise.all(batch.map((k) => bucket.head(k).catch(() => null)));
-    await Promise.all(batch.map((k) => bucket.delete(k)));
-    batch.forEach((k, j) => { bytesFreed += heads[j]?.size ?? 0; done.push(k); console.log(`[cleaner] deleted dead picture ${k} (${heads[j]?.size ?? "?"} bytes)`); });
+  for (let i = 0; i < files.length; i += 100) {
+    const batch = files.slice(i, i + 100);
+    await bucket.delete(batch.map((f) => f.key));
+    for (const f of batch) { bytesFreed += f.size; done.push(f.key); console.log(`[cleaner] deleted dead picture ${f.key} (${f.size} bytes)`); }
   }
   console.log(`[cleaner] delete mode: owner=${ownerId ?? "all"} deleted=${done.length} freed=${Math.round(bytesFreed / 1048576)}MB`);
   return { deleted: done.length, bytesFreed, keys: done, ownerId };
