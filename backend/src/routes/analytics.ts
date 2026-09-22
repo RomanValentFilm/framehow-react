@@ -612,6 +612,13 @@ router.get("/analytics/users-list", async (c) => {
   ).all();
 
   const users = result.results as any[];
+  // Accounts on their way out (22 Sept): deleted, not yet erased.
+  const closingR = await db.prepare(
+    `SELECT u.id, u.name, u.email, u.deleted_at,
+            (SELECT COUNT(*) FROM projects p WHERE p.user_id = u.id) AS projects
+       FROM users u WHERE u.deleted_at IS NOT NULL ORDER BY u.deleted_at DESC`,
+  ).all();
+  const closing = closingR.results as any[];
 
   const html = `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -619,6 +626,19 @@ router.get("/analytics/users-list", async (c) => {
 <style>${PAGE_STYLES}</style></head><body>
 <a class="back" href="/analytics?token=${encodeURIComponent(token)}">&larr; Dashboard</a>
 <h1>All Users (${users.length})</h1>
+${closing.length > 0 ? `<h2>Closing — deleted, erased for good after 7 days</h2>
+<table><thead><tr><th>Account</th><th>Deleted</th><th>Erased on</th><th>Projects held</th><th></th></tr></thead><tbody>
+${closing.map((u: any) => `<tr>
+  <td>${esc(u.name || u.email)}<div class="meta">${esc(u.email)}</div></td>
+  <td>${fmtTime(u.deleted_at)}</td>
+  <td>${fmtDate(u.deleted_at + 7 * 24 * 60 * 60 * 1000)}</td>
+  <td>${u.projects}</td>
+  <td><form method="post" action="/analytics/restore-account" onsubmit="return confirm('Bring back the account of ${esc(u.name || u.email).replace(/'/g, "")} with all its projects?')">
+    <input type="hidden" name="token" value="${esc(token)}"><input type="hidden" name="user" value="${esc(u.id)}">
+    <button class="expand-btn" style="margin:0">Restore</button></form></td>
+</tr>`).join('')}
+</tbody></table>
+<p class="meta">After the date shown, the nightly sweep erases the account, its projects, its pictures and its visit history. Nothing can be brought back afterwards.</p>` : ''}
 
 <table>
 <tr><th>Name</th><th>Email</th><th>Profession</th><th>Registered</th><th>Sessions</th><th>Events</th><th>Time in app</th><th>Devices</th><th>Countries</th><th>Last seen</th></tr>
@@ -966,6 +986,33 @@ router.get("/analytics/storage", async (c) => {
 <p><a href="/analytics/dead-pictures?token=${encodeURIComponent(token)}" class="expand-btn">Dead pictures — the cleaner's count (checks restore points and age; deletes nothing)</a></p>
 </body></html>`;
   return c.html(html);
+});
+
+// Bring back an account deleted less than seven days ago, with its projects
+// (22 Sept). After the sweep has erased it there is nothing to bring back.
+router.post("/analytics/restore-account", async (c) => {
+  const form = await c.req.parseBody();
+  const token = String(form["token"] ?? "");
+  if (!token || token !== c.env.ADMIN_API_TOKEN) return c.json({ error: "unauthorized" }, 401);
+  const userId = String(form["user"] ?? "").trim();
+  if (!userId) return c.json({ error: "user_required" }, 400);
+
+  const row = await c.env.DB.prepare(`SELECT id, deleted_at FROM users WHERE id = ?`).bind(userId).first<{ id: string; deleted_at: number | null }>();
+  if (!row) return c.html(`<p>That account no longer exists — it has been erased. <a href="/analytics/users-list?token=${encodeURIComponent(token)}">Back</a></p>`);
+
+  const now = Date.now();
+  await c.env.DB.batch([
+    c.env.DB.prepare(`UPDATE users SET deleted_at = NULL, updated_at = ? WHERE id = ?`).bind(now, userId),
+    // Only the projects that went with the account deletion, which all carry
+    // that same moment — a project the person had deleted earlier stays deleted.
+    c.env.DB.prepare(`UPDATE projects SET deleted_at = NULL, updated_at = ? WHERE user_id = ? AND deleted_at = ?`).bind(now, userId, row.deleted_at),
+  ]);
+  console.log(`[analytics] account ${userId} brought back`);
+  return c.html(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Restored</title><style>${PAGE_STYLES}</style></head><body>
+<p><a href="/analytics/users-list?token=${encodeURIComponent(token)}">← All users</a></p>
+<h1>The account is back</h1>
+<p class="meta">They can sign in again, and the projects deleted with the account are back in their list.</p>
+</body></html>`);
 });
 
 // ---------------------------------------------------------------------------

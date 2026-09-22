@@ -6,7 +6,7 @@ import userRouter from "./routes/user";
 import projectsRouter from "./routes/projects";
 import uploadRouter from "./routes/upload";
 import analyticsRouter from "./routes/analytics";
-import cleanupRouter, { purgeExpiredProjects } from "./routes/cleanup";
+import cleanupRouter, { purgeExpiredProjects, purgeDeletedAccounts } from "./routes/cleanup";
 import { deleteDeadPictures } from "./lib/cleaner";
 
 const app = new Hono<{ Bindings: Env; Variables: AppVariables }>();
@@ -59,6 +59,14 @@ export default {
         }
         const result = await purgeExpiredProjects(env.DB, env.IMAGES_BUCKET);
         console.log("[cron] daily cleanup done:", JSON.stringify(result));
+        // Accounts deleted more than seven days ago are erased for good,
+        // with their projects, pictures and visit history (22 Sept).
+        try {
+          const accounts = await purgeDeletedAccounts(env.DB, env.IMAGES_BUCKET);
+          console.log("[cron] accounts erased:", JSON.stringify(accounts));
+        } catch (e) {
+          console.error("[cron] account erase failed:", e);
+        }
         // THE DEAD-PICTURE CLEANER RUNS HERE TOO (22 Sept). Roman: "I don't
         // want to press buttons to delete dead pictures." Every night, every
         // account, the same rule as the page: no project, no restore point

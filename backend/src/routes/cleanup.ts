@@ -61,8 +61,62 @@ cleanup.get("/admin/cleanup/preview", async (c) => {
   return c.json({ cutoff, projects: expired.results });
 });
 
-export { purgeExpiredProjects };
+export { purgeExpiredProjects, purgeDeletedAccounts };
 export default cleanup;
+
+// ---------------------------------------------------------------------------
+// DELETING AN ACCOUNT MEANS DELETING IT (22 Sept, Roman's rules)
+//
+//   press → signed out everywhere, cannot sign in, the space stops counting
+//   seven days → everything still there, Roman can bring it back
+//   after that → every project, every picture file, every restore point and
+//                the account itself are erased. Nothing is kept, not even the
+//                address, which is free again from that moment.
+//
+// Until now the account was only MARKED as deleted and stayed for ever: the
+// name, the address and the profession sat in the database, and the pictures
+// went only because the projects happened to be marked at the same moment.
+// ---------------------------------------------------------------------------
+async function purgeDeletedAccounts(
+  db: import("@cloudflare/workers-types").D1Database,
+  bucket: import("@cloudflare/workers-types").R2Bucket,
+): Promise<{ purgedAccounts: number; deletedImages: number; bytesFreed: number }> {
+  const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const expired = await db
+    .prepare(`SELECT id FROM users WHERE deleted_at IS NOT NULL AND deleted_at < ?`)
+    .bind(cutoff)
+    .all<{ id: string }>();
+
+  let deletedImages = 0;
+  let bytesFreed = 0;
+  for (const user of expired.results) {
+    // The picture files first — deleting the account's row would take the
+    // project rows with it (cascade) and leave every file behind for ever.
+    const projects = await db
+      .prepare(`SELECT id FROM projects WHERE user_id = ?`)
+      .bind(user.id)
+      .all<{ id: string }>();
+    for (const p of projects.results) {
+      const r = await deleteProjectForGood(db, bucket, user.id, p.id);
+      deletedImages += r.deletedFiles;
+      bytesFreed += r.bytesFreed;
+    }
+    // Their visit history is their data too, and it points at an account
+    // that is about to stop existing.
+    await db.batch([
+      db.prepare(`DELETE FROM analytics_events WHERE uid = ?`).bind(user.id),
+      db.prepare(`DELETE FROM analytics_sessions WHERE uid = ?`).bind(user.id),
+      // Sessions, password resets and memberships go with the row (cascade).
+      db.prepare(`DELETE FROM users WHERE id = ?`).bind(user.id),
+    ]);
+    console.log(`[cleanup] account ${user.id} erased: ${projects.results.length} project(s)`);
+  }
+
+  if (expired.results.length > 0) {
+    console.log(`[cleanup] accounts erased: ${expired.results.length}, images=${deletedImages}, freed=${Math.round(bytesFreed / 1048576)}MB`);
+  }
+  return { purgedAccounts: expired.results.length, deletedImages, bytesFreed };
+}
 
 // ---------------------------------------------------------------------------
 // Shared logic — used by both the HTTP endpoint and the cron handler

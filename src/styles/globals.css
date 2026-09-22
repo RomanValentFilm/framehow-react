@@ -620,7 +620,11 @@
   .label-modal-box input::placeholder{opacity:0.5;}
   .label-modal-box input:focus{border-color:var(--accent);}
   .label-modal-btns{display:flex;justify-content:center;gap:10px;margin-top:14px;}
-  .confirm-modal{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:10001;display:flex;align-items:center;justify-content:center;}
+  /* THE QUESTION IS ALWAYS THE THING IN FRONT (22 Sept). At 10001 it was
+     beaten by a strip tag, the needs and notes overlays and the label box, so
+     a question asked while one of those stood open could be hidden behind it —
+     and a question nobody can see is a question nobody can answer. */
+  .confirm-modal{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:300000;display:flex;align-items:center;justify-content:center;}
   .confirm-modal.hidden{display:none!important;}
   .confirm-modal-box{background:var(--surface);border:1px solid var(--border-strong);border-radius:var(--radius);padding:20px;width:min(360px,88vw);text-align:center;}
   .confirm-modal-box p{font-size:14px;color:var(--text);line-height:1.5;margin:0 0 18px;}

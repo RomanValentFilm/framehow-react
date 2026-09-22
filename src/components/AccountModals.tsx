@@ -62,6 +62,7 @@ export function AccountModals() {
               <option value="script">Script</option>
               <option disabled style={{ color: '#666' }}>─</option>
               <option value="dop">DOP</option>
+              <option value="photographer">Photographer</option>
               <option value="camera_dept">Camera Dept.</option>
               <option disabled style={{ color: '#666' }}>─</option>
               <option value="producer">Producer / Production Dept.</option>
@@ -214,6 +215,7 @@ export function AccountModals() {
               <option value="script">Script</option>
               <option disabled style={{ color: '#666' }}>─</option>
               <option value="dop">DOP</option>
+              <option value="photographer">Photographer</option>
               <option value="camera_dept">Camera Dept.</option>
               <option disabled style={{ color: '#666' }}>─</option>
               <option value="producer">Producer / Production Dept.</option>

@@ -76,14 +76,28 @@ auth.post("/signup", async (c) => {
     return jsonError(c, 400, "invalid_profession", "Profession is too long.");
   }
 
+  // THE ADDRESS STAYS RESERVED WHILE AN ACCOUNT IS ON ITS WAY OUT (22 Sept).
+  //
+  // Roman's rule: a deleted account is kept for seven days so it can be
+  // brought back, and its address is free again only once it is erased.
+  // This used to ignore deleted accounts, so the same person could register
+  // again the next minute — and then two rows held one address, one of them
+  // still carrying all the projects we promised to keep for a week.
   const existing = await c.env.DB
     .prepare(
-      "SELECT id FROM users WHERE LOWER(email) = LOWER(?) AND deleted_at IS NULL LIMIT 1",
+      "SELECT id, deleted_at FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1",
     )
     .bind(email)
-    .first<{ id: string }>();
+    .first<{ id: string; deleted_at: number | null }>();
   if (existing) {
-    return jsonError(c, 409, "email_taken", "An account with this email already exists.");
+    return jsonError(
+      c,
+      409,
+      "email_taken",
+      existing.deleted_at
+        ? "This email belonged to an account that was deleted recently. It can be used again once the deletion is complete."
+        : "An account with this email already exists.",
+    );
   }
 
   const now = Date.now();

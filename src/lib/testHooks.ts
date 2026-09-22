@@ -31,7 +31,7 @@ import { handlePDF } from './pdf';
 import { deleteFrameForGood, handleMainAction, handleAction, renameFrame, hideFrame, unhideFrame } from './actions';
 import { createSetup, handleSetupFrameClick, handleStripTagClick } from './setups';
 import { renameNeedTab, renameNeedTable, renameNeedItem, ensureFrameNeeds } from './needs';
-import { saveNow, carryOnAsNewProject, openCloudProjectById, beginNewProject, untouchedStrip, makeRestorePoint, listRestorePoints, restoreToPoint, deleteCloudProject, recoverCloudProject, saveRestorePoint, deleteRestorePoint, deleteCloudProjectNow, openProjectList } from './accountFlow';
+import { saveNow, carryOnAsNewProject, openCloudProjectById, beginNewProject, untouchedStrip, makeRestorePoint, listRestorePoints, restoreToPoint, deleteCloudProject, recoverCloudProject, saveRestorePoint, deleteRestorePoint, deleteCloudProjectNow, openProjectList, openAccountSettings } from './accountFlow';
 import { storageState } from './storageMeter';
 import { flushSyncNow, markFrameDirty, getDirtyFrameIds, pullNow } from './currentProject';
 import { openNeedsModal } from './overview';
@@ -213,6 +213,8 @@ export interface TestDoor {
   storage(): { figure: { used: number; limit: number } | null; full: boolean; noticedStep: number };
   /** Open the project list (the OPEN button) — resolves when it closes (#533). */
   openProjectList(): Promise<void>;
+  /** Open the account settings box (22 Sept). */
+  openAccountSettings(): Promise<void>;
   /** Strip the settings memory from the local save — a save from before the
    *  memory existed, or one that lost it (22 Sept). Reload afterwards. */
   forgetSettingsMemoryInSave(): Promise<number>;
@@ -1182,6 +1184,7 @@ export function installTestDoor(): void {
     },
     storage() { return storageState(); },
     openProjectList() { return openProjectList(); },
+    openAccountSettings() { return openAccountSettings(); },
     async forgetSettingsMemoryInSave() {
       const { loadSnapshot, saveSnapshot } = await import('./persistence');
       const snap = await loadSnapshot();
