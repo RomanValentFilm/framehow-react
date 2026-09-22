@@ -80,7 +80,7 @@ orders or get out.
 
 ## THE LIST — 10 September, evening (Roman's order)
 
-dev is **v4.9.232 · #535** APP ONLY (deployed 22 Sept ~12:50); backend is still **v4.9.231 · #534** (no backend change since). Next number: **v4.9.233 · #536**. Deploys 21 Sept: 229, 230, 231 (app+backend); 22 Sept: 232 (app). Runs 22 Sept: 316–321 test 32 (320 red = the fault reproduced, 321 green), 322 numbering + big day 9/10 all green. NEXT: the dead-picture cleaner in COUNTING mode; then a full run on 232.
+dev is **v4.9.233 · #536**, app AND backend (deployed 22 Sept ~14:45; no migration). Next number: **v4.9.234 · #537**. Deploys 22 Sept: 232 (app), 233 (app+backend). Runs 22 Sept: 316–321 test 32 (320 red = fault reproduced, 321 green), 322 numbering + big day 9/10 green, 323 test 33 green. NEXT: Roman opens Analytics → Storage → Dead pictures and we read the numbers; then a full run on 233; then the cleaner's DELETE mode (only after the numbers are read).
 
 ### DONE 17 September — the launch set (v4.9.218 · #521)
 1. Unsent copies of other projects: carry their memory (`withMemory`); opening a project with an unsent copy starts from the copy then syncs (`startFromUnsentCopy`); at app start every unsent copy of another project is put in place, synced, archived (`uploadUnsentCopiesAtStart`, "Uploading unsent work: …"). Test 28 green (red since run 179).
@@ -148,6 +148,14 @@ OPEN: where the PDF project made offline on the iPad went — CLOSED, Roman dele
 - STORAGE FULL note: "…or Delete it first and then DELETE NOW on the greyed row."
 - Runs: 311 (storage) green; 312 red (the pull case) → fixed; 313 (storage) green; 314 (part 3, 4, 9, 10) 4 green.
 - Roman's iPad: many grey unnamed rows with Recover only = deleted device copies (24-h window); Delete now on them now. Uboot/Workflow "cannot delete": ask what the row tag says.
+
+### 22 September — v4.9.233 · #536 DEPLOYED ~14:45, app AND backend, no migration — the dead-picture cleaner, COUNTING MODE; next number v4.9.234 · #537
+- `backend/src/lib/cleaner.ts`: countDeadPictures — a file is dead only when NO images row (any project, deleted ones included) names it, NO restore point names it (regex over every tree_json, one at a time), and it is older than 24 h. Returns in-use / young / dead with bytes, dead per owner, a sample and the full dead key list (JSON). Nothing deletes.
+- Page: `/analytics/dead-pictures?token=…` (link at the bottom of Storage); `&format=json`; `&now=` moves the clock, FH_E2E only. Local worker has `--var ADMIN_API_TOKEN:e2e-admin`.
+- The old `POST /admin/cleanup/orphans` door is DELETED (it removed files no row named — restore points and age ignored). The nightly sweep (expired projects) is unchanged.
+- Analytics: every link encodes the token (25 links).
+- Test 33 `e2e/33-dead-pictures.spec.ts` (~20 s): live picture, restore-point-only picture, an orphan upload; today nothing dead; +25 h only the orphan dead; restore to the point works and the picture serves.
+- DELETE MODE (next, after Roman reads the live numbers): same decision, `mode=delete` behind a second confirmation, batched, logs every key deleted; rule "never younger than 24 h" stays; then test 33 gets a delete leg + restore-after-cleaning.
 
 ### 22 September — v4.9.232 · #535 DEPLOYED ~12:50, APP ONLY — the lost NEEDS renames, found and fixed; next number v4.9.233 · #536
 THE FAULT (run 320, red): Roman's iPad recipe exactly — open a project, DELETE IT WHILE OPEN, open Workflow → renamed actors / category / location back to defaults, then pushed to the server so every device lost them. Chain in the new log lines: after the delete the screen is empty, the local save stamps the empty screen's DEFAULT names as changed now (backstop seed, dated with a stale baseline); opening Workflow judged the arriving settings against THAT memory ("is mine newer and unsent?" → yes for tab_shoot/tab_talents, fixed names in every project) and PUT BACK the defaults; the push then sent them. Merely opening another project and coming back (rounds 1–4) was fine — a saved project's memory is confirmed by its push.

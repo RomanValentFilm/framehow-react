@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import type { Env, AppVariables } from "../types";
 import { storageLimitBytes } from "../lib/storage";
-import { countDeadPictures } from "../lib/cleaner";
+import { countDeadPictures, deleteDeadPictures } from "../lib/cleaner";
 
 const router = new Hono<{ Bindings: Env; Variables: AppVariables }>();
 
@@ -1001,13 +1001,38 @@ router.get("/analytics/dead-pictures", async (c) => {
 </div>
 
 <h2>Dead files per account</h2>
-<table><thead><tr><th>Account</th><th>Files</th><th>Size</th></tr></thead>
-<tbody>${count.deadByOwner.map((o) => `<tr><td>${esc(who.get(o.userId) ?? o.userId)}</td><td>${o.files}</td><td>${mb(o.bytes)} MB</td></tr>`).join("") || `<tr><td colspan="3" class="meta">none</td></tr>`}</tbody></table>
+<table><thead><tr><th>Account</th><th>Files</th><th>Size</th><th></th></tr></thead>
+<tbody>${count.deadByOwner.map((o) => `<tr><td>${esc(who.get(o.userId) ?? o.userId)}</td><td>${o.files}</td><td>${mb(o.bytes)} MB</td>
+  <td><form method="post" action="/analytics/dead-pictures/delete" onsubmit="return confirm('Delete ${o.files} dead picture file(s) of ${esc(who.get(o.userId) ?? o.userId).replace(/'/g, "")} for good (${mb(o.bytes)} MB)? Nothing any project or restore point holds is touched. This cannot be undone.')">
+    <input type="hidden" name="token" value="${esc(token)}"><input type="hidden" name="owner" value="${esc(o.userId)}">
+    <button class="expand-btn" style="color:#ff6b6b;margin:0">Delete this account's dead files</button></form></td></tr>`).join("") || `<tr><td colspan="4" class="meta">none</td></tr>`}</tbody></table>
+<p class="meta">Deleting decides again at that moment (never from this page's count), one account at a time, and writes every deleted file to the worker log. Files younger than 24 hours are never touched.</p>
 
 <h2>A few of them</h2>
 <p class="meta">${count.deadSample.map(esc).join("<br>") || "none"}</p>
 </body></html>`;
   return c.html(html);
+});
+
+// The delete itself (22 Sept). One account per press; the decision is taken
+// afresh here. FH_E2E may move the clock, as for the count.
+router.post("/analytics/dead-pictures/delete", async (c) => {
+  const form = await c.req.parseBody();
+  const token = String(form["token"] ?? c.req.query("token") ?? "");
+  if (!token || token !== c.env.ADMIN_API_TOKEN) return c.json({ error: "unauthorized" }, 401);
+  if (!c.env.IMAGES_BUCKET) return c.json({ error: "no bucket" }, 500);
+  const owner = String(form["owner"] ?? c.req.query("owner") ?? "").trim();
+  if (!owner) return c.json({ error: "owner_required", message: "one account at a time" }, 400);
+  const nowRaw = form["now"] ?? c.req.query("now");
+  const clock = c.env.FH_E2E === "1" && nowRaw ? Number(nowRaw) : Date.now();
+  const result = await deleteDeadPictures(c.env.DB, c.env.IMAGES_BUCKET, owner, Number.isFinite(clock) ? clock : Date.now());
+  if (c.req.query("format") === "json" || c.req.header("Accept")?.includes("application/json")) return c.json(result);
+  const mb = (b: number) => (b / 1048576).toFixed(b < 10 * 1048576 ? 1 : 0);
+  return c.html(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Deleted</title><style>${PAGE_STYLES}</style></head><body>
+<p><a href="/analytics/dead-pictures?token=${encodeURIComponent(token)}">← Dead pictures</a></p>
+<h1>Deleted ${result.deleted} dead picture file(s) — ${mb(result.bytesFreed)} MB freed</h1>
+<p class="meta">Every file is listed in the worker log. Open the Dead pictures page again for the new count.</p>
+</body></html>`);
 });
 
 export default router;

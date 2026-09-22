@@ -107,3 +107,38 @@ export async function countDeadPictures(
   out.deadByOwner = Array.from(byOwner, ([userId, v]) => ({ userId, ...v })).sort((a, b) => b.bytes - a.bytes);
   return out;
 }
+
+export interface DeleteResult { deleted: number; bytesFreed: number; keys: string[]; ownerId: string | null }
+
+/**
+ * DELETE MODE (22 Sept, after Roman read the live count: 1459 dead files,
+ * 408 MB, 1452 of them his own test account's).
+ *
+ * The same decision, taken AGAIN at the moment of deleting — never from a
+ * count made earlier, because a restore point or a push can land in between.
+ * One account at a time when `ownerId` is given (Roman: the first pass is
+ * his own test account only; other people's files wait until the cleaner
+ * has run once and everything was well). Every key deleted is written to the
+ * worker log. The 24-hour rule stays exactly as it is.
+ */
+export async function deleteDeadPictures(
+  db: D1Database,
+  bucket: R2Bucket,
+  ownerId: string | null,
+  now = Date.now(),
+): Promise<DeleteResult> {
+  const count = await countDeadPictures(db, bucket, now);
+  const keys = count.deadKeys.filter((k) => ownerId === null || ownerOfKey(k) === ownerId);
+  // Sizes for the report: the count did not keep per-key sizes, so a second
+  // look at the listing is not worth it — heads are cheap and exact.
+  let bytesFreed = 0;
+  const done: string[] = [];
+  for (let i = 0; i < keys.length; i += 50) {
+    const batch = keys.slice(i, i + 50);
+    const heads = await Promise.all(batch.map((k) => bucket.head(k).catch(() => null)));
+    await Promise.all(batch.map((k) => bucket.delete(k)));
+    batch.forEach((k, j) => { bytesFreed += heads[j]?.size ?? 0; done.push(k); console.log(`[cleaner] deleted dead picture ${k} (${heads[j]?.size ?? "?"} bytes)`); });
+  }
+  console.log(`[cleaner] delete mode: owner=${ownerId ?? "all"} deleted=${done.length} freed=${Math.round(bytesFreed / 1048576)}MB`);
+  return { deleted: done.length, bytesFreed, keys: done, ownerId };
+}

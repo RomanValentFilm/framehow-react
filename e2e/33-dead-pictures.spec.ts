@@ -8,8 +8,9 @@
 //   · a file uploaded and never attached to any shot — dead once it is a day old,
 //     in use (young) before that
 //
-// And after the count, restoring to the point brings the deleted shot back
-// with its picture — the count touched nothing.
+// Then DELETE MODE for this one account: the orphan goes, nothing else does,
+// and restoring to the point still brings the deleted shot back with its
+// picture — the cleaner touched nothing that anyone can get back to.
 //
 //     npm run t -- -g "dead pictures"
 //
@@ -104,6 +105,24 @@ test('dead pictures: the count calls only the truly dead files dead, and a resto
   expect(later.deadKeys, 'the picture a restore point still holds is not dead').not.toContain(pointOnly[0]);
   expect(later.dead, 'the count agrees with the list').toBe(later.deadKeys.length);
   expect(later.restorePoints).toBeGreaterThanOrEqual(1);
+
+  // ── DELETE MODE ── one account, decided afresh at that moment.
+  say('DELETE the dead files of this account, as if a day had passed');
+  const meId = orphan.split('/')[1];
+  const del = await fetch(`${API}/analytics/dead-pictures/delete?format=json`, {
+    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ token: ADMIN, owner: meId, now: String(Date.now() + 25 * 60 * 60 * 1000) }),
+  });
+  expect(del.status, 'the delete answers').toBe(200);
+  const deleted = await del.json() as { deleted: number; keys: string[] };
+  say(`   deleted ${deleted.deleted} file(s)`);
+  expect(deleted.keys, 'the orphan was deleted').toContain(orphan);
+  for (const k of liveKeys) expect(deleted.keys, `a live picture was NOT deleted: ${k}`).not.toContain(k);
+  expect(deleted.keys, 'the restore point picture was NOT deleted').not.toContain(pointOnly[0]);
+  for (const k of deleted.keys) expect(k.startsWith(`users/${meId}/`), `only this account's files: ${k}`).toBe(true);
+  const after = await count(Date.now() + 25 * 60 * 60 * 1000);
+  expect(after.deadKeys, 'the orphan is gone from the bucket').not.toContain(orphan);
+  expect((await fetch(`${API}/images/${liveKeys[0]}`, { headers: { Authorization: `Bearer ${token}` } })).status, 'a live picture still serves').toBe(200);
 
   say('desktop: restore to the point — the deleted shot comes back with its picture');
   await desktop.restoreTo(point.id);
