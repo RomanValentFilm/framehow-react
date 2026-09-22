@@ -124,6 +124,20 @@ test('dead pictures: the count calls only the truly dead files dead, and a resto
   expect(after.deadKeys, 'the orphan is gone from the bucket').not.toContain(orphan);
   expect((await fetch(`${API}/images/${liveKeys[0]}`, { headers: { Authorization: `Bearer ${token}` } })).status, 'a live picture still serves').toBe(200);
 
+  // ── THE NIGHTLY SWEEP ── the same cleaner, all accounts, real clock. A
+  // second orphan uploaded a moment ago must survive it: the 24-hour rule.
+  say('the 3 a.m. sweep runs now; a fresh orphan must survive it');
+  const up2 = await fetch(`${API}/upload`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'image/png' }, body: new Uint8Array(noisePng(64, 48)) });
+  const orphan2 = (await up2.json() as { r2_key: string }).r2_key;
+  const sweep = await fetch(`${API}/__scheduled?cron=0+3+*+*+*`);
+  expect(sweep.status, 'the sweep ran').toBe(200);
+  await new Promise((r) => setTimeout(r, 3_000));
+  const afterSweep = await count();
+  expect(afterSweep.young, 'the fresh orphan is still there, young').toBeGreaterThanOrEqual(1);
+  const stillThere = await count(Date.now() + 25 * 60 * 60 * 1000);
+  expect(stillThere.deadKeys, 'the fresh orphan was not deleted by the sweep').toContain(orphan2);
+  expect((await fetch(`${API}/images/${liveKeys[0]}`, { headers: { Authorization: `Bearer ${token}` } })).status, 'a live picture still serves after the sweep').toBe(200);
+
   say('desktop: restore to the point — the deleted shot comes back with its picture');
   await desktop.restoreTo(point.id);
   await desktop.settle();

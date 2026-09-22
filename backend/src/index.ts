@@ -7,6 +7,7 @@ import projectsRouter from "./routes/projects";
 import uploadRouter from "./routes/upload";
 import analyticsRouter from "./routes/analytics";
 import cleanupRouter, { purgeExpiredProjects } from "./routes/cleanup";
+import { deleteDeadPictures } from "./lib/cleaner";
 
 const app = new Hono<{ Bindings: Env; Variables: AppVariables }>();
 
@@ -58,6 +59,18 @@ export default {
         }
         const result = await purgeExpiredProjects(env.DB, env.IMAGES_BUCKET);
         console.log("[cron] daily cleanup done:", JSON.stringify(result));
+        // THE DEAD-PICTURE CLEANER RUNS HERE TOO (22 Sept). Roman: "I don't
+        // want to press buttons to delete dead pictures." Every night, every
+        // account, the same rule as the page: no project, no restore point
+        // names the file, and it is older than 24 hours. After the expired
+        // projects, so what they leave behind is judged in the same pass.
+        // Every file it deletes is in the log; the buttons stay for a look.
+        try {
+          const dead = await deleteDeadPictures(env.DB, env.IMAGES_BUCKET, null);
+          console.log(`[cron] dead pictures: deleted=${dead.deleted} freed=${Math.round(dead.bytesFreed / 1048576)}MB`);
+        } catch (e) {
+          console.error("[cron] dead pictures failed:", e);
+        }
       })(),
     );
   },
