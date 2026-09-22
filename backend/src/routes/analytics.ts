@@ -626,19 +626,7 @@ router.get("/analytics/users-list", async (c) => {
 <style>${PAGE_STYLES}</style></head><body>
 <a class="back" href="/analytics?token=${encodeURIComponent(token)}">&larr; Dashboard</a>
 <h1>All Users (${users.length})</h1>
-${closing.length > 0 ? `<h2>Closing — deleted, erased for good after 7 days</h2>
-<table><thead><tr><th>Account</th><th>Deleted</th><th>Erased on</th><th>Projects held</th><th></th></tr></thead><tbody>
-${closing.map((u: any) => `<tr>
-  <td>${esc(u.name || u.email)}<div class="meta">${esc(u.email)}</div></td>
-  <td>${fmtTime(u.deleted_at)}</td>
-  <td>${fmtDate(u.deleted_at + 7 * 24 * 60 * 60 * 1000)}</td>
-  <td>${u.projects}</td>
-  <td><form method="post" action="/analytics/restore-account" onsubmit="return confirm('Bring back the account of ${esc(u.name || u.email).replace(/'/g, "")} with all its projects?')">
-    <input type="hidden" name="token" value="${esc(token)}"><input type="hidden" name="user" value="${esc(u.id)}">
-    <button class="expand-btn" style="margin:0">Restore</button></form></td>
-</tr>`).join('')}
-</tbody></table>
-<p class="meta">After the date shown, the nightly sweep erases the account, its projects, its pictures and its visit history. Nothing can be brought back afterwards.</p>` : ''}
+
 
 <table>
 <tr><th>Name</th><th>Email</th><th>Profession</th><th>Registered</th><th>Sessions</th><th>Events</th><th>Time in app</th><th>Devices</th><th>Countries</th><th>Last seen</th></tr>
@@ -655,9 +643,48 @@ ${users.map((u: any) => `<tr>
   <td style="white-space:nowrap">${u.last_seen ? fmtTime(u.last_seen) : '<span class="meta">no activity</span>'}</td>
 </tr>`).join("")}
 </table>
+<p style="margin-top:16px"><a href="/analytics/deleted-users?token=${encodeURIComponent(token)}" class="expand-btn">Deleted accounts (${closing.length})</a></p>
 
 </body></html>`;
 
+  return c.html(html);
+});
+
+// ─── GET /analytics/deleted-users — accounts on their way out, with Restore ──
+router.get("/analytics/deleted-users", async (c) => {
+  const token = c.req.query("token");
+  if (!token || token !== c.env.ADMIN_API_TOKEN) return c.json({ error: "unauthorized" }, 401);
+  const t = encodeURIComponent(token);
+
+  const rows = await c.env.DB.prepare(
+    `SELECT u.id, u.name, u.email, u.deleted_at,
+            (SELECT COUNT(*) FROM projects p WHERE p.user_id = u.id) AS projects
+       FROM users u WHERE u.deleted_at IS NOT NULL ORDER BY u.deleted_at DESC`,
+  ).all();
+  const closing = rows.results as any[];
+  const WEEK = 7 * 24 * 60 * 60 * 1000;
+
+  const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Deleted accounts — Framehow Analytics</title><style>${PAGE_STYLES}</style></head><body>
+<a class="back" href="/analytics/users-list?token=${t}">&larr; All users</a>
+<h1>Deleted accounts (${closing.length})</h1>
+<p class="meta">Kept for seven days, then the nightly sweep erases the account, its projects, its pictures and its visit history. Nothing can be brought back after that.</p>
+<table><thead><tr><th>Account</th><th>Deleted</th><th>Erased on</th><th>Days left</th><th>Projects held</th><th></th></tr></thead>
+<tbody>${closing.map((u: any) => {
+  const left = Math.ceil((u.deleted_at + WEEK - Date.now()) / (24 * 60 * 60 * 1000));
+  return `<tr>
+  <td>${esc(u.name || u.email)}<div class="meta">${esc(u.email)}</div></td>
+  <td>${fmtTime(u.deleted_at)}</td>
+  <td>${fmtDate(u.deleted_at + WEEK)}</td>
+  <td style="color:${left <= 1 ? '#ff6b6b' : '#ccc'}">${left > 0 ? left : 'due'}</td>
+  <td>${u.projects}</td>
+  <td><form method="post" action="/analytics/restore-account" onsubmit="return confirm('Bring back the account of ${esc(u.name || u.email).replace(/'/g, "")} with all its projects?')">
+    <input type="hidden" name="token" value="${esc(token)}"><input type="hidden" name="user" value="${esc(u.id)}">
+    <button class="expand-btn" style="margin:0">Restore</button></form></td>
+</tr>`;
+}).join('') || '<tr><td colspan="6" class="meta">None — nobody has deleted their account.</td></tr>'}</tbody></table>
+</body></html>`;
   return c.html(html);
 });
 

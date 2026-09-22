@@ -87,6 +87,11 @@ test('account: the delete question is in front, and deleting erases everything a
   const users = await (await fetch(`${API}/analytics/users`, { headers: { Authorization: `Bearer ${ADMIN}` } })).json() as { users: Array<{ id: string; email: string }> };
   const me = users.users.find((u) => u.email.toLowerCase() === email.toLowerCase());
   expect(me, 'the account is still listed while it is closing').toBeTruthy();
+  // The page Roman reaches from the link under All Users.
+  const page = await (await fetch(`${API}/analytics/deleted-users?token=${ADMIN}`)).text();
+  expect(page, 'the deleted account is listed there').toContain(email);
+  expect(page, 'with a way to bring it back').toContain('Restore');
+
   const restored = await fetch(`${API}/analytics/restore-account`, {
     method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ token: ADMIN, user: me!.id }),
