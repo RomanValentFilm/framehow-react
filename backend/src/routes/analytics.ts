@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { Env, AppVariables } from "../types";
 import { storageLimitBytes } from "../lib/storage";
+import { countDeadPictures } from "../lib/cleaner";
 
 const router = new Hono<{ Bindings: Env; Variables: AppVariables }>();
 
@@ -366,13 +367,13 @@ router.get("/analytics", async (c) => {
 </div>
 
 <div style="display:flex;gap:10px;flex-wrap:wrap;margin:16px 0 28px">
-  <a href="/analytics/users-list?token=${token}" class="expand-btn" style="font-size:13px;padding:8px 14px">All registered users (${totalUsers})</a>
-  <a href="/analytics/projects?token=${token}" class="expand-btn" style="font-size:13px;padding:8px 14px">Projects created (${totalProjects})</a>
-  <a href="/analytics/device-users?device=desktop&token=${token}" class="expand-btn" style="font-size:13px;padding:8px 14px">Desktop (${desktopUsers} users)</a>
-  <a href="/analytics/device-users?device=tablet&pwa=1&token=${token}" class="expand-btn" style="font-size:13px;padding:8px 14px">PWA Tablet (${pwaTabletUsers} users)</a>
-  <a href="/analytics/device-users?device=phone&pwa=1&token=${token}" class="expand-btn" style="font-size:13px;padding:8px 14px">PWA iPhone (${pwaPhoneUsers} users)</a>
-  <a href="/analytics/browser-mobile?token=${token}" class="expand-btn" style="font-size:13px;padding:8px 14px">Browser Mobile (${browserMobileSessions})</a>
-  <a href="/analytics/storage?token=${token}" class="expand-btn" style="font-size:13px;padding:8px 14px">Storage</a>
+  <a href="/analytics/users-list?token=${encodeURIComponent(token)}" class="expand-btn" style="font-size:13px;padding:8px 14px">All registered users (${totalUsers})</a>
+  <a href="/analytics/projects?token=${encodeURIComponent(token)}" class="expand-btn" style="font-size:13px;padding:8px 14px">Projects created (${totalProjects})</a>
+  <a href="/analytics/device-users?device=desktop&token=${encodeURIComponent(token)}" class="expand-btn" style="font-size:13px;padding:8px 14px">Desktop (${desktopUsers} users)</a>
+  <a href="/analytics/device-users?device=tablet&pwa=1&token=${encodeURIComponent(token)}" class="expand-btn" style="font-size:13px;padding:8px 14px">PWA Tablet (${pwaTabletUsers} users)</a>
+  <a href="/analytics/device-users?device=phone&pwa=1&token=${encodeURIComponent(token)}" class="expand-btn" style="font-size:13px;padding:8px 14px">PWA iPhone (${pwaPhoneUsers} users)</a>
+  <a href="/analytics/browser-mobile?token=${encodeURIComponent(token)}" class="expand-btn" style="font-size:13px;padding:8px 14px">Browser Mobile (${browserMobileSessions})</a>
+  <a href="/analytics/storage?token=${encodeURIComponent(token)}" class="expand-btn" style="font-size:13px;padding:8px 14px">Storage</a>
 </div>
 
 <h2>Funnel <span style="font-size:12px;color:#666;font-weight:400">(unique sessions per step, since tracking deployed)</span></h2>
@@ -386,8 +387,8 @@ ${funnelSteps.map((s: any) => {
 <tbody>
 ${top10Sessions.map((s: any) => {
   const who = s.uid
-    ? `<a href="/analytics/user/${s.uid}?token=${token}">${esc(s.name || s.email || s.uid)}</a>`
-    : `<a href="/analytics/session/${s.sid}?token=${token}" class="meta">anonymous</a>`;
+    ? `<a href="/analytics/user/${s.uid}?token=${encodeURIComponent(token)}">${esc(s.name || s.email || s.uid)}</a>`
+    : `<a href="/analytics/session/${s.sid}?token=${encodeURIComponent(token)}" class="meta">anonymous</a>`;
   return `<tr>
   <td>${who}${s.pwa ? ' <span class="pwa">PWA</span>' : ''}</td>
   <td>${esc(s.device) || '-'}</td>
@@ -402,8 +403,8 @@ ${top10Sessions.map((s: any) => {
 ${restSessions.length > 0 ? `<tbody id="more-sessions" class="hidden-rows">
 ${restSessions.map((s: any) => {
   const who = s.uid
-    ? `<a href="/analytics/user/${s.uid}?token=${token}">${esc(s.name || s.email || s.uid)}</a>`
-    : `<a href="/analytics/session/${s.sid}?token=${token}" class="meta">anonymous</a>`;
+    ? `<a href="/analytics/user/${s.uid}?token=${encodeURIComponent(token)}">${esc(s.name || s.email || s.uid)}</a>`
+    : `<a href="/analytics/session/${s.sid}?token=${encodeURIComponent(token)}" class="meta">anonymous</a>`;
   return `<tr>
   <td>${who}${s.pwa ? ' <span class="pwa">PWA</span>' : ''}</td>
   <td>${esc(s.device) || '-'}</td>
@@ -427,7 +428,7 @@ ${Object.entries(signpostCounts).map(([k, v]) => `<div class="chip"><b>${v}</b> 
 <table><thead><tr><th>User</th><th>Sessions</th><th>Events</th><th>Devices</th><th>Last seen</th></tr></thead>
 <tbody>
 ${top10Users.map((u: any) => `<tr>
-  <td><a href="/analytics/user/${u.id}?token=${token}">${esc(u.name || u.email || u.id)}</a>${u.profession ? ` <span class="meta">${esc(u.profession)}</span>` : ''}</td>
+  <td><a href="/analytics/user/${u.id}?token=${encodeURIComponent(token)}">${esc(u.name || u.email || u.id)}</a>${u.profession ? ` <span class="meta">${esc(u.profession)}</span>` : ''}</td>
   <td>${u.session_count}</td>
   <td>${u.total_events}</td>
   <td>${esc(u.devices) || '-'}</td>
@@ -436,7 +437,7 @@ ${top10Users.map((u: any) => `<tr>
 </tbody>
 ${restUsers.length > 0 ? `<tbody id="more-users" class="hidden-rows">
 ${restUsers.map((u: any) => `<tr>
-  <td><a href="/analytics/user/${u.id}?token=${token}">${esc(u.name || u.email || u.id)}</a>${u.profession ? ` <span class="meta">${esc(u.profession)}</span>` : ''}</td>
+  <td><a href="/analytics/user/${u.id}?token=${encodeURIComponent(token)}">${esc(u.name || u.email || u.id)}</a>${u.profession ? ` <span class="meta">${esc(u.profession)}</span>` : ''}</td>
   <td>${u.session_count}</td>
   <td>${u.total_events}</td>
   <td>${esc(u.devices) || '-'}</td>
@@ -511,7 +512,7 @@ router.get("/analytics/user/:uid", async (c) => {
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(u?.name || u?.email || uid)} — Framehow Analytics</title>
 <style>${PAGE_STYLES}</style></head><body>
-<a class="back" href="/analytics/users-list?token=${token}">&larr; All users</a>
+<a class="back" href="/analytics/users-list?token=${encodeURIComponent(token)}">&larr; All users</a>
 <div class="user-header">
   <div class="name">${esc(u?.name || 'Unknown user')}</div>
   <div class="detail">${esc(u?.email || '')}</div>
@@ -524,7 +525,7 @@ router.get("/analytics/user/:uid", async (c) => {
 <table>
 <tr><th>Started</th><th>Device</th><th>Browser</th><th>Country</th><th>Duration</th><th>Events</th></tr>
 ${allSessions.map((s: any) => `<tr>
-  <td><a href="/analytics/session/${s.sid}?token=${token}">${fmtTime(s.started_at)}</a></td>
+  <td><a href="/analytics/session/${s.sid}?token=${encodeURIComponent(token)}">${fmtTime(s.started_at)}</a></td>
   <td>${esc(s.device) || '-'}${s.pwa ? ' <span class="pwa">PWA</span>' : ''}</td>
   <td>${esc(s.browser) || '-'}</td>
   <td>${flag(s.country)} ${esc(s.country) || '-'}</td>
@@ -558,7 +559,7 @@ router.get("/analytics/session/:sid", async (c) => {
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Session ${esc(sid.slice(0, 8))} — Framehow Analytics</title>
 <style>${PAGE_STYLES}</style></head><body>
-<a class="back" href="/analytics?token=${token}">&larr; Dashboard</a>
+<a class="back" href="/analytics?token=${encodeURIComponent(token)}">&larr; Dashboard</a>
 <div class="user-header">
   <div class="name">Session ${esc(sid.slice(0, 12))}...</div>
   ${s ? `<div class="detail">${esc(s.device)} / ${esc(s.browser)} ${s.pwa ? '<span class="pwa">PWA</span>' : ''} &middot; ${flag(s.country)} ${esc(s.country)}</div>
@@ -616,13 +617,13 @@ router.get("/analytics/users-list", async (c) => {
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>All Users — Framehow Analytics</title>
 <style>${PAGE_STYLES}</style></head><body>
-<a class="back" href="/analytics?token=${token}">&larr; Dashboard</a>
+<a class="back" href="/analytics?token=${encodeURIComponent(token)}">&larr; Dashboard</a>
 <h1>All Users (${users.length})</h1>
 
 <table>
 <tr><th>Name</th><th>Email</th><th>Profession</th><th>Registered</th><th>Sessions</th><th>Events</th><th>Time in app</th><th>Devices</th><th>Countries</th><th>Last seen</th></tr>
 ${users.map((u: any) => `<tr>
-  <td><a href="/analytics/user/${u.id}?token=${token}">${esc(u.name) || '<span class="meta">—</span>'}</a></td>
+  <td><a href="/analytics/user/${u.id}?token=${encodeURIComponent(token)}">${esc(u.name) || '<span class="meta">—</span>'}</a></td>
   <td>${esc(u.email)}</td>
   <td>${esc(u.profession) || '-'}</td>
   <td style="white-space:nowrap">${u.user_created ? fmtDate(u.user_created) : '-'}</td>
@@ -684,7 +685,7 @@ router.get("/analytics/projects", async (c) => {
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Projects — Framehow Analytics</title>
 <style>${PAGE_STYLES}</style></head><body>
-<a class="back" href="/analytics?token=${token}">&larr; Dashboard</a>
+<a class="back" href="/analytics?token=${encodeURIComponent(token)}">&larr; Dashboard</a>
 <h1>Projects (${total})</h1>
 
 <div class="cards">
@@ -752,7 +753,7 @@ router.get("/analytics/device-users", async (c) => {
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${label} Users — Framehow Analytics</title>
 <style>${PAGE_STYLES}</style></head><body>
-<a class="back" href="/analytics?token=${token}">&larr; Dashboard</a>
+<a class="back" href="/analytics?token=${encodeURIComponent(token)}">&larr; Dashboard</a>
 <h1>${label} Users (${users.length}) ${emails.length > 0
   ? `<a href="#" onclick="navigator.clipboard.writeText('${emails.join(',')}');this.textContent='Copied!';setTimeout(()=>this.textContent='Copy all emails',1500);return false" style="font-size:13px;font-weight:400;margin-left:12px">Copy all emails</a>`
   : ''}</h1>
@@ -760,7 +761,7 @@ router.get("/analytics/device-users", async (c) => {
 <table>
 <tr><th>Name</th><th>Email</th><th>Profession</th><th>Sessions</th><th>Events</th><th>Browsers</th><th>Countries</th><th>Last seen</th></tr>
 ${users.map((u: any) => `<tr>
-  <td><a href="/analytics/user/${u.id}?token=${token}">${esc(u.name) || '<span class="meta">—</span>'}</a></td>
+  <td><a href="/analytics/user/${u.id}?token=${encodeURIComponent(token)}">${esc(u.name) || '<span class="meta">—</span>'}</a></td>
   <td>${esc(u.email)}</td>
   <td>${esc(u.profession) || '-'}</td>
   <td>${u.session_count}</td>
@@ -812,7 +813,7 @@ router.get("/analytics/browser-mobile", async (c) => {
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Browser Mobile — Framehow Analytics</title>
 <style>${PAGE_STYLES}</style></head><body>
-<a class="back" href="/analytics?token=${token}">&larr; Dashboard</a>
+<a class="back" href="/analytics?token=${encodeURIComponent(token)}">&larr; Dashboard</a>
 <h1>Browser Mobile (not PWA)</h1>
 <p style="color:#888;font-size:13px;margin-bottom:20px">Users on phone or tablet who use the browser instead of the installed PWA. These users could benefit from adding the app to their home screen.</p>
 
@@ -822,7 +823,7 @@ router.get("/analytics/browser-mobile", async (c) => {
 <table>
 <tr><th>Name</th><th>Email</th><th>Profession</th><th>Device</th><th>Browser</th><th>Country</th></tr>
 ${browserOnlyUsers.map((u: any) => `<tr>
-  <td><a href="/analytics/user/${u.id}?token=${token}">${esc(u.name) || '<span class="meta">—</span>'}</a></td>
+  <td><a href="/analytics/user/${u.id}?token=${encodeURIComponent(token)}">${esc(u.name) || '<span class="meta">—</span>'}</a></td>
   <td>${esc(u.email)}</td>
   <td>${esc(u.profession) || '-'}</td>
   <td>${esc(u.device)}</td>
@@ -836,8 +837,8 @@ ${browserOnlyUsers.map((u: any) => `<tr>
 <tr><th>Who</th><th>Device</th><th>Browser</th><th>Country</th><th>Duration</th><th>Events</th><th>Last seen</th></tr>
 ${sessions.map((s: any) => {
   const who = s.uid
-    ? `<a href="/analytics/user/${s.uid}?token=${token}">${esc(s.name || s.email || s.uid)}</a>`
-    : `<a href="/analytics/session/${s.sid}?token=${token}" class="meta">anonymous</a>`;
+    ? `<a href="/analytics/user/${s.uid}?token=${encodeURIComponent(token)}">${esc(s.name || s.email || s.uid)}</a>`
+    : `<a href="/analytics/session/${s.sid}?token=${encodeURIComponent(token)}" class="meta">anonymous</a>`;
   return `<tr>
   <td>${who}</td>
   <td>${esc(s.device) || '-'}</td>
@@ -946,7 +947,7 @@ router.get("/analytics/storage", async (c) => {
   const html = `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Framehow Storage</title><style>${PAGE_STYLES}</style></head><body>
-<p><a href="/analytics?token=${token}" style="color:#4fc3f7">← Analytics</a></p>
+<p><a href="/analytics?token=${encodeURIComponent(token)}" style="color:#4fc3f7">← Analytics</a></p>
 <h1>Storage</h1>
 <p class="meta">Limit per account: ${mb(limit)} MB. Sizes are what the server has recorded; pictures uploaded before sizes were kept count as 0 until they are re-sent or measured.</p>
 
@@ -962,6 +963,49 @@ router.get("/analytics/storage", async (c) => {
 <table><thead><tr><th>Account</th><th>Projects</th><th>Pictures</th><th>Used</th><th>Of limit</th><th>In deleted</th></tr></thead>
 <tbody>${rows}</tbody></table>
 <p class="meta">Named files in the bucket: ${mb(namedBytes)} MB.</p>
+<p><a href="/analytics/dead-pictures?token=${encodeURIComponent(token)}" class="expand-btn">Dead pictures — the cleaner's count (checks restore points and age; deletes nothing)</a></p>
+</body></html>`;
+  return c.html(html);
+});
+
+// ---------------------------------------------------------------------------
+// DEAD PICTURES — the cleaner in COUNTING MODE (22 Sept). Deletes nothing.
+// ---------------------------------------------------------------------------
+router.get("/analytics/dead-pictures", async (c) => {
+  const token = c.req.query("token");
+  if (!token || token !== c.env.ADMIN_API_TOKEN) return c.json({ error: "unauthorized" }, 401);
+  if (!c.env.IMAGES_BUCKET) return c.html("<p>No bucket bound.</p>");
+  const t = encodeURIComponent(token);
+  const mb = (b: number) => (b / 1048576).toFixed(b < 10 * 1048576 ? 1 : 0);
+
+  // The simulator may move the clock forward (FH_E2E only), so a file it
+  // uploaded a second ago can be judged as if a day had passed.
+  const clock = c.env.FH_E2E === "1" && c.req.query("now") ? Number(c.req.query("now")) : Date.now();
+  const count = await countDeadPictures(c.env.DB, c.env.IMAGES_BUCKET, Number.isFinite(clock) ? clock : Date.now());
+  if (c.req.query("format") === "json") return c.json(count);
+
+  const owners = await c.env.DB.prepare(`SELECT id, email, name FROM users`).all<{ id: string; email: string; name: string | null }>();
+  const who = new Map(owners.results.map((u) => [u.id, u.name || u.email]));
+
+  const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Framehow — Dead pictures</title><style>${PAGE_STYLES}</style></head><body>
+<p><a href="/analytics/storage?token=${t}" style="color:#4fc3f7">← Storage</a></p>
+<h1>Dead pictures <span style="font-size:13px;color:#888;font-weight:400">counting only — nothing is deleted on this page</span></h1>
+<p class="meta">A picture file is dead when no project (live or recoverable) names it, no restore point names it, and it is older than 24 hours. ${count.restorePoints} restore point(s) were checked.${count.truncated ? " <b style='color:#ff6b6b'>The bucket has more files than one pass can list — the numbers are partial.</b>" : ""}</p>
+
+<div class="cards">
+  <div class="card"><div class="num">${mb(count.bytes)} MB</div><div class="label">In the bucket: ${count.files} files</div></div>
+  <div class="card"><div class="num">${mb(count.inUseBytes)} MB</div><div class="label">In use: ${count.inUse} files${count.young ? ` (of which ${count.young} younger than 24 h, ${mb(count.youngBytes)} MB, not judged yet)` : ""}</div></div>
+  <div class="card"><div class="num" style="color:#ff6b6b">${mb(count.deadBytes)} MB</div><div class="label">Dead: ${count.dead} files</div></div>
+</div>
+
+<h2>Dead files per account</h2>
+<table><thead><tr><th>Account</th><th>Files</th><th>Size</th></tr></thead>
+<tbody>${count.deadByOwner.map((o) => `<tr><td>${esc(who.get(o.userId) ?? o.userId)}</td><td>${o.files}</td><td>${mb(o.bytes)} MB</td></tr>`).join("") || `<tr><td colspan="3" class="meta">none</td></tr>`}</tbody></table>
+
+<h2>A few of them</h2>
+<p class="meta">${count.deadSample.map(esc).join("<br>") || "none"}</p>
 </body></html>`;
   return c.html(html);
 });

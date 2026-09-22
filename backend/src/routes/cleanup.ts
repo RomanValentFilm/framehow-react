@@ -12,65 +12,9 @@ function isAdmin(c: any): boolean {
   return !!token && token === c.env.ADMIN_API_TOKEN;
 }
 
-// ---------------------------------------------------------------------------
-// POST /admin/cleanup/orphans — batched R2 orphan cleanup
-// Processes up to 500 R2 objects per call. Returns a cursor — keep calling
-// until `done: true`. This avoids Worker CPU timeout on large buckets.
-// ---------------------------------------------------------------------------
-cleanup.post("/admin/cleanup/orphans", async (c) => {
-  if (!isAdmin(c)) return c.json({ error: "unauthorized" }, 401);
-  if (!c.env.IMAGES_BUCKET) return c.json({ error: "R2 not configured" }, 500);
-
-  const db = c.env.DB;
-  const bucket = c.env.IMAGES_BUCKET;
-
-  // Accept cursor from previous call (query param or JSON body)
-  let inputCursor: string | undefined;
-  try {
-    const body = await c.req.json<{ cursor?: string }>().catch(() => ({}));
-    inputCursor = (body as any)?.cursor || c.req.query("cursor") || undefined;
-  } catch {
-    inputCursor = c.req.query("cursor") || undefined;
-  }
-
-  const BATCH_SIZE = 500;
-  let scanned = 0;
-  let deleted = 0;
-  let kept = 0;
-  let bytesFreed = 0;
-
-  const listed = await bucket.list({ limit: BATCH_SIZE, cursor: inputCursor });
-  const objects = listed.objects;
-  scanned = objects.length;
-
-  // Check which keys exist in D1 (100 at a time)
-  for (let i = 0; i < objects.length; i += 100) {
-    const batch = objects.slice(i, i + 100);
-    const placeholders = batch.map(() => "?").join(",");
-    const result = await db
-      .prepare(`SELECT r2_key FROM images WHERE r2_key IN (${placeholders})`)
-      .bind(...batch.map((o) => o.key))
-      .all<{ r2_key: string }>();
-    const existingKeys = new Set(result.results.map((r) => r.r2_key));
-
-    // Delete orphans in parallel (small batches)
-    const toDelete = batch.filter((obj) => !existingKeys.has(obj.key));
-    if (toDelete.length > 0) {
-      await Promise.all(toDelete.map((obj) => bucket.delete(obj.key)));
-      deleted += toDelete.length;
-      bytesFreed += toDelete.reduce((sum, obj) => sum + obj.size, 0);
-    }
-    kept += batch.length - toDelete.length;
-  }
-
-  const nextCursor = listed.truncated ? listed.cursor : undefined;
-  const done = !listed.truncated;
-  const mbFreed = Math.round(bytesFreed / 1024 / 1024);
-
-  console.log(`[cleanup] orphans batch: scanned=${scanned}, kept=${kept}, deleted=${deleted}, freed=${mbFreed}MB, done=${done}`);
-
-  return c.json({ scanned, kept, deleted, bytesFreed, mbFreed, done, cursor: nextCursor });
-});
+// The old "orphan cleanup" door lived here until 22 Sept: it deleted every
+// file no picture row named, without asking the restore points and without an
+// age. Gone. The cleaner with the full rule is lib/cleaner.ts (counting mode).
 
 // ---------------------------------------------------------------------------
 // POST /admin/cleanup/expired-projects — delete projects where deleted_at > 7 days
