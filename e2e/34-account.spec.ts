@@ -62,6 +62,8 @@ test('account: the delete question is in front, and deleting erases everything a
   expect(forgot, 'it points at the address to write to').toContain('info@framehow.com');
   expect(forgot.toLowerCase(), 'it no longer promises a link by mail').not.toContain('reset link');
   expect(await desktop.page.locator('#forgotEmail').count(), 'it asks for nothing').toBe(0);
+  const mailTo = await desktop.page.locator('#forgotModal a').first().getAttribute('href');
+  expect(mailTo, 'the address itself is clickable').toContain('mailto:info@framehow.com');
   // Shown by hand above, so its buttons carry no life yet — it is put away
   // the same way. (What this checks is the WORDING; the Close button is
   // exercised by the app's own path.)

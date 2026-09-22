@@ -109,8 +109,11 @@ export function AccountModals() {
         <div className="account-card">
           <h2>Forgot your password?</h2>
           <p className="account-hint">
-            Write to <b>info@framehow.com</b> from the address you signed up with,
-            and we'll send you a new password.
+            Write to{' '}
+            <a href="mailto:info@framehow.com?subject=Framehow%20%E2%80%94%20I%20forgot%20my%20password">
+              <b>info@framehow.com</b>
+            </a>{' '}
+            from the address you signed up with, and we'll send you a new password.
           </p>
           <p className="account-hint" style={{ marginTop: '8px' }}>
             During the beta this is done by hand — usually within a day.
