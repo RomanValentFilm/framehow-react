@@ -11,8 +11,14 @@ fs.copyFileSync('landing.html', 'dist/index.html');
 fs.mkdirSync('dist/img', { recursive: true });
 fs.copyFileSync('landing-assets/framehow-hero.png', 'dist/img/framehow-hero.png');
 
+// The Terms and the Privacy Policy, linked from the account box (22 Sept).
+// Placeholder wording until Roman sends his own; the pages exist so the links
+// in "I agree to the Terms of Service" lead somewhere real.
+fs.copyFileSync('legal-terms.html', 'dist/terms.html');
+fs.copyFileSync('legal-privacy.html', 'dist/privacy.html');
+
 // _redirects for Cloudflare Pages SPA routing under /app/
-fs.writeFileSync('dist/_redirects', '/app/* /app/index.html 200\n');
+fs.writeFileSync('dist/_redirects', '/terms /terms.html 200\n/privacy /privacy.html 200\n/app/* /app/index.html 200\n');
 
 // The PDF engine is a separate, hashed file that is normally only fetched the
 // first time a PDF is imported — so a device that has never imported one

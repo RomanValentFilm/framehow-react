@@ -75,6 +75,17 @@ export function AccountModals() {
             </select>
           </div>
 
+          {/* AGREEING IS A DELIBERATE ACT (22 Sept). Unticked to begin with,
+              and Create account is refused until it is ticked. Shown only when
+              creating an account — logging in agrees to nothing new. */}
+          <div className="account-row" id="accountRowTerms" style={{ flexDirection: 'row', alignItems: 'flex-start', gap: '8px' }}>
+            <input type="checkbox" id="accountTerms" style={{ width: 'auto', marginTop: '2px' }} />
+            <label htmlFor="accountTerms" style={{ fontSize: '12px', lineHeight: 1.45, color: '#aaa' }}>
+              I agree to the <a href="/terms" target="_blank" rel="noopener noreferrer">Terms of Service</a>
+              {' '}and acknowledge the <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a>.
+            </label>
+          </div>
+
           <div className="account-error" id="accountError" />
 
           <div className="account-btns">
@@ -89,20 +100,29 @@ export function AccountModals() {
         </div>
       </div>
 
-      {/* Forgot password */}
+      {/* Forgot password — BY HAND DURING THE BETA (22 Sept).
+          This used to promise "we'll email you a link" and then send nothing:
+          no mail has ever left this server. Rather than a promise nobody can
+          keep, it says where to write. Roman gives the new password from the
+          users page and passes it on himself. */}
       <div className="account-modal hidden" id="forgotModal">
         <div className="account-card">
-          <h2>Reset your password</h2>
-          <p className="account-hint">We'll email you a link to choose a new password.</p>
-          <div className="account-row">
-            <label htmlFor="forgotEmail">Email</label>
-            <input type="email" id="forgotEmail" autoComplete="email" />
-          </div>
+          <h2>Forgot your password?</h2>
+          <p className="account-hint">
+            Write to <b>info@framehow.com</b> from the address you signed up with,
+            and we'll send you a new password.
+          </p>
+          <p className="account-hint" style={{ marginTop: '8px' }}>
+            During the beta this is done by hand — usually within a day.
+          </p>
           <div className="account-error" id="forgotError" />
           <div className="account-success" id="forgotSuccess" />
           <div className="account-btns">
-            <button className="btn" id="forgotCancel" type="button">Cancel</button>
-            <button className="btn btn-accent" id="forgotSubmit" type="button">Send reset link</button>
+            <button className="btn" id="forgotCancel" type="button">Close</button>
+            {/* Opens their own mail program with the message already written.
+                A machine with no mail program set up does nothing at all — so
+                the address above stays on screen to be copied by hand. */}
+            <button className="btn btn-accent" id="forgotWrite" type="button">Write to us</button>
           </div>
         </div>
       </div>

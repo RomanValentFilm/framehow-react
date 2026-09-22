@@ -238,6 +238,7 @@ function openAccountModal(initialMode: AccountMode = 'signup'): Promise<AccountR
   const emailInput = el<HTMLInputElement>('accountEmail');
   const passInput = el<HTMLInputElement>('accountPassword');
   const profSelect = el<HTMLSelectElement>('accountProfession');
+  const termsBox = el<HTMLInputElement>('accountTerms');
 
   function switchMode(): void {
     mode = mode === 'signup' ? 'login' : 'signup';
@@ -253,6 +254,7 @@ function openAccountModal(initialMode: AccountMode = 'signup'): Promise<AccountR
       toggle.textContent = 'Already have an account? Log in';
       setVisible('accountRowName', true);
       setVisible('accountRowProfession', true);
+      setVisible('accountRowTerms', true);
       // Top toggle hidden in signup; bottom toggle visible
       topToggleWrap.style.display = 'none';
       toggle.style.display = '';
@@ -264,6 +266,7 @@ function openAccountModal(initialMode: AccountMode = 'signup'): Promise<AccountR
       toggle.textContent = 'New here? Create an account';
       setVisible('accountRowName', false);
       setVisible('accountRowProfession', false);
+      setVisible('accountRowTerms', false);      // logging in agrees to nothing new
       // Top toggle visible in login; bottom toggle hidden
       topToggleWrap.style.display = '';
       toggle.style.display = 'none';
@@ -275,6 +278,7 @@ function openAccountModal(initialMode: AccountMode = 'signup'): Promise<AccountR
   emailInput.value = '';
   passInput.value = '';
   profSelect.value = '';
+  termsBox.checked = false;
   applyMode();
   show('accountModal');
   focusFirstInput('accountModal');
@@ -303,12 +307,18 @@ function openAccountModal(initialMode: AccountMode = 'signup'): Promise<AccountR
           if (name.length === 0) { errorEl.textContent = 'Please enter your name.'; return; }
           if (email.length === 0) { errorEl.textContent = 'Please enter your email.'; return; }
           if (password.length < 8) { errorEl.textContent = 'Password must be at least 8 characters.'; return; }
+          if (!termsBox.checked) {
+            errorEl.textContent = 'Please agree to the Terms of Service to create an account.';
+            return;
+          }
           submit.disabled = true;
           const profession = profSelect.value || null;
+          // WHEN THEY AGREED, kept with the account — that is the point of
+          // asking, and the answer to "did this person accept the terms?".
           const res = await api.post<{
             user: SessionUser;
             session: { token: string; expires_at: number };
-          }>('/auth/signup', { name, email, password, profession });
+          }>('/auth/signup', { name, email, password, profession, terms_agreed_at: Date.now() });
           setSession(res.session.token, res.user);
           fhTrack('signup', { profession: profession || 'none' });
           finish({ user: res.user, token: res.session.token });
@@ -356,42 +366,36 @@ function openAccountModal(initialMode: AccountMode = 'signup'): Promise<AccountR
 // Forgot / reset password
 // ---------------------------------------------------------------------------
 
+/** WHERE TO WRITE (22 Sept). No mail has ever left this server, so the box
+ *  no longer asks for an address and promises a link: it says where to write,
+ *  and Roman hands over a new password from the users page. `prefillEmail` is
+ *  kept so the callers need no change. */
 function openForgotModal(prefillEmail: string = ''): Promise<boolean> {
-  const input = el<HTMLInputElement>('forgotEmail');
-  const errorEl = el('forgotError');
-  const successEl = el('forgotSuccess');
-  input.value = prefillEmail;
-  errorEl.textContent = '';
-  successEl.textContent = '';
+  void prefillEmail;
+  el('forgotError').textContent = '';
+  el('forgotSuccess').textContent = '';
   show('forgotModal');
-  focusFirstInput('forgotModal');
 
   return new Promise((resolve) => {
-    const submit = el<HTMLButtonElement>('forgotSubmit');
-    const cancel = el<HTMLButtonElement>('forgotCancel');
-    let sent = false;
-    function cleanup(result: boolean): void {
-      submit.onclick = null;
-      cancel.onclick = null;
+    const close = el<HTMLButtonElement>('forgotCancel');
+    const write = el<HTMLButtonElement>('forgotWrite');
+    function done(): void {
+      close.onclick = null;
+      write.onclick = null;
       hide('forgotModal');
-      resolve(result);
+      resolve(false);
     }
-    submit.onclick = async () => {
-      const email = input.value.trim();
-      if (email.length === 0) { errorEl.textContent = 'Please enter your email.'; return; }
-      submit.disabled = true;
-      try {
-        await api.post('/auth/forgot-password', { email });
-        sent = true;
-        successEl.textContent = 'If an account exists for that email, a reset link is on the way.';
-        setTimeout(() => cleanup(sent), 1200);
-      } catch (e) {
-        errorEl.textContent = asMessage(e, 'Could not send reset email.');
-      } finally {
-        submit.disabled = false;
-      }
+    close.onclick = done;
+    write.onclick = () => {
+      // Their own mail program, with the message already written. If the
+      // machine has none, nothing happens and the address stays on screen.
+      const subject = encodeURIComponent('Framehow — I forgot my password');
+      const body = encodeURIComponent(
+        'Hello,\n\nI have forgotten my Framehow password. '
+        + 'Please send me a new one for this address.\n\nThank you.\n');
+      window.location.href = `mailto:info@framehow.com?subject=${subject}&body=${body}`;
+      done();
     };
-    cancel.onclick = () => cleanup(sent);
   });
 }
 

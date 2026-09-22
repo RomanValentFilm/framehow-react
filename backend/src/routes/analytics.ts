@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { Env, AppVariables } from "../types";
 import { storageLimitBytes } from "../lib/storage";
 import { countDeadPictures, deleteDeadPictures } from "../lib/cleaner";
+import { hashPassword } from "../lib/crypto";
 
 const router = new Hono<{ Bindings: Env; Variables: AppVariables }>();
 
@@ -629,7 +630,7 @@ router.get("/analytics/users-list", async (c) => {
 
 
 <table>
-<tr><th>Name</th><th>Email</th><th>Profession</th><th>Registered</th><th>Sessions</th><th>Events</th><th>Time in app</th><th>Devices</th><th>Countries</th><th>Last seen</th></tr>
+<tr><th>Name</th><th>Email</th><th>Profession</th><th>Registered</th><th>Sessions</th><th>Events</th><th>Time in app</th><th>Devices</th><th>Countries</th><th>Last seen</th><th></th></tr>
 ${users.map((u: any) => `<tr>
   <td><a href="/analytics/user/${u.id}?token=${encodeURIComponent(token)}">${esc(u.name) || '<span class="meta">—</span>'}</a></td>
   <td>${esc(u.email)}</td>
@@ -641,6 +642,9 @@ ${users.map((u: any) => `<tr>
   <td>${esc(u.devices) || '-'}</td>
   <td>${(u.countries || '').split(',').filter(Boolean).map((cc: string) => flag(cc.trim())).join(' ') || '-'}</td>
   <td style="white-space:nowrap">${u.last_seen ? fmtTime(u.last_seen) : '<span class="meta">no activity</span>'}</td>
+  <td><form method="post" action="/analytics/set-password" onsubmit="return confirm('Give ${esc(u.name || u.email).replace(/'/g, "")} a new password? Their old one stops working at once and they are signed out everywhere.')">
+    <input type="hidden" name="token" value="${esc(token)}"><input type="hidden" name="user" value="${esc(u.id)}">
+    <button class="expand-btn" style="margin:0;white-space:nowrap">New password</button></form></td>
 </tr>`).join("")}
 </table>
 <p style="margin-top:16px"><a href="/analytics/deleted-users?token=${encodeURIComponent(token)}" class="expand-btn">Deleted accounts (${closing.length})</a></p>
@@ -648,6 +652,50 @@ ${users.map((u: any) => `<tr>
 </body></html>`;
 
   return c.html(html);
+});
+
+// ─── POST /analytics/set-password — a new password, by hand (22 Sept) ──────
+//
+// The beta has no way to send mail, so "I forgot my password" is answered by
+// Roman, who knows every tester personally: he presses this, reads the new
+// password once, and passes it on. The old one dies at once and every device
+// they are signed in on drops out — so a stolen password cannot outlive this.
+router.post("/analytics/set-password", async (c) => {
+  const form = await c.req.parseBody();
+  const token = String(form["token"] ?? "");
+  if (!token || token !== c.env.ADMIN_API_TOKEN) return c.json({ error: "unauthorized" }, 401);
+  const userId = String(form["user"] ?? "").trim();
+  if (!userId) return c.json({ error: "user_required" }, 400);
+
+  const who = await c.env.DB.prepare(`SELECT id, name, email FROM users WHERE id = ? AND deleted_at IS NULL`)
+    .bind(userId).first<{ id: string; name: string | null; email: string }>();
+  if (!who) return c.html(`<p>No such account. <a href="/analytics/users-list?token=${encodeURIComponent(token)}">Back</a></p>`);
+
+  // Words, not a jumble: this is read aloud or typed by hand on a phone.
+  const WORDS = ["amber", "anchor", "basalt", "cedar", "cobalt", "dune", "ember", "fjord", "granite", "harbour",
+                 "indigo", "juniper", "kestrel", "lantern", "meadow", "nimbus", "onyx", "pebble", "quartz",
+                 "raven", "saffron", "thistle", "umber", "velvet", "willow", "zephyr"];
+  const pick = () => WORDS[Math.floor(Math.random() * WORDS.length)];
+  const password = `${pick()}-${pick()}-${Math.floor(Math.random() * 90 + 10)}`;
+
+  const now = Date.now();
+  await c.env.DB.batch([
+    c.env.DB.prepare(`UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?`)
+      .bind(await hashPassword(password), now, userId),
+    // Every device signed in with the old password is dropped.
+    c.env.DB.prepare(`DELETE FROM sessions WHERE user_id = ?`).bind(userId),
+    // ...and any reset links asked for earlier are dead too.
+    c.env.DB.prepare(`DELETE FROM password_resets WHERE user_id = ?`).bind(userId),
+  ]);
+  console.log(`[analytics] new password set by hand for ${userId}`);
+
+  return c.html(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>New password</title><style>${PAGE_STYLES}</style></head><body>
+<p><a href="/analytics/users-list?token=${encodeURIComponent(token)}">← All users</a></p>
+<h1>New password for ${esc(who.name || who.email)}</h1>
+<div class="card" style="margin:16px 0"><div class="num" style="font-family:monospace;font-size:28px">${esc(password)}</div>
+<div class="label">${esc(who.email)}</div></div>
+<p class="meta">This is shown once — it is not stored anywhere in readable form. Pass it on, and tell them to change it in Account settings. They have been signed out on every device.</p>
+</body></html>`);
 });
 
 // ─── GET /analytics/deleted-users — accounts on their way out, with Restore ──

@@ -107,15 +107,21 @@ auth.post("/signup", async (c) => {
   const verifyTokenHash = await hashToken(verifyToken);
   const verifyExpiresAt = now + ttlMs(c.env, "EMAIL_VERIFY_TTL_HOURS");
 
+  // WHEN THEY AGREED (22 Sept). The app sends the moment the box was ticked;
+  // anything odd (missing, or a time that is not a time) is recorded as the
+  // moment the account was made, which is never later than the truth.
+  const claimed = Number((body as { terms_agreed_at?: unknown }).terms_agreed_at);
+  const termsAgreedAt = Number.isFinite(claimed) && claimed > 0 && claimed <= now + 60_000 ? claimed : now;
+
   await c.env.DB
     .prepare(
       `INSERT INTO users
          (id, name, email, password_hash, profession, email_verified,
           email_verification_token_hash, email_verification_expires_at,
-          created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`,
+          terms_agreed_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)`,
     )
-    .bind(userId, name, email, passwordHash, profession, verifyTokenHash, verifyExpiresAt, now, now)
+    .bind(userId, name, email, passwordHash, profession, verifyTokenHash, verifyExpiresAt, termsAgreedAt, now, now)
     .run();
 
   // Issue a session immediately — spec: "account works immediately, but remind

@@ -35,6 +35,39 @@ test('account: the delete question is in front, and deleting erases everything a
   await desktop.saveRestorePoint('before it all');
   await desktop.settle();
 
+  // ── AGREEING TO THE TERMS ── Create account is refused until it is ticked,
+  // and the two links must lead somewhere real (22 Sept).
+  say('desktop: the account box asks to agree before it will make an account');
+  const terms = await desktop.page.evaluate(() => {
+    const row = document.getElementById('accountRowTerms')!;
+    const box = document.getElementById('accountTerms') as HTMLInputElement;
+    return {
+      text: row.innerText,
+      ticked: box.checked,
+      links: Array.from(row.querySelectorAll('a')).map((a) => (a as HTMLAnchorElement).getAttribute('href')),
+    };
+  });
+  expect(terms.text, 'it says what is agreed to').toContain('Terms of Service');
+  expect(terms.text).toContain('Privacy Policy');
+  expect(terms.ticked, 'nothing is agreed to in advance').toBe(false);
+  expect(terms.links, 'both are links').toEqual(['/terms', '/privacy']);
+
+  // ── WHAT "FORGOT PASSWORD" SAYS ── it must not promise a letter (22 Sept).
+  say('desktop: the forgot-password box says where to write');
+  await desktop.page.evaluate(() => {
+    document.getElementById('forgotModal')!.classList.remove('hidden');
+  });
+  await desktop.page.waitForTimeout(300);
+  const forgot = await desktop.page.locator('#forgotModal').innerText();
+  expect(forgot, 'it points at the address to write to').toContain('info@framehow.com');
+  expect(forgot.toLowerCase(), 'it no longer promises a link by mail').not.toContain('reset link');
+  expect(await desktop.page.locator('#forgotEmail').count(), 'it asks for nothing').toBe(0);
+  // Shown by hand above, so its buttons carry no life yet — it is put away
+  // the same way. (What this checks is the WORDING; the Close button is
+  // exercised by the app's own path.)
+  await desktop.page.evaluate(() => document.getElementById('forgotModal')!.classList.add('hidden'));
+  await desktop.page.waitForTimeout(300);
+
   // ── THE QUESTION MUST BE THE THING IN FRONT ────────────────────────────
   say('desktop: open the account settings and press Delete account');
   await desktop.page.evaluate(() =>
@@ -106,6 +139,33 @@ test('account: the delete question is in front, and deleting erases everything a
   const fresh = (await backIn.json() as { session: { token: string } }).session;
   const list = await (await fetch(`${API}/projects`, { headers: { Authorization: `Bearer ${fresh.token}` } })).json() as { projects: Array<{ name: string; deleted_at: number | null }> };
   expect(list.projects.filter((p) => !p.deleted_at).map((p) => p.name), 'the project is back in their list').toContain('MINE');
+
+  // ── A NEW PASSWORD BY HAND ── the answer to "I forgot mine" while there is
+  // no way to send mail: Roman presses the button and reads the word out.
+  say('Roman gives them a new password from the users page');
+  const set = await fetch(`${API}/analytics/set-password`, {
+    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ token: ADMIN, user: me!.id }),
+  });
+  expect(set.status, 'the page answers').toBe(200);
+  const shown = (await set.text()).match(/font-size:28px">([a-z0-9-]+)</);
+  expect(shown, 'the new password is shown once').toBeTruthy();
+  const fresh2 = shown![1];
+  say(`   the new password is "${fresh2}"`);
+
+  const oldWay = await fetch(`${API}/auth/login`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+  expect(oldWay.status, 'the old password is dead').toBeGreaterThanOrEqual(400);
+  const newWay = await fetch(`${API}/auth/login`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password: fresh2 }),
+  });
+  expect(newWay.status, 'the new one works').toBe(200);
+  const afterToken = (await newWay.json() as { session: { token: string } }).session.token;
+  const stillMine = await (await fetch(`${API}/projects`, { headers: { Authorization: `Bearer ${afterToken}` } })).json() as { projects: Array<{ name: string; deleted_at: number | null }> };
+  expect(stillMine.projects.filter((p) => !p.deleted_at).map((p) => p.name), 'their work is untouched').toContain('MINE');
 
   await desktop.close();
 });
