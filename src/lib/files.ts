@@ -186,7 +186,7 @@ export function startPortrait(): void {
 // name to send. One rule, everywhere, or it is not a rule.
     serverFrameId: newFrameId(),
     src: '',
-    label: 'name',
+    label: '1',               // numbers, like every project but a fitting (9 Oct, Roman)
     cropW: 540,
     cropH: 960,
     strokes: [],

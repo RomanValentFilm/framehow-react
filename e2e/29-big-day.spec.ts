@@ -149,7 +149,10 @@ test('big day, part 2: shots made, named, moved, hidden and deleted on both devi
     let agreed = shotsOf(await Device.waitUntilWholeAgrees(desktop, ipad, 'SHOTS: THE TWO NEW SHOTS DID NOT REACH THE IPAD.'));
     say(`the shots now: ${agreed.map((s) => s.label).join(' · ')}`);
     expect.soft(agreed.length, 'eight shots after two NEWs').toBe(8);
-    const rightOrder = ['1', '2', '3', '3#1', '4', '5', '6', '6#1'];
+    // NEW on the LAST shot gives the next number, NEW in the middle the #1
+    // form (9 Oct, Roman's rule; the bench in test/frame-label-bench.ts
+    // proves every line of it).
+    const rightOrder = ['1', '2', '3', '3#1', '4', '5', '6', '7'];
     expect.soft(rightAfter, 'the app itself puts the new shots where NEW was pressed').toEqual(rightOrder);
     if (agreed.map((s) => s.label).join() !== rightOrder.join()) {
       say(`desktop log (newest first):\n${(await desktop.log()).slice(0, 60).map((l) => '    ' + l).join('\n')}`);

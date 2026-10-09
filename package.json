@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build && node scripts/postbuild.mjs",
     "preview": "vite preview",
-    "bench": "npm run bench:app && npm run bench:delta && npm run bench:resort",
+    "bench": "npm run bench:app && npm run bench:delta && npm run bench:resort && npm run bench:label",
     "bench:app": "tsc test/needs-bench.ts test/delta-bench.ts --module commonjs --moduleResolution node --target es2022 --esModuleInterop --skipLibCheck --outDir .bench --types node && node -e \"require('fs').writeFileSync('.bench/package.json','{\\\"type\\\":\\\"commonjs\\\"}')\" && node -r ./test/shim.cjs .bench/test/needs-bench.js",
     "bench:resort": "tsc test/resort-bench.ts --module commonjs --moduleResolution node --target es2022 --esModuleInterop --skipLibCheck --outDir .bench --types node && node -e \"require('fs').writeFileSync('.bench/package.json','{\\\"type\\\":\\\"commonjs\\\"}')\" && node -r ./test/shim.cjs .bench/test/resort-bench.js",
     "bench:delta": "tsc test/needs-bench.ts test/delta-bench.ts --module commonjs --moduleResolution node --target es2022 --esModuleInterop --skipLibCheck --outDir .bench --types node && node -e \"require('fs').writeFileSync('.bench/package.json','{\\\"type\\\":\\\"commonjs\\\"}')\" && node -r ./test/shim.cjs .bench/test/delta-bench.js",
@@ -16,7 +16,8 @@
     "e2e:watch": "playwright test --project=chromium --debug",
     "e2e:go": "playwright test --project=webkit 2>&1 | tee /tmp/e2e.log | grep -v WebServer; grep -v WebServer /tmp/e2e.log | tail -60 | pbcopy; npm run ping --silent; echo; echo '--- done. the last 60 lines are on your clipboard, just paste ---'",
     "ping": "afplay /System/Library/Sounds/Glass.aiff & osascript -e 'display notification \"Framehow: done \u2014 ready for you\" with title \"Framehow\" sound name \"Glass\"'",
-    "t": "sh scripts/e2e.sh"
+    "t": "sh scripts/e2e.sh",
+    "bench:label": "tsc test/frame-label-bench.ts --module commonjs --moduleResolution node --target es2022 --esModuleInterop --skipLibCheck --outDir .bench --types node && node -e \"require('fs').writeFileSync('.bench/package.json','{\\\"type\\\":\\\"commonjs\\\"}')\" && node .bench/test/frame-label-bench.js"
   },
   "dependencies": {
     "jspdf": "^2.5.2",

@@ -43,6 +43,7 @@ import { markAppScroll, showBarsNow } from './view';
 import { flushSyncNow, markSomethingToSend, getCurrentProject } from './currentProject';
 import { stampChangedContent } from './changeStamps';
 import { addFrameToSortOrders, removeFrameFromSortOrders } from './sortOrder';
+import { nextFrameLabel } from './frameLabel';
 
 export function handleMainAction(action: string, fid: number, div: HTMLElement): void {
   const s = state();
@@ -128,97 +129,45 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
   clearAllDrawActive();
 
   if (action === 'new') {
-    // --- Auto-label logic ---
-    // Portrait mode: every new frame gets "name"
-    if (s.portraitMode) {
-      const s2 = state();
-      const f2 = s2.frames.find((fr) => fr.id === fid);
-      if (!f2) return;
-      const idx2 = s2.frames.indexOf(f2);
-      const nid = s2.nextId;
-      useStore.setState({ nextId: nid + 1 });
-      const insideGroup = s.activeGroupId !== null;
-      const newFrame: any = {
-        id: nid,
-        src: '',
-        label: state().projectType === 'fitting' ? 'Name' : 'name',
-        cropW: f2.cropW || 540,
-        cropH: f2.cropH || 960,
-        strokes: [],
-        drawMode: true,
-        textContent: '',
-        tableData: null,
-      };
-      if (insideGroup) newFrame.hidden = true;
-      newFrame.serverFrameId = newFrameId();   // its identity, from the start (#405)
-      s2.frames.splice(idx2 + 1, 0, newFrame);
-      s2.versions[nid] = [{ id: 1, label: firstVerLabel(), type: 'empty', strokes: [], bgImage: null }];
-      s2.activeTab[nid] = 0;
-      s2.drawColor[nid] = COLORS[0];
-      s2.drawWidth[nid] = 6;
-      s2.drawEraser[nid] = false;
-      addFrameToActiveGroup(nid, fid);
-      addFrameToSortOrders(nid, fid);
-      updateFrameBadge();
-      renderAll();
-      // The new card is usually created below the fold on phones and tablets,
-      // so scroll to it — otherwise nothing appears to have happened.
-      flashNewFrame(nid);
-      void flushSyncNow(); // FRM-1: create new frame (portrait)
-      return;
-    }
-    // --- Auto-label logic ---
-    // "3"    → "3#1",   "3#1"  → "3#2",  "3#2" → "3#3"
-    // "4a"   → "4a#1",  "4a#1" → "4a#2"
-    // Base is the full label; # counter increments.
-    const prevLabel = f.label || '';
-    let newLabel: string;
-    const hashMatch = prevLabel.match(/^(.+)#(\d+)$/);
-    if (hashMatch) {
-      // Previous is "3#2" → "3#3", or "4a#1" → "4a#2"
-      const base = hashMatch[1];
-      const counter = parseInt(hashMatch[2], 10);
-      newLabel = `${base}#${counter + 1}`;
-    } else {
-      // Previous is "3" or "4a" or anything → keep full label, add #1
-      newLabel = `${prevLabel}#1`;
-    }
-
-    {
-      const s2 = state();
-      const f2 = s2.frames.find((fr) => fr.id === fid);
-      if (!f2) return;
-      const idx2 = s2.frames.indexOf(f2);
-      const nid = s2.nextId;
-      const insideGroup = s.activeGroupId !== null;
-      useStore.setState({ nextId: nid + 1 });
-      const newFrame: any = {
-        id: nid,
-        src: '',
-        label: newLabel,
-        cropW: f2.cropW || (s.portraitMode ? 540 : 960),
-        cropH: f2.cropH || (s.portraitMode ? 960 : 540),
-        strokes: [],
-        drawMode: true,
-        textContent: '',
-        tableData: null,
-      };
-      // Frames created inside a group are auto-hidden in ALL view
-      if (insideGroup) newFrame.hidden = true;
-      newFrame.serverFrameId = newFrameId();   // its identity, from the start (#405)
-      s2.frames.splice(idx2 + 1, 0, newFrame);
-      s2.versions[nid] = [{ id: 1, label: firstVerLabel(), type: 'empty', strokes: [], bgImage: null }];
-      s2.activeTab[nid] = 0;
-      s2.drawColor[nid] = COLORS[0];
-      s2.drawWidth[nid] = 6;
-      s2.drawEraser[nid] = false;
-      addFrameToActiveGroup(nid, fid);
-      addFrameToSortOrders(nid, fid);
-      updateFrameBadge();
-      renderAll();
-      flashNewFrame(nid);
-      void flushSyncNow(); // FRM-1: create new frame
-    }
+    // WHAT IT IS CALLED: one rule, in frameLabel.ts (9 Oct, Roman). Portrait
+    // and landscape used to be two near-identical copies of this block that
+    // differed only in the name and the card size; now there is one.
+    const s2 = state();
+    const f2 = s2.frames.find((fr) => fr.id === fid);
+    if (!f2) return;
+    const idx2 = s2.frames.indexOf(f2);
+    const newLabel = nextFrameLabel(s2.frames.map((fr) => fr.label || ''), idx2, s2.projectType);
+    const nid = s2.nextId;
+    const insideGroup = s.activeGroupId !== null;
+    useStore.setState({ nextId: nid + 1 });
+    const newFrame: any = {
+      id: nid,
+      src: '',
+      label: newLabel,
+      cropW: f2.cropW || (s.portraitMode ? 540 : 960),
+      cropH: f2.cropH || (s.portraitMode ? 960 : 540),
+      strokes: [],
+      drawMode: true,
+      textContent: '',
+      tableData: null,
+    };
+    // Frames created inside a group are auto-hidden in ALL view
+    if (insideGroup) newFrame.hidden = true;
+    newFrame.serverFrameId = newFrameId();   // its identity, from the start (#405)
+    s2.frames.splice(idx2 + 1, 0, newFrame);
+    s2.versions[nid] = [{ id: 1, label: firstVerLabel(), type: 'empty', strokes: [], bgImage: null }];
+    s2.activeTab[nid] = 0;
+    s2.drawColor[nid] = COLORS[0];
+    s2.drawWidth[nid] = 6;
+    s2.drawEraser[nid] = false;
+    addFrameToActiveGroup(nid, fid);
+    addFrameToSortOrders(nid, fid);
+    updateFrameBadge();
+    renderAll();
+    // The new card is usually created below the fold on phones and tablets,
+    // so scroll to it — otherwise nothing appears to have happened.
+    flashNewFrame(nid);
+    void flushSyncNow(); // FRM-1: create new frame
   } else if (action === 'duplicate') {
     const nid = s.nextId;
     useStore.setState({ nextId: nid + 1 });
