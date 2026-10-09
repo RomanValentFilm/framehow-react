@@ -80,7 +80,7 @@ orders or get out.
 
 ## THE LIST — 10 September, evening (Roman's order)
 
-dev is **v4.9.245 · #548** app (deployed 9 Oct ~16:15); backend is **v4.9.242 · #545**; the WEBSITE is its own thing now (site/, Worker framehow-site, live at framehow.com, /terms, /privacy). MIGRATION 0029 (terms_agreed_at) APPLIED to the live database by hand. Next number: **v4.9.246 · #549**. Deploys 22 Sept: 232, 233, 234, 235, 236, 237, 238, 239. Runs 22 Sept: 316–337, all green at the end. Runs 23 Sept: 342, 343, 344, 345 — simulator only, NOTHING DEPLOYED since 240. Runs 5–9 Oct: 345 (test 15 proven green), 346 FULL RUN on 9 Oct = **79 green · 6 skipped · 1 red**. NEXT, in order: (a) TRACE THE RUN-346 RED — a break named TEA, in a shooting order belonging to a group, missing on the third device (the order arrived with its 4 shots, the break did not: possible work loss, so it comes before the mail); (b) write the mail (texts and setup agreed 9 Oct, section below); (c) Roman's own Terms and Privacy text to replace the placeholders; (d) the real address — framehow.com already points at the Pages project, www still at an old Netlify site.
+dev is **v4.9.246 · #549** app (deployed 9 Oct ~16:50); backend is **v4.9.242 · #545**; the WEBSITE is its own thing now (site/, Worker framehow-site, live at framehow.com, /terms, /privacy). MIGRATION 0029 (terms_agreed_at) APPLIED to the live database by hand. Next number: **v4.9.247 · #550**. Deploys 22 Sept: 232, 233, 234, 235, 236, 237, 238, 239. Runs 22 Sept: 316–337, all green at the end. Runs 23 Sept: 342, 343, 344, 345 — simulator only, NOTHING DEPLOYED since 240. Runs 5–9 Oct: 345 (test 15 proven green), 346 FULL RUN on 9 Oct = **79 green · 6 skipped · 1 red**. NEXT, in order: (a) TRACE THE RUN-346 RED — a break named TEA, in a shooting order belonging to a group, missing on the third device (the order arrived with its 4 shots, the break did not: possible work loss, so it comes before the mail); (b) write the mail (texts and setup agreed 9 Oct, section below); (c) Roman's own Terms and Privacy text to replace the placeholders; (d) the real address — framehow.com already points at the Pages project, www still at an old Netlify site.
 
 ### DONE 17 September — the launch set (v4.9.218 · #521)
 1. Unsent copies of other projects: carry their memory (`withMemory`); opening a project with an unsent copy starts from the copy then syncs (`startFromUnsentCopy`); at app start every unsent copy of another project is put in place, synced, archived (`uploadUnsentCopiesAtStart`, "Uploading unsent work: …"). Test 28 green (red since run 179).
@@ -170,6 +170,14 @@ Nothing was deployed. Everything here is the simulator only; the app is untouche
   - **WHY the tablet was never touched: the simulator's writing door called the app's write straight out, with no tap and no key.** The app counts a device as awake only while a finger, a key, a scroll or the mouse reaches it (Roman's own rule #366: a device nobody is looking at is not kept up to date). So the test asked an untouched device to stay current — the opposite of the rule it runs on. In real life nobody writes on a device without touching it. **The fault is provably in the test, not in the app.**
 - **THE FIX (simulator only, nothing to deploy):** (1) `writeUnder` in `e2e/harness.ts` now touches the device first (`nudge`), exactly as a person does before typing; (2) the wait in `e2e/15-both-rearrange.spec.ts` uses `Device.nudgeOneAtATime(desktop, tablet)` instead of waking only the desktop — thirty-second turns, one device awake at a time, the way every other wait already does it.
 - **Run 345 (5 Oct) — PROVEN: 9 green, 6.9 min** (all three tests in the file, three times each). Test 15 was the last red; nothing in the suite is known-red now. STILL TO DO: one full run, then deploy 241.
+
+### 9 October — v4.9.246 · #549 app DEPLOYED ~16:50 (dev): FRAME NUMBERING, Roman's rule — DECIDED, no longer on LATER
+- ONE RULE for every project except fitting (`src/lib/frameLabel.ts`, `nextFrameLabel`): NEW on the LAST frame of the project, when the last label is a number (or number#n) → the HIGHEST number anywhere in the project + 1 (1 2 3 → 4; 1 2 3 3#1 → 4; PDF of 48 → 49). NEW anywhere else → the #1 form as before (after 21 with 22 behind it → 21#1). Last label not a number (INTRO, 12B) → the #1 form even at the end (13 or 12C would be a guess).
+- HIDDEN frames count: "last" = last in the whole project hidden included; a hidden 4 behind a visible 3 makes NEW on 3 → 3#1 (a second 4 = double, a 5 = gap).
+- 9x16 gets NUMBERS: a START 9x16 project now begins at "1" (was "name"), and new frames count. "name" was a placeholder nobody asked for; names are a fitting thing only ("Name"). Portrait and landscape NEW were two near-identical copies of one block — now one path.
+- Duplicate names are allowed, as before: a frame is known by its id, never by its label. The end rule never makes a double; the middle rule can (as it always could).
+- BENCH `npm run bench:label` (test/frame-label-bench.ts): 19 lines, every rule above. Part of `npm run bench`.
+- Test 29 part 2 expectation changed from 6#1 to 7 (NEW on the last of six). Every other NEW in the suite is a middle insert or reads the name back. Run 358: part 2 green, `1 · 2 · 3 · 3#1 · 4 · 5 · 6 · 7` on both devices.
 
 ### 9 October — v4.9.245 · #548 app DEPLOYED ~16:15 (dev): Terms/Privacy open IN A BOX; the manifest's scope
 - The two words in the tick-box line now open a box inside the app (X to close, tap outside to close) showing the LIVE page from framehow.com in a frame. Same on every device; the half-filled form stays underneath; a wording change is still a site deploy only — every app, old or new, shows it.
@@ -536,10 +544,8 @@ everything green except LATER 3 (known).
 7. **Take the sync log out** — last, Roman still reads it constantly.
 
 ### LATER
-1. **Frame numbering 1, 2, 3, 4 — not 1, 1#1.** The X#1 form exists on purpose
-   (a shot added after 3 is 3#1 so the script's numbers stay). Find every
-   place that reads or writes it first: actions.ts 'new', pdf.ts, files.ts,
-   exports, the sort cards. Decide with Roman what "after 3" is called.
+1. ~~Frame numbering~~ — DECIDED AND DONE 9 October (v4.9.246): NEW at the end
+   gives the next number, in the middle the #1 form. See the 9 Oct section.
 2. ~~The whole-day test~~ — DONE 15 September: `e2e/29-big-day.spec.ts`, ten parts.
 3. **Unsent work of OTHER projects uploads by itself when the user uses the
    app** — today only the open project is retried (`retryPendingSyncs`); a
