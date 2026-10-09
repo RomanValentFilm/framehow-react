@@ -201,7 +201,6 @@ test('forgot password: the box asks, the answer never says who is a member, and 
   const box = await desktop.page.locator('#forgotModal').innerText();
   expect(box, 'it says what it will do').toContain("we'll send you a link");
   expect(await desktop.page.locator('#forgotEmail').count(), 'it asks for the address').toBe(1);
-  expect(box, 'and still says where to write if no mail turns up').toContain('info@framehow.com');
 
   // A STRANGER'S ADDRESS MUST LOOK EXACTLY THE SAME, or anyone can sit here
   // and find out who is a member.
@@ -237,7 +236,14 @@ test('forgot password: the box asks, the answer never says who is a member, and 
   await clicked.page.locator('#resetPassword').fill('a-brand-new-password-7');
   await clicked.page.locator('#resetSubmit').click();
   await clicked.page.waitForTimeout(1_500);
-  await clicked.close();
+
+  // AND THEY ARE SIGNED IN, not sent back to the sign-in box for a password
+  // they chose one second earlier (9 Oct, Roman).
+  await expect(clicked.page.locator('#resetModal')).toBeHidden();
+  const stillIn = await clicked.page.evaluate(() => localStorage.getItem('fh_session_token'));
+  expect(stillIn, 'the device holds a sign-in').toBeTruthy();
+  const whoami = await fetch(`${API}/user/me`, { headers: { Authorization: `Bearer ${stillIn}` } });
+  expect(whoami.status, 'and the server knows that sign-in').toBe(200);
 
   const byNew = await fetch(`${API}/auth/login`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -249,6 +255,8 @@ test('forgot password: the box asks, the answer never says who is a member, and 
     body: JSON.stringify({ email, password }),
   });
   expect(byOld.status, 'and the old one is dead').toBeGreaterThanOrEqual(400);
+
+  await clicked.close();
 
   say('and the link cannot be used twice');
   const again = await fetch(`${API}/auth/reset-password`, {

@@ -460,7 +460,13 @@ function openResetModal(token: string): Promise<boolean> {
       if (password.length < 8) { errorEl.textContent = 'Password must be at least 8 characters.'; return; }
       submit.disabled = true;
       try {
-        await api.post('/auth/reset-password', { token, password });
+        // SIGNED IN WHEN THEY ARE DONE (9 Oct, Roman). The server hands back a
+        // session with the new password, so nobody has to type what they chose
+        // one second earlier. Every other device stays signed out.
+        const res = await api.post('/auth/reset-password', { token, password }) as {
+          user?: SessionUser | null; session?: { token: string } | null;
+        };
+        if (res?.session?.token && res.user) setSession(res.session.token, res.user);
         cleanup(true);
       } catch (e) {
         errorEl.textContent = asMessage(e, 'This reset link is invalid or has expired.');
@@ -1954,9 +1960,15 @@ export async function openAccountSettings(): Promise<void> {
         saveBtn.disabled = false;
       }
     };
+    // ONE WAY TO A NEW PASSWORD (9 Oct, Roman). Change password used to ask
+    // for the old one and the new one here; now it opens the SAME box as
+    // Forgot password, with their own address already in it — we send the link
+    // and they choose the new password there. One path, one wording, and it
+    // works for the person who cannot remember the old one either.
     cpBtn.onclick = async () => {
-      const okPw = await openChangePasswordModal();
-      if (okPw) showToast('Password updated.');
+      const me = getUser();
+      cleanup();
+      await openForgotModal(me?.email ?? '');
     };
     logoutBtn.onclick = async () => {
       cleanup();
@@ -1990,41 +2002,10 @@ export async function openAccountSettings(): Promise<void> {
   });
 }
 
-function openChangePasswordModal(): Promise<boolean> {
-  const cur = el<HTMLInputElement>('cpCurrent');
-  const next = el<HTMLInputElement>('cpNew');
-  const errorEl = el('cpError');
-  cur.value = '';
-  next.value = '';
-  errorEl.textContent = '';
-  show('changePasswordModal');
-  focusFirstInput('changePasswordModal');
-
-  return new Promise((resolve) => {
-    const submit = el<HTMLButtonElement>('cpSubmit');
-    const cancel = el<HTMLButtonElement>('cpCancel');
-    function cleanup(result: boolean): void {
-      submit.onclick = null;
-      cancel.onclick = null;
-      hide('changePasswordModal');
-      resolve(result);
-    }
-    submit.onclick = async () => {
-      if (cur.value.length === 0) { errorEl.textContent = 'Current password is required.'; return; }
-      if (next.value.length < 8) { errorEl.textContent = 'New password must be at least 8 characters.'; return; }
-      submit.disabled = true;
-      try {
-        await api.put('/user/password', { current_password: cur.value, new_password: next.value }, getToken());
-        cleanup(true);
-      } catch (e) {
-        errorEl.textContent = asMessage(e, 'Could not update password.');
-      } finally {
-        submit.disabled = false;
-      }
-    };
-    cancel.onclick = () => cleanup(false);
-  });
-}
+// The old Change password box (current password + new one) was removed on
+// 9 October: that button opens the Forgot password box now, so there is one
+// way to a new password and it works for the person who cannot remember the
+// old one either.
 
 // ---------------------------------------------------------------------------
 // Save toaster
@@ -7014,7 +6995,9 @@ export async function bootstrapAccountSystem(): Promise<void> {
     url.searchParams.delete('reset');
     window.history.replaceState({}, '', url.toString());
     const ok = await openResetModal(resetToken);
-    if (ok) showToast('Password updated. Please log in.');
+    // Signed in already (9 Oct) — so this no longer sends them to the sign-in
+    // box for a password they have just chosen.
+    if (ok) showToast('Your new password is set.');
   }
 
   // 4. If logged in and no current project, surface the project list.

@@ -322,8 +322,17 @@ auth.post("/reset-password", async (c) => {
 
   const passwordHash = await hashPassword(password);
 
-  // Apply changes atomically: update password, mark reset consumed, kill all
-  // existing sessions (force re-login on every device).
+  // THEY ARE SIGNED IN WHEN THEY ARE DONE (9 Oct, Roman).
+  //
+  // This used to drop every session and leave the person at the sign-in box,
+  // typing the password they had chosen one second earlier. Every OTHER device
+  // is still signed out — whoever asked for this link may be locked out of
+  // their own account by someone else — but THIS one carries straight on.
+  const sessionToken = generateToken();
+  const sessionTokenHash = await hashToken(sessionToken);
+  const sessionExpiresAt = now + ttlMs(c.env, "SESSION_TTL_DAYS");
+  const deviceInfo = c.req.header("User-Agent") ?? null;
+
   await c.env.DB.batch([
     c.env.DB
       .prepare("UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?")
@@ -334,9 +343,22 @@ auth.post("/reset-password", async (c) => {
     c.env.DB
       .prepare("DELETE FROM sessions WHERE user_id = ?")
       .bind(reset.user_id),
+    c.env.DB
+      .prepare(`INSERT INTO sessions (id, user_id, token_hash, device_info, expires_at, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)`)
+      .bind(newId(), reset.user_id, sessionTokenHash, deviceInfo, sessionExpiresAt, now),
   ]);
 
-  return c.json({ ok: true });
+  const me = await c.env.DB
+    .prepare("SELECT id, name, email, profession, email_verified FROM users WHERE id = ? LIMIT 1")
+    .bind(reset.user_id)
+    .first<{ id: string; name: string; email: string; profession: string | null; email_verified: number }>();
+
+  return c.json({
+    ok: true,
+    user: me ? { ...me, email_verified: me.email_verified === 1 } : null,
+    session: { token: sessionToken, expires_at: sessionExpiresAt },
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -831,6 +831,11 @@
   .account-top-toggle .account-link-btn{padding-left:0;font-size:16px;}
   .account-links{display:flex;flex-direction:column;align-items:center;gap:6px;margin-top:14px;padding-top:14px;border-top:1px solid var(--border);}
   .account-link-btn{background:none;border:none;color:#9aa6c6;font-size:16px;font-family:var(--font);cursor:pointer;padding:2px 4px;text-decoration:underline;}
+  /* EVERY LINK IN AN ACCOUNT BOX READS THE SAME (9 Oct, Roman): the browser's
+     own blue was almost unreadable on this background. Same colour as the
+     "Forgot password?" link above. */
+  .account-card a{color:#9aa6c6;text-decoration:underline;}
+  .account-card a:hover{color:#fff;}
   .account-link-btn:hover{color:#fff;}
   .account-sep{border:none;border-top:1px solid var(--border);margin:18px 0 14px;}
   .account-actions-stack{display:flex;flex-direction:column;gap:8px;}

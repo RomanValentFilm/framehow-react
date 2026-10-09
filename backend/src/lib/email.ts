@@ -106,7 +106,8 @@ export async function sendPasswordResetEmail(
     to,
     subject: "Your Framehow password",
     text: `Hi ${name},\n\n`
-      + `Open this link to choose a new password: ${resetLink(env, token, asked)}\n\n`
+      + `Open the link below to choose a new password:\n`
+      + `${resetLink(env, token, asked)}\n\n`
       + `This link works for one hour.\n\n`
       + `Framehow\n`,
   });

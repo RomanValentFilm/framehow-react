@@ -116,12 +116,6 @@ export function AccountModals() {
             <label htmlFor="forgotEmail">Email</label>
             <input type="email" id="forgotEmail" autoComplete="email" />
           </div>
-          <p className="account-hint" style={{ marginTop: '8px' }} id="forgotFallback">
-            Or write to{' '}
-            <a href="mailto:info@framehow.com?subject=Framehow%20%E2%80%94%20I%20forgot%20my%20password">
-              <b>info@framehow.com</b>
-            </a>
-          </p>
           <div className="account-error" id="forgotError" />
           <div className="account-success" id="forgotSuccess" />
           <div className="account-btns">
@@ -332,25 +326,10 @@ export function AccountModals() {
         </div>
       </div>
 
-      {/* Change password */}
-      <div className="account-modal hidden" id="changePasswordModal">
-        <div className="account-card">
-          <h2>Change password</h2>
-          <div className="account-row">
-            <label htmlFor="cpCurrent">Current password</label>
-            <input type="password" id="cpCurrent" autoComplete="current-password" />
-          </div>
-          <div className="account-row">
-            <label htmlFor="cpNew">New password</label>
-            <input type="password" id="cpNew" autoComplete="new-password" />
-          </div>
-          <div className="account-error" id="cpError" />
-          <div className="account-btns">
-            <button className="btn" id="cpCancel" type="button">Cancel</button>
-            <button className="btn btn-accent" id="cpSubmit" type="button">Update password</button>
-          </div>
-        </div>
-      </div>
+      {/* The Change password box that used to live here is gone (9 Oct).
+          Change password in the account box now opens the SAME box as Forgot
+          password, with the person's own address in it: we send the link and
+          they choose the new password there. One path for both. */}
     </>
   );
 }
