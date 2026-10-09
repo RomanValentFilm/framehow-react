@@ -4,21 +4,13 @@ import path from 'path';
 // Ensure dist root exists
 fs.mkdirSync('dist', { recursive: true });
 
-// Landing page → dist/index.html
-fs.copyFileSync('landing.html', 'dist/index.html');
-
-// Hero image → dist/img/framehow-hero.png
-fs.mkdirSync('dist/img', { recursive: true });
-fs.copyFileSync('landing-assets/framehow-hero.png', 'dist/img/framehow-hero.png');
-
-// The Terms and the Privacy Policy, linked from the account box (22 Sept).
-// Placeholder wording until Roman sends his own; the pages exist so the links
-// in "I agree to the Terms of Service" lead somewhere real.
-fs.copyFileSync('legal-terms.html', 'dist/terms.html');
-fs.copyFileSync('legal-privacy.html', 'dist/privacy.html');
-
-// _redirects for Cloudflare Pages SPA routing under /app/
-fs.writeFileSync('dist/_redirects', '/terms /terms.html 200\n/privacy /privacy.html 200\n/app/* /app/index.html 200\n');
+// THE APP'S BUNDLE IS THE APP AND NOTHING ELSE (9 Oct, Roman).
+//
+// The front page, the hero image, the Terms and the Privacy Policy used to be
+// copied in here, so a changed word on the website meant publishing the app.
+// They live in site/ now and are published on their own (site/wrangler.toml).
+// What stays: the rule that sends every /app/ address to the app.
+fs.writeFileSync('dist/_redirects', '/app/* /app/index.html 200\n');
 
 // The PDF engine is a separate, hashed file that is normally only fetched the
 // first time a PDF is imported — so a device that has never imported one
@@ -59,4 +51,4 @@ if (fs.existsSync(assetsDir) && fs.existsSync(swPath)) {
   console.warn('Post-build: no service worker or assets found — the app may not open offline');
 }
 
-console.log('Post-build: landing page, hero image, _redirects written to dist/');
+console.log('Post-build: _redirects written to dist/ (the website is published separately from site/)');

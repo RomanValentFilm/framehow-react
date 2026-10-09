@@ -225,7 +225,15 @@ cd ~/Desktop/Framehow\ Files/framehow-react && rm -rf dist tsconfig.tsbuildinfo 
 ## Build
 
 - `npm run build` = `tsc -b && vite build && node scripts/postbuild.mjs`
-- postbuild copies `landing.html` to `dist/index.html`, hero image to `dist/img/`, writes `_redirects` for SPA routing
+- postbuild writes `_redirects` for SPA routing under /app/ and names the app files in the service worker. NOTHING ELSE: the app's bundle is the app (9 Oct).
+
+## The website — framehow.com, /terms, /privacy — is SEPARATE (9 Oct, Roman)
+
+Three things, three deploys, none touches the others:
+- **the website** — `site/public/` (front page `index.html`, `img/framehow-hero.png`, `terms.html`, `privacy.html`). An assets-only Worker named `framehow-site`, routed ONLY to `framehow.com/`, `/terms*`, `/privacy*`, `/img/*`. Deploy from the project root: `npx wrangler deploy --config site/wrangler.toml`. Change a word on the Terms → this deploy only; the app is not rebuilt.
+- **the app** — Pages project `framehow-react` at /app (dev branch = dev, main = framehow.com/app).
+- **the server** — `backend/`, `cd backend && npx wrangler deploy`.
+NEVER add a `framehow.com/*` route to the site Worker — it would take /app with it. The tick box in the account box links to `https://framehow.com/terms` and `/privacy` (absolute), so dev and live read one copy.
 - Build must run on Mac (node_modules are darwin-arm64)
 
 ## "4 STEPS SAVE" — triggered when user says "4 steps save", "save", "new version", or "save everywhere"
@@ -702,7 +710,7 @@ Changes from v4.6.009:
 - `src/lib/setups.ts` — arrow toggle ▶/▼; _closeDropdown() helper; click-outside-to-close; max 12 setups; +NEW no space; remove title tooltips; light class on taken colors
 - `src/components/ViewBar.tsx` — 3×2 → 3×2 VIEW with hair space (U+200A)
 - `src/components/Toolbar.tsx` — APP_VERSION label next to logo
-- `landing.html` — hover #b03b25→#b01f2a (2 spots)
+- `site/public/index.html` (was landing.html) — hover #b03b25→#b01f2a (2 spots)
 
 ### v4.6.001 — 2026-06-16 (dev)
 **3x2 grid view — text scroll fix, cross-compare arrows, iPhone landscape, equal spacing**

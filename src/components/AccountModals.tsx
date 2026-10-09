@@ -98,8 +98,8 @@ export function AccountModals() {
                 UPPERCASE — right for EMAIL and PASSWORD, wrong for a line
                 somebody has to read and agree to. */}
             <label htmlFor="accountTerms" className="account-terms-text">
-              I agree to the <a href="/terms" target="_blank" rel="noopener noreferrer">Terms of Service</a>
-              {' '}and acknowledge the <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a>.
+              I agree to the <a href="https://framehow.com/terms" target="_blank" rel="noopener noreferrer">Terms of Service</a>
+              {' '}and acknowledge the <a href="https://framehow.com/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a>.
             </label>
           </div>
 

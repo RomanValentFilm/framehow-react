@@ -1,0 +1,43 @@
+# THE WEBSITE, ON ITS OWN (9 October, Roman).
+#
+# Three things are published separately from now on:
+#
+#   framehow.com            the front page            ← THIS
+#   framehow.com/terms      the Terms of Service      ← THIS
+#   framehow.com/privacy    the Privacy Policy        ← THIS
+#   framehow.com/app        the app                   (Pages project framehow-react)
+#   framehow-api            the server                (backend/)
+#
+# Until today the front page and the two legal pages travelled inside the
+# app's bundle, so changing a word on them meant publishing the app too. This
+# is a Worker made of files and nothing else: no code, no bindings. Cloudflare
+# serves the folder below, and ONLY for the addresses listed under routes —
+# everything else at framehow.com, above all /app, is left exactly as it is.
+#
+#   deploy:   npx wrangler deploy --config site/wrangler.toml     (from the project root)
+#
+# The route patterns are deliberately narrow. "framehow.com/" is the front page
+# and nothing else; "/terms*" also catches "/terms/" so a trailing slash still
+# lands. Never add "framehow.com/*" here — that would take the app with it.
+
+name = "framehow-site"
+compatibility_date = "2026-10-09"
+
+[assets]
+directory = "./public"
+
+[[routes]]
+pattern = "framehow.com/"
+zone_name = "framehow.com"
+
+[[routes]]
+pattern = "framehow.com/terms*"
+zone_name = "framehow.com"
+
+[[routes]]
+pattern = "framehow.com/privacy*"
+zone_name = "framehow.com"
+
+[[routes]]
+pattern = "framehow.com/img/*"
+zone_name = "framehow.com"

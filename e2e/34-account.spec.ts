@@ -80,7 +80,9 @@ test('account: the delete question is in front, and deleting erases everything a
   expect(terms.text, 'as a sentence, not shouted').not.toContain('TERMS OF SERVICE');
   expect(terms.ticked, 'nothing is agreed to in advance').toBe(false);
 
-  expect(terms.links, 'both are links').toEqual(['/terms', '/privacy']);
+  // ONE COPY OF EACH, at the real address (9 Oct): the pages live with the
+  // website now, not inside the app, so dev and live read the same words.
+  expect(terms.links, 'both are links').toEqual(['https://framehow.com/terms', 'https://framehow.com/privacy']);
 
   // THE EYE ON THIS BOX TOO (9 Oct, Roman) — one helper serves this field and
   // the new-password field, so pressing it here proves both are wired.
