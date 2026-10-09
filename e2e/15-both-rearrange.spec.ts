@@ -117,7 +117,13 @@ test('two devices writing seconds apart, both online, both arrive', async ({ bro
     // every second keeps its heartbeat fresh, so the desktop stays behind the
     // "your Tablet is working on this project — please wait" lock for the whole
     // minute and never fetches. A person puts the iPad down first.
-    await desktop.nudge();
+    //
+    // TURN AND TURN ABOUT (23 Sept, run 344). Waking only the desktop left the
+    // tablet — which had just written — untouched, so it stopped asking the
+    // server and the desktop's writing never reached it. The thirty-second
+    // turns are how every other wait does it: one device awake at a time, so
+    // neither holds the other behind the "please wait".
+    await Device.nudgeOneAtATime(desktop, tablet);
     const d = (await desktop.read()).frames.map((f) => f.text).join(' | ');
     const t = (await tablet.read()).frames.map((f) => f.text).join(' | ');
     lastSeen = `\n  desktop: ${d}\n  tablet:  ${t}`;

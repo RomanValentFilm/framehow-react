@@ -52,23 +52,9 @@ test('account: the delete question is in front, and deleting erases everything a
   expect(terms.ticked, 'nothing is agreed to in advance').toBe(false);
   expect(terms.links, 'both are links').toEqual(['/terms', '/privacy']);
 
-  // ── WHAT "FORGOT PASSWORD" SAYS ── it must not promise a letter (22 Sept).
-  say('desktop: the forgot-password box says where to write');
-  await desktop.page.evaluate(() => {
-    document.getElementById('forgotModal')!.classList.remove('hidden');
-  });
-  await desktop.page.waitForTimeout(300);
-  const forgot = await desktop.page.locator('#forgotModal').innerText();
-  expect(forgot, 'it points at the address to write to').toContain('info@framehow.com');
-  expect(forgot.toLowerCase(), 'it no longer promises a link by mail').not.toContain('reset link');
-  expect(await desktop.page.locator('#forgotEmail').count(), 'it asks for nothing').toBe(0);
-  const mailTo = await desktop.page.locator('#forgotModal a').first().getAttribute('href');
-  expect(mailTo, 'the address itself is clickable').toContain('mailto:info@framehow.com');
-  // Shown by hand above, so its buttons carry no life yet — it is put away
-  // the same way. (What this checks is the WORDING; the Close button is
-  // exercised by the app's own path.)
-  await desktop.page.evaluate(() => document.getElementById('forgotModal')!.classList.add('hidden'));
-  await desktop.page.waitForTimeout(300);
+  // ── THE FORGOT BOX IS CHECKED IN ITS OWN TEST BELOW ─────────────────────
+  // Asking for a new password drops every session the account has, so it
+  // cannot share a test with the delete-and-restore walk below.
 
   // ── THE QUESTION MUST BE THE THING IN FRONT ────────────────────────────
   say('desktop: open the account settings and press Delete account');
@@ -170,4 +156,104 @@ test('account: the delete question is in front, and deleting erases everything a
   expect(stillMine.projects.filter((p) => !p.deleted_at).map((p) => p.name), 'their work is untouched').toContain('MINE');
 
   await desktop.close();
+});
+
+// ---------------------------------------------------------------------------
+// FORGOT PASSWORD, THE WHOLE WAY ROUND (9 Oct).
+//
+// Roman took the Workers Paid plan and onboarded framehow.com for Cloudflare
+// Email Sending, so the box asks for an address again and a person fixes their
+// own password — no more passing one on by hand.
+//
+// The simulator's own worker has no sending binding: it writes the mail to the
+// log and hands the link's token back in its answer (only when it knows it is
+// the test worker). So this walks exactly the path a person walks, without
+// reading a mailbox.
+//
+// Its own test because asking for a new password drops every session.
+//
+//     npm run t -- -g "forgot"
+//
+// About half a minute.
+// ---------------------------------------------------------------------------
+test('forgot password: the box asks, the answer never says who is a member, and the link sets a new one', async ({ browser }) => {
+  const { token, email, password } = await freshAccount();
+  const desktop = await Device.open(browser, 'desktop', token, false);
+
+  // THE PROJECT LIST IS IN FRONT AT START (runs 348 and 349). An account with
+  // nothing in it gets the list opened over the whole screen — right for a
+  // person, and it stays open until they close it, so it sat in front of every
+  // box this test wants to press. A project, then its own Close button.
+  await desktop.newProject('MINE', 2);
+  await desktop.settle();
+  if (await desktop.page.locator('#projectListModal:not(.hidden)').count()) {
+    say('desktop: closing the project list, as a person does');
+    await desktop.page.locator('#projectListClose').click();
+    await desktop.page.waitForTimeout(400);
+  }
+  await expect(desktop.page.locator('#projectListModal')).toBeHidden();
+
+  say('desktop: the box asks for the address, opened the way the app opens it');
+  await desktop.page.evaluate(() =>
+    void (window as never as { __fh_test: { openForgotBox(): void } }).__fh_test.openForgotBox());
+  await desktop.page.waitForTimeout(400);
+  await expect(desktop.page.locator('#forgotModal')).toBeVisible();
+  const box = await desktop.page.locator('#forgotModal').innerText();
+  expect(box, 'it says what it will do').toContain("we'll send you a link");
+  expect(await desktop.page.locator('#forgotEmail').count(), 'it asks for the address').toBe(1);
+  expect(box, 'and still says where to write if no mail turns up').toContain('info@framehow.com');
+
+  // A STRANGER'S ADDRESS MUST LOOK EXACTLY THE SAME, or anyone can sit here
+  // and find out who is a member.
+  say('an address with no account: the same answer');
+  await desktop.page.locator('#forgotEmail').fill('nobody-at-all@example.com');
+  await desktop.page.locator('#forgotSend').click();
+  await expect(desktop.page.locator('#forgotSuccess')).toHaveText('Check your mail.');
+  await desktop.page.locator('#forgotCancel').click();
+  await desktop.page.waitForTimeout(300);
+
+  say('the real address: the same answer again');
+  await desktop.page.evaluate(() =>
+    void (window as never as { __fh_test: { openForgotBox(): void } }).__fh_test.openForgotBox());
+  await desktop.page.waitForTimeout(400);
+  await desktop.page.locator('#forgotEmail').fill(email);
+  await desktop.page.locator('#forgotSend').click();
+  await expect(desktop.page.locator('#forgotSuccess'), "Roman's one sentence, 9 Oct")
+    .toHaveText('Check your mail.');
+  await desktop.page.locator('#forgotCancel').click();
+  await desktop.close();
+
+  say('the token the link carries');
+  const asked = await (await fetch(`${API}/auth/forgot-password`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, app: 'http://127.0.0.1:5173/app' }),
+  })).json() as { ok: true; dev_token?: string };
+  expect(asked.dev_token, 'the simulator can follow the link').toBeTruthy();
+
+  say('the person opens the link: the app comes up asking for a new password');
+  const clicked = await Device.open(browser, 'the link', token, false,
+    { openWith: `&reset=${asked.dev_token}` });
+  await expect(clicked.page.locator('#resetModal')).toBeVisible();
+  await clicked.page.locator('#resetPassword').fill('a-brand-new-password-7');
+  await clicked.page.locator('#resetSubmit').click();
+  await clicked.page.waitForTimeout(1_500);
+  await clicked.close();
+
+  const byNew = await fetch(`${API}/auth/login`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password: 'a-brand-new-password-7' }),
+  });
+  expect(byNew.status, 'the password chosen through the link works').toBe(200);
+  const byOld = await fetch(`${API}/auth/login`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+  expect(byOld.status, 'and the old one is dead').toBeGreaterThanOrEqual(400);
+
+  say('and the link cannot be used twice');
+  const again = await fetch(`${API}/auth/reset-password`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token: asked.dev_token, password: 'something-else-9' }),
+  });
+  expect(again.status, 'a used link is refused').toBeGreaterThanOrEqual(400);
 });

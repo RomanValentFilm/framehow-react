@@ -7,7 +7,7 @@ import {
   newId,
   verifyPassword,
 } from "../lib/crypto";
-import { sendPasswordResetEmail, sendVerificationEmail } from "../lib/email";
+import { sendPasswordResetEmail, sendWelcomeEmail } from "../lib/email";
 import { isEmail, isNonEmptyString, jsonError } from "../lib/response";
 
 // Minimum password length. The spec doesn't pin a number; 8 is a sane floor
@@ -139,7 +139,10 @@ auth.post("/signup", async (c) => {
     .bind(sessionId, userId, sessionTokenHash, deviceInfo, sessionExpiresAt, now)
     .run();
 
-  await sendVerificationEmail(c.env, email, name, verifyToken);
+  // WELCOME, AND NOTHING WAITS FOR IT (9 Oct). The session above is already
+  // issued: the account works this second whether the mail arrives, is slow,
+  // or never goes at all. No address is confirmed during the beta.
+  await sendWelcomeEmail(c.env, email, name);
 
   return c.json({
     user: { id: userId, name, email, profession, email_verified: false },
@@ -266,8 +269,13 @@ auth.post("/forgot-password", async (c) => {
       )
       .bind(newId(), user.id, tokenHash, expiresAt, now)
       .run();
-    await sendPasswordResetEmail(c.env, user.email, user.name, token);
-    if (!c.env.EMAIL_API_KEY) response.dev_token = token;
+    // The app says which address it is speaking from, so a dev link points at
+    // dev; it is trusted only against the list the server holds (lib/email).
+    const from = typeof b.app === "string" ? b.app : null;
+    await sendPasswordResetEmail(c.env, user.email, user.name, token, from);
+    // The token is echoed back ONLY on the simulator's own worker, never on a
+    // real one, so a test can follow the link without reading mail.
+    if (c.env.FH_E2E === "1") response.dev_token = token;
   }
 
   return c.json(response);

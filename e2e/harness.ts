@@ -36,6 +36,61 @@ export function say(what: string): void {
   console.log(`  ${secs}s  ${what}`);
 }
 
+/**
+ * WHAT DIFFERS, SIDE BY SIDE (22 Sept).
+ *
+ * Two whole projects as the devices hold them. Everything that is not the same
+ * is named: the shot it belongs to, the strip, and the versions of each side
+ * written out as a person would read them — "TAKE 1(picture)[origin]". Shots
+ * that agree are not mentioned. Nothing here judges; it only says.
+ */
+type WholeVersion = { label: string; stars: number; hidden: boolean; picture: boolean; strokes: number; note: string; tag: string | null };
+type WholeShot = { name: string; versions: Record<string, WholeVersion[]> } & Record<string, unknown>;
+type WholeText = { shots: WholeShot[] } & Record<string, unknown>;
+
+export function sideBySide(nameA: string, textA: string, nameB: string, textB: string): string {
+  let A: WholeText, B: WholeText;
+  try { A = JSON.parse(textA) as WholeText; B = JSON.parse(textB) as WholeText; }
+  catch { return 'what differs: the two projects could not be read as words'; }
+
+  const same = (p: unknown, q: unknown): boolean => JSON.stringify(p) === JSON.stringify(q);
+  const reads = (v: WholeVersion): string =>
+    `${v.label}${v.picture ? '(picture)' : ''}${v.strokes ? `(${v.strokes} strokes)` : ''}`
+    + `${v.stars ? `(${v.stars} stars)` : ''}${v.hidden ? '(hidden)' : ''}${v.tag ? `[${v.tag}]` : ''}`;
+  const list = (vs: WholeVersion[] | undefined): string => (vs?.length ? vs.map(reads).join(' · ') : '(none)');
+
+  const out: string[] = [];
+  const shotsA = A.shots ?? [], shotsB = B.shots ?? [];
+  if (shotsA.length !== shotsB.length) out.push(`  shot count — ${nameA}: ${shotsA.length} | ${nameB}: ${shotsB.length}`);
+  for (let s = 0; s < Math.max(shotsA.length, shotsB.length); s++) {
+    const sa = shotsA[s], sb = shotsB[s];
+    if (same(sa, sb)) continue;
+    out.push(`  SHOT ${s + 1} — ${nameA}: "${sa?.name ?? '(not there)'}" | ${nameB}: "${sb?.name ?? '(not there)'}"`);
+    const strips = new Set([...Object.keys(sa?.versions ?? {}), ...Object.keys(sb?.versions ?? {})]);
+    for (const strip of strips) {
+      const va = sa?.versions?.[strip], vb = sb?.versions?.[strip];
+      if (same(va, vb)) continue;
+      out.push(`    ${strip} · ${nameA}: ${list(va)}`);
+      out.push(`    ${strip} · ${nameB}: ${list(vb)}`);
+    }
+    for (const field of new Set([...Object.keys(sa ?? {}), ...Object.keys(sb ?? {})])) {
+      if (field === 'versions') continue;
+      const fa = (sa as Record<string, unknown> | undefined)?.[field];
+      const fb = (sb as Record<string, unknown> | undefined)?.[field];
+      if (same(fa, fb)) continue;
+      out.push(`    ${field} · ${nameA}: ${JSON.stringify(fa)} | ${nameB}: ${JSON.stringify(fb)}`);
+    }
+  }
+  // Everything outside the shots — strips, setups, categories, groups, orders.
+  for (const field of new Set([...Object.keys(A), ...Object.keys(B)])) {
+    if (field === 'shots') continue;
+    if (same(A[field], B[field])) continue;
+    out.push(`  ${field} · ${nameA}: ${JSON.stringify(A[field])}`);
+    out.push(`  ${field} · ${nameB}: ${JSON.stringify(B[field])}`);
+  }
+  return out.length ? `what differs, side by side:\n${out.join('\n')}` : 'what differs: nothing named — the two texts differ only in their spacing';
+}
+
 export const API = process.env.FH_API ?? 'http://127.0.0.1:8787';
 export const APP = process.env.FH_APP ?? 'http://127.0.0.1:5173';
 
@@ -92,7 +147,10 @@ export class Device {
                     /** A SMALL STORAGE LIMIT for this device's requests (#533): the
                      *  simulator's local worker honours the header, the live one
                      *  ignores it. So a test can fill an account in seconds. */
-                    opts: { storageLimitMb?: number } = {}): Promise<Device> {
+                    /** EXTRA IN THE ADDRESS (9 Oct): what a person's browser
+                     *  carries when they open a link out of a mail, e.g.
+                     *  `&reset=<token>`. */
+                    opts: { storageLimitMb?: number; openWith?: string } = {}): Promise<Device> {
     const extra = opts.storageLimitMb
       ? { extraHTTPHeaders: { 'X-FH-Storage-Limit-MB': String(opts.storageLimitMb) } }
       : {};
@@ -128,7 +186,7 @@ export class Device {
     });
     page.on('pageerror', (e) => console.log(`  [${name} PAGE ERROR] ${e.message}`));
     say(`opening ${name}…`);
-    await page.goto(`${APP}/app/?fhtest=1&fhsync=1`);
+    await page.goto(`${APP}/app/?fhtest=1&fhsync=1${opts.openWith ?? ''}`);
     await page.waitForFunction(() => Boolean((window as never as { __fh_test?: unknown }).__fh_test)
         && Boolean((window as never as { __fh_booted?: boolean }).__fh_booted),
       undefined, { timeout: 30_000 });
@@ -195,6 +253,16 @@ export class Device {
   async newProject(name: string, frames: number): Promise<string | null> {
     say(`${this.name}: making "${name}" with ${frames} frames, and saving it`);
     const id = await this.newProjectInner(name, frames);
+    // A SAVE THAT GIVES NO CLOUD ID MUST SAY WHY (22 Sept, run 340). In the
+    // full run "project is on the server (null)" was followed by a failure two
+    // steps later, and by then nothing was left to read. The app writes the
+    // reason to its own log at that moment; it is printed here, where it is
+    // still true.
+    if (!id) {
+      const tail = (await this.log()).slice(0, 30).map((l) => '    ' + l).join('\n');
+      throw new Error(`${this.name}: SAVING "${name}" GAVE NO CLOUD ID — the project stayed on the device.\n`
+        + `Its own log, newest first:\n${tail}`);
+    }
     say(`${this.name}: project is on the server (${String(id).slice(0, 8)})`);
     return id;
   }
@@ -325,6 +393,12 @@ export class Device {
       const tagLines = all.filter((l) => /tag[: ]/.test(l)).slice(0, 25);
       if (tagLines.length) say(`${d.name} tag lines:\n${tagLines.map((l) => '    ' + l.slice(0, 220)).join('\n')}`);
     }
+    // WHICH SHOT, AND WHICH VERSION (22 Sept, run 342). The first differing
+    // line names neither — it reads "}" against "}," — and these two tests do
+    // not fail the same way twice, so there may be no second chance to look.
+    // Everything that differs is said here, in the app's own words, side by
+    // side, at the moment it is still true.
+    say(sideBySide(a.name, x, b.name, y));
     throw new Error(`${why}\n  first difference at line ${i + 1}:\n  ${a.name}: ${(xl[i] ?? '(end)').trim()}\n  ${b.name}: ${(yl[i] ?? '(end)').trim()}`
       + `\n  around:\n${xl.slice(Math.max(0, i - 3), i + 3).map((l) => '    ' + l).join('\n')}`);
   }
@@ -352,7 +426,19 @@ export class Device {
     say(`${this.name}: project open`);
   }
 
-  writeUnder(index: number, text: string): Promise<void> {
+  /**
+   * WRITING IS TOUCHING (23 Sept, run 344).
+   *
+   * This door called the app's write straight out, with no tap and no key —
+   * so the app, which counts a device as awake only while a finger, a key or
+   * a scroll reaches it, never counted the writer as awake at all. In run 344
+   * the tablet wrote, then said "nobody has touched this device for a while"
+   * and stopped asking the server, and the desktop's writing — already up
+   * there for half a minute — had no way in. Nobody can write on a device
+   * without touching it, so the door does what a person does first.
+   */
+  async writeUnder(index: number, text: string): Promise<void> {
+    await this.nudge();
     return this.page.evaluate(([i, t]) =>
       (window as never as { __fh_test: { writeUnder(i: number, t: string): void } })
         .__fh_test.writeUnder(i as number, t as string), [index, text]);
@@ -755,23 +841,34 @@ export class Device {
         .__fh_test.sortMenuLines());
   }
 
-  moveInOrder(orderIndex: number, from: number, to: number): Promise<void> {
+  /**
+   * NAME THE ORDER WHENEVER YOU KNOW ITS NAME (9 Oct, run 346).
+   *
+   * These three take either the order's name or its place in the list. A place
+   * is read at one moment and used at another, and in run 346 that gap was
+   * enough: the iPad's break and shot move both went into the ALL order
+   * instead of the barn's. A name cannot drift, and the app's own ADD BREAK
+   * finds the order by its identity too — so a name is what a test gives.
+   */
+  moveInOrder(which: number | string, from: number, to: number): Promise<void> {
     return this.page.evaluate(([o, f, t]) =>
-      (window as never as { __fh_test: { moveInOrder(o: number, f: number, t: number): void } })
-        .__fh_test.moveInOrder(o as number, f as number, t as number), [orderIndex, from, to]);
+      (window as never as { __fh_test: { moveInOrder(o: number | string, f: number, t: number): void } })
+        .__fh_test.moveInOrder(o as number | string, f as number, t as number),
+      [which, from, to] as [number | string, number, number]);
   }
 
-  addBreak(orderIndex: number, position: number, text: string): Promise<string> {
+  addBreak(which: number | string, position: number, text: string): Promise<string> {
     return this.page.evaluate(([o, p, t]) =>
-      (window as never as { __fh_test: { addBreak(o: number, p: number, t: string): string } })
-        .__fh_test.addBreak(o as number, p as number, t as string),
-      [orderIndex, position, text] as [number, number, string]);
+      (window as never as { __fh_test: { addBreak(o: number | string, p: number, t: string): string } })
+        .__fh_test.addBreak(o as number | string, p as number, t as string),
+      [which, position, text] as [number | string, number, string]);
   }
 
-  moveBreak(orderIndex: number, breakIndex: number, toPosition: number): Promise<void> {
+  moveBreak(which: number | string, breakIndex: number, toPosition: number): Promise<void> {
     return this.page.evaluate(([o, b, p]) =>
-      (window as never as { __fh_test: { moveBreak(o: number, b: number, p: number): void } })
-        .__fh_test.moveBreak(o as number, b as number, p as number), [orderIndex, breakIndex, toPosition]);
+      (window as never as { __fh_test: { moveBreak(o: number | string, b: number, p: number): void } })
+        .__fh_test.moveBreak(o as number | string, b as number, p as number),
+      [which, breakIndex, toPosition] as [number | string, number, number]);
   }
 
   /** One shooting order written out flat: the frames in order with the breaks

@@ -6,12 +6,23 @@ compatibility_flags = ["nodejs_compat"]
 # Vars (non-secret defaults). Override per-environment as needed.
 [vars]
 APP_NAME = "Framehow"
-APP_URL = "https://framehow.app"
+# WHERE THE APP LIVES (9 Oct). The reset link in a mail is built from this, and
+# the app reads its token off its own address. The FIRST one is the live app and
+# the fallback; the others are addresses the app may ask for (one server serves
+# both the live app and dev). Nothing outside this list is ever put in a mail.
+APP_URL = "https://framehow.com/app"
+APP_URLS = "https://framehow.com/app, https://dev.framehow-react.pages.dev/app, http://127.0.0.1:5173/app"
 SESSION_TTL_DAYS = "30"
 PASSWORD_RESET_TTL_HOURS = "1"
 EMAIL_VERIFY_TTL_HOURS = "48"
 # Admin email for storage alerts (admin-only feature, see spec).
 ADMIN_EMAIL = "roman@valentfilm.com"
+
+# MAIL (9 Oct) — Cloudflare Email Sending. No key and no secret: the binding
+# belongs to the Worker. framehow.com is onboarded for sending; mail goes out
+# from info@framehow.com.
+[[send_email]]
+name = "EMAIL"
 
 # Secrets to set via `wrangler secret put`:
 #   EMAIL_API_KEY      — provider key (Resend / MailChannels / etc.)

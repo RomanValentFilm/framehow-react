@@ -354,8 +354,9 @@ function openAccountModal(initialMode: AccountMode = 'signup'): Promise<AccountR
 
     forgot.onclick = async () => {
       finish(null);
-      const sent = await openForgotModal(emailInput.value.trim());
-      if (sent) showToast('Check your email for a reset link.');
+      // The box says "Check your mail." itself (9 Oct), so there is no toast
+      // on top of it saying the same thing in other words.
+      await openForgotModal(emailInput.value.trim());
     };
 
     cancel.onclick = () => finish(null);
@@ -366,36 +367,74 @@ function openAccountModal(initialMode: AccountMode = 'signup'): Promise<AccountR
 // Forgot / reset password
 // ---------------------------------------------------------------------------
 
-/** WHERE TO WRITE (22 Sept). No mail has ever left this server, so the box
- *  no longer asks for an address and promises a link: it says where to write,
- *  and Roman hands over a new password from the users page. `prefillEmail` is
- *  kept so the callers need no change. */
-function openForgotModal(prefillEmail: string = ''): Promise<boolean> {
-  void prefillEmail;
-  el('forgotError').textContent = '';
-  el('forgotSuccess').textContent = '';
+/**
+ * ASK, AND WE SEND THE LINK (9 Oct).
+ *
+ * From 22 September this box only said where to write, because no mail had
+ * ever left the server. Cloudflare now sends for framehow.com, so it asks for
+ * the address again and the person fixes their own password.
+ *
+ * THE ANSWER IS THE SAME EITHER WAY. Whether or not there is an account for
+ * that address, the box says "Check your mail." — otherwise anyone could sit
+ * here and find out who is a member.
+ *
+ * WHICH ADDRESS THE LINK POINTS AT is settled by the server against a list it
+ * holds; we only say where we are speaking from, so a dev link opens dev.
+ */
+export function openForgotModal(prefillEmail: string = ''): Promise<boolean> {
+  const input = el<HTMLInputElement>('forgotEmail');
+  const errorEl = el('forgotError');
+  const successEl = el('forgotSuccess');
+  input.value = prefillEmail;
+  errorEl.textContent = '';
+  successEl.textContent = '';
+  el('forgotIntro').classList.remove('hidden');
+  el('forgotRow').classList.remove('hidden');
   show('forgotModal');
+  focusFirstInput('forgotModal');
 
   return new Promise((resolve) => {
     const close = el<HTMLButtonElement>('forgotCancel');
-    const write = el<HTMLButtonElement>('forgotWrite');
-    function done(): void {
+    const send = el<HTMLButtonElement>('forgotSend');
+    // Opened again after a send: put the buttons back as they were.
+    send.classList.remove('hidden');
+    send.disabled = false;
+    close.textContent = 'Cancel';
+    function done(sent: boolean): void {
       close.onclick = null;
-      write.onclick = null;
+      send.onclick = null;
+      input.onkeydown = null;
       hide('forgotModal');
-      resolve(false);
+      resolve(sent);
     }
-    close.onclick = done;
-    write.onclick = () => {
-      // Their own mail program, with the message already written. If the
-      // machine has none, nothing happens and the address stays on screen.
-      const subject = encodeURIComponent('Framehow — I forgot my password');
-      const body = encodeURIComponent(
-        'Hello,\n\nI have forgotten my Framehow password. '
-        + 'Please send me a new one for this address.\n\nThank you.\n');
-      window.location.href = `mailto:info@framehow.com?subject=${subject}&body=${body}`;
-      done();
+    close.onclick = () => done(false);
+    send.onclick = async () => {
+      const email = input.value.trim();
+      if (!email || !email.includes('@')) {
+        errorEl.textContent = 'Please type your email address.';
+        return;
+      }
+      errorEl.textContent = '';
+      send.disabled = true;
+      try {
+        // The app's own address, so the link in the mail opens THIS app.
+        const app = `${window.location.origin}${import.meta.env.BASE_URL}`.replace(/\/+$/, '');
+        await api.post('/auth/forgot-password', { email, app });
+      } catch {
+        // A refusal tells us nothing worth saying: the answer must look the
+        // same whether or not the address is known. The work is already done
+        // on the server either way.
+      }
+      send.disabled = false;
+      // Roman's wording, 9 Oct — this sentence and nothing else.
+      successEl.textContent = 'Check your mail.';
+      el('forgotIntro').classList.add('hidden');
+      el('forgotRow').classList.add('hidden');
+      send.classList.add('hidden');
+      close.textContent = 'Close';
+      close.onclick = () => done(true);
     };
+    input.onkeydown = (e) => { if (e.key === 'Enter') send.click(); };
   });
 }
 
@@ -6962,6 +7001,12 @@ export async function bootstrapAccountSystem(): Promise<void> {
     console.warn('[accountFlow] IDB restore failed', e);
   }
 
+  // UP MEANS UP, EVEN WITH A BOX IN FRONT (9 Oct). The "choose a new password"
+  // box below waits for the person, and the start used to be called finished
+  // only after it closed — so a device opened on a link out of a mail looked,
+  // to anything watching, as though it had never come up at all.
+  (window as any).__fh_booted = true;
+
   // 3. Handle ?reset=token URLs (from the password reset email).
   const url = new URL(window.location.href);
   const resetToken = url.searchParams.get('reset');
@@ -6975,7 +7020,6 @@ export async function bootstrapAccountSystem(): Promise<void> {
   // 4. If logged in and no current project, surface the project list.
   // Said out loud FIRST (#523): the simulator waits for this before it acts,
   // because the project list below can stay open for as long as it likes.
-  (window as any).__fh_booted = true;
   if (isLoggedIn() && state().frames.length === 0) {
     dismissNewProjectModal();
     // Hide startup loading line before opening the (potentially long-lived) modal

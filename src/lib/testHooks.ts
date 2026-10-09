@@ -31,7 +31,7 @@ import { handlePDF } from './pdf';
 import { deleteFrameForGood, handleMainAction, handleAction, renameFrame, hideFrame, unhideFrame } from './actions';
 import { createSetup, handleSetupFrameClick, handleStripTagClick } from './setups';
 import { renameNeedTab, renameNeedTable, renameNeedItem, ensureFrameNeeds } from './needs';
-import { saveNow, carryOnAsNewProject, openCloudProjectById, beginNewProject, untouchedStrip, makeRestorePoint, listRestorePoints, restoreToPoint, deleteCloudProject, recoverCloudProject, saveRestorePoint, deleteRestorePoint, deleteCloudProjectNow, openProjectList, openAccountSettings } from './accountFlow';
+import { saveNow, carryOnAsNewProject, openCloudProjectById, beginNewProject, untouchedStrip, makeRestorePoint, listRestorePoints, restoreToPoint, deleteCloudProject, recoverCloudProject, saveRestorePoint, deleteRestorePoint, deleteCloudProjectNow, openProjectList, openAccountSettings, openForgotModal } from './accountFlow';
 import { storageState } from './storageMeter';
 import { flushSyncNow, markFrameDirty, getDirtyFrameIds, pullNow } from './currentProject';
 import { openNeedsModal } from './overview';
@@ -215,6 +215,9 @@ export interface TestDoor {
   openProjectList(): Promise<void>;
   /** Open the account settings box (22 Sept). */
   openAccountSettings(): Promise<void>;
+  /** Open the forgot-password box, exactly as the link in the sign-in box
+   *  does (9 Oct). The box does the asking and the sending itself. */
+  openForgotBox(): void;
   /** Strip the settings memory from the local save — a save from before the
    *  memory existed, or one that lost it (22 Sept). Reload afterwards. */
   forgetSettingsMemoryInSave(): Promise<number>;
@@ -308,12 +311,16 @@ export interface TestDoor {
   pickStoryFlow(groupId: number | null): void;
   /** Each line of the SORT BY menu as text, e.g. "SHOOTING ORDER 2 / KITCHEN". */
   sortMenuLines(): string[];
+  // THE ORDER IS NAMED, NOT COUNTED (9 Oct). Each of these three takes either
+  // the order's NAME — which is what a test should give whenever it knows one,
+  // because a place in the list can stop meaning what it meant a moment ago —
+  // or, for the simple one-order case, its place.
   /** Move a frame inside an order — the drag in the sort edit view. */
-  moveInOrder(orderIndex: number, from: number, to: number): void;
+  moveInOrder(which: number | string, from: number, to: number): void;
   /** ADD BREAK, at a place in the order. Returns the break's id. */
-  addBreak(orderIndex: number, position: number, text: string): string;
+  addBreak(which: number | string, position: number, text: string): string;
   /** Drag a break to a different place. */
-  moveBreak(orderIndex: number, breakIndex: number, toPosition: number): void;
+  moveBreak(which: number | string, breakIndex: number, toPosition: number): void;
   // --- the pen (#356) ------------------------------------------------------
   // Roman's report: "the moment you draw it disappears". Every guess I made
   // about it was a guess, because nothing in the simulator could hold a pencil.
@@ -490,14 +497,44 @@ function scribbleAim(frameIndex: number): {
   };
 }
 
-/** Change one shooting order in place, then stamp it — every order door goes
- *  through here so none of them can forget the "when". */
-function editOrder(orderIndex: number, change: (o: SortOrder) => SortOrder): void {
+/**
+ * Change one shooting order in place, then stamp it — every order door goes
+ * through here so none of them can forget the "when".
+ *
+ * NAME IT, DON'T COUNT IT (9 Oct, run 346).
+ *
+ * This used to take only a PLACE IN THE LIST — "the third order" — and write
+ * to whatever sat there. In run 346 the iPad asked for its break and its shot
+ * move in the barn's order and both landed in the ALL order instead: the place
+ * had stopped meaning what the test read a moment earlier. Nothing was lost,
+ * but the simulator had quietly written somewhere nobody asked for.
+ *
+ * The app itself never does this — ADD BREAK finds the order by its own
+ * identity, never by counting. So a name may be given here, and a name is
+ * what every test that knows one gives. An index still works for the simple
+ * case of a single order, and a name that is not there says so loudly rather
+ * than writing next door.
+ */
+function findOrder(which: number | string): { order: SortOrder; index: number } {
+  const all = useStore.getState().sortOrders;
+  if (typeof which === 'string') {
+    const index = all.findIndex((o) => o.name === which);
+    if (index < 0) {
+      throw new Error(`no shooting order called "${which}" — there are: `
+        + (all.map((o) => `"${o.name}"`).join(', ') || '(none)'));
+    }
+    return { order: all[index], index };
+  }
+  const order = all[which];
+  if (!order) throw new Error(`no shooting order at ${which} — there are ${all.length}`);
+  return { order, index: which };
+}
+
+function editOrder(which: number | string, change: (o: SortOrder) => SortOrder): void {
+  const { index } = findOrder(which);
   const s = useStore.getState();
-  const target = s.sortOrders[orderIndex];
-  if (!target) throw new Error(`no shooting order at ${orderIndex}`);
   useStore.setState({
-    sortOrders: s.sortOrders.map((o, i) => (i === orderIndex ? change(o) : o)),
+    sortOrders: s.sortOrders.map((o, i) => (i === index ? change(o) : o)),
   } as never);
   stampChangedSettings(getCurrentProject().projectId);
   (window as never as { __fh_renderAll?: () => void }).__fh_renderAll?.();
@@ -1037,24 +1074,24 @@ export function installTestDoor(): void {
       return lines;
     },
 
-    moveInOrder(orderIndex, from, to) {
-      editOrder(orderIndex, (o) => {
+    moveInOrder(which, from, to) {
+      editOrder(which, (o) => {
         const frameOrder = [...o.frameOrder];
         const [moved] = frameOrder.splice(from, 1);
-        if (moved === undefined) throw new Error(`no frame at ${from} in order ${orderIndex}`);
+        if (moved === undefined) throw new Error(`no frame at ${from} in order "${o.name}"`);
         frameOrder.splice(to, 0, moved);
         return { ...o, frameOrder };
       });
     },
 
-    addBreak(orderIndex, position, text) {
+    addBreak(which, position, text) {
       const id = `brk_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-      editOrder(orderIndex, (o) => ({ ...o, breaks: [...o.breaks, { id, text, position }] }));
+      editOrder(which, (o) => ({ ...o, breaks: [...o.breaks, { id, text, position }] }));
       return id;
     },
 
-    moveBreak(orderIndex, breakIndex, toPosition) {
-      editOrder(orderIndex, (o) => {
+    moveBreak(which, breakIndex, toPosition) {
+      editOrder(which, (o) => {
         if (!o.breaks[breakIndex]) throw new Error(`no break at ${breakIndex}`);
         return {
           ...o,
@@ -1185,6 +1222,7 @@ export function installTestDoor(): void {
     storage() { return storageState(); },
     openProjectList() { return openProjectList(); },
     openAccountSettings() { return openAccountSettings(); },
+    openForgotBox() { void openForgotModal(''); },
     async forgetSettingsMemoryInSave() {
       const { loadSnapshot, saveSnapshot } = await import('./persistence');
       const snap = await loadSnapshot();

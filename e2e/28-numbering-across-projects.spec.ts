@@ -595,20 +595,18 @@ test('numbering: multiple projects, groups, orders for ALL and for groups, three
     // ── AN ORDER FOR ALL, on the Desktop, with TWO breaks ────────────────
     await desktop.enterGroup(null);
     await desktop.newSortOrder('A — DAY 1');
-    let i = await desktop.orderIndexOf('A — DAY 1');
-    await desktop.moveInOrder(i, 11, 0);
-    await desktop.moveInOrder(i, 7, 2);
-    await desktop.addBreak(i, 3, 'LUNCH');
-    await desktop.addBreak(i, 8, 'COMPANY MOVE');
+    await desktop.moveInOrder('A — DAY 1', 11, 0);
+    await desktop.moveInOrder('A — DAY 1', 7, 2);
+    await desktop.addBreak('A — DAY 1', 3, 'LUNCH');
+    await desktop.addBreak('A — DAY 1', 8, 'COMPANY MOVE');
     await desktop.push();
     await desktop.settle();
 
     // ── AN ORDER INSIDE THE BARN, on the iPad, with a break ──────────────
     await ipad.enterGroup(barn);
     await ipad.newSortOrder('A — BARN');
-    i = await ipad.orderIndexOf('A — BARN');
-    await ipad.moveInOrder(i, 3, 0);
-    await ipad.addBreak(i, 2, 'TEA');
+    await ipad.moveInOrder('A — BARN', 3, 0);
+    await ipad.addBreak('A — BARN', 2, 'TEA');
     await ipad.push();
     await ipad.settle();
     await ipad.enterGroup(null);
@@ -616,8 +614,7 @@ test('numbering: multiple projects, groups, orders for ALL and for groups, three
     // ── AN ORDER INSIDE EXTERIORS, on the laptop ─────────────────────────
     await laptop.enterGroup(ext);
     await laptop.newSortOrder('A — EXT PM');
-    i = await laptop.orderIndexOf('A — EXT PM');
-    await laptop.moveInOrder(i, 2, 0);
+    await laptop.moveInOrder('A — EXT PM', 2, 0);
     await laptop.push();
     await laptop.settle();
     await laptop.enterGroup(null);
@@ -642,9 +639,8 @@ test('numbering: multiple projects, groups, orders for ALL and for groups, three
     await ipad.settle();
     const bGroup = await ipad.makeGroup('B — INSIDE', [0, 1, 2]);
     await ipad.newSortOrder('B — DAY 1');
-    i = await ipad.orderIndexOf('B — DAY 1');
-    await ipad.moveInOrder(i, 5, 0);
-    await ipad.addBreak(i, 2, 'LUNCH ON B');
+    await ipad.moveInOrder('B — DAY 1', 5, 0);
+    await ipad.addBreak('B — DAY 1', 2, 'LUNCH ON B');
     await ipad.push();
     await ipad.settle();
 
@@ -879,9 +875,9 @@ test('numbering: breaks belong to one story flow each, and their names travel',
     await desktop.enterGroup(null);
     await desktop.push();
     await desktop.settle();
-    const inOrder = await desktop.addBreak(await desktop.orderIndexOf('BARN ORDER'), 2, 'BREAK NAME');
-    const inYardOrder = await desktop.addBreak(await desktop.orderIndexOf('YARD ORDER'), 1, 'BREAK NAME');
-    const inAllOrder = await desktop.addBreak(await desktop.orderIndexOf('ALL ORDER'), 4, 'BREAK NAME');
+    const inOrder = await desktop.addBreak('BARN ORDER', 2, 'BREAK NAME');
+    const inYardOrder = await desktop.addBreak('YARD ORDER', 1, 'BREAK NAME');
+    const inAllOrder = await desktop.addBreak('ALL ORDER', 4, 'BREAK NAME');
     await desktop.renameBreak('__storyflow__', inAll, 'LUNCH ALL');
     await desktop.renameBreak(`__storyflow__:${barn}`, inBarn, 'LUNCH BARN');
     await desktop.renameBreak(`__storyflow__:${yard}`, inYard, 'LUNCH YARD');
@@ -979,9 +975,8 @@ test('numbering: offline with a project open, then a new project made offline to
     await desktop.newFrameAfter(3);                 // a shot, with no signal
     await desktop.moveFrame(7, 0);                  // and a rearrangement
     await desktop.addStoryBreak(2, 'LUNCH ON A');
-    let i = await desktop.orderIndexOf('A — DAY 1');
-    await desktop.moveInOrder(i, 0, 4);
-    await desktop.addBreak(i, 3, 'BREAK ON A');
+    await desktop.moveInOrder('A — DAY 1', 0, 4);
+    await desktop.addBreak('A — DAY 1', 3, 'BREAK ON A');
     const groupA = await desktop.makeGroup('A — INSIDE', [0, 1, 2]);
     // ...AND SHOTS RENAMED, WHICH IS CONTENT, NOT ARRANGEMENT (#523). Roman,
     // 18 September: renamed shots on the iPad with no signal, made a new
@@ -998,9 +993,8 @@ test('numbering: offline with a project open, then a new project made offline to
     say('and now makes a NEW project, still offline, with JOB A unsent');
     await desktop.buildProjectWithoutSaving('JOB B', 6);
     await desktop.newSortOrder('B — DAY 1');
-    i = await desktop.orderIndexOf('B — DAY 1');
-    await desktop.moveInOrder(i, 5, 0);
-    await desktop.addBreak(i, 2, 'BREAK ON B');
+    await desktop.moveInOrder('B — DAY 1', 5, 0);
+    await desktop.addBreak('B — DAY 1', 2, 'BREAK ON B');
     const groupB = await desktop.makeGroup('B — INSIDE', [0, 1]);
     const wantedB = await desktop.orderTextByName('B — DAY 1');
     const wantedGroupB = await desktop.groupAsText(groupB);

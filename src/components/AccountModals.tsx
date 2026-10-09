@@ -100,32 +100,33 @@ export function AccountModals() {
         </div>
       </div>
 
-      {/* Forgot password — BY HAND DURING THE BETA (22 Sept).
-          This used to promise "we'll email you a link" and then send nothing:
-          no mail has ever left this server. Rather than a promise nobody can
-          keep, it says where to write. Roman gives the new password from the
-          users page and passes it on himself. */}
+      {/* Forgot password — THE REAL THING AGAIN (9 Oct). From 22 Sept until
+          today this box only said where to write, because no mail had ever
+          left the server and a promise nobody can keep is worse than none.
+          Cloudflare now sends for framehow.com, so it asks for the address and
+          sends the link itself. The line about writing to us stays underneath,
+          for the person whose mail never turns up. */}
       <div className="account-modal hidden" id="forgotModal">
         <div className="account-card">
           <h2>Forgot your password?</h2>
-          <p className="account-hint">
-            Write to{' '}
+          <p className="account-hint" id="forgotIntro">
+            Type your email address and we'll send you a link to set a new one.
+          </p>
+          <div className="account-row" id="forgotRow">
+            <label htmlFor="forgotEmail">Email</label>
+            <input type="email" id="forgotEmail" autoComplete="email" />
+          </div>
+          <p className="account-hint" style={{ marginTop: '8px' }} id="forgotFallback">
+            Or write to{' '}
             <a href="mailto:info@framehow.com?subject=Framehow%20%E2%80%94%20I%20forgot%20my%20password">
               <b>info@framehow.com</b>
-            </a>{' '}
-            from the address you signed up with, and we'll send you a new password.
-          </p>
-          <p className="account-hint" style={{ marginTop: '8px' }}>
-            During the beta this is done by hand — usually within a day.
+            </a>
           </p>
           <div className="account-error" id="forgotError" />
           <div className="account-success" id="forgotSuccess" />
           <div className="account-btns">
-            <button className="btn" id="forgotCancel" type="button">Close</button>
-            {/* Opens their own mail program with the message already written.
-                A machine with no mail program set up does nothing at all — so
-                the address above stays on screen to be copied by hand. */}
-            <button className="btn btn-accent" id="forgotWrite" type="button">Write to us</button>
+            <button className="btn" id="forgotCancel" type="button">Cancel</button>
+            <button className="btn btn-accent" id="forgotSend" type="button">Send</button>
           </div>
         </div>
       </div>

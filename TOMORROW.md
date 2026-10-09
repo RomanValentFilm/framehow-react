@@ -80,7 +80,7 @@ orders or get out.
 
 ## THE LIST — 10 September, evening (Roman's order)
 
-dev is **v4.9.239 · #542**, app AND backend (deployed 22 Sept ~18:00). MIGRATION 0029 (terms_agreed_at) APPLIED to the live database by hand. Next number: **v4.9.240 · #543**. Deploys 22 Sept: 232, 233, 234, 235, 236, 237, 238, 239. Runs 22 Sept: 316–337, all green at the end. NEXT: (a) FULL RUN on 239 — start before bed, Mac awake: `FH_RUN=338 npm run t` (~70 min); (b) Roman's own Terms and Privacy text to replace the placeholders; (c) mail when the beta opens to strangers (Cloudflare Email Sending needs the $5 Workers Paid plan; Roman is on Free).
+dev is **v4.9.240 · #543** app (deployed 22 Sept ~18:15); backend is **v4.9.239 · #542**. MIGRATION 0029 (terms_agreed_at) APPLIED to the live database by hand. Next number: **v4.9.241 · #544**. Deploys 22 Sept: 232, 233, 234, 235, 236, 237, 238, 239. Runs 22 Sept: 316–337, all green at the end. Runs 23 Sept: 342, 343, 344, 345 — simulator only, NOTHING DEPLOYED since 240. Runs 5–9 Oct: 345 (test 15 proven green), 346 FULL RUN on 9 Oct = **79 green · 6 skipped · 1 red**. NEXT, in order: (a) TRACE THE RUN-346 RED — a break named TEA, in a shooting order belonging to a group, missing on the third device (the order arrived with its 4 shots, the break did not: possible work loss, so it comes before the mail); (b) write the mail (texts and setup agreed 9 Oct, section below); (c) Roman's own Terms and Privacy text to replace the placeholders; (d) the real address — framehow.com already points at the Pages project, www still at an old Netlify site.
 
 ### DONE 17 September — the launch set (v4.9.218 · #521)
 1. Unsent copies of other projects: carry their memory (`withMemory`); opening a project with an unsent copy starts from the copy then syncs (`startFromUnsentCopy`); at app start every unsent copy of another project is put in place, synced, archived (`uploadUnsentCopiesAtStart`, "Uploading unsent work: …"). Test 28 green (red since run 179).
@@ -153,6 +153,91 @@ OPEN: where the PDF project made offline on the iPad went — CLOSED, Roman dele
 WHAT EXISTS: `backend/src/lib/email.ts` — `send()` is a stub; `sendVerificationEmail` and `sendPasswordResetEmail` build the text and the links (`APP_URL/auth/verify-email?token=` and `/auth/reset-password?token=`). Env already has optional `EMAIL_API_KEY` and `EMAIL_FROM` (types.ts, commented in wrangler.toml). The auth routes call these; the app already handles `?reset=token` at boot (accountFlow bootstrap step 3) and the verify link route exists on the backend. Nobody has ever received a mail: `users.email_verified` is 0 for everyone; sign-in does not need it.
 STEPS: (1) Roman makes a provider account — Resend is the simplest for a Worker (free tier, one HTTPS call, no library); verify the sending domain (valentfilm.com or framehow.app) or use their test sender first. (2) Roman types the two secrets himself: `cd backend && npx wrangler secret put EMAIL_API_KEY` and `npx wrangler secret put EMAIL_FROM` (e.g. "Framehow <hello@framehow.app>") — never paste them in chat. (3) Claude finishes `send()` (the Resend example in the file is right), logs the provider's answer, and makes a failure NOT break sign-up/forgot (log + carry on). (4) Check by hand on dev: register a throwaway address → verification mail arrives → link marks verified; forgot password → mail arrives → link opens the reset modal → new password works. (5) Decide with Roman: does sign-in REQUIRE a verified address (today no)? Suggest: no for the beta, but show "please verify" once. (6) Deploy backend (238 · #541). Simulator: the local worker has no key → stub path → nothing to test there beyond "forgot password does not error"; the real check is by hand.
 ALSO ASK: the analytics "Enter token" page and the app's account modals — anything else in the account area Roman wants (rename, delete account, change email)?
+
+### 23 September, night — RUNS 342–345: the two "sometimes" reds, and test 15 TRACED AT LAST
+
+Nothing was deployed. Everything here is the simulator only; the app is untouched and still **v4.9.240 · #543**.
+
+- **Run 342** — the back half (18→31), 46 green, 1 red, 35.1 min. Storage (31) PASSED. Instead BIG DAY part 4 went red: after the iPad tags its own picture on shot 4, the two devices never come to hold the same project — the iPad holds one version the desktop does not, and then both go quiet. Green in run 340, so not a permanent fault.
+- **Run 343** — part 4 alone, three times over: all green, 5 min. It does not repeat on its own.
+- So both "sometimes" reds have the SAME SHAPE: green alone, red once inside a long run. Worth holding on to; not a cause.
+- **DONE ABOUT IT:** when two devices fail to agree, the harness now prints WHAT DIFFERS, SIDE BY SIDE (`sideBySide` in `e2e/harness.ts`): every shot that differs, its strip, and each side's versions written as a person reads them — `TAKE 1(picture)[origin]` — plus everything outside the shots. The old print named only the first differing line, which read "}" against "},".
+- **Run 344** — FULL RUN, 79 green · 6 skipped · 1 red, 49.8 min. Storage green, part 4 green. The one red was **test 15 — and this time it is traced, with times from both logs**:
+  - 12:36:07 the desktop sent its two writes; they were on the server from that second.
+  - 12:36:04 onward the tablet: "not asking the server: nobody has touched this device for a while".
+  - 12:36:35 the tablet sent its own write; that was a PARTIAL send (1 of 6 frames), so the answer carried the arrangement, not the other shots' writing.
+  - It never asked again → the desktop's writing had no way in.
+  - **WHY the tablet was never touched: the simulator's writing door called the app's write straight out, with no tap and no key.** The app counts a device as awake only while a finger, a key, a scroll or the mouse reaches it (Roman's own rule #366: a device nobody is looking at is not kept up to date). So the test asked an untouched device to stay current — the opposite of the rule it runs on. In real life nobody writes on a device without touching it. **The fault is provably in the test, not in the app.**
+- **THE FIX (simulator only, nothing to deploy):** (1) `writeUnder` in `e2e/harness.ts` now touches the device first (`nudge`), exactly as a person does before typing; (2) the wait in `e2e/15-both-rearrange.spec.ts` uses `Device.nudgeOneAtATime(desktop, tablet)` instead of waking only the desktop — thirty-second turns, one device awake at a time, the way every other wait already does it.
+- **Run 345 (5 Oct) — PROVEN: 9 green, 6.9 min** (all three tests in the file, three times each). Test 15 was the last red; nothing in the suite is known-red now. STILL TO DO: one full run, then deploy 241.
+
+### 9 October — RUN 346's RED: TRACED AND FIXED (simulator only, nothing deployed)
+- The break named TEA did NOT vanish. All three devices agreed on `A — DAY 1: 2 12 [TEA] 1 [LUNCH] 7 3 4 5 6 [COMPANY MOVE] 8 9 10 11` — TEA had landed in the ALL order at exactly the position asked for, and `A — BARN` read `1 2 3 4`, missing BOTH its break AND the shot move the iPad made a second earlier. Two writes, same wrong order. Nothing lost, filed in the wrong place.
+- CAUSE: the simulator aimed at a shooting order BY ITS PLACE IN THE LIST and wrote to whatever sat there. The place was read at one moment (`orderIndexOf`) and used at another, and the list had moved under it. The app itself NEVER does this — its own ADD BREAK finds the order by its identity (`addBreak(orderId, …)` in sortOrder.ts), so this cannot happen through a person's path. Also a breach of Roman's rule that a door must go through the app's own function.
+- FIX: `moveInOrder` / `addBreak` / `moveBreak` now take the order's NAME (an index still works for the single-order case), resolved through `findOrder` in testHooks, which throws with the list of real names rather than writing next door. Every call site that derived an index from a name (test 28 ×7, test 29 ×4) now gives the name.
+- PROVEN: run 347, test 28 whole file, **10 passed (9.6 min)** — `A — BARN: 4 1 [TEA] 2 3` on all three devices.
+
+### 9 October — MAIL: AGREED AND SET UP. Roman's own wording — DO NOT CHANGE A WORD WITHOUT HIM.
+
+**DONE in Cloudflare (Roman, 9 Oct):** Workers Paid taken. Email Sending onboarded for framehow.com; reputation page shows Healthy. Records live and LOCKED: MX ×3 + SPF + DKIM on `cf-bounce.framehow.com`. `_dmarc.framehow.com` was set by Cloudflare to `p=reject` and Roman changed it to **`v=DMARC1; p=none;`** (his Gmail sends as framehow.com and would have started bouncing). Root SPF already reads `v=spf1 a mx include:_spf.webglobe.cz include:_spf.google.com ~all` — Google is in it, nothing to merge. Root MX is Google (his inbox), untouched.
+
+**AGREED:** mail goes out from **info@framehow.com** (so testers' replies reach him; change to noreply@ later is one line, no dashboard work). The account works the INSTANT it is made — nothing waits for mail, nothing is blocked by it. No confirmation of the address at this stage. The New password button on the users page stays as the backup.
+
+**TWO FAULTS FOUND IN THE EXISTING CODE (9 Oct) — must be fixed as part of this:**
+1. The mail builds the reset link as a page on the SERVER, but the app reads the token off its OWN address (`?reset=`). A tester clicking the old link would land nowhere.
+2. The address used for links is set to framehow.app, which is not where the app lives. Dev links must point at dev, live links at the live address.
+
+**FORGOT-PASSWORD BOX — Roman's wording:**
+> **Forgot your password?**
+> Type your email address and we'll send you a link to set a new one.
+> [ email field ] [ Cancel ] [ Send ]
+
+After Send the box says exactly: **"Check your mail."** — nothing else (he cut the extra sentence). The "or write to us at info@framehow.com" line stays underneath. The answer must be the same whether or not the address has an account (never tell a stranger who is a member).
+
+**RESET MAIL — exact text:**
+> Subject: Your Framehow password
+>
+> Hi \<name>,
+>
+> Open this link to choose a new password: \<link>
+>
+> This link works for one hour.
+>
+> Framehow
+
+**WELCOME MAIL — exact text:**
+> Subject: Welcome to Framehow
+>
+> Hi \<name>,
+>
+> Your Framehow account is ready — you can start straight away.
+>
+> Your storyboards sync between your devices on their own, and your work is kept even when you are offline.
+>
+> Feel free to send us a note if you have ideas about improvements.
+>
+> Framehow
+
+**NEVER sign a mail "Roman".** Always "Framehow". (Roman, 9 Oct: "no Roman!!!!!! ever!!!")
+
+**AFTER THE LINK:** the box that already exists — ONE field, "New password", Set password. Agreed: one field, no re-type.
+
+**SENDING ITSELF:** Cloudflare's Workers binding, no API key and no secret to type. A refusal or an outage is logged and the person's action still succeeds — asking for a password never shows an error because of mail. Locally there is no binding, so the simulator writes the mail to the log as it does today.
+
+**ALREADY LIVE (22 Sept), nothing to do:** the Terms tick box on Create account — unticked by default, refused until ticked, both links real, the moment kept with the account.
+
+### 5 October — MAIL: the figures, checked against Cloudflare's own pricing page (updated 9 June 2026)
+- Sending to ANY address needs the Workers Paid plan = **$5/month**. It includes **3,000 emails a month**, then $0.35 per 1,000. A beta never leaves the 3,000.
+- Receiving stays free and unlimited (Email Routing), as today.
+- Free sending exists but ONLY to addresses verified in Roman's own account — so to himself, never to a tester.
+- ROMAN'S IDEA, answered: send free to himself and auto-forward to the user does NOT work — the forward is itself a send to an unverified address. Gmail forwards everything to one fixed address, not one per person; per-person means scripting a relay inside Google. It is also worse: every reset link (a key to someone's account) would sit in his inbox first.
+- Roman already owns mail at framehow.com as a Gmail alias. That is for HIM typing; the app is a program on Cloudflare and cannot type into Gmail. Getting a program to send through Gmail means Google's sending interface and its sign-in kept re-authorised — more to set up and break than it saves.
+- DECISION STILL OPEN (Roman's, not urgent): $5 Workers Paid before opening to strangers. Until then the New password button + Roman's own mail is the path, and it is enough for people he knows by name.
+
+### 22 September, evening — FULL RUN 340 on v4.9.240 · #543: 78 green · 6 skipped · 2 red
+- **Test 15** (two devices writing seconds apart) — the tablet's log: "not asking the server: nobody has touched this device for a while", so the desktop's change never arrived. SAME test and same line as the single red in run 303. This is the known "test 15 idle timing" item on the LATER list. Not new, not yet traced.
+- **Test 31** (storage) — `desktop: project is on the server (null)`: saving the second project (BIG) gave no cloud id, in the same second as the line before it (so no network call was waited on). Test 31 ALONE passes (run 341, 50.6 s). No evidence for the cause: the failure surfaced two steps later, so no app log was printed. DONE ABOUT IT: the harness now throws WITH the device's own log the moment a save returns no cloud id, so the next full run says why. Nothing guessed, nothing changed in the app.
+- Everything else green, including all of today's new work (32, 33, 34) and the whole of BIG DAY and numbering.
 
 ### 22 September — 238 and 239 DEPLOYED, app AND backend — accounts; next number v4.9.240 · #543
 - Photographer added to the profession list (both boxes), between DOP and Camera Dept.

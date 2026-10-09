@@ -801,10 +801,10 @@ test('big day, part 6: shooting orders and the boxes, on both devices',
     expect.soft(seen.redIcons, 'a shot moved out of its box goes red — shot 6').toContain('6');
     await desktop.closeOrder();
     const dayIdx = await desktop.orderIndexOf('DAY ORDER');
-    const brk = await desktop.addBreak(dayIdx, 4, 'LUNCH');
+    const brk = await desktop.addBreak('DAY ORDER', 4, 'LUNCH');
     const dayOrderId = (await desktop.read()).orders[dayIdx].id;
     await desktop.renameBreak(dayOrderId, brk, 'LUNCH 60');
-    await desktop.moveBreak(dayIdx, 0, 3);
+    await desktop.moveBreak('DAY ORDER', 0, 3);
     await desktop.push();
     await desktop.settle();
     const withBreak = await desktop.orderTextByName('DAY ORDER');
@@ -835,8 +835,7 @@ test('big day, part 6: shooting orders and the boxes, on both devices',
     await desktop.page.waitForTimeout(600);
     await moveTo(desktop.page, '2', 5);
     await desktop.closeOrder();
-    const crewIdx = await ipad.orderIndexOf('CREW ORDER');
-    await ipad.addBreak(crewIdx, 1, 'TEA');
+    await ipad.addBreak('CREW ORDER', 1, 'TEA');
     await ipad.push().catch(() => {});
     await desktop.push().catch(() => {});
     const dayMine = await desktop.orderTextByName('DAY ORDER');
@@ -972,8 +971,7 @@ test('big day, part 8: an offline day — both work apart, both come back, nothi
     await desktop.typeNote(7, 'desk note');                     // shot "7"
     const setA = await desktop.makeGroup('SET A', [0, 1]);
     await desktop.newSortOrder('DESK ORDER');
-    const deskIdx = await desktop.orderIndexOf('DESK ORDER');
-    await desktop.addBreak(deskIdx, 2, 'DESK BREAK');
+    await desktop.addBreak('DESK ORDER', 2, 'DESK BREAK');
     const deskMine = {
       whole: parse(await desktop.whole()),
       order: await desktop.orderTextByName('DESK ORDER'),
