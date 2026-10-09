@@ -240,6 +240,7 @@ export function openAccountModal(initialMode: AccountMode = 'signup'): Promise<A
   const profSelect = el<HTMLSelectElement>('accountProfession');
   const termsBox = el<HTMLInputElement>('accountTerms');
   wirePasswordEye('accountPassword', 'accountPasswordEye', 'accountPasswordEyeSlash');
+  wireLegalLinks();
 
   function switchMode(): void {
     mode = mode === 'signup' ? 'login' : 'signup';
@@ -437,6 +438,48 @@ export function openForgotModal(prefillEmail: string = ''): Promise<boolean> {
     };
     input.onkeydown = (e) => { if (e.key === 'Enter') send.click(); };
   });
+}
+
+/**
+ * THE TERMS AND THE PRIVACY POLICY OPEN IN A BOX (9 Oct, Roman).
+ *
+ * The two words in the tick-box line are real links to framehow.com, so a
+ * reader without JavaScript — or a search engine — still finds the pages.
+ * Here they are caught and shown in a box over the account box instead: the
+ * same on every device, the half-filled form stays, nothing leaves the app.
+ * The box shows the LIVE page, so the wording is changed on the site alone.
+ *
+ * The box sits on top of the account box: it is raised above it for as long
+ * as it is open and put back when it closes, so the account box is still the
+ * one in front for everything else.
+ */
+function wireLegalLinks(): void {
+  const row = el('accountRowTerms');
+  const box = el('legalModal');
+  const frame = el<HTMLIFrameElement>('legalFrame');
+  const title = el('legalTitle');
+  const close = el<HTMLButtonElement>('legalClose');
+  function open(href: string, name: string): void {
+    title.textContent = name;
+    frame.title = name;
+    frame.src = href;
+    box.style.zIndex = '500';
+    show('legalModal');
+    close.focus();
+  }
+  function shut(): void {
+    hide('legalModal');
+    frame.src = 'about:blank';
+    box.style.zIndex = '';
+  }
+  row.onclick = (e) => {
+    const a = (e.target as HTMLElement).closest('a[data-legal]') as HTMLAnchorElement | null;
+    if (!a) return;
+    e.preventDefault();
+    open(a.href, a.dataset.legal ?? 'Terms');
+  };
+  close.onclick = shut;
+  box.onclick = (e) => { if (e.target === box) shut(); };
 }
 
 /**

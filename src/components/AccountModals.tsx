@@ -98,8 +98,8 @@ export function AccountModals() {
                 UPPERCASE — right for EMAIL and PASSWORD, wrong for a line
                 somebody has to read and agree to. */}
             <label htmlFor="accountTerms" className="account-terms-text">
-              I agree to the <a href="https://framehow.com/terms" target="_blank" rel="noopener noreferrer">Terms of Service</a>
-              {' '}and acknowledge the <a href="https://framehow.com/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a>.
+              I agree to the <a href="https://framehow.com/terms" data-legal="Terms of Service">Terms of Service</a>
+              {' '}and acknowledge the <a href="https://framehow.com/privacy" data-legal="Privacy Policy">Privacy Policy</a>.
             </label>
           </div>
 
@@ -356,6 +356,23 @@ export function AccountModals() {
             <button className="btn" id="customiseCancel" type="button">Cancel</button>
             <button className="btn btn-accent" id="customiseSave" type="button">Save</button>
           </div>
+        </div>
+      </div>
+
+      {/* THE TERMS AND THE PRIVACY POLICY, IN A BOX (9 Oct, Roman).
+          A link out of the account box used to open a new tab — and on a Mac
+          with an old installed copy of Framehow, Chrome pulled it into that
+          copy's window. A box is the same on every device, the half-filled
+          form stays underneath, and nothing leaves the app. It shows the LIVE
+          page from framehow.com, so a wording change is a site deploy and
+          every app, old or new, shows it. */}
+      <div className="account-modal hidden" id="legalModal">
+        <div className="account-card legal-card">
+          <div className="legal-head">
+            <h2 id="legalTitle">Terms of Service</h2>
+            <button className="legal-close" id="legalClose" type="button" aria-label="Close">×</button>
+          </div>
+          <iframe id="legalFrame" title="Terms" src="about:blank" />
         </div>
       </div>
 

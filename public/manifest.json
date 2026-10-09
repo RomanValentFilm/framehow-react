@@ -3,6 +3,7 @@
   "short_name": "Framehow",
   "description": "Storyboard tool for film & animation",
   "start_url": "./",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#000000",
   "theme_color": "#1a1a1a",

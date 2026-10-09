@@ -84,6 +84,17 @@ test('account: the delete question is in front, and deleting erases everything a
   // website now, not inside the app, so dev and live read the same words.
   expect(terms.links, 'both are links').toEqual(['https://framehow.com/terms', 'https://framehow.com/privacy']);
 
+  // THE TWO WORDS OPEN A BOX INSIDE THE APP (9 Oct, Roman) — over the account
+  // box, which is open at this point; the form underneath is left alone.
+  await desktop.page.locator('#accountRowTerms a[data-legal="Terms of Service"]').click();
+  await expect(desktop.page.locator('#legalModal')).toBeVisible();
+  await expect(desktop.page.locator('#legalTitle')).toHaveText('Terms of Service');
+  expect(await desktop.page.locator('#legalFrame').getAttribute('src'), 'it shows the live page')
+    .toBe('https://framehow.com/terms');
+  await desktop.page.locator('#legalClose').click();
+  await expect(desktop.page.locator('#legalModal')).toBeHidden();
+  await expect(desktop.page.locator('#accountModal'), 'the account box is still there').toBeVisible();
+
   // THE EYE ON THIS BOX TOO (9 Oct, Roman) — one helper serves this field and
   // the new-password field, so pressing it here proves both are wired.
   await desktop.page.locator('#accountPassword').fill('something-secret-8');

@@ -834,6 +834,13 @@
   /* EVERY LINK IN AN ACCOUNT BOX READS THE SAME (9 Oct, Roman): the browser's
      own blue was almost unreadable on this background. Same colour as the
      "Forgot password?" link above. */
+  /* The Terms / Privacy box: the live page from framehow.com inside the app (9 Oct). */
+  .legal-card{width:min(760px,94vw);height:min(86vh,900px);display:flex;flex-direction:column;padding:0;overflow:hidden;}
+  .legal-head{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--border);}
+  .legal-head h2{margin:0;}
+  .legal-close{background:none;border:none;color:#9aa6c6;font-size:28px;line-height:1;padding:0 4px;cursor:pointer;}
+  @media (hover:hover){.legal-close:hover{color:#fff;}}
+  #legalFrame{flex:1;width:100%;border:0;background:#0a0a0a;}
   /* The Terms line reads as a sentence, not as a field label (9 Oct). */
   .account-row label.account-terms-text{font-size:12px;line-height:1.45;color:#aaa;text-transform:none;letter-spacing:normal;font-weight:400;}
   /* A password field with an eye at its right-hand end (9 Oct). */
