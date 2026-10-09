@@ -50,7 +50,20 @@ export function AccountModals() {
           </div>
           <div className="account-row">
             <label htmlFor="accountPassword">Password</label>
-            <input type="password" id="accountPassword" autoComplete="new-password" />
+            {/* THE SAME EYE AS THE NEW-PASSWORD BOX (9 Oct, Roman). */}
+            <div className="account-pw">
+              <input type="password" id="accountPassword" autoComplete="new-password" />
+              <button className="account-pw-eye" id="accountPasswordEye" type="button"
+                      aria-label="Show password">
+                <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                  <path d="M1.5 12S5.5 5.5 12 5.5 22.5 12 22.5 12 18.5 18.5 12 18.5 1.5 12 1.5 12Z"
+                        fill="none" stroke="currentColor" strokeWidth="1.6" />
+                  <circle cx="12" cy="12" r="3.2" fill="none" stroke="currentColor" strokeWidth="1.6" />
+                  <line id="accountPasswordEyeSlash" x1="4" y1="20" x2="20" y2="4"
+                        stroke="currentColor" strokeWidth="1.6" />
+                </svg>
+              </button>
+            </div>
           </div>
           <div className="account-row" id="accountRowProfession">
             <label htmlFor="accountProfession">Profession <span className="account-optional">(optional)</span></label>
@@ -80,7 +93,11 @@ export function AccountModals() {
               creating an account — logging in agrees to nothing new. */}
           <div className="account-row" id="accountRowTerms" style={{ flexDirection: 'row', alignItems: 'flex-start', gap: '8px' }}>
             <input type="checkbox" id="accountTerms" style={{ width: 'auto', marginTop: '2px' }} />
-            <label htmlFor="accountTerms" style={{ fontSize: '12px', lineHeight: 1.45, color: '#aaa' }}>
+            {/* A SENTENCE, NOT A FIELD LABEL (9 Oct, Roman: "why caps???").
+                Every label in an account row is styled small, grey and
+                UPPERCASE — right for EMAIL and PASSWORD, wrong for a line
+                somebody has to read and agree to. */}
+            <label htmlFor="accountTerms" className="account-terms-text">
               I agree to the <a href="/terms" target="_blank" rel="noopener noreferrer">Terms of Service</a>
               {' '}and acknowledge the <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a>.
             </label>
@@ -108,7 +125,7 @@ export function AccountModals() {
           for the person whose mail never turns up. */}
       <div className="account-modal hidden" id="forgotModal">
         <div className="account-card">
-          <h2>Forgot your password?</h2>
+          <h2 id="forgotTitle">Forgot your password?</h2>
           <p className="account-hint" id="forgotIntro">
             Type your email address and we'll send you a link to set a new one.
           </p>
@@ -117,7 +134,9 @@ export function AccountModals() {
             <input type="email" id="forgotEmail" autoComplete="email" />
           </div>
           <div className="account-error" id="forgotError" />
-          <div className="account-success" id="forgotSuccess" />
+          {/* AFTER SENDING there is nothing left to say but one sentence, and
+              it takes the heading's place in the heading's own white (9 Oct,
+              Roman). No second colour. */}
           <div className="account-btns">
             <button className="btn" id="forgotCancel" type="button">Cancel</button>
             <button className="btn btn-accent" id="forgotSend" type="button">Send</button>
@@ -131,7 +150,21 @@ export function AccountModals() {
           <h2>Choose a new password</h2>
           <div className="account-row">
             <label htmlFor="resetPassword">New password</label>
-            <input type="password" id="resetPassword" autoComplete="new-password" />
+            {/* SEE WHAT YOU TYPE (9 Oct, Roman). One field and no re-type, so
+                there has to be a way to read it back before pressing. */}
+            <div className="account-pw">
+              <input type="password" id="resetPassword" autoComplete="new-password" />
+              <button className="account-pw-eye" id="resetPasswordEye" type="button"
+                      aria-label="Show password">
+                <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+                  <path d="M1.5 12S5.5 5.5 12 5.5 22.5 12 22.5 12 18.5 18.5 12 18.5 1.5 12 1.5 12Z"
+                        fill="none" stroke="currentColor" strokeWidth="1.6" />
+                  <circle cx="12" cy="12" r="3.2" fill="none" stroke="currentColor" strokeWidth="1.6" />
+                  <line id="resetPasswordEyeSlash" x1="4" y1="20" x2="20" y2="4"
+                        stroke="currentColor" strokeWidth="1.6" />
+                </svg>
+              </button>
+            </div>
           </div>
           <div className="account-error" id="resetError" />
           <div className="account-btns">

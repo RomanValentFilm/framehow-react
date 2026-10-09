@@ -834,6 +834,13 @@
   /* EVERY LINK IN AN ACCOUNT BOX READS THE SAME (9 Oct, Roman): the browser's
      own blue was almost unreadable on this background. Same colour as the
      "Forgot password?" link above. */
+  /* The Terms line reads as a sentence, not as a field label (9 Oct). */
+  .account-row label.account-terms-text{font-size:12px;line-height:1.45;color:#aaa;text-transform:none;letter-spacing:normal;font-weight:400;}
+  /* A password field with an eye at its right-hand end (9 Oct). */
+  .account-pw{position:relative;display:flex;align-items:center;}
+  .account-pw input{padding-right:40px;}
+  .account-pw-eye{position:absolute;right:6px;top:50%;transform:translateY(-50%);background:none;border:none;padding:4px;margin:0;line-height:0;color:#9aa6c6;cursor:pointer;}
+  @media (hover:hover){.account-pw-eye:hover{color:#fff;}}
   .account-card a{color:#9aa6c6;text-decoration:underline;}
   .account-card a:hover{color:#fff;}
   .account-link-btn:hover{color:#fff;}

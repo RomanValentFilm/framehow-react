@@ -25,6 +25,23 @@ test.describe.configure({ timeout: 300_000 });
 const API = 'http://127.0.0.1:8787';
 const ADMIN = 'e2e-admin';
 
+/**
+ * THE PROJECT LIST OPENS ITSELF AT START (runs 348–355).
+ *
+ * An account with nothing in it gets the list over the whole screen — right
+ * for a person, and it stays until they close it. Every box these tests press
+ * sits behind it until then, so both tests close it the same way: with its own
+ * Close button.
+ */
+async function closeProjectList(d: Device): Promise<void> {
+  if (await d.page.locator('#projectListModal:not(.hidden)').count()) {
+    say(`${d.name}: closing the project list, as a person does`);
+    await d.page.locator('#projectListClose').click();
+    await d.page.waitForTimeout(400);
+  }
+  await expect(d.page.locator('#projectListModal')).toBeHidden();
+}
+
 test('account: the delete question is in front, and deleting erases everything after seven days', async ({ browser }) => {
   const { token, email, password } = await freshAccount();
   const desktop = await Device.open(browser, 'desktop', token, false);
@@ -37,7 +54,16 @@ test('account: the delete question is in front, and deleting erases everything a
 
   // ── AGREEING TO THE TERMS ── Create account is refused until it is ticked,
   // and the two links must lead somewhere real (22 Sept).
+  await closeProjectList(desktop);
+
   say('desktop: the account box asks to agree before it will make an account');
+  // OPENED THE WAY THE MENU OPENS IT (run 353). This used to read the markup
+  // with the box shut, which says nothing about what a person can reach — and
+  // the eye below could not be pressed at all.
+  await desktop.page.evaluate(() =>
+    void (window as never as { __fh_test: { openAccountBox(): void } }).__fh_test.openAccountBox());
+  await desktop.page.waitForTimeout(500);
+  await expect(desktop.page.locator('#accountModal')).toBeVisible();
   const terms = await desktop.page.evaluate(() => {
     const row = document.getElementById('accountRowTerms')!;
     const box = document.getElementById('accountTerms') as HTMLInputElement;
@@ -47,10 +73,29 @@ test('account: the delete question is in front, and deleting erases everything a
       links: Array.from(row.querySelectorAll('a')).map((a) => (a as HTMLAnchorElement).getAttribute('href')),
     };
   });
+  // READ AS IT LOOKS (run 354/355). The line was styled as a field label and
+  // came out in capitals; it reads as a sentence now, and the test says so.
   expect(terms.text, 'it says what is agreed to').toContain('Terms of Service');
   expect(terms.text).toContain('Privacy Policy');
+  expect(terms.text, 'as a sentence, not shouted').not.toContain('TERMS OF SERVICE');
   expect(terms.ticked, 'nothing is agreed to in advance').toBe(false);
+
   expect(terms.links, 'both are links').toEqual(['/terms', '/privacy']);
+
+  // THE EYE ON THIS BOX TOO (9 Oct, Roman) — one helper serves this field and
+  // the new-password field, so pressing it here proves both are wired.
+  await desktop.page.locator('#accountPassword').fill('something-secret-8');
+  expect(await desktop.page.locator('#accountPassword').getAttribute('type')).toBe('password');
+  await desktop.page.locator('#accountPasswordEye').click();
+  expect(await desktop.page.locator('#accountPassword').getAttribute('type'),
+    'the eye shows what was typed').toBe('text');
+  await desktop.page.locator('#accountPasswordEye').click();
+  expect(await desktop.page.locator('#accountPassword').getAttribute('type'),
+    'and hides it again').toBe('password');
+
+  await desktop.page.locator('#accountCancel').click();
+  await desktop.page.waitForTimeout(400);
+  await expect(desktop.page.locator('#accountModal')).toBeHidden();
 
   // ── THE FORGOT BOX IS CHECKED IN ITS OWN TEST BELOW ─────────────────────
   // Asking for a new password drops every session the account has, so it
@@ -186,12 +231,7 @@ test('forgot password: the box asks, the answer never says who is a member, and 
   // box this test wants to press. A project, then its own Close button.
   await desktop.newProject('MINE', 2);
   await desktop.settle();
-  if (await desktop.page.locator('#projectListModal:not(.hidden)').count()) {
-    say('desktop: closing the project list, as a person does');
-    await desktop.page.locator('#projectListClose').click();
-    await desktop.page.waitForTimeout(400);
-  }
-  await expect(desktop.page.locator('#projectListModal')).toBeHidden();
+  await closeProjectList(desktop);
 
   say('desktop: the box asks for the address, opened the way the app opens it');
   await desktop.page.evaluate(() =>
@@ -207,7 +247,7 @@ test('forgot password: the box asks, the answer never says who is a member, and 
   say('an address with no account: the same answer');
   await desktop.page.locator('#forgotEmail').fill('nobody-at-all@example.com');
   await desktop.page.locator('#forgotSend').click();
-  await expect(desktop.page.locator('#forgotSuccess')).toHaveText('Check your mail.');
+  await expect(desktop.page.locator('#forgotTitle')).toHaveText('Check your mail.');
   await desktop.page.locator('#forgotCancel').click();
   await desktop.page.waitForTimeout(300);
 
@@ -217,8 +257,12 @@ test('forgot password: the box asks, the answer never says who is a member, and 
   await desktop.page.waitForTimeout(400);
   await desktop.page.locator('#forgotEmail').fill(email);
   await desktop.page.locator('#forgotSend').click();
-  await expect(desktop.page.locator('#forgotSuccess'), "Roman's one sentence, 9 Oct")
+  // The one sentence takes the heading's place, and nothing else is left on
+  // screen to read (9 Oct, Roman).
+  await expect(desktop.page.locator('#forgotTitle'), "Roman's one sentence, 9 Oct")
     .toHaveText('Check your mail.');
+  await expect(desktop.page.locator('#forgotIntro')).toBeHidden();
+  await expect(desktop.page.locator('#forgotRow')).toBeHidden();
   await desktop.page.locator('#forgotCancel').click();
   await desktop.close();
 
@@ -233,6 +277,13 @@ test('forgot password: the box asks, the answer never says who is a member, and 
   const clicked = await Device.open(browser, 'the link', token, false,
     { openWith: `&reset=${asked.dev_token}` });
   await expect(clicked.page.locator('#resetModal')).toBeVisible();
+  // THE EYE (9 Oct): hidden to start, readable when pressed, hidden again.
+  expect(await clicked.page.locator('#resetPassword').getAttribute('type')).toBe('password');
+  await clicked.page.locator('#resetPasswordEye').click();
+  expect(await clicked.page.locator('#resetPassword').getAttribute('type'),
+    'the eye shows what was typed').toBe('text');
+  await clicked.page.locator('#resetPasswordEye').click();
+  expect(await clicked.page.locator('#resetPassword').getAttribute('type')).toBe('password');
   await clicked.page.locator('#resetPassword').fill('a-brand-new-password-7');
   await clicked.page.locator('#resetSubmit').click();
   await clicked.page.waitForTimeout(1_500);

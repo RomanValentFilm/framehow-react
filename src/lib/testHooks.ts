@@ -31,7 +31,7 @@ import { handlePDF } from './pdf';
 import { deleteFrameForGood, handleMainAction, handleAction, renameFrame, hideFrame, unhideFrame } from './actions';
 import { createSetup, handleSetupFrameClick, handleStripTagClick } from './setups';
 import { renameNeedTab, renameNeedTable, renameNeedItem, ensureFrameNeeds } from './needs';
-import { saveNow, carryOnAsNewProject, openCloudProjectById, beginNewProject, untouchedStrip, makeRestorePoint, listRestorePoints, restoreToPoint, deleteCloudProject, recoverCloudProject, saveRestorePoint, deleteRestorePoint, deleteCloudProjectNow, openProjectList, openAccountSettings, openForgotModal } from './accountFlow';
+import { saveNow, carryOnAsNewProject, openCloudProjectById, beginNewProject, untouchedStrip, makeRestorePoint, listRestorePoints, restoreToPoint, deleteCloudProject, recoverCloudProject, saveRestorePoint, deleteRestorePoint, deleteCloudProjectNow, openProjectList, openAccountSettings, openForgotModal, openAccountModal } from './accountFlow';
 import { storageState } from './storageMeter';
 import { flushSyncNow, markFrameDirty, getDirtyFrameIds, pullNow } from './currentProject';
 import { openNeedsModal } from './overview';
@@ -218,6 +218,9 @@ export interface TestDoor {
   /** Open the forgot-password box, exactly as the link in the sign-in box
    *  does (9 Oct). The box does the asking and the sending itself. */
   openForgotBox(): void;
+  /** Open the Create account / Sign in box, as the ACCOUNT menu does (9 Oct).
+   *  Fires and forgets: the box stays until something in it is pressed. */
+  openAccountBox(): void;
   /** Strip the settings memory from the local save — a save from before the
    *  memory existed, or one that lost it (22 Sept). Reload afterwards. */
   forgetSettingsMemoryInSave(): Promise<number>;
@@ -1223,6 +1226,7 @@ export function installTestDoor(): void {
     openProjectList() { return openProjectList(); },
     openAccountSettings() { return openAccountSettings(); },
     openForgotBox() { void openForgotModal(''); },
+    openAccountBox() { void openAccountModal('signup'); },
     async forgetSettingsMemoryInSave() {
       const { loadSnapshot, saveSnapshot } = await import('./persistence');
       const snap = await loadSnapshot();

@@ -223,7 +223,7 @@ interface AccountResult {
   token: string;
 }
 
-function openAccountModal(initialMode: AccountMode = 'signup'): Promise<AccountResult | null> {
+export function openAccountModal(initialMode: AccountMode = 'signup'): Promise<AccountResult | null> {
   let mode: AccountMode = initialMode;
   const titleEl = el('accountTitle');
   const hintEl = el('accountHint');
@@ -239,6 +239,7 @@ function openAccountModal(initialMode: AccountMode = 'signup'): Promise<AccountR
   const passInput = el<HTMLInputElement>('accountPassword');
   const profSelect = el<HTMLSelectElement>('accountProfession');
   const termsBox = el<HTMLInputElement>('accountTerms');
+  wirePasswordEye('accountPassword', 'accountPasswordEye', 'accountPasswordEyeSlash');
 
   function switchMode(): void {
     mode = mode === 'signup' ? 'login' : 'signup';
@@ -384,10 +385,9 @@ function openAccountModal(initialMode: AccountMode = 'signup'): Promise<AccountR
 export function openForgotModal(prefillEmail: string = ''): Promise<boolean> {
   const input = el<HTMLInputElement>('forgotEmail');
   const errorEl = el('forgotError');
-  const successEl = el('forgotSuccess');
   input.value = prefillEmail;
   errorEl.textContent = '';
-  successEl.textContent = '';
+  el('forgotTitle').textContent = 'Forgot your password?';
   el('forgotIntro').classList.remove('hidden');
   el('forgotRow').classList.remove('hidden');
   show('forgotModal');
@@ -426,8 +426,9 @@ export function openForgotModal(prefillEmail: string = ''): Promise<boolean> {
         // on the server either way.
       }
       send.disabled = false;
-      // Roman's wording, 9 Oct — this sentence and nothing else.
-      successEl.textContent = 'Check your mail.';
+      // Roman's wording, 9 Oct — this sentence and NOTHING else: it takes the
+      // heading's place, in the heading's own white.
+      el('forgotTitle').textContent = 'Check your mail.';
       el('forgotIntro').classList.add('hidden');
       el('forgotRow').classList.add('hidden');
       send.classList.add('hidden');
@@ -438,11 +439,35 @@ export function openForgotModal(prefillEmail: string = ''): Promise<boolean> {
   });
 }
 
+/**
+ * AN EYE ON A PASSWORD FIELD (9 Oct, Roman).
+ *
+ * One helper for every such field — the new-password box and the Create
+ * account / Sign in box — so there is one behaviour to get right: hidden when
+ * the box opens, readable while the eye is pressed on, hidden again after.
+ */
+function wirePasswordEye(inputId: string, eyeId: string, slashId: string): void {
+  const input = el<HTMLInputElement>(inputId);
+  const eye = el<HTMLButtonElement>(eyeId);
+  const slash = document.getElementById(slashId);
+  input.type = 'password';
+  if (slash) slash.style.display = '';
+  eye.onclick = () => {
+    const shown = input.type === 'text';
+    input.type = shown ? 'password' : 'text';
+    if (slash) slash.style.display = shown ? '' : 'none';
+    eye.setAttribute('aria-label', shown ? 'Show password' : 'Hide password');
+    input.focus();
+  };
+}
+
 function openResetModal(token: string): Promise<boolean> {
   const input = el<HTMLInputElement>('resetPassword');
   const errorEl = el('resetError');
   input.value = '';
   errorEl.textContent = '';
+  // One field, no re-type — so it must be readable before pressing.
+  wirePasswordEye('resetPassword', 'resetPasswordEye', 'resetPasswordEyeSlash');
   show('resetModal');
   focusFirstInput('resetModal');
 
