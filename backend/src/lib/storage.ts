@@ -21,6 +21,7 @@
 
 import type { D1Database, R2Bucket } from "@cloudflare/workers-types";
 import type { Env } from "../types";
+import { addBytes } from "./totals";
 
 const DEFAULT_LIMIT_MB = 350;
 
@@ -154,6 +155,9 @@ export async function deleteProjectForGood(
   if (shared.size > 0) {
     console.log(`[storage] project ${projectId}: ${shared.size} picture file(s) kept — named by another project or restore point`);
   }
+  // The running totals come down with the files (12 Oct), so Delete now frees
+  // room at the upload door at once, not only after the nightly recount.
+  await addBytes(db, userId, -bytesFreed);
   return { deletedFiles: toDelete.length, keptShared: shared.size, bytesFreed };
 }
 

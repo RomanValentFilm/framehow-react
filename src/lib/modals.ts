@@ -712,6 +712,7 @@ export function openTextModal(
 export function showImportantNote(headline: string, body: string): Promise<void> {
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
+    overlay.id = 'importantNote';            // so the simulator can read what it says (12 Oct)
     overlay.style.cssText =
       'position:fixed;inset:0;z-index:999999;background:rgba(0,0,0,0.75);' +
       'display:flex;align-items:center;justify-content:center;padding:20px;' +

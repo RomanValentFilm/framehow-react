@@ -87,7 +87,7 @@ import { closeSortMode, refreshOpenSortView, removeFrameFromSortOrders } from '.
 import { resetStoryboardState, state, useStore, bumpRenderTick, freshNeedDefinitions, DEFAULT_STRIP_DEFS, migrateNeedDefinitions, createDefaultExportMeta, blankNeeds, blankNote } from '../store/state';
 import type { Frame, Stroke, Version, FrameNeedState, FrameNoteState, NeedDefinitions, BracketNodeData, ProjectType } from '../store/state';
 import { clearRectsForProject } from './pdfAdjust';
-import { noteStorage, storageLineText, storageIsHigh, storageFigure as lastStorageFigure } from './storageMeter';
+import { noteStorage, storageLineText, storageIsHigh, storageFigure as lastStorageFigure, storageFullFromServer } from './storageMeter';
 
 // ---------------------------------------------------------------------------
 // Device identification — persistent ID + human-readable name
@@ -2356,7 +2356,8 @@ async function uploadImageToR2(
       status: res.status,
       code: body?.error?.code ?? 'upload_failed',
       message: body?.error?.message ?? 'Image upload failed.',
-    } as ApiError;
+      storage: body?.storage,
+    } as ApiError & { storage?: { used: number; limit: number; pending?: number } };
   }
   return res.json();
 }
@@ -3037,12 +3038,42 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   const uploadedR2Keys = new Map<string, { r2Key: string; task: typeof imageUploads[0] }>();
 
   if (imageUploads.length > 0) {
+    // A REFUSED PICTURE IS SAID, NOT SWALLOWED (12 Oct, Roman). Until today a
+    // picture the server refused was skipped in silence: it stayed on this
+    // device only, never reached the cloud or the other devices, and nobody
+    // was told. Two refusals matter —
+    //   too large (over 10 MB)  → the person is told once per push, in a box;
+    //   storage full            → the same stop as a refused save: work stays
+    //                             on the device, the person is told, pushes
+    //                             wait. The rest of this batch is not tried.
+    let saidTooLarge = false;
+    let full = false;
     const results = await Promise.all(
       imageUploads.map(async (task) => {
+        if (full) return null;
         try {
           const r = await uploadImageToR2(task.src, token);
           return { task, versionId: task.versionId, ...r };
         } catch (e) {
+          const err = e as ApiError & { storage?: { used: number; limit: number; pending?: number } };
+          if (err?.status === 413 && err.code === 'image_too_large') {
+            trace(`  picture refused: over 10 MB (version ${task.versionId.slice(0, 6)}) — it stays on this device`);
+            if (!saidTooLarge) {
+              saidTooLarge = true;
+              void (async () => {
+                const { showImportantNote } = await import('./modals');
+                await showImportantNote('PICTURE TOO LARGE',
+                  'This picture exceeds the maximum limit of 10 MB per photo, please use smaller pictures.');
+              })();
+            }
+            return null;
+          }
+          if (err?.status === 413 && err.code === 'storage_full') {
+            full = true;
+            trace(`  picture refused: storage full (version ${task.versionId.slice(0, 6)})`);
+            storageFullFromServer(err.storage);
+            return null;
+          }
           console.warn('[sync] image upload failed for version', task.versionId, e);
           return null; // Skip failed uploads — structure still syncs
         }

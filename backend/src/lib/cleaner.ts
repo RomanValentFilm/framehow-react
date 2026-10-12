@@ -139,11 +139,20 @@ export async function deleteDeadPictures(
   // keys in ONE call; 1452 files are fifteen calls now.
   let bytesFreed = 0;
   const done: string[] = [];
+  const freedByOwner = new Map<string, number>();
   for (let i = 0; i < files.length; i += 100) {
     const batch = files.slice(i, i + 100);
     await bucket.delete(batch.map((f) => f.key));
-    for (const f of batch) { bytesFreed += f.size; done.push(f.key); console.log(`[cleaner] deleted dead picture ${f.key} (${f.size} bytes)`); }
+    for (const f of batch) {
+      bytesFreed += f.size; done.push(f.key);
+      const o = ownerOfKey(f.key);
+      freedByOwner.set(o, (freedByOwner.get(o) ?? 0) + f.size);
+      console.log(`[cleaner] deleted dead picture ${f.key} (${f.size} bytes)`);
+    }
   }
+  // The running totals come down with the files (12 Oct).
+  const { addBytes } = await import("./totals");
+  for (const [o, b] of freedByOwner) await addBytes(db, o, -b);
   console.log(`[cleaner] delete mode: owner=${ownerId ?? "all"} deleted=${done.length} freed=${Math.round(bytesFreed / 1048576)}MB`);
   return { deleted: done.length, bytesFreed, keys: done, ownerId };
 }

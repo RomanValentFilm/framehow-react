@@ -4,6 +4,38 @@ import { storageLimitBytes } from "../lib/storage";
 import { countDeadPictures, deleteDeadPictures } from "../lib/cleaner";
 import { hashPassword } from "../lib/crypto";
 
+// ---------------------------------------------------------------------------
+// THE STORAGE BAR (12 Oct, Roman): how much the whole of Framehow holds at
+// Cloudflare, against the free 10 GB and the ceiling Roman set, with the
+// estimated monthly cost. Red from 8 GB. On the front page and the storage page.
+// ---------------------------------------------------------------------------
+async function storageBarHtml(env: Env, token: string): Promise<string> {
+  const { totalBytes, ceilingBytes, estimatedUsdPerMonth, gbText, FREE_GB, GB } = await import("../lib/totals");
+  const used = await totalBytes(env.DB);
+  const ceiling = ceilingBytes(env);
+  const scale = Math.max(ceiling, used);
+  const pctUsed = Math.min(100, (used / scale) * 100);
+  const pctFree = Math.min(100, (FREE_GB * GB / scale) * 100);
+  const red = used >= 8 * GB;
+  const colour = red ? "#c62828" : "#4fc3f7";
+  const cost = estimatedUsdPerMonth(used);
+  return `
+<div style="margin:16px 0 8px">
+  <div style="display:flex;justify-content:space-between;font-size:13px;color:#aaa;margin-bottom:6px">
+    <span>Framehow at Cloudflare: <b style="color:${red ? "#ff6b6b" : "#fff"}">${gbText(used)}</b></span>
+    <span>free up to ${FREE_GB} GB · ceiling ${gbText(ceiling)} · estimated <b style="color:#fff">$${cost.toFixed(2)}</b> / month</span>
+  </div>
+  <div style="position:relative;height:14px;background:#1a1a1a;border:1px solid #333;border-radius:7px;overflow:hidden">
+    <div style="position:absolute;left:0;top:0;bottom:0;width:${pctUsed.toFixed(2)}%;background:${colour}"></div>
+    <div title="free allowance ends here" style="position:absolute;left:${pctFree.toFixed(2)}%;top:0;bottom:0;width:2px;background:#888"></div>
+  </div>
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px">
+    <div style="font-size:11px;color:#666">The mark is the end of the free 10 GB; the bar ends at the ceiling. Figures are the running total; the nightly sweep sets them to the bucket's exact count.</div>
+    <form method="post" action="/analytics/recount" style="margin:0"><input type="hidden" name="token" value="${token.replace(/"/g, "&quot;")}"><button class="expand-btn" style="margin:0;padding:4px 10px;font-size:12px">Recount now</button></form>
+  </div>
+</div>`;
+}
+
 const router = new Hono<{ Bindings: Env; Variables: AppVariables }>();
 
 // ─── POST /track ───────────────────────────────────────────────────────────
@@ -366,6 +398,8 @@ router.get("/analytics", async (c) => {
   <div class="card"><div class="num">${tabletSessions}</div><div class="label">Tablet sessions</div></div>
   <div class="card"><div class="num">${phoneSessions}</div><div class="label">Phone sessions</div></div>
 </div>
+
+${await storageBarHtml(c.env, token)}
 
 <div style="display:flex;gap:10px;flex-wrap:wrap;margin:16px 0 28px">
   <a href="/analytics/users-list?token=${encodeURIComponent(token)}" class="expand-btn" style="font-size:13px;padding:8px 14px">All registered users (${totalUsers})</a>
@@ -958,6 +992,13 @@ ${sessions.map((s: any) => {
 router.get("/analytics/storage", async (c) => {
   const token = c.req.query("token");
   if (!token || token !== c.env.ADMIN_API_TOKEN) return c.json({ error: "unauthorized" }, 401);
+  // THE FIGURES AS NUMBERS (12 Oct), for the simulator: the running total,
+  // the ceiling, the estimated cost — what the bar on the page is drawn from.
+  if (c.req.query("format") === "json") {
+    const { totalBytes, ceilingBytes, estimatedUsdPerMonth, alertStep } = await import("../lib/totals");
+    const total = await totalBytes(c.env.DB);
+    return c.json({ total, ceiling: ceilingBytes(c.env), estimatedUsd: estimatedUsdPerMonth(total), step: alertStep(total) });
+  }
 
   const db = c.env.DB;
   const limit = storageLimitBytes(c.env);
@@ -1044,6 +1085,7 @@ router.get("/analytics/storage", async (c) => {
 <title>Framehow Storage</title><style>${PAGE_STYLES}</style></head><body>
 <p><a href="/analytics?token=${encodeURIComponent(token)}" style="color:#4fc3f7">← Analytics</a></p>
 <h1>Storage</h1>
+${await storageBarHtml(c.env, token)}
 <p class="meta">Limit per account: ${mb(limit)} MB. Sizes are what the server has recorded; pictures uploaded before sizes were kept count as 0 until they are re-sent or measured.</p>
 
 <div class="cards">
@@ -1065,6 +1107,19 @@ router.get("/analytics/storage", async (c) => {
 
 // Bring back an account deleted less than seven days ago, with its projects
 // (22 Sept). After the sweep has erased it there is nothing to bring back.
+// RECOUNT NOW (12 Oct): what the nightly sweep does to the figures, on
+// demand — the bucket is listed and the running totals set to the truth.
+router.post("/analytics/recount", async (c) => {
+  const form = await c.req.parseBody();
+  const token = String(form["token"] ?? "");
+  if (!token || token !== c.env.ADMIN_API_TOKEN) return c.json({ error: "unauthorized" }, 401);
+  if (!c.env.IMAGES_BUCKET) return c.json({ error: "no bucket" }, 500);
+  const { recalibrate } = await import("../lib/totals");
+  const t = await recalibrate(c.env.DB, c.env.IMAGES_BUCKET);
+  console.log(`[analytics] recount: ${t.files} files, ${t.bytes} bytes`);
+  return c.redirect(`/analytics/storage?token=${encodeURIComponent(token)}`);
+});
+
 router.post("/analytics/restore-account", async (c) => {
   const form = await c.req.parseBody();
   const token = String(form["token"] ?? "");

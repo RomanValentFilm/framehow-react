@@ -21,6 +21,9 @@ export interface Env {
   // Storage (#533): per-account limit in MB (default 350); FH_E2E="1" only on
   // the simulator's local worker — lets a test lower the limit per request.
   STORAGE_LIMIT_MB?: string;
+  // THE CEILING for the whole of Framehow, in GB (12 Oct, Roman). Nothing at
+  // Cloudflare caps storage; this does. Default 50.
+  GLOBAL_STORAGE_LIMIT_GB?: string;
   FH_E2E?: string;
 
   // Secrets (set via `wrangler secret put`)

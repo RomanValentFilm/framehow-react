@@ -114,6 +114,15 @@ export async function sendPasswordResetEmail(
 }
 
 // ---------------------------------------------------------------------------
+// MAIL TO ROMAN (12 Oct): the storage figures — every night, and at once when
+// a step is crossed. Goes to ADMIN_EMAIL; never to a user.
+// ---------------------------------------------------------------------------
+export async function sendAdminMail(env: Env, subject: string, text: string): Promise<boolean> {
+  if (!env.ADMIN_EMAIL) { console.log(`[email] no ADMIN_EMAIL — not sent: ${subject}`); return false; }
+  return send(env, { to: env.ADMIN_EMAIL, subject, text });
+}
+
+// ---------------------------------------------------------------------------
 // Confirming an address is NOT part of the beta (Roman, 22 Sept: "i don't want
 // the user to do a confirmation of an account yet... he creates an account, he
 // has the account immediately in the app and can use it"). The route that

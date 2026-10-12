@@ -4,6 +4,8 @@ import type { AppVariables, Env } from "../types";
 import { requireUser } from "../lib/auth";
 import { newId } from "../lib/crypto";
 import { jsonError } from "../lib/response";
+import { storageLimitBytes } from "../lib/storage";
+import { addBytes, ceilingBytes, mailIfStepCrossed, totalBytes, userBytes } from "../lib/totals";
 
 // Spec: 10 MB per image. Enforced here from Content-Length first, then again
 // against the actual stream length below.
@@ -39,8 +41,12 @@ const upload = new Hono<{ Bindings: Env; Variables: AppVariables }>();
 // and our client controls the upload — keeping the wire format simple keeps
 // memory bounded.
 //
-// Quota / rate-limit are enforced at /sync time (when the image row actually
-// lands in D1). Orphan R2 objects from rejected syncs get swept by a cron later.
+// THE WALL AND THE CEILING ARE AT THIS DOOR (12 Oct, Roman). Until today the
+// account limit was checked only when a project was SAVED; this door refused
+// nothing but a single picture over 10 MB, so an account could hold any amount
+// for a day until the sweep. Now, before a byte is stored: this account under
+// its limit, and the whole of Framehow under the ceiling Roman set. Both refuse
+// with the storage-full answer the app already understands. See lib/totals.ts.
 // ---------------------------------------------------------------------------
 upload.post("/upload", requireUser, async (c) => {
   if (!c.env.IMAGES_BUCKET) {
@@ -73,12 +79,38 @@ upload.post("/upload", requireUser, async (c) => {
   }
 
   const me = c.get("user");
+
+  // THE WALL: this account, orphans included, may not pass its limit.
+  const limit = storageLimitBytes(c.env, c.req.header("X-FH-Storage-Limit-MB"));
+  const mine = await userBytes(c.env.DB, me.id);
+  if (mine + buf.byteLength > limit) {
+    console.log(`[upload] refused: account ${me.id} at ${mine} + ${buf.byteLength} > ${limit}`);
+    return c.json({
+      error: { code: "storage_full", message: "This account's storage is full." },
+      storage: { used: mine, limit, pending: buf.byteLength },
+    }, 413);
+  }
+  // THE CEILING: the whole of Framehow may not pass the number Roman set.
+  const ceiling = ceilingBytes(c.env, c.req.header("X-FH-Global-Limit-MB"));
+  const all = await totalBytes(c.env.DB);
+  if (all + buf.byteLength > ceiling) {
+    console.log(`[upload] REFUSED AT THE CEILING: Framehow holds ${all} + ${buf.byteLength} > ${ceiling}`);
+    return c.json({
+      error: { code: "storage_full", message: "Framehow's storage is full for the moment." },
+      storage: { used: mine, limit, pending: buf.byteLength },
+    }, 413);
+  }
+
   const r2Key = `users/${me.id}/${newId()}.${extForContentType(contentType)}`;
 
   await c.env.IMAGES_BUCKET.put(r2Key, buf, {
     httpMetadata: { contentType },
     customMetadata: { user_id: me.id },
   });
+  await addBytes(c.env.DB, me.id, buf.byteLength);
+  // AT ONCE, if this upload crossed a step Roman wants to hear about. Never in
+  // the way of the answer: a mail that fails is logged, the upload stands.
+  c.executionCtx.waitUntil(mailIfStepCrossed(c.env, c.env.DB, all + buf.byteLength).catch((e) => console.log(`[upload] step mail failed: ${String(e)}`)));
 
   return c.json({
     r2_key: r2Key,

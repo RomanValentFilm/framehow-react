@@ -73,11 +73,26 @@ export default {
         // names the file, and it is older than 24 hours. After the expired
         // projects, so what they leave behind is judged in the same pass.
         // Every file it deletes is in the log; the buttons stay for a look.
+        let deadFreed = 0;
         try {
           const dead = await deleteDeadPictures(env.DB, env.IMAGES_BUCKET, null);
+          deadFreed = dead.bytesFreed;
           console.log(`[cron] dead pictures: deleted=${dead.deleted} freed=${Math.round(dead.bytesFreed / 1048576)}MB`);
         } catch (e) {
           console.error("[cron] dead pictures failed:", e);
+        }
+        // THE EXACT FIGURE, EVERY NIGHT (12 Oct, Roman). The bucket is listed
+        // once more after everything above, the running totals are set to the
+        // truth, a step mail goes if the night crossed one, and Roman gets the
+        // nightly report whatever the size.
+        try {
+          const { recalibrate, mailIfStepCrossed, mailNightlyReport } = await import("./lib/totals");
+          const t = await recalibrate(env.DB, env.IMAGES_BUCKET);
+          console.log(`[cron] storage: ${t.files} files, ${t.bytes} bytes, ${t.byOwner.size} account(s)`);
+          await mailIfStepCrossed(env, env.DB, t.bytes);
+          await mailNightlyReport(env, t, deadFreed);
+        } catch (e) {
+          console.error("[cron] storage totals failed:", e);
         }
       })(),
     );

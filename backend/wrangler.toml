@@ -12,6 +12,11 @@ APP_NAME = "Framehow"
 # both the live app and dev). Nothing outside this list is ever put in a mail.
 APP_URL = "https://framehow.com/app"
 APP_URLS = "https://framehow.com/app, https://dev.framehow-react.pages.dev/app, http://127.0.0.1:5173/app"
+# THE CEILING (12 Oct, Roman): the most the whole of Framehow may hold at
+# Cloudflare, in GB. Cloudflare itself never stops — it bills — so this is the
+# brake. Above the free 10 GB, 50 GB costs at most 60 cents a month. Change the
+# number here and deploy the backend; nothing else needs touching.
+GLOBAL_STORAGE_LIMIT_GB = "50"
 SESSION_TTL_DAYS = "30"
 PASSWORD_RESET_TTL_HOURS = "1"
 EMAIL_VERIFY_TTL_HOURS = "48"
