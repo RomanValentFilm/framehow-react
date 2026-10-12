@@ -201,12 +201,14 @@ cd ~/Desktop/Framehow\ Files/framehow-react && git add -A && git commit -m "v4.6
 - Deploys to preview URL (e.g. `dev.framehow-react.pages.dev`)
 - Every deploy MUST be committed to git first so we can diff/rollback
 
-### Production (live — framehow.com/app)
+### Production (live — framehow.com/app) — PUSH TO `main`, Cloudflare builds it (12 Oct 2026)
 ```
-cd ~/Desktop/Framehow\ Files/framehow-react && git add -A && git commit -m "v4.6.0XX: description" && npm run build && npx wrangler pages deploy dist --project-name framehow-react --branch main
+cd ~/Desktop/Framehow\ Files/framehow-react && git push origin v4.4:main
 ```
-- Serves on **framehow.com/app** (custom domain)
-- MUST use `--branch main` — without it, wrangler auto-detects the `dev` git branch and deploys to preview only
+- The Pages project is CONNECTED TO GITHUB with automatic deployments: production = whatever lands on the `main` branch there. Cloudflare clones, builds (`npm run build`) and publishes it itself, ~2 minutes; watch Workers & Pages → framehow-react → Deployments, Production line.
+- A DIRECT UPLOAD to `--branch main` FAILS on this project ("Failed to publish your Function. Got error: Unknown internal error") — tried three times on 12 Oct; dev direct uploads work. Do not use `wrangler pages deploy … --branch main`.
+- `main` is an ancestor of `v4.4`, so the push is a plain fast-forward. Only push a commit a FULL RUN has proven green.
+- Serves on **framehow.com/app** (custom domain). First launch: v5.0.000 · #552, 12 Oct 2026.
 - Deploy to production ONLY when user explicitly says so
 
 ### Version numbering
