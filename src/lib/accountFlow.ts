@@ -87,7 +87,7 @@ import { closeSortMode, refreshOpenSortView, removeFrameFromSortOrders } from '.
 import { resetStoryboardState, state, useStore, bumpRenderTick, freshNeedDefinitions, DEFAULT_STRIP_DEFS, migrateNeedDefinitions, createDefaultExportMeta, blankNeeds, blankNote } from '../store/state';
 import type { Frame, Stroke, Version, FrameNeedState, FrameNoteState, NeedDefinitions, BracketNodeData, ProjectType } from '../store/state';
 import { clearRectsForProject } from './pdfAdjust';
-import { noteStorage, storageLineText, storageIsHigh, storageFigure as lastStorageFigure, storageFullFromServer } from './storageMeter';
+import { noteStorage, storageLineText, storageIsHigh, storageFigure as lastStorageFigure } from './storageMeter';
 
 // ---------------------------------------------------------------------------
 // Device identification — persistent ID + human-readable name
@@ -3043,11 +3043,14 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
     // device only, never reached the cloud or the other devices, and nobody
     // was told. Two refusals matter —
     //   too large (over 10 MB)  → the person is told once per push, in a box;
-    //   storage full            → the same stop as a refused save: work stays
-    //                             on the device, the person is told, pushes
-    //                             wait. The rest of this batch is not tried.
+    //   storage full            → THE WHOLE SAVE STOPS, exactly as when the
+    //                             server refuses the save itself (run 361: the
+    //                             save went up without its picture and the shot
+    //                             no longer waited with it). The refusal is
+    //                             thrown on, and the one storage-full path in
+    //                             the sync files the work and holds pushes.
     let saidTooLarge = false;
-    let full = false;
+    let full: (ApiError & { storage?: { used: number; limit: number; pending?: number } }) | null = null;
     const results = await Promise.all(
       imageUploads.map(async (task) => {
         if (full) return null;
@@ -3069,9 +3072,8 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
             return null;
           }
           if (err?.status === 413 && err.code === 'storage_full') {
-            full = true;
-            trace(`  picture refused: storage full (version ${task.versionId.slice(0, 6)})`);
-            storageFullFromServer(err.storage);
+            full = err;
+            trace(`  picture refused: storage full (version ${task.versionId.slice(0, 6)}) — the save stops here`);
             return null;
           }
           console.warn('[sync] image upload failed for version', task.versionId, e);
@@ -3079,6 +3081,7 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
         }
       }),
     );
+    if (full) throw full;
     for (const r of results) {
       if (!r) continue;
       images.push({
