@@ -253,6 +253,8 @@ export interface TestDoor {
   pressNewVersion(index: number, strip: StripType): void;
   /** Choose HIDE for a version: the card's own clear/delete choice, answered. */
   hideVersion(index: number, strip: StripType, versionIndex: number): Promise<void>;
+  /** Choose DELETE for a version, and answer Yes to "are you sure" (13 Oct). */
+  deleteVersion(index: number, strip: StripType, versionIndex: number): Promise<void>;
   /** Move the version on show one place (#531) — the overview's ◀ ▶, the app's own path. */
   moveVersion(index: number, strip: StripType, versionIndex: number, dir: 'left' | 'right'): void;
   /** WRITE on the main card ('main') or TEXT on a strip card's version — the
@@ -340,6 +342,13 @@ export interface TestDoor {
    *  holds. Opens the real fullscreen drawing view, dispatches real pointer
    *  events on the real canvas, and closes it again. */
   drawOnVersion(frameIndex: number, strip?: StripType, versionIndex?: number): Promise<number>;
+  /** ONE STROKE INTO THE BIG VIEW THAT IS ALREADY OPEN (13 Oct) — no opening,
+   *  no closing: what a person does who left the view open. */
+  strokeInOpenBigView(frameIndex: number, strip: StripType, versionIndex: number): number;
+  /** Open the big view in draw mode and LEAVE IT OPEN. */
+  openBigView(frameIndex: number, strip: StripType, versionIndex: number): void;
+  /** Close the big view and wait until it is gone. */
+  closeBigView(): Promise<void>;
 
   /** How many strokes the PROJECT holds for that version — read from the store,
    *  not from the screen, so a test cannot be fooled by a stale picture. */
@@ -1391,6 +1400,24 @@ export function installTestDoor(): void {
       ok.click();
       await new Promise((r) => setTimeout(r, 100));   // the choice resolves on the next tick
     },
+    async deleteVersion(index, strip, versionIndex) {
+      const f = useStore.getState().frames[index];
+      if (!f) throw new Error(`no frame at ${index}`);
+      ensureStripVersions(f.id, strip);
+      setStripActiveTab(f.id, strip, versionIndex);
+      handleAction('clear', f.id, stripCardOf(f.id, index, strip), false, strip);
+      const del = document.querySelector('#choiceContent [data-choice="delete"]') as HTMLElement | null;
+      const ok = document.getElementById('choiceOk3');
+      if (!del || !ok) throw new Error('the hide/delete choice did not open');
+      del.click();
+      await new Promise((r) => setTimeout(r, 50));
+      (document.getElementById('choiceOk3') as HTMLElement | null)?.click();
+      await new Promise((r) => setTimeout(r, 150));
+      const yes = document.getElementById('confirmYes') as HTMLElement | null;
+      if (!yes || document.getElementById('confirmModal')?.classList.contains('hidden')) throw new Error('the "are you sure" question did not open');
+      yes.click();
+      await new Promise((r) => setTimeout(r, 150));
+    },
     async writeOnCard(index, strip, versionIndex, text) {
       const f = useStore.getState().frames[index];
       if (!f) throw new Error(`no frame at ${index}`);
@@ -1515,6 +1542,31 @@ export function installTestDoor(): void {
       return getStripVersions(f.id, strip)[versionIndex]?.strokes?.length ?? 0;
     },
 
+    openBigView(frameIndex, strip, versionIndex) {
+      const f = useStore.getState().frames[frameIndex];
+      if (!f) throw new Error(`no frame at ${frameIndex}`);
+      ensureStripVersions(f.id, strip);
+      closeFullscreen();
+      openFullscreen(f.id, versionIndex, strip, 'draw');
+    },
+    strokeInOpenBigView(frameIndex, strip, versionIndex) {
+      const f = useStore.getState().frames[frameIndex];
+      if (!f) throw new Error(`no frame at ${frameIndex}`);
+      const cvs = document.getElementById(`fs_cvs_${f.id}_${versionIndex}`) as HTMLCanvasElement | null;
+      if (!cvs) throw new Error(`the big view is not open on frame ${frameIndex + 1} ${strip} ${versionIndex + 1}`);
+      const r = cvs.getBoundingClientRect();
+      const at = (dx: number, dy: number) => ({ clientX: r.left + r.width * dx, clientY: r.top + r.height * dy, bubbles: true });
+      cvs.dispatchEvent(new MouseEvent('mousedown', at(0.3, 0.8)));
+      cvs.dispatchEvent(new MouseEvent('mousemove', at(0.5, 0.6)));
+      cvs.dispatchEvent(new MouseEvent('mousemove', at(0.7, 0.4)));
+      cvs.dispatchEvent(new MouseEvent('mouseup', at(0.7, 0.4)));
+      return getStripVersions(f.id, strip)[versionIndex]?.strokes?.length ?? 0;
+    },
+    async closeBigView() {
+      closeFullscreen();
+      const until = Date.now() + 3000;
+      while (document.querySelector('.fs-overlay') && Date.now() < until) await new Promise((r) => setTimeout(r, 50));
+    },
     strokeCount(frameIndex, strip = 'ver', versionIndex = 0) {
       const f = useStore.getState().frames[frameIndex];
       if (!f) throw new Error(`no frame at ${frameIndex}`);

@@ -77,7 +77,24 @@ export async function mustGoQuiet(devices: Device[], seconds = 12): Promise<void
 export async function mustAgree(a: Device, b: Device, floor: number): Promise<void> {
   const agreed = await Device.waitUntilTheyAgree(a, b);
   void agreed;
-  const [x, y] = [await snapshot(a), await snapshot(b)];
+  // THE WHOLE PICTURE, NOT ONLY THE FRAMES (run 376, seed 447807). The last
+  // step of that day was a setup made offline 2.5 s before the device came
+  // back; the frames already agreed 0.3 s after reconnecting, and the setups
+  // were compared at once — before the app's own five-second send and the
+  // other device's fetch could happen. So the orders, setups and categories
+  // are waited for the same way the frames are, one device awake at a time,
+  // within the same minute; then they are judged.
+  const same = (p: Snapshot, q: Snapshot): boolean =>
+    p.frames === q.frames && JSON.stringify(p.orders) === JSON.stringify(q.orders)
+    && JSON.stringify(p.setups) === JSON.stringify(q.setups)
+    && JSON.stringify(p.categories) === JSON.stringify(q.categories);
+  let [x, y] = [await snapshot(a), await snapshot(b)];
+  const deadline = Date.now() + 60_000;
+  while (!same(x, y) && Date.now() < deadline) {
+    await Device.nudgeOneAtATime(a, b);
+    await a.page.waitForTimeout(1000);
+    [x, y] = [await snapshot(a), await snapshot(b)];
+  }
   expect(x.frames, `${a.name} lost frames: ${x.frames} of at least ${floor}`)
     .toBeGreaterThanOrEqual(floor);
   expect(y.frames, `${b.name} lost frames`).toBe(x.frames);

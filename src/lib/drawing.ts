@@ -6,6 +6,7 @@ import { COLORS, state, useStore } from '../store/state';
 import type { Frame, Stroke, Version, StripType, FrameSnapshot } from '../store/state';
 import { getStripVersions, getStripActiveTab, getStripCrossCompare, setStripPrevFrameState } from './helpers';
 import { markFrameDirty, noteStrokeEnded } from './currentProject';
+import { trace } from './syncTrace';
 import { stampChangedContent } from './changeStamps';
 
 export function _drawStrokeItem(tctx: CanvasRenderingContext2D, st: Stroke, cH: number): void {
@@ -287,7 +288,11 @@ export function setupMainDrawing(cvs: HTMLCanvasElement, fid: number): void {
   let isDrawing = false,
     isErasing = false,
     cur: Stroke | null = null;
-  const f = state().frames.find((fr) => fr.id === fid);
+  // THE SHOT AS IT IS NOW, NOT AS IT WAS WHEN THE CANVAS WAS WIRED (13 Oct,
+  // Roman). A fetch landing while the big view is open rebuilds the shots —
+  // the log says "replaced under us" — and a stroke written into the copy
+  // taken at wiring time never reaches the project: gone on closing.
+  const live = (): Frame | undefined => state().frames.find((fr) => fr.id === fid);
   function getPos(e: MouseEvent | TouchEvent): { x: number; y: number } {
     const r = cvs.getBoundingClientRect(),
       sx = cvs.width / r.width,
@@ -298,6 +303,7 @@ export function setupMainDrawing(cvs: HTMLCanvasElement, fid: number): void {
     return { x: (cx - r.left) * sx, y: (cy - r.top) * sy };
   }
   function eraseAtPoint(p: { x: number; y: number }): void {
+    const f = live();
     if (!f || !f.strokes || f.strokes.length === 0) return;
     const idx = _hitTestStroke(f.strokes, p, 20);
     if (idx < 0) return;
@@ -340,6 +346,7 @@ export function setupMainDrawing(cvs: HTMLCanvasElement, fid: number): void {
     ctx.stroke();
   }
   function end(): void {
+    const f = live();
     if (isDrawing && cur && cur.points && cur.points.length > 1 && f) {
       snapshotFrame(fid, 'main');
       f.strokes = f.strokes || [];
@@ -388,7 +395,32 @@ export function setupDrawing(cvs: HTMLCanvasElement, fid: number, ai: number, st
   let isDrawing = false,
     isErasing = false,
     cur: Stroke | null = null;
-  const ver = getStripVersions(fid, strip)[ai];
+  // THE VERSION AS IT IS NOW (13 Oct, Roman): found by its server name when
+  // it has one, else by its place. Roman left the big view open, a fetch
+  // rebuilt the versions underneath ("maps still the same: NO — replaced
+  // under us"), and every stroke after that went into a detached copy — so
+  // the drawing showed for a second on closing and was gone.
+  const wired = getStripVersions(fid, strip)[ai];
+  const wiredName = wired?.serverVersionId;
+  const live = (): Version | undefined => {
+    const vers = getStripVersions(fid, strip);
+    let now: Version | undefined;
+    if (wiredName) now = vers.find((v) => v.serverVersionId === wiredName);
+    if (!now && wired && vers.includes(wired)) now = wired;
+    if (!now) now = vers[ai];
+    // RESCUE (13 Oct): the version was swapped out underneath the open view.
+    // Strokes that only the old copy holds are carried over, once each, and
+    // the log says so — Roman's drawing vanished exactly this way.
+    if (now && wired && now !== wired && wired.strokes?.length) {
+      const carried = wired.strokes.filter((st) => !(now!.strokes ?? []).includes(st));
+      if (carried.length) {
+        now.strokes = [...(now.strokes ?? []), ...carried];
+        if (now.type === 'empty') now.type = 'drawing';
+        trace(`drawing: the ${strip} version under the open view was replaced — ${carried.length} stroke(s) carried over to the live one`);
+      }
+    }
+    return now;
+  };
   function getPos(e: MouseEvent | TouchEvent): { x: number; y: number } {
     const r = cvs.getBoundingClientRect(),
       sx = cvs.width / r.width,
@@ -399,6 +431,7 @@ export function setupDrawing(cvs: HTMLCanvasElement, fid: number, ai: number, st
     return { x: (cx - r.left) * sx, y: (cy - r.top) * sy };
   }
   function eraseAtPoint(p: { x: number; y: number }): void {
+    const ver = live();
     if (!ver || !ver.strokes || ver.strokes.length === 0) return;
     const idx = _hitTestStroke(ver.strokes, p, 20);
     if (idx < 0) return;
@@ -441,7 +474,8 @@ export function setupDrawing(cvs: HTMLCanvasElement, fid: number, ai: number, st
     ctx.stroke();
   }
   function end(): void {
-    if (isDrawing && cur && cur.points && cur.points.length > 1) {
+    const ver = live();
+    if (isDrawing && cur && cur.points && cur.points.length > 1 && ver) {
       snapshotFrame(fid, strip);
       ver.strokes = ver.strokes || [];
       ver.strokes.push(cur);
@@ -476,6 +510,9 @@ export function setupDrawing(cvs: HTMLCanvasElement, fid: number, ai: number, st
     isErasing = false;
     cur = null;
   }
+  // THE CLOSE CAN RESCUE TOO (13 Oct): the swap may come after the last
+  // stroke; the big view asks here before it tears the canvas down.
+  (cvs as HTMLCanvasElement & { __fhRescue?: () => void }).__fhRescue = () => { live(); };
   cvs.addEventListener('mousedown', start);
   cvs.addEventListener('mousemove', move);
   cvs.addEventListener('mouseup', end);

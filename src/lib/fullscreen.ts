@@ -773,6 +773,11 @@ export function closeFullscreen(): void {
   // actually hold at the moment doRemove runs, rather than reasoning about it.
   const s = state();
   const fsInfo = s.fsOverlayActive;
+  // RESCUE STROKES FROM A REPLACED VERSION (13 Oct) — before anything is torn down.
+  overlay.querySelectorAll('canvas').forEach((c) => {
+    const rescue = (c as HTMLCanvasElement & { __fhRescue?: () => void }).__fhRescue;
+    if (rescue) { try { rescue(); } catch { /* never in the way of closing */ } }
+  });
 
   const doRemove = () => {
     // THE CARD KEEPS SHOWING WHAT YOU JUST WORKED ON (#356).

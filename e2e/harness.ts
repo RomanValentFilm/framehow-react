@@ -473,6 +473,27 @@ export class Device {
       [frameIndex, strip, versionIndex] as [number, string, number]);
   }
 
+  /** Open the big view on a version and leave it OPEN (13 Oct). */
+  async openBigView(frameIndex: number, strip: string, versionIndex: number): Promise<void> {
+    say(`${this.name}: opening the big view on shot ${frameIndex + 1} ${strip} version ${versionIndex + 1}, and leaving it open`);
+    await this.page.evaluate(([i, s, v]) =>
+      (window as never as { __fh_test: { openBigView(i: number, s: string, v: number): void } }).__fh_test.openBigView(i as number, s as string, v as number),
+      [frameIndex, strip, versionIndex] as [number, string, number]);
+    await this.page.waitForTimeout(400);
+  }
+  /** One stroke into the big view that is already open. */
+  strokeInOpenBigView(frameIndex: number, strip: string, versionIndex: number): Promise<number> {
+    return this.page.evaluate(([i, s, v]) =>
+      (window as never as { __fh_test: { strokeInOpenBigView(i: number, s: string, v: number): number } })
+        .__fh_test.strokeInOpenBigView(i as number, s as string, v as number),
+      [frameIndex, strip, versionIndex] as [number, string, number]);
+  }
+  closeBigView(): Promise<void> {
+    say(`${this.name}: closing the big view`);
+    return this.page.evaluate(() =>
+      (window as never as { __fh_test: { closeBigView(): Promise<void> } }).__fh_test.closeBigView());
+  }
+
   /** How many strokes the project holds for that version. */
   strokes(frameIndex: number, strip = 'ver', versionIndex = 0): Promise<number> {
     return this.page.evaluate(([i, s, v]) =>
@@ -1275,6 +1296,13 @@ export class Device {
     await this.page.evaluate(([i, st, v]) =>
       (window as never as { __fh_test: { hideVersion(i: number, st: string, v: number): Promise<void> } })
         .__fh_test.hideVersion(i as number, st as string, v as number), [index, strip, versionIndex] as [number, string, number]);
+  }
+
+  async deleteVersion(index: number, strip: string, versionIndex: number): Promise<void> {
+    say(`${this.name}: DELETING shot ${index + 1} ${strip} version ${versionIndex + 1}`);
+    await this.page.evaluate(([i, st, v]) =>
+      (window as never as { __fh_test: { deleteVersion(i: number, st: string, v: number): Promise<void> } })
+        .__fh_test.deleteVersion(i as number, st as string, v as number), [index, strip, versionIndex] as [number, string, number]);
   }
 
   async writeOnCard(index: number, strip: 'main' | string, versionIndex: number, text: string): Promise<void> {
