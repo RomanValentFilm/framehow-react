@@ -309,7 +309,20 @@ export interface PendingRecord {
   /** When the server confirmed it has this work. The copy is then kept for a
    *  further 24 hours as a safety net before being removed. */
   uploadedAt?: number;
+  /** PARKED (12 Oct, Roman): the server answered that this project is not
+   *  there any more (deleted, or purged for good). The copy stays on the
+   *  device and in the project list — save as new, or Delete now — but it is
+   *  never sent on its own again. Before this, a start tried it first every
+   *  time, failed every time, and left the screen empty. */
+  parkedAt?: number;
   snapshot: CurrentProjectSnapshot;
+}
+
+export async function markPendingParked(key: string): Promise<void> {
+  const rec = await getPending(key);
+  if (!rec || rec.parkedAt) return;
+  rec.parkedAt = Date.now();
+  await withStore('readwrite', (s) => s.put(rec, key), PENDING_STORE);
 }
 
 /** Key a project is filed under while its work is unsent. */
@@ -324,6 +337,7 @@ export async function savePending(key: string, projectId: string | null, name: s
   const rec: PendingRecord = {
     key, projectId, name, savedAt: Date.now(), snapshot,
     warned: existing?.warned ?? false,
+    ...(existing?.parkedAt ? { parkedAt: existing.parkedAt } : {}),
   };
   await withStore('readwrite', (s) => s.put(rec, key), PENDING_STORE);
   return !rec.warned;   // true = the user has not been told about this one yet

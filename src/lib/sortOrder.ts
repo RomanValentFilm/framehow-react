@@ -491,24 +491,15 @@ function getAvailableCategories(frameIds: number[], excludeIds: string[] = []): 
   const cats: CategoryOption[] = [];
 
   const defs = s.needDefinitions;
-  const firstTab = defs.tabs[0];
 
-  // First tab tables (SHOOT) come first
-  if (firstTab) {
-    for (const table of firstTab.tables) {
-      if (excludeIds.includes(table.id)) continue;
-      cats.push({ id: table.id, name: table.name, type: 'need' });
-    }
-  }
-
-  // SETUP after first tab
+  // THE ORDER OF THE BOX (Roman, 12 Oct): KEEP ORDER (drawn by the caller),
+  // then SETUPS, then every NEEDS category in tab order. SETUP used to sit
+  // between the first tab's tables and the rest.
   if (!excludeIds.includes('setup')) {
     cats.push({ id: 'setup', name: 'SETUP', type: 'setup' });
   }
 
-  // Remaining tabs (TALENTS, GEAR, ART...)
-  for (let i = 1; i < defs.tabs.length; i++) {
-    const tab = defs.tabs[i];
+  for (const tab of defs.tabs) {
     for (const table of tab.tables) {
       if (excludeIds.includes(table.id)) continue;
       cats.push({ id: table.id, name: table.name, type: 'need' });

@@ -4,7 +4,7 @@
 import { COLORS, state, useStore, bumpRenderTick } from '../store/state';
 import { openLoadPicturesSheet } from './loadPictures';
 import type { StripType } from '../store/state';
-import { drawToolbarHTML, starHTML, toggleStar, getStripVersions, stripTabPrefix, stripScrollId, ensureStripVersions, getStripActiveTab, setStripActiveTab, addNewStripVersion, relabelStripVersions, revealActiveVersionTab } from './helpers';
+import { drawToolbarHTML, starHTML, toggleStar, getStripVersions, stripTabPrefix, stripScrollId, ensureStripVersions, getStripActiveTab, setStripActiveTab, addNewStripVersion, relabelStripVersions, revealActiveVersionTab, followVersion } from './helpers';
 import { restoreCanvas, restoreMainCanvas, setupDrawing, setupMainDrawing, snapshotFrame } from './drawing';
 import { resetToolbarState } from './view';
 import { stampChangedContent } from './changeStamps';
@@ -381,7 +381,7 @@ export function openFullscreen(
               }
               allVers.splice(lastVisible + 1, 0, ver);
               const visibleIdx = allVers.findIndex((v) => !v.hidden);
-              setStripActiveTab(fid, strip, visibleIdx >= 0 ? visibleIdx : 0);
+              followVersion(fid, strip, visibleIdx >= 0 ? visibleIdx : 0);
             }
             relabelStripVersions(fid, strip);
           } else {

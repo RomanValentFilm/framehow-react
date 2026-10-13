@@ -169,6 +169,29 @@ test('the needs move a shot, mark it, and never announce it twice', async ({ bro
   await desktop.settle();
   await desktop.openOrder(0);
   await desktop.settle();
+
+  // THE ORDER OF THE BOX (Roman, 12 Oct): KEEP ORDER, then SETUP, then the
+  // needs categories. Read straight off the opened box, then shut it again.
+  say('the box lists KEEP ORDER first, SETUP second, the needs after');
+  const listed = await desktop.page.evaluate(async () => {
+    const edit = Array.from(document.querySelectorAll('button')).find((b) => /EDIT ORDER/.test(b.textContent || ''));
+    edit?.click();
+    await new Promise((r) => setTimeout(r, 500));
+    (document.querySelector('[data-bact="expand"]') as HTMLElement | null)?.click();
+    await new Promise((r) => setTimeout(r, 350));
+    const heads = Array.from(document.querySelectorAll('.sort-bracket-dd-list > .sort-bracket-dd-keepasis span:first-child, .sort-bracket-dd-list > .sort-bracket-dd-group'))
+      .map((el) => (el.textContent || '').trim());
+    // Shut the box only; the sheet stays in edit mode (there is no cancel —
+    // EDIT ORDER has become SORT NOW), and sortByDays carries on from here.
+    (document.querySelector('[data-bact="collapse"]') as HTMLElement | null)?.click();
+    await new Promise((r) => setTimeout(r, 300));
+    return heads;
+  });
+  say(`   the box lists: ${listed.join(' · ')}`);
+  expect(listed[0], 'KEEP ORDER is first').toBe('KEEP ORDER');
+  expect(listed[1], 'SETUP is second').toBe('SETUP');
+  expect(listed.slice(2).includes('SETUP'), 'and nowhere else').toBe(false);
+
   await sortByDays(desktop.page, [DAY1, DAY2]);
 
   // A SHEET WRITTEN BY SORT NOW IS UP TO DATE, so coming back says nothing.

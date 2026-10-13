@@ -108,7 +108,7 @@ export function renderNotesCard(div: HTMLElement, fid: number): void {
       <button class="act-btn" data-notes-act="copy" data-notes-actfid="${fid}">Copy Note</button>
       <button class="act-btn${_copiedNoteState ? '' : ' disabled'}" data-notes-act="paste" data-notes-actfid="${fid}">Paste</button>
       <button class="act-btn" data-notes-act="reset" data-notes-actfid="${fid}">Reset</button>
-      ${!isNote ? '<button class="act-btn notes-tbl-settings-btn" data-notes-tblsettings="' + fid + '">Table Settings</button>' : ''}
+      ${!isNote ? '<button class="act-btn notes-tbl-settings-btn" data-notes-tblsettings="' + fid + '">Share Table Settings</button>' : ''}
     </div>
   `;
 

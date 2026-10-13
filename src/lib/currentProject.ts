@@ -51,6 +51,7 @@ import { stampChangedContent, exportChangeStamps } from './changeStamps';
 import { makeRetryClock } from './retryWait';
 import { isStorageFull, storageFullFromServer, onStorageFreed } from './storageMeter';
 import { whatWentWrong } from './projectGone';
+import { provisionalName } from './provisionalName';
 
 interface CurrentProject {
   /** Server-side UUID once the project has been saved. Null = local-only. */
@@ -123,7 +124,14 @@ export function markSaved(projectId: string): void {
   try { _afterSaved?.(); } catch { /* never in the way of a save */ }
 }
 
-export function clearCurrentProject(): void {
+/**
+ * @param keepDeviceSave true when the device's save of the open project must
+ *   stay: at START, after an unsent copy of ANOTHER project stood in (12 Oct,
+ *   run 364). This used to wipe that save too — so every start that tried a
+ *   copy, sent or not, then found no project to restore and opened the list.
+ *   Roman's iPad: "the start ended on an empty screen".
+ */
+export function clearCurrentProject(opts: { keepDeviceSave?: boolean } = {}): void {
   cp = { projectId: null, name: null, lastSavedAt: null, dirty: false };
   _dirty = false;
   _dirtyFrameIds.clear();
@@ -136,7 +144,7 @@ export function clearCurrentProject(): void {
   emit();
   // Only the "currently open" record is cleared. Anything the server has not
   // confirmed stays exactly where it is, under its own key.
-  void clearSnapshot();
+  if (!opts.keepDeviceSave) void clearSnapshot();
 }
 
 // ---------------------------------------------------------------------------
@@ -780,6 +788,13 @@ async function restorePendingFromDevice(): Promise<void> {
  *  unnamed project may go up under a provisional name (#524). */
 let _saveOffered = false;
 let _unnamedTraced = false;
+const _saidOnce = new Map<string, string>();
+/** One line per reason, again only when the wording changes. */
+function sayOnce(key: string, line: string): void {
+  if (_saidOnce.get(key) === line) return;
+  _saidOnce.set(key, line);
+  trace(line);
+}
 export function markSaveOffered(): void {
   if (_saveOffered) return;
   _saveOffered = true;
@@ -817,24 +832,37 @@ async function retryPendingSyncs(why: 'timer' | 'now' = 'timer'): Promise<void> 
   // The account is full (#533): asking again gets the same no. The retry
   // wakes the moment Delete now frees space (onStorageFreed → retryNow).
   if (isStorageFull()) return;
-  if (cloudSyncInFlight || _projectSwitchInFlight || _localSavesHeld) return;
-  if (why === 'timer' && !_retryClock.mayTry(Date.now())) return;
+  // SAY WHY A WAITING PROJECT IS NOT CREATED (13 Oct, run 365): a named
+  // project made offline sat on the device after a restart with nothing in
+  // the log to read. Once per reason, not per tick.
+  if (cloudSyncInFlight || _projectSwitchInFlight || _localSavesHeld) {
+    if (unsavedWaiting) sayOnce('held', `retry: "${cp.name}" waits to be created — held (push in flight=${cloudSyncInFlight}, switching=${_projectSwitchInFlight}, saves held=${_localSavesHeld})`);
+    return;
+  }
+  if (why === 'timer' && !_retryClock.mayTry(Date.now())) {
+    if (unsavedWaiting) sayOnce('wait', `retry: "${cp.name}" waits to be created — not yet time (wait ${Math.round(_retryClock.waitNow() / 1000)}s)`);
+    return;
+  }
   _retryClock.tried(Date.now());
   // Made offline and never uploaded: it needs creating on the server first.
   // Only when it already has a name — otherwise saving would have to stop and
   // ask for one, and this runs in the background.
   if (unsavedWaiting) {
     if (!cp.name) {
-      const d = new Date();
-      const provisional = `Untitled ${d.getDate()} ${d.toLocaleString('en', { month: 'short' })} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+      const provisional = provisionalName();
       trace(`unnamed project going up as "${provisional}" — rename it any time`);
       setProjectName(provisional);
     }
+    trace(`retry: creating "${cp.name}" on the server (${why})`);
     cloudSyncInFlight = true;
     try {
       await _createAndSyncFn!();
       _retryClock.succeeded();
-    } catch { _retryClock.failed(); /* still unreachable — the device copy stays put */ }
+      trace(`retry: "${cp.name}" ${cp.projectId ? 'is on the server' : 'was NOT created — the save returned without an id'}`);
+    } catch (e) {
+      _retryClock.failed();   /* still unreachable — the device copy stays put */
+      trace(`retry: creating "${cp.name}" FAILED (${(e as { status?: number })?.status ?? 'no response'}) · trying again in ${Math.round(_retryClock.waitNow() / 1000)}s`);
+    }
     finally { cloudSyncInFlight = false; }
     return;
   }
@@ -903,6 +931,11 @@ export function setCloudSyncInFlight(v: boolean): void {
 export function isLoadInFlight(): boolean {
   return _pullInFlight || _projectSwitchInFlight || _pullIncomplete;
 }
+/** Which of the three it is — for the log, never for a decision. */
+export function loadInFlightWhy(): string {
+  return [_pullInFlight && 'pull in flight', _projectSwitchInFlight && 'switching project', _pullIncomplete && 'last pull incomplete']
+    .filter(Boolean).join(', ') || 'nothing';
+}
 
 function scheduleAutosave(): void {
   if (autosaveTimer !== null) clearTimeout(autosaveTimer);
@@ -954,9 +987,15 @@ let _localSavesHeld = false;
 /** ...and no timer-driven push or retry either: they read "the open project"
  *  and would push the stand-in, or create it, on their own account. Explicit
  *  calls (the fetch's own flush, the upload's push) are not held. */
-export function standInForAnotherProject(on: boolean): void {
+export function standInForAnotherProject(on: boolean, saveAfter = true): void {
   _localSavesHeld = on;
-  if (!on) scheduleAutosave();
+  if (on) return;
+  if (saveAfter) { scheduleAutosave(); return; }
+  // AT START (12 Oct, run 364): the store was just emptied and the open project
+  // is restored next. A save already waiting from the reset would write an
+  // empty project — or clear the device's save — if it fired before the
+  // restore landed. Nothing here is ours to save: the timer is dropped.
+  if (autosaveTimer !== null) { clearTimeout(autosaveTimer); autosaveTimer = null; }
 }
 export function isStandingIn(): boolean { return _localSavesHeld; }
 /** Told after every save that reached the server (a push, a pull's mark, or

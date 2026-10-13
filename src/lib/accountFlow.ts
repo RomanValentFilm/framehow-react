@@ -31,7 +31,7 @@ import {
   pushSucceeded,
   registerUnsentCheck,
   markSaved,
-  isLoadInFlight,
+  isLoadInFlight, loadInFlightWhy,
   isPullIncomplete,
   isPushInFlight,
   setCloudSyncInFlight,
@@ -73,13 +73,15 @@ import {
 } from './currentProject';
 import { makeGoneRegister, whatWentWrong } from './projectGone';
 import { trace } from './syncTrace';
+import { isProvisionalName } from './provisionalName';
+import { keepBoxesAboveTheKeyboard } from './keyboardRoom';
 import { frameChangedAt, versionChangedAt, frameChangedAtForSending, versionChangedAtForSending, importChangeStamps, stampChangedContent, seedContentStamps, pictureFp, strokesFp, untouchedStrip } from './changeStamps';
 import { shouldSendOnlyChanges } from './pushMode';
 import { tagText, readTagText } from './ids';
 import { serverHasSomethingNew, whoseFrameWins, type DeviceMemory } from './sessionRules';
 import { mergeDelta, lastMergeRefusal, answerIsSafeToApply, untouchedByDelta, type MergeableTree } from './deltaMerge';
 import { settingsForPush, adoptSettingsFromServer, applySettingsToStore, importSettingStamps, stampChangedSettings, seedSettings, forgetAnotherProjectsSettings, settingsNeedPush, reconcileRestoredSettings, captureMySettings, keepMyUnsentSettings, unsentSettingNames, settingsMemorySummary, seedSettingsAgeUnknown, type SettingItem } from './projectSettings';
-import { applySnapshotToStore, loadSnapshot, snapshotFromStore, listPending, isArchived, getPending, markPendingUploaded, saveProjectListCache, loadProjectListCache, deletePending, deleteEveryCopyOf, recoverPending, isDeletedCopy, requestDurableStorage, clearPending } from './persistence';
+import { applySnapshotToStore, loadSnapshot, snapshotFromStore, listPending, isArchived, getPending, markPendingUploaded, markPendingParked, saveProjectListCache, loadProjectListCache, deletePending, deleteEveryCopyOf, recoverPending, isDeletedCopy, requestDurableStorage, clearPending } from './persistence';
 import type { PendingRecord } from './persistence';
 import { showThreeWayConflict, showConfirm, showConfirmDefaultNo, showToast, showLabelEdit } from './modals';
 import { saveOpenTextEdits, saveOpenTableEdits, versionStars, inStarOrder } from './helpers';
@@ -1732,6 +1734,7 @@ function putCopyInPlace(rec: PendingRecord, projectId: string | null, name: stri
 let _uploadingCopies = false;
 let _goesFirstTraced = 0;
 const _namelessTraced = new Set<string>();
+const _parkedTraced = new Set<string>();
 let _copiesCheckTimer: number | null = null;
 let _lastCopiesCheck = 0;
 
@@ -1871,7 +1874,16 @@ async function uploadUnsentCopies(reason: 'start' | 'reconnect'): Promise<void> 
       trace(`a filed copy of "${r.projectId!.slice(0, 8)}" has no name — filed by a push that failed after the project left the screen; not sending it`);
     }
   }
-  const copies = recs.filter((r) => r.projectId && r.projectId !== current && r.name
+  // A PARKED COPY IS NEVER TRIED AGAIN (12 Oct, Roman). The server has said
+  // its project is gone; it waits in the project list for the person.
+  const parked = recs.filter((r) => r.parkedAt && r.projectId && r.projectId !== current);
+  for (const r of parked) {
+    if (!_parkedTraced.has(r.key)) {
+      _parkedTraced.add(r.key);
+      trace(`a filed copy of "${r.name ?? r.projectId!.slice(0, 8)}" is parked — its project is gone from the server; it stays on this device, in the project list`);
+    }
+  }
+  const copies = recs.filter((r) => r.projectId && r.projectId !== current && r.name && !r.parkedAt
     && r.snapshot?.frames?.length && r.snapshot.contentStamps && Object.keys(r.snapshot.contentStamps).length > 0);
   if (copies.length === 0) return;
 
@@ -1926,7 +1938,20 @@ async function uploadUnsentCopies(reason: 'start' | 'reconnect'): Promise<void> 
         await markPendingUploaded(rec.key);
         trace(`  unsent copy of "${who}" is in the cloud`);
       } catch (e) {
-        trace(`  unsent copy of "${who}" could not be sent — kept on the device (${asMessage(e, 'no answer')})`);
+        // THE SERVER SAYS THE PROJECT IS NOT THERE (12 Oct, Roman's iPad: a
+        // copy of "Juraj", deleted in September, tried at every start, failed
+        // at every start — "Project not found" — and the start ended empty).
+        // 404 is the server's own answer, not a bad connection (that is status
+        // 0): nothing more will come of asking again. The copy is PARKED: kept,
+        // listed, never retried on its own.
+        const err = e as { status?: number; code?: string };
+        const gone = err?.status === 404 || whatWentWrong(err?.status, err?.code) === 'gone';
+        if (gone) {
+          await markPendingParked(rec.key).catch(() => { /* the next start parks it */ });
+          trace(`  unsent copy of "${who}" — the server does not have this project any more (${asMessage(e, 'not found')}); PARKED on this device, not tried again`);
+        } else {
+          trace(`  unsent copy of "${who}" could not be sent — kept on the device (${asMessage(e, 'no answer')})`);
+        }
       }
     }
   } finally {
@@ -1947,18 +1972,25 @@ async function uploadUnsentCopies(reason: 'start' | 'reconnect'): Promise<void> 
       }
       hideUnsentNotice();
     } else {
-      // Leave nothing of the last copy behind for the project restored next.
+      // Leave nothing of the last copy behind for the project restored next —
+      // but KEEP THE DEVICE'S SAVE of that project (12 Oct, run 364): clearing
+      // the current project used to wipe it, and the start then had nothing
+      // to restore and opened the list on an empty screen.
       beginSystemAction();
       try {
         resetStoryboardState();
-        clearCurrentProject();
+        clearCurrentProject({ keepDeviceSave: true });
         clearPushedFingerprints();
       } finally {
         endSystemAction();
       }
       if (line) line.textContent = 'Loading…';
     }
-    standInForAnotherProject(false);
+    // AT START NOTHING IS OURS TO SAVE (12 Oct). The store was just emptied and
+    // the open project is restored right after this; a local save scheduled
+    // here could only write an empty project — or clear the device's save of
+    // the one about to be restored. So no save is scheduled at start.
+    standInForAnotherProject(false, reason !== 'start');
     _uploadingCopies = false;
   }
 }
@@ -2134,7 +2166,7 @@ export function showSaveToaster(): void {
   }
   saveBtn.onclick = async () => {
     dismiss(true);
-    await saveNow();
+    await saveNow({ pressed: true });
   };
   laterBtn.onclick = () => dismiss(false);
 }
@@ -2143,17 +2175,28 @@ export function showSaveToaster(): void {
 // High-level flows
 // ---------------------------------------------------------------------------
 
-export async function saveNow(): Promise<void> {
+/**
+ * @param pressed true when the PERSON pressed SAVE (the button, the reminder's
+ *   Save, the test door). The app calls this too — the background upload of an
+ *   unnamed project names it "Untitled …" first and then saves through here —
+ *   and that call must never open a box (run 364: it did, in the background,
+ *   and the project never went up).
+ */
+export async function saveNow(opts: { pressed?: boolean } = {}): Promise<void> {
   // 0. Block save if project is still loading (pull or project switch in progress).
   //    Saving incomplete state would overwrite good data on the server.
   if (isLoadInFlight()) {
+    trace(`save refused: the project is still loading (${loadInFlightWhy()})`);
     showToast('Project still loading…');
     return;
   }
 
-  // 1. Ensure project name.
+  // 1. Ensure project name. A name the APP gave ("Untitled 12 Oct 16:05",
+  //    #524/#530) is not a name the person gave: SAVE asks, box empty
+  //    (Roman, 12 Oct — he pressed SAVE on a new project and was never asked).
+  //    The new name travels with the sync below; nothing else to send.
   let cp = getCurrentProject();
-  if (!cp.name) {
+  if (!cp.name || (opts.pressed && isProvisionalName(cp.name))) {
     const name = await openProjectNameModal();
     if (!name) return;
     setProjectName(name);
@@ -4710,7 +4753,7 @@ function parseTableData(json: string): { headers: string[]; rows: string[][] } |
 // ---------------------------------------------------------------------------
 
 export async function flowSaveProject(): Promise<void> {
-  await saveNow();
+  await saveNow({ pressed: true });
 }
 
 export async function flowLoadProject(): Promise<void> {
@@ -6984,6 +7027,7 @@ export async function bootstrapAccountSystem(): Promise<void> {
   registerPullFn(tryPullFromCloud);
   registerConnectionWatch(watchForTheConnectionComingBack);   // #298
   startPullOnFocus();
+  keepBoxesAboveTheKeyboard();                               // 13 Oct: the iPad keyboard no longer covers a box
 
   // 1. Validate any saved session.
   await loadCurrentUser();
@@ -7071,6 +7115,12 @@ export async function bootstrapAccountSystem(): Promise<void> {
         trace(`  ...but ${_serverFrameTimes.size || _lastPushedFingerprints.size} of its shots are known to the cloud — this project has LOST its cloud id`);
       }
       clearDirtyState(); // IDB restore is not a user change
+      // ...EXCEPT that a project not yet in the cloud is unsent by definition
+      // (13 Oct, run 366): named, made offline, then the app restarted before
+      // it went up — it sat on the device until somebody touched it, because
+      // "there is work to send" lived only in memory. The same line the
+      // stand-in restore has had since #529.
+      if (!snap.projectId) markSomethingToSend();
 
       // Kick off a cloud pull now that projectId is set.
       // The focus/visibility events fired before bootstrap set the projectId,

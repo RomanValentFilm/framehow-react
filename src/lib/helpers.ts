@@ -375,7 +375,7 @@ export function setVersionStars(fid: number, vi: number, strip: StripType, level
   ver.starred = next > 0;   // keep the legacy flag in step for exports and sync
   reorderByStars(fid, strip);
   const newIdx = vers.indexOf(ver);
-  setStripActiveTab(fid, strip, newIdx);
+  followVersion(fid, strip, newIdx);
   relabelStripVersions(fid, strip);
   void flushSyncNow(); // VER-12: rate version -> click star
 }
@@ -388,7 +388,7 @@ export function toggleStar(fid: number, vi: number, strip: StripType = 'ver'): v
   ver.stars = ver.starred ? 1 : 0;
   reorderByStars(fid, strip);
   const newIdx = vers.indexOf(ver);
-  setStripActiveTab(fid, strip, newIdx);
+  followVersion(fid, strip, newIdx);
   relabelStripVersions(fid, strip);
   void flushSyncNow(); // VER-12: star/unstar version → click star icon
 }
@@ -413,7 +413,7 @@ export function unhideVersion(ver: Version, fid: number, strip: StripType = 'ver
       }
       const insertAt = lastVisStarred + 1;
       vers.splice(insertAt, 0, ver);
-      setStripActiveTab(fid, strip, insertAt);
+      followVersion(fid, strip, insertAt);
     } else {
       let lastVisible = -1;
       for (let i = vers.length - 1; i >= 0; i--) {
@@ -423,7 +423,7 @@ export function unhideVersion(ver: Version, fid: number, strip: StripType = 'ver
         }
       }
       vers.splice(lastVisible + 1, 0, ver);
-      setStripActiveTab(fid, strip, lastVisible + 1);
+      followVersion(fid, strip, lastVisible + 1);
     }
   }
   relabelStripVersions(fid, strip);
@@ -797,6 +797,23 @@ export function setStripCrossCompare(fid: number, strip: StripType, val: number)
   reg(strip).slice().crossCompare[fid] = val;
 }
 
+/**
+ * FOLLOW A VERSION TO ITS NEW PLACE (12 October, Roman).
+ *
+ * A shot's card can show a version through TWO pointers: the strip's own
+ * active tab, and the cross-swipe pointer the main card and the 3x2 view read
+ * (`crossCompare`, with `crossCompareStrip` saying which strip it is on). The
+ * star, the ◀ ▶ arrows and HIDE moved only the first — so in the strip views
+ * the card followed the version, but in 3x2 it kept showing POSITION 3, which
+ * after the star was somebody else's picture. One function moves both.
+ */
+export function followVersion(fid: number, strip: StripType, newIdx: number): void {
+  setStripActiveTab(fid, strip, newIdx);
+  const s = state();
+  const onShow = (s.crossCompare[fid] ?? -1) >= 0 && ((s.crossCompareStrip[fid] || 'ver') as StripType) === strip;
+  if (onShow) s.crossCompare[fid] = newIdx;
+}
+
 export function getStripPrevFrameState(fid: number, strip: StripType): FrameSnapshot | null {
   return reg(strip).slice().prevFrameState[fid] || null;
 }
@@ -817,10 +834,10 @@ export function moveStripVersion(fid: number, strip: StripType, dir: 'left' | 'r
   const curAi = getStripActiveTab(fid, strip);
   if (dir === 'left' && curAi > 0) {
     [tabs[curAi - 1], tabs[curAi]] = [tabs[curAi], tabs[curAi - 1]];
-    setStripActiveTab(fid, strip, curAi - 1);
+    followVersion(fid, strip, curAi - 1);
   } else if (dir === 'right' && curAi < tabs.length - 1) {
     [tabs[curAi], tabs[curAi + 1]] = [tabs[curAi + 1], tabs[curAi]];
-    setStripActiveTab(fid, strip, curAi + 1);
+    followVersion(fid, strip, curAi + 1);
   } else {
     return false;
   }

@@ -26,7 +26,7 @@ import {
   relabelStripVersions,
   addNewStripVersion,
   autoNewStripVersionIfNeeded,
-  stripScrollId, firstVerLabel, flashNewFrame } from './helpers';
+  stripScrollId, firstVerLabel, flashNewFrame, followVersion } from './helpers';
 import { snapshotFrame } from './drawing';
 import { renderAll, renderMainFrame, renderVersionFrame } from './render';
 import { renderOverviewRow, renderGrid4Row, renderGrid3x2Card } from './overview';
@@ -586,7 +586,7 @@ export function handleAction(action: string, fid: number, div: HTMLElement, from
           }
           allVers.splice(lastVisible + 1, 0, ver);
           const visibleIdx = allVers.findIndex((v) => !v.hidden);
-          setStripActiveTab(fid, strip, visibleIdx >= 0 ? visibleIdx : 0);
+          followVersion(fid, strip, visibleIdx >= 0 ? visibleIdx : 0);
         }
         relabelStripVersions(fid, strip);
         rerender();

@@ -314,6 +314,13 @@ export class Device {
       [name, frames] as [string, number]);
   }
 
+  /** The device copies the project list would show (12 Oct). */
+  deviceCopies(): Promise<Array<{ name: string | null; projectId: string | null; parked: boolean }>> {
+    return this.page.evaluate(() =>
+      (window as never as { __fh_test: { deviceCopies(): Promise<Array<{ name: string | null; projectId: string | null; parked: boolean }>> } })
+        .__fh_test.deviceCopies());
+  }
+
   /** Save the open project, making it on the server if it is not there yet. */
   saveThisProject(): Promise<void> {
     return this.page.evaluate(() =>
@@ -1292,6 +1299,7 @@ export class Device {
 
   read(): Promise<{
     projectId: string | null;
+    projectName: string | null;
     frames: Array<{ id: string; serverFrameId?: string; label: string; text: string }>;
     categories: string[];
     setups: string[];

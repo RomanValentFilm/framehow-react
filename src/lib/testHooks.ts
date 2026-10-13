@@ -37,7 +37,7 @@ import { flushSyncNow, markFrameDirty, getDirtyFrameIds, pullNow } from './curre
 import { openNeedsModal } from './overview';
 import { stampChangedContent } from './changeStamps';
 import { stampChangedSettings } from './projectSettings';
-import { setProjectName, getCurrentProject } from './currentProject';
+import { setProjectName, getCurrentProject, markSaveOffered } from './currentProject';
 
 function on(): boolean {
   try {
@@ -433,8 +433,16 @@ export interface TestDoor {
    *  the answer is still in the air (#425). */
   startPullWithoutWaiting(): void;
   /** What is on screen, in order, as plain facts a test can compare. */
+  /** WAVE THE SAVE REMINDER AWAY (12 Oct): what pressing LATER on the reminder
+   *  does — after it, an unnamed project goes up as "Untitled …" by itself. */
+  waveSaveReminderAway(): void;
+  /** THE DEVICE COPIES the project list would show (12 Oct): every unsent copy
+   *  on this device that is neither archived nor deleted — name and whether it
+   *  is parked (its project gone from the server). */
+  deviceCopies(): Promise<Array<{ name: string | null; projectId: string | null; parked: boolean }>>;
   read(): {
     projectId: string | null;
+    projectName: string | null;
     frames: Array<{ id: string; serverFrameId?: string; label: string; text: string }>;
     categories: string[];
     setups: string[];
@@ -1751,7 +1759,7 @@ export function installTestDoor(): void {
 
     async push() { await flushSyncNow(); },
 
-    async saveThisProject() { await saveNow(); },
+    async saveThisProject() { await saveNow({ pressed: true }); },   // = the SAVE button
     /** SAVE AS NEW, on whatever is on screen — the app's own path (#523). */
     async saveAsNewProject(name: string) { await carryOnAsNewProject(name); },
 
@@ -1764,10 +1772,18 @@ export function installTestDoor(): void {
      *  is genuinely still in the air. */
     startPullWithoutWaiting() { pullNow(); },
 
+    waveSaveReminderAway() { markSaveOffered(); },
+    async deviceCopies() {
+      const { listPending, isArchived, isDeletedCopy } = await import('./persistence');
+      const all = await listPending();
+      return all.filter((r) => !isArchived(r) && !isDeletedCopy(r))
+        .map((r) => ({ name: r.name, projectId: r.projectId, parked: !!r.parkedAt }));
+    },
     read() {
       const s = useStore.getState();
       return {
         projectId: getCurrentProject().projectId,
+        projectName: getCurrentProject().name,
         frames: s.frames.map((f) => ({
           id: String(f.id),
           serverFrameId: f.serverFrameId,
