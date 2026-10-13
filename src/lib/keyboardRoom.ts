@@ -17,11 +17,21 @@ const KEYBOARD_MIN_PX = 120;   // less than this is a toolbar, not a keyboard
 
 let _held: HTMLElement | null = null;
 let _was: { top: string; height: string; bottom: string } | null = null;
+/** The box inside the overlay — capped to the free height so its bottom
+ *  buttons stay above the keys (Roman, 13 Oct: the needs, notes and table
+ *  boxes were pushed up and their buttons covered). Height only; the width is
+ *  never touched, so in portrait nothing widens. */
+let _box: HTMLElement | null = null;
+let _boxWas: { maxHeight: string; overflowY: string } | null = null;
 
 function overlayOf(el: Element | null): HTMLElement | null {
   let node = el as HTMLElement | null;
   while (node && node !== document.body) {
-    if (getComputedStyle(node).position === 'fixed') return node;
+    if (getComputedStyle(node).position === 'fixed') {
+      // Not the big picture view: shrinking it would resize the drawing
+      // surface under the note. Left alone until Roman asks.
+      return node.classList.contains('fs-overlay') ? null : node;
+    }
     node = node.parentElement;
   }
   return null;
@@ -33,7 +43,18 @@ function release(): void {
     _held.style.height = _was.height;
     _held.style.bottom = _was.bottom;
   }
-  _held = null; _was = null;
+  if (_box && _boxWas) {
+    _box.style.maxHeight = _boxWas.maxHeight;
+    _box.style.overflowY = _boxWas.overflowY;
+  }
+  _held = null; _was = null; _box = null; _boxWas = null;
+}
+
+/** The box is the overlay's child that contains the field being typed in. */
+function boxOf(overlay: HTMLElement, field: Element): HTMLElement | null {
+  let node = field as HTMLElement | null;
+  while (node && node.parentElement !== overlay) node = node.parentElement;
+  return node && node !== overlay ? node : null;
 }
 
 function fit(): void {
@@ -53,6 +74,22 @@ function fit(): void {
   overlay.style.top = `${vv.offsetTop}px`;
   overlay.style.height = `${vv.height}px`;
   overlay.style.bottom = 'auto';
+  const box = boxOf(overlay, active!);
+  if (box && _box !== box) {
+    if (_box && _boxWas) { _box.style.maxHeight = _boxWas.maxHeight; _box.style.overflowY = _boxWas.overflowY; }
+    _box = box;
+    _boxWas = { maxHeight: box.style.maxHeight, overflowY: box.style.overflowY };
+  }
+  // LANDSCAPE ONLY (Roman, 13 Oct): in portrait the box keeps its size and is
+  // only moved into the free part of the screen.
+  const landscape = window.innerWidth > window.innerHeight;
+  if (box && landscape) {
+    box.style.maxHeight = `${Math.max(120, vv.height - 16)}px`;
+    box.style.overflowY = 'auto';
+  } else if (box && _boxWas) {
+    box.style.maxHeight = _boxWas.maxHeight;
+    box.style.overflowY = _boxWas.overflowY;
+  }
 }
 
 /** Wire once at start. Harmless where there is no on-screen keyboard. */
