@@ -30,7 +30,14 @@ function overlayOf(el: Element | null): HTMLElement | null {
     if (getComputedStyle(node).position === 'fixed') {
       // Not the big picture view: shrinking it would resize the drawing
       // surface under the note. Left alone until Roman asks.
-      return node.classList.contains('fs-overlay') ? null : node;
+      if (node.classList.contains('fs-overlay')) return null;
+      // ONLY A BOX THAT COVERS THE SCREEN IS AN OVERLAY (14 Oct, Roman): the
+      // SETUPS bar is fixed too, a thin strip — sizing it to the free screen
+      // stretched it into a tall box. A bar is left alone.
+      if (node === _held) return node;          // already fitted by us — still the overlay
+      const r = node.getBoundingClientRect();
+      const coversScreen = r.width >= window.innerWidth * 0.9 && r.height >= window.innerHeight * 0.9;
+      return coversScreen ? node : null;
     }
     node = node.parentElement;
   }
