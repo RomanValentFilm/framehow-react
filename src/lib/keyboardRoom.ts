@@ -79,6 +79,12 @@ function boxOf(overlay: HTMLElement, field: Element): HTMLElement | null {
 function fit(): void {
   const vv = window.visualViewport;
   if (!vv) return;
+  // A READING OF (NEAR) ZERO IS NOISE (15 Oct, Roman's log): with a hardware
+  // keyboard attached, iPadOS reports the visible area as 0 pixels high for a
+  // moment. Taken at face value that is "a keyboard as tall as the screen",
+  // and the box was fitted into nothing — zero height, at the top edge. No
+  // keyboard leaves less than this; the reading is ignored, nothing changes.
+  if (vv.height < 100) { trace(`kb ignored: visible area reported ${Math.round(vv.height)}px high`); return; }
   const active = document.activeElement;
   const typing = !!active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA');
   const keyboardUp = window.innerHeight - vv.height >= KEYBOARD_MIN_PX;
