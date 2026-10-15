@@ -101,11 +101,14 @@ function fit(): void {
   // area stays at 0 for the whole hardware-typing session, so it cannot be
   // waited for. A real keyboard shrinks the window (788 → 600 in the first
   // log); a window at full height means no keyboard, and the page may go back.
+  // NO COUNTER-MOVE (18:22 log): with a hardware keyboard Safari does the
+  // dance on EVERY key — window 820 → 635, page scrolled, window 820 again —
+  // and scrolling back each time was a ping-pong the person could see. The
+  // page is left to Safari, which keeps the caret in view; it comes back on
+  // leaving the field. Only noted here.
   if (typing && _atFocus && _glitched && window.innerHeight >= _atFocus.winH - 10
-      && (Math.round(window.scrollY) !== _atFocus.y || Math.round(window.scrollX) !== _atFocus.x)) {
-    const back = _atFocus;
-    trace(`kb page back: ${Math.round(window.scrollY)} → ${back.y} after Safari's hardware-keyboard glitch`);
-    setTimeout(() => window.scrollTo(back.x, back.y), 0);
+      && Math.round(window.scrollY) !== _atFocus.y) {
+    trace(`kb page moved by Safari: ${Math.round(window.scrollY)} (was ${_atFocus.y} at focus) — left alone`);
   }
   if (vv.height < 100) { trace(`kb ignored: visible area reported ${Math.round(vv.height)}px high`); return; }
   const keyboardUp = window.innerHeight - vv.height >= KEYBOARD_MIN_PX;
