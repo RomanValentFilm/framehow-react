@@ -23,6 +23,12 @@ let _was: { top: string; height: string; bottom: string } | null = null;
  *  never touched, so in portrait nothing widens. */
 let _box: HTMLElement | null = null;
 let _boxWas: { maxHeight: string; overflowY: string } | null = null;
+/** Where the page stood when the keyboard came (15 Oct, Roman): Safari
+ *  scrolls the whole page to keep the field in view while the keyboard is
+ *  up, and leaves it there when the keyboard goes — with a hardware keyboard
+ *  taking over at the first key, the app sat pushed up out of the frame. */
+let _scrollWas: { x: number; y: number } | null = null;
+let _sawKeyboard = false;
 
 function overlayOf(el: Element | null): HTMLElement | null {
   let node = el as HTMLElement | null;
@@ -57,6 +63,25 @@ function release(): void {
   _held = null; _was = null; _box = null; _boxWas = null;
 }
 
+/** Is this field inside something fixed to the screen (a box, a bar, the
+ *  big picture view)? Then Safari's page scroll for the keyboard is noise. */
+function insideFixed(el: Element | null): boolean {
+  let node = el as HTMLElement | null;
+  while (node && node !== document.body) {
+    if (getComputedStyle(node).position === 'fixed') return true;
+    node = node.parentElement;
+  }
+  return false;
+}
+
+function pageBack(): void {
+  if (!_scrollWas) return;
+  const back = _scrollWas;
+  _scrollWas = null;
+  // After Safari has finished its own move, not before.
+  setTimeout(() => window.scrollTo(back.x, back.y), 0);
+}
+
 /** The box is the overlay's child that contains the field being typed in. */
 function boxOf(overlay: HTMLElement, field: Element): HTMLElement | null {
   let node = field as HTMLElement | null;
@@ -70,6 +95,13 @@ function fit(): void {
   const active = document.activeElement;
   const typing = !!active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA');
   const keyboardUp = window.innerHeight - vv.height >= KEYBOARD_MIN_PX;
+  // THE PAGE, for every field inside something fixed (the big view too):
+  // remembered when the keyboard comes, put back when it goes.
+  // The page goes back only once the keyboard has BEEN up and is gone again,
+  // or the field is left — not in the moment between focus and the keyboard
+  // rising, when nothing has moved yet.
+  if (typing && keyboardUp && insideFixed(active)) _sawKeyboard = true;
+  else if (!typing || (_sawKeyboard && !keyboardUp)) { pageBack(); _sawKeyboard = false; }
   if (!typing || !keyboardUp) { release(); return; }
   const overlay = overlayOf(active);
   if (!overlay) { release(); return; }
@@ -105,6 +137,13 @@ export function keepBoxesAboveTheKeyboard(): void {
   if (!vv) return;
   vv.addEventListener('resize', fit);
   vv.addEventListener('scroll', fit);
-  document.addEventListener('focusin', () => setTimeout(fit, 50));
+  document.addEventListener('focusin', (e) => {
+    // Remembered NOW, before Safari starts moving the page for the keyboard.
+    const t = e.target as Element | null;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA') && insideFixed(t) && !_scrollWas) {
+      _scrollWas = { x: window.scrollX, y: window.scrollY };
+    }
+    setTimeout(fit, 50);
+  });
   document.addEventListener('focusout', () => setTimeout(fit, 50));
 }

@@ -1190,7 +1190,7 @@ function renderProjectList(
     row.appendChild(tag);
     // When it was saved, in full — the same stamp on every row in the list.
     const when = document.createElement('span');
-    when.className = 'project-list-meta';
+    when.className = 'project-list-meta project-list-when';
     when.textContent = formatSavedStamp(rec.savedAt);
     row.appendChild(when);
     if (editMode && onDeleteLocal) {
@@ -1376,7 +1376,7 @@ function renderProjectList(
     } else {
       if (!isDeleted) {
         const meta = document.createElement('span');
-        meta.className = 'project-list-meta';
+        meta.className = 'project-list-meta project-list-when';
         // The full stamp, not "3 hours ago" (#409): the list can hold three
         // copies of one project and the user has to be able to tell which is
         // which without counting backwards.
@@ -2728,10 +2728,16 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   // made a second ago pushes immediately, so waiting for the next autosave
   // would send it with no change time at all.
   stampChangedContent(cp.projectId);
+  // THE PROJECT'S NAME COUNTS AS A CHANGE (15 Oct, Roman). Naming an
+  // "Untitled …" project that was already fully on the server changed nothing
+  // else, so the save stopped at "nothing changed" and the server — and the
+  // project list — kept "Untitled".
+  const nameChanged = _lastPushedName !== null && cp.name !== _lastPushedName;
+  if (nameChanged) trace(`  project name changed — sending: "${cp.name}"`);
   const metaChanged =
-    settingsNeedPush() ||
+    settingsNeedPush() || nameChanged ||
     (_lastPushedMeta !== '' && projectMetaFingerprint(s) !== _lastPushedMeta);
-  if (metaChanged) {
+  if (metaChanged && !nameChanged) {
     const names = unsentSettingNames();
     trace(`  project settings changed — sending${names.length ? ': ' + names.join(', ') : ' (the metadata blob)'}`);
   }
@@ -3328,6 +3334,7 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   // as sent, and the "sending again" push said "nothing changed". The blob was
   // built from `s`, so `s` is what the server holds.
   _lastPushedMeta = projectMetaFingerprint(s);
+  _lastPushedName = cp.name;
 
   // ---------------------------------------------------------------------------
   // Persist server IDs + r2Keys back to the Zustand store so the next push
@@ -5851,6 +5858,8 @@ function projectMetaFingerprint(s: ReturnType<typeof state>): string {
 }
 
 let _lastPushedMeta = '';
+/** The name the server was last given; null = we do not know yet. */
+let _lastPushedName: string | null = null;
 
 /** True when the project's settings have changed since the last successful
  *  push. Empty means "we do not know yet", which must not count as unsent. */
@@ -5863,6 +5872,7 @@ export function projectSettingsUnsent(): boolean {
 export function adoptFingerprintsFromStore(): void {
   const s = state();
   _lastPushedMeta = projectMetaFingerprint(s);
+  _lastPushedName = getCurrentProject().name;   // what the server holds, as of now
   // Forget timestamps for frames that are gone, so the counts stay honest.
   const alive = new Set(s.frames.map((f) => f.serverFrameId).filter(Boolean) as string[]);
   for (const id of [..._serverFrameTimes.keys()]) if (!alive.has(id)) _serverFrameTimes.delete(id);
@@ -5932,6 +5942,7 @@ export function forgetPushedFingerprint(serverFrameId: string): void {
 export function clearPushedFingerprints(): void {
   _lastPushedFingerprints.clear();
   _lastPushedMeta = '';
+  _lastPushedName = null;
 }
 
 /**

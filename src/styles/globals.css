@@ -868,6 +868,12 @@
   .project-list-row:active{background:#0d0d0d;}
   .project-list-name{font-weight:500;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .project-list-meta{font-family:var(--mono);font-size:11px;color:var(--text-faint);flex-shrink:0;}
+  /* THE NAME WINS, THE DATE GIVES WAY (Roman, 15 Oct, iPhone portrait): the
+     name is shown whole; the date takes what is left and is cut, or gone,
+     when there is no room. Only the name itself is cut when it alone is
+     wider than the row. */
+  .project-list-row:has(.project-list-when) .project-list-name{flex:0 0 auto;max-width:100%;}
+  .project-list-when{flex:1 1 0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right;}
 
   /* Mobile tweaks */
   @media (max-width:430px){

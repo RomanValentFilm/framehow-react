@@ -50,6 +50,18 @@ test('SAVE asks a name: an app-named "Untitled …" project opens an empty name 
   say(`   it went up as "${got.projectName}"`);
   expect(got.projectName, 'under the app\'s own provisional name').toMatch(/^Untitled \d{1,2} [A-Z][a-z]{2} \d{2}:\d{2}$/);
   await desktop.settle();
+  // EVERYTHING ELSE ALREADY UP (Roman, 15 Oct): with nothing left to send, the
+  // save after naming stopped at "nothing changed" and the server kept
+  // "Untitled". So: push, settle, and only then SAVE.
+  {
+    const until = Date.now() + 60_000;
+    while ((await desktop.read()).unsent.length > 0 && Date.now() < until) {
+      await desktop.push();
+      await desktop.settle();
+    }
+  }
+  expect((await desktop.read()).unsent, 'nothing left to send before SAVE').toEqual([]);
+  expect(await Device.projectNames(token), 'the server has the Untitled name').toEqual([got.projectName]);
 
   say('SAVE: the name box opens, and it is empty');
   // Not awaited — the save is now waiting on the box.
