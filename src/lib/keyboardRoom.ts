@@ -44,6 +44,28 @@ function overlayOf(el: Element | null): HTMLElement | null {
   return null;
 }
 
+/** The page, pinned while a field on it is typed into with a hardware
+ *  keyboard: the body is fixed at the current scroll position, so the window
+ *  has nothing to scroll. Unpinned on leaving the field, at the same place. */
+let _pinned: { x: number; y: number } | null = null;
+function pinPage(): void {
+  if (_pinned) return;
+  _pinned = { x: window.scrollX, y: window.scrollY };
+  const b = document.body.style;
+  b.position = 'fixed';
+  b.top = `${-_pinned.y}px`;
+  b.left = `${-_pinned.x}px`;
+  b.width = '100%';
+}
+function unpinPage(): void {
+  if (!_pinned) return;
+  const back = _pinned;
+  _pinned = null;
+  const b = document.body.style;
+  b.position = ''; b.top = ''; b.left = ''; b.width = '';
+  window.scrollTo(back.x, back.y);
+}
+
 function release(): void {
   if (_held && _was) {
     _held.style.top = _was.top;
@@ -72,9 +94,18 @@ function fit(): void {
   // Taken at face value that is "a keyboard as tall as the screen", and the
   // box was fitted into nothing — zero height, at the top edge. No keyboard
   // leaves less than this; the reading is ignored, nothing changes.
-  if (vv.height < 100) return;
   const active = document.activeElement;
   const typing = !!active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA');
+  if (vv.height < 100) {
+    // THE HARDWARE-KEYBOARD SIGNATURE (15 Oct, Roman's logs): the zero reading
+    // comes right at focus, before the first key. Safari then scrolls the PAGE
+    // on every key to lift the caret above a keyboard that is not there — the
+    // boxes are spared only because a fixed thing cannot be scrolled. So a
+    // field that lives on the page gets the same protection: the page is
+    // pinned where it stands until the field is left.
+    if (typing && !overlayOf(active)) pinPage();
+    return;
+  }
   const keyboardUp = window.innerHeight - vv.height >= KEYBOARD_MIN_PX;
   if (!typing || !keyboardUp) { release(); return; }
   const overlay = overlayOf(active);
@@ -112,5 +143,5 @@ export function keepBoxesAboveTheKeyboard(): void {
   vv.addEventListener('resize', fit);
   vv.addEventListener('scroll', fit);
   document.addEventListener('focusin', () => setTimeout(fit, 50));
-  document.addEventListener('focusout', () => setTimeout(fit, 50));
+  document.addEventListener('focusout', () => { unpinPage(); setTimeout(fit, 50); });
 }
