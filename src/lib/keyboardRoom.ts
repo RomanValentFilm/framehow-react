@@ -97,15 +97,17 @@ function fit(): void {
   const active = document.activeElement;
   const typing = !!active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA');
   if (typing && _atFocus && (vv.height < 100 || window.innerHeight < _atFocus.winH - KEYBOARD_MIN_PX)) _glitched = true;
-  if (vv.height < 100) { trace(`kb ignored: visible area reported ${Math.round(vv.height)}px high`); return; }
-  if (typing && _atFocus && _glitched
-      && window.innerHeight >= _atFocus.winH - 10 && vv.height >= _atFocus.winH - KEYBOARD_MIN_PX
+  // THE WINDOW HEIGHT IS THE HONEST SIGNAL (second log, 18:20): the visible
+  // area stays at 0 for the whole hardware-typing session, so it cannot be
+  // waited for. A real keyboard shrinks the window (788 → 600 in the first
+  // log); a window at full height means no keyboard, and the page may go back.
+  if (typing && _atFocus && _glitched && window.innerHeight >= _atFocus.winH - 10
       && (Math.round(window.scrollY) !== _atFocus.y || Math.round(window.scrollX) !== _atFocus.x)) {
     const back = _atFocus;
-    _glitched = false;
     trace(`kb page back: ${Math.round(window.scrollY)} → ${back.y} after Safari's hardware-keyboard glitch`);
     setTimeout(() => window.scrollTo(back.x, back.y), 0);
   }
+  if (vv.height < 100) { trace(`kb ignored: visible area reported ${Math.round(vv.height)}px high`); return; }
   const keyboardUp = window.innerHeight - vv.height >= KEYBOARD_MIN_PX;
   if (!typing || !keyboardUp) { release(); return; }
   const overlay = overlayOf(active);
