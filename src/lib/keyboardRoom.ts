@@ -34,6 +34,16 @@ let _was: { top: string; height: string; bottom: string } | null = null;
  *  never touched, so in portrait nothing widens. */
 let _box: HTMLElement | null = null;
 let _boxWas: { maxHeight: string; overflowY: string } | null = null;
+/** SAFARI'S HARDWARE-KEYBOARD GLITCH (15 Oct, Roman's log, PIC/TXT on a card):
+ *  with a hardware keyboard, Safari briefly lays out as if a 491-pixel
+ *  software keyboard had appeared (the window height drops to 297), scrolls
+ *  the page to keep the caret above that imaginary keyboard, then the window
+ *  is back to full height — and the page is left scrolled, the field out of
+ *  the frame. Remembered at focus; put back once the glitch has been seen
+ *  and the window is whole again. Only then, so a finger scroll while typing
+ *  is never undone. */
+let _atFocus: { x: number; y: number; winH: number } | null = null;
+let _glitched = false;
 
 function overlayOf(el: Element | null): HTMLElement | null {
   let node = el as HTMLElement | null;
@@ -84,9 +94,18 @@ function fit(): void {
   // moment. Taken at face value that is "a keyboard as tall as the screen",
   // and the box was fitted into nothing — zero height, at the top edge. No
   // keyboard leaves less than this; the reading is ignored, nothing changes.
-  if (vv.height < 100) { trace(`kb ignored: visible area reported ${Math.round(vv.height)}px high`); return; }
   const active = document.activeElement;
   const typing = !!active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA');
+  if (typing && _atFocus && (vv.height < 100 || window.innerHeight < _atFocus.winH - KEYBOARD_MIN_PX)) _glitched = true;
+  if (vv.height < 100) { trace(`kb ignored: visible area reported ${Math.round(vv.height)}px high`); return; }
+  if (typing && _atFocus && _glitched
+      && window.innerHeight >= _atFocus.winH - 10 && vv.height >= _atFocus.winH - KEYBOARD_MIN_PX
+      && (Math.round(window.scrollY) !== _atFocus.y || Math.round(window.scrollX) !== _atFocus.x)) {
+    const back = _atFocus;
+    _glitched = false;
+    trace(`kb page back: ${Math.round(window.scrollY)} → ${back.y} after Safari's hardware-keyboard glitch`);
+    setTimeout(() => window.scrollTo(back.x, back.y), 0);
+  }
   const keyboardUp = window.innerHeight - vv.height >= KEYBOARD_MIN_PX;
   if (!typing || !keyboardUp) { release(); return; }
   const overlay = overlayOf(active);
@@ -124,8 +143,15 @@ export function keepBoxesAboveTheKeyboard(): void {
   if (!vv) return;
   vv.addEventListener('resize', () => { trace(seen('viewport resize')); fit(); });
   vv.addEventListener('scroll', () => { trace(seen('viewport scroll')); fit(); });
-  window.addEventListener('scroll', () => { if (document.activeElement && document.activeElement !== document.body) trace(seen('page scroll')); }, { passive: true });
-  document.addEventListener('focusin', () => { trace(seen('focus')); setTimeout(fit, 50); });
-  document.addEventListener('focusout', () => { trace(seen('blur')); setTimeout(fit, 50); });
+  window.addEventListener('scroll', () => { if (document.activeElement && document.activeElement !== document.body) { trace(seen('page scroll')); fit(); } }, { passive: true });
+  document.addEventListener('focusin', (e) => {
+    const t = e.target as Element | null;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) {
+      _atFocus = { x: window.scrollX, y: window.scrollY, winH: window.innerHeight };
+      _glitched = false;
+    }
+    trace(seen('focus')); setTimeout(fit, 50);
+  });
+  document.addEventListener('focusout', () => { _atFocus = null; _glitched = false; trace(seen('blur')); setTimeout(fit, 50); });
   document.addEventListener('keydown', (e) => { if (!(e as KeyboardEvent).repeat) trace(seen(`key "${(e as KeyboardEvent).key}"`)); });
 }

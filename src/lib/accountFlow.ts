@@ -981,6 +981,10 @@ export async function openProjectList(): Promise<void> {
         try {
           await api.put(`/projects/${encodeURIComponent(p.id)}`, { name: newName }, getToken());
           p.name = newName;
+          // THE OPEN PROJECT TAKES THE NAME AT ONCE (15 Oct, Roman): the list
+          // renamed on the server and in its own row, and the toolbar kept the
+          // old name until the project was re-opened.
+          if (getCurrentProject().projectId === p.id) setProjectName(newName);
         } catch (e) {
           showToast(asMessage(e, 'Could not rename project.'));
         }
