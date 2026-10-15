@@ -15,6 +15,17 @@
 
 const KEYBOARD_MIN_PX = 120;   // less than this is a toolbar, not a keyboard
 
+// DIAGNOSTIC LINES (15 Oct): what the keyboard code sees and does, in the
+// sync log — Roman's iPad with a hardware keyboard moves the frame-number box
+// to the top at the first key, and nothing here can be reproduced elsewhere.
+import { trace } from './syncTrace';
+function seen(why: string): string {
+  const vv = window.visualViewport;
+  const a = document.activeElement as HTMLElement | null;
+  const who = a ? `${a.tagName.toLowerCase()}#${a.id || '-'}` : 'nothing';
+  return `kb ${why}: vv ${vv ? `${Math.round(vv.height)}h/${Math.round(vv.offsetTop)}top` : 'none'} · win ${window.innerHeight}h · page ${Math.round(window.scrollY)} · focus ${who}`;
+}
+
 let _held: HTMLElement | null = null;
 let _was: { top: string; height: string; bottom: string } | null = null;
 /** The box inside the overlay — capped to the free height so its bottom
@@ -45,6 +56,7 @@ function overlayOf(el: Element | null): HTMLElement | null {
 }
 
 function release(): void {
+  if (_held) trace(`kb release: ${_held.id || _held.className} back to top=${_was?.top || 'auto'} height=${_was?.height || 'auto'}`);
   if (_held && _was) {
     _held.style.top = _was.top;
     _held.style.height = _was.height;
@@ -81,6 +93,7 @@ function fit(): void {
   overlay.style.top = `${vv.offsetTop}px`;
   overlay.style.height = `${vv.height}px`;
   overlay.style.bottom = 'auto';
+  trace(`kb fit: ${overlay.id || overlay.className} top=${Math.round(vv.offsetTop)} height=${Math.round(vv.height)}`);
   const box = boxOf(overlay, active!);
   if (box && _box !== box) {
     if (_box && _boxWas) { _box.style.maxHeight = _boxWas.maxHeight; _box.style.overflowY = _boxWas.overflowY; }
@@ -103,8 +116,10 @@ function fit(): void {
 export function keepBoxesAboveTheKeyboard(): void {
   const vv = window.visualViewport;
   if (!vv) return;
-  vv.addEventListener('resize', fit);
-  vv.addEventListener('scroll', fit);
-  document.addEventListener('focusin', () => setTimeout(fit, 50));
-  document.addEventListener('focusout', () => setTimeout(fit, 50));
+  vv.addEventListener('resize', () => { trace(seen('viewport resize')); fit(); });
+  vv.addEventListener('scroll', () => { trace(seen('viewport scroll')); fit(); });
+  window.addEventListener('scroll', () => { if (document.activeElement && document.activeElement !== document.body) trace(seen('page scroll')); }, { passive: true });
+  document.addEventListener('focusin', () => { trace(seen('focus')); setTimeout(fit, 50); });
+  document.addEventListener('focusout', () => { trace(seen('blur')); setTimeout(fit, 50); });
+  document.addEventListener('keydown', (e) => { if (!(e as KeyboardEvent).repeat) trace(seen(`key "${(e as KeyboardEvent).key}"`)); });
 }
