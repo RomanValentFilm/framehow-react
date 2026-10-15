@@ -1,5 +1,3 @@
-import { trace } from "./syncTrace";
-
 // THE BOX ABOVE THE KEYBOARD (13 October, Roman).
 //
 // On the iPad every box — name the project, rename, sign in, forgot password —
@@ -147,34 +145,12 @@ function fit(): void {
   }
 }
 
-/** ONE LINE PER KEY (15 Oct, Roman: the page field still jumps on 013): what
- *  Safari does on each key, as it does it. Window height, the visible-area
- *  reading, where the page stands, whether the pin is on, where the field
- *  sits on screen, and the nearest ancestor that is actually scrolled. */
-function keyLine(why: string): void {
-  const vv = window.visualViewport;
-  const active = document.activeElement as HTMLElement | null;
-  if (!isTyping(active) || !active) return;
-  const r = active.getBoundingClientRect();
-  const scrolled: string[] = [];
-  let node: HTMLElement | null = active;
-  while (node) {
-    if (node.scrollTop > 0) scrolled.push(`${node.id || node.className.toString().split(' ')[0] || node.tagName}@${Math.round(node.scrollTop)}`);
-    node = node.parentElement;
-  }
-  trace(`kb ${why}: win ${window.innerWidth}×${window.innerHeight} · vv ${vv ? `${Math.round(vv.height)}h top${Math.round(vv.offsetTop)}` : 'none'} · page y${Math.round(window.scrollY)} · pin ${_pinned ? `on@${_pinned.y}` : 'off'} · field top${Math.round(r.top)} h${Math.round(r.height)} · scrolled [${scrolled.join(' ') || 'none'}]`);
-}
-
 /** Wire once at start. Harmless where there is no on-screen keyboard. */
 export function keepBoxesAboveTheKeyboard(): void {
   const vv = window.visualViewport;
   if (!vv) return;
-  vv.addEventListener('resize', () => { fit(); keyLine('vv resize'); });
-  vv.addEventListener('scroll', () => { fit(); keyLine('vv scroll'); });
-  window.addEventListener('resize', () => keyLine('win resize'));
-  window.addEventListener('scroll', () => keyLine('page scroll'));
-  document.addEventListener('keydown', () => keyLine('key down'));
-  document.addEventListener('input', () => keyLine('after key'));
-  document.addEventListener('focusin', () => setTimeout(() => { fit(); keyLine('focus'); }, 50));
+  vv.addEventListener('resize', fit);
+  vv.addEventListener('scroll', fit);
+  document.addEventListener('focusin', () => setTimeout(fit, 50));
   document.addEventListener('focusout', () => { unpinPage(); setTimeout(fit, 50); });
 }
