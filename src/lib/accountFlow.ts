@@ -2189,6 +2189,17 @@ export function showSaveToaster(): void {
 export async function saveNow(opts: { pressed?: boolean } = {}): Promise<void> {
   // 0. Block save if project is still loading (pull or project switch in progress).
   //    Saving incomplete state would overwrite good data on the server.
+  //    A PERSON'S SAVE WAITS INSTEAD OF BEING THROWN AWAY (15 Oct, Roman: he
+  //    named a new project and pressed Save while its own "Untitled" creation
+  //    was coming back from the server — refused, name gone, project still
+  //    "Untitled"). A fetch takes a second or two: the save waits for it, up
+  //    to fifteen seconds, and only then gives up.
+  if (isLoadInFlight() && opts.pressed) {
+    trace(`save waits: the project is still loading (${loadInFlightWhy()})`);
+    const until = Date.now() + 15_000;
+    while (isLoadInFlight() && Date.now() < until) await new Promise((r) => setTimeout(r, 200));
+    if (!isLoadInFlight()) trace('save goes ahead: the project has finished loading');
+  }
   if (isLoadInFlight()) {
     trace(`save refused: the project is still loading (${loadInFlightWhy()})`);
     showToast('Project still loading…');

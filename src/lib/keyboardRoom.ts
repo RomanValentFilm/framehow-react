@@ -26,6 +26,15 @@ let _was: { top: string; height: string; bottom: string } | null = null;
 let _box: HTMLElement | null = null;
 let _boxWas: { maxHeight: string; overflowY: string } | null = null;
 
+/** A field being typed into: a text field, OR AN EDITABLE BLOCK (15 Oct,
+ *  Roman: the text under a card in 3x2 is one — it was never watched here, so
+ *  the pin and the log lines never switched on for it, and it kept jumping
+ *  while PIC/TXT, a plain field, had stopped). */
+function isTyping(el: Element | null): el is HTMLElement {
+  if (!el) return false;
+  return el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || (el as HTMLElement).isContentEditable === true;
+}
+
 function overlayOf(el: Element | null): HTMLElement | null {
   let node = el as HTMLElement | null;
   while (node && node !== document.body) {
@@ -97,7 +106,7 @@ function fit(): void {
   // box was fitted into nothing — zero height, at the top edge. No keyboard
   // leaves less than this; the reading is ignored, nothing changes.
   const active = document.activeElement;
-  const typing = !!active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA');
+  const typing = isTyping(active);
   if (vv.height < 100) {
     // THE HARDWARE-KEYBOARD SIGNATURE (15 Oct, Roman's logs): the zero reading
     // comes right at focus, before the first key. Safari then scrolls the PAGE
@@ -145,11 +154,10 @@ function fit(): void {
 function keyLine(why: string): void {
   const vv = window.visualViewport;
   const active = document.activeElement as HTMLElement | null;
-  const typing = !!active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA');
-  if (!typing || !active) return;
+  if (!isTyping(active) || !active) return;
   const r = active.getBoundingClientRect();
   const scrolled: string[] = [];
-  let node: HTMLElement | null = active.parentElement;
+  let node: HTMLElement | null = active;
   while (node) {
     if (node.scrollTop > 0) scrolled.push(`${node.id || node.className.toString().split(' ')[0] || node.tagName}@${Math.round(node.scrollTop)}`);
     node = node.parentElement;
