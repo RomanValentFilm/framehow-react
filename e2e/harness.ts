@@ -1313,6 +1313,25 @@ export class Device {
       [index, strip, versionIndex, text] as [number, string, number, string]);
   }
 
+  async openWriteBox(index: number, strip: 'main' | string, versionIndex: number): Promise<void> {
+    say(`${this.name}: opens the WRITE box on shot ${index + 1} ${strip} and leaves it open`);
+    await this.page.evaluate(([i, st, v]) =>
+      (window as never as { __fh_test: { openWriteBox(i: number, st: string, v: number): void } })
+        .__fh_test.openWriteBox(i as number, st as string, v as number), [index, strip, versionIndex] as [number, string, number]);
+  }
+
+  async finishWriteBox(text: string): Promise<void> {
+    say(`${this.name}: types "${text}" into the open WRITE box and presses OK`);
+    await this.page.evaluate((t) =>
+      (window as never as { __fh_test: { finishWriteBox(t: string): Promise<void> } }).__fh_test.finishWriteBox(t), text);
+  }
+
+  async textOnCard(index: number, strip: 'main' | string, versionIndex: number): Promise<string> {
+    return this.page.evaluate(([i, st, v]) =>
+      (window as never as { __fh_test: { textOnCard(i: number, st: string, v: number): string } })
+        .__fh_test.textOnCard(i as number, st as string, v as number), [index, strip, versionIndex] as [number, string, number]);
+  }
+
   async unhideFrame(index: number): Promise<void> {
     say(`${this.name}: un-hiding shot ${index + 1}`);
     await this.page.evaluate((i) =>

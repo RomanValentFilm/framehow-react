@@ -26,7 +26,7 @@ import {
   relabelStripVersions,
   addNewStripVersion,
   autoNewStripVersionIfNeeded,
-  stripScrollId, firstVerLabel, flashNewFrame, followVersion } from './helpers';
+  stripScrollId, firstVerLabel, flashNewFrame, followVersion, liveVersionFor } from './helpers';
 import { snapshotFrame } from './drawing';
 import { renderAll, renderMainFrame, renderVersionFrame } from './render';
 import { renderOverviewRow, renderGrid4Row, renderGrid3x2Card } from './overview';
@@ -207,19 +207,26 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
       if (result !== null) {
         snapshotFrame(fid, 'main');
         const { text, color } = result;
-        s.drawColor[fid] = color;
+        // THE CARD AS IT IS NOW (17 Oct, Roman): the box was open while his own
+        // change came back from the server and the cards were rebuilt — the
+        // text went onto the old card, which was no longer the one on screen.
+        const lf = state().frames.find((x: any) => x.id === fid) ?? f;
+        if (lf !== f) trace('write: the shot under the box was replaced while it was open — writing to the live one');
+        lf.strokes = lf.strokes || [];
+        const ex = lf.strokes.find((st: any) => st.type === 'text');
+        state().drawColor[fid] = color;
         useStore.setState({ penColor: color });   // one pen (#336)
-        if (existing) {
+        if (ex) {
           if (text) {
-            existing.text = text;
-            existing.color = color;
+            ex.text = text;
+            ex.color = color;
           } else {
-            f.strokes = f.strokes.filter((stk: any) => stk !== existing);
+            lf.strokes = lf.strokes.filter((stk: any) => stk !== ex);
           }
         } else if (text) {
-          f.strokes.push({ type: 'text', text, color, x: 20, y: 50 });
+          lf.strokes.push({ type: 'text', text, color, x: 20, y: 50 });
         }
-        if ((f.strokes || []).length > 0) f.drawMode = true;
+        if ((lf.strokes || []).length > 0) lf.drawMode = true;
         bumpRenderTick(); // Ensure Zustand subscriber fires → IDB save + dirty flag
       }
       const cs = state();
@@ -487,19 +494,24 @@ export function handleAction(action: string, fid: number, div: HTMLElement, from
       if (result !== null) {
         snapshotFrame(fid, strip);
         const { text, color } = result;
-        s.drawColor[fid] = color;
+        // THE VERSION AS IT IS NOW (17 Oct, Roman — see the main WRITE above).
+        const lv = liveVersionFor(fid, strip, ai, ver);
+        if (lv !== ver) trace(`write: the ${strip} version under the box was replaced while it was open — writing to the live one`);
+        lv.strokes = lv.strokes || [];
+        const ex = lv.strokes.find((st: any) => st.type === 'text');
+        state().drawColor[fid] = color;
         useStore.setState({ penColor: color });   // one pen (#336)
-        if (existing) {
+        if (ex) {
           if (text) {
-            existing.text = text;
-            existing.color = color;
+            ex.text = text;
+            ex.color = color;
           } else {
-            ver.strokes = ver.strokes.filter((stk: any) => stk !== existing);
+            lv.strokes = lv.strokes.filter((stk: any) => stk !== ex);
           }
         } else if (text) {
-          ver.strokes.push({ type: 'text', text, color, x: 20, y: 50 });
+          lv.strokes.push({ type: 'text', text, color, x: 20, y: 50 });
         }
-        if (ver.type === 'empty' && ver.strokes.length > 0) ver.type = 'drawing';
+        if (lv.type === 'empty' && lv.strokes.length > 0) lv.type = 'drawing';
         bumpRenderTick(); // Ensure Zustand subscriber fires → IDB save + dirty flag
       }
       rerender();

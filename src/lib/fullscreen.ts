@@ -4,7 +4,7 @@
 import { COLORS, state, useStore, bumpRenderTick } from '../store/state';
 import { openLoadPicturesSheet } from './loadPictures';
 import type { StripType } from '../store/state';
-import { drawToolbarHTML, starHTML, toggleStar, getStripVersions, stripTabPrefix, stripScrollId, ensureStripVersions, getStripActiveTab, setStripActiveTab, addNewStripVersion, relabelStripVersions, revealActiveVersionTab, followVersion } from './helpers';
+import { drawToolbarHTML, starHTML, toggleStar, getStripVersions, stripTabPrefix, stripScrollId, ensureStripVersions, getStripActiveTab, setStripActiveTab, addNewStripVersion, relabelStripVersions, revealActiveVersionTab, followVersion, liveVersionFor } from './helpers';
 import { restoreCanvas, restoreMainCanvas, setupDrawing, setupMainDrawing, snapshotFrame } from './drawing';
 import { resetToolbarState } from './view';
 import { stampChangedContent } from './changeStamps';
@@ -253,19 +253,25 @@ export function openFullscreen(
       if (result !== null) {
         snapshotFrame(fid, strip);
         const { text, color } = result;
-        s.drawColor[fid] = color;
+        // THE VERSION AS IT IS NOW (17 Oct, Roman): a fetch while the box was
+        // open may have replaced it; the text goes to the live one.
+        const lv = liveVersionFor(fid, strip, vi, ver);
+        if (lv !== ver) trace(`write: the ${strip} version under the box was replaced while it was open — writing to the live one`);
+        lv.strokes = lv.strokes || [];
+        const ex = lv.strokes.find((st: any) => st.type === 'text');
+        state().drawColor[fid] = color;
         useStore.setState({ penColor: color });   // one pen (#336)
-        if (existing) {
+        if (ex) {
           if (text) {
-            existing.text = text;
-            existing.color = color;
+            ex.text = text;
+            ex.color = color;
           } else {
-            ver.strokes = ver.strokes.filter((stk: any) => stk !== existing);
+            lv.strokes = lv.strokes.filter((stk: any) => stk !== ex);
           }
         } else if (text) {
-          ver.strokes.push({ type: 'text', text, color, x: 20, y: 50 });
+          lv.strokes.push({ type: 'text', text, color, x: 20, y: 50 });
         }
-        if (ver.type === 'empty' && ver.strokes.length > 0) ver.type = 'drawing';
+        if (lv.type === 'empty' && lv.strokes.length > 0) lv.type = 'drawing';
         bumpRenderTick();
       }
       // Refresh canvas to show text

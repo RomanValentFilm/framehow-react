@@ -1001,3 +1001,17 @@ export function revealActiveVersionTab(root: ParentNode = document): void {
     else if (overRight > 0) row.scrollLeft += overRight;
   });
 }
+
+/** THE VERSION AS IT IS NOW (17 Oct). A box or view opened on a version may
+ *  outlive a fetch that rebuilt the shot's versions underneath; what was held
+ *  is then a detached copy. Found again by its server name, else by identity
+ *  if it is still in the list, else by its place; the held one as a last
+ *  resort. The drawing surface does the same per stroke. */
+export function liveVersionFor(fid: number, strip: StripType, idx: number, held: Version): Version {
+  const vers = getStripVersions(fid, strip);
+  let now: Version | undefined;
+  if (held.serverVersionId) now = vers.find((v) => v.serverVersionId === held.serverVersionId);
+  if (!now && vers.includes(held)) now = held;
+  if (!now) now = vers[idx];
+  return now ?? held;
+}

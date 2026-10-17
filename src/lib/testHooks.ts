@@ -260,6 +260,12 @@ export interface TestDoor {
   /** WRITE on the main card ('main') or TEXT on a strip card's version — the
    *  app's own text box, filled and OK'd. */
   writeOnCard(index: number, strip: 'main' | StripType, versionIndex: number, text: string): Promise<void>;
+  /** Open the WRITE box and leave it open (17 Oct: a fetch may land while it
+   *  is). finishWriteBox types and presses OK. textOnCard reads what the card
+   *  carries now. */
+  openWriteBox(index: number, strip: 'main' | StripType, versionIndex: number): void;
+  finishWriteBox(text: string): Promise<void>;
+  textOnCard(index: number, strip: 'main' | StripType, versionIndex: number): string;
   /** Make a setup, exactly as the CREATE button does. Returns its id. */
   newSetup(name: string, colorIndex?: number): string;
 
@@ -1435,6 +1441,35 @@ export function installTestDoor(): void {
       area.dispatchEvent(new Event('input', { bubbles: true }));
       ok.click();
       await new Promise((r) => setTimeout(r, 100));
+    },
+
+    openWriteBox(index, strip, versionIndex) {
+      const f = useStore.getState().frames[index];
+      if (!f) throw new Error(`no frame at ${index}`);
+      if (strip === 'main') {
+        handleMainAction('write', f.id, mainCardOf(f.id, index));
+      } else {
+        ensureStripVersions(f.id, strip);
+        setStripActiveTab(f.id, strip, versionIndex);
+        handleAction('text', f.id, stripCardOf(f.id, index, strip), false, strip);
+      }
+      if (!document.getElementById('textModalArea')) throw new Error('the text box did not open');
+    },
+    async finishWriteBox(text) {
+      const area = document.getElementById('textModalArea') as HTMLTextAreaElement | null;
+      const ok = document.getElementById('textModalOk');
+      if (!area || !ok) throw new Error('the text box is not open');
+      area.value = text;
+      area.dispatchEvent(new Event('input', { bubbles: true }));
+      ok.click();
+      await new Promise((r) => setTimeout(r, 100));
+    },
+    textOnCard(index, strip, versionIndex) {
+      const f = useStore.getState().frames[index];
+      if (!f) throw new Error(`no frame at ${index}`);
+      const strokes = strip === 'main' ? (f.strokes || []) : (getStripVersions(f.id, strip)[versionIndex]?.strokes || []);
+      const t = strokes.find((st: any) => st.type === 'text') as { text?: string } | undefined;
+      return t?.text ?? '';
     },
 
     newSetup(name, colorIndex = 0) { return createSetup(name, colorIndex); },
