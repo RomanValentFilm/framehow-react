@@ -651,7 +651,13 @@ export function openTextModal(
             c === '#ffffff' ? 'border-color:var(--border-strong);' : ''
           }" data-tcolor="${c}"></div>`
       ).join('');
-    colorRow.querySelectorAll('[data-tcolor]').forEach((d) =>
+    colorRow.querySelectorAll('[data-tcolor]').forEach((d) => {
+      // THE DOT DOES NOT TAKE THE CURSOR (17 Oct, Roman): tapping it pulled the
+      // cursor out of the field — keyboard down, box re-centred — and the
+      // re-focus below pulled it back: keyboard up, box fitted again. A jump
+      // for every colour. The field keeps the cursor through the tap.
+      d.addEventListener('pointerdown', (e) => e.preventDefault());
+      d.addEventListener('mousedown', (e) => e.preventDefault());
       d.addEventListener('click', () => {
         chosenColor = (d as HTMLElement).dataset.tcolor!;
         colorRow
@@ -659,8 +665,8 @@ export function openTextModal(
           .forEach((x) => x.classList.toggle('selected', (x as HTMLElement).dataset.tcolor === chosenColor));
         // Re-focus the textarea so the user can keep typing after picking a color
         area.focus();
-      })
-    );
+      });
+    });
     modal.classList.remove('hidden');
     area.focus();
     function clampTo5Lines() {

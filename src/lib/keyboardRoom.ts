@@ -75,7 +75,32 @@ function unpinPage(): void {
   window.scrollTo(back.x, back.y);
 }
 
+/** THE BOX STAYS PUT FOR A MOMENT AFTER THE KEYBOARD GOES (17 Oct, Roman:
+ *  "press OK, the keyboard closes, the box jumps, you have to press OK
+ *  again"). The tap on OK first takes the cursor out of the field, the
+ *  keyboard drops, and the box re-centred under the finger before the tap
+ *  itself landed. So the box is let go a moment later; a tap that was already
+ *  on its way lands first. A field focused again within that moment (the
+ *  colour dots, a second field in the same box) simply keeps the box. */
+const RELEASE_GRACE_MS = 400;
+let _releaseTimer: number | null = null;
+function releaseSoon(): void {
+  if (!_held) return;
+  if (_releaseTimer !== null) return;
+  _releaseTimer = window.setTimeout(() => {
+    _releaseTimer = null;
+    const vv = window.visualViewport;
+    const stillUp = !!vv && vv.height >= 100 && window.innerHeight - vv.height >= KEYBOARD_MIN_PX;
+    if (isTyping(document.activeElement) && stillUp) return;   // back in a field — keep the box
+    release();
+  }, RELEASE_GRACE_MS);
+}
+function keepHeld(): void {
+  if (_releaseTimer !== null) { clearTimeout(_releaseTimer); _releaseTimer = null; }
+}
+
 function release(): void {
+  keepHeld();
   if (_held && _was) {
     _held.style.top = _was.top;
     _held.style.height = _was.height;
@@ -122,9 +147,10 @@ function fit(): void {
     return;
   }
   const keyboardUp = window.innerHeight - vv.height >= KEYBOARD_MIN_PX;
-  if (!typing || !keyboardUp) { release(); return; }
+  if (!typing || !keyboardUp) { releaseSoon(); return; }
   const overlay = overlayOf(active);
   if (!overlay) { release(); return; }
+  keepHeld();
   if (_held !== overlay) {
     release();
     _held = overlay;
