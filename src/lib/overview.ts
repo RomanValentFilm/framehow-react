@@ -1016,21 +1016,10 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
 
     const card = wrap.querySelector('.frame-card')!;
 
-    // Wire editable text block below card
-    const textBlock = wrap.querySelector(`[data-g3text="${fid}"]`) as HTMLElement | null;
-    if (textBlock) {
-      textBlock.addEventListener('click', () => {
-        textBlock.contentEditable = 'true';
-        textBlock.classList.add('g3-text-active');
-        textBlock.focus();
-      });
-      textBlock.addEventListener('blur', () => {
-        textBlock.contentEditable = 'false';
-        textBlock.classList.remove('g3-text-active');
-        f.textContent = textBlock.innerText;
-        textBlock.scrollTop = 0;
-      });
-    }
+    // THE TEXT UNDER THE CARD IS READ-ONLY (17 Oct, Roman): it used to turn
+    // editable on a tap — a second way to change the same text, and the one
+    // that fought the hardware keyboard. The text is changed through PIC/TXT
+    // on the card only. Long text scrolls by finger, no tap needed.
 
     // VERSN button — open fullscreen on ver strip
     const versnBtn = wrap.querySelector(`[data-g3versn="${fid}"]`) as HTMLElement | null;

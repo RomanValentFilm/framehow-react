@@ -268,8 +268,7 @@
   .grid3x2-card-wrap .reorder-label::after,
   .grid3x2-card-wrap .vtab-add::after{content:'';position:absolute;inset:-8px -6px;}
   .grid3x2-page-sep{grid-column:1/-1;height:0;border-top:2px solid #000;margin:0 -3vw;}
-  .g3-text-block{color:#000;font-size:12px;line-height:1.4;padding:6px 4px 6px 4px;height:calc(1.4em * 3 + 12px);overflow-y:hidden;white-space:pre-wrap;word-break:break-word;cursor:text;outline:none;background:transparent;scrollbar-width:thin;}
-  .g3-text-block.g3-text-active{overflow-y:scroll;}
+  .g3-text-block{color:#000;font-size:12px;line-height:1.4;padding:6px 4px 6px 4px;height:calc(1.4em * 3 + 12px);overflow-y:auto;-webkit-overflow-scrolling:touch;white-space:pre-wrap;word-break:break-word;cursor:default;outline:none;background:transparent;scrollbar-width:thin;}
   .g3-text-block::-webkit-scrollbar{-webkit-appearance:none;width:6px;}
   .g3-text-block::-webkit-scrollbar-thumb{background:rgba(0,0,0,.4);border-radius:3px;min-height:20px;}
   .g3-text-block::-webkit-scrollbar-track{background:rgba(0,0,0,.08);border-radius:3px;}
