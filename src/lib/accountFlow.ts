@@ -822,6 +822,7 @@ export async function openProjectList(): Promise<void> {
   const content = el('projectListContent');
   content.textContent = 'Loading…';
   show('projectListModal');
+  trace(`project list: shown (${state().frames.length} shot(s) open, ${getCurrentProject().name ? `"${getCurrentProject().name}"` : 'no name'})`);
 
   let editMode = false;
   let projects: CloudProject[] = [];
@@ -861,6 +862,7 @@ export async function openProjectList(): Promise<void> {
     }
 
     function cleanup(): void {
+      trace('project list: closed');
       closeBtn.onclick = null;
       newBtn.onclick = null;
       editBtn.onclick = null;

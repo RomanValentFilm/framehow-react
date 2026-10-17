@@ -354,6 +354,7 @@ export function initFramehow(): void {
         autoPhoneMainView();
         break;
       case 'open':
+        trace('Open project: chosen on the start chooser');
         void flowLoadProject();
         break;
       case 'cancel':
@@ -443,6 +444,7 @@ export function initFramehow(): void {
   });
   document.getElementById('menuLoadProject')!.addEventListener('click', () => {
     document.getElementById('mainMenu')!.classList.remove('open');
+    trace('Open project: tapped in the menu');
     void flowLoadProject();
   });
   document.getElementById('menuAccount')!.addEventListener('click', () => {
