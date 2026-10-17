@@ -105,6 +105,12 @@ function fit(): void {
   // leaves less than this; the reading is ignored, nothing changes.
   const active = document.activeElement;
   const typing = isTyping(active);
+  // NOBODY IS TYPING → THE PAGE IS FREE (17 Oct, Roman: after writing, the
+  // page would not scroll). The pin was let go on "field left" only — and when
+  // a sync redraw rebuilt the card under the field, Safari never said so, and
+  // the page stayed held. Now the pin is let go the moment no field is being
+  // typed into, whoever took the field away.
+  if (!typing) unpinPage();
   if (vv.height < 100) {
     // THE HARDWARE-KEYBOARD SIGNATURE (15 Oct, Roman's logs): the zero reading
     // comes right at focus, before the first key. Safari then scrolls the PAGE
@@ -153,4 +159,12 @@ export function keepBoxesAboveTheKeyboard(): void {
   vv.addEventListener('scroll', fit);
   document.addEventListener('focusin', () => setTimeout(fit, 50));
   document.addEventListener('focusout', () => { unpinPage(); setTimeout(fit, 50); });
+  // The first touch after the field went away: a pinned page with nobody
+  // typing is let go before the finger moves (see fit).
+  const freeIfIdle = () => { if (_pinned && !isTyping(document.activeElement)) unpinPage(); };
+  document.addEventListener('touchstart', freeIfIdle, { passive: true, capture: true });
+  document.addEventListener('pointerdown', freeIfIdle, { passive: true, capture: true });
+  // And a redraw that removes the field without a word: looked at shortly after.
+  new MutationObserver(() => { if (_pinned) setTimeout(freeIfIdle, 0); })
+    .observe(document.body, { childList: true, subtree: true });
 }
