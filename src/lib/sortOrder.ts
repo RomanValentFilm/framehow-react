@@ -2874,10 +2874,16 @@ function wireEditViewEvents(el: HTMLElement, orderId: string): void {
         // cannot tap into the middle of the name's text … you have to delete
         // the second word to get to the first". Left to iOS, which puts the
         // cursor where the finger is; the page is already settled by then.
-        if (document.activeElement === inp) return;
+        if (document.activeElement === inp) { trace('break name: tapped — already has the cursor'); return; }
         e.preventDefault();
         inp.removeAttribute('readonly');
         inp.focus({ preventScroll: true });
+        {
+          const r = inp.getBoundingClientRect();
+          const t = e.touches[0];
+          const under = t ? document.elementFromPoint(t.clientX, t.clientY) : null;
+          trace(`break name: tapped · cursor ${document.activeElement === inp ? 'IN' : 'NOT in'} the field · body ${document.body.style.position || 'normal'} top ${document.body.style.top || '0'} · page y${Math.round(window.scrollY)} · field top${Math.round(r.top)} · under the finger: ${under ? (under.id || under.className.toString().split(' ')[0] || under.tagName) : 'nothing'}`);
+        }
         useStore.setState({ scrollHideGuard: Date.now() + 1200 });
         // After 500ms, detect keyboard type:
         // - Software keyboard: viewport shrinks → scroll input into view
