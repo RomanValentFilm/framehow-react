@@ -61,6 +61,11 @@ function overlayOf(el: Element | null): HTMLElement | null {
 let _pinned: { x: number; y: number } | null = null;
 function pinPage(): void {
   if (_pinned) return;
+  // HANDS OFF A PAGE SOMEBODY ELSE HOLDS (19 Oct, Roman's log 15:47): the
+  // break name on the SORT BY page holds the page its own way (25 % from the
+  // top, since #496). The pin then wrote its own position over that one — the
+  // field jumped off the screen and every key scrolled the held page.
+  if (document.body.style.position === 'fixed') return;
   _pinned = { x: window.scrollX, y: window.scrollY };
   const b = document.body.style;
   b.position = 'fixed';
