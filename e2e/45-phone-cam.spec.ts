@@ -84,8 +84,12 @@ test('phone cam, frameline later ON: the framing screen comes up, Save puts it o
   await pressCamAndHandOver(d);
   await expect(d.page.locator('#cropOverlay'), 'the framing screen with the frame lines').toBeVisible({ timeout: 10_000 });
   await expect(d.page.locator('#cropModeBtn'), 'and the camera choice on it').toHaveText('PHONE CAM');
-  await d.page.waitForTimeout(500);
-  await d.page.locator('#cropConfirm').click();
+  // The photo must be laid out before Save means anything; then Save is
+  // pressed as the app presses it (run 398: the simulator's own sync log at the
+  // bottom of the screen lay over the button and the tap waited four minutes).
+  await expect.poll(() => d.page.evaluate(() => (document.getElementById('cropImg') as HTMLImageElement).naturalWidth), { timeout: 15_000 }).toBeGreaterThan(0);
+  await d.page.waitForTimeout(300);
+  await d.page.evaluate(() => (document.getElementById('cropConfirm') as HTMLButtonElement).click());
   let pic = null;
   for (let i = 0; i < 40 && !pic; i++) { await d.page.waitForTimeout(250); pic = await pictureSize(d, 0, 0); }
   say(`   on the card: ${pic?.w} × ${pic?.h}, ${pic?.mb} MB`);

@@ -26,8 +26,15 @@ mkdir -p e2e-log
 # exactly when a Mac decides to sleep — and a sleeping machine looks in the log
 # like devices that stopped agreeing. `caffeinate -i` holds off idle sleep for
 # as long as the tests run and nothing longer.
+# THE RESULT IS THE TESTS' RESULT (23 Oct). The pipe below ended with grep, and
+# a pipe answers with its LAST command — so a red run answered "fine", and a
+# deploy chained after it with && went ahead on red (run 398: a test timed out,
+# and v5.0.027 was committed and uploaded anyway). pipefail makes the pipe
+# answer with the first failure; the run's number is kept and returned.
+set -o pipefail 2>/dev/null || true
 { echo "=== RUN ${FH_RUN:-unnumbered} — $(date '+%H:%M:%S') — args: $* ==="; \
   caffeinate -dims npx playwright test --project=webkit "$@" 2>&1; } | tee e2e-log/last-run.log | grep -v WebServer
+RESULT=$?
 afplay /System/Library/Sounds/Glass.aiff 2>/dev/null &
 osascript -e 'display notification "Tests finished — say zzz" with title "Framehow"' 2>/dev/null
 echo
@@ -35,3 +42,4 @@ echo
 # line scrolls away long before a run ends, and Roman pastes the tail — so this
 # is where he can see which run he just finished without hunting for it.
 echo "--- FH_RUN=${FH_RUN:-unnumbered} finished. say  zzz  ---"
+exit $RESULT

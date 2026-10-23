@@ -39,10 +39,11 @@ export function setCamMode(m: CamMode): void {
   trace(`camera: ${m === 'phone' ? 'PHONE CAM' : 'FH CAM'} chosen${isFitting() ? ' (fittings)' : ''}`);
 }
 
-/** Ticked (the default): after a phone shot the photo comes up in the frame
- *  lines to be placed. Unticked: it fills the frame by itself. */
+/** Ticked: after a phone shot the photo comes up in the frame lines to be
+ *  placed. Unticked (the default — Roman, 23 Oct: the faster start): it fills
+ *  the frame by itself. */
 export function getFramelineLater(): boolean {
-  return read(LATER_KEY) !== 'no';
+  return read(LATER_KEY) === 'yes';
 }
 export function setFramelineLater(on: boolean): void {
   write(LATER_KEY, on ? 'yes' : 'no');
