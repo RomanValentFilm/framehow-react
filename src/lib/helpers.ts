@@ -719,7 +719,9 @@ export function setFrameStripLabel(f: Frame, strip: StripType, label: string): v
 
   const clean = label.trim();
   // The first letter is the prefix on the version tabs (v1, v2 / s1, s2).
-  const newPrefix = clean[0].toLowerCase();
+  // A FITTING keeps CAPITAL letters (#505, Roman 23 Oct): "l1" reads as "11".
+  // Customise already did this; renaming on the card made them small again.
+  const newPrefix = s.projectType === 'fitting' ? clean[0].toUpperCase() : clean[0].toLowerCase();
   const prefixChanged = def.prefix !== newPrefix;
 
   // Replace the strip, do not write over it — a replacement is what the store
