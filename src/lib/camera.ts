@@ -8,11 +8,14 @@ import { showToast, showCamBlockedMsg } from './modals';
 import { fhTrack } from './tracking';
 import { resetToolbarState } from './view';
 import { flushSyncNow } from './currentProject';
+import { getCamMode, getFramelineLater, wireCamModeButton, shrinkForSaving, fillCrop } from './camMode';
 
 let cameraStream: MediaStream | null = null;
 let cameraFacing: 'environment' | 'user' = 'environment';
 let cameraTarget: any = null;
 let cropState: any = null;
+/** This shot goes through the PHONE's own camera (23 Oct). */
+let phoneShot = false;
 
 export interface CameraTarget {
   fid: number;
@@ -54,6 +57,11 @@ export async function openCamera(
   const ar = effectiveAspectRatio(fid);
   cameraTarget = { fid, div, aspectRatio: ar, fromCompare: !!fromCompare, fromMain: !!fromMain, stripType: strip };
 
+  // PHONE CAM (23 Oct): the phone's own camera, opened INSIDE this tap — iOS
+  // opens its camera only from a tap, so nothing may be waited for first.
+  if (getCamMode() === 'phone') { openPhoneCamera(); return; }
+  phoneShot = false;
+
   let hasCamera = false;
   let camBlocked = false;
   if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
@@ -72,6 +80,7 @@ export async function openCamera(
 
   if (hasCamera) {
     document.getElementById('cameraOverlay')!.classList.remove('hidden');
+    (document.getElementById('cameraModeBtn') as (HTMLElement & { __fhRefresh?: () => void }) | null)?.__fhRefresh?.();
     const vid = document.getElementById('cameraVideo') as HTMLVideoElement;
     vid.srcObject = cameraStream;
     setupPinchZoom(vid);
@@ -90,6 +99,26 @@ export async function openCamera(
   } else {
     (document.getElementById('camFallbackInput') as HTMLInputElement).click();
   }
+}
+
+/** Open the phone's own camera for the current target. */
+function openPhoneCamera(): void {
+  phoneShot = true;
+  (document.getElementById('camFallbackInput') as HTMLInputElement).click();
+}
+
+/** PHONE CAM with FRAMELINE LATER unticked: the photo fills the frame by
+ *  itself, cut evenly at the edges, and goes straight onto the card. */
+function placePhoneShotByItself(dataURL: string): void {
+  const target = cameraTarget;
+  if (!target) return;
+  const img = new Image();
+  img.onload = () => {
+    const crop = fillCrop(img.naturalWidth, img.naturalHeight, target.aspectRatio);
+    const url = shrinkForSaving(img, img.naturalWidth, img.naturalHeight, crop);
+    if (onCapturedImage) onCapturedImage(url, target);
+  };
+  img.src = dataURL;
 }
 
 export function positionCameraGuide(ar: number): void {
@@ -217,6 +246,7 @@ export function closeCamera(): void {
   if (detailBar) detailBar.classList.remove('tb-hide');
   document.getElementById('cameraOverlay')!.classList.add('hidden');
   document.getElementById('cameraRatioMenu')?.classList.add('hidden');
+  document.getElementById('cameraModeMenu')?.classList.add('hidden');
   const vid = document.getElementById('cameraVideo') as HTMLVideoElement;
   vid.srcObject = null;
   vid.style.filter = '';
@@ -473,11 +503,31 @@ export function wireCameraEvents(): void {
   document.getElementById('camFallbackInput')!.addEventListener('change', (e) => {
     const file = (e.target as HTMLInputElement).files?.[0];
     if (!file || !cameraTarget) return;
+    const byItself = phoneShot && !getFramelineLater();
+    phoneShot = false;
     const reader = new FileReader();
-    reader.onload = (ev) => openCropUI((ev.target as FileReader).result as string);
+    reader.onload = (ev) => {
+      const url = (ev.target as FileReader).result as string;
+      if (byItself) placePhoneShotByItself(url); else openCropUI(url);
+    };
     reader.readAsDataURL(file);
     (e.target as HTMLInputElement).value = '';
   });
+
+  // FH CAM / PHONE CAM (23 Oct): the button next to RATIO, and the same one on
+  // the framing screen. Choosing PHONE CAM in the camera screen switches at
+  // once, inside the same tap.
+  {
+    const btn = document.getElementById('cameraModeBtn');
+    const panel = document.getElementById('cameraModeMenu');
+    if (btn && panel) wireCamModeButton(btn, panel, (m) => {
+      if (m === 'phone' && cameraTarget) { closeCamera(); openPhoneCamera(); }
+    });
+    document.getElementById('cameraVideoWrap')?.addEventListener('click', () => panel?.classList.add('hidden'));
+    const cbtn = document.getElementById('cropModeBtn');
+    const cpanel = document.getElementById('cropModeMenu');
+    if (cbtn && cpanel) wireCamModeButton(cbtn, cpanel);
+  }
 
   document.getElementById('cropConfirm')!.addEventListener('click', () => {
     if (!cropState || !cameraTarget) return;
@@ -487,11 +537,11 @@ export function wireCameraEvents(): void {
     const srcW = s.guideW / s.scale;
     const srcH = s.guideH / s.scale;
     const img = document.getElementById('cropImg') as HTMLImageElement;
-    const cvs = document.createElement('canvas');
-    cvs.width = Math.round(srcW);
-    cvs.height = Math.round(srcH);
-    cvs.getContext('2d')!.drawImage(img, srcX, srcY, srcW, srcH, 0, 0, cvs.width, cvs.height);
-    if (onCapturedImage) onCapturedImage(cvs.toDataURL('image/jpeg', 0.92), cameraTarget);
+    // Kept sharp, but not at the phone's full size (23 Oct): long side at most
+    // 3000 px, high-quality scaling — the 3–5 MB a phone hands over filled an
+    // account in one fitting.
+    const url = shrinkForSaving(img, img.naturalWidth, img.naturalHeight, { x: srcX, y: srcY, w: srcW, h: srcH });
+    if (onCapturedImage) onCapturedImage(url, cameraTarget);
     closeCropUI();
   });
 
@@ -508,6 +558,8 @@ export function openCropUI(imgSrc: string): void {
   const img = document.getElementById('cropImg') as HTMLImageElement;
   const guide = document.getElementById('cropGuide')! as HTMLElement;
   overlay.classList.remove('hidden');
+  (document.getElementById('cropModeBtn') as (HTMLElement & { __fhRefresh?: () => void }) | null)?.__fhRefresh?.();
+  document.getElementById('cropModeMenu')?.classList.add('hidden');
 
   img.onload = () => {
     const nw = img.naturalWidth,

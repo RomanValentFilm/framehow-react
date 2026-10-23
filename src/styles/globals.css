@@ -1624,8 +1624,25 @@ body.fitting-mode.detail-open .detail-bar{display:none !important;}
 }
 
 /* FITTING projects shoot to the frame's own shape — no RATIO picker */
-body.fitting-mode .camera-ratio-btn,
+body.fitting-mode .camera-ratio-btn:not(.cam-mode-btn),
 body.fitting-mode .camera-ratio-menu{display:none !important;}
+/* FH CAM / PHONE CAM (23 Oct): the same button as RATIO, beside it; in a
+   fitting (no RATIO) in RATIO's place. The panel opens under it, flat. */
+.cam-mode-btn{left:96px;}
+body.fitting-mode .cam-mode-btn{left:16px;}
+.crop-mode-btn{left:16px;top:max(16px,env(safe-area-inset-top));}
+.cam-mode-menu{position:absolute;left:96px;top:calc(max(16px,env(safe-area-inset-top)) + 40px);z-index:12;display:flex;flex-direction:column;gap:12px;padding:12px 14px;background:rgba(20,20,20,.95);border:1px solid rgba(255,255,255,.3);border-radius:5px;box-shadow:0 4px 16px rgba(0,0,0,.6);}
+body.fitting-mode .cam-mode-menu,#cropModeMenu{left:16px;}
+.cam-mode-menu.hidden{display:none;}
+.cam-mode-switch{position:relative;display:flex;background:#2a2a2a;border:1px solid rgba(255,255,255,.25);border-radius:20px;padding:3px;min-width:240px;}
+.cam-mode-knob{position:absolute;top:3px;bottom:3px;left:3px;width:calc(50% - 3px);background:var(--accent);border-radius:17px;transition:transform .2s ease;}
+.cam-mode-switch.is-phone .cam-mode-knob{transform:translateX(100%);}
+.cam-mode-opt{position:relative;z-index:1;flex:1;font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.06em;color:#bbb;background:none;border:none;padding:8px 12px;cursor:pointer;white-space:nowrap;-webkit-tap-highlight-color:transparent;}
+.cam-mode-opt.active{color:#fff;}
+.cam-mode-later{display:flex;align-items:center;gap:9px;font-family:var(--mono);font-size:12px;font-weight:600;letter-spacing:.05em;color:#ddd;cursor:pointer;user-select:none;}
+.cam-mode-later input{width:18px;height:18px;accent-color:var(--accent);margin:0;}
+.cam-mode-later.is-off{opacity:.4;}
+.cam-mode-inline{display:flex;flex-direction:column;gap:10px;}
 
 /* A newly created frame announces itself briefly. Each view builds its card
    from a different element, so all three are listed. */

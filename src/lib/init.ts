@@ -476,6 +476,11 @@ export function initFramehow(): void {
     put('customStrip3', v.refs);  put('customFrameLabel3', v.refsLabel);
     put('customNeeds', v.needs);  put('customNeedsLabel', v.needsLabel);
     put('customNotes', v.notes);  put('customNotesLabel', v.notesLabel);
+    // THE CAMERA CHOICE, always reachable (23 Oct): with PHONE CAM and
+    // FRAMELINE LATER unticked no Framehow screen appears during a shot.
+    // Applies at once, like the camera's own panel.
+    const camHost = document.getElementById('customCamPanel');
+    if (camHost) void import('./camMode').then(({ renderCamPanel }) => renderCamPanel(camHost));
     document.getElementById('customiseModal')!.classList.remove('hidden');
   });
   document.getElementById('customiseCancel')!.addEventListener('click', () => {

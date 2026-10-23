@@ -263,6 +263,11 @@ export interface TestDoor {
   /** Open the WRITE box and leave it open (17 Oct: a fetch may land while it
    *  is). finishWriteBox types and presses OK. textOnCard reads what the card
    *  carries now. */
+  /** The picture on a version, measured: width, height, size in MB (23 Oct,
+   *  PHONE CAM). Null when there is none. */
+  pictureSize(index: number, strip: StripType, versionIndex: number): Promise<{ w: number; h: number; mb: number; frame: number } | null>;
+  /** The camera choice, as the panel sets it. */
+  setCamChoice(mode: 'fh' | 'phone', framelineLater: boolean): void;
   openWriteBox(index: number, strip: 'main' | StripType, versionIndex: number): void;
   finishWriteBox(text: string): Promise<void>;
   textOnCard(index: number, strip: 'main' | StripType, versionIndex: number): string;
@@ -1443,6 +1448,23 @@ export function installTestDoor(): void {
       await new Promise((r) => setTimeout(r, 100));
     },
 
+    async pictureSize(index, strip, versionIndex) {
+      const f = useStore.getState().frames[index];
+      if (!f) throw new Error(`no frame at ${index}`);
+      const v = getStripVersions(f.id, strip)[versionIndex];
+      const src = v?.bgImage as string | null | undefined;
+      if (!src) return null;
+      const img = new Image();
+      await new Promise<void>((res, rej) => { img.onload = () => res(); img.onerror = () => rej(new Error('picture did not load')); img.src = src; });
+      const mb = src.startsWith('data:') ? (src.length * 0.75) / 1048576 : -1;
+      return { w: img.naturalWidth, h: img.naturalHeight, mb: Math.round(mb * 100) / 100, frame: (f.cropW || 16) / (f.cropH || 9) };
+    },
+    setCamChoice(mode, framelineLater) {
+      try {
+        localStorage.setItem(useStore.getState().projectType === 'fitting' ? 'fh_camMode_fitting' : 'fh_camMode', mode);
+        localStorage.setItem('fh_camFramelineLater', framelineLater ? 'yes' : 'no');
+      } catch { /* */ }
+    },
     openWriteBox(index, strip, versionIndex) {
       const f = useStore.getState().frames[index];
       if (!f) throw new Error(`no frame at ${index}`);
