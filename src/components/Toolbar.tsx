@@ -81,6 +81,7 @@ export function Toolbar() {
               }}
             />
             <button id="menuCustomise">Customise</button>
+            <button id="menuCamSetup">Cam Set Up</button>
             <div
               style={{
                 height: 20,

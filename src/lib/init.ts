@@ -476,12 +476,14 @@ export function initFramehow(): void {
     put('customStrip3', v.refs);  put('customFrameLabel3', v.refsLabel);
     put('customNeeds', v.needs);  put('customNeedsLabel', v.needsLabel);
     put('customNotes', v.notes);  put('customNotesLabel', v.notesLabel);
-    // THE CAMERA CHOICE, always reachable (23 Oct): with PHONE CAM and
-    // FRAMELINE LATER unticked no Framehow screen appears during a shot.
-    // Applies at once, like the camera's own panel.
-    const camHost = document.getElementById('customCamPanel');
-    if (camHost) void import('./camMode').then(({ renderCamPanel }) => renderCamPanel(camHost));
     document.getElementById('customiseModal')!.classList.remove('hidden');
+  });
+  // CAM SET UP (23 Oct, Roman): below Customise. Opens the Framehow camera
+  // with the FH CAM / PHONE CAM panel already open — the one place the choice
+  // can always be reached, since PHONE CAM shows no Framehow screen at all.
+  document.getElementById('menuCamSetup')!.addEventListener('click', () => {
+    document.getElementById('mainMenu')!.classList.remove('open');
+    void import('./camera').then(({ openCameraSetup }) => openCameraSetup());
   });
   document.getElementById('customiseCancel')!.addEventListener('click', () => {
     document.getElementById('customiseModal')!.classList.add('hidden');

@@ -42,11 +42,12 @@ async function pictureSize(d: Device, index: number, vi: number) {
       .__fh_test.pictureSize(i as number, 'ver', v as number), [index, vi] as [number, number]);
 }
 
-async function openFitting(browser: import('@playwright/test').Browser, name: string) {
+async function openFitting(browser: import('@playwright/test').Browser, name: string, kind: 'fitting' | 'landscape' = 'fitting') {
   const { token } = await freshAccount();
   const desktop = await Device.open(browser, 'desktop', token);
-  await desktop.newProjectOfKind(name, 'fitting', 2);
+  await desktop.newProjectOfKind(name, kind, 2);
   await desktop.settle();
+  if (kind !== 'fitting') await desktop.showStrip('ver');
   if (await desktop.page.locator('#projectListModal').isVisible()) {
     await desktop.page.locator('#projectListClose').click();
     await desktop.page.waitForTimeout(300);
@@ -63,9 +64,9 @@ async function pressCamAndHandOver(d: Device): Promise<void> {
   await chooser.setFiles({ name: 'IMG_0001.jpg', mimeType: 'image/jpeg', buffer: photo });
 }
 
-test('phone cam, frameline later OFF: the photo fills the frame by itself, shrunk', async ({ browser }) => {
+test('phone cam in a fitting: the photo fills the frame by itself, shrunk — even with frameline later ON', async ({ browser }) => {
   const d = await openFitting(browser, 'PHONE CAM AUTO');
-  await camChoice(d, 'phone', false);
+  await camChoice(d, 'phone', true);          // a fitting ignores it
   await pressCamAndHandOver(d);
   await expect(d.page.locator('#cropOverlay'), 'no framing screen when FRAMELINE LATER is off').toBeHidden();
   let pic = null;
@@ -78,8 +79,9 @@ test('phone cam, frameline later OFF: the photo fills the frame by itself, shrun
   await d.close();
 });
 
-test('phone cam, frameline later ON: the framing screen comes up, Save puts it on the card', async ({ browser }) => {
-  const d = await openFitting(browser, 'PHONE CAM FRAMED');
+test('phone cam, frameline later ON (not a fitting): the framing screen comes up, Save puts it on the card', async ({ browser }) => {
+  // A fitting never frames (Roman, 23 Oct) — this is a landscape project.
+  const d = await openFitting(browser, 'PHONE CAM FRAMED', 'landscape');
   await camChoice(d, 'phone', true);
   await pressCamAndHandOver(d);
   await expect(d.page.locator('#cropOverlay'), 'the framing screen with the frame lines').toBeVisible({ timeout: 10_000 });

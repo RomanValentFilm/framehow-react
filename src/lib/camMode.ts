@@ -43,6 +43,9 @@ export function setCamMode(m: CamMode): void {
  *  placed. Unticked (the default — Roman, 23 Oct: the faster start): it fills
  *  the frame by itself. */
 export function getFramelineLater(): boolean {
+  // A FITTING never goes through the frame lines (Roman, 23 Oct): the photo
+  // always fills the frame by itself.
+  if (isFitting()) return false;
   return read(LATER_KEY) === 'yes';
 }
 export function setFramelineLater(on: boolean): void {
@@ -68,7 +71,7 @@ export function renderCamPanel(host: HTMLElement, onMode?: (m: CamMode) => void,
       <button type="button" class="cam-mode-opt${m === 'fh' ? ' active' : ''}" data-cammode="fh">FH CAM</button>
       <button type="button" class="cam-mode-opt${m === 'phone' ? ' active' : ''}" data-cammode="phone">PHONE CAM</button>
     </div>
-    <label class="cam-mode-later${m === 'phone' ? '' : ' is-off'}">
+    <label class="cam-mode-later${m === 'phone' ? '' : ' is-off'}"${isFitting() ? ' hidden' : ''}>
       <input type="checkbox" data-camlater${later ? ' checked' : ''} />
       <span>FRAMELINE LATER</span>
     </label>`;

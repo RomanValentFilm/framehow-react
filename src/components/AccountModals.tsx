@@ -352,11 +352,6 @@ export function AccountModals() {
               <input type="text" id="customNotesLabel" maxLength={6} autoComplete="one-time-code" style={{width:'70px',fontSize:'13px',padding:'5px 8px'}} />
             </div>
           </div>
-          <p className="account-hint" style={{marginTop:'14px'}}>Camera — on this device</p>
-          <div className="account-row">
-            <label>CAMERA</label>
-            <div id="customCamPanel" className="cam-mode-inline"></div>
-          </div>
           <div className="account-btns">
             <button className="btn" id="customiseCancel" type="button">Cancel</button>
             <button className="btn btn-accent" id="customiseSave" type="button">Save</button>

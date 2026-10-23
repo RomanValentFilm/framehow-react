@@ -101,6 +101,36 @@ export async function openCamera(
   }
 }
 
+/** CAM SET UP from the Menu (23 Oct): the Framehow camera with no card
+ *  behind it — the viewfinder, the FH CAM / PHONE CAM panel already open, and
+ *  no shutter. Choosing PHONE CAM here only remembers it (there is nothing to
+ *  shoot); Cancel closes. */
+let setupMode = false;
+export async function openCameraSetup(): Promise<void> {
+  setupMode = true;
+  phoneShot = false;
+  cameraTarget = null;
+  document.getElementById('cameraOverlay')!.classList.add('cam-setup');
+  let ok = false;
+  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    try {
+      cameraStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: cameraFacing, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false,
+      });
+      ok = true;
+    } catch { ok = false; }
+  }
+  document.getElementById('cameraOverlay')!.classList.remove('hidden');
+  const vid = document.getElementById('cameraVideo') as HTMLVideoElement;
+  if (ok) vid.srcObject = cameraStream;
+  const ar = state().frames[0] ? canvasAspectRatio(state().frames[0].id) : 16 / 9;
+  requestAnimationFrame(() => requestAnimationFrame(() => positionCameraGuide(ar)));
+  [100, 300, 800].forEach((d) => setTimeout(() => positionCameraGuide(ar), d));
+  const btn = document.getElementById('cameraModeBtn') as (HTMLElement & { __fhRefresh?: () => void }) | null;
+  btn?.__fhRefresh?.();
+  btn?.click();                                   // the panel opens by itself
+}
+
 /** Open the phone's own camera for the current target. */
 function openPhoneCamera(): void {
   phoneShot = true;
@@ -245,6 +275,8 @@ export function closeCamera(): void {
   if (viewBar) viewBar.classList.remove('tb-hide');
   if (detailBar) detailBar.classList.remove('tb-hide');
   document.getElementById('cameraOverlay')!.classList.add('hidden');
+  document.getElementById('cameraOverlay')!.classList.remove('cam-setup');
+  setupMode = false;
   document.getElementById('cameraRatioMenu')?.classList.add('hidden');
   document.getElementById('cameraModeMenu')?.classList.add('hidden');
   const vid = document.getElementById('cameraVideo') as HTMLVideoElement;
@@ -521,6 +553,7 @@ export function wireCameraEvents(): void {
     const btn = document.getElementById('cameraModeBtn');
     const panel = document.getElementById('cameraModeMenu');
     if (btn && panel) wireCamModeButton(btn, panel, (m) => {
+      if (setupMode) return;                                      // only remembered
       if (m === 'phone' && cameraTarget) { closeCamera(); openPhoneCamera(); }
     });
     document.getElementById('cameraVideoWrap')?.addEventListener('click', () => panel?.classList.add('hidden'));
