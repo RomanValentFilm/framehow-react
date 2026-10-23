@@ -173,6 +173,9 @@ Nothing was deployed. Everything here is the simulator only; the app is untouche
 - **THE FIX (simulator only, nothing to deploy):** (1) `writeUnder` in `e2e/harness.ts` now touches the device first (`nudge`), exactly as a person does before typing; (2) the wait in `e2e/15-both-rearrange.spec.ts` uses `Device.nudgeOneAtATime(desktop, tablet)` instead of waking only the desktop — thirty-second turns, one device awake at a time, the way every other wait already does it.
 - **Run 345 (5 Oct) — PROVEN: 9 green, 6.9 min** (all three tests in the file, three times each). Test 15 was the last red; nothing in the suite is known-red now. STILL TO DO: one full run, then deploy 241.
 
+### 23 October, afternoon — live = v5.0.025 · #577 (commit 6707234). In source: v5.0.026 · #578
+- FIX: the version ARROWS (and the cross-swipe) moved the page by the bars' height on every tap — `whereOnScreen` measured from the screen top, `scrollAnchorToRel` places from under the bars (#528). Roman: "it should just not go back but stay where it is" → the arrows no longer move the page at all (only that card is redrawn). Test 44 "arrows leave".
+
 ### 23 October — live = v5.0.024 · #576 (pushed 20 Oct after runs 387+388). In source: v5.0.025 · #577
 - FIX: renaming a strip ON THE CARD in a FITTING made the tab letters small (l1 reads as 11); Customise already kept them capital (#505). `setFrameStripLabel` (helpers.ts) now does the same. Test 43 "capital tab".
 - IDEA, PARKED (Roman, 23 Oct): renaming a version label on one card renames the whole strip (#408, by design). Maybe later: a rename that changes ONE card only. Not now.

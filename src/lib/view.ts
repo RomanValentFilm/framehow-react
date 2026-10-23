@@ -825,24 +825,15 @@ function adjacentCrossStrip(fid: number, currentStrip: StripType, dir: 'next' | 
   return null;
 }
 
-/** Where this card sits on screen right now — so it can be put back there
- *  after a change, instead of being centred (#516). */
-function whereOnScreen(fid: number): number | null {
-  const target = anchorTargetFor(fid);
-  if (!target) return null;
-  const r = target.getBoundingClientRect();
-  if (r.height <= 0) return null;
-  return Math.max(-1, Math.min(2, -r.top / r.height));
-}
-
 export function navigateStrip(fid: number, fromStrip: StripType, dir: 'left' | 'right'): void {
   saveOpenTextEdits();
   saveOpenTableEdits();
-  // THE PAGE STAYS WHERE IT IS (#516, Roman by hand, 15 September). An arrow
-  // on a version used to centre that row on screen; the row goes back to
-  // exactly where it was, even if the new version's picture is taller.
-  const wasAt = whereOnScreen(fid);
-  const putBack = () => requestAnimationFrame(() => scrollAnchorToRel(fid, wasAt));
+  // THE PAGE STAYS WHERE IT IS (#516, Roman by hand, 15 September; and again
+  // 23 October: "it should just not go back but stay where it is"). An arrow
+  // used to centre the row; then it was "put back where it was" — and the
+  // putting back measured from the top of the screen but placed from under the
+  // bars, so every tap moved the page by the bars' height. Only this one card
+  // is redrawn and nothing above it changes, so the page is simply left alone.
   const s = state();
   const cur = fromStrip === 'main' ? (s.crossCompare[fid] ?? -1) : (getStripCrossCompare(fid, fromStrip) ?? -1);
   const ccStrip = s.crossCompareStrip[fid] || 'ver';
@@ -867,7 +858,6 @@ export function navigateStrip(fid: number, fromStrip: StripType, dir: 'left' | '
       const div = document.querySelector(`#${scrollId} .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
       if (div && renderVer) renderVer(div, fid, fromStrip);
     }
-    putBack();
     return;
   }
   // Single-column main: cross-compare swipe across strips
@@ -951,7 +941,6 @@ export function navigateStrip(fid: number, fromStrip: StripType, dir: 'left' | '
       }
     }
   }
-  putBack();
 }
 
 export function addNavArrows(wrapEl: HTMLElement, fid: number, fromStrip: StripType): void {
@@ -1046,17 +1035,13 @@ export function addCrossSwipe(el: HTMLElement, fid: number, fromStrip: StripType
       } else if (fromStrip === 'ver' && s.currentViewMode === 'ver') {
         // Ver strip cross-compare to main (swipe right to show main inline)
         if (dx > 0 && cur < 0) {
-          const wasAt = whereOnScreen(fid);                 // stays put (#516)
-          s.crossCompare[fid] = 0;
+          s.crossCompare[fid] = 0;                          // the page stays put (#516, 23 Oct)
           const div = document.querySelector(`#versionsScroll .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
           if (div && renderVer) renderVer(div, fid);
-          requestAnimationFrame(() => scrollAnchorToRel(fid, wasAt));
         } else if (dx < 0 && cur >= 0) {
-          const wasAt = whereOnScreen(fid);
           s.crossCompare[fid] = -1;
           const div = document.querySelector(`#versionsScroll .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
           if (div && renderVer) renderVer(div, fid);
-          requestAnimationFrame(() => scrollAnchorToRel(fid, wasAt));
         }
       }
       // Floor/refs strips don't do main-inline cross-compare
