@@ -1643,9 +1643,8 @@ body.fitting-mode .cam-mode-menu,#cropModeMenu{left:16px;}
 .cam-mode-later input{width:18px;height:18px;accent-color:var(--accent);margin:0;}
 .cam-mode-later.is-off{opacity:.4;}
 .cam-mode-later[hidden]{display:none;}
-/* CAM SET UP from the Menu: the viewfinder as a backdrop, nothing to shoot. */
-.camera-overlay.cam-setup .camera-snap,.camera-overlay.cam-setup .camera-flip,
-.camera-overlay.cam-setup .camera-ratio-btn:not(.cam-mode-btn),.camera-overlay.cam-setup .exp-range-wrap{display:none !important;}
+/* CAM SET UP from the Menu (Roman, 23 Oct): the camera exactly as always —
+   shutter, flip, RATIO, exposure — only the panel is already open. */
 
 /* A newly created frame announces itself briefly. Each view builds its card
    from a different element, so all three are listed. */

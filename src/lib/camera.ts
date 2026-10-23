@@ -16,6 +16,8 @@ let cameraTarget: any = null;
 let cropState: any = null;
 /** This shot goes through the PHONE's own camera (23 Oct). */
 let phoneShot = false;
+/** CAM SET UP from the Menu: the camera open with no card behind it. */
+let setupMode = false;
 
 export interface CameraTarget {
   fid: number;
@@ -105,7 +107,6 @@ export async function openCamera(
  *  behind it — the viewfinder, the FH CAM / PHONE CAM panel already open, and
  *  no shutter. Choosing PHONE CAM here only remembers it (there is nothing to
  *  shoot); Cancel closes. */
-let setupMode = false;
 export async function openCameraSetup(): Promise<void> {
   setupMode = true;
   phoneShot = false;
@@ -178,6 +179,8 @@ export function positionCameraGuide(ar: number): void {
 }
 
 export function captureFromViewfinder(): void {
+  // CAM SET UP has no card behind it: the shutter says so instead of doing nothing.
+  if (setupMode) { showToast('Cam Set Up — to shoot, press CAM on a card'); return; }
   if (!cameraTarget || !cameraStream) return;
   fhTrack('photo_taken');
   const video = document.getElementById('cameraVideo') as HTMLVideoElement;
