@@ -6,7 +6,8 @@ import { state, useStore, CAM_RATIOS } from '../store/state';
 import type { CamRatioKey } from '../store/state';
 import { showToast, showCamBlockedMsg } from './modals';
 import { fhTrack } from './tracking';
-import { resetToolbarState } from './view';
+import { trace } from './syncTrace';
+import { resetToolbarState, captureFrameAnchor } from './view';
 import { flushSyncNow } from './currentProject';
 import { getCamMode, getFramelineLater, wireCamModeButton, shrinkForSaving, fillCrop } from './camMode';
 
@@ -16,8 +17,6 @@ let cameraTarget: any = null;
 let cropState: any = null;
 /** This shot goes through the PHONE's own camera (23 Oct). */
 let phoneShot = false;
-/** CAM SET UP from the Menu: the camera open with no card behind it. */
-let setupMode = false;
 
 export interface CameraTarget {
   fid: number;
@@ -53,7 +52,8 @@ export async function openCamera(
   div: HTMLElement,
   fromCompare: boolean,
   fromMain: boolean,
-  strip: string = 'ver'
+  strip: string = 'ver',
+  setup = false,
 ): Promise<void> {
   fhTrack('camera_opened');
   const ar = effectiveAspectRatio(fid);
@@ -61,7 +61,8 @@ export async function openCamera(
 
   // PHONE CAM (23 Oct): the phone's own camera, opened INSIDE this tap — iOS
   // opens its camera only from a tap, so nothing may be waited for first.
-  if (getCamMode() === 'phone') { openPhoneCamera(); return; }
+  // CAM SET UP always shows the Framehow camera, whatever is chosen.
+  if (!setup && getCamMode() === 'phone') { openPhoneCamera(); return; }
   phoneShot = false;
 
   let hasCamera = false;
@@ -96,6 +97,7 @@ export async function openCamera(
     vid.addEventListener('playing', posGuide, { once: true });
     vid.addEventListener('loadedmetadata', posGuide, { once: true });
     [50, 150, 300, 600, 1000, 1500].forEach((d) => setTimeout(posGuide, d));
+    if (setup) document.getElementById('cameraModeBtn')?.click();   // the panel opens by itself
   } else if (camBlocked) {
     showCamBlockedMsg();
   } else {
@@ -103,33 +105,21 @@ export async function openCamera(
   }
 }
 
-/** CAM SET UP from the Menu (23 Oct): the Framehow camera with no card
- *  behind it — the viewfinder, the FH CAM / PHONE CAM panel already open, and
- *  no shutter. Choosing PHONE CAM here only remembers it (there is nothing to
- *  shoot); Cancel closes. */
+/** CAM SET UP from the Menu (23 Oct, Roman): the camera exactly as always,
+ *  opened on the card in the middle of the screen — the shutter works and the
+ *  photo goes onto that card as a new look — with the FH CAM / PHONE CAM
+ *  panel already open. The way back from PHONE CAM. */
 export async function openCameraSetup(): Promise<void> {
-  setupMode = true;
-  phoneShot = false;
-  cameraTarget = null;
-  document.getElementById('cameraOverlay')!.classList.add('cam-setup');
-  let ok = false;
-  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-    try {
-      cameraStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: cameraFacing, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false,
-      });
-      ok = true;
-    } catch { ok = false; }
-  }
-  document.getElementById('cameraOverlay')!.classList.remove('hidden');
-  const vid = document.getElementById('cameraVideo') as HTMLVideoElement;
-  if (ok) vid.srcObject = cameraStream;
-  const ar = state().frames[0] ? canvasAspectRatio(state().frames[0].id) : 16 / 9;
-  requestAnimationFrame(() => requestAnimationFrame(() => positionCameraGuide(ar)));
-  [100, 300, 800].forEach((d) => setTimeout(() => positionCameraGuide(ar), d));
-  const btn = document.getElementById('cameraModeBtn') as (HTMLElement & { __fhRefresh?: () => void }) | null;
-  btn?.__fhRefresh?.();
-  btn?.click();                                   // the panel opens by itself
+  const s = state();
+  if (!s.frames.length) { showToast('Open or make a project first'); return; }
+  const anchor = captureFrameAnchor();
+  const fid = anchor ? Number(anchor.fid) : s.frames[0].id;
+  const div = (document.querySelector(`.frame-card[data-vfid="${fid}"]`)
+    || document.querySelector(`.frame-card[data-mfid="${fid}"]`)
+    || document.querySelector(`.grid3x2-card-wrap[data-g3fid="${fid}"]`)) as HTMLElement | null;
+  if (!div) { showToast('Open or make a project first'); return; }
+  trace(`Cam Set Up: opened on shot ${s.frames.findIndex((f) => f.id === fid) + 1}`);
+  await openCamera(fid, div, false, false, 'ver', true);
 }
 
 /** Open the phone's own camera for the current target. */
@@ -179,9 +169,11 @@ export function positionCameraGuide(ar: number): void {
 }
 
 export function captureFromViewfinder(): void {
-  // CAM SET UP has no card behind it: the shutter says so instead of doing nothing.
-  if (setupMode) { showToast('Cam Set Up — to shoot, press CAM on a card'); return; }
-  if (!cameraTarget || !cameraStream) return;
+  if (!cameraTarget) return;
+  // PHONE CAM chosen in this screen: the shutter hands over to the phone's own
+  // camera — inside this tap, which iOS needs.
+  if (getCamMode() === 'phone') { closeCamera(); openPhoneCamera(); return; }
+  if (!cameraStream) return;
   fhTrack('photo_taken');
   const video = document.getElementById('cameraVideo') as HTMLVideoElement;
   const guide = document.getElementById('cameraGuide')!;
@@ -278,8 +270,6 @@ export function closeCamera(): void {
   if (viewBar) viewBar.classList.remove('tb-hide');
   if (detailBar) detailBar.classList.remove('tb-hide');
   document.getElementById('cameraOverlay')!.classList.add('hidden');
-  document.getElementById('cameraOverlay')!.classList.remove('cam-setup');
-  setupMode = false;
   document.getElementById('cameraRatioMenu')?.classList.add('hidden');
   document.getElementById('cameraModeMenu')?.classList.add('hidden');
   const vid = document.getElementById('cameraVideo') as HTMLVideoElement;
@@ -555,10 +545,9 @@ export function wireCameraEvents(): void {
   {
     const btn = document.getElementById('cameraModeBtn');
     const panel = document.getElementById('cameraModeMenu');
-    if (btn && panel) wireCamModeButton(btn, panel, (m) => {
-      if (setupMode) return;                                      // only remembered
-      if (m === 'phone' && cameraTarget) { closeCamera(); openPhoneCamera(); }
-    });
+    // Sliding to PHONE CAM only remembers it (Roman, 23 Oct: "no time to tick
+    // frameline later"); the SHUTTER then shoots with the chosen camera.
+    if (btn && panel) wireCamModeButton(btn, panel);
     document.getElementById('cameraVideoWrap')?.addEventListener('click', () => panel?.classList.add('hidden'));
     const cbtn = document.getElementById('cropModeBtn');
     const cpanel = document.getElementById('cropModeMenu');
