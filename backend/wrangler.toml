@@ -17,6 +17,10 @@ APP_URLS = "https://framehow.com/app, https://dev.framehow-react.pages.dev/app, 
 # brake. Above the free 10 GB, 50 GB costs at most 60 cents a month. Change the
 # number here and deploy the backend; nothing else needs touching.
 GLOBAL_STORAGE_LIMIT_GB = "50"
+# THE LIMIT PER ACCOUNT, in MB — all of a user's projects together (#533).
+# 350 MB until 23 Oct; Roman, on a fitting whose first project was 150 MB at
+# once: "let's do 500mb now per account". Change and deploy the backend.
+STORAGE_LIMIT_MB = "500"
 SESSION_TTL_DAYS = "30"
 PASSWORD_RESET_TTL_HOURS = "1"
 EMAIL_VERIFY_TTL_HOURS = "48"
