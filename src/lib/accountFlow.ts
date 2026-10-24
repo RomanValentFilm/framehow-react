@@ -3078,8 +3078,8 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
     columnNames: s.columnNames,
     groups: metaGroups,
     nextGroupId: s.nextGroupId,
-    portraitMode: s.portraitMode,
-    projectType: s.projectType,
+    portraitMode: _serverKind ? _serverKind !== 'landscape' : s.portraitMode,
+    projectType: keptKind(s.projectType),
     pdfAdjustRects: Object.keys(pdfAdjustRects).length > 0 ? pdfAdjustRects : undefined,
     pdfAdjustLastFile: lastPdfName,
     setups: s.setups.length > 0 ? s.setups : undefined,
@@ -4171,6 +4171,7 @@ async function applyCloudTreeToStore(
         restoredProjectType = meta.projectType;
         isPortrait = restoredProjectType !== 'landscape';
         kindFrom = "the server's record";
+        _serverKind = meta.projectType;
       }
       if (meta.nextGroupId != null) {
         restoredNextGroupId = meta.nextGroupId;
@@ -5877,6 +5878,22 @@ function projectMetaFingerprint(s: ReturnType<typeof state>): string {
 }
 
 let _lastPushedMeta = '';
+
+/**
+ * A PROJECT'S KIND NEVER CHANGES (24 Oct, Roman's Workflow 03 came back as a
+ * fitting: RATIO gone, fitting bars). Nothing in the app lets the user change
+ * a project's kind, so a push that would write a different kind than the
+ * server holds is carrying the kind of some OTHER project — the one just
+ * left or just started. The server's kind is kept, and the log says so.
+ */
+let _serverKind: ProjectType | null = null;
+function keptKind(local: ProjectType): ProjectType {
+  if (_serverKind && _serverKind !== local) {
+    trace(`  project kind kept as the server's: ${_serverKind} (this device said ${local} — not written)`);
+    return _serverKind;
+  }
+  return local;
+}
 /** The name the server was last given; null = we do not know yet. */
 let _lastPushedName: string | null = null;
 
@@ -5962,6 +5979,7 @@ export function clearPushedFingerprints(): void {
   _lastPushedFingerprints.clear();
   _lastPushedMeta = '';
   _lastPushedName = null;
+  _serverKind = null;   // a new identity: its kind is whatever it is started as
 }
 
 /**
@@ -5994,6 +6012,7 @@ export function forgetTheServerEverHadIt(): void {
 }
 
 export function resetProjectSyncGuards(): void {
+  _serverKind = null;
   _lastKnownImageCount = 0;
   _lastKnownFrameCount = 0;
   _lastPushedFingerprints.clear();

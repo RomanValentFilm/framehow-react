@@ -2,14 +2,15 @@
 
 import { applyDefaultNames } from './userDefaults';
 import { COLORS, state, useStore, resetStoryboardState } from '../store/state';
-import { resetProjectSyncGuards } from './accountFlow';
+import { resetProjectSyncGuards, clearPushedFingerprints } from './accountFlow';
 import { setProgress, showToast } from './modals';
 import { fhTrack } from './tracking';
 import { newFrameId } from './ids';
 import { renderAll } from './render';
 import { autoPhoneMainView } from './view';
 import { updateFrameBadge, firstVerLabel } from './helpers';
-import { flushSyncNow } from './currentProject';
+import { flushSyncNow, getCurrentProject, clearCurrentProject } from './currentProject';
+import { trace } from './syncTrace';
 
 export function handleFolderImages(e: Event): void {
   fhTrack('images_loaded');
@@ -123,8 +124,23 @@ export function handleFolderImages(e: Event): void {
   input.value = '';
 }
 
+
+/** A NEW PROJECT IS NEVER STARTED UNDER ANOTHER PROJECT'S CLOUD ID (24 Oct).
+ *  Every start goes through the new-project flow, which cuts the old project
+ *  loose first — but if any path ever skips that, the next push would write
+ *  this project's kind and names into the old project's record (Workflow 03
+ *  came back as a fitting). So the identity is checked here, at the start. */
+function ownIdentityFirst(what: string): void {
+  const cp = getCurrentProject();
+  if (!cp.projectId) return;
+  trace(`${what} started while "${cp.name}" was still current — cut loose first`);
+  clearCurrentProject();
+  clearPushedFingerprints();
+}
+
 export function startFromScratch(): void {
   resetProjectSyncGuards();
+  ownIdentityFirst('new project');
   fhTrack('start_scratch');
   resetStoryboardState();
   applyDefaultNames(true);          // the user's own names (#510)
@@ -161,6 +177,7 @@ export function startFromScratch(): void {
 
 export function startPortrait(): void {
   resetProjectSyncGuards();
+  ownIdentityFirst('new 9:16 project');
   fhTrack('start_portrait');
   resetStoryboardState();
   applyDefaultNames(false);         // column names only; portrait keeps its strips (#510)
@@ -204,6 +221,7 @@ export function startPortrait(): void {
 
 export function startFitting(): void {
   resetProjectSyncGuards();
+  ownIdentityFirst('new fitting');
   fhTrack('start_fitting');
   resetStoryboardState();
   applyDefaultNames(false);         // column names only; a fitting keeps its strips (#510)
