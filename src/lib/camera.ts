@@ -401,7 +401,7 @@ export function wireCameraEvents(): void {
     const rangeEl = document.getElementById('expRange') as HTMLInputElement;
     const vid = document.getElementById('cameraVideo') as HTMLVideoElement;
     let evNow = 0, lut = buildToneLUT(0), satMul = 1, rafId: number | null = null;
-    let canvas: HTMLCanvasElement | null = null, ctx: CanvasRenderingContext2D | null = null;
+    let canvas: HTMLCanvasElement | null = null, ctx: CanvasRenderingContext2D | null = null, half: HTMLCanvasElement | null = null;
     function ensureCanvas() {
       if (canvas) return;
       canvas = document.createElement('canvas');
@@ -424,7 +424,20 @@ export function wireCameraEvents(): void {
       const k = Math.min(1, 1280 / Math.max(vw, vh));
       const cw = Math.round(vw * k), ch = Math.round(vh * k);
       if (canvas!.width !== cw || canvas!.height !== ch) { canvas!.width = cw; canvas!.height = ch; }
-      ctx!.drawImage(vid, 0, 0, cw, ch);
+      // Shrunk in two careful steps (halve, then to size), smoothing on:
+      // one rough step shimmered on fine patterns (moiré, 24 Oct).
+      ctx!.imageSmoothingEnabled = true; ctx!.imageSmoothingQuality = 'high';
+      if (k < 0.5) {
+        const hw = Math.round(vw / 2), hh = Math.round(vh / 2);
+        if (!half) half = document.createElement('canvas');
+        if (half.width !== hw || half.height !== hh) { half.width = hw; half.height = hh; }
+        const hctx = half.getContext('2d')!;
+        hctx.imageSmoothingEnabled = true; hctx.imageSmoothingQuality = 'high';
+        hctx.drawImage(vid, 0, 0, hw, hh);
+        ctx!.drawImage(half, 0, 0, cw, ch);
+      } else {
+        ctx!.drawImage(vid, 0, 0, cw, ch);
+      }
       const img = ctx!.getImageData(0, 0, cw, ch);
       applyLUT(img.data, lut, satMul);
       ctx!.putImageData(img, 0, 0);
