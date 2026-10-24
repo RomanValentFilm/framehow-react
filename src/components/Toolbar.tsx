@@ -32,7 +32,9 @@ export function Toolbar() {
   return (
     <div className="toolbar" id="mainToolbar">
       <div className="logo">
-        Frame<span>how</span>
+        {/* The version number is hidden on an iPhone held upright, so the
+            three taps land on the logo there too (24 Oct). */}
+        <span onClick={tapVersion} style={{color:"inherit"}}>Frame<span>how</span></span>
         <span
           className="toolbar-version"
           onClick={tapVersion}

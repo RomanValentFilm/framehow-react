@@ -10,7 +10,7 @@ import { trace } from './syncTrace';
 import { resetToolbarState, captureFrameAnchor } from './view';
 import { flushSyncNow } from './currentProject';
 import { getCamMode, getFramelineLater, wireCamModeButton, shrinkForSaving, fillCrop } from './camMode';
-import { buildToneLUT, applyLUT, satFor, getLookOn, finishShot } from './camLook';
+import { buildToneLUT, applyLUT, getLookOn, liveFilter } from './camLook';
 
 let cameraStream: MediaStream | null = null;
 let cameraFacing: 'environment' | 'user' = 'environment';
@@ -76,6 +76,12 @@ export async function openCamera(
         audio: false,
       });
       hasCamera = true;
+      // What the phone actually gives (24 Oct): we ask for 4K and never for a
+      // frame rate; this says what came back.
+      try {
+        const st = cameraStream.getVideoTracks()[0]?.getSettings();
+        if (st) trace(`camera: stream ${st.width}×${st.height} at ${st.frameRate ? Math.round(st.frameRate) : '?'} fps`);
+      } catch { /* */ }
     } catch (e: any) {
       hasCamera = false;
       if (e.name === 'NotAllowedError' && Date.now() - t0 < 500) camBlocked = true;
@@ -214,35 +220,24 @@ export function captureFromViewfinder(): void {
     cropX = cx - cropW / 2; cropY = cy - cropH / 2;
   }
   const look = getLookOn();
-  const grab = (): HTMLCanvasElement => {
-    const c = document.createElement('canvas');
-    c.width = Math.round(cropW); c.height = Math.round(cropH);
-    c.getContext('2d', { willReadFrequently: true })!.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, c.width, c.height);
-    return c;
-  };
-  // THE SHOT, plus two more frames right after it for the noise averaging
-  // (24 Oct). The viewfinder keeps running meanwhile.
-  const frames = [grab()];
+  const c = document.createElement('canvas');
+  c.width = Math.round(cropW); c.height = Math.round(cropH);
+  const cctx = c.getContext('2d', { willReadFrequently: true })!;
+  cctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, c.width, c.height);
   const expR = document.getElementById('expRange') as HTMLInputElement;
   const ev = expR ? +expR.value / 100 : 0;
-  const target = cameraTarget;
   trace(`camera: shot from a ${vw}×${vh} stream, crop ${Math.round(cropW)}×${Math.round(cropH)}${look ? ', look on' : ''}`);
-  const finish = () => {
-    const cvs = finishShot(frames, look);
-    // THE SAME CURVE AS THE VIEWFINDER (the 80 %): one table for both.
-    if (look || Math.abs(ev) >= 0.05) {
-      const ctx = cvs.getContext('2d', { willReadFrequently: true })!;
-      const img = ctx.getImageData(0, 0, cvs.width, cvs.height);
-      applyLUT(img.data, buildToneLUT(ev, look), satFor(ev, look));
-      ctx.putImageData(img, 0, 0);
-    }
-    if (onCapturedImage && target) onCapturedImage(cvs.toDataURL('image/jpeg', 0.92), target);
-  };
-  if (look) {
-    requestAnimationFrame(() => { frames.push(grab()); requestAnimationFrame(() => { frames.push(grab()); closeCamera(); setTimeout(finish, 0); }); });
-    return;
+  // THE SAME BRIGHTNESS AS THE VIEWFINDER, in one pass; nothing else is done
+  // to the photo (24 Oct, Roman: no post-processing — it must land at once).
+  if (look || Math.abs(ev) >= 0.05) {
+    const img = cctx.getImageData(0, 0, c.width, c.height);
+    applyLUT(img.data, buildToneLUT(ev, look));
+    cctx.putImageData(img, 0, 0);
   }
-  finish();
+  // SAVED LIKE A PHONE PHOTO: long side 3000 at most (a 4K crop would be
+  // 2–4 MB each); the log says the size.
+  const url = shrinkForSaving(c, c.width, c.height, { x: 0, y: 0, w: c.width, h: c.height });
+  if (onCapturedImage && cameraTarget) onCapturedImage(url, cameraTarget);
   closeCamera();
 }
 
@@ -400,89 +395,25 @@ export function wireCameraEvents(): void {
       setTimeout(positionExpSlider, 300);
     });
 
-  // Exposure slider live overlay
+  // THE VIEWFINDER'S BRIGHTNESS (24 Oct): the look and the exposure slider
+  // are a display setting on the video itself — no picture painted over it
+  // (that copy ran a frame behind at 4K and flickered at the edges).
   (function () {
     const rangeEl = document.getElementById('expRange') as HTMLInputElement;
     const vid = document.getElementById('cameraVideo') as HTMLVideoElement;
-    let lut: Uint8Array | null = null,
-      satMul = 1,
-      rafId: number | null = null,
-      canvas: HTMLCanvasElement | null = null,
-      ctx: CanvasRenderingContext2D | null = null;
-
-    // THE 80 % (24 Oct): the same table as the shot. Always on while the FH
-    // look is on; the exposure slider adds to it.
     let evNow = 0;
-    function refreshLUT(): void {
-      const look = getLookOn();
-      if (!look && Math.abs(evNow) < 0.05) { lut = null; satMul = 1; return; }
-      lut = buildToneLUT(evNow, look);
-      satMul = satFor(evNow, look);
-    }
-    (window as any).__fh_camRefreshLook = () => { refreshLUT(); if (!rafId) rafId = requestAnimationFrame(renderFrame); };
-
-    function ensureCanvas() {
-      if (canvas) return;
-      canvas = document.createElement('canvas');
-      canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0;pointer-events:none;';
-      vid.insertAdjacentElement('afterend', canvas);
-      ctx = canvas.getContext('2d', { willReadFrequently: true });
-    }
-
-    function renderFrame() {
-      if (!cameraStream) {
-        rafId = null;
-        return;
-      }
-      ensureCanvas();
-      canvas!.style.display = 'block';
-      const vw = vid.videoWidth,
-        vh = vid.videoHeight;
-      if (vw === 0 || vh === 0) {
-        rafId = requestAnimationFrame(renderFrame);
-        return;
-      }
-      // LIVE AT SCREEN SIZE, NOT STREAM SIZE (24 Oct): a 4K stream is 8 million
-      // pixels a frame — the curve runs on a copy no wider than 1280, which
-      // the screen cannot tell apart, and the viewfinder stays smooth.
-      const k = Math.min(1, 1280 / Math.max(vw, vh));
-      const cw = Math.round(vw * k), ch = Math.round(vh * k);
-      if (canvas!.width !== cw || canvas!.height !== ch) {
-        canvas!.width = cw;
-        canvas!.height = ch;
-      }
-      if (!lut) {
-        // Nothing to apply: the plain video shows through, the copy is spared.
-        canvas!.style.display = 'none';
-        rafId = requestAnimationFrame(renderFrame);
-        return;
-      }
-      canvas!.style.display = 'block';
-      ctx!.drawImage(vid, 0, 0, cw, ch);
-      const img = ctx!.getImageData(0, 0, cw, ch);
-      applyLUT(img.data, lut, satMul);
-      ctx!.putImageData(img, 0, 0);
-      rafId = requestAnimationFrame(renderFrame);
-    }
-
+    const applyLive = () => { vid.style.filter = liveFilter(evNow, getLookOn()); };
+    (window as any).__fh_camRefreshLook = applyLive;
     rangeEl.addEventListener('input', function () {
       evNow = +(this as HTMLInputElement).value / 100;
-      refreshLUT();
-      if (!rafId) rafId = requestAnimationFrame(renderFrame);
+      applyLive();
     });
-
     new MutationObserver(() => {
       const hidden = document.getElementById('cameraOverlay')!.classList.contains('hidden');
       if (hidden) {
-        lut = null;
-        satMul = 1;
         evNow = 0;
         rangeEl.value = '0';
-        if (rafId) {
-          cancelAnimationFrame(rafId);
-          rafId = null;
-        }
-        if (canvas) canvas.style.display = 'none';
+        vid.style.filter = '';
       } else {
         // Overlay just opened — re-position guide + slider once layout settles.
         if (cameraTarget) {
@@ -493,8 +424,7 @@ export function wireCameraEvents(): void {
         positionExpSlider();
         setTimeout(positionExpSlider, 300);
         setTimeout(positionExpSlider, 600);
-        refreshLUT();
-        if (!rafId) rafId = requestAnimationFrame(renderFrame);
+        applyLive();
       }
     }).observe(document.getElementById('cameraOverlay')!, { attributes: true, attributeFilter: ['class'] });
   })();
