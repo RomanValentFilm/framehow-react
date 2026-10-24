@@ -181,6 +181,14 @@ Nothing was deployed. Everything here is the simulator only; the app is untouche
   (b) iPHONE CAMERA — the iPhone's own camera with its full processing; iOS always shows its "Use Photo" step (a web page cannot skip it); the photo then FILLS the frame automatically (centre crop, no crop screen, no zoom) and is shrunk to ~1 MB before saving.
   The choice is remembered. Roman disliked extra steps ("not so good all the new steps") — (b) costs the one Use Photo tap, nothing more. Not started.
 
+### 24 October, later — v5.0.034 · #586 (dev): (a) iOS 26 glass strip: the top bar sat under the status bar (safe-area × 0.5) and iOS 26 blurs that strip in home-screen apps — the bars now use the FULL safe-area inset, so the toolbar starts below the status bar (all sticky tops updated in globals.css). (b) PHONE CAM hint once per device (localStorage fh_phoneCamHint), Roman's words. (c) FRAMELINE LATER right-aligned under PHONE CAM, disabled while FH CAM; fittings: no tick box (unchanged). NEXT: FH CAM 4K + 80/20 treatment (tone curve live = shot; after the shutter: 4K, sharpening, local contrast, 3-frame noise averaging when still).
+- Roman asked: can the phone's camera open in 16:9 by default? NO — a web page can't set the iOS camera's ratio; only the user, kept via Preserve Settings.
+
+### 24 October — WHERE WE STAND: live = v5.0.026 · #578; dev = v5.0.033 · #585 (commit adfc1ee). NOT yet on main.
+- Waiting for Roman's hour: `FH_QUIET=1 FH_RUN=409 npm run t && git push origin v4.4:main` (full set, then live by itself if green, one beep at the end). Release notes drafted 23 Oct (two cameras, 500 MB, arrows) + "Max screen: a double-arrow on every picture opens it fitted to the screen; pinch to zoom, swipe through the versions."
+- Max screen on the iPad: opens on the first tap since 032 (iOS's late mouse click after a touch had closed it); the label shows only the version's label (033). The button's diagnostic log lines were removed in 033.
+- DEPLOY CHAINS: `FH_QUIET=1` before `FH_RUN=…` keeps the test beep; one beep (afplay + notification) at the chain's end. The script returns the tests' result (pipefail), so `&&` really stops on red.
+
 ### 23 October, late — MAX SCREEN (v5.0.031 · #583, dev): `src/lib/maxView.ts`. A half-transparent double-arrow top right on every picture (attached by the painter in drawing.ts `paint`, only when there is a picture or strokes; not in the draw screen). Tap → viewer: long side at the screen edge, black around, bars gone; pinch/zoom, drag, double tap = fit, swipe/arrow keys through the versions of that look (main card: main + VERSN versions), tap/×/Escape closes. Preview only, nothing sent. Test 46 "max screen". IDEA LATER: a crop function in there (Roman).
 
 ### 23 October, night — WHERE WE STAND: live = v5.0.026 · #578; dev = v5.0.030 · #582 (commit fe99af9), camera built, NOT yet on main.

@@ -53,6 +53,17 @@ export function setFramelineLater(on: boolean): void {
   trace(`camera: FRAMELINE LATER ${on ? 'on' : 'off'}`);
 }
 
+/** Once per device, the first time PHONE CAM is chosen (Roman, 24 Oct): the
+ *  phone's own camera keeps its ratio and exposure only if told to. */
+function phoneCamHintOnce(): void {
+  if (read('fh_phoneCamHint') === 'shown') return;
+  write('fh_phoneCamHint', 'shown');
+  void import('./modals').then(({ showImportantNote }) =>
+    showImportantNote('PHONE CAM',
+      'To fix the aspect ratio of your phone\'s camera, set it in the camera and keep it: ' +
+      'Settings → Camera → Preserve Settings → Creative Controls.'));
+}
+
 export function camModeLabel(m: CamMode = getCamMode()): string {
   return m === 'phone' ? 'PHONE CAM' : 'FH CAM';
 }
@@ -72,8 +83,8 @@ export function renderCamPanel(host: HTMLElement, onMode?: (m: CamMode) => void,
       <button type="button" class="cam-mode-opt${m === 'phone' ? ' active' : ''}" data-cammode="phone">PHONE CAM</button>
     </div>
     <label class="cam-mode-later${m === 'phone' ? '' : ' is-off'}"${isFitting() ? ' hidden' : ''}>
-      <input type="checkbox" data-camlater${later ? ' checked' : ''} />
       <span>FRAMELINE LATER</span>
+      <input type="checkbox" data-camlater${later ? ' checked' : ''}${m === 'phone' ? '' : ' disabled'} />
     </label>`;
   host.querySelectorAll<HTMLButtonElement>('[data-cammode]').forEach((b) =>
     b.addEventListener('click', (e) => {
@@ -81,6 +92,7 @@ export function renderCamPanel(host: HTMLElement, onMode?: (m: CamMode) => void,
       const next = b.dataset.cammode as CamMode;
       if (next === getCamMode()) return;
       setCamMode(next);
+      if (next === 'phone') phoneCamHintOnce();
       renderCamPanel(host, onMode, onChange);
       onChange?.();
       onMode?.(next);
