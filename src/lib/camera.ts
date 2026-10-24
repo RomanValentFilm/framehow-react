@@ -495,8 +495,8 @@ export function wireCameraEvents(): void {
     const panel = document.getElementById('cameraModeMenu');
     // Sliding to PHONE CAM only remembers it (Roman, 23 Oct: "no time to tick
     // frameline later"); the SHUTTER then shoots with the chosen camera.
-    if (btn && panel) wireCamModeButton(btn, panel);
-    document.getElementById('cameraVideoWrap')?.addEventListener('click', () => panel?.classList.add('hidden'));
+    // OK with PHONE CAM chosen opens the phone's camera in that tap (24 Oct).
+    if (btn && panel) wireCamModeButton(btn, panel, (m) => { if (m === 'phone') { closeCamera(); openPhoneCamera(); } });
     const cbtn = document.getElementById('cropModeBtn');
     const cpanel = document.getElementById('cropModeMenu');
     if (cbtn && cpanel) wireCamModeButton(cbtn, cpanel);

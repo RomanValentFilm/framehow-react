@@ -1649,6 +1649,9 @@ body.fitting-mode .cam-mode-menu,#cropModeMenu{left:16px;}
 .cam-mode-later input{width:18px;height:18px;accent-color:var(--accent);margin:0;}
 .cam-mode-later.is-off{opacity:.4;}
 .cam-mode-later[hidden]{display:none;}
+.cam-mode-note{margin:0;max-width:260px;font-family:var(--mono);font-size:11px;line-height:1.45;color:#bbb;}
+.cam-mode-note[hidden]{display:none;}
+.cam-mode-ok{align-self:flex-end;font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.06em;color:#fff;background:var(--accent);border:none;border-radius:4px;padding:8px 22px;cursor:pointer;-webkit-tap-highlight-color:transparent;}
 /* MAX SCREEN (23 Oct): the corner button on every picture, and the viewer. */
 .max-btn{position:absolute;top:4px;right:4px;width:26px;height:26px;border:none;background:rgba(0,0,0,.45);border-radius:4px;cursor:pointer;z-index:6;padding:0;display:flex;align-items:center;justify-content:center;-webkit-tap-highlight-color:transparent;opacity:.55;transition:opacity .15s;}
 .max-btn svg{width:14px;height:14px;}

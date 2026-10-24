@@ -53,29 +53,18 @@ export function setFramelineLater(on: boolean): void {
   trace(`camera: FRAMELINE LATER ${on ? 'on' : 'off'}`);
 }
 
-/** Once per device, the first time PHONE CAM is chosen (24 Oct). The camera
- *  iOS hands to a web page is a reduced one: 4:3, no ratio choice, no
- *  exposure — the Camera app's settings do not reach it (Roman's screenshots,
- *  24 Oct). So the note says what actually happens. */
-function phoneCamHintOnce(): void {
-  if (read('fh_phoneCamHint2') === 'shown') return;
-  write('fh_phoneCamHint2', 'shown');
-  void import('./modals').then(({ showImportantNote }) =>
-    showImportantNote('PHONE CAM',
-      'Your phone\'s camera shoots 4:3 here, with its full picture quality. ' +
-      'Framehow cuts the photo to your frame when it lands on the card.'));
-}
-
 export function camModeLabel(m: CamMode = getCamMode()): string {
   return m === 'phone' ? 'PHONE CAM' : 'FH CAM';
 }
 
 /**
- * The panel: FH CAM ◀━━━▶ PHONE CAM, and under it ☐ FRAMELINE LATER.
- * `onMode` runs after the mode changed (the camera screen uses it to switch
- * cameras at once — inside the same tap, which iOS needs to open its camera).
+ * THE CAMERA MODAL (24 Oct, Roman): FH CAM ◀━━━▶ PHONE CAM, under it
+ * FRAMELINE LATER (right), a note while PHONE CAM is chosen, and OK — the
+ * only way out. Choosing a side changes nothing but the switch; OK confirms:
+ * `onOk` runs with the chosen mode, inside the OK tap (which iOS needs to
+ * open its camera).
  */
-export function renderCamPanel(host: HTMLElement, onMode?: (m: CamMode) => void, onChange?: () => void): void {
+export function renderCamPanel(host: HTMLElement, onOk: (m: CamMode) => void, onChange?: () => void): void {
   const m = getCamMode();
   const later = getFramelineLater();
   host.innerHTML = `
@@ -89,35 +78,38 @@ export function renderCamPanel(host: HTMLElement, onMode?: (m: CamMode) => void,
         <span>FRAMELINE LATER</span>
         <input type="checkbox" data-camlater${later ? ' checked' : ''}${m === 'phone' ? '' : ' disabled'} />
       </label>
-    </div>`;
+    </div>
+    <p class="cam-mode-note"${m === 'phone' ? '' : ' hidden'}>OK opens your phone's camera (4:3, full quality; Framehow cuts the photo to your frame).<br>To change back to the Framehow camera, go to Menu › Cam Set Up.</p>
+    <button type="button" class="cam-mode-ok" data-camok>OK</button>`;
   host.querySelectorAll<HTMLButtonElement>('[data-cammode]').forEach((b) =>
     b.addEventListener('click', (e) => {
       e.stopPropagation();
       const next = b.dataset.cammode as CamMode;
       if (next === getCamMode()) return;
       setCamMode(next);
-      if (next === 'phone') phoneCamHintOnce();
-      renderCamPanel(host, onMode, onChange);
+      renderCamPanel(host, onOk, onChange);
       onChange?.();
-      onMode?.(next);
     }));
   const box = host.querySelector<HTMLInputElement>('[data-camlater]');
   box?.addEventListener('click', (e) => e.stopPropagation());
   box?.addEventListener('change', () => { setFramelineLater(!!box.checked); onChange?.(); });
+  host.querySelector<HTMLButtonElement>('[data-camok]')!.addEventListener('click', (e) => {
+    e.stopPropagation();
+    trace(`camera: modal OK — ${camModeLabel()}`);
+    onOk(getCamMode());
+  });
 }
 
-/** Wire a button + its panel (camera screen, framing screen). */
+/** Wire a button + its modal (camera screen, framing screen). The button
+ *  opens it; only OK closes it. `onMode` runs at OK with the chosen mode. */
 export function wireCamModeButton(btn: HTMLElement, panel: HTMLElement, onMode?: (m: CamMode) => void): void {
   const refreshLabel = () => { btn.textContent = camModeLabel(); };
   refreshLabel();
   btn.addEventListener('click', (e) => {
     e.stopPropagation();
-    if (panel.classList.contains('hidden')) {
-      renderCamPanel(panel, (m) => { panel.classList.add('hidden'); onMode?.(m); }, refreshLabel);
-      panel.classList.remove('hidden');
-    } else {
-      panel.classList.add('hidden');
-    }
+    if (!panel.classList.contains('hidden')) return;
+    renderCamPanel(panel, (m) => { panel.classList.add('hidden'); refreshLabel(); onMode?.(m); }, refreshLabel);
+    panel.classList.remove('hidden');
   });
   panel.addEventListener('click', (e) => e.stopPropagation());
   (btn as HTMLElement & { __fhRefresh?: () => void }).__fhRefresh = refreshLabel;
