@@ -41,10 +41,10 @@ export function buildToneLUT(ev: number): Uint8Array {
   return t;
 }
 
-/** Less colour when going darker: 10 % at the end of the slider (ev −2),
- *  evenly along the way (Roman, 24 Oct; was 21 %). */
+/** Less colour when going darker: 15 % at the end of the slider (ev −2),
+ *  evenly along the way (Roman, 24 Oct: 21 % → 10 % → "even 5 % less"). */
 export function satFor(ev: number): number {
-  return ev < 0 ? 1 - Math.abs(ev) * 0.05 : 1;
+  return ev < 0 ? 1 - Math.abs(ev) * 0.075 : 1;
 }
 
 /** Apply the table and the colour factor in place. */
