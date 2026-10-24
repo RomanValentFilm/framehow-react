@@ -123,13 +123,13 @@ export function wireCamModeButton(btn: HTMLElement, panel: HTMLElement, onMode?:
   (btn as HTMLElement & { __fhRefresh?: () => void }).__fhRefresh = refreshLabel;
 }
 
-/** Shrink a photo for saving: long side at most 3000 px, high-quality
- *  scaling, JPEG at 0.9 — sharp on an iPad (about 2400 px wide), about
- *  1.5–2.5 MB instead of the 3–5 MB a phone hands over. `crop` is the part of
- *  the source to keep (in source pixels). */
+/** Shrink a photo for saving: long side at most 2400 px (every pixel of an
+ *  iPad screen), high-quality scaling, JPEG at 0.85 — about 0.5–0.9 MB
+ *  (24 Oct, Roman: "less file size"; was 3000 px at 0.9, 1–2 MB). `crop` is
+ *  the part of the source to keep (in source pixels). */
 export function shrinkForSaving(src: CanvasImageSource, sw: number, sh: number,
   crop: { x: number; y: number; w: number; h: number }): string {
-  const LONG = 3000;
+  const LONG = 2400;
   const k = Math.min(1, LONG / Math.max(crop.w, crop.h));
   const w = Math.max(1, Math.round(crop.w * k)), h = Math.max(1, Math.round(crop.h * k));
   const cvs = document.createElement('canvas');
@@ -139,7 +139,7 @@ export function shrinkForSaving(src: CanvasImageSource, sw: number, sh: number,
   ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(src, crop.x, crop.y, crop.w, crop.h, 0, 0, w, h);
   void sw; void sh;
-  const url = cvs.toDataURL('image/jpeg', 0.9);
+  const url = cvs.toDataURL('image/jpeg', 0.85);
   trace(`camera: photo saved ${w}×${h} · ${(url.length * 0.75 / 1048576).toFixed(1)} MB`);
   return url;
 }

@@ -6,7 +6,7 @@
 //   - unticked: the photo fills the frame by itself, cut evenly, straight onto
 //     the card — no Framehow screen at all;
 //   - ticked: the framing screen comes up with the frame lines; Save puts it on.
-// Either way the saved picture is shrunk: long side at most 3000 px, ≤ 3 MB.
+// Either way the saved picture is shrunk: long side at most 2400 px, under 1 MB.
 //
 //     npm run t -- -g "phone cam"
 //
@@ -73,7 +73,7 @@ test('phone cam in a fitting: the photo fills the frame by itself, shrunk — ev
   for (let i = 0; i < 40 && !pic; i++) { await d.page.waitForTimeout(250); pic = await pictureSize(d, 0, 0); }
   say(`   on the card: ${pic?.w} × ${pic?.h}, ${pic?.mb} MB · the frame is ${pic?.frame.toFixed(3)}`);
   expect(pic, 'the photo is on the card').not.toBeNull();
-  expect(Math.max(pic!.w, pic!.h), 'long side at most 3000 px').toBeLessThanOrEqual(3000);
+  expect(Math.max(pic!.w, pic!.h), 'long side at most 2400 px').toBeLessThanOrEqual(2400);
   expect(pic!.mb, 'at most 3 MB').toBeLessThanOrEqual(3);
   expect(Math.abs(pic!.w / pic!.h - pic!.frame), 'it has the shape of the frame — filled, cut evenly').toBeLessThan(0.01);
   await d.close();
@@ -96,7 +96,7 @@ test('phone cam, frameline later ON (not a fitting): the framing screen comes up
   for (let i = 0; i < 40 && !pic; i++) { await d.page.waitForTimeout(250); pic = await pictureSize(d, 0, 0); }
   say(`   on the card: ${pic?.w} × ${pic?.h}, ${pic?.mb} MB`);
   expect(pic, 'the photo is on the card').not.toBeNull();
-  expect(Math.max(pic!.w, pic!.h), 'long side at most 3000 px').toBeLessThanOrEqual(3000);
+  expect(Math.max(pic!.w, pic!.h), 'long side at most 2400 px').toBeLessThanOrEqual(2400);
   expect(pic!.mb, 'at most 3 MB').toBeLessThanOrEqual(3);
   await d.close();
 });
