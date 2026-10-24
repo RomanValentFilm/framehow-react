@@ -15,6 +15,7 @@
 
 import { state } from '../store/state';
 import { trace } from './syncTrace';
+import { getLookOn, setLookOn } from './camLook';
 
 export type CamMode = 'fh' | 'phone';
 
@@ -53,15 +54,17 @@ export function setFramelineLater(on: boolean): void {
   trace(`camera: FRAMELINE LATER ${on ? 'on' : 'off'}`);
 }
 
-/** Once per device, the first time PHONE CAM is chosen (Roman, 24 Oct): the
- *  phone's own camera keeps its ratio and exposure only if told to. */
+/** Once per device, the first time PHONE CAM is chosen (24 Oct). The camera
+ *  iOS hands to a web page is a reduced one: 4:3, no ratio choice, no
+ *  exposure — the Camera app's settings do not reach it (Roman's screenshots,
+ *  24 Oct). So the note says what actually happens. */
 function phoneCamHintOnce(): void {
-  if (read('fh_phoneCamHint') === 'shown') return;
-  write('fh_phoneCamHint', 'shown');
+  if (read('fh_phoneCamHint2') === 'shown') return;
+  write('fh_phoneCamHint2', 'shown');
   void import('./modals').then(({ showImportantNote }) =>
     showImportantNote('PHONE CAM',
-      'To fix the aspect ratio of your phone\'s camera, set it in the camera and keep it: ' +
-      'Settings → Camera → Preserve Settings → Creative Controls.'));
+      'Your phone\'s camera shoots 4:3 here, with its full picture quality. ' +
+      'Framehow cuts the photo to your frame when it lands on the card.'));
 }
 
 export function camModeLabel(m: CamMode = getCamMode()): string {
@@ -82,10 +85,16 @@ export function renderCamPanel(host: HTMLElement, onMode?: (m: CamMode) => void,
       <button type="button" class="cam-mode-opt${m === 'fh' ? ' active' : ''}" data-cammode="fh">FH CAM</button>
       <button type="button" class="cam-mode-opt${m === 'phone' ? ' active' : ''}" data-cammode="phone">PHONE CAM</button>
     </div>
-    <label class="cam-mode-later${m === 'phone' ? '' : ' is-off'}"${isFitting() ? ' hidden' : ''}>
-      <span>FRAMELINE LATER</span>
-      <input type="checkbox" data-camlater${later ? ' checked' : ''}${m === 'phone' ? '' : ' disabled'} />
-    </label>`;
+    <div class="cam-mode-row">
+      <label class="cam-mode-look${m === 'fh' ? '' : ' is-off'}">
+        <input type="checkbox" data-camlook${getLookOn() ? ' checked' : ''}${m === 'fh' ? '' : ' disabled'} />
+        <span>FH LOOK</span>
+      </label>
+      <label class="cam-mode-later${m === 'phone' ? '' : ' is-off'}"${isFitting() ? ' hidden' : ''}>
+        <span>FRAMELINE LATER</span>
+        <input type="checkbox" data-camlater${later ? ' checked' : ''}${m === 'phone' ? '' : ' disabled'} />
+      </label>
+    </div>`;
   host.querySelectorAll<HTMLButtonElement>('[data-cammode]').forEach((b) =>
     b.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -100,6 +109,13 @@ export function renderCamPanel(host: HTMLElement, onMode?: (m: CamMode) => void,
   const box = host.querySelector<HTMLInputElement>('[data-camlater]');
   box?.addEventListener('click', (e) => e.stopPropagation());
   box?.addEventListener('change', () => { setFramelineLater(!!box.checked); onChange?.(); });
+  const lookBox = host.querySelector<HTMLInputElement>('[data-camlook]');
+  lookBox?.addEventListener('click', (e) => e.stopPropagation());
+  lookBox?.addEventListener('change', () => {
+    setLookOn(!!lookBox.checked);
+    (window as unknown as { __fh_camRefreshLook?: () => void }).__fh_camRefreshLook?.();   // the viewfinder follows at once
+    onChange?.();
+  });
 }
 
 /** Wire a button + its panel (camera screen, framing screen). */

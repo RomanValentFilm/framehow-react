@@ -1639,6 +1639,10 @@ body.fitting-mode .cam-mode-menu,#cropModeMenu{left:16px;}
 .cam-mode-switch.is-phone .cam-mode-knob{transform:translateX(100%);}
 .cam-mode-opt{position:relative;z-index:1;flex:1;font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.06em;color:#bbb;background:none;border:none;padding:8px 12px;cursor:pointer;white-space:nowrap;-webkit-tap-highlight-color:transparent;}
 .cam-mode-opt.active{color:#fff;}
+.cam-mode-row{display:flex;align-items:center;justify-content:space-between;gap:18px;}
+.cam-mode-look{display:flex;align-items:center;gap:9px;font-family:var(--mono);font-size:12px;font-weight:600;letter-spacing:.05em;color:#ddd;cursor:pointer;user-select:none;}
+.cam-mode-look input{width:18px;height:18px;accent-color:var(--accent);margin:0;}
+.cam-mode-look.is-off{opacity:.4;}
 .cam-mode-later{display:flex;align-items:center;justify-content:flex-end;gap:9px;font-family:var(--mono);font-size:12px;font-weight:600;letter-spacing:.05em;color:#ddd;cursor:pointer;user-select:none;}
 .cam-mode-later input{width:18px;height:18px;accent-color:var(--accent);margin:0;}
 .cam-mode-later.is-off{opacity:.4;}
