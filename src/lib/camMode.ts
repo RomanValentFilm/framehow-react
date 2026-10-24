@@ -80,7 +80,7 @@ export function renderCamPanel(host: HTMLElement, onOk: (m: CamMode) => void, on
       </label>
     </div>
     <p class="cam-mode-note">${m === 'phone'
-      ? `Your phone’s camera, with its full picture quality.${isFitting() ? '' : ' Tick FRAMELINE LATER to fit the shot to the frame lines afterwards.'}<br>Back to Framehow camera: Menu › Cam Set Up.`
+      ? `Your phone’s camera, with its full picture quality.${isFitting() ? '' : ' Tick FRAMELINE LATER to fit the shot to the frame lines afterwards.'}<br>To return to Framehow camera, press:<br>Menu › Cam Set Up`
       : 'Aspect Ratio frame lines and exposure while you shoot.'}</p>
     <button type="button" class="btn btn-accent cam-mode-ok" data-camok>OK</button>`;
   host.querySelectorAll<HTMLButtonElement>('[data-cammode]').forEach((b) =>

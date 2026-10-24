@@ -12,6 +12,7 @@
 // It is also re-checked on every render of a non-fitting project, so those
 // project types can never be left with a rearranged toolbar.
 
+import { trace } from './syncTrace';
 import { state, useStore } from '../store/state';
 import { relabelStripVersions } from './helpers';
 
@@ -184,6 +185,7 @@ function migrateFittingNames(): void {
  */
 export function applyFittingChrome(): void {
   const isFitting = state().projectType === 'fitting';
+  if (document.body.classList.contains('fitting-mode') !== isFitting) trace(`fitting look ${isFitting ? 'on' : 'off'} (project kind: ${state().projectType})`);
   document.body.classList.toggle('fitting-mode', isFitting);
 
   if (isFitting) {

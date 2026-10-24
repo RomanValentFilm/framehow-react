@@ -4124,6 +4124,7 @@ async function applyCloudTreeToStore(
   let isPortrait = newFrames.length > 0 && newFrames[0].cropH > newFrames[0].cropW;
   // Project kind: falls back to the shape inference above for legacy projects
   let restoredProjectType: ProjectType = isPortrait ? 'portrait' : 'landscape';
+  let kindFrom = 'guessed from the first shot';
 
   if (tree.project.metadata) {
     try {
@@ -4169,6 +4170,7 @@ async function applyCloudTreeToStore(
       if (meta.projectType === 'landscape' || meta.projectType === 'portrait' || meta.projectType === 'fitting') {
         restoredProjectType = meta.projectType;
         isPortrait = restoredProjectType !== 'landscape';
+        kindFrom = "the server's record";
       }
       if (meta.nextGroupId != null) {
         restoredNextGroupId = meta.nextGroupId;
@@ -4543,7 +4545,7 @@ async function applyCloudTreeToStore(
     fsOverlayActive: prevView.fsOverlayActive,
     currentViewMode: prevView.currentViewMode,
     portraitMode: isPortrait,
-    projectType: restoredProjectType,
+    projectType: (trace(`  project kind: ${restoredProjectType} (${kindFrom}; was ${state().projectType})`), restoredProjectType),
     stripTagInfoDismissed: restoredStripTagInfoDismissed,
     needDefinitions: migrateNeedDefinitions(restoredNeedDefinitions ?? freshNeedDefinitions()),
     frameNeeds: localFrameNeeds,
