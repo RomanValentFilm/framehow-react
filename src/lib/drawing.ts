@@ -7,6 +7,7 @@ import type { Frame, Stroke, Version, StripType, FrameSnapshot } from '../store/
 import { getStripVersions, getStripActiveTab, getStripCrossCompare, setStripPrevFrameState } from './helpers';
 import { markFrameDirty, noteStrokeEnded } from './currentProject';
 import { trace } from './syncTrace';
+import { attachMaxButton } from './maxView';
 import { stampChangedContent } from './changeStamps';
 
 export function _drawStrokeItem(tctx: CanvasRenderingContext2D, st: Stroke, cH: number): void {
@@ -180,6 +181,7 @@ function fit(ctx: CanvasRenderingContext2D, cvs: HTMLCanvasElement, img: HTMLIma
  */
 function paint(cvs: HTMLCanvasElement, src: string | null | undefined, strokes: Stroke[] | undefined,
   drawStrokes: (ctx: CanvasRenderingContext2D, st: Stroke[]) => void): void {
+  attachMaxButton(cvs, !!src || (strokes?.length ?? 0) > 0);   // MAX SCREEN (23 Oct)
   const ctx = cvs.getContext('2d')!;
   if (!src) {
     ctx.clearRect(0, 0, cvs.width, cvs.height);

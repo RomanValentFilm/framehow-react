@@ -1643,6 +1643,18 @@ body.fitting-mode .cam-mode-menu,#cropModeMenu{left:16px;}
 .cam-mode-later input{width:18px;height:18px;accent-color:var(--accent);margin:0;}
 .cam-mode-later.is-off{opacity:.4;}
 .cam-mode-later[hidden]{display:none;}
+/* MAX SCREEN (23 Oct): the corner button on every picture, and the viewer. */
+.max-btn{position:absolute;top:4px;right:4px;width:26px;height:26px;border:none;background:rgba(0,0,0,.45);border-radius:4px;cursor:pointer;z-index:6;padding:0;display:flex;align-items:center;justify-content:center;-webkit-tap-highlight-color:transparent;opacity:.55;transition:opacity .15s;}
+.max-btn svg{width:14px;height:14px;}
+@media(hover:hover){.max-btn:hover{opacity:1;}}
+.canvas-wrap.draw-active .max-btn,body.setup-lock .max-btn,body.scribble-on .max-btn{display:none;}
+#maxView{position:fixed;inset:0;background:#000;z-index:20000;display:flex;align-items:center;justify-content:center;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;}
+#maxView .max-stage{display:flex;align-items:center;justify-content:center;transform-origin:center center;will-change:transform;}
+#maxView canvas{display:block;}
+#maxView .max-close{position:fixed;top:max(12px,env(safe-area-inset-top));right:12px;width:32px;height:32px;border:none;background:rgba(255,255,255,.12);border-radius:6px;cursor:pointer;z-index:2;display:flex;align-items:center;justify-content:center;opacity:.75;}
+#maxView .max-close svg{width:18px;height:18px;}
+#maxView .max-label{position:fixed;left:14px;bottom:max(12px,env(safe-area-inset-bottom));font-family:var(--mono);font-size:12px;letter-spacing:.06em;color:rgba(255,255,255,.7);pointer-events:none;}
+body.max-view-open{overflow:hidden;}
 /* CAM SET UP from the Menu (Roman, 23 Oct): the camera exactly as always —
    shutter, flip, RATIO, exposure — only the panel is already open. */
 

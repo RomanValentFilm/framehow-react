@@ -1198,6 +1198,9 @@ export function initFramehow(): void {
     }
   }
 
+  // MAX SCREEN (23 Oct): the corner button on plain photos too.
+  void import('./maxView').then(({ watchForPlainPictures }) => watchForPlainPictures());
+
   // iOS :active CSS enabler
   document.addEventListener('touchstart', () => {}, { passive: true });
 

@@ -181,6 +181,12 @@ Nothing was deployed. Everything here is the simulator only; the app is untouche
   (b) iPHONE CAMERA — the iPhone's own camera with its full processing; iOS always shows its "Use Photo" step (a web page cannot skip it); the photo then FILLS the frame automatically (centre crop, no crop screen, no zoom) and is shrunk to ~1 MB before saving.
   The choice is remembered. Roman disliked extra steps ("not so good all the new steps") — (b) costs the one Use Photo tap, nothing more. Not started.
 
+### 23 October, late — MAX SCREEN (v5.0.031 · #583, dev): `src/lib/maxView.ts`. A half-transparent double-arrow top right on every picture (attached by the painter in drawing.ts `paint`, only when there is a picture or strokes; not in the draw screen). Tap → viewer: long side at the screen edge, black around, bars gone; pinch/zoom, drag, double tap = fit, swipe/arrow keys through the versions of that look (main card: main + VERSN versions), tap/×/Escape closes. Preview only, nothing sent. Test 46 "max screen". IDEA LATER: a crop function in there (Roman).
+
+### 23 October, night — WHERE WE STAND: live = v5.0.026 · #578; dev = v5.0.030 · #582 (commit fe99af9), camera built, NOT yet on main.
+- NEXT: Roman tests 030 on dev (fitting: CAM → phone camera → photo fills the look; Menu → Cam Set Up: the camera on the card in view with the panel open; FH CAM unchanged). Then: `FH_RUN=402 npm run t && git push origin v4.4:main` (the script now stops the chain on red). Release notes drafted in the chat of 23 Oct (two cameras, 500 MB, arrows).
+- PHONE CAM in the panel only REMEMBERS; the shutter in the FH camera hands over to the phone's camera when PHONE CAM is chosen (so there is time to tick FRAMELINE LATER). A card's CAM with PHONE CAM remembered opens the phone camera directly.
+
 ### 23 October, evening — STORAGE PER ACCOUNT 350 → 500 MB (backend/wrangler.toml `STORAGE_LIMIT_MB`, backend deploy only). Roman on a fitting: first project 150 MB at once. Photos are saved at full camera size, JPEG 0.92 (camera.ts) — shrinking them would cut ~4–5× (Roman's call, later). A per-user limit needs code (later).
 
 ### 23 October, afternoon — live = v5.0.026 · #578 (commit 26afc9f, pushed to main)
