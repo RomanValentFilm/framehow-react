@@ -14,11 +14,12 @@
 
 import { state } from '../store/state';
 import type { Stroke } from '../store/state';
-import { getStripVersions } from './helpers';
+import { getStripVersions, getStripActiveTab, followVersion, stripScrollId } from './helpers';
 import { drawMainStrokes, drawVersionStrokes } from './drawing';
 import { trace } from './syncTrace';
 
-type Item = { src: string | null | undefined; strokes: Stroke[] | undefined; main: boolean; w: number; h: number; label: string };
+type Item = { src: string | null | undefined; strokes: Stroke[] | undefined; main: boolean; w: number; h: number; label: string;
+  strip?: 'ver' | 'floor' | 'refs'; vi?: number };
 
 const EXPAND = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>';
 const COLLAPSE = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M4 14h6v6M20 10h-6V4M10 14l-7 7M14 10l7-7"/></svg>';
@@ -63,41 +64,83 @@ export function watchForPlainPictures(): void {
   sweep();
 }
 
-/** Which look and which strip this canvas belongs to, from where it sits. */
+type Strip = 'ver' | 'floor' | 'refs';
+
+/**
+ * Which look, which strip and WHICH PICTURE this canvas shows, from where it
+ * sits. It opens on the picture that was pressed — period (Roman, 24 Oct: a
+ * main card showing a fresh shot opened on the main picture instead, because
+ * "main card" was taken for "main picture"). And when the viewer is closed on
+ * another picture after swiping, the card is turned to that one, the same way
+ * the card's own arrows would do it.
+ */
 function openFromCanvas(cvs: HTMLCanvasElement | HTMLImageElement): void {
   const s = state();
   const card = cvs.closest<HTMLElement>('.frame-card, .grid3x2-card-wrap');
   const fidStr = card?.dataset.mfid ?? card?.dataset.vfid ?? card?.dataset.g3fid ?? card?.dataset.ovfid ?? card?.dataset.fid;
   const fid = fidStr ? Number(fidStr) : NaN;
   const f = s.frames.find((x) => x.id === fid);
-  if (!f) return;
-  const isMain = !!card?.dataset.mfid || (!!card?.dataset.g3fid && (s.crossCompare[fid] ?? -1) < 0);
+  if (!f || !card) return;
   const w = f.cropW || 960, h = f.cropH || 540;
   const items: Item[] = [];
   let start = 0;
-  if (isMain) {
-    items.push({ src: f.src, strokes: f.strokes, main: true, w, h, label: f.label || '' });
-    for (const v of getStripVersions(fid, 'ver')) if (v.bgImage || (v.strokes?.length ?? 0) > 0)
-      items.push({ src: v.bgImage, strokes: v.strokes, main: false, w, h, label: v.label || '' });
-  } else {
-    // Which strip: a version column says so; a 3x2 card shows its cross strip;
-    // an overview row shows the companion column.
-    const strip = (card?.dataset.strip
-      || (card?.dataset.ovfid ? (s.activeStrips.find((st: string) => st !== 'main') || 'ver') : null)
-      || s.crossCompareStrip[fid] || 'ver') as 'ver' | 'floor' | 'refs';
-    const vers = getStripVersions(fid, strip);
-    const showing = card?.dataset.g3fid ? (s.crossCompare[fid] ?? 0)
-      : card?.dataset.ovi !== undefined ? Number(card.dataset.ovi)
-      : (s.activeTab[fid] ?? 0);
-    vers.forEach((v, i) => {
-      if (!v.bgImage && !(v.strokes?.length)) return;
-      if (i === showing) start = items.length;
-      items.push({ src: v.bgImage, strokes: v.strokes, main: false, w, h, label: v.label || '' });
+  const mainItem = (): Item => ({ src: f.src, strokes: f.strokes, main: true, w, h, label: f.label || '' });
+  const verItem = (v: ReturnType<typeof getStripVersions>[number], strip: Strip, vi: number): Item =>
+    ({ src: v.bgImage, strokes: v.strokes, main: false, w, h, label: v.label || '', strip, vi });
+  const hasSomething = (v: ReturnType<typeof getStripVersions>[number]) => !!v.bgImage || (v.strokes?.length ?? 0) > 0;
+
+  const mainOrG3 = card.dataset.mfid !== undefined || card.dataset.g3fid !== undefined;
+  let leave: ((it: Item) => void) | undefined;
+  if (mainOrG3) {
+    // Main picture first, then the versions of the strip the card cross-shows
+    // (VERSN when it shows nothing but main). Showing = the cross pointer.
+    const cross = s.crossCompare[fid] ?? -1;
+    const strip = (s.crossCompareStrip[fid] || 'ver') as Strip;
+    items.push(mainItem());
+    getStripVersions(fid, strip).forEach((v, i) => {
+      if (!hasSomething(v)) return;
+      if (i === cross) start = items.length;
+      items.push(verItem(v, strip, i));
     });
+    const isG3 = card.dataset.g3fid !== undefined;
+    leave = (it) => {
+      const st = state();
+      if (isG3 || st.currentViewMode === 'main') {
+        // This card shows the picture itself (cross pointer), like its arrows.
+        if (it.main) { st.crossCompare[fid] = -1; st.crossCompareStrip[fid] = 'ver'; }
+        else { st.crossCompare[fid] = it.vi!; st.crossCompareStrip[fid] = it.strip!; st.activeTab[fid] = it.vi!; }
+        const w3 = (window as unknown as Record<string, (el: HTMLElement, fid: number) => void>);
+        if (isG3) w3.__fh_renderGrid3x2Card?.(card, fid); else w3.__fh_renderMainFrame?.(card, fid);
+      } else if (!it.main) {
+        // Main next to its strips: the strip's column turns to that version.
+        followVersion(fid, it.strip!, it.vi!);
+        const vd = document.querySelector<HTMLElement>(`#${stripScrollId(it.strip!)} .frame-card[data-vfid="${fid}"]`);
+        if (vd) (window as unknown as Record<string, (el: HTMLElement, fid: number, strip: Strip) => void>).__fh_renderVersionFrame?.(vd, fid, it.strip!);
+      }
+    };
+  } else {
+    // A version column says its strip; an overview row shows the companion column.
+    const strip = (card.dataset.strip
+      || (card.dataset.ovfid ? (s.activeStrips.find((st: string) => st !== 'main') || 'ver') : null)
+      || 'ver') as Strip;
+    const showing = card.dataset.ovi !== undefined ? Number(card.dataset.ovi) : getStripActiveTab(fid, strip);
+    getStripVersions(fid, strip).forEach((v, i) => {
+      if (!hasSomething(v)) return;
+      if (i === showing) start = items.length;
+      items.push(verItem(v, strip, i));
+    });
+    if (card.dataset.vfid !== undefined) leave = (it) => {
+      followVersion(fid, strip, it.vi!);
+      (window as unknown as Record<string, (el: HTMLElement, fid: number, strip: Strip) => void>).__fh_renderVersionFrame?.(card, fid, strip);
+    };
   }
   if (!items.length) return;
-  trace(`max screen: shot ${s.frames.indexOf(f) + 1}, ${items.length} picture(s)`);
-  openMaxView(items, start);
+  trace(`max screen: shot ${s.frames.indexOf(f) + 1}, ${items.length} picture(s), opens on ${items[start].label || 'main'}`);
+  openMaxView(items, start, (it, moved) => {
+    if (!moved || !leave) return;
+    trace(`max screen: left on ${it.label || 'main'} — the card follows`);
+    leave(it);
+  });
 }
 
 // --- the viewer -------------------------------------------------------------
@@ -131,9 +174,10 @@ function paintItem(cvs: HTMLCanvasElement, it: Item): void {
   } else draw();
 }
 
-export function openMaxView(items: Item[], index: number): void {
+export function openMaxView(items: Item[], index: number, onClose?: (it: Item, moved: boolean) => void): void {
   closeMaxView();
   let i = Math.max(0, Math.min(index, items.length - 1));
+  const startI = i;
   const root = document.createElement('div');
   root.id = 'maxView';
   root.innerHTML = `<div class="max-stage"><canvas></canvas></div>
@@ -246,14 +290,16 @@ export function openMaxView(items: Item[], index: number): void {
   const onResize = () => show();
   window.addEventListener('resize', onResize);
   (root as HTMLElement & { __fhResize?: () => void }).__fhResize = onResize;
+  (root as HTMLElement & { __fhClose?: () => void }).__fhClose = () => onClose?.(items[i], i !== startI);
 }
 
 export function closeMaxView(): void {
   if (!_root) return;
-  const r = _root as HTMLElement & { __fhKey?: (e: KeyboardEvent) => void; __fhResize?: () => void };
+  const r = _root as HTMLElement & { __fhKey?: (e: KeyboardEvent) => void; __fhResize?: () => void; __fhClose?: () => void };
   if (r.__fhKey) document.removeEventListener('keydown', r.__fhKey);
   if (r.__fhResize) window.removeEventListener('resize', r.__fhResize);
   r.remove();
   _root = null;
   document.body.classList.remove('max-view-open');
+  r.__fhClose?.();
 }

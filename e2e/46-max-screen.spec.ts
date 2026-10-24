@@ -69,11 +69,64 @@ test('max screen: button only on pictures, fits the screen, steps through the ve
   say(`   after ${atLast ? '←' : '→'}: ${second}`);
   expect(second, 'the other version').not.toBe(first);
 
-  say('close with the double-arrow top right — and nothing in the project changed');
+  say('close with the double-arrow top right — nothing in the project changed, but the card now shows the one we left on (Roman, 24 Oct)');
   const before = await d.read();
   await d.page.locator('#maxView .max-close').click();
   await expect(view).toBeHidden();
   expect((await d.read()).unsent, 'a preview sends nothing').toEqual(before.unsent);
+  await d.page.waitForTimeout(300);
+  await d.page.locator('.frame-card[data-vfid] .max-btn:visible').first().click();
+  await expect(view).toBeVisible();
+  const again = await label.textContent();
+  say(`   opened again on: ${again}`);
+  expect(again, 'the card followed the viewer').toBe(second);
+  await d.page.locator('#maxView .max-close').click();
+  await expect(view).toBeHidden();
 
+  await d.close();
+});
+
+test('max screen: a main card showing a version opens on that version, not on main (iPhone, 24 Oct)', async ({ browser }) => {
+  const { token } = await freshAccount();
+  const d = await Device.open(browser, 'desktop', token);
+  await d.newProject('MAX MAIN', 2);
+  await d.settle();
+  if (await d.page.locator('#projectListModal').isVisible()) {
+    await d.page.locator('#projectListClose').click();
+    await d.page.waitForTimeout(300);
+  }
+  say('a picture on main of shot 1, a drawing on its VERSN v1; then MAIN alone, like the phone');
+  await d.putPicture(0, RED_SQUARE);
+  await d.showStrip('ver');
+  expect(await d.draw(0, 'ver', 0)).toBe(1);
+  await d.showStrip('main');
+  // The version column is still open; press its button again to close it, so
+  // SHOT stands alone — the phone's view. (Run 410: two columns, no arrows.)
+  await d.page.locator('.strip-toggle[data-strip="ver"]').click();
+  await d.page.waitForTimeout(600);
+  expect(await d.page.locator('#mainScroll .frame-card[data-mfid]').count(), 'main column there').toBeGreaterThan(0);
+  expect(await d.page.locator('.frame-card[data-vfid]:visible').count(), 'version column gone').toBe(0);
+
+  say('the main card\'s › arrow: the card now shows v1 in main\'s place');
+  const card = d.page.locator('#mainScroll .frame-card[data-mfid]').first();
+  await card.locator('.nav-arrow-right').click();
+  await d.page.waitForTimeout(400);
+
+  say('press max screen on it');
+  await card.locator('.max-btn:visible').click();
+  const view = d.page.locator('#maxView');
+  await expect(view).toBeVisible();
+  const label = d.page.locator('#maxView .max-label');
+  const first = await label.textContent();
+  say(`   showing: ${first}`);
+  expect(first, 'the picture that was pressed — v1, not main').toBe('v1');
+
+  say('← to main, close: the card is back on main (its arrow is › only)');
+  await d.page.keyboard.press('ArrowLeft');
+  await d.page.waitForTimeout(200);
+  await d.page.locator('#maxView .max-close').click();
+  await expect(view).toBeHidden();
+  await d.page.waitForTimeout(300);
+  expect(await card.locator('.nav-arrow-left').count(), 'no ‹ arrow: the card shows main again').toBe(0);
   await d.close();
 });
