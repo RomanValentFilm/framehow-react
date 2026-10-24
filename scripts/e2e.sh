@@ -35,11 +35,19 @@ set -o pipefail 2>/dev/null || true
 { echo "=== RUN ${FH_RUN:-unnumbered} — $(date '+%H:%M:%S') — args: $* ==="; \
   caffeinate -dims npx playwright test --project=webkit "$@" 2>&1; } | tee e2e-log/last-run.log | grep -v WebServer
 RESULT=$?
-afplay /System/Library/Sounds/Glass.aiff 2>/dev/null &
-osascript -e 'display notification "Tests finished — say zzz" with title "Framehow"' 2>/dev/null
+# ONE ZZZ AT THE END (Roman, 24 Oct): when the tests are the first half of a
+# deploy chain, FH_QUIET=1 keeps the beep and the "say zzz" for the chain's end.
+if [ -z "$FH_QUIET" ]; then
+  afplay /System/Library/Sounds/Glass.aiff 2>/dev/null &
+  osascript -e 'display notification "Tests finished — say zzz" with title "Framehow"' 2>/dev/null
+fi
 echo
 # The number is on the last line too, not only the first (#383). The log's first
 # line scrolls away long before a run ends, and Roman pastes the tail — so this
 # is where he can see which run he just finished without hunting for it.
-echo "--- FH_RUN=${FH_RUN:-unnumbered} finished. say  zzz  ---"
+if [ -z "$FH_QUIET" ]; then
+  echo "--- FH_RUN=${FH_RUN:-unnumbered} finished. say  zzz  ---"
+else
+  echo "--- FH_RUN=${FH_RUN:-unnumbered} tests done ($([ $RESULT -eq 0 ] && echo green || echo RED)) — going on ---"
+fi
 exit $RESULT

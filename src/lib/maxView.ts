@@ -38,11 +38,15 @@ export function attachMaxButton(cvs: HTMLCanvasElement | HTMLImageElement, hasPi
   btn.innerHTML = EXPAND;
   btn.addEventListener('click', (e) => {
     e.stopPropagation(); e.preventDefault();
+    trace('max button: tap registered');
     openFromCanvas(cvs);
   });
   // The card's own handlers must not see this tap (drag, swipe, draw).
-  ['pointerdown', 'touchstart', 'mousedown'].forEach((ev) =>
-    btn!.addEventListener(ev, (e) => e.stopPropagation(), { passive: true }));
+  ['pointerdown', 'pointerup', 'touchstart', 'touchend', 'mousedown', 'mouseup'].forEach((ev) =>
+    btn!.addEventListener(ev, (e) => {
+      e.stopPropagation();
+      if (ev === 'touchstart' || ev === 'touchend') trace(`max button: ${ev === 'touchstart' ? 'finger down' : 'finger up'} · button still on the card: ${document.contains(btn!)}`);
+    }, { passive: true }));
   wrap.appendChild(btn);
 }
 
@@ -147,6 +151,13 @@ export function openMaxView(items: Item[], index: number): void {
   const label = root.querySelector<HTMLElement>('.max-label')!;
 
   let scale = 1, tx = 0, ty = 0;
+  // THE TAP THAT OPENED IT MUST NOT CLOSE IT (Roman, 24 Oct: "you have to tap
+  // twice"). After a touch, iOS sends a late mouse click to whatever is under
+  // the finger — by then the viewer. So: no closing in the first half second,
+  // and mouse events within a second of a touch are the touch's echo.
+  const openedAt = Date.now();
+  let lastTouch = 0;
+  const settled = () => Date.now() - openedAt > 500;
   const apply = () => { stage.style.transform = `translate(${tx}px, ${ty}px) scale(${scale})`; };
   const show = () => {
     scale = 1; tx = 0; ty = 0; apply();
@@ -163,6 +174,7 @@ export function openMaxView(items: Item[], index: number): void {
   const dist = (t: TouchList) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
   const mid = (t: TouchList) => ({ x: (t[0].clientX + t[1].clientX) / 2, y: (t[0].clientY + t[1].clientY) / 2 });
   root.addEventListener('touchstart', (e) => {
+    lastTouch = Date.now();
     if (e.touches.length === 2) {
       const m = mid(e.touches);
       pinch = { d: dist(e.touches), s: scale, cx: m.x - window.innerWidth / 2, cy: m.y - window.innerHeight / 2, tx, ty };
@@ -187,6 +199,7 @@ export function openMaxView(items: Item[], index: number): void {
     }
   }, { passive: false });
   root.addEventListener('touchend', (e) => {
+    lastTouch = Date.now();
     if (pinch && e.touches.length < 2) { pinch = null; if (scale <= 1.02) { scale = 1; tx = 0; ty = 0; apply(); } return; }
     if (!drag || e.touches.length) return;
     const dx = e.changedTouches[0].clientX - drag.x, dy = e.changedTouches[0].clientY - drag.y;
@@ -197,7 +210,7 @@ export function openMaxView(items: Item[], index: number): void {
       const now = Date.now();
       if (now - lastTap < 320) { scale = 1; tx = 0; ty = 0; apply(); lastTap = 0; return; }   // double tap: fit
       lastTap = now;
-      if (scale === 1) setTimeout(() => { if (lastTap === now) closeMaxView(); }, 330);          // single tap, not zoomed: close
+      if (scale === 1 && settled()) setTimeout(() => { if (lastTap === now) closeMaxView(); }, 330);   // single tap, not zoomed: close
     }
   });
   // Mouse / trackpad: wheel zooms, drag moves, click closes when not zoomed.
@@ -210,14 +223,15 @@ export function openMaxView(items: Item[], index: number): void {
     apply();
   }, { passive: false });
   let mdrag: { x: number; y: number; tx: number; ty: number; moved: boolean } | null = null;
-  root.addEventListener('mousedown', (e) => { mdrag = { x: e.clientX, y: e.clientY, tx, ty, moved: false }; });
+  const touchEcho = () => Date.now() - lastTouch < 1000;
+  root.addEventListener('mousedown', (e) => { if (touchEcho()) return; mdrag = { x: e.clientX, y: e.clientY, tx, ty, moved: false }; });
   root.addEventListener('mousemove', (e) => {
     if (!mdrag) return;
     if (Math.hypot(e.clientX - mdrag.x, e.clientY - mdrag.y) > 4) mdrag.moved = true;
     if (scale > 1) { tx = mdrag.tx + e.clientX - mdrag.x; ty = mdrag.ty + e.clientY - mdrag.y; apply(); }
   });
   root.addEventListener('mouseup', (e) => {
-    if (!mdrag) return;
+    if (!mdrag || touchEcho() || !settled()) { mdrag = null; return; }
     const dx = e.clientX - mdrag.x; const moved = mdrag.moved; mdrag = null;
     if ((e.target as HTMLElement).closest('.max-close')) return;
     if (scale === 1 && Math.abs(dx) > 50) { go(dx < 0 ? 1 : -1); return; }

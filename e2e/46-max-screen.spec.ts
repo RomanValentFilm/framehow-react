@@ -44,7 +44,8 @@ test('max screen: button only on pictures, fits the screen, steps through the ve
   expect(buttons, 'a button on each card that has something to show').toBeGreaterThanOrEqual(2);
 
   say('tap the button on shot 1 VERSN');
-  await d.page.locator('.frame-card[data-vfid] .max-btn').first().click({ force: true });
+  // A card still in draw mode hides its button on purpose — take a visible one.
+  await d.page.locator('.frame-card[data-vfid] .max-btn:visible').first().click();
   const view = d.page.locator('#maxView');
   await expect(view, 'the viewer is up').toBeVisible();
   const vp = d.page.viewportSize()!;
