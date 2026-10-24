@@ -38,15 +38,11 @@ export function attachMaxButton(cvs: HTMLCanvasElement | HTMLImageElement, hasPi
   btn.innerHTML = EXPAND;
   btn.addEventListener('click', (e) => {
     e.stopPropagation(); e.preventDefault();
-    trace('max button: tap registered');
     openFromCanvas(cvs);
   });
   // The card's own handlers must not see this tap (drag, swipe, draw).
   ['pointerdown', 'pointerup', 'touchstart', 'touchend', 'mousedown', 'mouseup'].forEach((ev) =>
-    btn!.addEventListener(ev, (e) => {
-      e.stopPropagation();
-      if (ev === 'touchstart' || ev === 'touchend') trace(`max button: ${ev === 'touchstart' ? 'finger down' : 'finger up'} · button still on the card: ${document.contains(btn!)}`);
-    }, { passive: true }));
+    btn!.addEventListener(ev, (e) => e.stopPropagation(), { passive: true }));
   wrap.appendChild(btn);
 }
 
@@ -162,7 +158,9 @@ export function openMaxView(items: Item[], index: number): void {
   const show = () => {
     scale = 1; tx = 0; ty = 0; apply();
     paintItem(cvs, items[i]);
-    label.textContent = items.length > 1 ? `${items[i].label}  ·  ${i + 1} / ${items.length}` : items[i].label;
+    // Only the name of what is on screen (Roman, 24 Oct): the shot's number
+    // for the main picture, the version's label (L2, v3) for a version.
+    label.textContent = items[i].label;
   };
   const go = (d: number) => { const n = i + d; if (n < 0 || n >= items.length) return; i = n; show(); };
   show();

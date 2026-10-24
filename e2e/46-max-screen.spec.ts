@@ -59,10 +59,10 @@ test('max screen: button only on pictures, fits the screen, steps through the ve
   const label = d.page.locator('#maxView .max-label');
   const first = await label.textContent();
   say(`   showing: ${first}`);
-  expect(first, 'two versions to step through').toMatch(/[12] \/ 2/);
+  expect(first, 'the version\'s own label, nothing else (Roman, 24 Oct)').toMatch(/^v[12]$/);
   // It opens on the version the card shows — the newest, so step LEFT (run 404
   // pressed → on the last one and nothing could change).
-  const atLast = /2 \/ 2/.test(first || '');
+  const atLast = first === 'v2';
   await d.page.keyboard.press(atLast ? 'ArrowLeft' : 'ArrowRight');
   await d.page.waitForTimeout(200);
   const second = await label.textContent();
