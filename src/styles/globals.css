@@ -738,7 +738,7 @@
   @media (hover:none) and (pointer:coarse) and (max-width:430px),
          (hover:none) and (pointer:coarse) and (max-height:430px){
     html{overflow-x:clip;}
-    .toolbar{position:relative;top:auto;left:auto;right:auto;z-index:40;padding-top:calc(env(safe-area-inset-top)5);height:calc(44px + env(safe-area-inset-top)5);}
+    .toolbar{position:relative;top:auto;left:auto;right:auto;z-index:40;padding-top:calc(env(safe-area-inset-top));height:calc(44px + env(safe-area-inset-top));}
     .toolbar.tb-hide{transform:none;}
     .view-bar{position:-webkit-sticky;position:sticky;top:env(safe-area-inset-top);left:auto;right:auto;padding:3px 6px;z-index:20;background:var(--viewbar-fill);border-bottom:1px solid var(--border);}
     .view-bar.tb-hide{transform:none;}
@@ -770,9 +770,9 @@
   @media (hover:none) and (pointer:coarse) and (max-width:430px) and (orientation:portrait){
     .toolbar{position:-webkit-sticky;position:sticky;top:0;}
     .view-bar{display:flex!important;position:-webkit-sticky;position:sticky;
-              top:calc(44px + env(safe-area-inset-top)5);z-index:20;}
+              top:calc(44px + env(safe-area-inset-top));z-index:20;}
     .detail-bar{display:flex!important;position:-webkit-sticky;position:sticky;
-                top:calc(70px + env(safe-area-inset-top)5);z-index:19;}
+                top:calc(70px + env(safe-area-inset-top));z-index:19;}
     .detail-bar .db-left{display:none;}
     .detail-bar .db-middle{flex:1;min-width:0;overflow-x:auto;-webkit-overflow-scrolling:touch;flex-wrap:nowrap;scrollbar-width:none;}
     .detail-bar .db-middle::-webkit-scrollbar{display:none;}

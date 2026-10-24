@@ -15,7 +15,6 @@
 
 import { state } from '../store/state';
 import { trace } from './syncTrace';
-import { getLookOn, setLookOn } from './camLook';
 
 export type CamMode = 'fh' | 'phone';
 
@@ -86,10 +85,6 @@ export function renderCamPanel(host: HTMLElement, onMode?: (m: CamMode) => void,
       <button type="button" class="cam-mode-opt${m === 'phone' ? ' active' : ''}" data-cammode="phone">PHONE CAM</button>
     </div>
     <div class="cam-mode-row">
-      <label class="cam-mode-look${m === 'fh' ? '' : ' is-off'}">
-        <input type="checkbox" data-camlook${getLookOn() ? ' checked' : ''}${m === 'fh' ? '' : ' disabled'} />
-        <span>FH LOOK</span>
-      </label>
       <label class="cam-mode-later${m === 'phone' ? '' : ' is-off'}"${isFitting() ? ' hidden' : ''}>
         <span>FRAMELINE LATER</span>
         <input type="checkbox" data-camlater${later ? ' checked' : ''}${m === 'phone' ? '' : ' disabled'} />
@@ -109,13 +104,6 @@ export function renderCamPanel(host: HTMLElement, onMode?: (m: CamMode) => void,
   const box = host.querySelector<HTMLInputElement>('[data-camlater]');
   box?.addEventListener('click', (e) => e.stopPropagation());
   box?.addEventListener('change', () => { setFramelineLater(!!box.checked); onChange?.(); });
-  const lookBox = host.querySelector<HTMLInputElement>('[data-camlook]');
-  lookBox?.addEventListener('click', (e) => e.stopPropagation());
-  lookBox?.addEventListener('change', () => {
-    setLookOn(!!lookBox.checked);
-    (window as unknown as { __fh_camRefreshLook?: () => void }).__fh_camRefreshLook?.();   // the viewfinder follows at once
-    onChange?.();
-  });
 }
 
 /** Wire a button + its panel (camera screen, framing screen). */

@@ -10,7 +10,7 @@ import { trace } from './syncTrace';
 import { resetToolbarState, captureFrameAnchor } from './view';
 import { flushSyncNow } from './currentProject';
 import { getCamMode, getFramelineLater, wireCamModeButton, shrinkForSaving, fillCrop } from './camMode';
-import { buildToneLUT, applyLUT, getLookOn, liveFilter } from './camLook';
+import { buildToneLUT, applyLUT, liveFilter } from './camLook';
 
 let cameraStream: MediaStream | null = null;
 let cameraFacing: 'environment' | 'user' = 'environment';
@@ -219,19 +219,18 @@ export function captureFromViewfinder(): void {
     cropW /= _zoom; cropH /= _zoom;
     cropX = cx - cropW / 2; cropY = cy - cropH / 2;
   }
-  const look = getLookOn();
   const c = document.createElement('canvas');
   c.width = Math.round(cropW); c.height = Math.round(cropH);
   const cctx = c.getContext('2d', { willReadFrequently: true })!;
   cctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, c.width, c.height);
   const expR = document.getElementById('expRange') as HTMLInputElement;
   const ev = expR ? +expR.value / 100 : 0;
-  trace(`camera: shot from a ${vw}×${vh} stream, crop ${Math.round(cropW)}×${Math.round(cropH)}${look ? ', look on' : ''}`);
+  trace(`camera: shot from a ${vw}×${vh} stream, crop ${Math.round(cropW)}×${Math.round(cropH)}`);
   // THE SAME BRIGHTNESS AS THE VIEWFINDER, in one pass; nothing else is done
   // to the photo (24 Oct, Roman: no post-processing — it must land at once).
-  if (look || Math.abs(ev) >= 0.05) {
+  {
     const img = cctx.getImageData(0, 0, c.width, c.height);
-    applyLUT(img.data, buildToneLUT(ev, look));
+    applyLUT(img.data, buildToneLUT(ev));
     cctx.putImageData(img, 0, 0);
   }
   // SAVED LIKE A PHONE PHOTO: long side 3000 at most (a 4K crop would be
@@ -402,7 +401,7 @@ export function wireCameraEvents(): void {
     const rangeEl = document.getElementById('expRange') as HTMLInputElement;
     const vid = document.getElementById('cameraVideo') as HTMLVideoElement;
     let evNow = 0;
-    const applyLive = () => { vid.style.filter = liveFilter(evNow, getLookOn()); };
+    const applyLive = () => { vid.style.filter = liveFilter(evNow); };
     (window as any).__fh_camRefreshLook = applyLive;
     rangeEl.addEventListener('input', function () {
       evNow = +(this as HTMLInputElement).value / 100;
