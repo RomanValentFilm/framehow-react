@@ -1,39 +1,61 @@
-// THE FH CAMERA'S LOOK (24 October, Roman — twice).
+// THE FH CAMERA'S CURVE (24 October, Roman: "yesterday's curve worked
+// perfectly — why did we build a new one?").
 //
-// The browser hands the camera over as video — a little darker than the
-// phone's own photos. The first look (035) was a tone curve painted over the
-// video every frame plus averaging and sharpening after the shutter: it
-// flickered at the edges at 4K, changed the colours, and the photo took ages
-// to land. Roman: "keep the colours and brightness it brings by default,
-// brightness 10 % down, skip the post-processing."
+// This is the exposure curve as it was before 035, untouched: the slider's
+// brightness, contrast, gamma, a pull on the highlights and a touch less
+// colour when going darker — tuned earlier and kept. The only addition is a
+// small brightness lift (+8 %) at the slider's zero, because the browser's
+// video is a little darker than the phone's own photos.
 //
-// So the look is now ONE NUMBER: a brightness gain. Live it is a display
-// setting on the video itself (the screen does it — no copy, no flicker,
-// no cost); on the shot it is the same gain in one quick pass. No colour
-// change, no averaging, no sharpening, and no switch (24 Oct, Roman: "what is that toggle for?").
+// ONE TABLE FOR THE VIEWFINDER AND THE SHOT, so what you see is what lands
+// on the card. Live, the table is painted onto a copy of the video at screen
+// size and the video itself is hidden under it (035 left the video showing
+// through, and at 4K the copy ran a frame behind: flicker at the edges).
+// Nothing is done to the photo afterwards — no averaging, no sharpening.
 
-/** The gain of the look: +8 % (035 lifted the mids about 18 %; 10 % down). */
+/** The lift at the slider's zero. */
 export const LOOK_GAIN = 1.08;
 
-/** The display setting for the viewfinder: the look's gain and the slider's
- *  brightness. The shot uses the exact curve below; this is its preview. */
-export function liveFilter(ev: number): string {
-  const gain = LOOK_GAIN * Math.pow(2, ev * 0.85);
-  return Math.abs(gain - 1) < 0.005 ? '' : `brightness(${gain.toFixed(3)})`;
-}
-
-/** THE SHOT GETS EXACTLY WHAT THE SCREEN SHOWED (Roman, 24 Oct: "no
- *  correction that is not on screen when taking the picture"): the same
- *  plain brightness as the viewfinder's display setting, as a table. */
+/** Yesterday's curve, then the lift. */
 export function buildToneLUT(ev: number): Uint8Array {
-  const gain = LOOK_GAIN * Math.pow(2, ev * 0.85);
   const t = new Uint8Array(256);
-  for (let i = 0; i < 256; i++) t[i] = Math.max(0, Math.min(255, Math.round(i * gain)));
+  const bright = Math.pow(2, ev * 0.85);
+  const contrast = ev > 0 ? 1 - ev * 0.08 : 1 + Math.abs(ev) * 0.55;
+  const gamma = Math.pow(2, -ev);
+  const pull = ev < 0 ? Math.abs(ev) * 0.075 : 0;
+  const curve = Math.abs(ev) >= 0.05;
+  for (let i = 0; i < 256; i++) {
+    let v = i;
+    if (curve) {
+      let c1 = i * bright;
+      c1 = (c1 - 128) * contrast + 128;
+      c1 = Math.max(0, Math.min(255, c1));
+      const n = i / 255;
+      let c3 = 255 * Math.pow(n, gamma);
+      if (pull > 0) c3 *= 1 - pull * n * n;
+      c3 = Math.max(0, Math.min(255, c3));
+      v = 0.3 * c1 + 0.7 * c3;
+    }
+    t[i] = Math.max(0, Math.min(255, Math.round(v * LOOK_GAIN)));
+  }
   return t;
 }
 
-/** Apply the table in place. Colours are left alone. */
-export function applyLUT(d: Uint8ClampedArray, lut: Uint8Array): void {
+/** Yesterday's colour factor: a touch less colour when going darker. */
+export function satFor(ev: number): number {
+  return ev < 0 ? 1 - Math.abs(ev) * 0.106 : 1;
+}
+
+/** Apply the table and the colour factor in place. */
+export function applyLUT(d: Uint8ClampedArray, lut: Uint8Array, sat: number): void {
   const n = d.length;
-  for (let i = 0; i < n; i += 4) { d[i] = lut[d[i]]; d[i + 1] = lut[d[i + 1]]; d[i + 2] = lut[d[i + 2]]; }
+  if (sat >= 1) {
+    for (let i = 0; i < n; i += 4) { d[i] = lut[d[i]]; d[i + 1] = lut[d[i + 1]]; d[i + 2] = lut[d[i + 2]]; }
+    return;
+  }
+  for (let i = 0; i < n; i += 4) {
+    const r = lut[d[i]], g = lut[d[i + 1]], b = lut[d[i + 2]];
+    const gr = 0.299 * r + 0.587 * g + 0.114 * b;
+    d[i] = gr + (r - gr) * sat; d[i + 1] = gr + (g - gr) * sat; d[i + 2] = gr + (b - gr) * sat;
+  }
 }

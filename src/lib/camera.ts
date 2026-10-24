@@ -10,7 +10,7 @@ import { trace } from './syncTrace';
 import { resetToolbarState, captureFrameAnchor } from './view';
 import { flushSyncNow } from './currentProject';
 import { getCamMode, getFramelineLater, wireCamModeButton, shrinkForSaving, fillCrop } from './camMode';
-import { buildToneLUT, applyLUT, liveFilter } from './camLook';
+import { buildToneLUT, applyLUT, satFor } from './camLook';
 
 let cameraStream: MediaStream | null = null;
 let cameraFacing: 'environment' | 'user' = 'environment';
@@ -226,11 +226,11 @@ export function captureFromViewfinder(): void {
   const expR = document.getElementById('expRange') as HTMLInputElement;
   const ev = expR ? +expR.value / 100 : 0;
   trace(`camera: shot from a ${vw}×${vh} stream, crop ${Math.round(cropW)}×${Math.round(cropH)}`);
-  // THE SAME BRIGHTNESS AS THE VIEWFINDER, in one pass; nothing else is done
-  // to the photo (24 Oct, Roman: no post-processing — it must land at once).
+  // THE SAME TABLE AS THE VIEWFINDER, in one pass; nothing else is done to
+  // the photo (24 Oct, Roman: no post-processing — it must land at once).
   {
     const img = cctx.getImageData(0, 0, c.width, c.height);
-    applyLUT(img.data, buildToneLUT(ev));
+    applyLUT(img.data, buildToneLUT(ev), satFor(ev));
     cctx.putImageData(img, 0, 0);
   }
   // SAVED LIKE A PHONE PHOTO: long side 3000 at most (a 4K crop would be
@@ -394,25 +394,56 @@ export function wireCameraEvents(): void {
       setTimeout(positionExpSlider, 300);
     });
 
-  // THE VIEWFINDER'S BRIGHTNESS (24 Oct): the look and the exposure slider
-  // are a display setting on the video itself — no picture painted over it
-  // (that copy ran a frame behind at 4K and flickered at the edges).
+  // THE VIEWFINDER (24 Oct): yesterday's curve painted onto a copy of the
+  // video at screen size, every frame — and the video itself hidden under it,
+  // so nothing can show through at the edges (the 4K flicker of 035).
   (function () {
     const rangeEl = document.getElementById('expRange') as HTMLInputElement;
     const vid = document.getElementById('cameraVideo') as HTMLVideoElement;
-    let evNow = 0;
-    const applyLive = () => { vid.style.filter = liveFilter(evNow); };
-    (window as any).__fh_camRefreshLook = applyLive;
+    let evNow = 0, lut = buildToneLUT(0), satMul = 1, rafId: number | null = null;
+    let canvas: HTMLCanvasElement | null = null, ctx: CanvasRenderingContext2D | null = null;
+    function ensureCanvas() {
+      if (canvas) return;
+      canvas = document.createElement('canvas');
+      canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0;pointer-events:none;';
+      vid.insertAdjacentElement('afterend', canvas);
+      ctx = canvas.getContext('2d', { willReadFrequently: true });
+    }
+    function stop() {
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = null;
+      if (canvas) canvas.style.display = 'none';
+      vid.style.visibility = '';
+    }
+    function renderFrame() {
+      if (!cameraStream) { stop(); return; }
+      const vw = vid.videoWidth, vh = vid.videoHeight;
+      if (vw === 0 || vh === 0) { rafId = requestAnimationFrame(renderFrame); return; }
+      ensureCanvas();
+      // At screen size, not stream size: a 4K frame is 8 million pixels.
+      const k = Math.min(1, 1280 / Math.max(vw, vh));
+      const cw = Math.round(vw * k), ch = Math.round(vh * k);
+      if (canvas!.width !== cw || canvas!.height !== ch) { canvas!.width = cw; canvas!.height = ch; }
+      ctx!.drawImage(vid, 0, 0, cw, ch);
+      const img = ctx!.getImageData(0, 0, cw, ch);
+      applyLUT(img.data, lut, satMul);
+      ctx!.putImageData(img, 0, 0);
+      // The digital zoom scales the video element; the copy follows it.
+      if (canvas!.style.transform !== vid.style.transform) canvas!.style.transform = vid.style.transform;
+      if (canvas!.style.display !== 'block') { canvas!.style.display = 'block'; vid.style.visibility = 'hidden'; }
+      rafId = requestAnimationFrame(renderFrame);
+    }
+    const start = () => { if (!rafId) rafId = requestAnimationFrame(renderFrame); };
     rangeEl.addEventListener('input', function () {
       evNow = +(this as HTMLInputElement).value / 100;
-      applyLive();
+      lut = buildToneLUT(evNow); satMul = satFor(evNow);
+      start();
     });
     new MutationObserver(() => {
       const hidden = document.getElementById('cameraOverlay')!.classList.contains('hidden');
       if (hidden) {
-        evNow = 0;
-        rangeEl.value = '0';
-        vid.style.filter = '';
+        evNow = 0; rangeEl.value = '0'; lut = buildToneLUT(0); satMul = 1;
+        stop();
       } else {
         // Overlay just opened — re-position guide + slider once layout settles.
         if (cameraTarget) {
@@ -423,7 +454,7 @@ export function wireCameraEvents(): void {
         positionExpSlider();
         setTimeout(positionExpSlider, 300);
         setTimeout(positionExpSlider, 600);
-        applyLive();
+        start();
       }
     }).observe(document.getElementById('cameraOverlay')!, { attributes: true, attributeFilter: ['class'] });
   })();
