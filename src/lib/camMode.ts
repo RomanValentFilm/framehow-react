@@ -79,7 +79,9 @@ export function renderCamPanel(host: HTMLElement, onOk: (m: CamMode) => void, on
         <input type="checkbox" data-camlater${later ? ' checked' : ''}${m === 'phone' ? '' : ' disabled'} />
       </label>
     </div>
-    <p class="cam-mode-note"${m === 'phone' ? '' : ' hidden'}>OK opens your phone's camera (4:3, full quality; Framehow cuts the photo to your frame).<br>To change back to the Framehow camera, go to Menu › Cam Set Up.</p>
+    <p class="cam-mode-note">${m === 'phone'
+      ? `Your phone’s camera, with its full picture quality.${isFitting() ? '' : ' Tick FRAMELINE LATER to fit the shot to the frame lines afterwards.'}<br>Back to Framehow camera: Menu › Cam Set Up.`
+      : 'Aspect Ratio frame lines and exposure while you shoot.'}</p>
     <button type="button" class="cam-mode-ok" data-camok>OK</button>`;
   host.querySelectorAll<HTMLButtonElement>('[data-cammode]').forEach((b) =>
     b.addEventListener('click', (e) => {
