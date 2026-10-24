@@ -124,8 +124,8 @@ export function wireCamModeButton(btn: HTMLElement, panel: HTMLElement, onMode?:
 }
 
 /** Shrink a photo for saving: long side at most 2400 px (every pixel of an
- *  iPad screen), high-quality scaling, JPEG at 0.85 — about 0.5–0.9 MB
- *  (24 Oct, Roman: "less file size"; was 3000 px at 0.9, 1–2 MB). `crop` is
+ *  iPad screen), high-quality scaling, JPEG at 0.9 (Roman: keep the quality) — under 1 MB
+ *  (24 Oct, Roman: "less file size"; was 3000 px, 1–2 MB). `crop` is
  *  the part of the source to keep (in source pixels). */
 export function shrinkForSaving(src: CanvasImageSource, sw: number, sh: number,
   crop: { x: number; y: number; w: number; h: number }): string {
@@ -139,7 +139,7 @@ export function shrinkForSaving(src: CanvasImageSource, sw: number, sh: number,
   ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(src, crop.x, crop.y, crop.w, crop.h, 0, 0, w, h);
   void sw; void sh;
-  const url = cvs.toDataURL('image/jpeg', 0.85);
+  const url = cvs.toDataURL('image/jpeg', 0.9);
   trace(`camera: photo saved ${w}×${h} · ${(url.length * 0.75 / 1048576).toFixed(1)} MB`);
   return url;
 }
