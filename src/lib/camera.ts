@@ -9,7 +9,8 @@ import { fhTrack } from './tracking';
 import { trace } from './syncTrace';
 import { resetToolbarState, captureFrameAnchor } from './view';
 import { flushSyncNow } from './currentProject';
-import { getCamMode, getFramelineLater, wireCamModeButton, shrinkForSaving, fillCrop } from './camMode';
+import { getCamMode, getFramelineLater, wireCamModeButton, shrinkForSaving, fillCrop, loadPhoneShot } from './camMode';
+import type { PhoneShot } from './camMode';
 import { buildToneLUT, applyLUT, satFor } from './camLook';
 
 let cameraStream: MediaStream | null = null;
@@ -137,16 +138,13 @@ function openPhoneCamera(): void {
 
 /** PHONE CAM with FRAMELINE LATER unticked: the photo fills the frame by
  *  itself, cut evenly at the edges, and goes straight onto the card. */
-function placePhoneShotByItself(dataURL: string): void {
+function placePhoneShotByItself(shot: PhoneShot): void {
   const target = cameraTarget;
   if (!target) return;
-  const img = new Image();
-  img.onload = () => {
-    const crop = fillCrop(img.naturalWidth, img.naturalHeight, target.aspectRatio);
-    const url = shrinkForSaving(img, img.naturalWidth, img.naturalHeight, crop);
-    if (onCapturedImage) onCapturedImage(url, target);
-  };
-  img.src = dataURL;
+  const crop = fillCrop(shot.w, shot.h, target.aspectRatio);
+  const url = shrinkForSaving(shot.src, shot.w, shot.h, crop);
+  shot.release();
+  if (onCapturedImage) onCapturedImage(url, target);
 }
 
 export function positionCameraGuide(ar: number): void {
@@ -299,8 +297,8 @@ export function positionExpSlider(): void {
 }
 
 /** Render the RATIO dropdown menu with the current selection marked. */
-function renderRatioMenu(): void {
-  const menu = document.getElementById('cameraRatioMenu');
+function renderRatioMenu(menuId = 'cameraRatioMenu', onPick?: () => void): void {
+  const menu = document.getElementById(menuId);
   if (!menu) return;
   const cur = state().camAspectRatio || 'canvas';
   menu.innerHTML = CAM_RATIOS.map(
@@ -316,7 +314,7 @@ function renderRatioMenu(): void {
       // Recompute guide with the new ratio
       if (cameraTarget) {
         cameraTarget.aspectRatio = effectiveAspectRatio(cameraTarget.fid);
-        positionCameraGuide(cameraTarget.aspectRatio);
+        if (onPick) onPick(); else positionCameraGuide(cameraTarget.aspectRatio);
       }
       void flushSyncNow();
     });
@@ -478,12 +476,10 @@ export function wireCameraEvents(): void {
     if (!file || !cameraTarget) return;
     const byItself = phoneShot && !getFramelineLater();
     phoneShot = false;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const url = (ev.target as FileReader).result as string;
-      if (byItself) placePhoneShotByItself(url); else openCropUI(url);
-    };
-    reader.readAsDataURL(file);
+    void loadPhoneShot(file).then((shot) => {
+      if (!cameraTarget) { shot.release(); return; }
+      if (byItself) placePhoneShotByItself(shot); else openCropUI(shot);
+    }).catch(() => showToast('Could not read the photo'));
     (e.target as HTMLInputElement).value = '';
   });
 
@@ -502,6 +498,23 @@ export function wireCameraEvents(): void {
     if (cbtn && cpanel) wireCamModeButton(cbtn, cpanel);
   }
 
+  // RATIO on the framing screen too (25 Oct, Roman): the frame lines change
+  // and the photo is laid out again, fitting the new lines.
+  {
+    const rbtn = document.getElementById('cropRatioBtn');
+    const rmenu = document.getElementById('cropRatioMenu');
+    if (rbtn && rmenu) {
+      rbtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (rmenu.classList.contains('hidden')) {
+          renderRatioMenu('cropRatioMenu', () => { if (cropState) layoutCrop(); });
+          rmenu.classList.remove('hidden');
+        } else rmenu.classList.add('hidden');
+      });
+      document.getElementById('cropArea')?.addEventListener('click', () => rmenu.classList.add('hidden'));
+    }
+  }
+
   document.getElementById('cropConfirm')!.addEventListener('click', () => {
     if (!cropState || !cameraTarget) return;
     const s = cropState;
@@ -510,10 +523,11 @@ export function wireCameraEvents(): void {
     const srcW = s.guideW / s.scale;
     const srcH = s.guideH / s.scale;
     const img = document.getElementById('cropImg') as HTMLImageElement;
-    // Kept sharp, but not at the phone's full size (23 Oct): long side at most
-    // 3000 px, high-quality scaling — the 3–5 MB a phone hands over filled an
-    // account in one fitting.
-    const url = shrinkForSaving(img, img.naturalWidth, img.naturalHeight, { x: srcX, y: srcY, w: srcW, h: srcH });
+    // Kept sharp, but not at the phone's full size (23 Oct). The quick-decoded
+    // copy is used when there is one (25 Oct): its pixels are already few.
+    const src = cropShot?.src ?? img, sw = cropShot?.w ?? img.naturalWidth, sh = cropShot?.h ?? img.naturalHeight;
+    const k = sw / img.naturalWidth;
+    const url = shrinkForSaving(src, sw, sh, { x: srcX * k, y: srcY * k, w: srcW * k, h: srcH * k });
     if (onCapturedImage) onCapturedImage(url, cameraTarget);
     closeCropUI();
   });
@@ -525,54 +539,51 @@ export function wireCameraEvents(): void {
   });
 }
 
-export function openCropUI(imgSrc: string): void {
-  const overlay = document.getElementById('cropOverlay')!;
+let cropShot: PhoneShot | null = null;
+
+/** The frame lines and the photo's starting place on the framing screen: the
+ *  photo FITS the frame lines on its long side, centred (25 Oct, Roman — it
+ *  came up zoomed in a fifth); pinch or drag from there. Also run again when
+ *  RATIO changes the frame lines. */
+function layoutCrop(): void {
   const area = document.getElementById('cropArea')! as HTMLElement;
   const img = document.getElementById('cropImg') as HTMLImageElement;
   const guide = document.getElementById('cropGuide')! as HTMLElement;
+  const nw = img.naturalWidth, nh = img.naturalHeight;
+  const aw = area.clientWidth, ah = area.clientHeight;
+  const ar = cameraTarget.aspectRatio;
+  let gw, gh;
+  if (ar > aw / ah) { gw = aw * 0.84; gh = gw / ar; }
+  else { gh = ah * 0.84; gw = gh * ar; }
+  guide.style.width = Math.round(gw) + 'px';
+  guide.style.height = Math.round(gh) + 'px';
+  guide.style.left = Math.round((aw - gw) / 2) + 'px';
+  guide.style.top = Math.round((ah - gh) / 2) + 'px';
+  const sc = Math.min(gw / nw, gh / nh);
+  const ix = (aw - nw * sc) / 2, iy = (ah - nh * sc) / 2;
+  cropState = {
+    ...(cropState || {}),
+    naturalW: nw, naturalH: nh, x: ix, y: iy, scale: sc, aspectRatio: ar,
+    minScale: sc, areaW: aw, areaH: ah,
+    guideL: (aw - gw) / 2, guideT: (ah - gh) / 2, guideW: gw, guideH: gh,
+  };
+  applyCropTransform();
+}
+
+export function openCropUI(shot: PhoneShot): void {
+  const overlay = document.getElementById('cropOverlay')!;
+  const area = document.getElementById('cropArea')! as HTMLElement;
+  const img = document.getElementById('cropImg') as HTMLImageElement;
   overlay.classList.remove('hidden');
   (document.getElementById('cropModeBtn') as (HTMLElement & { __fhRefresh?: () => void }) | null)?.__fhRefresh?.();
   document.getElementById('cropModeMenu')?.classList.add('hidden');
+  document.getElementById('cropRatioMenu')?.classList.add('hidden');
+  cropShot?.release();
+  cropShot = shot;
 
   img.onload = () => {
-    const nw = img.naturalWidth,
-      nh = img.naturalHeight;
-    const aw = area.clientWidth,
-      ah = area.clientHeight;
-    const ar = cameraTarget.aspectRatio;
-    let gw, gh;
-    if (ar > aw / ah) {
-      gw = aw * 0.84;
-      gh = gw / ar;
-    } else {
-      gh = ah * 0.84;
-      gw = gh * ar;
-    }
-    guide.style.width = Math.round(gw) + 'px';
-    guide.style.height = Math.round(gh) + 'px';
-    guide.style.left = Math.round((aw - gw) / 2) + 'px';
-    guide.style.top = Math.round((ah - gh) / 2) + 'px';
-
-    const sc = Math.max(gw / nw, gh / nh) * 1.2;
-    const ix = (aw - nw * sc) / 2,
-      iy = (ah - nh * sc) / 2;
-
-    cropState = {
-      naturalW: nw,
-      naturalH: nh,
-      x: ix,
-      y: iy,
-      scale: sc,
-      aspectRatio: ar,
-      minScale: Math.max(gw / nw, gh / nh),
-      areaW: aw,
-      areaH: ah,
-      guideL: (aw - gw) / 2,
-      guideT: (ah - gh) / 2,
-      guideW: gw,
-      guideH: gh,
-    };
-    applyCropTransform();
+    cropState = null;
+    layoutCrop();
 
     let startTouches: any = null,
       startX = 0,
@@ -640,7 +651,8 @@ export function openCropUI(imgSrc: string): void {
     (area as any).ontouchend = pointerUp;
     (area as any).ontouchcancel = pointerUp;
   };
-  img.src = imgSrc;
+  img.src = shot.url;
+  if (img.complete && img.naturalWidth) img.onload!(new Event('load'));
 }
 
 function clampCrop(): void {
@@ -669,6 +681,9 @@ function closeCropUI(): void {
   area.onmousedown = area.onmousemove = area.onmouseup = area.onmouseleave = null;
   area.ontouchstart = area.ontouchmove = area.ontouchend = area.ontouchcancel = null;
   cropState = null;
+  cropShot?.release();
+  cropShot = null;
+  (document.getElementById('cropImg') as HTMLImageElement).removeAttribute('src');
 }
 
 

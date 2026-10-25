@@ -21,6 +21,8 @@ export function Modals() {
           <img id="cropImg" />
           <div className="crop-guide" id="cropGuide"></div>
         </div>
+        <button className="camera-ratio-btn crop-ratio-btn" id="cropRatioBtn" type="button">RATIO</button>
+        <div className="camera-ratio-menu hidden" id="cropRatioMenu"></div>
         <button className="camera-ratio-btn cam-mode-btn crop-mode-btn" id="cropModeBtn" type="button">FH CAM</button>
         <div className="cam-mode-menu hidden" id="cropModeMenu"></div>
         <div className="crop-controls">

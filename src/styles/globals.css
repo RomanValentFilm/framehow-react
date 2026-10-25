@@ -1632,9 +1632,12 @@ body.fitting-mode .camera-ratio-menu{display:none !important;}
    fitting (no RATIO) in RATIO's place. The panel opens under it, flat. */
 .cam-mode-btn{left:96px;}
 body.fitting-mode .cam-mode-btn{left:16px;}
-.crop-mode-btn{left:16px;top:max(16px,env(safe-area-inset-top));}
+.crop-ratio-btn{left:16px;top:max(16px,env(safe-area-inset-top));}
+#cropRatioMenu{left:16px;}
+.crop-mode-btn{left:96px;top:max(16px,env(safe-area-inset-top));}
+body.fitting-mode .crop-mode-btn{left:16px;}
 .cam-mode-menu{position:absolute;left:96px;top:calc(max(16px,env(safe-area-inset-top)) + 40px);z-index:12;display:flex;flex-direction:column;gap:12px;padding:12px 14px;background:rgba(20,20,20,.95);border:1px solid rgba(255,255,255,.3);border-radius:5px;box-shadow:0 4px 16px rgba(0,0,0,.6);}
-body.fitting-mode .cam-mode-menu,#cropModeMenu{left:16px;}
+body.fitting-mode .cam-mode-menu{left:16px;}
 .cam-mode-menu.hidden{display:none;}
 .cam-mode-switch{position:relative;display:flex;background:#2a2a2a;border:1px solid rgba(255,255,255,.25);border-radius:20px;padding:3px;min-width:240px;}
 .cam-mode-knob{position:absolute;top:3px;bottom:3px;left:3px;width:calc(50% - 3px);background:var(--accent);border-radius:17px;transition:transform .2s ease;}

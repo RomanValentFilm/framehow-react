@@ -143,3 +143,38 @@ export function fillCrop(w: number, h: number, ar: number): { x: number; y: numb
   if (w / h > ar) { const cw = h * ar; return { x: (w - cw) / 2, y: 0, w: cw, h }; }
   const ch = w / ar; return { x: 0, y: (h - ch) / 2, w, h: ch };
 }
+
+/**
+ * THE PHONE'S PHOTO, READY FAST (25 Oct, Roman: "it takes a while till the
+ * photo appears — only with PHONE CAM"). The old way read the 3–5 MB file
+ * into a text string, decoded it, and shrank all 12 million pixels on the
+ * main thread. Now the phone's own picture engine decodes and shrinks it in
+ * one go (createImageBitmap with a target size), which is a fraction of the
+ * time. The photo's upright size is read from a plain <img> first (that is
+ * cheap, no pixels needed) and the bitmap is trusted only if its shape agrees
+ * — some engines ignore the rotation note in the file. Otherwise the <img>
+ * is used, as before.
+ */
+export type PhoneShot = { src: CanvasImageSource; w: number; h: number; img: HTMLImageElement; url: string; release(): void };
+
+export function loadPhoneShot(file: File, maxLong = 2400): Promise<PhoneShot> {
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  const loaded = new Promise<void>((res, rej) => { img.onload = () => res(); img.onerror = () => rej(new Error('photo unreadable')); });
+  img.src = url;
+  return loaded.then(async () => {
+    const ow = img.naturalWidth, oh = img.naturalHeight;
+    const k = Math.min(1, maxLong / Math.max(ow, oh));
+    const rw = Math.max(1, Math.round(ow * k)), rh = Math.max(1, Math.round(oh * k));
+    let src: CanvasImageSource = img, w = ow, h = oh, bmp: ImageBitmap | null = null;
+    try {
+      const opts = { resizeWidth: rw, resizeHeight: rh, resizeQuality: 'high', imageOrientation: 'from-image' } as ImageBitmapOptions;
+      bmp = await createImageBitmap(file, opts);
+      const sameShape = Math.abs(bmp.width / bmp.height - ow / oh) < 0.02;
+      if (sameShape) { src = bmp; w = bmp.width; h = bmp.height; }
+      else { trace(`camera: the quick decode came out ${bmp.width}×${bmp.height} for a ${ow}×${oh} photo — using the slow way`); bmp.close(); bmp = null; }
+    } catch { /* no quick decode here: the <img> does */ }
+    trace(`camera: phone photo ${ow}×${oh} ready as ${w}×${h}${bmp ? ' (quick)' : ' (plain)'}`);
+    return { src, w, h, img, url, release() { bmp?.close(); URL.revokeObjectURL(url); } };
+  });
+}
