@@ -6349,6 +6349,10 @@ async function tryPullFromCloud(force = false): Promise<void> {
   // answer, and then skipped the one pull that would have applied it. Every
   // early exit is traced here, so a pull can never again vanish unseen.
   if (pullInFlight) { quietly('  not fetching: another fetch is still running'); return; }
+  // NOT WHILE THE CAMERA IS OPEN (25 Oct): a pull redraws every card, which
+  // stalls the viewfinder for a quarter of a second each time. It waits; the
+  // next heartbeat after the camera closes brings everything.
+  if (document.getElementById('cameraOverlay')?.classList.contains('hidden') === false) { quietly('  not fetching: the camera is open'); return; }
   // NOT WHILE A HAND IS ON THE PAGE (#371).
   //
   // Fetching is what rebuilds the page, and rebuilding the page in 3x2 throws

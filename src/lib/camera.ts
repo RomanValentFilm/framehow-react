@@ -12,6 +12,8 @@ import { flushSyncNow } from './currentProject';
 import { getCamMode, getFramelineLater, wireCamModeButton, shrinkForSaving, fillCrop, loadPhoneShot } from './camMode';
 import type { PhoneShot } from './camMode';
 import { buildToneLUT, applyLUT, satFor } from './camLook';
+import { makeGpuViewfinder } from './camGpu';
+import type { GpuViewfinder } from './camGpu';
 
 let cameraStream: MediaStream | null = null;
 let cameraFacing: 'environment' | 'user' = 'environment';
@@ -427,6 +429,7 @@ export function wireCameraEvents(): void {
       if (rafId) cancelAnimationFrame(rafId);
       rafId = null;
       if (canvas) canvas.style.display = 'none';
+      if (gpu) gpu.canvas.style.display = 'none';
       vid.style.visibility = '';
     }
     // THE VIEWFINDER PACES ITSELF (25 Oct, Roman: the iPad stuttered after the
@@ -435,10 +438,47 @@ export function wireCameraEvents(): void {
     // and the log says the real frames per second, once, after the start.
     let effort = 2;                 // 2 = two steps at 1280, 1 = one step at 1280, 0 = one step at 960
     let slowFrames = 0, frames = 0, firstAt = 0, reported = false, lastAt = 0, longestGap = 0;
+    // THE GRAPHICS CHIP FIRST (25 Oct): the same table, drawn by a shader —
+    // no 4K frame is copied out. Where that is not available, or it fails,
+    // the painter below does it the old way.
+    let gpu: GpuViewfinder | null | undefined;   // undefined = not tried yet
+    let gpuLutStale = true;
+    function ensureGpu(): GpuViewfinder | null {
+      if (gpu !== undefined) return gpu;
+      gpu = makeGpuViewfinder();
+      if (gpu) {
+        gpu.canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0;pointer-events:none;';
+        vid.insertAdjacentElement('afterend', gpu.canvas);
+      } else trace('camera: no graphics-chip viewfinder here — painting the old way');
+      return gpu;
+    }
     function renderFrame() {
       if (!cameraStream) { stop(); return; }
       const vw = vid.videoWidth, vh = vid.videoHeight;
       if (vw === 0 || vh === 0) { rafId = requestAnimationFrame(renderFrame); return; }
+      const g = ensureGpu();
+      if (g) {
+        const t0 = performance.now();
+        if (!firstAt) firstAt = t0;
+        if (lastAt && t0 - lastAt > longestGap) longestGap = t0 - lastAt;
+        lastAt = t0;
+        if (gpuLutStale) { g.setLUT(lut, satMul); gpuLutStale = false; }
+        // Drawn at the stream's own size: the chip does not mind 4K.
+        if (g.draw(vid, vw, vh)) {
+          if (g.canvas.style.transform !== vid.style.transform) g.canvas.style.transform = vid.style.transform;
+          if (g.canvas.style.display !== 'block') { g.canvas.style.display = 'block'; vid.style.visibility = 'hidden'; }
+          frames++;
+          if (!reported && t0 - firstAt > 4000) {
+            reported = true;
+            trace(`camera: viewfinder ${Math.round(frames / ((t0 - firstAt) / 1000))} fps on the graphics chip, ${vw}×${vh} · longest pause ${Math.round(longestGap)} ms`);
+          }
+          rafId = requestAnimationFrame(renderFrame);
+          return;
+        }
+        // The chip refused this frame: fall back to the painter for good.
+        g.canvas.style.display = 'none'; g.dispose(); gpu = null;
+        trace('camera: graphics-chip viewfinder failed — painting the old way');
+      }
       ensureCanvas();
       const t0 = performance.now();
       if (!firstAt) firstAt = t0;
@@ -483,13 +523,13 @@ export function wireCameraEvents(): void {
     const start = () => { if (!rafId) { frames = 0; firstAt = 0; lastAt = 0; longestGap = 0; reported = false; rafId = requestAnimationFrame(renderFrame); } };
     rangeEl.addEventListener('input', function () {
       evNow = +(this as HTMLInputElement).value / 100;
-      lut = buildToneLUT(evNow); satMul = satFor(evNow);
+      lut = buildToneLUT(evNow); satMul = satFor(evNow); gpuLutStale = true;
       start();
     });
     new MutationObserver(() => {
       const hidden = document.getElementById('cameraOverlay')!.classList.contains('hidden');
       if (hidden) {
-        evNow = 0; rangeEl.value = '0'; lut = buildToneLUT(0); satMul = 1;
+        evNow = 0; rangeEl.value = '0'; lut = buildToneLUT(0); satMul = 1; gpuLutStale = true;
         stop();
       } else {
         // Overlay just opened — re-position guide + slider once layout settles.
