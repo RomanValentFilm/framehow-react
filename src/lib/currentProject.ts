@@ -230,6 +230,7 @@ const _dirtyFrameIds = new Set<string>();
  *  their setState calls from being treated as user changes. */
 export function beginSystemAction(): void { _isSystemAction = true; }
 export function endSystemAction(): void { _isSystemAction = false; }
+export function isSystemAction(): boolean { return _isSystemAction; }
 
 /** True when user has made unpushed changes. */
 export function isDirty(): boolean { return _dirty; }
@@ -1211,13 +1212,19 @@ export function startAutosave(): void {
   // dirty local frames instead of blindly overwriting them with cloud data.
   let _prevFrameRefs = new Map<number, object>(); // frame.id → frame object ref
   let _prevStripVerRefs = new Map<string, object>(); // "strip:fid" → versions array ref
-  useStore.subscribe(() => {
+  useStore.subscribe((s, prev) => {
     scheduleAutosave();
-    const s = useStore.getState();
     // Only mark dirty when a USER (not system) action changes the store
     if (!_isSystemAction) {
       _dirty = true;
       _changeSerial++;
+      // WHAT CHANGED WHILE A PUSH WAS IN THE AIR (25 Oct): the next push says
+      // "sending again" because of this — the log says which part moved.
+      if (cloudSyncInFlight) {
+        const keys = (Object.keys(s) as (keyof typeof s)[]).filter((k) => s[k] !== prev[k] && typeof s[k] !== 'function');
+        const where = (new Error().stack || '').split('\n').slice(2, 6).map((l) => l.trim().replace(/^at /, '').split('/').pop()).join(' < ');
+        trace(`  changed during the push: ${keys.join(', ') || '(nothing by reference)'} — by ${where}`);
+      }
       // Track which frames changed — wrapped in try/catch so the safety-net
       // timer is ALWAYS reached even if the tracking logic has an edge-case error.
       try {

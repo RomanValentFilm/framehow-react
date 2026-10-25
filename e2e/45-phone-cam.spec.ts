@@ -77,6 +77,19 @@ test('phone cam in a fitting, frameline later OFF: the photo is cut to ONE PERSO
   expect(pic!.mb, 'at most 3 MB').toBeLessThanOrEqual(3);
   // ONE PERSON (25 Oct): 1:2, not the card's 9:16 — thin black at the sides on the card.
   expect(Math.abs(pic!.w / pic!.h - 0.5), 'cut to ONE PERSON, 1:2').toBeLessThan(0.01);
+  // ONE PUSH PER PHOTO (25 Oct, Roman's log: every photo went up three times —
+  // the push's own bookkeeping after the answer counted as new work).
+  await d.page.waitForTimeout(4000);
+  const lines = await d.log();
+  const sends = lines.filter((l) => l.includes('sending frames:') && !l.includes('(none)')).length;
+  say(`   the photo was sent ${sends} time(s)`);
+  for (const l of lines.filter((l) => l.includes('changed during the push'))) say(`   ${l.trim()}`);
+  // Reported, not yet demanded (25 Oct, runs 443–445: three, then two —
+  // the second is still being traced; the line above names its caller).
+  if (sends !== 1) {
+    say(`   NOT YET ONCE: sent ${sends} time(s) — the sync lines, oldest first:`);
+    for (const l of lines.filter((l) => /push start|sending frames|something changed|pull:|heartbeat|delta:|landed on the card|photo saved|nothing changed/.test(l)).reverse()) say(`     ${l.trim()}`);
+  }
   await d.close();
 });
 

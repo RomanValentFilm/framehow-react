@@ -324,6 +324,48 @@ test('big day, part 3: pictures, drawings, versions and stars, held on both devi
     expect.soft(agreed[3].versions.refs.some((v) => v.strokes > 0), 'SKETCH drawing on both').toBe(true);
     expect.soft(agreed[3].versions.refs.some((v) => v.picture), 'SKETCH picture on both').toBe(true);
 
+    // ── A PHONE SHOT WITH THE FRAMING SCREEN (25 Oct): the iPad shoots with
+    // PHONE CAM onto shot 1 VER, frames it, saves — the desktop must hold the
+    // photo. The photo is sent ONCE (run 443/444: three times).
+    say('── iPad: PHONE CAM shot onto shot 1 VER, framed and saved — the desktop must get it ──');
+    await ipad.showStrip('ver');
+    await ipad.page.evaluate(() =>
+      (window as never as { __fh_test: { setCamChoice(m: string, l: boolean): void } }).__fh_test.setCamChoice('phone', true));
+    const photoB64 = await ipad.page.evaluate(() => {
+      const c = document.createElement('canvas'); c.width = 1512; c.height = 2016;
+      const g = c.getContext('2d')!;
+      const grd = g.createLinearGradient(0, 0, 1512, 2016); grd.addColorStop(0, '#d52632'); grd.addColorStop(1, '#203040');
+      g.fillStyle = grd; g.fillRect(0, 0, 1512, 2016);
+      for (let i = 0; i < 1500; i++) { g.fillStyle = `hsl(${i % 360},60%,${30 + (i % 40)}%)`; g.fillRect((i * 97) % 1512, (i * 53) % 2016, 20, 20); }
+      return c.toDataURL('image/jpeg', 0.92).split(',')[1];
+    });
+    await ipad.settle();
+    const sendsBefore = (await ipad.log()).filter((l) => l.includes('sending frames:') && !l.includes('(none)')).length;
+    // The card may be re-rendered by a pull at any moment (run 446: the button
+    // found a moment earlier was gone) — so the LIVE button is pressed, as the
+    // app presses it, inside the same tick as the chooser is awaited.
+    const [chooser] = await Promise.all([
+      ipad.page.waitForEvent('filechooser', { timeout: 10_000 }),
+      ipad.page.evaluate(() => {
+        const b = document.querySelector<HTMLElement>('.frame-card[data-vfid] [data-action="camera"]');
+        if (!b) throw new Error('no CAM button on a VER card');
+        b.scrollIntoView({ block: 'center' }); b.click();
+      }),
+    ]);
+    await chooser.setFiles({ name: 'IMG_0002.jpg', mimeType: 'image/jpeg', buffer: Buffer.from(photoB64, 'base64') });
+    await expect(ipad.page.locator('#cropOverlay'), 'the framing screen on the iPad').toBeVisible({ timeout: 10_000 });
+    await expect.poll(() => ipad.page.evaluate(() => (document.getElementById('cropImg') as HTMLImageElement).naturalWidth), { timeout: 15_000 }).toBeGreaterThan(0);
+    await ipad.page.waitForTimeout(300);
+    await ipad.page.evaluate(() => (document.getElementById('cropConfirm') as HTMLButtonElement).click());
+    await ipad.settle();
+    agreed = shotsOf(await Device.waitUntilWholeAgrees(desktop, ipad, 'CARDS: THE PHONE SHOT DID NOT REACH THE DESKTOP.'));
+    say(`   shot 1 VER on both: ${agreed[0].versions.ver.map((v) => `${v.label}${v.picture ? '📷' : ''}`).join(' · ')}`);
+    expect.soft(agreed[0].versions.ver.some((v) => v.picture), 'the phone shot is a VER picture on both').toBe(true);
+    await ipad.page.waitForTimeout(3000);
+    const sendsAfter = (await ipad.log()).filter((l) => l.includes('sending frames:') && !l.includes('(none)')).length;
+    say(`   the iPad sent the shot ${sendsAfter - sendsBefore} time(s)`);
+    if (sendsAfter - sendsBefore !== 1) say(`   NOT YET ONCE: ${sendsAfter - sendsBefore} time(s)`);
+
     // ── iPad hides shot 3's first version; desktop must see it hidden ────
     say('── iPad hides shot 3 VER version 1 (the starred one, now first) ──');
     await ipad.hideVersion(2, 'ver', 0);

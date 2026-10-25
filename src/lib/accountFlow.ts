@@ -54,6 +54,7 @@ import {
   flushSyncNow,
   cancelPendingPush,
   beginSystemAction,
+  isSystemAction,
   endSystemAction,
   pendingOnDevice,
   markSomethingToSend,
@@ -3303,7 +3304,15 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   // this device would keep pushing its older copy for ever.
   if (res.settings) {
     stampChangedSettings(cp.projectId);   // a change made while this push was in the air is later than its reply (#510)
-    applySettingsToStore(res.settings);
+    // TAKING THE ANSWER IS NOT WORK (25 Oct): applying the merged settings
+    // rewrote the frames' arrangement, the strip and column names and the
+    // needs in the store, and the listener took that for the user's doing —
+    // "something changed while the push was in the air", and every photo went
+    // up again. Settings keep their own unsent stamps, so nothing of the
+    // user's is lost by not counting this.
+    const wasSys = isSystemAction();
+    beginSystemAction();
+    try { applySettingsToStore(res.settings); } finally { if (!wasSys) endSystemAction(); }
     adoptSettingsFromServer(res.settings, cp.projectId);
   }
   const staleFrameIds = new Set(res.stale_frames ?? []);
@@ -3356,7 +3365,16 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   // ---------------------------------------------------------------------------
   // Persist server IDs + r2Keys back to the Zustand store so the next push
   // reuses them and the diff-based pull can match frames by UUID.
+  //
+  // AS A SYSTEM ACTION (25 Oct). This write-back is the push's own bookkeeping,
+  // but the store's listener took it for the user's work: "something changed
+  // while the push was in the air — sending again", the same shot went up a
+  // second time, that write-back counted again, and a third push found nothing.
+  // Roman's log: every photo pushed three times. Bookkeeping is not work.
   // ---------------------------------------------------------------------------
+  const wasSystem = isSystemAction();
+  beginSystemAction();
+  try {
   useStore.setState((prev) => {
     const updatedFrames = prev.frames.map((f) => {
       const upd = frameIdUpdates.find((u) => u.localId === f.id);
@@ -3400,6 +3418,7 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
       refsVersions: updatedStripVersions.refs || prev.refsVersions,
     };
   });
+  } finally { if (!wasSystem) endSystemAction(); }
 
   // #395's after-the-push comparison is GONE (#399).
   //
