@@ -601,7 +601,15 @@
   .crop-controls{display:flex;align-items:center;justify-content:center;gap:20px;padding:16px 0;flex-shrink:0;width:100%;}
   /* With the log strip on, the framing screen's buttons move up above it (25 Oct). */
   body.fh-log-on .crop-controls{padding-bottom:86px;}
-  .crop-btn{font-family:var(--font);font-size:14px;font-weight:500;color:#fff;background:none;border:none;cursor:pointer;padding:10px 20px;-webkit-tap-highlight-color:transparent;}
+  /* PHONES ONLY (25 Oct, Roman: on a phone held sideways the photo sat small
+     above the buttons; the iPad was fine): the framing screen is full screen,
+     like the viewfinder, and the buttons float over the picture. */
+  @media (hover:none) and (pointer:coarse) and (max-width:430px), (hover:none) and (pointer:coarse) and (max-height:430px){
+    .crop-area{position:absolute;inset:0;flex:none;}
+    .crop-controls{position:absolute;left:0;right:0;bottom:max(16px,env(safe-area-inset-bottom));padding:0;z-index:3;}
+    body.fh-log-on .crop-controls{bottom:70px;padding:0;}
+  }
+  .crop-btn{font-family:var(--font);font-size:14px;font-weight:500;color:#fff;background:rgba(0,0,0,.45);border:none;border-radius:6px;cursor:pointer;padding:10px 20px;-webkit-tap-highlight-color:transparent;}
   .crop-btn-confirm{background:var(--accent);border-radius:var(--radius-sm);}
   .text-modal{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:10000;display:flex;align-items:center;justify-content:center;}
   .text-modal.hidden{display:none!important;}

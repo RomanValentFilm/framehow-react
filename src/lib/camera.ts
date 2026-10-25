@@ -568,9 +568,14 @@ function layoutCrop(): void {
   const nw = img.naturalWidth, nh = img.naturalHeight;
   const aw = area.clientWidth, ah = area.clientHeight;
   const ar = guideRatio(cameraTarget.aspectRatio, nw, nh);
+  // On a phone the frame lines fill the screen on their long side (25 Oct) —
+  // the photo's long side matches them, so a sideways phone shows the photo
+  // edge to edge. The iPad keeps its margin.
+  const phone = Math.min(window.innerWidth, window.innerHeight) <= 430;
+  const fill = phone ? 1 : 0.84;
   let gw, gh;
-  if (ar > aw / ah) { gw = aw * 0.84; gh = gw / ar; }
-  else { gh = ah * 0.84; gw = gh * ar; }
+  if (ar > aw / ah) { gw = aw * fill; gh = gw / ar; }
+  else { gh = ah * fill; gw = gh * ar; }
   guide.style.width = Math.round(gw) + 'px';
   guide.style.height = Math.round(gh) + 'px';
   guide.style.left = Math.round((aw - gw) / 2) + 'px';
