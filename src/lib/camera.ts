@@ -541,10 +541,9 @@ export function wireCameraEvents(): void {
 
 let cropShot: PhoneShot | null = null;
 
-/** The frame lines and the photo's starting place on the framing screen: the
- *  photo FITS the frame lines on its long side, centred (25 Oct, Roman — it
- *  came up zoomed in a fifth); pinch or drag from there. Also run again when
- *  RATIO changes the frame lines. */
+/** The frame lines and the photo's starting place on the framing screen
+ *  (25 Oct, Roman — it came up zoomed in a fifth); pinch or drag from there.
+ *  Also run again when RATIO changes the frame lines. */
 function layoutCrop(): void {
   const area = document.getElementById('cropArea')! as HTMLElement;
   const img = document.getElementById('cropImg') as HTMLImageElement;
@@ -559,12 +558,15 @@ function layoutCrop(): void {
   guide.style.height = Math.round(gh) + 'px';
   guide.style.left = Math.round((aw - gw) / 2) + 'px';
   guide.style.top = Math.round((ah - gh) / 2) + 'px';
-  const sc = Math.min(gw / nw, gh / nh);
+  // THE PHOTO'S LONG SIDE = THE FRAME'S LONG SIDE (25 Oct, Roman): a portrait
+  // photo in a landscape frame is as tall as the frame is wide, centred, black
+  // at the sides. Pinching out goes as far as the whole photo inside the lines.
+  const sc = Math.max(gw, gh) / Math.max(nw, nh);
   const ix = (aw - nw * sc) / 2, iy = (ah - nh * sc) / 2;
   cropState = {
     ...(cropState || {}),
     naturalW: nw, naturalH: nh, x: ix, y: iy, scale: sc, aspectRatio: ar,
-    minScale: sc, areaW: aw, areaH: ah,
+    minScale: Math.min(sc, Math.min(gw / nw, gh / nh)), areaW: aw, areaH: ah,
     guideL: (aw - gw) / 2, guideT: (ah - gh) / 2, guideW: gw, guideH: gh,
   };
   applyCropTransform();
