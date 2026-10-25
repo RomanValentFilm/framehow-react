@@ -1652,6 +1652,12 @@ body.fitting-mode.detail-open .detail-bar{display:none !important;}
 .cam-mode-later[hidden]{display:none;}
 .cam-mode-note{margin:0;max-width:260px;font-family:var(--font);font-size:12px;font-weight:500;line-height:1.45;color:#ddd;}
 .cam-mode-note[hidden]{display:none;}
+/* UPRIGHT PROJECTS — fittings and 9:16 (25 Oct, Roman): RATIO and the camera
+   button stand under each other at the left edge, not side by side. The RATIO
+   list opens beside them; the camera modal opens under both. */
+body.portrait-mode .cam-mode-btn,body.portrait-mode .crop-mode-btn{left:16px;top:calc(max(16px,env(safe-area-inset-top)) + 40px);}
+body.portrait-mode .camera-ratio-menu{left:96px;top:max(16px,env(safe-area-inset-top));}
+body.portrait-mode .cam-mode-menu{left:16px;top:calc(max(16px,env(safe-area-inset-top)) + 80px);}
 /* iPhone upright (24 Oct, Roman: cut off on the right): edge to edge. */
 @media (max-width:430px){
   .cam-mode-menu,#cropModeMenu{left:16px;right:16px;max-width:calc(100vw - 32px);}

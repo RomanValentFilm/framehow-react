@@ -853,3 +853,32 @@ everything green except LATER 3 (known).
   run says `ECONNREFUSED 127.0.0.1:8787`, it is void — repeat it.
 - The run script holds the Mac awake (`caffeinate -dims`) and prints FH_RUN at
   the end.
+
+## 25 October — where we stand (evening)
+
+Dev: v5.0.067 · #619. Live: still v5.0.026 · #578 — the full run + live is pending
+(RUN 454 line: `FH_LIVE=1 npm run deploy -- 454 "…"`).
+
+Today, all on dev: PHONE CAM framing screen with RATIO (fit-centred, long side to
+long side), faster hand-over (createImageBitmap, falls back to the plain way), photos
+2400 px at full JPEG quality (~0.5–1 MB), fittings frame too (FRAMELINE LATER on by
+default; ONE PERSON 1:2 / 2 PEOPLE 9:16 / GROUP PHOTO), 9:16 projects get the upright
+RATIO list, camera modal with OK + texts (+ "applies to the next shot" on the framing
+screen), log strip two lines, a save never changes a project's kind, a new project
+always starts under its own identity (Workflow 03 had been written as a fitting;
+Roman deleted it), push bookkeeping no longer counts as work (three pushes → one or
+two), only project content counts as work (screen state never), and a landing photo
+draws into the card ON SCREEN (the remembered element was often replaced by a pull —
+"shows the old version until a redraw"). Big day part 3 now takes a phone shot.
+
+PARKED, by Roman's decision ("why change something so massive now"): the pull-back
+after every push (#320) makes the phone pull its own photo back and sometimes send
+it once more. Deliberate, never lost anything. Tests accept ≤ 2 sends. If ever
+revisited: only move the taken-mark when the push reply holds nothing this device
+did not already know — row by row against the held tree — otherwise #320 stands.
+Not tonight; the attempt was withdrawn untested.
+
+Still open: Roman says the "applies to the next shot" line was not seen on the phone
+on 064 — the code is wired to the framing screen's modal; needs a screenshot.
+Guest link for clients: idea described 23 Oct, several days of work, question open
+(client's star = user's star, or a separate "client's pick").
