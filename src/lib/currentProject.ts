@@ -1206,6 +1206,36 @@ function hideOfflineBanner(): void {
  * via flushSyncNow(). A 30s safety-net timer catches anything missed.
  * System actions are wrapped to prevent false positives.
  */
+/**
+ * THE SCREEN'S OWN STATE IS NOT WORK (25 Oct, Roman's phone log). The store
+ * holds the project AND the screen: which card is centred, whether the bars
+ * are hiding on a scroll, which card is lit after a swipe. A scroll on the
+ * phone wrote the bars' guard while a push was in the air, and that counted
+ * as "something changed — sending again": every photo went up two or three
+ * times. So a store change counts as work only if something OUTSIDE this list
+ * changed — and a write that changed nothing by reference never counts.
+ * Anything not listed here still counts (the safe side).
+ */
+const SCREEN_ONLY = new Set<string>([
+  'scrollHideGuard', 'centerFid', 'swipeHighlightFid', 'ovExpandedFid', 'overviewAction',
+  'drawingInProgress', 'drawSuppressClick', 'fsOverlayActive', 'currentViewMode', 'activeStrips',
+  'layoutMode', 'crossCompare', 'crossCompareStrip', 'activeTab', 'stripActiveTab', 'stripCrossCompare',
+  'floorActiveTab', 'floorCrossCompare', 'refsActiveTab', 'refsCrossCompare', 'drawActive', 'showText',
+  'reorderFid', 'verReorderFid', 'verReorderStrip', 'verSlideDir', 'imgTarget', 'mainImgTarget',
+  'setupMode', 'setupEditing', 'sortMode', 'scribbleMode', 'sortEditingId', 'needsStripVisible',
+  'notesStripVisible', 'swipeHintShown', 'activeGroupId', 'activeSetupId', 'drawColor', 'penColor',
+  'drawWidth', 'drawEraser', 'prevFrameState', 'stripPrevFrameState', 'floorPrevFrameState', 'refsPrevFrameState',
+  'stripClipboard',
+]);
+function isWork(s: object, prev: object): boolean {
+  for (const k of Object.keys(s) as (keyof typeof s)[]) {
+    if (s[k] === prev[k]) continue;
+    if (typeof s[k] === 'function') continue;
+    if (!SCREEN_ONLY.has(k)) return true;
+  }
+  return false;   // only screen state moved, or nothing by reference
+}
+
 export function startAutosave(): void {
   // Zustand subscriber: schedule IDB autosave + detect user changes.
   // Also tracks WHICH frames changed so the pull-merge logic can keep
@@ -1215,15 +1245,14 @@ export function startAutosave(): void {
   useStore.subscribe((s, prev) => {
     scheduleAutosave();
     // Only mark dirty when a USER (not system) action changes the store
-    if (!_isSystemAction) {
+    if (!_isSystemAction && isWork(s, prev)) {
       _dirty = true;
       _changeSerial++;
       // WHAT CHANGED WHILE A PUSH WAS IN THE AIR (25 Oct): the next push says
       // "sending again" because of this — the log says which part moved.
       if (cloudSyncInFlight) {
         const keys = (Object.keys(s) as (keyof typeof s)[]).filter((k) => s[k] !== prev[k] && typeof s[k] !== 'function');
-        const where = (new Error().stack || '').split('\n').slice(2, 6).map((l) => l.trim().replace(/^at /, '').split('/').pop()).join(' < ');
-        trace(`  changed during the push: ${keys.join(', ') || '(nothing by reference)'} — by ${where}`);
+        trace(`  changed during the push: ${keys.join(', ')}`);
       }
       // Track which frames changed — wrapped in try/catch so the safety-net
       // timer is ALWAYS reached even if the tracking logic has an edge-case error.
