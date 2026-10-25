@@ -20,7 +20,7 @@ import { APP_VERSION } from '../store/state';
  *  It is bumped BY HAND, which is why it sat at #309 through #310, #311, #312
  *  and #313 — telling the screen a version of events that was four changes out
  *  of date. Worth remembering the next time it is trusted in a log. */
-export const SYNC_BUILD_TAG = '#604';
+export const SYNC_BUILD_TAG = '#605';
 
 let box: HTMLElement | null = null;
 
@@ -107,6 +107,7 @@ export function toggleSyncLog(): boolean {
   // take it out. Use ?fhsync=0 in the address to leave debug mode altogether.
   if (on) write(DEBUG_KEY, true);
   if (!on && box) { box.remove(); box = null; }
+  document.body.classList.toggle('fh-log-on', on);
   if (on) trace('log on');   // and everything recorded before it appears with it
   return on;
 }
@@ -120,7 +121,9 @@ function ensureBox(): HTMLElement | null {
     // A FIXED height, not a share of the screen: at 42vh the log grew until it
     // covered the controls and the page could not be worked. It stays a strip
     // along the bottom and scrolls inside itself.
-    'position:fixed;left:0;right:0;bottom:0;height:112px;overflow:auto;' +
+    // THREE LINES (25 Oct, Roman: the strip sat over the Save button): the
+    // version line plus three log lines; the rest scrolls inside.
+    'position:fixed;left:0;right:0;bottom:0;height:70px;overflow:auto;' +
     'z-index:2147483647;background:rgba(0,0,0,0.88);color:#6f6;' +
     'font:10px/1.35 ui-monospace,monospace;padding:24px 6px 6px;' +
     'white-space:pre-wrap;-webkit-user-select:text;user-select:text;';
@@ -148,6 +151,7 @@ function ensureBox(): HTMLElement | null {
   box.appendChild(copy);
 
   document.body.appendChild(box);
+  document.body.classList.add('fh-log-on');
   // Everything recorded before the strip was opened. Walked oldest-first,
   // because each line is put in at the TOP — going the other way would show the
   // history upside down.

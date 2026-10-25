@@ -599,6 +599,8 @@
   .crop-area img{position:absolute;transform-origin:0 0;user-select:none;-webkit-user-select:none;pointer-events:none;}
   .crop-guide{position:absolute;border:2px solid rgba(255,255,255,.7);box-shadow:0 0 0 9999px rgba(0,0,0,.5);border-radius:4px;pointer-events:none;}
   .crop-controls{display:flex;align-items:center;justify-content:center;gap:20px;padding:16px 0;flex-shrink:0;width:100%;}
+  /* With the log strip on, the framing screen's buttons move up above it (25 Oct). */
+  body.fh-log-on .crop-controls{padding-bottom:86px;}
   .crop-btn{font-family:var(--font);font-size:14px;font-weight:500;color:#fff;background:none;border:none;cursor:pointer;padding:10px 20px;-webkit-tap-highlight-color:transparent;}
   .crop-btn-confirm{background:var(--accent);border-radius:var(--radius-sm);}
   .text-modal{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:10000;display:flex;align-items:center;justify-content:center;}
