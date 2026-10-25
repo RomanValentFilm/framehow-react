@@ -689,7 +689,7 @@ export function applyCapturedImage(dataURL: string, target: any): void {
     const vcvs = div.querySelector(`#${cvsPfx}`) as HTMLCanvasElement | null;
     if (vcvs) drawFit(vcvs, dataURL);
   }
-  // toast removed
+  trace(`camera: landed on the card (shot ${s.frames.findIndex((fr) => fr.id === fid) + 1}${capturedToVersion ? `, ${strip} ${getStripActiveTab(fid, strip) + 1}` : ', main'})`);
   useStore.setState({ centerFid: String(fid) });
   // If fullscreen overlay is open, refresh it instead of strip DOM
   if (s.fsOverlayActive && s.fsOverlayActive.fid === fid) {

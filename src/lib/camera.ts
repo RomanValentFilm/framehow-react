@@ -492,6 +492,7 @@ export function wireCameraEvents(): void {
     if (!file || !cameraTarget) return;
     const byItself = phoneShot && !getFramelineLater();
     phoneShot = false;
+    trace(`camera: phone handed over the photo · ${(file.size / 1048576).toFixed(1)} MB`);
     void loadPhoneShot(file).then((shot) => {
       if (!cameraTarget) { shot.release(); return; }
       if (byItself) placePhoneShotByItself(shot); else openCropUI(shot);
