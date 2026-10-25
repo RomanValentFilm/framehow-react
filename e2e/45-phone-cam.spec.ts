@@ -98,5 +98,8 @@ test('phone cam, frameline later ON (not a fitting): the framing screen comes up
   expect(pic, 'the photo is on the card').not.toBeNull();
   expect(Math.max(pic!.w, pic!.h), 'long side at most 2400 px').toBeLessThanOrEqual(2400);
   expect(pic!.mb, 'at most 3 MB').toBeLessThanOrEqual(3);
+  // Run 433: 0.05 MB — a black picture. The cut reached outside the photo and
+  // Safari drew nothing. A real photo in that frame is well above this.
+  expect(pic!.mb, 'and not a black picture (run 433: 0.05 MB)').toBeGreaterThan(0.15);
   await d.close();
 });

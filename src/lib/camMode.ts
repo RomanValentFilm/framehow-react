@@ -131,8 +131,18 @@ export function shrinkForSaving(src: CanvasImageSource, sw: number, sh: number,
   const ctx = cvs.getContext('2d')!;
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(src, crop.x, crop.y, crop.w, crop.h, 0, 0, w, h);
-  void sw; void sh;
+  // THE CUT MAY REACH OUTSIDE THE PHOTO (25 Oct: a portrait photo fitted into
+  // a landscape frame has black at both sides). Asked for a piece that is
+  // partly outside, Safari drew nothing at all — so only the part inside the
+  // photo is drawn, where it belongs; the rest stays black.
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, w, h);
+  const ix = Math.max(0, crop.x), iy = Math.max(0, crop.y);
+  const ix2 = Math.min(sw, crop.x + crop.w), iy2 = Math.min(sh, crop.y + crop.h);
+  if (ix2 > ix && iy2 > iy) {
+    const kx = w / crop.w, ky = h / crop.h;
+    ctx.drawImage(src, ix, iy, ix2 - ix, iy2 - iy,
+      (ix - crop.x) * kx, (iy - crop.y) * ky, (ix2 - ix) * kx, (iy2 - iy) * ky);
+  }
   const url = cvs.toDataURL('image/jpeg', 0.9);
   trace(`camera: photo saved ${w}×${h} · ${(url.length * 0.75 / 1048576).toFixed(1)} MB`);
   return url;
