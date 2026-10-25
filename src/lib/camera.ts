@@ -429,19 +429,29 @@ export function wireCameraEvents(): void {
       if (canvas) canvas.style.display = 'none';
       vid.style.visibility = '';
     }
+    // THE VIEWFINDER PACES ITSELF (25 Oct, Roman: the iPad stuttered after the
+    // two-step shrink of 040). Each frame is timed; when frames take too long
+    // the effort drops — first the single-step shrink, then a smaller copy —
+    // and the log says the real frames per second, once, after the start.
+    let effort = 2;                 // 2 = two steps at 1280, 1 = one step at 1280, 0 = one step at 960
+    let slowFrames = 0, frames = 0, firstAt = 0, reported = false, lastAt = 0, longestGap = 0;
     function renderFrame() {
       if (!cameraStream) { stop(); return; }
       const vw = vid.videoWidth, vh = vid.videoHeight;
       if (vw === 0 || vh === 0) { rafId = requestAnimationFrame(renderFrame); return; }
       ensureCanvas();
+      const t0 = performance.now();
+      if (!firstAt) firstAt = t0;
+      if (lastAt && t0 - lastAt > longestGap) longestGap = t0 - lastAt;   // a pause between frames: something else held the phone
+      lastAt = t0;
       // At screen size, not stream size: a 4K frame is 8 million pixels.
-      const k = Math.min(1, 1280 / Math.max(vw, vh));
+      const k = Math.min(1, (effort === 0 ? 960 : 1280) / Math.max(vw, vh));
       const cw = Math.round(vw * k), ch = Math.round(vh * k);
       if (canvas!.width !== cw || canvas!.height !== ch) { canvas!.width = cw; canvas!.height = ch; }
       // Shrunk in two careful steps (halve, then to size), smoothing on:
       // one rough step shimmered on fine patterns (moiré, 24 Oct).
-      ctx!.imageSmoothingEnabled = true; ctx!.imageSmoothingQuality = 'high';
-      if (k < 0.5) {
+      ctx!.imageSmoothingEnabled = true; ctx!.imageSmoothingQuality = effort === 2 ? 'high' : 'medium';
+      if (effort === 2 && k < 0.5) {
         const hw = Math.round(vw / 2), hh = Math.round(vh / 2);
         if (!half) half = document.createElement('canvas');
         if (half.width !== hw || half.height !== hh) { half.width = hw; half.height = hh; }
@@ -458,9 +468,19 @@ export function wireCameraEvents(): void {
       // The digital zoom scales the video element; the copy follows it.
       if (canvas!.style.transform !== vid.style.transform) canvas!.style.transform = vid.style.transform;
       if (canvas!.style.display !== 'block') { canvas!.style.display = 'block'; vid.style.visibility = 'hidden'; }
+      const took = performance.now() - t0;
+      frames++;
+      // Over 24 ms a frame cannot keep 30 a second; five such in a row and the
+      // effort drops a notch (it never climbs back within one camera session).
+      if (took > 24) { if (++slowFrames >= 5 && effort > 0) { effort--; slowFrames = 0; trace(`camera: viewfinder effort down to ${effort} (${Math.round(took)} ms a frame)`); } }
+      else slowFrames = 0;
+      if (!reported && t0 - firstAt > 4000) {
+        reported = true;
+        trace(`camera: viewfinder ${Math.round(frames / ((t0 - firstAt) / 1000))} fps at effort ${effort}, ${cw}×${ch} · a frame takes ${Math.round(took)} ms · longest pause ${Math.round(longestGap)} ms`);
+      }
       rafId = requestAnimationFrame(renderFrame);
     }
-    const start = () => { if (!rafId) rafId = requestAnimationFrame(renderFrame); };
+    const start = () => { if (!rafId) { frames = 0; firstAt = 0; lastAt = 0; longestGap = 0; reported = false; rafId = requestAnimationFrame(renderFrame); } };
     rangeEl.addEventListener('input', function () {
       evNow = +(this as HTMLInputElement).value / 100;
       lut = buildToneLUT(evNow); satMul = satFor(evNow);
