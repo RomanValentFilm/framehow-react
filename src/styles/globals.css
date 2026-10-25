@@ -23,7 +23,7 @@
     --radius:10px;--radius-sm:6px;
   }
   body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:100dvh;display:flex;flex-direction:column;-webkit-overflow-scrolling:touch;width:100%;}
-  .toolbar{display:flex;align-items:center;gap:8px;padding:0 12px;padding-top:calc(env(safe-area-inset-top) + 4px);height:calc(44px + env(safe-area-inset-top));background:var(--toolbar-fill);border-bottom:1px solid var(--border);flex-shrink:0;z-index:20;position:sticky;top:0;width:100%;}
+  .toolbar{display:flex;align-items:center;gap:8px;padding:0 12px;padding-top:calc(env(safe-area-inset-top) * 0.5 + 4px);height:calc(44px + env(safe-area-inset-top) * 0.5);background:var(--toolbar-fill);border-bottom:1px solid var(--border);flex-shrink:0;z-index:20;position:sticky;top:0;width:100%;}
   .logo{font-family:var(--mono);font-size:14px;font-weight:500;letter-spacing:0.08em;text-transform:uppercase;}
   .logo span{color:var(--accent);}
   .toolbar-right{margin-left:auto;display:flex;gap:8px;align-items:center;flex-shrink:1;min-width:0;}
@@ -40,7 +40,7 @@
   .strip-col+.strip-col{border-left:1px solid var(--border);}
   .strip-label{display:none;}
   .view-bar{display:flex;align-items:center;padding:3px 10px;background:var(--viewbar-fill);border-bottom:1px solid var(--border);position:sticky;top:44px;z-index:10;}
-  .detail-bar{display:flex;align-items:center;padding:3px 10px;background:var(--detailbar-fill);border-bottom:1px solid var(--border);position:sticky;top:calc(44px + env(safe-area-inset-top) + 28px);z-index:9;}
+  .detail-bar{display:flex;align-items:center;padding:3px 10px;background:var(--detailbar-fill);border-bottom:1px solid var(--border);position:sticky;top:calc(44px + env(safe-area-inset-top) * 0.5 + 28px);z-index:9;}
   .db-left,.db-right{flex:1;min-width:0;}
   .db-right{justify-content:flex-end;}
   .view-btns{display:flex;gap:4px;align-items:center;}
@@ -65,7 +65,7 @@
   }
   @media (max-height:430px) and (orientation:landscape){.grid3x2-card-wrap .pictxt-btn{display:none!important;}.grid3x2-card-wrap .act-btn[data-mact="new"],.grid3x2-card-wrap .act-btn[data-mact="upload"],.grid3x2-card-wrap .act-btn[data-mact="delete"]{display:none!important;}}
   /* ─── Setup bar ─── */
-  .setup-bar{background:var(--surface);border-bottom:1px solid var(--border);padding:3px 10px;position:sticky;top:calc(44px + env(safe-area-inset-top) + 28px);z-index:9;}
+  .setup-bar{background:var(--surface);border-bottom:1px solid var(--border);padding:3px 10px;position:sticky;top:calc(44px + env(safe-area-inset-top) * 0.5 + 28px);z-index:9;}
   .setup-bar-inner{display:flex;align-items:flex-start;gap:8px;}
   .setup-bar-pills{display:flex;align-items:center;gap:6px;flex-wrap:wrap;flex:1;min-width:0;}
   .setup-bar-right{display:flex;align-items:center;gap:6px;flex-shrink:0;margin-left:auto;}
@@ -174,7 +174,7 @@
   body.setup-lock .detail-bar{pointer-events:none;}
   body.setup-lock .detail-bar .view-btn{opacity:.25;}
   body.setup-lock .detail-bar .vb-sep{opacity:.25;}
-  body.detail-open .setup-bar{top:calc(44px + env(safe-area-inset-top) + 56px);}
+  body.detail-open .setup-bar{top:calc(44px + env(safe-area-inset-top) * 0.5 + 56px);}
   body.setup-lock #mainMenuBtn{pointer-events:none;opacity:.35;}
   body.setup-lock .version-actions{pointer-events:none;opacity:.35;}
   body.setup-lock .version-tabs{pointer-events:none;opacity:.35;}
@@ -301,7 +301,7 @@
   .g3-notes-modal .notes-action-row{flex:none;padding:8px 8px;}
 
   /* ── Scribble overlay for 3×2 view ── */
-  .scribble-toolbar{position:fixed;left:1.5vw;top:calc(44px + env(safe-area-inset-top) + 42px);transform:translateX(-50%);z-index:120;display:flex;flex-direction:column;align-items:center;gap:0;}
+  .scribble-toolbar{position:fixed;left:1.5vw;top:calc(44px + env(safe-area-inset-top)*0.5 + 42px);transform:translateX(-50%);z-index:120;display:flex;flex-direction:column;align-items:center;gap:0;}
   /* Scribble active: block card interactions so drawing isn't interrupted */
   body.scribble-on .grid3x2-card-wrap .version-actions,
   body.scribble-on .grid3x2-card-wrap .version-tabs,
@@ -312,11 +312,11 @@
   body.scribble-on .grid3x2-card-wrap .pictxt-btn,
   body.scribble-on .grid3x2-card-wrap .fs-btn,
   body.scribble-on .grid3x2-card-wrap .frame-num{pointer-events:none;}
-  body.detail-open .scribble-toolbar{top:calc(44px + env(safe-area-inset-top) + 70px);}
-  body.setup-lock .scribble-toolbar{top:calc(44px + env(safe-area-inset-top) + 70px);}
-  body.setup-lock.setup-expanded .scribble-toolbar{top:calc(44px + env(safe-area-inset-top) + 98px);}
-  body.setup-lock.detail-open .scribble-toolbar{top:calc(44px + env(safe-area-inset-top) + 98px);}
-  body.setup-lock.setup-expanded.detail-open .scribble-toolbar{top:calc(44px + env(safe-area-inset-top) + 126px);}
+  body.detail-open .scribble-toolbar{top:calc(44px + env(safe-area-inset-top)*0.5 + 70px);}
+  body.setup-lock .scribble-toolbar{top:calc(44px + env(safe-area-inset-top)*0.5 + 70px);}
+  body.setup-lock.setup-expanded .scribble-toolbar{top:calc(44px + env(safe-area-inset-top)*0.5 + 98px);}
+  body.setup-lock.detail-open .scribble-toolbar{top:calc(44px + env(safe-area-inset-top)*0.5 + 98px);}
+  body.setup-lock.setup-expanded.detail-open .scribble-toolbar{top:calc(44px + env(safe-area-inset-top)*0.5 + 126px);}
   .scribble-toggle-btn{background:none;border:none;padding:4px;cursor:pointer;}
   .scribble-tools{display:flex;flex-direction:column;align-items:center;gap:5px;margin-top:10px;padding:8px 5px;background:rgba(0,0,0,.65);border-radius:8px;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);}
   .scribble-color-dot{width:18px;height:18px;border-radius:50%;border:2px solid transparent;cursor:pointer;transition:border-color .15s;flex-shrink:0;}
@@ -732,23 +732,23 @@
     .fs-overlay{padding:51px 20px 20px;}
     .fs-overlay > .fs-close{top:31px;}
     .toolbar{position:fixed;top:0;left:0;right:0;z-index:40;}
-    .view-bar{position:fixed;top:calc(44px + env(safe-area-inset-top));left:0;right:0;z-index:30;}
+    .view-bar{position:fixed;top:calc(44px + env(safe-area-inset-top) * 0.5);left:0;right:0;z-index:30;}
     .detail-bar{position:fixed;left:0;right:0;z-index:29;}
     .toolbar.tb-hide{transform:translateY(-100%);}
-    .view-bar.tb-hide{transform:translateY(calc(-44px - env(safe-area-inset-top)));padding-top:env(safe-area-inset-top);}
-    .columns{padding-top:calc(74px + env(safe-area-inset-top));}
-    body.detail-open .columns{padding-top:calc(102px + env(safe-area-inset-top));}
-    body.setup-lock .setup-bar{position:fixed;top:calc(72px + env(safe-area-inset-top));left:0;right:0;z-index:25;}
-    body.setup-lock.detail-open .setup-bar{top:calc(100px + env(safe-area-inset-top));}
+    .view-bar.tb-hide{transform:translateY(calc(-44px - env(safe-area-inset-top) * 0.5));padding-top:env(safe-area-inset-top);}
+    .columns{padding-top:calc(74px + env(safe-area-inset-top) * 0.5);}
+    body.detail-open .columns{padding-top:calc(102px + env(safe-area-inset-top) * 0.5);}
+    body.setup-lock .setup-bar{position:fixed;top:calc(72px + env(safe-area-inset-top) * 0.5);left:0;right:0;z-index:25;}
+    body.setup-lock.detail-open .setup-bar{top:calc(100px + env(safe-area-inset-top) * 0.5);}
     body.setup-lock .view-bar.tb-hide ~ .setup-bar{top:calc(env(safe-area-inset-top) + 25px);}
-    body.setup-lock .columns{padding-top:calc(104px + env(safe-area-inset-top));}
-    body.setup-lock.detail-open .columns{padding-top:calc(132px + env(safe-area-inset-top));}
+    body.setup-lock .columns{padding-top:calc(104px + env(safe-area-inset-top) * 0.5);}
+    body.setup-lock.detail-open .columns{padding-top:calc(132px + env(safe-area-inset-top) * 0.5);}
   }
   /* iPhone: toolbar scrolls naturally, view-bar sticks at top. No JS. */
   @media (hover:none) and (pointer:coarse) and (max-width:430px),
          (hover:none) and (pointer:coarse) and (max-height:430px){
     html{overflow-x:clip;}
-    .toolbar{position:relative;top:auto;left:auto;right:auto;z-index:40;padding-top:calc(env(safe-area-inset-top));height:calc(44px + env(safe-area-inset-top));}
+    .toolbar{position:relative;top:auto;left:auto;right:auto;z-index:40;padding-top:calc(env(safe-area-inset-top) * 0.55);height:calc(44px + env(safe-area-inset-top) * 0.55);}
     .toolbar.tb-hide{transform:none;}
     .view-bar{position:-webkit-sticky;position:sticky;top:env(safe-area-inset-top);left:auto;right:auto;padding:3px 6px;z-index:20;background:var(--viewbar-fill);border-bottom:1px solid var(--border);}
     .view-bar.tb-hide{transform:none;}
@@ -780,9 +780,9 @@
   @media (hover:none) and (pointer:coarse) and (max-width:430px) and (orientation:portrait){
     .toolbar{position:-webkit-sticky;position:sticky;top:0;}
     .view-bar{display:flex!important;position:-webkit-sticky;position:sticky;
-              top:calc(44px + env(safe-area-inset-top));z-index:20;}
+              top:calc(44px + env(safe-area-inset-top) * 0.55);z-index:20;}
     .detail-bar{display:flex!important;position:-webkit-sticky;position:sticky;
-                top:calc(70px + env(safe-area-inset-top));z-index:19;}
+                top:calc(70px + env(safe-area-inset-top) * 0.55);z-index:19;}
     .detail-bar .db-left{display:none;}
     .detail-bar .db-middle{flex:1;min-width:0;overflow-x:auto;-webkit-overflow-scrolling:touch;flex-wrap:nowrap;scrollbar-width:none;}
     .detail-bar .db-middle::-webkit-scrollbar{display:none;}
@@ -1272,9 +1272,9 @@
   @media(hover:hover){.sort-dd-delete:hover{color:#fff;background:var(--accent);}}
 
   /* ─── SORT EDIT VIEW (frame sets) ─── */
-  .sort-edit-view{background:#000;min-height:calc(100dvh - 44px - env(safe-area-inset-top) - 28px);padding:0;overflow:visible;}
+  .sort-edit-view{background:#000;min-height:calc(100dvh - 44px - env(safe-area-inset-top) * 0.5 - 28px);padding:0;overflow:visible;}
   .sort-edit-inner{max-width:900px;margin:0 auto;padding:0 16px 80px;background:#333;min-height:inherit;}
-  .sort-edit-header{display:flex;align-items:center;justify-content:space-between;padding:3px 16px;margin:0 -16px 6px;background:var(--surface);border-bottom:1px solid var(--border);position:-webkit-sticky;position:sticky;top:calc(44px + env(safe-area-inset-top) + 28px);z-index:8;}
+  .sort-edit-header{display:flex;align-items:center;justify-content:space-between;padding:3px 16px;margin:0 -16px 6px;background:var(--surface);border-bottom:1px solid var(--border);position:-webkit-sticky;position:sticky;top:calc(44px + env(safe-area-inset-top) * 0.5 + 28px);z-index:8;}
   .sort-edit-header-left{display:flex;align-items:center;gap:6px;}
   .sort-edit-label{font-size:13px;color:#ccc;font-weight:500;letter-spacing:.3px;}
   .sort-edit-sep{font-size:13px;color:#888;}
@@ -1392,14 +1392,14 @@
 
   /* iPad: sort-edit-view needs padding to clear fixed toolbar + view-bar (same as .columns) */
   @media (hover:none) and (pointer:coarse){
-    .sort-edit-view{padding-top:calc(74px + env(safe-area-inset-top));overflow:visible;}
-    .sort-edit-header{top:calc(74px + env(safe-area-inset-top));}
+    .sort-edit-view{padding-top:calc(74px + env(safe-area-inset-top) * 0.5);overflow:visible;}
+    .sort-edit-header{top:calc(74px + env(safe-area-inset-top) * 0.5);}
   }
   /* iPhone: toolbar scrolls naturally, no extra padding needed (same as .columns) */
   @media (hover:none) and (pointer:coarse) and (max-width:430px),
          (hover:none) and (pointer:coarse) and (max-height:430px){
     .sort-edit-view{padding-top:0;overflow:visible;}
-    .sort-edit-header{top:calc(44px + env(safe-area-inset-top) + 28px);}
+    .sort-edit-header{top:calc(44px + env(safe-area-inset-top) * 0.5 + 28px);}
   }
   /* iPhone portrait: reduced sort card — number+pill | main image | arrows only */
   @media (hover:none) and (pointer:coarse) and (max-width:430px) and (orientation:portrait){
@@ -1621,7 +1621,7 @@ body.fitting-mode.detail-open .detail-bar{display:none !important;}
    fitting project has only one bar, so put the padding back to the one-bar
    value. Phones already use 0, so only the tablet rule needs correcting. */
 @media (hover:none) and (pointer:coarse){
-  body.fitting-mode.detail-open .columns{padding-top:calc(74px + env(safe-area-inset-top));}
+  body.fitting-mode.detail-open .columns{padding-top:calc(74px + env(safe-area-inset-top) * 0.5);}
 }
 @media (hover:none) and (pointer:coarse) and (max-width:430px),
        (hover:none) and (pointer:coarse) and (max-height:430px){
