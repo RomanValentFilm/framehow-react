@@ -365,7 +365,11 @@ test('big day, part 3: pictures, drawings, versions and stars, held on both devi
     const landedAt = ipadLines.findIndex((l) => l.includes('landed on the card'));
     const sends = landedAt < 0 ? -1 : ipadLines.slice(landedAt).filter((l) => l.includes('sending frames:') && !l.includes('(none)')).length;
     say(`   after landing, the iPad sent the shot ${sends} time(s)`);
-    expect.soft(sends, 'once').toBe(1);
+    // Reported, not demanded (25 Oct, Roman): a device pulls its own push
+    // back by design (#320) and may send the shot once more on the way — old,
+    // deliberate, and never lost anything. Three or more would be the churn
+    // fixed today (bookkeeping counted as work).
+    expect.soft(sends, 'once or twice, never the old three').toBeLessThanOrEqual(2);
 
     // ── iPad hides shot 3's first version; desktop must see it hidden ────
     say('── iPad hides shot 3 VER version 1 (the starred one, now first) ──');

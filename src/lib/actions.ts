@@ -631,9 +631,19 @@ export function handleAction(action: string, fid: number, div: HTMLElement, from
 
 export function applyCapturedImage(dataURL: string, target: any): void {
   const s = state();
-  const { fid, div, fromCompare, fromMain } = target;
+  const { fid, fromCompare, fromMain } = target;
   const strip: StripType = target.stripType || 'ver';
   const scrollId = stripScrollId(strip);
+  // THE CARD ON SCREEN NOW, not the one remembered when CAM was pressed (25
+  // Oct, Roman: "it shows the last version card, and after a while the new
+  // photo"). Pulls redraw the cards all the time; by the time the photo lands
+  // the remembered element is often off the page, so the photo was drawn into
+  // a card nobody saw until the next redraw built it from the store.
+  const liveDiv = (fromMain || fromCompare
+    ? document.querySelector(`#mainScroll .frame-card[data-mfid="${fid}"]`)
+    : document.querySelector(`#${scrollId} .frame-card[data-vfid="${fid}"]`)) as HTMLElement | null;
+  const div: HTMLElement = (liveDiv && liveDiv.isConnected ? liveDiv : target.div) as HTMLElement;
+  if (div !== target.div) trace('camera: the card was redrawn meanwhile — landing on the one on screen');
   // The CAM button was pressed ON the card, so the card is on screen already.
   // The page must therefore not move at all. Remember where it is and put it
   // back, because re-rendering the card changes its height for a moment.
