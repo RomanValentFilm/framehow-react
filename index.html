@@ -8,6 +8,15 @@
 <meta name="theme-color" content="#1a1a1a">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
+<script>
+// OPAQUE ON THE IPHONE, TRANSLUCENT ON THE IPAD (25 Oct). iOS 26 blurs a
+// translucent status bar over the iPhone's top bar (036 made it opaque); the
+// iPad, given an opaque one, drops the app's bars 24 pt and lets scrolled
+// content pass behind the status bar. The setting is read when the icon is
+// added to the home screen, so this runs before that moment.
+(function(){var ipad=/iPad/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+if(ipad){var m=document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');if(m)m.setAttribute('content','black-translucent');}})();
+</script>
 <meta name="apple-mobile-web-app-title" content="Framehow">
 <link rel="apple-touch-icon" href="/app/icons/icon_512.png">
 </head>
