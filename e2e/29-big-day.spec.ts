@@ -340,7 +340,6 @@ test('big day, part 3: pictures, drawings, versions and stars, held on both devi
       return c.toDataURL('image/jpeg', 0.92).split(',')[1];
     });
     await ipad.settle();
-    const sendsBefore = (await ipad.log()).filter((l) => l.includes('sending frames:') && !l.includes('(none)')).length;
     // The card may be re-rendered by a pull at any moment (run 446: the button
     // found a moment earlier was gone) — so the LIVE button is pressed, as the
     // app presses it, inside the same tick as the chooser is awaited.
@@ -362,9 +361,11 @@ test('big day, part 3: pictures, drawings, versions and stars, held on both devi
     say(`   shot 1 VER on both: ${agreed[0].versions.ver.map((v) => `${v.label}${v.picture ? '📷' : ''}`).join(' · ')}`);
     expect.soft(agreed[0].versions.ver.some((v) => v.picture), 'the phone shot is a VER picture on both').toBe(true);
     await ipad.page.waitForTimeout(3000);
-    const sendsAfter = (await ipad.log()).filter((l) => l.includes('sending frames:') && !l.includes('(none)')).length;
-    say(`   the iPad sent the shot ${sendsAfter - sendsBefore} time(s)`);
-    if (sendsAfter - sendsBefore !== 1) say(`   NOT YET ONCE: ${sendsAfter - sendsBefore} time(s)`);
+    const ipadLines = (await ipad.log()).reverse();
+    const landedAt = ipadLines.findIndex((l) => l.includes('landed on the card'));
+    const sends = landedAt < 0 ? -1 : ipadLines.slice(landedAt).filter((l) => l.includes('sending frames:') && !l.includes('(none)')).length;
+    say(`   after landing, the iPad sent the shot ${sends} time(s)`);
+    expect.soft(sends, 'once').toBe(1);
 
     // ── iPad hides shot 3's first version; desktop must see it hidden ────
     say('── iPad hides shot 3 VER version 1 (the starred one, now first) ──');
