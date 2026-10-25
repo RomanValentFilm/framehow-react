@@ -63,7 +63,7 @@ export interface Setup {
 
 /** 12-colour palette for setups. */
 /** App version — bump before every deploy. */
-export const APP_VERSION = 'v5.0.054';
+export const APP_VERSION = 'v5.0.055';
 
 /** Free-text fields printed in the header of every exported page. */
 export interface ExportMeta {
@@ -78,7 +78,17 @@ export function createDefaultExportMeta(): ExportMeta {
 }
 
 /** Camera guide aspect-ratio presets. 'canvas' = use the frame's own canvas AR. */
-export type CamRatioKey = '2.39' | '2.0' | '1.85' | 'canvas' | '16:9' | '4:3' | '1:1' | '9:16';
+export type CamRatioKey = '2.39' | '2.0' | '1.85' | 'canvas' | '16:9' | '4:3' | '1:1' | '9:16'
+  | 'fit1' | 'fit2' | 'fitGroup';
+
+/** FITTING frame lines (25 Oct, Roman): ONE PERSON is 1:2, 2 PEOPLE is 9:16 —
+ *  which fills the fitting card exactly — and GROUP PHOTO is the whole photo
+ *  as the phone delivers it (value 0: the photo's own shape). */
+export const FITTING_RATIOS: { key: CamRatioKey; label: string; value: number }[] = [
+  { key: 'fit1',     label: 'ONE PERSON',  value: 0.5 },
+  { key: 'fit2',     label: '2 PEOPLE',    value: 9 / 16 },
+  { key: 'fitGroup', label: 'GROUP PHOTO', value: 0 },
+];
 
 export const CAM_RATIOS: { key: CamRatioKey; label: string; value: number | null }[] = [
   { key: '2.39',   label: '2.39:1', value: 2.39 },

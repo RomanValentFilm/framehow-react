@@ -2,7 +2,7 @@
 // All functions match original IDs (#cameraOverlay, #cameraVideo, #cropOverlay, ...)
 // rendered by React.
 
-import { state, useStore, CAM_RATIOS } from '../store/state';
+import { state, useStore, CAM_RATIOS, FITTING_RATIOS } from '../store/state';
 import type { CamRatioKey } from '../store/state';
 import { showToast, showCamBlockedMsg } from './modals';
 import { fhTrack } from './tracking';
@@ -44,9 +44,21 @@ function canvasAspectRatio(fid: number): number {
 /** Effective guide aspect ratio — resolves the saved preset against the frame canvas. */
 function effectiveAspectRatio(fid: number): number {
   const key = state().camAspectRatio || 'canvas';
+  if (state().projectType === 'fitting') {
+    // A fitting knows only its three; anything else means ONE PERSON (the default).
+    const f = FITTING_RATIOS.find((r) => r.key === key) || FITTING_RATIOS[0];
+    return f.value;   // 0 = the photo's own shape (GROUP PHOTO)
+  }
   const preset = CAM_RATIOS.find((r) => r.key === key);
   if (preset && preset.value != null) return preset.value;
   return canvasAspectRatio(fid);
+}
+
+/** The guide's shape where a concrete number is needed: GROUP PHOTO (0) is
+ *  the photo's own shape when there is a photo, else the phone's upright 3:4. */
+function guideRatio(ar: number, photoW?: number, photoH?: number): number {
+  if (ar > 0) return ar;
+  return photoW && photoH ? photoW / photoH : 3 / 4;
 }
 
 export async function openCamera(
@@ -141,13 +153,14 @@ function openPhoneCamera(): void {
 function placePhoneShotByItself(shot: PhoneShot): void {
   const target = cameraTarget;
   if (!target) return;
-  const crop = fillCrop(shot.w, shot.h, target.aspectRatio);
+  const crop = fillCrop(shot.w, shot.h, guideRatio(target.aspectRatio, shot.w, shot.h));
   const url = shrinkForSaving(shot.src, shot.w, shot.h, crop);
   shot.release();
   if (onCapturedImage) onCapturedImage(url, target);
 }
 
 export function positionCameraGuide(ar: number): void {
+  ar = guideRatio(ar);
   const wrap = document.getElementById('cameraVideoWrap')!;
   const guide = document.getElementById('cameraGuide')!;
   const ww = wrap.clientWidth,
@@ -301,7 +314,8 @@ function renderRatioMenu(menuId = 'cameraRatioMenu', onPick?: () => void): void 
   const menu = document.getElementById(menuId);
   if (!menu) return;
   const cur = state().camAspectRatio || 'canvas';
-  menu.innerHTML = CAM_RATIOS.map(
+  const list = state().projectType === 'fitting' ? FITTING_RATIOS : CAM_RATIOS;
+  menu.innerHTML = list.map(
     (r) =>
       `<button class="camera-ratio-item${r.key === cur ? ' active' : ''}" data-ratio="${r.key}">${r.label}</button>`
   ).join('');
@@ -550,7 +564,7 @@ function layoutCrop(): void {
   const guide = document.getElementById('cropGuide')! as HTMLElement;
   const nw = img.naturalWidth, nh = img.naturalHeight;
   const aw = area.clientWidth, ah = area.clientHeight;
-  const ar = cameraTarget.aspectRatio;
+  const ar = guideRatio(cameraTarget.aspectRatio, nw, nh);
   let gw, gh;
   if (ar > aw / ah) { gw = aw * 0.84; gh = gw / ar; }
   else { gh = ah * 0.84; gw = gh * ar; }

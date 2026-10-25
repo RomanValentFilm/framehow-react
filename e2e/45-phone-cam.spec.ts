@@ -64,23 +64,45 @@ async function pressCamAndHandOver(d: Device): Promise<void> {
   await chooser.setFiles({ name: 'IMG_0001.jpg', mimeType: 'image/jpeg', buffer: photo });
 }
 
-test('phone cam in a fitting: the photo fills the frame by itself, shrunk — even with frameline later ON', async ({ browser }) => {
+test('phone cam in a fitting, frameline later OFF: the photo is cut to ONE PERSON (1:2) by itself, shrunk', async ({ browser }) => {
   const d = await openFitting(browser, 'PHONE CAM AUTO');
-  await camChoice(d, 'phone', true);          // a fitting ignores it
+  await camChoice(d, 'phone', false);
   await pressCamAndHandOver(d);
   await expect(d.page.locator('#cropOverlay'), 'no framing screen when FRAMELINE LATER is off').toBeHidden();
   let pic = null;
   for (let i = 0; i < 40 && !pic; i++) { await d.page.waitForTimeout(250); pic = await pictureSize(d, 0, 0); }
-  say(`   on the card: ${pic?.w} × ${pic?.h}, ${pic?.mb} MB · the frame is ${pic?.frame.toFixed(3)}`);
+  say(`   on the card: ${pic?.w} × ${pic?.h}, ${pic?.mb} MB · the card is ${pic?.frame.toFixed(3)}`);
   expect(pic, 'the photo is on the card').not.toBeNull();
   expect(Math.max(pic!.w, pic!.h), 'long side at most 2400 px').toBeLessThanOrEqual(2400);
   expect(pic!.mb, 'at most 3 MB').toBeLessThanOrEqual(3);
-  expect(Math.abs(pic!.w / pic!.h - pic!.frame), 'it has the shape of the frame — filled, cut evenly').toBeLessThan(0.01);
+  // ONE PERSON (25 Oct): 1:2, not the card's 9:16 — thin black at the sides on the card.
+  expect(Math.abs(pic!.w / pic!.h - 0.5), 'cut to ONE PERSON, 1:2').toBeLessThan(0.01);
+  await d.close();
+});
+
+test('phone cam in a fitting, frameline later ON (the default): the framing screen, RATIO offers ONE PERSON / 2 PEOPLE / GROUP PHOTO; 2 PEOPLE fills the card', async ({ browser }) => {
+  const d = await openFitting(browser, 'PHONE CAM FITTING FRAMED');
+  await camChoice(d, 'phone', true);
+  await pressCamAndHandOver(d);
+  await expect(d.page.locator('#cropOverlay'), 'the framing screen').toBeVisible({ timeout: 10_000 });
+  await expect.poll(() => d.page.evaluate(() => (document.getElementById('cropImg') as HTMLImageElement).naturalWidth), { timeout: 15_000 }).toBeGreaterThan(0);
+  await d.page.evaluate(() => (document.getElementById('cropRatioBtn') as HTMLButtonElement).click());
+  const items = await d.page.locator('#cropRatioMenu .camera-ratio-item').allTextContents();
+  say(`   RATIO offers: ${items.join(' · ')}`);
+  expect(items, 'the fitting\'s three').toEqual(['ONE PERSON', '2 PEOPLE', 'GROUP PHOTO']);
+  await d.page.locator('#cropRatioMenu .camera-ratio-item', { hasText: '2 PEOPLE' }).click();
+  await d.page.waitForTimeout(300);
+  await d.page.evaluate(() => (document.getElementById('cropConfirm') as HTMLButtonElement).click());
+  let pic = null;
+  for (let i = 0; i < 40 && !pic; i++) { await d.page.waitForTimeout(250); pic = await pictureSize(d, 0, 0); }
+  say(`   on the card: ${pic?.w} × ${pic?.h}, ${pic?.mb} MB · the card is ${pic?.frame.toFixed(3)}`);
+  expect(pic, 'the photo is on the card').not.toBeNull();
+  expect(Math.abs(pic!.w / pic!.h - 9 / 16), '2 PEOPLE: 9:16, the card\'s own shape').toBeLessThan(0.01);
+  expect(pic!.mb, 'not a black picture').toBeGreaterThan(0.15);
   await d.close();
 });
 
 test('phone cam, frameline later ON (not a fitting): the framing screen comes up, Save puts it on the card', async ({ browser }) => {
-  // A fitting never frames (Roman, 23 Oct) — this is a landscape project.
   const d = await openFitting(browser, 'PHONE CAM FRAMED', 'landscape');
   await camChoice(d, 'phone', true);
   await pressCamAndHandOver(d);

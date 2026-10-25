@@ -1462,7 +1462,7 @@ export function installTestDoor(): void {
     setCamChoice(mode, framelineLater) {
       try {
         localStorage.setItem(useStore.getState().projectType === 'fitting' ? 'fh_camMode_fitting' : 'fh_camMode', mode);
-        localStorage.setItem('fh_camFramelineLater', framelineLater ? 'yes' : 'no');
+        localStorage.setItem(useStore.getState().projectType === 'fitting' ? 'fh_camFramelineLater_fitting' : 'fh_camFramelineLater', framelineLater ? 'yes' : 'no');
       } catch { /* */ }
     },
     openWriteBox(index, strip, versionIndex) {

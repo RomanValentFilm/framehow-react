@@ -43,13 +43,13 @@ export function setCamMode(m: CamMode): void {
  *  placed. Unticked (the default — Roman, 23 Oct: the faster start): it fills
  *  the frame by itself. */
 export function getFramelineLater(): boolean {
-  // A FITTING never goes through the frame lines (Roman, 23 Oct): the photo
-  // always fills the frame by itself.
-  if (isFitting()) return false;
+  // A FITTING frames too, and starts with it ON (Roman, 25 Oct: the framing
+  // screen with ONE PERSON / 2 PEOPLE / GROUP PHOTO); elsewhere it starts off.
+  if (isFitting()) return read(LATER_KEY + '_fitting') !== 'no';
   return read(LATER_KEY) === 'yes';
 }
 export function setFramelineLater(on: boolean): void {
-  write(LATER_KEY, on ? 'yes' : 'no');
+  write(isFitting() ? LATER_KEY + '_fitting' : LATER_KEY, on ? 'yes' : 'no');
   trace(`camera: FRAMELINE LATER ${on ? 'on' : 'off'}`);
 }
 
@@ -74,13 +74,13 @@ export function renderCamPanel(host: HTMLElement, onOk: (m: CamMode) => void, on
       <button type="button" class="cam-mode-opt${m === 'phone' ? ' active' : ''}" data-cammode="phone">PHONE CAM</button>
     </div>
     <div class="cam-mode-row">
-      <label class="cam-mode-later${m === 'phone' ? '' : ' is-off'}"${isFitting() ? ' hidden' : ''}>
+      <label class="cam-mode-later${m === 'phone' ? '' : ' is-off'}">
         <span>FRAMELINE LATER</span>
         <input type="checkbox" data-camlater${later ? ' checked' : ''}${m === 'phone' ? '' : ' disabled'} />
       </label>
     </div>
     <p class="cam-mode-note">${m === 'phone'
-      ? `Your phone’s camera, with its full picture quality.${isFitting() ? '' : ' Tick FRAMELINE LATER to fit the shot to the frame lines afterwards.'}<br>To return to Framehow camera, press:<br>Menu › Cam Set Up`
+      ? `Your phone’s camera, with its full picture quality. Tick FRAMELINE LATER to fit the shot to the frame lines afterwards.<br>To return to Framehow camera, press:<br>Menu › Cam Set Up`
       : 'Aspect Ratio frame lines and exposure while you shoot.'}</p>
     <button type="button" class="btn btn-accent cam-mode-ok" data-camok>OK</button>`;
   host.querySelectorAll<HTMLButtonElement>('[data-cammode]').forEach((b) =>
