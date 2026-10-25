@@ -67,6 +67,9 @@ export function camModeLabel(m: CamMode = getCamMode()): string {
 export function renderCamPanel(host: HTMLElement, onOk: (m: CamMode) => void, onChange?: () => void): void {
   const m = getCamMode();
   const later = getFramelineLater();
+  // On the framing screen the photo is already taken (25 Oct): a camera
+  // change there is for the next shot, and the modal says so.
+  const afterShot = host.id === 'cropModeMenu';
   host.innerHTML = `
     <div class="cam-mode-switch${m === 'phone' ? ' is-phone' : ''}" role="radiogroup">
       <span class="cam-mode-knob"></span>
@@ -79,6 +82,7 @@ export function renderCamPanel(host: HTMLElement, onOk: (m: CamMode) => void, on
         <input type="checkbox" data-camlater${later ? ' checked' : ''}${m === 'phone' ? '' : ' disabled'} />
       </label>
     </div>
+    <p class="cam-mode-note"${afterShot ? '' : ' hidden'}>The camera change applies to the next shot.</p>
     <p class="cam-mode-note">${m === 'phone'
       ? `Your phone’s camera, with its full picture quality. Tick FRAMELINE LATER to fit the shot to the frame lines afterwards.<br>To return to Framehow camera, press:<br>Menu › Cam Set Up`
       : 'Aspect Ratio frame lines and exposure while you shoot.'}</p>
