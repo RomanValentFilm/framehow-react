@@ -679,6 +679,10 @@ export function applyCapturedImage(dataURL: string, target: any): void {
     t.type = 'upload';
     t.bgImage = dataURL;
     t.r2Key = undefined; // Clear so sync uploads the new image
+    // THE CARD SHOWS THE PHOTO JUST TAKEN (25 Oct, Roman, fittings): the new
+    // version is the active one, but a card that was cross-showing main kept
+    // showing main. The cross pointer is cleared, so the card turns to it.
+    setStripCrossCompare(fid, strip, -1);
     renderVersionFrame(div, fid, strip);
     const nai = getStripActiveTab(fid, strip);
     const cvsPfx = `cvs_${strip}_${fid}_${nai}`;

@@ -63,7 +63,7 @@ export interface Setup {
 
 /** 12-colour palette for setups. */
 /** App version — bump before every deploy. */
-export const APP_VERSION = 'v5.0.055';
+export const APP_VERSION = 'v5.0.056';
 
 /** Free-text fields printed in the header of every exported page. */
 export interface ExportMeta {
@@ -80,6 +80,20 @@ export function createDefaultExportMeta(): ExportMeta {
 /** Camera guide aspect-ratio presets. 'canvas' = use the frame's own canvas AR. */
 export type CamRatioKey = '2.39' | '2.0' | '1.85' | 'canvas' | '16:9' | '4:3' | '1:1' | '9:16'
   | 'fit1' | 'fit2' | 'fitGroup';
+
+/** 9:16 PROJECTS (25 Oct, Roman): the same list stood on end — the frame lines
+ *  are upright, 1:2.39, 1:2, 1:1.85 … The keys stay the same, so a choice
+ *  saved with the project means the same thing on every device. */
+export const PORTRAIT_RATIOS: { key: CamRatioKey; label: string; value: number | null }[] = [
+  { key: '2.39',   label: '1:2.39', value: 1 / 2.39 },
+  { key: '2.0',    label: '1:2',    value: 0.5 },
+  { key: '1.85',   label: '1:1.85', value: 1 / 1.85 },
+  { key: 'canvas', label: 'CANVAS', value: null },
+  { key: '16:9',   label: '9:16',   value: 9 / 16 },
+  { key: '4:3',    label: '3:4',    value: 3 / 4 },
+  { key: '1:1',    label: '1:1',    value: 1 },
+  { key: '9:16',   label: '16:9',   value: 16 / 9 },
+];
 
 /** FITTING frame lines (25 Oct, Roman): ONE PERSON is 1:2, 2 PEOPLE is 9:16 —
  *  which fills the fitting card exactly — and GROUP PHOTO is the whole photo

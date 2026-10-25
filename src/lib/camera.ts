@@ -2,7 +2,7 @@
 // All functions match original IDs (#cameraOverlay, #cameraVideo, #cropOverlay, ...)
 // rendered by React.
 
-import { state, useStore, CAM_RATIOS, FITTING_RATIOS } from '../store/state';
+import { state, useStore, CAM_RATIOS, FITTING_RATIOS, PORTRAIT_RATIOS } from '../store/state';
 import type { CamRatioKey } from '../store/state';
 import { showToast, showCamBlockedMsg } from './modals';
 import { fhTrack } from './tracking';
@@ -49,7 +49,8 @@ function effectiveAspectRatio(fid: number): number {
     const f = FITTING_RATIOS.find((r) => r.key === key) || FITTING_RATIOS[0];
     return f.value;   // 0 = the photo's own shape (GROUP PHOTO)
   }
-  const preset = CAM_RATIOS.find((r) => r.key === key);
+  const list = state().projectType === 'portrait' ? PORTRAIT_RATIOS : CAM_RATIOS;
+  const preset = list.find((r) => r.key === key);
   if (preset && preset.value != null) return preset.value;
   return canvasAspectRatio(fid);
 }
@@ -314,7 +315,8 @@ function renderRatioMenu(menuId = 'cameraRatioMenu', onPick?: () => void): void 
   const menu = document.getElementById(menuId);
   if (!menu) return;
   const cur = state().camAspectRatio || 'canvas';
-  const list = state().projectType === 'fitting' ? FITTING_RATIOS : CAM_RATIOS;
+  const kind = state().projectType;
+  const list = kind === 'fitting' ? FITTING_RATIOS : kind === 'portrait' ? PORTRAIT_RATIOS : CAM_RATIOS;
   menu.innerHTML = list.map(
     (r) =>
       `<button class="camera-ratio-item${r.key === cur ? ' active' : ''}" data-ratio="${r.key}">${r.label}</button>`
