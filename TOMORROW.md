@@ -902,3 +902,22 @@ Next: BETA mark by the logo (+ a line in the welcome mail); a quiet ceiling on t
 number of accounts (friendly "we're full for now" above it); a note to Roman for
 each new sign-up. Sign-up codes only if ever needed (as a link, not typed).
 Later: native app shell (Capacitor) → TestFlight → App Store, camera first.
+
+## PICTS LIBRARY — agreed 26 Oct (to build)
+- PICTS button, right end of the view bar (desktop, iPad landscape + 9:16, iPhone
+  landscape + 9:16). Fittings: iPad → right of LOOKS GALLERY; iPhone portrait →
+  right end of its bar, iPhone landscape → right of LOOKS GALLERY. Red outline only
+  while the library is open; any other view button takes over as now.
+- All pictures of the account on the server: camera photos, uploads, imported PDF
+  frames. Plain photo (no drawings). Day headers (thin line with the date), newest
+  at the bottom, opens scrolled to the bottom.
+- Rows keep each picture's own shape (no crop, no bands). Per row: Mac/iPad 5
+  landscape or 7 portrait, iPhone 3 and 3; mixed rows fill edge to edge.
+- Tap → max screen; closing returns to the library at the same place.
+- SELECT top right → red tick bottom right of each chosen tile; bottom bar with
+  count, share (as max screen; desktop: several = one ZIP) and DELETE with
+  "Are you sure you want to delete the selected pictures? This cannot be undone."
+- A deleted picture used on a card: the version stays (drawings/text) with
+  "You deleted this picture". An emptied PDF frame card stays; the user deletes it.
+- Small previews (~25 KB) for the grid, not counted in the user's 500 MB.
+- First step done in 086: 9:16 projects start with SHOT/ANGLE/SKETCH/REFS.

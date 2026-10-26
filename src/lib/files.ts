@@ -180,16 +180,13 @@ export function startPortrait(): void {
   ownIdentityFirst('new 9:16 project');
   fhTrack('start_portrait');
   resetStoryboardState();
-  applyDefaultNames(false);         // column names only; portrait keeps its strips (#510)
+  // THE SAME STRIP NAMES AS A LANDSCAPE PROJECT (26 Oct, Roman): SHOT, ANGLE,
+  // SKETCH, REFS — the user's own names where set. The old LOOK1 / fit A
+  // names were the fitting's, from before fittings were a kind of their own.
+  // Projects already made keep the names they were saved with.
+  applyDefaultNames(true);
   useStore.setState({ portraitMode: true, projectType: 'portrait' });
-  // Portrait (9:16) projects default strips to costume-fitting labels
   const s = state();
-  s.stripDefs = s.stripDefs.map((def, i) => ({
-    ...def,
-    buttonLabel: `LOOK${i + 1}`,
-    defaultFrameLabel: `fit ${String.fromCharCode(65 + i)}`,
-    prefix: 'f',
-  }));
   const id = s.nextId;
   useStore.setState({ nextId: id + 1 });
   s.frames.push({
