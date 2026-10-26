@@ -69,6 +69,16 @@ test('max screen: button only on pictures, fits the screen, steps through the ve
   say(`   after ${atLast ? '←' : '→'}: ${second}`);
   expect(second, 'the other version').not.toBe(first);
 
+  say('desktop: DOWNLOAD and COPY top left; download gives a real JPEG named after the project and the shot (26 Oct)');
+  await expect(d.page.locator('#maxView .max-share'), 'two buttons on a desktop').toHaveCount(2);
+  const [dl] = await Promise.all([d.page.waitForEvent('download'), d.page.locator('#maxView .max-share[title="Download"]').click()]);
+  const path = await dl.path();
+  const bytes = path ? (await import('fs')).readFileSync(path) : Buffer.alloc(0);
+  say(`   downloaded "${dl.suggestedFilename()}", ${Math.round(bytes.length / 1024)} KB`);
+  expect(dl.suggestedFilename(), 'named after the project and the shot').toMatch(/^MAX SCREEN – shot 1 – v[12]\.jpg$/);
+  expect(bytes[0] === 0xff && bytes[1] === 0xd8, 'a JPEG').toBe(true);
+  expect(bytes.length, 'with the picture in it').toBeGreaterThan(3000);
+
   say('close with the double-arrow top right — nothing in the project changed, but the card now shows the one we left on (Roman, 24 Oct)');
   const before = await d.read();
   await d.page.locator('#maxView .max-close').click();

@@ -882,3 +882,23 @@ Still open: Roman says the "applies to the next shot" line was not seen on the p
 on 064 — the code is wired to the framing screen's modal; needs a screenshot.
 Guest link for clients: idea described 23 Oct, several days of work, question open
 (client's star = user's star, or a separate "client's pick").
+
+## 26 October — LIVE is v5.0.074 · #626 (main a76b3b5, full run 464: 99/99 green)
+
+Release notes for the crews (Roman's list):
+- Two cameras: the Framehow camera now shoots in 4K with frame lines and exposure,
+  and your phone's own camera can be chosen instead, with full picture quality.
+  You can place the shot in the frame lines afterwards.
+- Fittings: choose ONE PERSON, 2 PEOPLE or GROUP PHOTO frame lines.
+- Photos appear on the card at once.
+- Photos are sharper and lighter: about 0.5–1 MB each, so roughly 500–1000 photos
+  fit in your 500 MB.
+- Max screen: tap the corner arrows on any picture to see it full screen, pinch to
+  zoom, swipe through the versions.
+- The version arrows no longer move the page.
+- iPhone and iPad: cleaner top bars (iPhone: delete and re-add the home-screen icon).
+
+Next: BETA mark by the logo (+ a line in the welcome mail); a quiet ceiling on the
+number of accounts (friendly "we're full for now" above it); a note to Roman for
+each new sign-up. Sign-up codes only if ever needed (as a link, not typed).
+Later: native app shell (Capacitor) → TestFlight → App Store, camera first.

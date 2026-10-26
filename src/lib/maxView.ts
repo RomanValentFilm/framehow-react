@@ -17,6 +17,7 @@ import type { Stroke } from '../store/state';
 import { getStripVersions, getStripActiveTab, followVersion, stripScrollId } from './helpers';
 import { drawMainStrokes, drawVersionStrokes } from './drawing';
 import { trace } from './syncTrace';
+import { getCurrentProject } from './currentProject';
 
 type Item = { src: string | null | undefined; strokes: Stroke[] | undefined; main: boolean; w: number; h: number; label: string;
   strip?: 'ver' | 'floor' | 'refs'; vi?: number };
@@ -136,12 +137,61 @@ function openFromCanvas(cvs: HTMLCanvasElement | HTMLImageElement): void {
   }
   if (!items.length) return;
   trace(`max screen: shot ${s.frames.indexOf(f) + 1}, ${items.length} picture(s), opens on ${items[start].label || 'main'}`);
+  const shotNo = s.frames.indexOf(f) + 1;
+  const fileBase = `${(getCurrentProject().name || 'Framehow').replace(/[\\/:*?"<>|]+/g, ' ').trim()} – shot ${shotNo}`;
   openMaxView(items, start, (it, moved) => {
     if (!moved || !leave) return;
     trace(`max screen: left on ${it.label || 'main'} — the card follows`);
     leave(it);
+  }, fileBase);
+}
+
+// --- sharing (26 Oct, Roman) ------------------------------------------------
+// The picture as the viewer shows it — photo with its drawings and text —
+// rendered at up to 2400 px on its long side. iPhone/iPad: the system share
+// sheet (AirDrop, WhatsApp, Messages, Mail, Save to Photos, Copy). Mac/PC:
+// download and copy.
+
+const SHARE = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M8 7l4-4 4 4"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>';
+const DOWNLOAD = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M8 11l4 4 4-4"/><path d="M5 19h14"/></svg>';
+const COPY = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg>';
+
+/** iPhone and iPad: a touch device whose browser can hand files to the share sheet. */
+function canShareSheet(): boolean {
+  try {
+    const probe = new File([new Blob(['x'], { type: 'image/jpeg' })], 'x.jpg', { type: 'image/jpeg' });
+    return navigator.maxTouchPoints > 1 && !!navigator.canShare && navigator.canShare({ files: [probe] });
+  } catch { return false; }
+}
+
+function renderForShare(it: Item): Promise<HTMLCanvasElement> {
+  return new Promise((resolve) => {
+    const k = 2400 / Math.max(it.w, it.h);
+    const cvs = document.createElement('canvas');
+    cvs.width = Math.round(it.w * k); cvs.height = Math.round(it.h * k);
+    const ctx = cvs.getContext('2d')!;
+    const finish = (img: HTMLImageElement | null) => {
+      ctx.setTransform(k, 0, 0, k, 0, 0);
+      ctx.fillStyle = '#000'; ctx.fillRect(0, 0, it.w, it.h);
+      if (img) {
+        const sc = Math.min(it.w / img.width, it.h / img.height);
+        const dw = img.width * sc, dh = img.height * sc;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, (it.w - dw) / 2, (it.h - dh) / 2, dw, dh);
+      }
+      (it.main ? drawMainStrokes : drawVersionStrokes)(ctx, it.strokes || []);
+      resolve(cvs);
+    };
+    if (!it.src) { finish(null); return; }
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => finish(img);
+    img.onerror = () => finish(null);
+    img.src = it.src;
   });
 }
+const toBlob = (c: HTMLCanvasElement, type: string) =>
+  new Promise<Blob>((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error('no picture'))), type, 0.92));
 
 // --- the viewer -------------------------------------------------------------
 let _root: HTMLElement | null = null;
@@ -174,7 +224,7 @@ function paintItem(cvs: HTMLCanvasElement, it: Item): void {
   } else draw();
 }
 
-export function openMaxView(items: Item[], index: number, onClose?: (it: Item, moved: boolean) => void): void {
+export function openMaxView(items: Item[], index: number, onClose?: (it: Item, moved: boolean) => void, fileBase = 'Framehow'): void {
   closeMaxView();
   let i = Math.max(0, Math.min(index, items.length - 1));
   const startI = i;
@@ -182,7 +232,9 @@ export function openMaxView(items: Item[], index: number, onClose?: (it: Item, m
   root.id = 'maxView';
   root.innerHTML = `<div class="max-stage"><canvas></canvas></div>
     <button class="max-close" type="button" title="Close">${COLLAPSE}</button>
-    <div class="max-label"></div>`;
+    <div class="max-share-row"></div>
+    <div class="max-label"></div>
+    <div class="max-flash"></div>`;
   document.body.appendChild(root);
   _root = root;
   document.body.classList.add('max-view-open');
@@ -198,6 +250,9 @@ export function openMaxView(items: Item[], index: number, onClose?: (it: Item, m
   const openedAt = Date.now();
   let lastTouch = 0;
   const settled = () => Date.now() - openedAt > 500;
+  // Declared before show(), which clears it on every picture change.
+  let ready: { at: number; file: File } | null = null;
+  let prepareLater: (() => void) | null = null;
   const apply = () => { stage.style.transform = `translate(${tx}px, ${ty}px) scale(${scale})`; };
   const show = () => {
     scale = 1; tx = 0; ty = 0; apply();
@@ -205,9 +260,63 @@ export function openMaxView(items: Item[], index: number, onClose?: (it: Item, m
     // Only the name of what is on screen (Roman, 24 Oct): the shot's number
     // for the main picture, the version's label (L2, v3) for a version.
     label.textContent = items[i].label;
+    ready = null;
+    if (prepareLater) prepareLater();
   };
   const go = (d: number) => { const n = i + d; if (n < 0 || n >= items.length) return; i = n; show(); };
   show();
+
+  // SHARE / DOWNLOAD / COPY (26 Oct). The JPEG for the picture on screen is
+  // made ahead, whenever the picture changes, so the share sheet can open
+  // inside the tap itself (iOS refuses it after a wait).
+  const flash = root.querySelector<HTMLElement>('.max-flash')!;
+  const say = (msg: string) => { flash.textContent = msg; flash.classList.add('on'); setTimeout(() => flash.classList.remove('on'), 1400); };
+  const fileName = () => `${fileBase} – ${items[i].label || 'main'}.jpg`;
+  const prepare = () => {
+    const at = i;
+    void renderForShare(items[at]).then((c) => toBlob(c, 'image/jpeg')).then((b) => {
+      if (at === i) ready = { at, file: new File([b], fileName(), { type: 'image/jpeg' }) };
+    }).catch(() => { /* the button says so when pressed */ });
+  };
+  prepareLater = prepare;
+  prepare();
+  const row = root.querySelector<HTMLElement>('.max-share-row')!;
+  const button = (svg: string, title: string, act: () => void) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'max-share'; b.title = title; b.innerHTML = svg;
+    ['touchstart', 'touchend', 'mousedown', 'mouseup'].forEach((ev) => b.addEventListener(ev, (e) => e.stopPropagation(), { passive: true }));
+    b.addEventListener('click', (e) => { e.stopPropagation(); act(); });
+    row.appendChild(b);
+  };
+  if (canShareSheet()) {
+    button(SHARE, 'Share', () => {
+      if (!ready || ready.at !== i) { say('One moment…'); prepare(); return; }
+      trace(`max screen: share sheet — ${ready.file.name}`);
+      navigator.share({ files: [ready.file] }).catch(() => { /* closed without sharing */ });
+    });
+  } else {
+    button(DOWNLOAD, 'Download', () => {
+      const go = (file: File) => {
+        const url = URL.createObjectURL(file);
+        const a = document.createElement('a'); a.href = url; a.download = file.name;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 4000);
+        trace(`max screen: downloaded ${file.name}`); say('Downloaded');
+      };
+      if (ready && ready.at === i) go(ready.file);
+      else void renderForShare(items[i]).then((c) => toBlob(c, 'image/jpeg')).then((b) => go(new File([b], fileName(), { type: 'image/jpeg' })));
+    });
+    button(COPY, 'Copy picture', () => {
+      // PNG: the only picture type every browser's clipboard takes. The promise
+      // goes straight into the clipboard item, inside the click (Safari).
+      try {
+        const png = renderForShare(items[i]).then((c) => toBlob(c, 'image/png'));
+        void navigator.clipboard.write([new ClipboardItem({ 'image/png': png })])
+          .then(() => { trace('max screen: picture copied'); say('Copied — paste it with ⌘V'); })
+          .catch(() => say('Copy is not allowed here — use download'));
+      } catch { say('Copy is not allowed here — use download'); }
+    });
+  }
 
   // Two fingers: zoom around the pinch. One finger: move when zoomed, swipe when not.
   let pinch: { d: number; s: number; cx: number; cy: number; tx: number; ty: number } | null = null;
