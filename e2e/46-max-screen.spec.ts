@@ -63,7 +63,8 @@ test('max screen: button only on pictures, fits the screen, steps through the ve
   // It opens on the version the card shows — the newest, so step LEFT (run 404
   // pressed → on the last one and nothing could change).
   const atLast = first === 'v2';
-  await d.page.keyboard.press(atLast ? 'ArrowLeft' : 'ArrowRight');
+  // The side arrow, as a user presses it (26 Oct) — not the key.
+  await d.page.locator(atLast ? '#maxView .max-prev' : '#maxView .max-next').click();
   await d.page.waitForTimeout(200);
   const second = await label.textContent();
   say(`   after ${atLast ? '←' : '→'}: ${second}`);

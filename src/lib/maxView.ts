@@ -232,6 +232,8 @@ export function openMaxView(items: Item[], index: number, onClose?: (it: Item, m
   root.id = 'maxView';
   root.innerHTML = `<div class="max-stage"><canvas></canvas></div>
     <button class="max-close" type="button" title="Close">${COLLAPSE}</button>
+    <button class="max-nav max-prev" type="button" title="Previous">‹</button>
+    <button class="max-nav max-next" type="button" title="Next">›</button>
     <div class="max-share-row"></div>
     <div class="max-label"></div>
     <div class="max-flash"></div>`;
@@ -241,6 +243,8 @@ export function openMaxView(items: Item[], index: number, onClose?: (it: Item, m
   const stage = root.querySelector<HTMLElement>('.max-stage')!;
   const cvs = root.querySelector('canvas')!;
   const label = root.querySelector<HTMLElement>('.max-label')!;
+  const prevBtn = root.querySelector<HTMLButtonElement>('.max-prev')!;
+  const nextBtn = root.querySelector<HTMLButtonElement>('.max-next')!;
 
   let scale = 1, tx = 0, ty = 0;
   // THE TAP THAT OPENED IT MUST NOT CLOSE IT (Roman, 24 Oct: "you have to tap
@@ -266,6 +270,10 @@ export function openMaxView(items: Item[], index: number, onClose?: (it: Item, m
     // Only the name of what is on screen (Roman, 24 Oct): the shot's number
     // for the main picture, the version's label (L2, v3) for a version.
     label.textContent = items[i].label;
+    // THE SIDE ARROWS (26 Oct, Roman): as on the cards — shown only where there
+    // is somewhere to go.
+    prevBtn.style.display = i > 0 ? '' : 'none';
+    nextBtn.style.display = i < items.length - 1 ? '' : 'none';
     ready = null;
     if (prepareLater) prepareLater();
   };
@@ -397,6 +405,10 @@ export function openMaxView(items: Item[], index: number, onClose?: (it: Item, m
     if (!moved && scale === 1) closeMaxView();
   });
   root.querySelector('.max-close')!.addEventListener('click', (e) => { e.stopPropagation(); closeMaxView(); });
+  ([[prevBtn, -1], [nextBtn, 1]] as [HTMLButtonElement, number][]).forEach(([b, d]) => {
+    ['touchstart', 'touchend', 'mousedown', 'mouseup'].forEach((ev) => b.addEventListener(ev, (e) => { e.stopPropagation(); if (ev.startsWith('touch')) lastTouch = Date.now(); }, { passive: true }));
+    b.addEventListener('click', (e) => { e.stopPropagation(); go(d); });
+  });
   const onKey = (e: KeyboardEvent) => {
     if (e.key === 'Escape') closeMaxView();
     if (e.key === 'ArrowRight') go(1);

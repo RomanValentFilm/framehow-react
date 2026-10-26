@@ -1697,6 +1697,11 @@ body.portrait-mode .cam-mode-menu{left:16px;top:calc(max(16px,var(--sat)) + 80px
 @media(hover:hover){#maxView .max-share:hover,#maxView .max-close:hover{opacity:1;}}
 #maxView .max-flash{position:fixed;right:64px;top:calc(max(12px,var(--sat)) + 40px);font-family:var(--font);font-size:12px;font-weight:500;color:#fff;background:rgba(0,0,0,.7);padding:6px 12px;border-radius:6px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:3;}
 #maxView .max-flash.on{opacity:1;}
+/* THE SIDE ARROWS (26 Oct): in the middle of each side, like the cards' arrows. */
+#maxView .max-nav{position:fixed;top:50%;transform:translateY(-50%);width:44px;height:64px;border:none;background:rgba(0,0,0,.45);color:#fff;font-size:34px;line-height:1;border-radius:6px;cursor:pointer;z-index:2;display:flex;align-items:center;justify-content:center;opacity:.8;padding:0 0 4px;-webkit-tap-highlight-color:transparent;}
+#maxView .max-prev{left:max(8px,env(safe-area-inset-left));}
+#maxView .max-next{right:max(8px,env(safe-area-inset-right));}
+@media(hover:hover){#maxView .max-nav:hover{opacity:1;}}
 /* UPRIGHT PROJECTS (26 Oct, Roman): the share buttons stand under the close
    arrows in one column at the right edge, on a dark tint (45 % black) so the
    white icons stand out — an upright picture fills the screen behind them. */
