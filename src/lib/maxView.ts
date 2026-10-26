@@ -250,6 +250,12 @@ export function openMaxView(items: Item[], index: number, onClose?: (it: Item, m
   const openedAt = Date.now();
   let lastTouch = 0;
   const settled = () => Date.now() - openedAt > 500;
+  // WHILE THE SHARE SHEET IS UP, NO TAP CLOSES THE VIEWER (26 Oct, Roman on
+  // the iPad: pressing share closed it). The taps that dismiss the sheet, and
+  // iOS's late mouse echo of the button tap, reached the viewer as "a tap on
+  // the picture". Only the close button and Escape close it meanwhile.
+  let holdUntil = 0;
+  const mayClose = () => settled() && Date.now() > holdUntil;
   // Declared before show(), which clears it on every picture change.
   let ready: { at: number; file: File } | null = null;
   let prepareLater: (() => void) | null = null;
@@ -284,7 +290,7 @@ export function openMaxView(items: Item[], index: number, onClose?: (it: Item, m
   const button = (svg: string, title: string, act: () => void) => {
     const b = document.createElement('button');
     b.type = 'button'; b.className = 'max-share'; b.title = title; b.innerHTML = svg;
-    ['touchstart', 'touchend', 'mousedown', 'mouseup'].forEach((ev) => b.addEventListener(ev, (e) => e.stopPropagation(), { passive: true }));
+    ['touchstart', 'touchend', 'mousedown', 'mouseup'].forEach((ev) => b.addEventListener(ev, (e) => { e.stopPropagation(); lastTouch = ev.startsWith('touch') ? Date.now() : lastTouch; }, { passive: true }));
     b.addEventListener('click', (e) => { e.stopPropagation(); act(); });
     row.appendChild(b);
   };
@@ -292,9 +298,21 @@ export function openMaxView(items: Item[], index: number, onClose?: (it: Item, m
     button(SHARE, 'Share', () => {
       if (!ready || ready.at !== i) { say('One moment…'); prepare(); return; }
       trace(`max screen: share sheet — ${ready.file.name}`);
-      navigator.share({ files: [ready.file] }).catch(() => { /* closed without sharing */ });
+      holdUntil = Infinity;
+      navigator.share({ files: [ready.file] }).catch(() => { /* closed without sharing */ })
+        .finally(() => { holdUntil = Date.now() + 1000; });
     });
   } else {
+    button(COPY, 'Copy picture', () => {
+      // PNG: the only picture type every browser's clipboard takes. The promise
+      // goes straight into the clipboard item, inside the click (Safari).
+      try {
+        const png = renderForShare(items[i]).then((c) => toBlob(c, 'image/png'));
+        void navigator.clipboard.write([new ClipboardItem({ 'image/png': png })])
+          .then(() => { trace('max screen: picture copied'); say('Copied — paste it with ⌘V'); })
+          .catch(() => say('Copy is not allowed here — use download'));
+      } catch { say('Copy is not allowed here — use download'); }
+    });
     button(DOWNLOAD, 'Download', () => {
       const go = (file: File) => {
         const url = URL.createObjectURL(file);
@@ -305,16 +323,6 @@ export function openMaxView(items: Item[], index: number, onClose?: (it: Item, m
       };
       if (ready && ready.at === i) go(ready.file);
       else void renderForShare(items[i]).then((c) => toBlob(c, 'image/jpeg')).then((b) => go(new File([b], fileName(), { type: 'image/jpeg' })));
-    });
-    button(COPY, 'Copy picture', () => {
-      // PNG: the only picture type every browser's clipboard takes. The promise
-      // goes straight into the clipboard item, inside the click (Safari).
-      try {
-        const png = renderForShare(items[i]).then((c) => toBlob(c, 'image/png'));
-        void navigator.clipboard.write([new ClipboardItem({ 'image/png': png })])
-          .then(() => { trace('max screen: picture copied'); say('Copied — paste it with ⌘V'); })
-          .catch(() => say('Copy is not allowed here — use download'));
-      } catch { say('Copy is not allowed here — use download'); }
     });
   }
 
@@ -361,7 +369,7 @@ export function openMaxView(items: Item[], index: number, onClose?: (it: Item, m
       const now = Date.now();
       if (now - lastTap < 320) { scale = 1; tx = 0; ty = 0; apply(); lastTap = 0; return; }   // double tap: fit
       lastTap = now;
-      if (scale === 1 && settled()) setTimeout(() => { if (lastTap === now) closeMaxView(); }, 330);   // single tap, not zoomed: close
+      if (scale === 1 && mayClose()) setTimeout(() => { if (lastTap === now && mayClose()) closeMaxView(); }, 330);   // single tap, not zoomed: close
     }
   });
   // Mouse / trackpad: wheel zooms, drag moves, click closes when not zoomed.
@@ -382,7 +390,7 @@ export function openMaxView(items: Item[], index: number, onClose?: (it: Item, m
     if (scale > 1) { tx = mdrag.tx + e.clientX - mdrag.x; ty = mdrag.ty + e.clientY - mdrag.y; apply(); }
   });
   root.addEventListener('mouseup', (e) => {
-    if (!mdrag || touchEcho() || !settled()) { mdrag = null; return; }
+    if (!mdrag || touchEcho() || !mayClose()) { mdrag = null; return; }
     const dx = e.clientX - mdrag.x; const moved = mdrag.moved; mdrag = null;
     if ((e.target as HTMLElement).closest('.max-close')) return;
     if (scale === 1 && Math.abs(dx) > 50) { go(dx < 0 ? 1 : -1); return; }
