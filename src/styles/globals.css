@@ -1693,7 +1693,7 @@ body.portrait-mode .cam-mode-menu{left:16px;top:calc(max(16px,var(--sat)) + 80px
 /* SHARE / COPY / DOWNLOAD (26 Oct): top right, a little apart from the close button. */
 #maxView .max-share-row{position:fixed;top:max(12px,var(--sat));right:64px;display:flex;gap:8px;z-index:2;}
 #maxView .max-share{width:32px;height:32px;border:none;background:rgba(255,255,255,.12);border-radius:6px;cursor:pointer;display:flex;align-items:center;justify-content:center;opacity:.75;padding:0;-webkit-tap-highlight-color:transparent;}
-#maxView .max-share svg{width:18px;height:18px;}
+#maxView .max-share svg{width:23px;height:23px;}
 @media(hover:hover){#maxView .max-share:hover,#maxView .max-close:hover{opacity:1;}}
 #maxView .max-flash{position:fixed;right:64px;top:calc(max(12px,var(--sat)) + 40px);font-family:var(--font);font-size:12px;font-weight:500;color:#fff;background:rgba(0,0,0,.7);padding:6px 12px;border-radius:6px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:3;}
 #maxView .max-flash.on{opacity:1;}
