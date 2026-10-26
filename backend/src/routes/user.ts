@@ -13,6 +13,54 @@ const user = new Hono<{ Bindings: Env; Variables: AppVariables }>();
 
 user.use("*", requireUser);
 
+// GET /user/pictures — EVERY PICTURE OF THIS ACCOUNT (26 Oct, Roman: the PICTS
+// library). The storage itself is the list: every file the account ever
+// uploaded sits under users/<id>/, each with the moment it arrived. Joined
+// with the cards that use it today (project, shot, version), so the app can
+// say where a picture lives. A file no card uses any more is listed too —
+// it is still the account's, and still counts against its storage.
+// Read-only: nothing here changes or deletes anything.
+user.get("/pictures", async (c) => {
+  const me = c.get("user");
+  if (!c.env.IMAGES_BUCKET) return c.json({ pictures: [] });
+  const prefix = `users/${me.id}/`;
+  const files: { key: string; uploaded_at: number; size: number }[] = [];
+  let cursor: string | undefined;
+  do {
+    const page = await c.env.IMAGES_BUCKET.list({ prefix, cursor, limit: 1000 });
+    for (const o of page.objects) {
+      if (o.key.startsWith(`${prefix}thumbs/`)) continue;   // the library's own previews
+      files.push({ key: o.key, uploaded_at: o.uploaded.getTime(), size: o.size });
+    }
+    cursor = page.truncated ? page.cursor : undefined;
+  } while (cursor);
+
+  const uses = await c.env.DB.prepare(
+    `SELECT i.r2_key AS key, i.width AS width, i.height AS height,
+            p.id AS project_id, p.name AS project_name, f.label AS frame_label, v.label AS version_label
+       FROM images i
+       JOIN versions v ON v.id = i.version_id
+       JOIN frames   f ON f.id = v.frame_id
+       JOIN strips   s ON s.id = f.strip_id
+       JOIN projects p ON p.id = s.project_id
+      WHERE p.user_id = ? AND p.deleted_at IS NULL`,
+  ).bind(me.id).all<{ key: string; width: number | null; height: number | null; project_id: string; project_name: string; frame_label: string | null; version_label: string | null }>();
+  const byKey = new Map<string, { width: number | null; height: number | null; uses: { project_id: string; project: string; shot: string | null; version: string | null }[] }>();
+  for (const u of uses.results ?? []) {
+    const e = byKey.get(u.key) ?? { width: u.width, height: u.height, uses: [] };
+    e.uses.push({ project_id: u.project_id, project: u.project_name, shot: u.frame_label, version: u.version_label });
+    byKey.set(u.key, e);
+  }
+  files.sort((a, b) => a.uploaded_at - b.uploaded_at);   // oldest first: the app shows the newest at the bottom
+  return c.json({
+    pictures: files.map((f) => ({
+      key: f.key, uploaded_at: f.uploaded_at, size: f.size,
+      width: byKey.get(f.key)?.width ?? null, height: byKey.get(f.key)?.height ?? null,
+      uses: byKey.get(f.key)?.uses ?? [],
+    })),
+  });
+});
+
 // GET /user/me — current profile
 user.get("/me", (c) => {
   return c.json({ user: c.get("user") });
