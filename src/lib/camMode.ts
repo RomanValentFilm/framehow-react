@@ -40,13 +40,13 @@ export function setCamMode(m: CamMode): void {
 }
 
 /** Ticked: after a phone shot the photo comes up in the frame lines to be
- *  placed. Unticked (the default — Roman, 23 Oct: the faster start): it fills
+ *  placed (the default since 26 Oct). Unticked: it fills
  *  the frame by itself. */
 export function getFramelineLater(): boolean {
-  // A FITTING frames too, and starts with it ON (Roman, 25 Oct: the framing
-  // screen with ONE PERSON / 2 PEOPLE / GROUP PHOTO); elsewhere it starts off.
+  // TICKED BY DEFAULT EVERYWHERE (26 Oct, Roman; fittings since 25 Oct). A
+  // device where it was unticked by hand keeps that choice.
   if (isFitting()) return read(LATER_KEY + '_fitting') !== 'no';
-  return read(LATER_KEY) === 'yes';
+  return read(LATER_KEY) !== 'no';
 }
 export function setFramelineLater(on: boolean): void {
   write(isFitting() ? LATER_KEY + '_fitting' : LATER_KEY, on ? 'yes' : 'no');
@@ -70,22 +70,26 @@ export function renderCamPanel(host: HTMLElement, onOk: (m: CamMode) => void, on
   // On the framing screen the photo is already taken (25 Oct): a camera
   // change there is for the next shot, and the modal says so.
   const afterShot = host.id === 'cropModeMenu';
+  // The tick box sits right under the sentence that explains it (26 Oct).
+  const laterRow = `<div class="cam-mode-row">
+      <label class="cam-mode-later${m === 'phone' ? '' : ' is-off'}">
+        <span>FRAMELINE LATER</span>
+        <input type="checkbox" data-camlater${later ? ' checked' : ''}${m === 'phone' ? '' : ' disabled'} />
+      </label>
+    </div>`;
   host.innerHTML = `
     <div class="cam-mode-switch${m === 'phone' ? ' is-phone' : ''}" role="radiogroup">
       <span class="cam-mode-knob"></span>
       <button type="button" class="cam-mode-opt${m === 'fh' ? ' active' : ''}" data-cammode="fh">FH CAM</button>
       <button type="button" class="cam-mode-opt${m === 'phone' ? ' active' : ''}" data-cammode="phone">PHONE CAM</button>
     </div>
-    <div class="cam-mode-row">
-      <label class="cam-mode-later${m === 'phone' ? '' : ' is-off'}">
-        <span>FRAMELINE LATER</span>
-        <input type="checkbox" data-camlater${later ? ' checked' : ''}${m === 'phone' ? '' : ' disabled'} />
-      </label>
-    </div>
     <p class="cam-mode-note"${afterShot ? '' : ' hidden'}>The camera change applies to the next shot.</p>
-    <p class="cam-mode-note">${m === 'phone'
-      ? `Your phone’s camera with full picture quality.<span class="cam-mode-gap"></span>Tick FRAMELINE LATER to fit the shot to the frame lines afterwards.<span class="cam-mode-gap"></span>To return to Framehow camera, press:<br>MENU › CAM SET UP`
-      : 'Aspect Ratio frame lines and exposure while you shoot.'}</p>
+    ${m === 'phone'
+      ? `<p class="cam-mode-note">Your phone’s camera with full picture quality.<span class="cam-mode-gap"></span>Tick FRAMELINE LATER to fit the shot to the frame lines afterwards.</p>
+    ${laterRow}
+    <p class="cam-mode-note">To RETURN TO FRAMEHOW CAMERA, press:<br>MENU › CAM SET UP</p>`
+      : `<p class="cam-mode-note">Aspect Ratio frame lines and exposure while you shoot.</p>
+    ${laterRow}`}
     <button type="button" class="btn btn-accent cam-mode-ok" data-camok>OK</button>`;
   host.querySelectorAll<HTMLButtonElement>('[data-cammode]').forEach((b) =>
     b.addEventListener('click', (e) => {
