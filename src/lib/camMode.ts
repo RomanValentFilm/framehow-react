@@ -88,8 +88,7 @@ export function renderCamPanel(host: HTMLElement, onOk: (m: CamMode) => void, on
       ? `<p class="cam-mode-note">Your phone’s camera with full picture quality.<span class="cam-mode-gap"></span>Tick FRAMELINE LATER to fit the shot to the frame lines afterwards.</p>
     ${laterRow}
     <p class="cam-mode-note">To RETURN TO FRAMEHOW CAMERA, press:<br>MENU › CAM SET UP</p>`
-      : `<p class="cam-mode-note">Aspect Ratio frame lines and exposure while you shoot.</p>
-    ${laterRow}`}
+      : `<p class="cam-mode-note">With Aspect Ratio frame lines and exposure slider.</p>`}
     <button type="button" class="btn btn-accent cam-mode-ok" data-camok>OK</button>`;
   host.querySelectorAll<HTMLButtonElement>('[data-cammode]').forEach((b) =>
     b.addEventListener('click', (e) => {
