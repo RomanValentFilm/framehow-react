@@ -85,7 +85,10 @@ export function applyCustomise(v: CustomiseValues): void {
   if (notesNow !== (s.columnNames.find((c) => c.id === 'notes')?.cardLabel ?? '')) renameNotesLabel(notesNow);
 
   // Remembered for the next NEW project — on this device and with the account.
-  rememberDefaultNames({ stripDefs: newDefs, columnNames: newColumns });
+  // NOT FROM A FITTING (26 Oct, Roman): a fitting's strips are LOOKS / LOOK2 /
+  // REFS, its own kind; saved as the default they renamed every new landscape
+  // and 9:16 project. A fitting's Customise changes that fitting only.
+  if (state().projectType !== 'fitting') rememberDefaultNames({ stripDefs: newDefs, columnNames: newColumns });
 
   renderAll();
   void flushSyncNow(); // CUS-1: customise names → Save

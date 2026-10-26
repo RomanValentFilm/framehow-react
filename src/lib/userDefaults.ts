@@ -46,11 +46,23 @@ function isNames(p: unknown): p is DefaultNames {
 }
 
 /** What a new project should be called by — the account's, else the device's, else the app's. */
+/** Defaults that are a fitting's strip names (LOOKS / LOOK2), or the old
+ *  9:16 ones (LOOK1 / LOOK2 / LOOK3), were saved by mistake from such a
+ *  project (26 Oct): the strips go back to the app's own, the column names
+ *  the user chose are kept. */
+function withoutFittingStrips(n: DefaultNames, from: string): DefaultNames {
+  const labels = n.stripDefs.map((d) => (d.buttonLabel || '').toUpperCase().replace(/\s+/g, ''));
+  const fittingLike = labels[0] === 'LOOKS' || labels.every((l) => /^LOOK\d$/.test(l));
+  if (!fittingLike) return n;
+  trace(`  new project: the strip names from ${from} were a fitting's (${labels.join(' / ')}) — using the app's own`);
+  return { stripDefs: DEFAULT_STRIP_DEFS, columnNames: n.columnNames };
+}
+
 export function readDefaultNames(): DefaultNames {
   const a = fromAccount();
-  if (a) { trace('  new project: names from the account'); return a; }
+  if (a) { trace('  new project: names from the account'); return withoutFittingStrips(a, 'the account'); }
   const d = fromDevice();
-  if (d) { trace('  new project: names from this device'); return d; }
+  if (d) { trace('  new project: names from this device'); return withoutFittingStrips(d, 'this device'); }
   trace(`  new project: the app's own names (signed in: ${getUser() ? 'yes' : 'no'})`);
   return { stripDefs: DEFAULT_STRIP_DEFS, columnNames: DEFAULT_COLUMN_NAMES };
 }
