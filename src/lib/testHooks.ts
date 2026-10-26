@@ -178,6 +178,8 @@ export interface TestDoor {
   /** PART 4 DOORS (#509): needs and notes, through their own buttons and boxes. */
   /** Menu > Customise > Save, with these six names — the app's own save (#510). */
   customise(values: import('./customise').CustomiseValues): void;
+  /** The strip buttons' names of the project that is open (26 Oct). */
+  stripButtonNames(): string[];
   /** Press NEEDS / NOTES in the view bar if that column is not showing. */
   showNeeds(): void;
   showNotes(): void;
@@ -1168,6 +1170,7 @@ export function installTestDoor(): void {
       handleMainAction('pictxt', f.id, card);
     },
     customise(values) { applyCustomise(values); },
+    stripButtonNames() { return useStore.getState().stripDefs.map((d) => d.buttonLabel); },
     showNeeds() {
       if (useStore.getState().needsStripVisible) return;
       const btn = document.getElementById('needsStripBtn');
