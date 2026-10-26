@@ -23,7 +23,9 @@ type Item = { src: string | null | undefined; strokes: Stroke[] | undefined; mai
   strip?: 'ver' | 'floor' | 'refs'; vi?: number };
 
 const EXPAND = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>';
-const COLLAPSE = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M4 14h6v6M20 10h-6V4M10 14l-7 7M14 10l7-7"/></svg>';
+// Drawn at 18 pt, the share icons at 23 pt: a thicker line here (2.55 = 2 × 23/18)
+// so all the top-right icons have the same line weight on screen (26 Oct).
+const COLLAPSE = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.55" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14h6v6M20 10h-6V4M10 14l-7 7M14 10l7-7"/></svg>';
 
 /** Put the corner button on a card's canvas (called by the painter). Once. */
 export function attachMaxButton(cvs: HTMLCanvasElement | HTMLImageElement, hasPicture: boolean): void {
