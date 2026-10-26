@@ -31,9 +31,12 @@ else
 fi
 {
   git add -A &&
+  # Nothing new since the last deploy (run 464: the full run on code already
+  # committed) is not a failure — the tests just proved that commit.
+  { git diff --cached --quiet && echo "nothing new to commit — $VERSION is already committed"; } ||
   git commit -q -m "$MSG ($VERSION $TAG)
 
-Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>" &&
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" &&
   mkdir -p "$HOME/Desktop/Framehow Files/framehow-react-versions/$VERSION" &&
   rsync -a --exclude node_modules --exclude .git --exclude e2e-report --exclude e2e-log --exclude test-results \
     --exclude dist --exclude e2e/fixtures --exclude .wrangler --exclude .wrangler-e2e --exclude site --exclude .bench \
