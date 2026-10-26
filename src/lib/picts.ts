@@ -7,6 +7,7 @@
 // a phone. Tap a picture: the max screen, which returns here.
 //
 // Step 2 of the library: looking only. Select, share and delete follow.
+// Turning the device keeps every row as it is, only larger or smaller (091).
 
 import { api, API_BASE_URL } from './api';
 import { getToken } from './session';
@@ -71,42 +72,55 @@ async function loadPic(p: Pic, token: string): Promise<Loaded | null> {
   } catch { return null; }
 }
 
-/** Rows of equal height, each picture its own shape, filled edge to edge. */
-function layoutDay(host: HTMLElement, pics: Loaded[], width: number, onTap: (p: Loaded) => void): void {
+const GAP = 2;
+type Row = { pics: Loaded[]; weight: number; el: HTMLElement };
+
+/** Which pictures share a row — decided once. Turning the device does not
+ *  move a picture to another row; the rows only grow or shrink (Roman, 26 Oct). */
+function buildDay(host: HTMLElement, pics: Loaded[], onTap: (p: Loaded) => void): Row[] {
   const phone = Math.min(window.innerWidth, window.innerHeight) <= 430;
   const per = phone ? PER_ROW.phone : PER_ROW.wide;
-  const GAP = 2;
   host.innerHTML = '';
-  let row: Loaded[] = [], weight = 0;
-  const fullLandscapeH = (width - GAP * (per.landscape - 1)) / (per.landscape * 16 / 9);
-  const flush = (last: boolean) => {
-    if (!row.length) return;
-    const ratios = row.map((p) => p.w / p.h);
-    const sum = ratios.reduce((a, b) => a + b, 0);
-    let h = (width - GAP * (row.length - 1)) / sum;
-    if (last && weight < 1) h = Math.min(h, fullLandscapeH * (row.every((p) => p.h > p.w) ? 2 : 1));   // an unfilled last row is not stretched
-    const r = document.createElement('div');
-    r.className = 'picts-row';
-    r.style.height = `${Math.round(h)}px`;
-    row.forEach((p, i) => {
+  const rows: Row[] = [];
+  let cur: Loaded[] = [], weight = 0;
+  const flush = () => {
+    if (!cur.length) return;
+    const el = document.createElement('div');
+    el.className = 'picts-row';
+    for (const p of cur) {
       const t = document.createElement('button');
       t.type = 'button'; t.className = 'picts-tile';
-      t.style.width = `${Math.floor(ratios[i] * h)}px`;
       t.style.backgroundImage = `url("${p.url}")`;
       t.title = whereUsed(p);
       t.dataset.key = p.key;
       t.addEventListener('click', () => onTap(p));
-      r.appendChild(t);
-    });
-    host.appendChild(r);
-    row = []; weight = 0;
+      el.appendChild(t);
+    }
+    host.appendChild(el);
+    rows.push({ pics: cur, weight, el });
+    cur = []; weight = 0;
   };
   for (const p of pics) {
-    row.push(p);
+    cur.push(p);
     weight += p.h > p.w ? 1 / per.portrait : 1 / per.landscape;
-    if (weight >= 0.999) flush(false);
+    if (weight >= 0.999) flush();
   }
-  flush(true);
+  flush();
+  return rows;
+}
+
+/** Rows of equal height, each picture its own shape, filled edge to edge. An
+ *  unfilled last row is as high as a full row of the same pictures would be —
+ *  not higher than the row above it (Roman, 26 Oct). */
+function sizeRows(rows: Row[], width: number): void {
+  for (const r of rows) {
+    const ratios = r.pics.map((p) => p.w / p.h);
+    const sum = ratios.reduce((a, b) => a + b, 0);
+    let h = (width - GAP * (r.pics.length - 1)) / sum;
+    if (r.weight < 0.999) h *= r.weight;
+    r.el.style.height = `${Math.round(h)}px`;
+    [...r.el.children].forEach((t, i) => { (t as HTMLElement).style.width = `${Math.floor(ratios[i] * h)}px`; });
+  }
 }
 
 export async function openPicts(): Promise<void> {
@@ -153,6 +167,27 @@ export async function openPicts(): Promise<void> {
     trace(`PICTS: opened ${whereUsed(p)}`);
     openMaxView(items, ordered.indexOf(p), undefined, 'Framehow picture');
   };
+  // A turn of the device, from the moment the library opens: the same rows,
+  // larger or smaller, edge to edge again; the place kept. The iPad sometimes
+  // tells its new size a moment late — so once more after a short pause.
+  const allRows: Row[] = [];
+  let lastWidth = daysEl.clientWidth;
+  const resize = () => {
+    if (_root !== root) { window.removeEventListener('resize', onTurn); window.removeEventListener('orientationchange', onTurn); return; }
+    root.style.top = `${topOfContent()}px`;
+    const w = daysEl.clientWidth;
+    if (w === lastWidth) return;
+    const atBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 40;
+    const share = scroller.scrollHeight ? scroller.scrollTop / scroller.scrollHeight : 0;
+    lastWidth = w;
+    sizeRows(allRows, w);
+    scroller.scrollTop = atBottom ? scroller.scrollHeight : share * scroller.scrollHeight;
+    trace(`PICTS: turned — rows sized for ${w} px`);
+  };
+  function onTurn(): void { resize(); setTimeout(resize, 350); }
+  window.addEventListener('resize', onTurn);
+  window.addEventListener('orientationchange', onTurn);
+
   // The newest day first, so what is on screen arrives first; a day is laid
   // out when all its pictures are in, so its rows never jump.
   for (let i = slots.length - 1; i >= 0; i--) {
@@ -161,17 +196,12 @@ export async function openPicts(): Promise<void> {
     if (_root !== root) return;
     loadedAll.push(...got);
     const atBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 40;
-    layoutDay(s.rows, got, daysEl.clientWidth, tap);
+    const rows = buildDay(s.rows, got, tap);
+    const w = daysEl.clientWidth;
+    allRows.push(...rows);
+    sizeRows(w === lastWidth ? rows : allRows, w);   // turned while loading: the earlier days too
+    lastWidth = w;
     if (atBottom) scroller.scrollTop = scroller.scrollHeight;
-  }
-  window.addEventListener('resize', relayout);
-  function relayout(): void {
-    if (_root !== root) { window.removeEventListener('resize', relayout); return; }
-    root.style.top = `${topOfContent()}px`;
-    for (const s of slots) {
-      const got = loadedAll.filter((p) => s.pics.some((q) => q.key === p.key));
-      if (got.length) layoutDay(s.rows, got, daysEl.clientWidth, tap);
-    }
   }
 }
 

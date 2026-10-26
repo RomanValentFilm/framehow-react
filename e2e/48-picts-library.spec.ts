@@ -52,6 +52,34 @@ test('picts library: the server lists every picture of the account, oldest first
   const dates = await d.page.locator('#pictsLibrary .picts-date').allTextContents();
   say(`   date lines: ${dates.join(' | ')}`);
   expect(dates.length, 'one line for today').toBe(1);
+
+  // The rows as they stand: which pictures, how high, how wide the library is.
+  const rows = () => d.page.evaluate(() => ({
+    width: document.querySelector<HTMLElement>('#pictsLibrary .picts-days')!.clientWidth,
+    rows: [...document.querySelectorAll<HTMLElement>('#pictsLibrary .picts-row')].map((r) => ({
+      h: r.getBoundingClientRect().height,
+      keys: [...r.querySelectorAll<HTMLElement>('.picts-tile')].map((t) => t.dataset.key),
+    })),
+  }));
+  say('   a short last row is as high as a full row of the same pictures — not taller (26 Oct)');
+  const before = await rows();
+  const last = before.rows[before.rows.length - 1];
+  // Square pictures, 5 to a full row on a desktop.
+  const fullRowH = (before.width - 2 * 4) / 5;
+  say(`   last row ${Math.round(last.h)} px high, a full row would be ${Math.round(fullRowH)} px`);
+  expect(Math.abs(last.h - fullRowH), 'the same height as a full row').toBeLessThanOrEqual(3);
+
+  say('   turned: the same pictures in the same rows, only smaller (26 Oct)');
+  const vp = d.page.viewportSize()!;
+  await d.page.setViewportSize({ width: Math.round(vp.height * 0.75), height: vp.width });
+  await d.page.waitForTimeout(700);
+  const after = await rows();
+  say(`   width ${before.width} → ${after.width} px, last row ${Math.round(last.h)} → ${Math.round(after.rows[after.rows.length - 1].h)} px`);
+  expect(after.rows.map((r) => r.keys), 'no picture moved to another row').toEqual(before.rows.map((r) => r.keys));
+  after.rows.forEach((r, i) => expect(Math.abs(r.h - before.rows[i].h * after.width / before.width), `row ${i + 1} grew or shrank with the width`).toBeLessThanOrEqual(3));
+  await d.page.setViewportSize(vp);
+  await d.page.waitForTimeout(700);
+
   await d.page.locator('#pictsLibrary .picts-tile').last().click();
   await expect(d.page.locator('#maxView'), 'the max screen').toBeVisible();
   say(`   max screen says: ${await d.page.locator('#maxView .max-label').textContent()}`);
