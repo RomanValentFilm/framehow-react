@@ -40,6 +40,29 @@ test('picts library: the server lists every picture of the account, oldest first
   expect([...pictures].sort((a, b) => a.uploaded_at - b.uploaded_at).map((p) => p.key), 'oldest first').toEqual(pictures.map((p) => p.key));
   expect(pictures.filter((p) => p.uses.some((u) => u.project === 'LIBRARY ONE')).length, 'and where they are used').toBeGreaterThanOrEqual(2);
 
+  say('step 2: PICTS opens the library — both pictures, under a date line; a tap opens the max screen, which returns here');
+  // The project list may still lie over the bars after making the project
+  // (runs 481/482: the PICTS tap waited three minutes behind it).
+  await d.page.evaluate(() => document.getElementById('projectListModal')?.classList.add('hidden'));
+  await d.page.waitForTimeout(300);
+  await d.page.locator('#pictsBtn').click({ timeout: 15_000 });
+  await expect(d.page.locator('#pictsLibrary'), 'the library').toBeVisible();
+  await expect(d.page.locator('#pictsBtn'), 'the button is lit').toHaveClass(/active/);
+  await expect.poll(() => d.page.locator('#pictsLibrary .picts-tile').count(), { timeout: 15_000 }).toBeGreaterThanOrEqual(2);
+  const dates = await d.page.locator('#pictsLibrary .picts-date').allTextContents();
+  say(`   date lines: ${dates.join(' | ')}`);
+  expect(dates.length, 'one line for today').toBe(1);
+  await d.page.locator('#pictsLibrary .picts-tile').last().click();
+  await expect(d.page.locator('#maxView'), 'the max screen').toBeVisible();
+  say(`   max screen says: ${await d.page.locator('#maxView .max-label').textContent()}`);
+  await d.page.locator('#maxView .max-close').click();
+  await expect(d.page.locator('#maxView')).toBeHidden();
+  await expect(d.page.locator('#pictsLibrary'), 'back in the library').toBeVisible();
+  say('   another view button takes over: the library closes, the button goes back to normal');
+  await d.page.locator('.strip-toggle[data-strip="ver"]').click();
+  await expect(d.page.locator('#pictsLibrary')).toHaveCount(0);
+  await expect(d.page.locator('#pictsBtn')).not.toHaveClass(/active/);
+
   say('another account sees none of them');
   const other = await freshAccount();
   const res2 = await fetch(`${API}/user/pictures`, { headers: { Authorization: `Bearer ${other.token}` } });

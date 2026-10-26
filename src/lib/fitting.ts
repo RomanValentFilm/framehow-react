@@ -25,7 +25,7 @@ const q = <T extends HTMLElement>(sel: string): T | null => document.querySelect
 const CANONICAL: [string, string[]][] = [
   ['.view-bar .vb-left',   ['.view-btn[data-view="group"]', '#setupsBtn']],
   ['.view-bar .vb-middle', ['.view-btn[data-view="3x2"]', '.vb-sep-hair', '#sortByBtn']],
-  ['.view-bar .vb-right',  ['#detailBtn']],
+  ['.view-bar .vb-right',  ['#detailBtn', '#pictsBtn']],
   ['#detailBar .db-middle', ['.strip-toggle[data-strip="main"]', '#stripBtn-ver', '#stripBtn-floor',
                              '#stripBtn-refs', '.vb-sep', '#needsStripBtn', '#notesStripBtn']],
   ['#detailBar .db-right',  ['#vbOffBtn', '.view-btn[data-view="overview"]', '.view-btn[data-view="grid4"]']],
@@ -129,7 +129,8 @@ function applyFitting(): boolean {
   }
 
   // Right: the gallery button, plus OFF (which shows itself when relevant).
-  for (const sel of ['.view-btn[data-view="off"]', '.view-btn[data-view="grid4"]']) {
+  // PICTS on the right of LOOKS GALLERY (26 Oct, Roman).
+  for (const sel of ['.view-btn[data-view="off"]', '.view-btn[data-view="grid4"]', '#pictsBtn']) {
     const el = q<HTMLElement>(sel);
     if (el) vbRight.appendChild(el);
   }

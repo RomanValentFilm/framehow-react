@@ -24,7 +24,10 @@ export function ViewBar() {
             simply always there now, so a button to summon it is one press that
             can only ever go wrong. The empty group is kept so the three-column
             layout of the bar is unchanged. */}
-        <div className="view-btns vb-right" />
+        {/* PICTS (26 Oct, Roman): the library of every picture, right end. */}
+        <div className="view-btns vb-right">
+          <button className="picts-btn" id="pictsBtn" type="button" title="All your pictures">PICTS</button>
+        </div>
       </div>
 
       {/* DETAIL BAR — toggled by DETAIL button */}

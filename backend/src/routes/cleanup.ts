@@ -101,6 +101,23 @@ async function purgeDeletedAccounts(
       deletedImages += r.deletedFiles;
       bytesFreed += r.bytesFreed;
     }
+    // EVERY FILE OF THE ACCOUNT, NOT ONLY THE ONES ON A CARD (26 Oct, Roman:
+    // "the small previews go with the account"). The projects above take the
+    // files their cards use; what is left under users/<id>/ — pictures no card
+    // uses any more, and the PICTS library's previews — goes now too.
+    if (bucket) {
+      let cursor: string | undefined;
+      do {
+        const page = await bucket.list({ prefix: `users/${user.id}/`, cursor, limit: 1000 });
+        const keys = page.objects.map((o) => o.key);
+        if (keys.length) {
+          await bucket.delete(keys);
+          deletedImages += keys.length;
+          bytesFreed += page.objects.reduce((s, o) => s + o.size, 0);
+        }
+        cursor = page.truncated ? page.cursor : undefined;
+      } while (cursor);
+    }
     // Their visit history is their data too, and it points at an account
     // that is about to stop existing.
     await db.batch([
