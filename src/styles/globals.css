@@ -1667,6 +1667,8 @@ body.fitting-mode.detail-open .detail-bar{display:none !important;}
 .cam-mode-later[hidden]{display:none;}
 .cam-mode-note{margin:0;max-width:260px;font-family:var(--font);font-size:12px;font-weight:500;line-height:1.45;color:#ddd;}
 .cam-mode-note[hidden]{display:none;}
+/* Three short paragraphs in the PHONE CAM note (26 Oct, Roman: easier to read). */
+.cam-mode-gap{display:block;height:8px;}
 /* UPRIGHT PROJECTS — fittings and 9:16 (25 Oct, Roman): RATIO and the camera
    button stand under each other at the left edge, not side by side. The RATIO
    list opens beside them; the camera modal opens under both. */

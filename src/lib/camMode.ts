@@ -84,7 +84,7 @@ export function renderCamPanel(host: HTMLElement, onOk: (m: CamMode) => void, on
     </div>
     <p class="cam-mode-note"${afterShot ? '' : ' hidden'}>The camera change applies to the next shot.</p>
     <p class="cam-mode-note">${m === 'phone'
-      ? `Your phone’s camera, with its full picture quality. Tick FRAMELINE LATER to fit the shot to the frame lines afterwards.<br>To return to Framehow camera, press:<br>Menu › Cam Set Up`
+      ? `Your phone’s camera with full picture quality.<span class="cam-mode-gap"></span>Tick FRAMELINE LATER to fit the shot to the frame lines afterwards.<span class="cam-mode-gap"></span>To return to Framehow camera, press:<br>MENU › CAM SET UP`
       : 'Aspect Ratio frame lines and exposure while you shoot.'}</p>
     <button type="button" class="btn btn-accent cam-mode-ok" data-camok>OK</button>`;
   host.querySelectorAll<HTMLButtonElement>('[data-cammode]').forEach((b) =>
