@@ -190,3 +190,31 @@ test('picts library: the server lists every picture of the account, oldest first
   expect(theirs.length, 'a fresh account has an empty library').toBe(0);
   await d.close();
 });
+
+test('picts library on the iPad: the library starts under the bars, SELECT is visible', async ({ browser }) => {
+  // 27 Oct, Roman's iPad log: "SELECT … covered by div#mainToolbar (library top 0px)" —
+  // the bars are pinned to the screen there, and the library started under them.
+  const { token } = await freshAccount();
+  const d = await Device.open(browser, 'tablet', token, true);
+  await d.newProjectOfKind('LIBRARY IPAD', 'landscape', 1);
+  await d.settle();
+  await d.uploadPicture(0, 'main', RED);
+  await d.settle();
+  await d.page.evaluate(() => document.getElementById('projectListModal')?.classList.add('hidden'));
+  await d.page.waitForTimeout(300);
+  await d.page.locator('#pictsBtn').click({ timeout: 15_000 });
+  await expect.poll(() => d.page.locator('#pictsLibrary .picts-tile').count(), { timeout: 15_000 }).toBeGreaterThanOrEqual(1);
+  const where = await d.page.evaluate(() => {
+    const lib = document.getElementById('pictsLibrary')!.getBoundingClientRect().top;
+    const bars = ['#mainToolbar', '.view-bar', '#detailBar'].map((s) => document.querySelector<HTMLElement>(s))
+      .filter((e): e is HTMLElement => !!e && getComputedStyle(e).display !== 'none')
+      .map((e) => e.getBoundingClientRect().bottom);
+    return { lib, bars: Math.max(...bars) };
+  });
+  say(`   library top ${Math.round(where.lib)} px, bars end at ${Math.round(where.bars)} px`);
+  expect(where.lib, 'the library starts under the bars').toBeGreaterThanOrEqual(where.bars - 1);
+  await expect.poll(async () => (await d.log()).find((l) => l.includes('PICTS: SELECT at')) ?? '', { timeout: 5_000 }).toContain('— visible');
+  say(`   ${(await d.log()).find((l) => l.includes('PICTS: SELECT at'))}`);
+  say(`   ${(await d.log()).find((l) => l.includes('PICTS: shown')) ?? 'no shown line'}`);
+  await d.close();
+});

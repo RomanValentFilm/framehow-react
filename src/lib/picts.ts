@@ -57,11 +57,16 @@ export function closePicts(): void {
 function topOfContent(): number {
   // Under whatever bars are showing (view bar, detail bar), wherever they are.
   let bottom = 0;
+  // Asked where each bar sits on the screen — not whether it has a layout
+  // parent: on the iPad the bars are pinned to the screen, have none, and the
+  // library started at 0, under them (27 Oct, iPad log: "library top 0px").
   for (const sel of ['#mainToolbar', '.view-bar', '#detailBar']) {
     const el = document.querySelector<HTMLElement>(sel);
-    if (!el || el.offsetParent === null) continue;
+    if (!el) continue;
+    const cs = getComputedStyle(el);
+    if (cs.display === 'none' || cs.visibility === 'hidden') continue;
     const r = el.getBoundingClientRect();
-    if (r.height > 0 && r.bottom > bottom) bottom = r.bottom;
+    if (r.height > 0 && r.bottom > 0 && r.bottom > bottom) bottom = r.bottom;
   }
   return Math.max(0, Math.round(bottom));
 }
@@ -535,6 +540,13 @@ export async function openPicts(): Promise<void> {
     if (atBottom) scroller.scrollTop = scroller.scrollHeight;
     refresh();
   }
+  // What could not be shown, and whether a card uses it (27 Oct: 419 on the
+  // server, 381 with a preview — which are the 38?).
+  const missing = pics.filter((p) => !byKey.has(p.key));
+  if (missing.length) {
+    const noCard = missing.filter((p) => !p.uses.length).length;
+    trace(`PICTS: shown ${pics.length - missing.length} of ${pics.length}; not shown ${missing.length} — not on any card: ${noCard}, on a card: ${missing.length - noCard}`);
+  } else trace(`PICTS: shown all ${pics.length}`);
 }
 
 /** Any other view button takes over: the library closes, the button does its work. */
