@@ -29,6 +29,9 @@ export interface PreviewRec {
    *  network off, the test browser would not read a picture object back
    *  (runs 493/494: "The I/O read operation failed"). */
   bytes: ArrayBuffer;
+  /** On the server too. false = its picture is there, the preview not yet:
+   *  sent with the next sync (27 Oct). */
+  sent?: boolean;
 }
 
 const DB = 'framehow-picts';

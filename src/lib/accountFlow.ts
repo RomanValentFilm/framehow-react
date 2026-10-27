@@ -2421,9 +2421,15 @@ async function uploadImageToR2(
     } as ApiError & { storage?: { used: number; limit: number; pending?: number } };
   }
   const out = await res.json() as { r2_key: string; size_bytes: number; content_type: string };
-  // THE PICTS LIBRARY'S PREVIEW (27 Oct, Roman): made from the picture already
-  // in hand — later, when the device has nothing else to do; never in the way.
-  void import('./picts').then((m) => m.queuePreview(out.r2_key, blob, src)).catch(() => { /* the library makes it on its first look */ });
+  // THE PICTS LIBRARY'S PREVIEW GOES WITH ITS PICTURE (27 Oct, Roman: "can't it
+  // go together?"): straight after the picture, in the same step. It never
+  // holds the picture back — at most a few seconds, and a preview that does not
+  // make it is noted on the device and sent with the next sync.
+  try {
+    const m = await import('./picts');
+    await Promise.race([m.sendPreviewNow(out.r2_key, src), new Promise((r) => setTimeout(r, 8000))]);
+    void m.sendUnsentPreviews();   // and any that missed an earlier picture's upload (run 496)
+  } catch { /* noted on the device; the next sync sends it */ }
   return out;
 }
 
@@ -5941,6 +5947,8 @@ export function adoptFingerprintsFromStore(): void {
     _lastPushedFingerprints.set(f.serverFrameId, frameFingerprint(f, i, s));
   });
   trace(`  recorded ${_lastPushedFingerprints.size} frames as matching the server`);
+  // A sync went through: previews that missed their picture's upload go now (27 Oct).
+  void import('./picts').then((m) => m.sendUnsentPreviews()).catch(() => { /* next sync */ });
 }
 
 /** Hand the last-sent record to the local snapshot, and take it back on boot. */

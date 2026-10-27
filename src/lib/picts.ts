@@ -191,44 +191,64 @@ async function makeThumb(p: Pic, token: string): Promise<Made | null> {
   return made;
 }
 
-// ---- previews made when a picture is added (27 Oct, Roman) -----------------
-// From the picture already in hand, so nothing is downloaded. Never in the
-// way: it waits until the upload has settled (a few seconds of quiet after the
-// last one), then does one picture per moment the device has nothing to do.
-const _queue: { key: string; blob: Blob; src?: string }[] = [];
-let _queueTimer = 0;
+// ---- the preview goes with its picture (27 Oct, Roman) -----------------------
 const idle = (fn: () => void) => {
   const ric = (window as unknown as { requestIdleCallback?: (f: () => void, o?: { timeout: number }) => number }).requestIdleCallback;
   if (ric) ric(fn, { timeout: 10_000 }); else setTimeout(fn, 400);
 };
-export function queuePreview(key: string, blob: Blob, src?: string): void {
-  _queue.push({ key, blob, src });
-  clearTimeout(_queueTimer);
-  _queueTimer = window.setTimeout(() => idle(nextPreview), 4000);
-}
-function nextPreview(): void {
-  const job = _queue.shift();
-  if (!job) return;
+
+/** Called by the upload, straight after its picture reached the server. The
+ *  preview this device made when the picture was added (offline, maybe) is
+ *  found by the picture's fingerprint — or made now — linked to the server's
+ *  name, and sent. If it does not make it, the device notes it as not sent. */
+export async function sendPreviewNow(key: string, src: string): Promise<void> {
   const token = getToken();
-  if (!token) { _queue.length = 0; return; }
-  void (async () => {
-    // The preview this device made when the picture was added (offline, maybe):
-    // found again by its fingerprint, linked to the server's name, sent along.
-    const fp = job.src ? await fpOf(job.src) : null;
-    const had = fp ? await getPreview(previewId(fp)) : null;
-    if (had) {
-      await putPreview({ ...had, r2Key: job.key });
-      await keepThumb(job.key, had.bytes, token, 'on adding');
-      return;
+  if (!token) return;
+  const fp = await fpOf(src);
+  let rec = await getPreview(previewId(fp));
+  if (!rec) {
+    const made = await shrinkWithSize(src);
+    if (!made) return;
+    rec = { id: previewId(fp), fp, r2Key: key, at: Date.now(), label: '', w: made.w, h: made.h, bytes: made.bytes };
+  }
+  rec = { ...rec, r2Key: key, sent: false };
+  await putPreview(rec);
+  const ok = await keepThumb(key, rec.bytes, token, 'with its picture');
+  if (ok) await putPreview({ ...rec, sent: true });
+  else noteWaiting();
+}
+
+// A preview waiting to be sent: tried again when the connection comes back,
+// and every 30 seconds while one waits (run 496). Nothing runs when none waits.
+let _waiting = false;
+let _retryT = 0;
+function noteWaiting(): void {
+  _waiting = true;
+  if (_retryT) return;
+  _retryT = window.setInterval(() => { if (navigator.onLine !== false) void sendUnsentPreviews(); }, 30_000);
+  window.addEventListener('online', () => void sendUnsentPreviews());
+}
+
+/** After a sync went through: every preview whose picture is on the server but
+ *  which itself is not yet (the connection dropped between the two). */
+let _sending = false;
+export async function sendUnsentPreviews(): Promise<void> {
+  if (_sending) return;
+  const token = getToken();
+  if (!token) return;
+  _sending = true;
+  try {
+    if (!_waiting) return;   // nothing noted this session — no need to read the store
+    const waiting = (await allPreviews()).filter((r) => r.r2Key && r.sent === false);
+    if (!waiting.length) { _waiting = false; if (_retryT) { clearInterval(_retryT); _retryT = 0; } return; }
+    trace(`PICTS: ${waiting.length} preview(s) not sent with their picture — sending now`);
+    let left = 0;
+    for (const r of waiting) {
+      if (await keepThumb(r.r2Key!, r.bytes, token, 'after the sync')) await putPreview({ ...r, sent: true });
+      else left++;
     }
-    const url = job.src ?? URL.createObjectURL(job.blob);
-    try {
-      const made = await shrinkWithSize(url);
-      if (!made) return;
-      await putPreview({ id: fp ? previewId(fp) : `r2:${job.key}:preview`, fp: fp ?? undefined, r2Key: job.key, at: Date.now(), label: '', w: made.w, h: made.h, bytes: made.bytes });
-      await keepThumb(job.key, made.bytes, token, 'on adding');
-    } finally { if (!job.src) URL.revokeObjectURL(url); }
-  })().catch(() => false).finally(() => { if (_queue.length) idle(nextPreview); });
+    if (!left) { _waiting = false; if (_retryT) { clearInterval(_retryT); _retryT = 0; } }
+  } finally { _sending = false; }
 }
 
 /** The device's name for a picture's PREVIEW: the picture's fingerprint with
@@ -308,6 +328,10 @@ export function watchNewPictures(): void {
   if (_watching) return;
   _watching = true;
   trace('PICTS: watching for new pictures (a preview each, when the device is idle)');
+  // A preview left waiting from an earlier visit: found once, a little after start.
+  setTimeout(() => idle(() => void allPreviews().then((all) => {
+    if (all.some((r) => r.r2Key && r.sent === false)) { noteWaiting(); void sendUnsentPreviews(); }
+  })), 10_000);
   setInterval(() => {
     if (_busy) return;
     const sig = unsentSignature();
@@ -316,19 +340,21 @@ export function watchNewPictures(): void {
     if (sig.startsWith('0:')) return;
     _busy = true;
     idle(() => void previewsForUnsent().finally(() => { _busy = false; }));
-  }, 4000);
+  }, 1000);   // a look every second (Roman, 27 Oct: "can it be done simultaneously?")
 }
 async function previewsForUnsent(): Promise<void> {
   const s = useStore.getState();
   const mine: LocalPic[] = [];
   picturesOf(s.frames, s.stripVersions, getCurrentProject().name || 'Untitled', mine);
   for (const l of mine.filter((x) => !x.r2Key)) {
+    const t0 = performance.now();   // the whole work: fingerprint, unpack, draw small, pack
     const fp = await fpOf(l.src);
     if (await getPreview(previewId(fp))) continue;
     const made = await shrinkWithSize(l.src).catch(() => null);
     if (!made) continue;
+    const ms = Math.round(performance.now() - t0);
     await putPreview({ id: previewId(fp), fp, r2Key: null, at: Date.now(), label: l.label, w: made.w, h: made.h, bytes: made.bytes });
-    trace(`PICTS: preview made on this device for ${l.label} (${Math.round(made.bytes.byteLength / 1024)} KB, not uploaded yet)`);
+    trace(`PICTS: preview made on this device for ${l.label} in ${ms} ms (${Math.round(made.bytes.byteLength / 1024)} KB, not uploaded yet)`);
     await new Promise<void>((r) => idle(r));   // one per quiet moment
   }
 }
@@ -354,7 +380,8 @@ async function loadPic(p: Pic, token: string, dev: Device, online: boolean): Pro
       if (!w || !h) { const img = await loadImg(url); w = img.naturalWidth; h = img.naturalHeight; }
       // Kept on the device, under the fingerprint when there is one.
       const fp = p.fp ?? (local ? await fpOf(local) : undefined);
-      const next: PreviewRec = { id: fp ? previewId(fp) : `r2:${p.key}:preview`, fp, r2Key: p.local ? null : p.key, at: p.uploaded_at, label: whereUsed(p), w, h, bytes };
+      const next: PreviewRec = { id: fp ? previewId(fp) : `r2:${p.key}:preview`, fp, r2Key: p.local ? null : p.key, at: p.uploaded_at, label: whereUsed(p), w, h, bytes,
+        sent: rec?.sent ?? (online && !p.local ? (p.thumb || from !== 'made here') : undefined) };
       if (!rec || rec.at !== next.at || rec.label !== next.label || (rec.r2Key ?? null) !== next.r2Key) void putPreview(next);
       // Online, a server picture without a preview gets this one.
       if (online && !p.local && !p.thumb && from === 'made here') void keepThumb(p.key, bytes, token, 'from this device');

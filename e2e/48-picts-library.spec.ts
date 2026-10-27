@@ -47,8 +47,8 @@ test('picts library: the server lists every picture of the account, oldest first
     const l = ((await (await fetch(`${API}/user/pictures`, { headers: { Authorization: `Bearer ${token}` } })).json()) as { pictures: Pic[] }).pictures;
     return l.filter((p) => p.thumb).length;
   }, { timeout: 20_000, message: 'both previews, made on adding' }).toBe(2);
-  const madeOnAdding = (await d.log()).filter((l) => l.includes('preview kept') && l.includes('on adding')).length;
-  say(`   log lines "preview kept … on adding": ${madeOnAdding}`);
+  const madeOnAdding = (await d.log()).filter((l) => l.includes('preview kept') && l.includes('with its picture')).length;
+  say(`   log lines "preview kept … with its picture": ${madeOnAdding}`);
   expect(madeOnAdding, 'made by the adding, not by the library').toBe(2);
 
   say('step 2: PICTS opens the library — both pictures, under a date line; a tap opens the max screen, which returns here');
@@ -242,6 +242,9 @@ test('picts library offline: pictures shot offline are in the library offline; o
   await d.settle();
   await d.page.evaluate(() => document.getElementById('projectListModal')?.classList.add('hidden'));
 
+  // Whenever the app's one-time "you are offline" notice comes up, the test
+  // dismisses it before its next press, as a person would (run 496).
+  await d.page.addLocatorHandler(d.page.locator('#offlineDismiss'), async (b) => { await b.click(); });
   say('offline: a picture on each of the three shots');
   await d.offline(true);
   const colours = [colourPng(200, 40, 40), colourPng(40, 200, 40), colourPng(40, 40, 200)];
@@ -256,8 +259,14 @@ test('picts library offline: pictures shot offline are in the library offline; o
   await expect(d.page.locator('#pictsLibrary .picts-offline'), 'the offline line').toBeVisible({ timeout: 15_000 });
   await expect.poll(() => d.page.locator('#pictsLibrary .picts-tile').count(), { timeout: 15_000 }).toBe(3);
   say(`   ${(await d.log()).find((l) => l.includes('PICTS: OFFLINE')) ?? 'no OFFLINE line'}`);
+  // The app's one-time "you are offline" notice may come up at any moment — a
+  // person dismisses it (run 496: it lay over the max screen's close button).
+  const dismissOffline = async () => { const b = d.page.locator('#offlineDismiss'); if (await b.isVisible().catch(() => false)) await b.click(); };
+  await dismissOffline();
   await d.page.locator('#pictsLibrary .picts-tile').first().click();
   await expect(d.page.locator('#maxView'), 'a picture opens in the max screen, offline').toBeVisible();
+  await d.page.waitForTimeout(300);
+  await dismissOffline();
   await d.page.locator('#maxView .max-close').click();
   await d.page.locator('#pictsBtn').click();   // close the library
   await expect(d.page.locator('#pictsLibrary')).toHaveCount(0);
@@ -269,7 +278,7 @@ test('picts library offline: pictures shot offline are in the library offline; o
     return l.filter((p) => p.thumb).length;
   }, { timeout: 45_000, message: 'three previews on the server' }).toBe(3);
   const log = await d.log();
-  const linked = log.filter((l) => l.includes('preview kept') && l.includes('on adding')).length;
+  const linked = log.filter((l) => l.includes('preview kept') && l.includes('with its picture')).length;
   const remade = log.filter((l) => l.includes('made from the full picture')).length;
   say(`   previews sent on upload: ${linked}; made again from the full picture: ${remade}`);
   expect(linked, 'each preview sent once, on upload').toBe(3);
@@ -291,6 +300,36 @@ test('picts library offline: pictures shot offline are in the library offline; o
   await expect.poll(() => d.page.locator('#pictsLibrary .picts-tile').count(), { timeout: 15_000 }).toBe(3);
   say(`   ${(await d.log()).find((l) => l.includes('PICTS: OFFLINE')) ?? 'no OFFLINE line'}`);
   await d.offline(false);
+  await d.close();
+});
+
+test('picts library: a preview that misses its picture\'s upload goes with the next sync', async ({ browser }) => {
+  // 27 Oct, Roman: "can't it go together?" — the preview goes straight after its
+  // picture; if the connection drops between the two, the next sync sends it.
+  const { token } = await freshAccount();
+  const d = await Device.open(browser, 'desktop', token);
+  await d.newProjectOfKind('PREVIEW LATE', 'landscape', 2);
+  await d.settle();
+  const thumbsOnServer = async () => ((await (await fetch(`${API}/user/pictures`, { headers: { Authorization: `Bearer ${token}` } })).json()) as { pictures: Pic[] }).pictures.filter((p) => p.thumb).length;
+
+  say('the preview\'s way to the server is cut; a picture is added and uploads');
+  await d.page.route('**/thumbs/**', (r) => (r.request().method() === 'PUT' ? r.abort() : r.continue()));
+  await d.uploadPicture(0, 'main', colourPng(220, 180, 20));
+  await d.settle();
+  await expect.poll(async () => ((await (await fetch(`${API}/user/pictures`, { headers: { Authorization: `Bearer ${token}` } })).json()) as { pictures: Pic[] }).pictures.length,
+    { timeout: 20_000, message: 'the picture is on the server' }).toBe(1);
+  await d.page.waitForTimeout(1500);
+  expect(await thumbsOnServer(), 'its preview is not').toBe(0);
+  say(`   ${(await d.log()).find((l) => l.includes('preview not kept')) ?? 'no "not kept" line'}`);
+
+  say('the way is open again; the next sync (another picture) sends the waiting preview too');
+  await d.page.unroute('**/thumbs/**');
+  await d.uploadPicture(1, 'main', colourPng(20, 180, 220));
+  await d.settle();
+  await expect.poll(thumbsOnServer, { timeout: 30_000, message: 'both previews on the server' }).toBe(2);
+  const late = (await d.log()).filter((l) => l.includes('preview kept') && l.includes('after the sync')).length;
+  say(`   previews sent after the sync: ${late}`);
+  expect(late, 'the missed one went with the next sync').toBeGreaterThanOrEqual(1);
   await d.close();
 });
 

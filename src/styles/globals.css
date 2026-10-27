@@ -1778,3 +1778,6 @@ body.picts-open #maxView{z-index:20000;}
 #pictsLibrary .picts-flash.on{opacity:1;}
 #pictsLibrary .picts-day:first-child .picts-date{padding-right:110px;}
 #pictsLibrary .picts-offline{font-family:var(--font);font-size:12px;font-weight:500;color:#9a9a9a;text-align:center;padding:10px 12px 0;margin:0;}
+/* SELECT in white, so people see it (Roman, 27 Oct); CANCEL stays grey until something is marked. */
+#pictsLibrary .picts-select{color:#fff;}
+#pictsLibrary.selecting .picts-select:not(.ready){color:#808080;}
