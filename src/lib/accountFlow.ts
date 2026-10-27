@@ -2420,7 +2420,11 @@ async function uploadImageToR2(
       storage: body?.storage,
     } as ApiError & { storage?: { used: number; limit: number; pending?: number } };
   }
-  return res.json();
+  const out = await res.json() as { r2_key: string; size_bytes: number; content_type: string };
+  // THE PICTS LIBRARY'S PREVIEW (27 Oct, Roman): made from the picture already
+  // in hand — later, when the device has nothing else to do; never in the way.
+  void import('./picts').then((m) => m.queuePreview(out.r2_key, blob)).catch(() => { /* the library makes it on its first look */ });
+  return out;
 }
 
 // R2 image cache: avoids re-downloading the same image when pulling updates

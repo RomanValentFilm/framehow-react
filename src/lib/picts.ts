@@ -28,7 +28,7 @@ import { logStripHeight, trace } from './syncTrace';
 import { openMaxView } from './maxView';
 
 type Use = { project_id: string; project: string; shot: string | null; version: string | null };
-type Pic = { key: string; uploaded_at: number; size: number; width: number | null; height: number | null; uses: Use[]; thumb?: boolean };
+type Pic = { key: string; uploaded_at: number; size: number; width: number | null; height: number | null; uses: Use[]; thumb?: boolean; thumb_size?: number | null };
 type Loaded = Pic & { url: string; w: number; h: number };
 
 /** Per row: landscape and portrait pictures (Roman, 26 Oct; portraits tuned to 8). */
@@ -102,10 +102,8 @@ const loadImg = (url: string) => new Promise<HTMLImageElement>((ok, bad) => {
   const img = new Image(); img.onload = () => ok(img); img.onerror = () => bad(new Error('no picture')); img.src = url;
 });
 
-/** Make the preview from the full picture, and keep it in the account's folder. */
-async function makeThumb(p: Pic, token: string): Promise<Blob | null> {
-  const url = await fullUrl(p.key, token);
-  if (!url) return null;
+/** Shrink a picture to its preview. */
+async function shrink(url: string): Promise<Blob | null> {
   const img = await loadImg(url);
   const k = Math.min(1, THUMB_LONG / Math.max(img.naturalWidth, img.naturalHeight));
   const c = document.createElement('canvas');
@@ -113,12 +111,48 @@ async function makeThumb(p: Pic, token: string): Promise<Blob | null> {
   const ctx = c.getContext('2d')!;
   ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(img, 0, 0, c.width, c.height);
-  const blob = await new Promise<Blob | null>((res) => c.toBlob(res, 'image/jpeg', THUMB_Q));
-  if (!blob) return null;
-  void authed(`/thumbs/${p.key}`, token, { method: 'PUT', headers: { 'Content-Type': 'image/jpeg' }, body: blob })
-    .then((r) => trace(`PICTS: preview kept for ${p.key.split('/').pop()} (${Math.round(blob.size / 1024)} KB) — ${r.status}`))
-    .catch(() => trace(`PICTS: preview not kept for ${p.key.split('/').pop()} (offline?)`));
+  return new Promise<Blob | null>((res) => c.toBlob(res, 'image/jpeg', THUMB_Q));
+}
+
+function keepThumb(key: string, blob: Blob, token: string, why: string): Promise<boolean> {
+  return authed(`/thumbs/${key}`, token, { method: 'PUT', headers: { 'Content-Type': 'image/jpeg' }, body: blob })
+    .then((r) => { trace(`PICTS: preview kept for ${key.split('/').pop()} (${Math.round(blob.size / 1024)} KB, ${why}) — ${r.status}`); return r.ok; })
+    .catch(() => { trace(`PICTS: preview not kept for ${key.split('/').pop()} (offline?)`); return false; });
+}
+
+/** An older picture without a preview: made once from the full picture. */
+async function makeThumb(p: Pic, token: string): Promise<Blob | null> {
+  const url = await fullUrl(p.key, token);
+  if (!url) return null;
+  const blob = await shrink(url);
+  if (blob) void keepThumb(p.key, blob, token, 'first look');
   return blob;
+}
+
+// ---- previews made when a picture is added (27 Oct, Roman) -----------------
+// From the picture already in hand, so nothing is downloaded. Never in the
+// way: it waits until the upload has settled (a few seconds of quiet after the
+// last one), then does one picture per moment the device has nothing to do.
+const _queue: { key: string; blob: Blob }[] = [];
+let _queueTimer = 0;
+const idle = (fn: () => void) => {
+  const ric = (window as unknown as { requestIdleCallback?: (f: () => void, o?: { timeout: number }) => number }).requestIdleCallback;
+  if (ric) ric(fn, { timeout: 10_000 }); else setTimeout(fn, 400);
+};
+export function queuePreview(key: string, blob: Blob): void {
+  _queue.push({ key, blob });
+  clearTimeout(_queueTimer);
+  _queueTimer = window.setTimeout(() => idle(nextPreview), 4000);
+}
+function nextPreview(): void {
+  const job = _queue.shift();
+  if (!job) return;
+  const token = getToken();
+  if (!token) { _queue.length = 0; return; }
+  const url = URL.createObjectURL(job.blob);
+  void shrink(url).then((b) => (b ? keepThumb(job.key, b, token, 'on adding') : false))
+    .catch(() => false)
+    .finally(() => { URL.revokeObjectURL(url); if (_queue.length) idle(nextPreview); });
 }
 
 async function loadPic(p: Pic, token: string): Promise<Loaded | null> {
@@ -147,7 +181,7 @@ async function pool<T, R>(items: T[], n: number, fn: (t: T) => Promise<R>): Prom
   return out;
 }
 
-const GAP = 2;
+const GAP = 3;   // the lines between pictures (Roman, 27 Oct: 3 px)
 type Row = { pics: Loaded[]; weight: number; el: HTMLElement };
 
 /** Which pictures share a row — decided once. Turning the device does not
@@ -165,10 +199,15 @@ function buildDay(host: HTMLElement, pics: Loaded[]): Row[] {
     for (const p of cur) {
       const t = document.createElement('button');
       t.type = 'button'; t.className = 'picts-tile';
-      t.style.backgroundImage = `url("${p.url}")`;
       t.title = whereUsed(p);
       t.dataset.key = p.key;
-      t.innerHTML = '<span class="picts-tick"></span>';
+      // A real image, not the tile's wallpaper (27 Oct): the iPad unpacks it on
+      // the side, beforehand — not in the middle of a scroll.
+      const img = document.createElement('img');
+      img.decoding = 'async'; img.loading = 'lazy'; img.alt = ''; img.draggable = false;
+      img.src = p.url;
+      t.appendChild(img);
+      t.insertAdjacentHTML('beforeend', '<span class="picts-tick"></span>');
       el.appendChild(t);
     }
     host.appendChild(el);
@@ -196,6 +235,10 @@ function sizeRows(rows: Row[], width: number): void {
     r.el.style.height = `${Math.round(h)}px`;
     [...r.el.children].forEach((t, i) => { (t as HTMLElement).style.width = `${Math.floor(ratios[i] * h)}px`; });
   }
+  // A day far off screen is not drawn (27 Oct); its height is kept, so the
+  // scrolling never jumps.
+  const days = new Set(rows.map((r) => r.el.closest<HTMLElement>('.picts-day')).filter(Boolean) as HTMLElement[]);
+  for (const d of days) d.style.containIntrinsicSize = `auto ${d.offsetHeight}px`;
 }
 
 /** iPhone and iPad: a touch device whose browser hands files to the share sheet. */
@@ -240,6 +283,14 @@ export async function openPicts(): Promise<void> {
   const daysEl = root.querySelector<HTMLElement>('.picts-days')!;
   const note = root.querySelector<HTMLElement>('.picts-empty')!;
   const selectBtn = root.querySelector<HTMLButtonElement>('.picts-select')!;
+  // Where SELECT is, and what is on top of it (27 Oct: missing on the iPad).
+  setTimeout(() => {
+    if (_root !== root) return;
+    const r = selectBtn.getBoundingClientRect();
+    const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) as HTMLElement | null;
+    const what = (el: HTMLElement | null) => (el ? `${el.tagName.toLowerCase()}${el.id ? '#' + el.id : ''}${el.className && typeof el.className === 'string' ? '.' + el.className.trim().split(/\s+/).join('.') : ''}` : 'nothing');
+    trace(`PICTS: SELECT at ${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.width)}×${Math.round(r.height)} — ${top === selectBtn ? 'visible' : `covered by ${what(top)}`} (library top ${root.style.top}, screen ${window.innerWidth}×${window.innerHeight})`);
+  }, 800);
   const shareBtn = root.querySelector<HTMLButtonElement>('.picts-share')!;
   const countEl = root.querySelector<HTMLElement>('.picts-count')!;
   const flashEl = root.querySelector<HTMLElement>('.picts-flash')!;
@@ -254,6 +305,13 @@ export async function openPicts(): Promise<void> {
   catch { note.textContent = 'The library could not be reached — try again when online.'; return; }
   if (_root !== root) return;
   trace(`PICTS: ${pics.length} picture(s) on the server, ${pics.filter((p) => p.thumb).length} with a preview`);
+  {
+    const sizes = pics.map((p) => p.thumb_size).filter((n): n is number => !!n);
+    if (sizes.length) {
+      const kb = (n: number) => `${Math.round(n / 1024)} KB`;
+      trace(`PICTS: previews: ${sizes.length}, average ${kb(sizes.reduce((a, b) => a + b, 0) / sizes.length)}, smallest ${kb(Math.min(...sizes))}, largest ${kb(Math.max(...sizes))}`);
+    }
+  }
   if (!pics.length) { note.textContent = 'No pictures yet. Every photo and picture you add appears here.'; return; }
   note.remove();
 

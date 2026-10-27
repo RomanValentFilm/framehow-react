@@ -41,8 +41,14 @@ test('picts library: the server lists every picture of the account, oldest first
   expect(pictures.filter((p) => p.uses.some((u) => u.project === 'LIBRARY ONE')).length, 'and where they are used').toBeGreaterThanOrEqual(2);
 
   const storageNow = async () => ((await (await fetch(`${API}/projects`, { headers: { Authorization: `Bearer ${token}` } })).json()) as { storage: { used: number } }).storage.used;
-  const usedBefore = await storageNow();
-  say(`   storage before the library: ${usedBefore} bytes`);
+  say('previews are made when a picture is added — before the library is ever opened (27 Oct)');
+  await expect.poll(async () => {
+    const l = ((await (await fetch(`${API}/user/pictures`, { headers: { Authorization: `Bearer ${token}` } })).json()) as { pictures: Pic[] }).pictures;
+    return l.filter((p) => p.thumb).length;
+  }, { timeout: 20_000, message: 'both previews, made on adding' }).toBe(2);
+  const madeOnAdding = (await d.log()).filter((l) => l.includes('preview kept') && l.includes('on adding')).length;
+  say(`   log lines "preview kept … on adding": ${madeOnAdding}`);
+  expect(madeOnAdding, 'made by the adding, not by the library').toBe(2);
 
   say('step 2: PICTS opens the library — both pictures, under a date line; a tap opens the max screen, which returns here');
   // The project list may still lie over the bars after making the project
@@ -81,8 +87,14 @@ test('picts library: the server lists every picture of the account, oldest first
     expect(n, 'small').toBeLessThan(200 * 1024);
   }
   const usedAfter = await storageNow();
-  say(`   previews ${thumbBytes} bytes; storage ${usedBefore} → ${usedAfter}`);
-  expect(usedAfter, 'the previews count in the account').toBe(usedBefore + thumbBytes);
+  const pictureBytes = listed.reduce((a, p) => a + p.size, 0);
+  say(`   pictures ${pictureBytes} bytes + previews ${thumbBytes} bytes; storage says ${usedAfter}`);
+  expect(usedAfter, 'the previews count in the account').toBe(pictureBytes + thumbBytes);
+  await expect.poll(async () => (await d.log()).some((l) => l.includes('PICTS: SELECT at')), { timeout: 5_000 }).toBe(true);
+  const log = await d.log();
+  say(`   ${log.find((l) => l.includes('PICTS: previews:')) ?? 'no preview-size line'}`);
+  say(`   ${log.find((l) => l.includes('PICTS: SELECT at')) ?? 'no SELECT line'}`);
+  expect(log.some((l) => l.includes('PICTS: SELECT at') && l.includes('— visible')), 'SELECT is visible, nothing over it').toBe(true);
   const other0 = await freshAccount();
   const peek = await fetch(`${API}/thumbs/${listed[0].key}`, { headers: { Authorization: `Bearer ${other0.token}` } });
   expect(peek.status, 'another account cannot see a preview').toBe(404);
@@ -99,7 +111,7 @@ test('picts library: the server lists every picture of the account, oldest first
   const before = await rows();
   const last = before.rows[before.rows.length - 1];
   // Square pictures, 5 to a full row on a desktop.
-  const fullRowH = (before.width - 2 * 4) / 5;
+  const fullRowH = (before.width - 3 * 4) / 5;   // 3 px lines (27 Oct)
   say(`   last row ${Math.round(last.h)} px high, a full row would be ${Math.round(fullRowH)} px`);
   expect(Math.abs(last.h - fullRowH), 'the same height as a full row').toBeLessThanOrEqual(3);
 
@@ -129,6 +141,9 @@ test('picts library: the server lists every picture of the account, oldest first
   await lib.locator('.picts-select').click();
   await expect(lib.locator('.picts-select')).toHaveText('CANCEL');
   await expect(lib.locator('.picts-select'), 'CANCEL grey while nothing is marked').not.toHaveClass(/ready|active/);
+  await expect(tiles.first().locator('.picts-tick'), 'an empty white circle on every picture').toBeVisible();
+  expect(await tiles.first().locator('.picts-tick').evaluate((e) => getComputedStyle(e).backgroundColor), 'empty, not red').not.toBe(
+    await lib.locator('.picts-select').evaluate(() => getComputedStyle(document.getElementById('pictsBtn')!).borderTopColor));
   await expect(lib.locator('.picts-bar'), 'the bar').toBeVisible();
   await expect(count).toHaveText('0 selected');
   await expect(lib.locator('.picts-share'), 'nothing to share yet').toBeDisabled();

@@ -1744,11 +1744,12 @@ body.max-view-open{overflow:hidden;}
 
 /* THE PICTS LIBRARY (26 Oct). Under the bars, over the cards. */
 #pictsLibrary{position:fixed;left:0;right:0;bottom:0;z-index:18;background:#000;}
-#pictsLibrary .picts-scroll{position:absolute;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:0 0 24px;}
-#pictsLibrary .picts-days{margin:0 2px;}
+#pictsLibrary .picts-scroll{position:absolute;inset:0;overflow-y:auto;padding:0 0 24px;}
+#pictsLibrary .picts-days{margin:0 3px;}
 #pictsLibrary .picts-date{display:flex;justify-content:space-between;align-items:baseline;font-family:var(--mono);font-size:11px;letter-spacing:.08em;color:#9a9a9a;padding:14px 6px 6px;border-top:1px solid #2a2a2a;}
 #pictsLibrary .picts-day:first-child .picts-date{border-top:none;}
-#pictsLibrary .picts-row{display:flex;gap:2px;margin-bottom:2px;}
+#pictsLibrary .picts-day{content-visibility:auto;}
+#pictsLibrary .picts-row{display:flex;gap:3px;margin-bottom:3px;}
 #pictsLibrary .picts-tile{position:relative;flex:none;height:100%;padding:0;border:none;background:#1a1a1a center/cover no-repeat;cursor:pointer;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;}
 #pictsLibrary .picts-wait{background:#111;}
 #pictsLibrary .picts-empty{font-family:var(--font);font-size:13px;color:#9a9a9a;text-align:center;padding:40px 20px;}
@@ -1764,7 +1765,12 @@ body.picts-open #maxView{z-index:20000;}
 #pictsLibrary.selecting .picts-scroll{touch-action:pan-y;padding-bottom:calc(56px + env(safe-area-inset-bottom));}
 #pictsLibrary .picts-tick{display:none;position:absolute;right:6px;bottom:6px;width:22px;height:22px;border-radius:50%;background:var(--accent);border:2px solid #fff;box-sizing:border-box;}
 #pictsLibrary .picts-tick::after{content:'';position:absolute;left:6px;top:2.5px;width:5px;height:10px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg);}
-#pictsLibrary .picts-tile.marked .picts-tick{display:block;}
+#pictsLibrary .picts-tile img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;pointer-events:none;-webkit-user-drag:none;}
+/* After SELECT every picture shows an empty white circle; a tap fills it red with the tick (27 Oct). */
+#pictsLibrary.selecting .picts-tick{display:block;background:rgba(0,0,0,.15);box-shadow:0 0 3px rgba(0,0,0,.5);}
+#pictsLibrary .picts-tick::after{display:none;}
+#pictsLibrary .picts-tile.marked .picts-tick{display:block;background:var(--accent);}
+#pictsLibrary .picts-tile.marked .picts-tick::after{display:block;}
 #pictsLibrary .picts-bar{display:none;position:absolute;left:0;right:0;bottom:0;z-index:3;align-items:center;justify-content:space-between;padding:8px 10px calc(8px + env(safe-area-inset-bottom));background:var(--viewbar-fill);border-top:1px solid var(--border);}
 #pictsLibrary.selecting .picts-bar{display:flex;}
 #pictsLibrary .picts-count{font-family:var(--mono);font-size:13px;font-weight:700;letter-spacing:.04em;color:#808080;}
