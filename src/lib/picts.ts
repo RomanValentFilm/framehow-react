@@ -186,7 +186,7 @@ async function pool<T, R>(items: T[], n: number, fn: (t: T) => Promise<R>): Prom
   return out;
 }
 
-const GAP = 3;   // the lines between pictures (Roman, 27 Oct: 3 px)
+const GAP = 4;   // the lines between pictures (Roman, 27 Oct: 4 px)
 type Row = { pics: Loaded[]; weight: number; el: HTMLElement };
 
 /** Which pictures share a row — decided once. Turning the device does not
@@ -333,7 +333,19 @@ export async function openPicts(): Promise<void> {
     daysEl.appendChild(sec);
     slots.push({ pics: list, rows: sec.querySelector<HTMLElement>('.picts-rows')!, date: sec.querySelector<HTMLElement>('.picts-date')! });
   }
-  scroller.scrollTop = scroller.scrollHeight;   // newest at the bottom, in view
+  // PINNED TO THE BOTTOM (27 Oct, Roman: "always start at the bottom"). Until
+  // the person touches or scrolls the library, it stays on the newest picture,
+  // however much the days above it grow while they load and get drawn.
+  let pinned = true;
+  const toBottom = () => { if (pinned) scroller.scrollTop = scroller.scrollHeight; };
+  const letGo = () => {
+    if (!pinned) return;
+    pinned = false;
+    trace(`PICTS: touched — staying where you are (${Math.round(scroller.scrollTop)} of ${scroller.scrollHeight - scroller.clientHeight} px)`);
+  };
+  for (const ev of ['wheel', 'touchstart', 'pointerdown', 'keydown']) scroller.addEventListener(ev, letGo, { passive: true });
+  try { new ResizeObserver(toBottom).observe(daysEl); } catch { /* older browser: the loading steps below still pin */ }
+  toBottom();
 
   // ---- marking -------------------------------------------------------------
   let selecting = false;
@@ -530,18 +542,22 @@ export async function openPicts(): Promise<void> {
     if (_root !== root) return;
     loadedAll.push(...got);
     for (const p of got) byKey.set(p.key, p);
-    const atBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 40;
     const rows = buildDay(s.rows, got);
     for (const p of got) if (marked.has(p.key)) tileOf(p.key)?.classList.add('marked');
     const w = daysEl.clientWidth;
     allRows.push(...rows);
     sizeRows(w === lastWidth ? rows : allRows, w);   // turned while loading: the earlier days too
     lastWidth = w;
-    if (atBottom) scroller.scrollTop = scroller.scrollHeight;
+    toBottom();
     refresh();
   }
   // What could not be shown, and whether a card uses it (27 Oct: 419 on the
   // server, 381 with a preview — which are the 38?).
+  requestAnimationFrame(() => {
+    toBottom();
+    const gap = Math.round(scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight);
+    trace(`PICTS: all loaded — ${gap <= 2 ? 'at the bottom' : `${gap} px above the bottom`}${pinned ? '' : ' (you had scrolled)'}`);
+  });
   const missing = pics.filter((p) => !byKey.has(p.key));
   if (missing.length) {
     const noCard = missing.filter((p) => !p.uses.length).length;

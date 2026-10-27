@@ -111,7 +111,7 @@ test('picts library: the server lists every picture of the account, oldest first
   const before = await rows();
   const last = before.rows[before.rows.length - 1];
   // Square pictures, 5 to a full row on a desktop.
-  const fullRowH = (before.width - 3 * 4) / 5;   // 3 px lines (27 Oct)
+  const fullRowH = (before.width - 4 * 4) / 5;   // 4 px lines (27 Oct)
   say(`   last row ${Math.round(last.h)} px high, a full row would be ${Math.round(fullRowH)} px`);
   expect(Math.abs(last.h - fullRowH), 'the same height as a full row').toBeLessThanOrEqual(3);
 
@@ -216,5 +216,7 @@ test('picts library on the iPad: the library starts under the bars, SELECT is vi
   await expect.poll(async () => (await d.log()).find((l) => l.includes('PICTS: SELECT at')) ?? '', { timeout: 5_000 }).toContain('— visible');
   say(`   ${(await d.log()).find((l) => l.includes('PICTS: SELECT at'))}`);
   say(`   ${(await d.log()).find((l) => l.includes('PICTS: shown')) ?? 'no shown line'}`);
+  await expect.poll(async () => (await d.log()).find((l) => l.includes('PICTS: all loaded')) ?? '', { timeout: 5_000, message: 'it opens at the bottom' }).toContain('at the bottom');
+  say(`   ${(await d.log()).find((l) => l.includes('PICTS: all loaded'))}`);
   await d.close();
 });
