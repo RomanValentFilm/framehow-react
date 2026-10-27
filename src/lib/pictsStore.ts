@@ -32,6 +32,9 @@ export interface PreviewRec {
   /** On the server too. false = its picture is there, the preview not yet:
    *  sent with the next sync (27 Oct). */
   sent?: boolean;
+  /** When this device made the preview (≈ when the picture landed in its
+   *  card). Never overwritten — for the order check (27 Oct). */
+  madeAt?: number;
 }
 
 const DB = 'framehow-picts';

@@ -1781,3 +1781,6 @@ body.picts-open #maxView{z-index:20000;}
 /* SELECT in white, so people see it (Roman, 27 Oct); CANCEL stays grey until something is marked. */
 #pictsLibrary .picts-select{color:#fff;}
 #pictsLibrary.selecting .picts-select:not(.ready){color:#808080;}
+/* The page behind held still while the library is open (27 Oct, iPhone). */
+html.picts-hold, html.picts-hold body{overflow:hidden;overscroll-behavior:none;}
+#pictsLibrary .picts-scroll{overscroll-behavior:contain;}

@@ -20,9 +20,13 @@ VERSION=$(grep -o "APP_VERSION = '[^']*'" src/store/state.ts | sed "s/.*'\(.*\)'
 TAG=$(grep -o "SYNC_BUILD_TAG = '[^']*'" src/lib/syncTrace.ts | sed "s/.*'\(.*\)'/\1/")
 echo "=== DEPLOY $VERSION · $TAG — run $RUN${FH_LIVE:+ — AND LIVE} ==="
 finish() {
-  afplay /System/Library/Sounds/Glass.aiff 2>/dev/null
+  # THE SOUND SAYS WHETHER IT PLAYED (27 Oct, Roman: "there is no sound when
+  # finished now"). Its error used to be thrown away; now the last line tells,
+  # and if Glass fails the Mac's own alert beep sounds instead.
+  if SND_ERR=$(afplay /System/Library/Sounds/Glass.aiff 2>&1); then SND="sound played"
+  else SND="sound failed: ${SND_ERR:-no reason given} — beeped instead"; osascript -e 'beep 2' 2>/dev/null; fi
   osascript -e "display notification \"$1 — say zzz\" with title \"Framehow\"" 2>/dev/null
-  echo "--- $1 ($VERSION · $TAG, run $RUN) — say zzz ---"
+  echo "--- $1 ($VERSION · $TAG, run $RUN) — say zzz — $SND ---"
 }
 if [ -n "$FH_T" ]; then
   FH_QUIET=1 FH_RUN="$RUN" sh scripts/e2e.sh -g "$FH_T" || { finish "Tests RED, nothing deployed"; exit 1; }

@@ -234,6 +234,38 @@ function colourPng(r: number, g: number, b: number): string {
   return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', ihdr), chunk('IDAT', deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]).toString('base64');
 }
 
+// Before the offline test: switching the test browser's network off and on
+// spoils its uploads for the next test (runs 499/500).
+test('picts library: a preview that misses its picture\'s upload goes with the next sync', async ({ browser }) => {
+  // 27 Oct, Roman: "can't it go together?" — the preview goes straight after its
+  // picture; if the connection drops between the two, the next sync sends it.
+  const { token } = await freshAccount();
+  const d = await Device.open(browser, 'desktop', token);
+  await d.newProjectOfKind('PREVIEW LATE', 'landscape', 2);
+  await d.settle();
+  const thumbsOnServer = async () => ((await (await fetch(`${API}/user/pictures`, { headers: { Authorization: `Bearer ${token}` } })).json()) as { pictures: Pic[] }).pictures.filter((p) => p.thumb).length;
+
+  say('the preview\'s way to the server is cut; a picture is added and uploads');
+  await d.page.route('**/thumbs/**', (r) => (r.request().method() === 'PUT' ? r.abort() : r.continue()));
+  await d.uploadPicture(0, 'main', colourPng(220, 180, 20));
+  await d.settle();
+  await expect.poll(async () => ((await (await fetch(`${API}/user/pictures`, { headers: { Authorization: `Bearer ${token}` } })).json()) as { pictures: Pic[] }).pictures.length,
+    { timeout: 20_000, message: 'the picture is on the server' }).toBe(1);
+  await d.page.waitForTimeout(1500);
+  expect(await thumbsOnServer(), 'its preview is not').toBe(0);
+  say(`   ${(await d.log()).find((l) => l.includes('preview not kept')) ?? 'no "not kept" line'}`);
+
+  say('the way is open again; the next sync (another picture) sends the waiting preview too');
+  await d.page.unroute('**/thumbs/**');
+  await d.uploadPicture(1, 'main', colourPng(20, 180, 220));
+  await d.settle();
+  await expect.poll(thumbsOnServer, { timeout: 30_000, message: 'both previews on the server' }).toBe(2);
+  const late = (await d.log()).filter((l) => l.includes('preview kept') && l.includes('after the sync')).length;
+  say(`   previews sent after the sync: ${late}`);
+  expect(late, 'the missed one went with the next sync').toBeGreaterThanOrEqual(1);
+  await d.close();
+});
+
 test('picts library offline: pictures shot offline are in the library offline; online they upload with their preview, once', async ({ browser }) => {
   // 27 Oct, Roman: "a user offline shoots 10 pictures — he has to see 10 in the library".
   const { token } = await freshAccount();
@@ -302,34 +334,3 @@ test('picts library offline: pictures shot offline are in the library offline; o
   await d.offline(false);
   await d.close();
 });
-
-test('picts library: a preview that misses its picture\'s upload goes with the next sync', async ({ browser }) => {
-  // 27 Oct, Roman: "can't it go together?" — the preview goes straight after its
-  // picture; if the connection drops between the two, the next sync sends it.
-  const { token } = await freshAccount();
-  const d = await Device.open(browser, 'desktop', token);
-  await d.newProjectOfKind('PREVIEW LATE', 'landscape', 2);
-  await d.settle();
-  const thumbsOnServer = async () => ((await (await fetch(`${API}/user/pictures`, { headers: { Authorization: `Bearer ${token}` } })).json()) as { pictures: Pic[] }).pictures.filter((p) => p.thumb).length;
-
-  say('the preview\'s way to the server is cut; a picture is added and uploads');
-  await d.page.route('**/thumbs/**', (r) => (r.request().method() === 'PUT' ? r.abort() : r.continue()));
-  await d.uploadPicture(0, 'main', colourPng(220, 180, 20));
-  await d.settle();
-  await expect.poll(async () => ((await (await fetch(`${API}/user/pictures`, { headers: { Authorization: `Bearer ${token}` } })).json()) as { pictures: Pic[] }).pictures.length,
-    { timeout: 20_000, message: 'the picture is on the server' }).toBe(1);
-  await d.page.waitForTimeout(1500);
-  expect(await thumbsOnServer(), 'its preview is not').toBe(0);
-  say(`   ${(await d.log()).find((l) => l.includes('preview not kept')) ?? 'no "not kept" line'}`);
-
-  say('the way is open again; the next sync (another picture) sends the waiting preview too');
-  await d.page.unroute('**/thumbs/**');
-  await d.uploadPicture(1, 'main', colourPng(20, 180, 220));
-  await d.settle();
-  await expect.poll(thumbsOnServer, { timeout: 30_000, message: 'both previews on the server' }).toBe(2);
-  const late = (await d.log()).filter((l) => l.includes('preview kept') && l.includes('after the sync')).length;
-  say(`   previews sent after the sync: ${late}`);
-  expect(late, 'the missed one went with the next sync').toBeGreaterThanOrEqual(1);
-  await d.close();
-});
-

@@ -76,7 +76,35 @@ export function closePicts(): void {
   _root.remove(); _root = null;
   document.getElementById('pictsBtn')?.classList.remove('active');
   document.body.classList.remove('picts-open');
+  releasePage();
   trace('PICTS: closed');
+}
+
+// THE PAGE BEHIND IS HELD STILL while the library is open (Roman's iPhone,
+// 27 Oct: a swipe on the library scrolled the 3×2 view behind it). No swipe
+// outside the library's own pictures moves anything; on closing, the 3×2 view
+// is exactly where it was.
+let _heldY: number | null = null;
+function blockBehind(e: TouchEvent): void {
+  if (!_root) return;
+  const t = e.target as HTMLElement | null;
+  if (t && t.closest('#pictsLibrary .picts-scroll')) return;
+  if (t && t.closest('#maxView')) return;
+  if (e.cancelable) e.preventDefault();
+}
+function holdPage(): void {
+  if (_heldY !== null) return;
+  _heldY = window.scrollY;
+  document.documentElement.classList.add('picts-hold');
+  document.addEventListener('touchmove', blockBehind, { passive: false });
+}
+function releasePage(): void {
+  if (_heldY === null) return;
+  const y = _heldY;
+  _heldY = null;
+  document.documentElement.classList.remove('picts-hold');
+  document.removeEventListener('touchmove', blockBehind);
+  if (Math.abs(window.scrollY - y) > 1) window.scrollTo(0, y);
 }
 
 function topOfContent(): number {
@@ -209,7 +237,7 @@ export async function sendPreviewNow(key: string, src: string): Promise<void> {
   if (!rec) {
     const made = await shrinkWithSize(src);
     if (!made) return;
-    rec = { id: previewId(fp), fp, r2Key: key, at: Date.now(), label: '', w: made.w, h: made.h, bytes: made.bytes };
+    rec = { id: previewId(fp), fp, r2Key: key, at: Date.now(), madeAt: Date.now(), label: '', w: made.w, h: made.h, bytes: made.bytes };
   }
   rec = { ...rec, r2Key: key, sent: false };
   await putPreview(rec);
@@ -339,7 +367,8 @@ export function watchNewPictures(): void {
     _lastSig = sig;
     if (sig.startsWith('0:')) return;
     _busy = true;
-    idle(() => void previewsForUnsent().finally(() => { _busy = false; }));
+    // Straight away: 35 ms for a camera picture on Roman's iPad (27 Oct log).
+    void previewsForUnsent().finally(() => { _busy = false; });
   }, 1000);   // a look every second (Roman, 27 Oct: "can it be done simultaneously?")
 }
 async function previewsForUnsent(): Promise<void> {
@@ -353,9 +382,9 @@ async function previewsForUnsent(): Promise<void> {
     const made = await shrinkWithSize(l.src).catch(() => null);
     if (!made) continue;
     const ms = Math.round(performance.now() - t0);
-    await putPreview({ id: previewId(fp), fp, r2Key: null, at: Date.now(), label: l.label, w: made.w, h: made.h, bytes: made.bytes });
+    await putPreview({ id: previewId(fp), fp, r2Key: null, at: Date.now(), madeAt: Date.now(), label: l.label, w: made.w, h: made.h, bytes: made.bytes });
     trace(`PICTS: preview made on this device for ${l.label} in ${ms} ms (${Math.round(made.bytes.byteLength / 1024)} KB, not uploaded yet)`);
-    await new Promise<void>((r) => idle(r));   // one per quiet moment
+    await new Promise<void>((r) => setTimeout(r, 0));   // one at a time, the screen keeps drawing between
   }
 }
 
@@ -380,7 +409,7 @@ async function loadPic(p: Pic, token: string, dev: Device, online: boolean): Pro
       if (!w || !h) { const img = await loadImg(url); w = img.naturalWidth; h = img.naturalHeight; }
       // Kept on the device, under the fingerprint when there is one.
       const fp = p.fp ?? (local ? await fpOf(local) : undefined);
-      const next: PreviewRec = { id: fp ? previewId(fp) : `r2:${p.key}:preview`, fp, r2Key: p.local ? null : p.key, at: p.uploaded_at, label: whereUsed(p), w, h, bytes,
+      const next: PreviewRec = { id: fp ? previewId(fp) : `r2:${p.key}:preview`, fp, r2Key: p.local ? null : p.key, at: p.uploaded_at, madeAt: rec?.madeAt, label: whereUsed(p), w, h, bytes,
         sent: rec?.sent ?? (online && !p.local ? (p.thumb || from !== 'made here') : undefined) };
       if (!rec || rec.at !== next.at || rec.label !== next.label || (rec.r2Key ?? null) !== next.r2Key) void putPreview(next);
       // Online, a server picture without a preview gets this one.
@@ -503,8 +532,29 @@ export async function openPicts(): Promise<void> {
   document.body.appendChild(root);
   _root = root;
   document.body.classList.add('picts-open');
+  holdPage();
   document.getElementById('pictsBtn')?.classList.add('active');
   const scroller = root.querySelector<HTMLElement>('.picts-scroll')!;
+  // Where everything sits, and whether the first swipe moves the library
+  // (27 Oct: on the iPhone it did not, and a gap showed above it).
+  setTimeout(() => {
+    if (_root !== root) return;
+    const r = root.getBoundingClientRect();
+    const bars = ['#mainToolbar', '.view-bar', '#detailBar'].map((sel) => {
+      const el = document.querySelector<HTMLElement>(sel);
+      if (!el || getComputedStyle(el).display === 'none') return `${sel} hidden`;
+      const b = el.getBoundingClientRect();
+      return `${sel} ${Math.round(b.top)}–${Math.round(b.bottom)}`;
+    }).join(', ');
+    trace(`PICTS: library ${Math.round(r.top)}–${Math.round(r.bottom)} px; pictures ${scroller.scrollHeight} px tall in ${scroller.clientHeight} px; bars: ${bars}; page at ${Math.round(window.scrollY)}`);
+  }, 1200);
+  let firstSwipe = true;
+  scroller.addEventListener('touchstart', () => {
+    if (!firstSwipe) return;
+    firstSwipe = false;
+    const from = scroller.scrollTop, pageFrom = window.scrollY;
+    setTimeout(() => trace(`PICTS: first swipe — library ${Math.round(from)} → ${Math.round(scroller.scrollTop)} px, page ${Math.round(pageFrom)} → ${Math.round(window.scrollY)}`), 700);
+  }, { passive: true });
   const daysEl = root.querySelector<HTMLElement>('.picts-days')!;
   const note = root.querySelector<HTMLElement>('.picts-empty')!;
   const selectBtn = root.querySelector<HTMLButtonElement>('.picts-select')!;
@@ -547,6 +597,15 @@ export async function openPicts(): Promise<void> {
     if (items.has(l.key)) continue;
     if (!l.r2Key) {
       const fp = l.key.slice('local:'.length);
+      // Already on the server, the card not told yet (Roman's iPad, 27 Oct: the
+      // library opened in that second and showed the picture twice). Its
+      // preview knows the server's name: one picture, not two.
+      const known = dev.byId.get(previewId(fp))?.r2Key;
+      if (known) {
+        _localSrc.set(known, l.src);
+        if (!items.has(known)) items.set(known, blank(known, dev.byId.get(previewId(fp))!.at, l.label, { fp }));
+        continue;
+      }
       items.set(l.key, blank(l.key, dev.byId.get(previewId(fp))?.at ?? Date.now(), l.label, { local: true, fp }));
     } else if (!online) {
       items.set(l.key, blank(l.key, dev.byR2.get(l.key)?.at ?? Date.now(), l.label, {}));
@@ -558,6 +617,19 @@ export async function openPicts(): Promise<void> {
     }
   }
   const pics = [...items.values()].sort((a, b) => a.uploaded_at - b.uploaded_at);
+  // THE ORDER OF THE NEWEST (27 Oct, iPhone: "the last 3/4 pictures are not
+  // in the right order"): each with its time, whose clock it is, and when this
+  // device made its preview (≈ when the picture landed in its card).
+  {
+    const serverKeys = new Set((server ?? []).map((p) => p.key));
+    const hm = (t: number) => new Date(t).toLocaleTimeString();
+    const tail = pics.slice(-6).map((p) => {
+      const rec = p.local ? dev.byId.get(previewId(p.fp)) : (dev.byR2.get(p.key) ?? (p.fp ? dev.byId.get(previewId(p.fp)) : undefined));
+      const clock = serverKeys.has(p.key) ? 'server' : 'this device';
+      return `${whereUsed(p)} @${hm(p.uploaded_at)} (${clock}${rec?.madeAt ? `, landed ${hm(rec.madeAt)}` : ''})`;
+    });
+    trace(`PICTS: the newest, in the library's order: ${tail.join(' | ')}`);
+  }
   const unsent = pics.filter((p) => p.local).length;
   trace(`PICTS: ${online ? `${server!.length} picture(s) on the server, ${server!.filter((p) => p.thumb).length} with a preview` : 'OFFLINE'}; on this device: ${devRecs.length} preview(s); not uploaded yet: ${unsent}`);
   try {
