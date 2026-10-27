@@ -5,24 +5,42 @@
 // shape: rows of equal height, filled edge to edge, nothing cropped. A row
 // holds 5 landscape or 8 portrait pictures on a desktop or iPad, 3 of either on
 // a phone. Tap a picture: the max screen, which returns here.
-//
-// Step 2 of the library: looking only. Select, share and delete follow.
 // Turning the device keeps every row as it is, only larger or smaller (091).
+//
+// Step 3 (27 Oct):
+//   PREVIEWS  the library shows a small copy of each picture (512 px on its
+//             long side). Made by the app the first time a picture is shown,
+//             kept in the account's folder, counted in its storage. The full
+//             picture is loaded only for the max screen and for sharing.
+//   SELECT    top right; turns marking on and becomes CANCEL. A tap marks a
+//             picture (a red tick, nothing dimmed); a tap on a date line marks
+//             or unmarks its whole day; a finger moved sideways across the
+//             pictures marks all of them on the way (up or down still
+//             scrolls); the mouse marks in any direction.
+//   THE BAR   at the bottom while marking: SHARE · "3 selected" · DELETE.
+//             iPhone/iPad: the share sheet with the pictures. Mac/PC: one
+//             picture downloads as itself, several as one ZIP. DELETE is grey
+//             until step 4.
 
 import { api, API_BASE_URL } from './api';
 import { getToken } from './session';
-import { trace } from './syncTrace';
+import { logStripHeight, trace } from './syncTrace';
 import { openMaxView } from './maxView';
 
 type Use = { project_id: string; project: string; shot: string | null; version: string | null };
-type Pic = { key: string; uploaded_at: number; size: number; width: number | null; height: number | null; uses: Use[] };
+type Pic = { key: string; uploaded_at: number; size: number; width: number | null; height: number | null; uses: Use[]; thumb?: boolean };
 type Loaded = Pic & { url: string; w: number; h: number };
 
 /** Per row: landscape and portrait pictures (Roman, 26 Oct; portraits tuned to 8). */
 const PER_ROW = { wide: { landscape: 5, portrait: 8 }, phone: { landscape: 3, portrait: 3 } };
+/** The preview: long side and JPEG quality (≈ 25–40 KB). */
+const THUMB_LONG = 512;
+const THUMB_Q = 0.72;
 
 let _root: HTMLElement | null = null;
-const _urls = new Map<string, string>();   // r2 key → object URL, kept for the session
+const _thumbs = new Map<string, string>();   // r2 key → preview object URL, kept for the session
+const _full = new Map<string, Blob>();       // r2 key → the full picture, once loaded
+const _fullUrls = new Map<string, string>();
 
 export function pictsOpen(): boolean { return !!_root; }
 
@@ -57,19 +75,76 @@ function whereUsed(p: Pic): string {
   return `${u.project} – shot ${u.shot ?? '?'}${u.version ? ` – ${u.version}` : ''}`;
 }
 
+const authed = (path: string, token: string, init: RequestInit = {}) =>
+  fetch(`${API_BASE_URL}${path}`, { ...init, headers: { ...(init.headers || {}), Authorization: `Bearer ${token}` } });
+
+/** The full picture, once per session. */
+async function fullBlob(key: string, token: string): Promise<Blob | null> {
+  const had = _full.get(key);
+  if (had) return had;
+  const res = await authed(`/images/${key}`, token);
+  if (!res.ok) return null;
+  const b = await res.blob();
+  _full.set(key, b);
+  return b;
+}
+async function fullUrl(key: string, token: string): Promise<string | null> {
+  const had = _fullUrls.get(key);
+  if (had) return had;
+  const b = await fullBlob(key, token);
+  if (!b) return null;
+  const u = URL.createObjectURL(b);
+  _fullUrls.set(key, u);
+  return u;
+}
+
+const loadImg = (url: string) => new Promise<HTMLImageElement>((ok, bad) => {
+  const img = new Image(); img.onload = () => ok(img); img.onerror = () => bad(new Error('no picture')); img.src = url;
+});
+
+/** Make the preview from the full picture, and keep it in the account's folder. */
+async function makeThumb(p: Pic, token: string): Promise<Blob | null> {
+  const url = await fullUrl(p.key, token);
+  if (!url) return null;
+  const img = await loadImg(url);
+  const k = Math.min(1, THUMB_LONG / Math.max(img.naturalWidth, img.naturalHeight));
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(img.naturalWidth * k)); c.height = Math.max(1, Math.round(img.naturalHeight * k));
+  const ctx = c.getContext('2d')!;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(img, 0, 0, c.width, c.height);
+  const blob = await new Promise<Blob | null>((res) => c.toBlob(res, 'image/jpeg', THUMB_Q));
+  if (!blob) return null;
+  void authed(`/thumbs/${p.key}`, token, { method: 'PUT', headers: { 'Content-Type': 'image/jpeg' }, body: blob })
+    .then((r) => trace(`PICTS: preview kept for ${p.key.split('/').pop()} (${Math.round(blob.size / 1024)} KB) — ${r.status}`))
+    .catch(() => trace(`PICTS: preview not kept for ${p.key.split('/').pop()} (offline?)`));
+  return blob;
+}
+
 async function loadPic(p: Pic, token: string): Promise<Loaded | null> {
   try {
-    let url = _urls.get(p.key);
+    let url = _thumbs.get(p.key);
     if (!url) {
-      const res = await fetch(`${API_BASE_URL}/images/${p.key}`, { headers: { Authorization: `Bearer ${token}` } });
-      if (!res.ok) return null;
-      url = URL.createObjectURL(await res.blob());
-      _urls.set(p.key, url);
+      let blob: Blob | null = null;
+      if (p.thumb) { const r = await authed(`/thumbs/${p.key}`, token); if (r.ok) blob = await r.blob(); }
+      if (!blob) blob = await makeThumb(p, token);
+      if (!blob) return null;
+      url = URL.createObjectURL(blob);
+      _thumbs.set(p.key, url);
     }
-    const img = new Image();
-    await new Promise<void>((ok, bad) => { img.onload = () => ok(); img.onerror = () => bad(); img.src = url!; });
+    const img = await loadImg(url);
     return { ...p, url, w: img.naturalWidth, h: img.naturalHeight };
   } catch { return null; }
+}
+
+/** At most n at a time — a first visit may have hundreds of previews to make. */
+async function pool<T, R>(items: T[], n: number, fn: (t: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(n, items.length) }, async () => {
+    while (next < items.length) { const i = next++; out[i] = await fn(items[i]); }
+  }));
+  return out;
 }
 
 const GAP = 2;
@@ -77,7 +152,7 @@ type Row = { pics: Loaded[]; weight: number; el: HTMLElement };
 
 /** Which pictures share a row — decided once. Turning the device does not
  *  move a picture to another row; the rows only grow or shrink (Roman, 26 Oct). */
-function buildDay(host: HTMLElement, pics: Loaded[], onTap: (p: Loaded) => void): Row[] {
+function buildDay(host: HTMLElement, pics: Loaded[]): Row[] {
   const phone = Math.min(window.innerWidth, window.innerHeight) <= 430;
   const per = phone ? PER_ROW.phone : PER_ROW.wide;
   host.innerHTML = '';
@@ -93,7 +168,7 @@ function buildDay(host: HTMLElement, pics: Loaded[], onTap: (p: Loaded) => void)
       t.style.backgroundImage = `url("${p.url}")`;
       t.title = whereUsed(p);
       t.dataset.key = p.key;
-      t.addEventListener('click', () => onTap(p));
+      t.innerHTML = '<span class="picts-tick"></span>';
       el.appendChild(t);
     }
     host.appendChild(el);
@@ -123,6 +198,25 @@ function sizeRows(rows: Row[], width: number): void {
   }
 }
 
+/** iPhone and iPad: a touch device whose browser hands files to the share sheet. */
+function canShareSheet(): boolean {
+  try {
+    const probe = new File([new Blob(['x'], { type: 'image/jpeg' })], 'x.jpg', { type: 'image/jpeg' });
+    return navigator.maxTouchPoints > 1 && !!navigator.canShare && navigator.canShare({ files: [probe] });
+  } catch { return false; }
+}
+
+/** A file name from where the picture is used; the same name twice gets a number. */
+function fileNames(pics: Pic[]): string[] {
+  const seen = new Map<string, number>();
+  return pics.map((p) => {
+    const ext = (p.key.split('.').pop() || 'jpg').toLowerCase();
+    const base = (p.uses[0] ? whereUsed(p) : `Framehow picture ${new Date(p.uploaded_at).toISOString().slice(0, 10)}`).replace(/[\\/:*?"<>|]/g, '-');
+    const n = (seen.get(base) ?? 0) + 1; seen.set(base, n);
+    return `${base}${n > 1 ? ` (${n})` : ''}.${ext}`;
+  });
+}
+
 export async function openPicts(): Promise<void> {
   const token = getToken();
   if (!token) { trace('PICTS: not signed in'); return; }
@@ -130,7 +224,14 @@ export async function openPicts(): Promise<void> {
   const root = document.createElement('div');
   root.id = 'pictsLibrary';
   root.style.top = `${topOfContent()}px`;
-  root.innerHTML = `<div class="picts-scroll"><div class="picts-days"></div><p class="picts-empty">Loading your pictures…</p></div>`;
+  // Above the sync log strip when it shows, so the bar is never under it (run 486).
+  root.style.bottom = `${logStripHeight()}px`;
+  root.innerHTML = `<div class="picts-scroll"><div class="picts-days"></div><p class="picts-empty">Loading your pictures…</p></div>`
+    + `<button type="button" class="picts-btn picts-select">SELECT</button>`
+    + `<div class="picts-bar"><button type="button" class="picts-btn picts-share" disabled>SHARE</button>`
+    + `<span class="picts-count">0 selected</span>`
+    + `<button type="button" class="picts-btn picts-delete" disabled title="Comes next">DELETE</button></div>`
+    + `<div class="picts-flash"></div>`;
   document.body.appendChild(root);
   _root = root;
   document.body.classList.add('picts-open');
@@ -138,12 +239,21 @@ export async function openPicts(): Promise<void> {
   const scroller = root.querySelector<HTMLElement>('.picts-scroll')!;
   const daysEl = root.querySelector<HTMLElement>('.picts-days')!;
   const note = root.querySelector<HTMLElement>('.picts-empty')!;
+  const selectBtn = root.querySelector<HTMLButtonElement>('.picts-select')!;
+  const shareBtn = root.querySelector<HTMLButtonElement>('.picts-share')!;
+  const countEl = root.querySelector<HTMLElement>('.picts-count')!;
+  const flashEl = root.querySelector<HTMLElement>('.picts-flash')!;
+  let flashT = 0;
+  const say = (t: string) => {
+    flashEl.textContent = t; flashEl.classList.add('on');
+    clearTimeout(flashT); flashT = window.setTimeout(() => flashEl.classList.remove('on'), 2200);
+  };
 
   let pics: Pic[] = [];
   try { pics = (await api.get<{ pictures: Pic[] }>('/user/pictures', token)).pictures; }
   catch { note.textContent = 'The library could not be reached — try again when online.'; return; }
   if (_root !== root) return;
-  trace(`PICTS: ${pics.length} picture(s) on the server`);
+  trace(`PICTS: ${pics.length} picture(s) on the server, ${pics.filter((p) => p.thumb).length} with a preview`);
   if (!pics.length) { note.textContent = 'No pictures yet. Every photo and picture you add appears here.'; return; }
   note.remove();
 
@@ -151,30 +261,189 @@ export async function openPicts(): Promise<void> {
   const days = new Map<string, Pic[]>();
   for (const p of pics) { const k = dayKey(p.uploaded_at); if (!days.has(k)) days.set(k, []); days.get(k)!.push(p); }
   const loadedAll: Loaded[] = [];
-  const slots: { pics: Pic[]; rows: HTMLElement }[] = [];
+  const byKey = new Map<string, Loaded>();
+  const slots: { pics: Pic[]; rows: HTMLElement; date: HTMLElement }[] = [];
   for (const [, list] of days) {
     const sec = document.createElement('section');
     sec.className = 'picts-day';
-    sec.innerHTML = `<div class="picts-date">${dayLabel(list[0].uploaded_at)}</div><div class="picts-rows"><div class="picts-wait" style="height:${Math.round(Math.min(160, window.innerHeight / 5))}px"></div></div>`;
+    sec.innerHTML = `<div class="picts-date"><span>${dayLabel(list[0].uploaded_at)}</span><span class="picts-day-all"></span></div><div class="picts-rows"><div class="picts-wait" style="height:${Math.round(Math.min(160, window.innerHeight / 5))}px"></div></div>`;
     daysEl.appendChild(sec);
-    slots.push({ pics: list, rows: sec.querySelector<HTMLElement>('.picts-rows')! });
+    slots.push({ pics: list, rows: sec.querySelector<HTMLElement>('.picts-rows')!, date: sec.querySelector<HTMLElement>('.picts-date')! });
   }
   scroller.scrollTop = scroller.scrollHeight;   // newest at the bottom, in view
 
-  const tap = (p: Loaded) => {
-    const ordered = loadedAll.slice().sort((a, b) => a.uploaded_at - b.uploaded_at);
-    const items = ordered.map((x) => ({ src: x.url, strokes: [], main: true, w: x.w, h: x.h, label: whereUsed(x) }));
-    trace(`PICTS: opened ${whereUsed(p)}`);
-    openMaxView(items, ordered.indexOf(p), undefined, 'Framehow picture');
+  // ---- marking -------------------------------------------------------------
+  let selecting = false;
+  const marked = new Set<string>();
+  const tileOf = (key: string) => root.querySelector<HTMLElement>(`.picts-tile[data-key="${CSS.escape(key)}"]`);
+  const refresh = () => {
+    countEl.textContent = `${marked.size} selected`;
+    shareBtn.disabled = marked.size === 0;
+    for (const s of slots) {
+      const all = s.pics.filter((p) => byKey.has(p.key));
+      const every = all.length > 0 && all.every((p) => marked.has(p.key));
+      s.date.querySelector<HTMLElement>('.picts-day-all')!.textContent = selecting ? (every ? 'DESELECT ALL' : 'SELECT ALL') : '';
+    }
   };
-  // A turn of the device, from the moment the library opens: the same rows,
-  // larger or smaller, edge to edge again; the place kept. The iPad sometimes
-  // tells its new size a moment late — so once more after a short pause.
+  const setMark = (key: string, on: boolean) => {
+    if (on) marked.add(key); else marked.delete(key);
+    tileOf(key)?.classList.toggle('marked', on);
+    // The full picture comes in the background, so SHARE is ready when pressed
+    // (the share sheet must open inside the tap — no waiting allowed there).
+    if (on && !_full.has(key)) void fullBlob(key, token);
+  };
+  const setSelecting = (on: boolean) => {
+    selecting = on;
+    root.classList.toggle('selecting', on);
+    selectBtn.textContent = on ? 'CANCEL' : 'SELECT';
+    selectBtn.classList.toggle('active', on);
+    if (!on) for (const k of [...marked]) setMark(k, false);
+    trace(`PICTS: marking ${on ? 'on' : 'off'}`);
+    refresh();
+  };
+  selectBtn.addEventListener('click', () => setSelecting(!selecting));
+
+  for (const s of slots) {
+    s.date.addEventListener('click', () => {
+      if (!selecting) return;
+      const all = s.pics.filter((p) => byKey.has(p.key));
+      const on = !all.every((p) => marked.has(p.key));
+      for (const p of all) setMark(p.key, on);
+      trace(`PICTS: ${on ? 'marked' : 'unmarked'} the day ${dayLabel(s.pics[0].uploaded_at)} (${all.length})`);
+      refresh();
+    });
+  }
+
+  // ---- share -----------------------------------------------------------------
+  shareBtn.addEventListener('click', () => {
+    const chosen = pics.filter((p) => marked.has(p.key));
+    if (!chosen.length) return;
+    const names = fileNames(chosen);
+    if (canShareSheet()) {
+      const missing = chosen.filter((p) => !_full.has(p.key));
+      if (missing.length) { say('One moment…'); for (const p of missing) void fullBlob(p.key, token); return; }
+      const files = chosen.map((p, i) => { const b = _full.get(p.key)!; return new File([b], names[i], { type: b.type || 'image/jpeg' }); });
+      trace(`PICTS: share sheet — ${files.length} picture(s)`);
+      navigator.share({ files }).catch(() => { /* closed without sharing */ });
+      return;
+    }
+    void (async () => {
+      say(chosen.length > 1 ? 'Packing…' : 'One moment…');
+      const blobs = await pool(chosen, 4, (p) => fullBlob(p.key, token));
+      if (blobs.some((b) => !b)) { say('A picture could not be loaded — try again'); return; }
+      let file: Blob, name: string;
+      if (chosen.length === 1) { file = blobs[0]!; name = names[0]; }
+      else {
+        const { default: JSZip } = await import('jszip');
+        const zip = new JSZip();
+        blobs.forEach((b, i) => zip.file(names[i], b!));
+        file = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
+        name = `Framehow pictures – ${chosen.length}.zip`;
+      }
+      const url = URL.createObjectURL(file);
+      const a = document.createElement('a'); a.href = url; a.download = name;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 8000);
+      trace(`PICTS: downloaded ${name}`);
+      say('Downloaded');
+    })();
+  });
+
+  // ---- tap, and the finger moved across ------------------------------------
+  const tap = async (p: Loaded) => {
+    const ordered = loadedAll.slice().sort((a, b) => a.uploaded_at - b.uploaded_at);
+    const items = ordered.map((x) => ({ src: _fullUrls.get(x.key) ?? x.url, strokes: [], main: true, w: x.w, h: x.h, label: whereUsed(x) }));
+    const at = ordered.indexOf(p);
+    const u = await fullUrl(p.key, token);
+    if (u) items[at].src = u;
+    if (_root !== root) return;
+    trace(`PICTS: opened ${whereUsed(p)}`);
+    openMaxView(items, at, undefined, 'Framehow picture');
+    // The neighbours in full, nearest first, for the arrows and the swipe.
+    const order = ordered.map((_, i) => i).filter((i) => i !== at).sort((a, b) => Math.abs(a - at) - Math.abs(b - at)).slice(0, 12);
+    void pool(order, 2, async (i) => { const fu = await fullUrl(ordered[i].key, token); if (fu) items[i].src = fu; });
+  };
+
+  let drag: { x: number; y: number; id: number; mouse: boolean; on: boolean | null; start: number; before: Set<string> } | null = null;
+  let justDragged = 0;
+  const tileKeys = () => [...root.querySelectorAll<HTMLElement>('.picts-tile')].map((t) => t.dataset.key!);
+  const tileAt = (x: number, y: number) => (document.elementFromPoint(x, y) as HTMLElement | null)?.closest<HTMLElement>('.picts-tile') ?? null;
+  let edgeRaf = 0, lastPt = { x: 0, y: 0 };
+  const markRange = (x: number, y: number) => {
+    if (!drag || drag.on === null) return;
+    const t = tileAt(x, y);
+    if (!t) return;
+    const keys = tileKeys();
+    const a = drag.start, b = keys.indexOf(t.dataset.key!);
+    if (b < 0) return;
+    const [lo, hi] = a < b ? [a, b] : [b, a];
+    keys.forEach((k, i) => {
+      const want = i >= lo && i <= hi ? drag!.on! : drag!.before.has(k);
+      if (marked.has(k) !== want) setMark(k, want);
+    });
+    refresh();
+  };
+  // Near the top or bottom edge while marking, the library scrolls on its own.
+  const edgeScroll = () => {
+    if (!drag || drag.on === null) { edgeRaf = 0; return; }
+    const r = scroller.getBoundingClientRect();
+    const zone = 60;
+    const dy = lastPt.y < r.top + zone ? -(r.top + zone - lastPt.y) / 4 : lastPt.y > r.bottom - zone ? (lastPt.y - (r.bottom - zone)) / 4 : 0;
+    if (dy) { scroller.scrollTop += dy; markRange(lastPt.x, lastPt.y); }
+    edgeRaf = requestAnimationFrame(edgeScroll);
+  };
+  scroller.addEventListener('pointerdown', (e) => {
+    if (!selecting) return;
+    const t = (e.target as HTMLElement).closest<HTMLElement>('.picts-tile');
+    if (!t) return;
+    drag = { x: e.clientX, y: e.clientY, id: e.pointerId, mouse: e.pointerType === 'mouse', on: null, start: tileKeys().indexOf(t.dataset.key!), before: new Set(marked) };
+  });
+  // On the window, not held by the pictures (run 485: holding the mouse there
+  // sent the next press — on SHARE — to the pictures instead).
+  window.addEventListener('pointermove', (e) => {
+    if (_root !== root) return;
+    if (!drag || e.pointerId !== drag.id) return;
+    lastPt = { x: e.clientX, y: e.clientY };
+    if (drag.on === null) {
+      const dx = Math.abs(e.clientX - drag.x), dy = Math.abs(e.clientY - drag.y);
+      // A finger: sideways first marks, up or down first scrolls (the browser
+      // takes that one). The mouse: any direction marks.
+      if (drag.mouse ? Math.max(dx, dy) < 6 : dx < 10 || dx < dy) return;
+      const startKey = tileKeys()[drag.start];
+      drag.on = !marked.has(startKey);
+      trace(`PICTS: drag ${drag.on ? 'marks' : 'unmarks'}`);
+      if (!edgeRaf) edgeRaf = requestAnimationFrame(edgeScroll);
+    }
+    markRange(e.clientX, e.clientY);
+  });
+  const endDrag = (e: PointerEvent) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    if (drag.on !== null) justDragged = Date.now();
+    drag = null;
+  };
+  window.addEventListener('pointerup', endDrag);
+  window.addEventListener('pointercancel', endDrag);
+
+  daysEl.addEventListener('click', (e) => {
+    const t = (e.target as HTMLElement).closest<HTMLElement>('.picts-tile');
+    if (!t) return;
+    if (Date.now() - justDragged < 300) return;   // the end of a drag is not a tap
+    const p = byKey.get(t.dataset.key!);
+    if (!p) return;
+    if (selecting) { setMark(p.key, !marked.has(p.key)); refresh(); return; }
+    void tap(p);
+  });
+
+  // ---- turning the device ----------------------------------------------------
+  // From the moment the library opens: the same rows, larger or smaller, edge
+  // to edge again; the place kept. The iPad sometimes tells its new size a
+  // moment late — so once more after a short pause.
   const allRows: Row[] = [];
   let lastWidth = daysEl.clientWidth;
   const resize = () => {
     if (_root !== root) { window.removeEventListener('resize', onTurn); window.removeEventListener('orientationchange', onTurn); return; }
     root.style.top = `${topOfContent()}px`;
+    root.style.bottom = `${logStripHeight()}px`;
     const w = daysEl.clientWidth;
     if (w === lastWidth) return;
     const atBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 40;
@@ -192,16 +461,19 @@ export async function openPicts(): Promise<void> {
   // out when all its pictures are in, so its rows never jump.
   for (let i = slots.length - 1; i >= 0; i--) {
     const s = slots[i];
-    const got = (await Promise.all(s.pics.map((p) => loadPic(p, token)))).filter(Boolean) as Loaded[];
+    const got = (await pool(s.pics, 6, (p) => loadPic(p, token))).filter(Boolean) as Loaded[];
     if (_root !== root) return;
     loadedAll.push(...got);
+    for (const p of got) byKey.set(p.key, p);
     const atBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 40;
-    const rows = buildDay(s.rows, got, tap);
+    const rows = buildDay(s.rows, got);
+    for (const p of got) if (marked.has(p.key)) tileOf(p.key)?.classList.add('marked');
     const w = daysEl.clientWidth;
     allRows.push(...rows);
     sizeRows(w === lastWidth ? rows : allRows, w);   // turned while loading: the earlier days too
     lastWidth = w;
     if (atBottom) scroller.scrollTop = scroller.scrollHeight;
+    refresh();
   }
 }
 

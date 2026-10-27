@@ -24,7 +24,7 @@
 
 import type { D1Database, R2Bucket } from "@cloudflare/workers-types";
 import type { Env } from "../types";
-import { ownerOfKey } from "./cleaner";
+import { ownerOfKey, pictureOfThumb } from "./cleaner";
 
 export const GB = 1024 * 1024 * 1024;
 export const MB = 1024 * 1024;
@@ -90,12 +90,28 @@ export async function addBytes(db: D1Database, userId: string | null, delta: num
   await db.batch(stmts);
 }
 
+/** THE LIBRARY'S PREVIEWS COUNT TOO (27 Oct, Roman: "put it in"). A preview
+ *  belongs to no card, so the sum over the cards cannot see it; its bytes are
+ *  kept per account here ('thumbs:<id>'): a new preview adds, a removed one
+ *  takes away, the nightly sweep writes the exact figure from the bucket. */
+export async function thumbBytes(db: D1Database, userId: string): Promise<number> {
+  return readScope(db, `thumbs:${userId}`);
+}
+export async function addThumbBytes(db: D1Database, userId: string, delta: number): Promise<void> {
+  if (!delta) return;
+  await db.prepare(
+    `INSERT INTO storage_totals (scope, bytes, updated_at) VALUES (?, ?, ?)
+     ON CONFLICT(scope) DO UPDATE SET bytes = MAX(0, storage_totals.bytes + excluded.bytes), updated_at = excluded.updated_at`,
+  ).bind(`thumbs:${userId}`, delta, Date.now()).run();
+}
+
 export interface BucketTotals { files: number; bytes: number; byOwner: Map<string, number> }
 
 /** The truth, from the bucket itself: every file, page by page. Writes the
  *  exact figures over the running ones. Nightly, after the sweep. */
 export async function recalibrate(db: D1Database, bucket: R2Bucket): Promise<BucketTotals> {
   const byOwner = new Map<string, number>();
+  const thumbsByOwner = new Map<string, number>();
   let files = 0, bytes = 0;
   let cursor: string | undefined;
   let pages = 0;
@@ -105,6 +121,7 @@ export async function recalibrate(db: D1Database, bucket: R2Bucket): Promise<Buc
       files++; bytes += o.size;
       const owner = ownerOfKey(o.key);
       byOwner.set(owner, (byOwner.get(owner) ?? 0) + o.size);
+      if (pictureOfThumb(o.key)) thumbsByOwner.set(owner, (thumbsByOwner.get(owner) ?? 0) + o.size);
     }
     cursor = listed.truncated ? listed.cursor : undefined;
     pages++;
@@ -112,12 +129,15 @@ export async function recalibrate(db: D1Database, bucket: R2Bucket): Promise<Buc
 
   const now = Date.now();
   const stmts = [
-    db.prepare(`DELETE FROM storage_totals WHERE scope LIKE 'user:%'`),
+    db.prepare(`DELETE FROM storage_totals WHERE scope LIKE 'user:%' OR scope LIKE 'thumbs:%'`),
     db.prepare(`INSERT INTO storage_totals (scope, bytes, updated_at) VALUES ('all', ?, ?)
                 ON CONFLICT(scope) DO UPDATE SET bytes = excluded.bytes, updated_at = excluded.updated_at`).bind(bytes, now),
   ];
   for (const [owner, b] of byOwner) {
     stmts.push(db.prepare(`INSERT INTO storage_totals (scope, bytes, updated_at) VALUES (?, ?, ?)`).bind(`user:${owner}`, b, now));
+  }
+  for (const [owner, b] of thumbsByOwner) {
+    stmts.push(db.prepare(`INSERT INTO storage_totals (scope, bytes, updated_at) VALUES (?, ?, ?)`).bind(`thumbs:${owner}`, b, now));
   }
   // D1 batches are limited in size; write in slices.
   for (let i = 0; i < stmts.length; i += 50) await db.batch(stmts.slice(i, i + 50));

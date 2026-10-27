@@ -1743,10 +1743,27 @@ body.max-view-open{overflow:hidden;}
 #pictsLibrary{position:fixed;left:0;right:0;bottom:0;z-index:18;background:#000;}
 #pictsLibrary .picts-scroll{position:absolute;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:0 0 24px;}
 #pictsLibrary .picts-days{margin:0 2px;}
-#pictsLibrary .picts-date{font-family:var(--mono);font-size:11px;letter-spacing:.08em;color:#9a9a9a;padding:14px 6px 6px;border-top:1px solid #2a2a2a;}
+#pictsLibrary .picts-date{display:flex;justify-content:space-between;align-items:baseline;font-family:var(--mono);font-size:11px;letter-spacing:.08em;color:#9a9a9a;padding:14px 6px 6px;border-top:1px solid #2a2a2a;}
 #pictsLibrary .picts-day:first-child .picts-date{border-top:none;}
 #pictsLibrary .picts-row{display:flex;gap:2px;margin-bottom:2px;}
-#pictsLibrary .picts-tile{flex:none;height:100%;padding:0;border:none;background:#1a1a1a center/cover no-repeat;cursor:pointer;-webkit-tap-highlight-color:transparent;}
+#pictsLibrary .picts-tile{position:relative;flex:none;height:100%;padding:0;border:none;background:#1a1a1a center/cover no-repeat;cursor:pointer;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;}
 #pictsLibrary .picts-wait{background:#111;}
 #pictsLibrary .picts-empty{font-family:var(--font);font-size:13px;color:#9a9a9a;text-align:center;padding:40px 20px;}
 body.picts-open #maxView{z-index:20000;}
+
+/* PICTS step 3 (27 Oct): SELECT / CANCEL, the red tick, the bar. Nothing dimmed.
+   Buttons in the app's own view-bar style (.picts-btn = .view-btn); CANCEL is the lit one. */
+#pictsLibrary .picts-select{position:absolute;top:8px;right:10px;z-index:3;}
+#pictsLibrary .picts-btn:disabled{opacity:.4;cursor:default;}
+#pictsLibrary .picts-day-all{color:var(--accent);font-weight:700;cursor:pointer;}
+#pictsLibrary.selecting .picts-date{cursor:pointer;}
+#pictsLibrary.selecting .picts-scroll{touch-action:pan-y;padding-bottom:calc(56px + env(safe-area-inset-bottom));}
+#pictsLibrary .picts-tick{display:none;position:absolute;right:6px;bottom:6px;width:22px;height:22px;border-radius:50%;background:var(--accent);border:2px solid #fff;box-sizing:border-box;}
+#pictsLibrary .picts-tick::after{content:'';position:absolute;left:6px;top:2.5px;width:5px;height:10px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg);}
+#pictsLibrary .picts-tile.marked .picts-tick{display:block;}
+#pictsLibrary .picts-bar{display:none;position:absolute;left:0;right:0;bottom:0;z-index:3;align-items:center;justify-content:space-between;padding:8px 10px calc(8px + env(safe-area-inset-bottom));background:var(--viewbar-fill);border-top:1px solid var(--border);}
+#pictsLibrary.selecting .picts-bar{display:flex;}
+#pictsLibrary .picts-count{font-family:var(--mono);font-size:13px;font-weight:700;letter-spacing:.04em;color:#808080;}
+#pictsLibrary .picts-flash{position:absolute;left:50%;bottom:calc(64px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:4;font-family:var(--font);font-size:12px;font-weight:500;color:#fff;background:rgba(0,0,0,.7);border-radius:6px;padding:6px 12px;opacity:0;transition:opacity .2s;pointer-events:none;}
+#pictsLibrary .picts-flash.on{opacity:1;}
+#pictsLibrary .picts-day:first-child .picts-date{padding-right:110px;}

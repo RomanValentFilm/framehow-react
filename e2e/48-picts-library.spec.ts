@@ -40,6 +40,10 @@ test('picts library: the server lists every picture of the account, oldest first
   expect([...pictures].sort((a, b) => a.uploaded_at - b.uploaded_at).map((p) => p.key), 'oldest first').toEqual(pictures.map((p) => p.key));
   expect(pictures.filter((p) => p.uses.some((u) => u.project === 'LIBRARY ONE')).length, 'and where they are used').toBeGreaterThanOrEqual(2);
 
+  const storageNow = async () => ((await (await fetch(`${API}/projects`, { headers: { Authorization: `Bearer ${token}` } })).json()) as { storage: { used: number } }).storage.used;
+  const usedBefore = await storageNow();
+  say(`   storage before the library: ${usedBefore} bytes`);
+
   say('step 2: PICTS opens the library — both pictures, under a date line; a tap opens the max screen, which returns here');
   // The project list may still lie over the bars after making the project
   // (runs 481/482: the PICTS tap waited three minutes behind it).
@@ -52,6 +56,28 @@ test('picts library: the server lists every picture of the account, oldest first
   const dates = await d.page.locator('#pictsLibrary .picts-date').allTextContents();
   say(`   date lines: ${dates.join(' | ')}`);
   expect(dates.length, 'one line for today').toBe(1);
+
+  say('step 3: the library made a preview of each picture — small, in the account\'s folder, counted in its storage (27 Oct)');
+  let listed: Pic[] = [];
+  await expect.poll(async () => {
+    listed = ((await (await fetch(`${API}/user/pictures`, { headers: { Authorization: `Bearer ${token}` } })).json()) as { pictures: Pic[] }).pictures;
+    return listed.filter((p) => p.thumb).length;
+  }, { timeout: 15_000 }).toBe(listed.length || 2);
+  let thumbBytes = 0;
+  for (const p of listed) {
+    const r = await fetch(`${API}/thumbs/${p.key}`, { headers: { Authorization: `Bearer ${token}` } });
+    expect(r.ok, 'the preview is there').toBe(true);
+    expect(r.headers.get('content-type'), 'a JPEG').toBe('image/jpeg');
+    const n = (await r.arrayBuffer()).byteLength;
+    thumbBytes += n;
+    expect(n, 'small').toBeLessThan(200 * 1024);
+  }
+  const usedAfter = await storageNow();
+  say(`   previews ${thumbBytes} bytes; storage ${usedBefore} → ${usedAfter}`);
+  expect(usedAfter, 'the previews count in the account').toBe(usedBefore + thumbBytes);
+  const other0 = await freshAccount();
+  const peek = await fetch(`${API}/thumbs/${listed[0].key}`, { headers: { Authorization: `Bearer ${other0.token}` } });
+  expect(peek.status, 'another account cannot see a preview').toBe(404);
 
   // The rows as they stand: which pictures, how high, how wide the library is.
   const rows = () => d.page.evaluate(() => ({
@@ -86,6 +112,46 @@ test('picts library: the server lists every picture of the account, oldest first
   await d.page.locator('#maxView .max-close').click();
   await expect(d.page.locator('#maxView')).toBeHidden();
   await expect(d.page.locator('#pictsLibrary'), 'back in the library').toBeVisible();
+
+  say('step 3: SELECT — a tap marks (red tick), the bar counts, the date line marks the day, a drag marks, SHARE downloads a ZIP, CANCEL clears');
+  const lib = d.page.locator('#pictsLibrary');
+  const tiles = lib.locator('.picts-tile');
+  const count = lib.locator('.picts-count');
+  await expect(lib.locator('.picts-bar'), 'no bar before SELECT').toBeHidden();
+  await lib.locator('.picts-select').click();
+  await expect(lib.locator('.picts-select')).toHaveText('CANCEL');
+  await expect(lib.locator('.picts-bar'), 'the bar').toBeVisible();
+  await expect(count).toHaveText('0 selected');
+  await expect(lib.locator('.picts-share'), 'nothing to share yet').toBeDisabled();
+  await expect(lib.locator('.picts-delete'), 'DELETE grey until step 4').toBeDisabled();
+  await tiles.first().click();
+  await expect(d.page.locator('#maxView'), 'marking, not the max screen').toBeHidden();
+  await expect(tiles.first()).toHaveClass(/marked/);
+  await expect(tiles.first().locator('.picts-tick'), 'the red tick').toBeVisible();
+  await expect(count).toHaveText('1 selected');
+  await lib.locator('.picts-date').first().click();
+  await expect(count, 'the date line marks the whole day').toHaveText('2 selected');
+  await expect(lib.locator('.picts-day-all').first()).toHaveText('DESELECT ALL');
+  await lib.locator('.picts-date').first().click();
+  await expect(count, 'and unmarks it').toHaveText('0 selected');
+  const b1 = (await tiles.nth(0).boundingBox())!, b2 = (await tiles.nth(1).boundingBox())!;
+  await d.page.mouse.move(b1.x + b1.width / 2, b1.y + b1.height / 2);
+  await d.page.mouse.down();
+  await d.page.mouse.move(b1.x + b1.width / 2 + 20, b1.y + b1.height / 2, { steps: 4 });
+  await d.page.mouse.move(b2.x + b2.width / 2, b2.y + b2.height / 2, { steps: 8 });
+  await d.page.mouse.up();
+  await expect(count, 'a drag across both marks both').toHaveText('2 selected');
+  const [zipDl] = await Promise.all([d.page.waitForEvent('download', { timeout: 20_000 }), lib.locator('.picts-share').click()]);
+  const zipPath = await zipDl.path();
+  const zipBytes = zipPath ? (await import('fs')).readFileSync(zipPath) : Buffer.alloc(0);
+  say(`   downloaded "${zipDl.suggestedFilename()}", ${zipBytes.length} bytes`);
+  expect(zipDl.suggestedFilename(), 'one ZIP for two pictures').toBe('Framehow pictures – 2.zip');
+  expect(zipBytes[0] === 0x50 && zipBytes[1] === 0x4b, 'a ZIP').toBe(true);
+  await lib.locator('.picts-select').click();
+  await expect(lib.locator('.picts-select')).toHaveText('SELECT');
+  await expect(lib.locator('.picts-bar')).toBeHidden();
+  await expect(lib.locator('.picts-tile.marked'), 'CANCEL clears the marks').toHaveCount(0);
+
   say('   another view button takes over: the library closes, the button goes back to normal');
   await d.page.locator('.strip-toggle[data-strip="ver"]').click();
   await expect(d.page.locator('#pictsLibrary')).toHaveCount(0);

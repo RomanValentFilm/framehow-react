@@ -20,7 +20,7 @@ import { APP_VERSION } from '../store/state';
  *  It is bumped BY HAND, which is why it sat at #309 through #310, #311, #312
  *  and #313 — telling the screen a version of events that was four changes out
  *  of date. Worth remembering the next time it is trusted in a log. */
-export const SYNC_BUILD_TAG = '#643';
+export const SYNC_BUILD_TAG = '#644';
 
 let box: HTMLElement | null = null;
 
@@ -99,6 +99,12 @@ export function isDebugDevice(): boolean {
 }
 
 /** Turn the log on or off on THIS device, and say which it now is. */
+/** How much of the screen's bottom the log strip covers right now (0 when it
+ *  is not showing) — the PICTS library keeps its bar above it (run 486). */
+export function logStripHeight(): number {
+  return box && box.isConnected ? box.offsetHeight : 0;
+}
+
 export function toggleSyncLog(): boolean {
   if (!logAllowedHere()) return false;
   const on = !enabled();

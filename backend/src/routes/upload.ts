@@ -5,7 +5,8 @@ import { requireUser } from "../lib/auth";
 import { newId } from "../lib/crypto";
 import { jsonError } from "../lib/response";
 import { storageLimitBytes } from "../lib/storage";
-import { addBytes, ceilingBytes, mailIfStepCrossed, totalBytes, userBytes } from "../lib/totals";
+import { addBytes, addThumbBytes, ceilingBytes, mailIfStepCrossed, totalBytes, userBytes } from "../lib/totals";
+import { thumbOfPicture } from "../lib/cleaner";
 
 // Spec: 10 MB per image. Enforced here from Content-Length first, then again
 // against the actual stream length below.
@@ -172,6 +173,78 @@ upload.get("/images/*", requireUser, async (c) => {
   }
   headers.set("Vary", "Origin");
   return new Response(obj.body as unknown as ReadableStream, { headers });
+});
+
+// ---------------------------------------------------------------------------
+// THE PICTS LIBRARY'S PREVIEWS (27 Oct, Roman).
+//
+// A small JPEG of each picture, made by the app the first time the library
+// shows it, kept beside the picture in the account's own folder:
+//   users/<id>/thumbs/<file>.jpg   for   users/<id>/<file>
+// It counts in the account's storage like any picture, and lives exactly as
+// long as its picture: the nightly cleaner takes it with it, an erased
+// account takes it along.
+// ---------------------------------------------------------------------------
+const MAX_THUMB_BYTES = 200 * 1024;
+
+function ownThumbKey(c: { req: { url: string } }, userId: string, route: string): { pic: string; thumb: string } | null {
+  const url = new URL(c.req.url);
+  if (!url.pathname.startsWith(route)) return null;
+  const pic = decodeURIComponent(url.pathname.slice(route.length));
+  if (!pic.startsWith(`users/${userId}/`)) return null;   // only one's own
+  const thumb = thumbOfPicture(pic);
+  return thumb ? { pic, thumb } : null;
+}
+
+function withCors(c: { req: { header(n: string): string | undefined }; env: Env }, headers: Headers): Headers {
+  const allowed = resolveAllowedOrigin(c.req.header("Origin"), c.env.APP_URL);
+  if (allowed) {
+    headers.set("Access-Control-Allow-Origin", allowed);
+    headers.set("Access-Control-Allow-Credentials", "true");
+  }
+  headers.set("Vary", "Origin");
+  return headers;
+}
+
+// PUT /thumbs/<picture key> — the app sends the preview it made.
+upload.put("/thumbs/*", requireUser, async (c) => {
+  if (!c.env.IMAGES_BUCKET) return jsonError(c, 503, "r2_unavailable", "Storage is not available.");
+  const me = c.get("user");
+  const k = ownThumbKey(c, me.id, "/thumbs/");
+  if (!k) return jsonError(c, 404, "not_found", "Picture not found.");
+  if ((c.req.header("Content-Type") ?? "") !== "image/jpeg") return jsonError(c, 415, "unsupported_media_type", "A preview is a JPEG.");
+  const buf = await c.req.arrayBuffer();
+  if (!buf.byteLength) return jsonError(c, 400, "empty_body", "Upload body is empty.");
+  if (buf.byteLength > MAX_THUMB_BYTES) return jsonError(c, 413, "image_too_large", "A preview is at most 200 KB.");
+  const pic = await c.env.IMAGES_BUCKET.head(k.pic);
+  if (!pic) return jsonError(c, 404, "not_found", "Picture not found.");
+  const old = await c.env.IMAGES_BUCKET.head(k.thumb);
+  const delta = buf.byteLength - (old?.size ?? 0);
+  // The same wall as any picture: a full account gets no new previews (the
+  // library then shows the picture itself).
+  const limit = storageLimitBytes(c.env, c.req.header("X-FH-Storage-Limit-MB"));
+  if (delta > 0 && (await userBytes(c.env.DB, me.id)) + delta > limit) {
+    return c.json({ error: { code: "storage_full", message: "This account's storage is full." } }, 413);
+  }
+  await c.env.IMAGES_BUCKET.put(k.thumb, buf, { httpMetadata: { contentType: "image/jpeg" }, customMetadata: { user_id: me.id } });
+  await addBytes(c.env.DB, me.id, delta);
+  await addThumbBytes(c.env.DB, me.id, delta);
+  return c.json({ thumb_key: k.thumb, size_bytes: buf.byteLength }, 201);
+});
+
+// GET /thumbs/<picture key> — the preview, to its owner only.
+upload.get("/thumbs/*", requireUser, async (c) => {
+  if (!c.env.IMAGES_BUCKET) return jsonError(c, 503, "r2_unavailable", "Storage is not available.");
+  const me = c.get("user");
+  const k = ownThumbKey(c, me.id, "/thumbs/");
+  if (!k) return jsonError(c, 404, "not_found", "Preview not found.");
+  const obj = await c.env.IMAGES_BUCKET.get(k.thumb);
+  if (!obj) return jsonError(c, 404, "not_found", "Preview not found.");
+  const headers = new Headers();
+  obj.writeHttpMetadata(headers);
+  headers.set("etag", obj.httpEtag);
+  headers.set("Cache-Control", "private, max-age=86400");
+  return new Response(obj.body as unknown as ReadableStream, { headers: withCors(c, headers) });
 });
 
 export default upload;

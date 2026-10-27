@@ -62,7 +62,9 @@ export async function sumUserImageBytes(
     )
     .bind(userId, excludeProjectId ?? null, excludeProjectId ?? null)
     .first<{ used: number }>();
-  return row?.used ?? 0;
+  // The PICTS library's previews count too (27 Oct, Roman).
+  const { thumbBytes } = await import("./totals");
+  return (row?.used ?? 0) + await thumbBytes(db, userId);
 }
 
 export interface StorageFigure { used: number; limit: number }

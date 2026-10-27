@@ -52,8 +52,22 @@ export function ownerOfKey(key: string): string {
   return m ? m[1] : "?";
 }
 
-/** The decision for one file, on its own so the bench can ask it. */
+/** THE LIBRARY'S PREVIEWS (27 Oct): `users/<id>/thumbs/<file>.jpg` is the
+ *  preview of `users/<id>/<file>`. null for anything that is not a preview. */
+export function pictureOfThumb(key: string): string | null {
+  const m = key.match(/^users\/([A-Za-z0-9_-]+)\/thumbs\/([^/]+)\.jpg$/);
+  return m ? `users/${m[1]}/${m[2]}` : null;
+}
+export function thumbOfPicture(key: string): string | null {
+  const m = key.match(/^users\/([A-Za-z0-9_-]+)\/([^/]+)$/);
+  return m ? `users/${m[1]}/thumbs/${m[2]}.jpg` : null;
+}
+
+/** The decision for one file, on its own so the bench can ask it. A preview
+ *  lives exactly as long as its picture: named picture, kept preview. */
 export function isDead(key: string, uploadedAt: number, now: number, named: ReadonlySet<string>): boolean {
+  const pic = pictureOfThumb(key);
+  if (pic) return !named.has(pic) && now - uploadedAt >= YOUNG_MS;
   if (named.has(key)) return false;
   if (now - uploadedAt < YOUNG_MS) return false;
   return true;
@@ -151,8 +165,12 @@ export async function deleteDeadPictures(
     }
   }
   // The running totals come down with the files (12 Oct).
-  const { addBytes } = await import("./totals");
+  const { addBytes, addThumbBytes } = await import("./totals");
   for (const [o, b] of freedByOwner) await addBytes(db, o, -b);
+  // Previews that went with their pictures come off the account's preview figure.
+  const thumbsFreed = new Map<string, number>();
+  for (const f of files) if (pictureOfThumb(f.key)) thumbsFreed.set(ownerOfKey(f.key), (thumbsFreed.get(ownerOfKey(f.key)) ?? 0) + f.size);
+  for (const [o, b] of thumbsFreed) await addThumbBytes(db, o, -b);
   console.log(`[cleaner] delete mode: owner=${ownerId ?? "all"} deleted=${done.length} freed=${Math.round(bytesFreed / 1048576)}MB`);
   return { deleted: done.length, bytesFreed, keys: done, ownerId };
 }

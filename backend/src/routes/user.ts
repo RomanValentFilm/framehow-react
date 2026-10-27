@@ -3,6 +3,7 @@ import type { AppVariables, Env } from "../types";
 import { requireUser } from "../lib/auth";
 import { hashPassword, verifyPassword } from "../lib/crypto";
 import { isNonEmptyString, jsonError } from "../lib/response";
+import { thumbOfPicture } from "../lib/cleaner";
 
 const MIN_PASSWORD_LEN = 8;
 const MAX_PASSWORD_LEN = 200;
@@ -25,11 +26,12 @@ user.get("/pictures", async (c) => {
   if (!c.env.IMAGES_BUCKET) return c.json({ pictures: [] });
   const prefix = `users/${me.id}/`;
   const files: { key: string; uploaded_at: number; size: number }[] = [];
+  const thumbs = new Set<string>();
   let cursor: string | undefined;
   do {
     const page = await c.env.IMAGES_BUCKET.list({ prefix, cursor, limit: 1000 });
     for (const o of page.objects) {
-      if (o.key.startsWith(`${prefix}thumbs/`)) continue;   // the library's own previews
+      if (o.key.startsWith(`${prefix}thumbs/`)) { thumbs.add(o.key); continue; }   // the library's own previews
       files.push({ key: o.key, uploaded_at: o.uploaded.getTime(), size: o.size });
     }
     cursor = page.truncated ? page.cursor : undefined;
@@ -57,6 +59,7 @@ user.get("/pictures", async (c) => {
       key: f.key, uploaded_at: f.uploaded_at, size: f.size,
       width: byKey.get(f.key)?.width ?? null, height: byKey.get(f.key)?.height ?? null,
       uses: byKey.get(f.key)?.uses ?? [],
+      thumb: thumbs.has(thumbOfPicture(f.key) ?? ''),   // a preview is there (27 Oct)
     })),
   });
 });
