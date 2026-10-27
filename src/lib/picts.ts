@@ -45,7 +45,7 @@ import { logStripHeight, trace } from './syncTrace';
 import { openMaxView } from './maxView';
 import { useStore } from '../store/state';
 import { getCurrentProject } from './currentProject';
-import { listPending } from './persistence';
+import { isArchived, listPending } from './persistence';
 import { allPreviews, deletePreviews, fingerprint, getPreview, putPreview, type PreviewRec } from './pictsStore';
 
 type Use = { project_id: string; project: string; shot: string | null; version: string | null };
@@ -315,6 +315,9 @@ async function localPictures(): Promise<LocalPic[]> {
   try {
     for (const rec of await listPending()) {
       if (rec.deletedAt) continue;
+      // The 24-hour safety copy of work already uploaded: its pictures are on
+      // the server — not new ones (27 Oct, iPhone: 4 "not uploaded yet" at the end).
+      if (isArchived(rec)) continue;
       const snap = rec.snapshot as unknown as { frames?: never; stripVersions?: never };
       picturesOf(snap.frames, snap.stripVersions, rec.name || 'Untitled', out);
     }
@@ -851,6 +854,10 @@ export async function openPicts(): Promise<void> {
   let lastWidth = daysEl.clientWidth;
   const resize = () => {
     if (_root !== root) { window.removeEventListener('resize', onTurn); window.removeEventListener('orientationchange', onTurn); return; }
+    // A turn makes the app scroll the page to its shot; held still, the page
+    // then stayed where the bars were out of view (27 Oct, iPhone). Back to
+    // where it was held, so the bars are in place.
+    if (_heldY !== null && Math.abs(window.scrollY - _heldY) > 1) window.scrollTo(0, _heldY);
     root.style.top = `${topOfContent()}px`;
     root.style.bottom = `${logStripHeight()}px`;
     const w = daysEl.clientWidth;
@@ -862,7 +869,7 @@ export async function openPicts(): Promise<void> {
     scroller.scrollTop = atBottom ? scroller.scrollHeight : share * scroller.scrollHeight;
     trace(`PICTS: turned — rows sized for ${w} px`);
   };
-  function onTurn(): void { resize(); setTimeout(resize, 350); }
+  function onTurn(): void { resize(); setTimeout(resize, 350); setTimeout(resize, 900); }
   window.addEventListener('resize', onTurn);
   window.addEventListener('orientationchange', onTurn);
 
