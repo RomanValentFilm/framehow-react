@@ -59,6 +59,9 @@
   @media (hover:hover){.view-btn:hover{color:#e6e6e6;border-color:var(--border-strong);}}
   .view-btn.active,.picts-btn.active{color:#fff;border-color:var(--accent);border-width:1.5px;font-weight:700;background:rgba(255,255,255,.15);}
   @media (pointer:coarse){.view-btn,.picts-btn{padding:4px 5px 2px;}}
+  /* One red outline at a time (27 Oct): while the PICTS library is open, PICTS is the lit one —
+     the view and strip buttons keep their state underneath and show it again when it closes. */
+  body.picts-open .view-btn.active{color:#808080;border-color:var(--border);border-width:1px;background:var(--btn-fill);}
   .vb-off-btn{background:#d52632;color:#fff;border-color:#d52632;font-size:10px;padding:0 6px;height:20px;display:flex;align-items:center;gap:2px;}
   .vb-desktop-only{display:flex;}
   @media (max-width:430px) and (orientation:portrait){.vb-desktop-only{display:none;}}
@@ -764,7 +767,7 @@
     body.view-grid3x2.detail-open .detail-bar{display:flex!important;}
     .columns{padding-top:0;}
     body.detail-open .columns{padding-top:0;}
-    .view-btn{padding:3px 4px;font-size:11px;}
+    .view-btn,.picts-btn{padding:3px 4px;font-size:11px;}
     body.setup-lock .setup-bar{position:sticky;top:calc(var(--sat) + 26px);left:auto;right:auto;z-index:19;}
     body.setup-lock .columns{padding-top:0;}
     body.setup-lock.detail-open .columns{padding-top:0;}
@@ -1752,9 +1755,10 @@ body.max-view-open{overflow:hidden;}
 body.picts-open #maxView{z-index:20000;}
 
 /* PICTS step 3 (27 Oct): SELECT / CANCEL, the red tick, the bar. Nothing dimmed.
-   Buttons in the app's own view-bar style (.picts-btn = .view-btn); CANCEL is the lit one. */
+   Buttons in the app's own view-bar style (.picts-btn = .view-btn); grey until something is marked, then white text and a lighter frame — never red (red = the view that is on). */
 #pictsLibrary .picts-select{position:absolute;top:8px;right:10px;z-index:3;}
-#pictsLibrary .picts-btn:disabled{opacity:.4;cursor:default;}
+#pictsLibrary .picts-btn:disabled{cursor:default;}
+#pictsLibrary .picts-btn.ready{color:#fff;border-color:var(--border-strong);}
 #pictsLibrary .picts-day-all{color:var(--accent);font-weight:700;cursor:pointer;}
 #pictsLibrary.selecting .picts-date{cursor:pointer;}
 #pictsLibrary.selecting .picts-scroll{touch-action:pan-y;padding-bottom:calc(56px + env(safe-area-inset-bottom));}

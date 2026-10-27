@@ -52,6 +52,14 @@ test('picts library: the server lists every picture of the account, oldest first
   await d.page.locator('#pictsBtn').click({ timeout: 15_000 });
   await expect(d.page.locator('#pictsLibrary'), 'the library').toBeVisible();
   await expect(d.page.locator('#pictsBtn'), 'the button is lit').toHaveClass(/active/);
+  say('   one red outline at a time: while the library is open, PICTS is the only one (27 Oct)');
+  const reds = await d.page.evaluate(() => {
+    const accent = getComputedStyle(document.getElementById('pictsBtn')!).borderTopColor;
+    return [...document.querySelectorAll<HTMLElement>('.view-bar button, .detail-bar button')]
+      .filter((b) => b.offsetParent && getComputedStyle(b).borderTopColor === accent).map((b) => b.textContent!.trim());
+  });
+  say(`   red outlines: ${reds.join(', ')}`);
+  expect(reds, 'only PICTS').toEqual(['PICTS']);
   await expect.poll(() => d.page.locator('#pictsLibrary .picts-tile').count(), { timeout: 15_000 }).toBeGreaterThanOrEqual(2);
   const dates = await d.page.locator('#pictsLibrary .picts-date').allTextContents();
   say(`   date lines: ${dates.join(' | ')}`);
@@ -120,6 +128,7 @@ test('picts library: the server lists every picture of the account, oldest first
   await expect(lib.locator('.picts-bar'), 'no bar before SELECT').toBeHidden();
   await lib.locator('.picts-select').click();
   await expect(lib.locator('.picts-select')).toHaveText('CANCEL');
+  await expect(lib.locator('.picts-select'), 'CANCEL grey while nothing is marked').not.toHaveClass(/ready|active/);
   await expect(lib.locator('.picts-bar'), 'the bar').toBeVisible();
   await expect(count).toHaveText('0 selected');
   await expect(lib.locator('.picts-share'), 'nothing to share yet').toBeDisabled();
@@ -129,9 +138,11 @@ test('picts library: the server lists every picture of the account, oldest first
   await expect(tiles.first()).toHaveClass(/marked/);
   await expect(tiles.first().locator('.picts-tick'), 'the red tick').toBeVisible();
   await expect(count).toHaveText('1 selected');
+  await expect(lib.locator('.picts-select'), 'CANCEL white once something is marked').toHaveClass(/ready/);
+  await expect(lib.locator('.picts-share'), 'SHARE white too').toHaveClass(/ready/);
   await lib.locator('.picts-date').first().click();
   await expect(count, 'the date line marks the whole day').toHaveText('2 selected');
-  await expect(lib.locator('.picts-day-all').first()).toHaveText('DESELECT ALL');
+  await expect(lib.locator('.picts-day-all').first()).toHaveText('UNSELECT DAY');
   await lib.locator('.picts-date').first().click();
   await expect(count, 'and unmarks it').toHaveText('0 selected');
   const b1 = (await tiles.nth(0).boundingBox())!, b2 = (await tiles.nth(1).boundingBox())!;

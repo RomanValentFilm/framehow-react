@@ -279,10 +279,13 @@ export async function openPicts(): Promise<void> {
   const refresh = () => {
     countEl.textContent = `${marked.size} selected`;
     shareBtn.disabled = marked.size === 0;
+    // Grey until something is marked, then white (Roman, 27 Oct) — CANCEL too.
+    selectBtn.classList.toggle('ready', selecting && marked.size > 0);
+    shareBtn.classList.toggle('ready', marked.size > 0);
     for (const s of slots) {
       const all = s.pics.filter((p) => byKey.has(p.key));
       const every = all.length > 0 && all.every((p) => marked.has(p.key));
-      s.date.querySelector<HTMLElement>('.picts-day-all')!.textContent = selecting ? (every ? 'DESELECT ALL' : 'SELECT ALL') : '';
+      s.date.querySelector<HTMLElement>('.picts-day-all')!.textContent = selecting ? (every ? 'UNSELECT DAY' : 'SELECT DAY') : '';
     }
   };
   const setMark = (key: string, on: boolean) => {
@@ -296,7 +299,6 @@ export async function openPicts(): Promise<void> {
     selecting = on;
     root.classList.toggle('selecting', on);
     selectBtn.textContent = on ? 'CANCEL' : 'SELECT';
-    selectBtn.classList.toggle('active', on);
     if (!on) for (const k of [...marked]) setMark(k, false);
     trace(`PICTS: marking ${on ? 'on' : 'off'}`);
     refresh();
