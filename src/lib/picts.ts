@@ -852,6 +852,25 @@ export async function openPicts(): Promise<void> {
   // moment late — so once more after a short pause.
   const allRows: Row[] = [];
   let lastWidth = daysEl.clientWidth;
+  // THE PICTURE YOU ARE LOOKING AT stays in view through a turn (Roman, 27 Oct):
+  // the one in the middle of the library is noted while you scroll, and after
+  // the rows are resized the library is scrolled so it is in the middle again.
+  let anchorKey: string | null = null;
+  const noteAnchor = () => {
+    const r = scroller.getBoundingClientRect();
+    const t = (document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) as HTMLElement | null)?.closest<HTMLElement>('.picts-tile');
+    if (t?.dataset.key) anchorKey = t.dataset.key;
+  };
+  let noteT = 0;
+  scroller.addEventListener('scroll', () => { clearTimeout(noteT); noteT = window.setTimeout(noteAnchor, 120); }, { passive: true });
+  const toAnchor = () => {
+    if (pinned || !anchorKey) return false;
+    const t = tileOf(anchorKey);
+    if (!t) return false;
+    const r = scroller.getBoundingClientRect(), b = t.getBoundingClientRect();
+    scroller.scrollTop += (b.top + b.height / 2) - (r.top + r.height / 2);
+    return true;
+  };
   const resize = () => {
     if (_root !== root) { window.removeEventListener('resize', onTurn); window.removeEventListener('orientationchange', onTurn); return; }
     // A turn makes the app scroll the page to its shot; held still, the page
@@ -866,8 +885,22 @@ export async function openPicts(): Promise<void> {
     const share = scroller.scrollHeight ? scroller.scrollTop / scroller.scrollHeight : 0;
     lastWidth = w;
     sizeRows(allRows, w);
-    scroller.scrollTop = atBottom ? scroller.scrollHeight : share * scroller.scrollHeight;
-    trace(`PICTS: turned — rows sized for ${w} px`);
+    if (atBottom || pinned) scroller.scrollTop = scroller.scrollHeight;
+    else if (!toAnchor()) scroller.scrollTop = share * scroller.scrollHeight;
+    trace(`PICTS: turned — rows sized for ${w} px; ${atBottom || pinned ? 'at the bottom' : anchorKey ? 'the picture you looked at in the middle' : 'same share of the way'}`);
+    // Where everything sits after the turn (27 Oct: CANCEL could not be pressed).
+    setTimeout(() => {
+      if (_root !== root) return;
+      const lr = root.getBoundingClientRect(), sr = selectBtn.getBoundingClientRect();
+      const top = document.elementFromPoint(sr.left + sr.width / 2, sr.top + sr.height / 2);
+      const bars = ['#mainToolbar', '.view-bar', '#detailBar'].map((sel) => {
+        const el = document.querySelector<HTMLElement>(sel);
+        if (!el || getComputedStyle(el).display === 'none') return `${sel} hidden`;
+        const b = el.getBoundingClientRect();
+        return `${sel} ${Math.round(b.top)}–${Math.round(b.bottom)}`;
+      }).join(', ');
+      trace(`PICTS: after the turn — library ${Math.round(lr.top)}–${Math.round(lr.bottom)}, ${selectBtn.textContent} ${top === selectBtn ? 'pressable' : `covered by ${(top as HTMLElement | null)?.id || (top as HTMLElement | null)?.className || 'nothing'}`}; bars: ${bars}; page at ${Math.round(window.scrollY)}`);
+    }, 400);
   };
   function onTurn(): void { resize(); setTimeout(resize, 350); setTimeout(resize, 900); }
   window.addEventListener('resize', onTurn);

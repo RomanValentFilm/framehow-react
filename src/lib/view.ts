@@ -585,6 +585,10 @@ export function restoreFrameAnchor(a: { fid: string; rel: number } | null): void
 
 export function scrollAnchorTo(fid: string | number | null): void {
   if (!fid) return;
+  // Not while the PICTS library lies over the page (27 Oct, iPhone): a turn
+  // scrolled the page behind it, the bars moved, the library sat elsewhere and
+  // its buttons could not be pressed. On closing, the page goes back to its shot.
+  if (document.body.classList.contains('picts-open')) { sayWhoScrolled(`centre on ${fid} — not now, the library is open`); return; }
   // SAY WHO MOVED THE PAGE (#363), the same way the app says who changed the
   // view. Roman reports the page jumping to the middle after a photo and after
   // a drawing; three readings of the code have each blamed the wrong caller.
