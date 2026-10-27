@@ -7,6 +7,7 @@
 
 import { test, expect } from '@playwright/test';
 import { API, Device, freshAccount, say } from './harness';
+import { deflateSync } from 'zlib';
 
 test.describe.configure({ timeout: 180_000 });
 
@@ -216,7 +217,80 @@ test('picts library on the iPad: the library starts under the bars, SELECT is vi
   await expect.poll(async () => (await d.log()).find((l) => l.includes('PICTS: SELECT at')) ?? '', { timeout: 5_000 }).toContain('— visible');
   say(`   ${(await d.log()).find((l) => l.includes('PICTS: SELECT at'))}`);
   say(`   ${(await d.log()).find((l) => l.includes('PICTS: shown')) ?? 'no shown line'}`);
-  await expect.poll(async () => (await d.log()).find((l) => l.includes('PICTS: all loaded')) ?? '', { timeout: 5_000, message: 'it opens at the bottom' }).toContain('at the bottom');
-  say(`   ${(await d.log()).find((l) => l.includes('PICTS: all loaded'))}`);
+  await expect.poll(async () => (await d.log()).find((l) => l.includes('PICTS: newest day loaded')) ?? '', { timeout: 5_000, message: 'it opens at the bottom' }).toContain('at the bottom');
+  say(`   ${(await d.log()).find((l) => l.includes('PICTS: newest day loaded'))}`);
   await d.close();
 });
+
+/** A small one-colour PNG — each colour a different picture, so a different fingerprint. */
+function colourPng(r: number, g: number, b: number): string {
+  const W = 48, H = 32;
+  const raw = Buffer.alloc((W * 3 + 1) * H);
+  for (let y = 0; y < H; y++) { raw[y * (W * 3 + 1)] = 0; for (let x = 0; x < W; x++) { const o = y * (W * 3 + 1) + 1 + x * 3; raw[o] = r; raw[o + 1] = g; raw[o + 2] = b; } }
+  const crcT = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
+  const crc = (buf: Buffer) => { let c = 0xffffffff; for (const x of buf) c = crcT[(c ^ x) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+  const chunk = (type: string, data: Buffer) => { const len = Buffer.alloc(4); len.writeUInt32BE(data.length); const td = Buffer.concat([Buffer.from(type), data]); const c = Buffer.alloc(4); c.writeUInt32BE(crc(td)); return Buffer.concat([len, td, c]); };
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(W, 0); ihdr.writeUInt32BE(H, 4); ihdr[8] = 8; ihdr[9] = 2; ihdr[10] = 0; ihdr[11] = 0; ihdr[12] = 0;
+  return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', ihdr), chunk('IDAT', deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]).toString('base64');
+}
+
+test('picts library offline: pictures shot offline are in the library offline; online they upload with their preview, once', async ({ browser }) => {
+  // 27 Oct, Roman: "a user offline shoots 10 pictures — he has to see 10 in the library".
+  const { token } = await freshAccount();
+  const d = await Device.open(browser, 'desktop', token);
+  await d.newProjectOfKind('OFFLINE DAY', 'landscape', 3);
+  await d.settle();
+  await d.page.evaluate(() => document.getElementById('projectListModal')?.classList.add('hidden'));
+
+  say('offline: a picture on each of the three shots');
+  await d.offline(true);
+  const colours = [colourPng(200, 40, 40), colourPng(40, 200, 40), colourPng(40, 40, 200)];
+  // Through the test door, not the file picker: offline, the test browser cannot
+  // read the picker's files (run 492: "NotReadableError") — a real device can.
+  for (let i = 0; i < 3; i++) { await d.putPicture(i, `data:image/png;base64,${colours[i]}`); await d.page.waitForTimeout(400); }
+  await expect.poll(async () => (await d.log()).filter((l) => l.includes('preview made on this device')).length,
+    { timeout: 20_000, message: 'a preview for each, made on the device, offline' }).toBe(3);
+
+  say('offline: PICTS shows the three, says it is offline');
+  await d.page.locator('#pictsBtn').click({ timeout: 15_000 });
+  await expect(d.page.locator('#pictsLibrary .picts-offline'), 'the offline line').toBeVisible({ timeout: 15_000 });
+  await expect.poll(() => d.page.locator('#pictsLibrary .picts-tile').count(), { timeout: 15_000 }).toBe(3);
+  say(`   ${(await d.log()).find((l) => l.includes('PICTS: OFFLINE')) ?? 'no OFFLINE line'}`);
+  await d.page.locator('#pictsLibrary .picts-tile').first().click();
+  await expect(d.page.locator('#maxView'), 'a picture opens in the max screen, offline').toBeVisible();
+  await d.page.locator('#maxView .max-close').click();
+  await d.page.locator('#pictsBtn').click();   // close the library
+  await expect(d.page.locator('#pictsLibrary')).toHaveCount(0);
+
+  say('online: the pictures upload; each preview is linked by its fingerprint and sent along — not made again, not downloaded');
+  await d.offline(false);
+  await expect.poll(async () => {
+    const l = ((await (await fetch(`${API}/user/pictures`, { headers: { Authorization: `Bearer ${token}` } })).json()) as { pictures: Pic[] }).pictures;
+    return l.filter((p) => p.thumb).length;
+  }, { timeout: 45_000, message: 'three previews on the server' }).toBe(3);
+  const log = await d.log();
+  const linked = log.filter((l) => l.includes('preview kept') && l.includes('on adding')).length;
+  const remade = log.filter((l) => l.includes('made from the full picture')).length;
+  say(`   previews sent on upload: ${linked}; made again from the full picture: ${remade}`);
+  expect(linked, 'each preview sent once, on upload').toBe(3);
+
+  say('online: PICTS shows three — not six (the device\'s and the server\'s are the same pictures)');
+  await d.page.locator('#pictsBtn').click({ timeout: 15_000 });
+  await expect.poll(() => d.page.locator('#pictsLibrary .picts-tile').count(), { timeout: 15_000 }).toBe(3);
+  await d.page.waitForTimeout(800);
+  expect(await d.page.locator('#pictsLibrary .picts-tile').count(), 'still three').toBe(3);
+  await expect(d.page.locator('#pictsLibrary .picts-offline')).toHaveCount(0);
+  await d.page.locator('#pictsBtn').click();
+
+  say('reload, then offline again: the three come from the device');
+  await d.page.reload();
+  await d.page.waitForTimeout(2500);
+  await d.page.evaluate(() => document.getElementById('projectListModal')?.classList.add('hidden'));
+  await d.offline(true);
+  await d.page.locator('#pictsBtn').click({ timeout: 15_000 });
+  await expect.poll(() => d.page.locator('#pictsLibrary .picts-tile').count(), { timeout: 15_000 }).toBe(3);
+  say(`   ${(await d.log()).find((l) => l.includes('PICTS: OFFLINE')) ?? 'no OFFLINE line'}`);
+  await d.offline(false);
+  await d.close();
+});
+

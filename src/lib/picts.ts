@@ -21,14 +21,37 @@
 //             iPhone/iPad: the share sheet with the pictures. Mac/PC: one
 //             picture downloads as itself, several as one ZIP. DELETE is grey
 //             until step 4.
+//
+// Offline (27 Oct, Roman: "a user offline shoots 10 pictures — he sees 10 in
+// the library"):
+//   THE DEVICE KEEPS PREVIEWS in a store of its own (pictsStore.ts) — never
+//             mixed with the projects. A picture added on this device gets
+//             its preview a few seconds later, when the device is idle,
+//             online or not, under the picture's FINGERPRINT. When the
+//             picture reaches the server, the same fingerprint finds the same
+//             preview: it is linked to the server's name and sent along — made
+//             once, downloaded never.
+//   OFFLINE   the library shows what the device keeps, and every picture of
+//             the open project and of unsent work.
+//   KEPT      everything not yet uploaded; the open project's pictures; the
+//             whole of today and of the last day with pictures; and the newest
+//             three screens. Making room removes previews only.
+//   ONLINE    the server's list joins; days whose previews are not on the
+//             device load when you scroll near them.
 
 import { api, API_BASE_URL } from './api';
 import { getToken } from './session';
 import { logStripHeight, trace } from './syncTrace';
 import { openMaxView } from './maxView';
+import { useStore } from '../store/state';
+import { getCurrentProject } from './currentProject';
+import { listPending } from './persistence';
+import { allPreviews, deletePreviews, fingerprint, getPreview, putPreview, type PreviewRec } from './pictsStore';
 
 type Use = { project_id: string; project: string; shot: string | null; version: string | null };
-type Pic = { key: string; uploaded_at: number; size: number; width: number | null; height: number | null; uses: Use[]; thumb?: boolean; thumb_size?: number | null };
+type Pic = { key: string; uploaded_at: number; size: number; width: number | null; height: number | null; uses: Use[]; thumb?: boolean; thumb_size?: number | null;
+  /** Not on the server yet: known only from this device (key "local:<fingerprint>"). */
+  local?: boolean; fp?: string; label?: string };
 type Loaded = Pic & { url: string; w: number; h: number };
 
 /** Per row: landscape and portrait pictures (Roman, 26 Oct; portraits tuned to 8). */
@@ -41,6 +64,8 @@ let _root: HTMLElement | null = null;
 const _thumbs = new Map<string, string>();   // r2 key → preview object URL, kept for the session
 const _full = new Map<string, Blob>();       // r2 key → the full picture, once loaded
 const _fullUrls = new Map<string, string>();
+const _localSrc = new Map<string, string>();  // key → the picture as this device holds it (data URL)
+const _fpOf = new Map<string, string>();      // data URL → fingerprint, so a picture is hashed once
 
 export function pictsOpen(): boolean { return !!_root; }
 
@@ -76,7 +101,7 @@ const dayLabel = (t: number) => new Date(t).toLocaleDateString(undefined, { week
 
 function whereUsed(p: Pic): string {
   const u = p.uses[0];
-  if (!u) return 'not on a card';
+  if (!u) return p.label || 'not on a card';
   return `${u.project} – shot ${u.shot ?? '?'}${u.version ? ` – ${u.version}` : ''}`;
 }
 
@@ -87,6 +112,18 @@ const authed = (path: string, token: string, init: RequestInit = {}) =>
 async function fullBlob(key: string, token: string): Promise<Blob | null> {
   const had = _full.get(key);
   if (had) return had;
+  // On this device already (a card of the open project, unsent work): no download.
+  const local = _localSrc.get(key);
+  if (local) {
+    const m = local.match(/^data:([^;,]+)?(;base64)?,/);
+    if (m) {
+      const bytes = m[2] ? b64ToBytes(local.slice(m[0].length)) : new TextEncoder().encode(decodeURIComponent(local.slice(m[0].length)));
+      const b = new Blob([bytes as Uint8Array<ArrayBuffer>], { type: m[1] || 'image/jpeg' });
+      _full.set(key, b);
+      return b;
+    }
+  }
+  if (key.startsWith('local:')) return null;
   const res = await authed(`/images/${key}`, token);
   if (!res.ok) return null;
   const b = await res.blob();
@@ -96,6 +133,8 @@ async function fullBlob(key: string, token: string): Promise<Blob | null> {
 async function fullUrl(key: string, token: string): Promise<string | null> {
   const had = _fullUrls.get(key);
   if (had) return had;
+  const local = _localSrc.get(key);
+  if (local) return local;   // the picture itself, as this device holds it
   const b = await fullBlob(key, token);
   if (!b) return null;
   const u = URL.createObjectURL(b);
@@ -107,8 +146,23 @@ const loadImg = (url: string) => new Promise<HTMLImageElement>((ok, bad) => {
   const img = new Image(); img.onload = () => ok(img); img.onerror = () => bad(new Error('no picture')); img.src = url;
 });
 
-/** Shrink a picture to its preview. */
-async function shrink(url: string): Promise<Blob | null> {
+function b64ToBytes(b64: string): Uint8Array {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+function bytesToDataUrl(bytes: ArrayBuffer, type = 'image/jpeg'): string {
+  const u = new Uint8Array(bytes);
+  let bin = '';
+  for (let i = 0; i < u.length; i += 0x8000) bin += String.fromCharCode(...u.subarray(i, i + 0x8000));
+  return `data:${type};base64,${btoa(bin)}`;
+}
+type Made = { bytes: ArrayBuffer; dataUrl: string; w: number; h: number };
+
+/** Shrink a picture to its preview — straight from the drawing to bytes, never
+ *  through a picture object (runs 493/494). */
+async function shrinkWithSize(url: string): Promise<Made | null> {
   const img = await loadImg(url);
   const k = Math.min(1, THUMB_LONG / Math.max(img.naturalWidth, img.naturalHeight));
   const c = document.createElement('canvas');
@@ -116,36 +170,39 @@ async function shrink(url: string): Promise<Blob | null> {
   const ctx = c.getContext('2d')!;
   ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(img, 0, 0, c.width, c.height);
-  return new Promise<Blob | null>((res) => c.toBlob(res, 'image/jpeg', THUMB_Q));
+  const dataUrl = c.toDataURL('image/jpeg', THUMB_Q);
+  if (!dataUrl.startsWith('data:image/jpeg')) return null;
+  const bytes = b64ToBytes(dataUrl.slice(dataUrl.indexOf(',') + 1));
+  return { bytes: bytes.buffer as ArrayBuffer, dataUrl, w: c.width, h: c.height };
 }
 
-function keepThumb(key: string, blob: Blob, token: string, why: string): Promise<boolean> {
-  return authed(`/thumbs/${key}`, token, { method: 'PUT', headers: { 'Content-Type': 'image/jpeg' }, body: blob })
-    .then((r) => { trace(`PICTS: preview kept for ${key.split('/').pop()} (${Math.round(blob.size / 1024)} KB, ${why}) — ${r.status}`); return r.ok; })
+function keepThumb(key: string, bytes: ArrayBuffer, token: string, why: string): Promise<boolean> {
+  return authed(`/thumbs/${key}`, token, { method: 'PUT', headers: { 'Content-Type': 'image/jpeg' }, body: bytes })
+    .then((r) => { trace(`PICTS: preview kept for ${key.split('/').pop()} (${Math.round(bytes.byteLength / 1024)} KB, ${why}) — ${r.status}`); return r.ok; })
     .catch(() => { trace(`PICTS: preview not kept for ${key.split('/').pop()} (offline?)`); return false; });
 }
 
 /** An older picture without a preview: made once from the full picture. */
-async function makeThumb(p: Pic, token: string): Promise<Blob | null> {
+async function makeThumb(p: Pic, token: string): Promise<Made | null> {
   const url = await fullUrl(p.key, token);
   if (!url) return null;
-  const blob = await shrink(url);
-  if (blob) void keepThumb(p.key, blob, token, 'first look');
-  return blob;
+  const made = await shrinkWithSize(url);
+  if (made) void keepThumb(p.key, made.bytes, token, 'first look');
+  return made;
 }
 
 // ---- previews made when a picture is added (27 Oct, Roman) -----------------
 // From the picture already in hand, so nothing is downloaded. Never in the
 // way: it waits until the upload has settled (a few seconds of quiet after the
 // last one), then does one picture per moment the device has nothing to do.
-const _queue: { key: string; blob: Blob }[] = [];
+const _queue: { key: string; blob: Blob; src?: string }[] = [];
 let _queueTimer = 0;
 const idle = (fn: () => void) => {
   const ric = (window as unknown as { requestIdleCallback?: (f: () => void, o?: { timeout: number }) => number }).requestIdleCallback;
   if (ric) ric(fn, { timeout: 10_000 }); else setTimeout(fn, 400);
 };
-export function queuePreview(key: string, blob: Blob): void {
-  _queue.push({ key, blob });
+export function queuePreview(key: string, blob: Blob, src?: string): void {
+  _queue.push({ key, blob, src });
   clearTimeout(_queueTimer);
   _queueTimer = window.setTimeout(() => idle(nextPreview), 4000);
 }
@@ -154,27 +211,162 @@ function nextPreview(): void {
   if (!job) return;
   const token = getToken();
   if (!token) { _queue.length = 0; return; }
-  const url = URL.createObjectURL(job.blob);
-  void shrink(url).then((b) => (b ? keepThumb(job.key, b, token, 'on adding') : false))
-    .catch(() => false)
-    .finally(() => { URL.revokeObjectURL(url); if (_queue.length) idle(nextPreview); });
+  void (async () => {
+    // The preview this device made when the picture was added (offline, maybe):
+    // found again by its fingerprint, linked to the server's name, sent along.
+    const fp = job.src ? await fpOf(job.src) : null;
+    const had = fp ? await getPreview(previewId(fp)) : null;
+    if (had) {
+      await putPreview({ ...had, r2Key: job.key });
+      await keepThumb(job.key, had.bytes, token, 'on adding');
+      return;
+    }
+    const url = job.src ?? URL.createObjectURL(job.blob);
+    try {
+      const made = await shrinkWithSize(url);
+      if (!made) return;
+      await putPreview({ id: fp ? previewId(fp) : `r2:${job.key}:preview`, fp: fp ?? undefined, r2Key: job.key, at: Date.now(), label: '', w: made.w, h: made.h, bytes: made.bytes });
+      await keepThumb(job.key, made.bytes, token, 'on adding');
+    } finally { if (!job.src) URL.revokeObjectURL(url); }
+  })().catch(() => false).finally(() => { if (_queue.length) idle(nextPreview); });
 }
 
-async function loadPic(p: Pic, token: string): Promise<Loaded | null> {
+/** The device's name for a picture's PREVIEW: the picture's fingerprint with
+ *  ":preview" on the end — never to be mistaken for the picture itself. */
+const previewId = (fp: string | undefined | null) => `fp:${fp}:preview`;
+
+async function fpOf(src: string): Promise<string> {
+  const had = _fpOf.get(src);
+  if (had) return had;
+  const fp = await fingerprint(src);
+  _fpOf.set(src, fp);
+  return fp;
+}
+
+// ---- the pictures this device holds (27 Oct) ---------------------------------
+type LocalPic = { key: string; src: string; r2Key: string | null; label: string };
+
+function picturesOf(frames: Array<{ id: number; src: string; label: string; r2Key?: string }> | undefined,
+  stripVersions: Record<string, Record<number, Array<{ label: string; bgImage: string | null; r2Key?: string }>>> | undefined,
+  project: string, out: LocalPic[]): void {
+  for (const f of frames || []) {
+    if (f.src && f.src.startsWith('data:image')) out.push({ key: '', src: f.src, r2Key: f.r2Key || null, label: `${project} – shot ${f.label} – main` });
+    for (const st of Object.keys(stripVersions || {})) {
+      for (const v of stripVersions![st]?.[f.id] || []) {
+        if (v.bgImage && v.bgImage.startsWith('data:image')) out.push({ key: '', src: v.bgImage, r2Key: v.r2Key || null, label: `${project} – shot ${f.label} – ${v.label}` });
+      }
+    }
+  }
+}
+
+/** Every picture of the open project and of unsent work on this device. */
+async function localPictures(): Promise<LocalPic[]> {
+  const out: LocalPic[] = [];
+  const s = useStore.getState();
+  picturesOf(s.frames, s.stripVersions, getCurrentProject().name || 'Untitled', out);
+  try {
+    for (const rec of await listPending()) {
+      if (rec.deletedAt) continue;
+      const snap = rec.snapshot as unknown as { frames?: never; stripVersions?: never };
+      picturesOf(snap.frames, snap.stripVersions, rec.name || 'Untitled', out);
+    }
+  } catch { /* no unsent work */ }
+  const seen = new Set<string>();
+  const res: LocalPic[] = [];
+  for (const l of out) {
+    l.key = l.r2Key ?? `local:${await fpOf(l.src)}`;
+    if (seen.has(l.key)) continue;
+    seen.add(l.key);
+    _localSrc.set(l.key, l.src);
+    res.push(l);
+  }
+  return res;
+}
+
+// A picture ADDED on this device, online or offline, gets its preview a few
+// seconds later, when the device is idle — so the library shows it even if it
+// never reaches the server today (Roman, 27 Oct).
+let _watching = false;
+let _lastSig = '';
+let _busy = false;
+/** A cheap look every few seconds: which pictures are not uploaded yet (how
+ *  many, how long). The app changes a picture inside its shot without
+ *  replacing the list of shots (run 491: a watcher on the list never woke),
+ *  so the pictures themselves are looked at — counted, not worked on. */
+function unsentSignature(): string {
+  const s = useStore.getState();
+  let n = 0, len = 0;
+  for (const f of s.frames) {
+    if (f.src && f.src.startsWith('data:image') && !f.r2Key) { n++; len += f.src.length; }
+    for (const st of Object.keys(s.stripVersions || {})) {
+      for (const v of s.stripVersions[st]?.[f.id] || []) if (v.bgImage && v.bgImage.startsWith('data:image') && !v.r2Key) { n++; len += v.bgImage.length; }
+    }
+  }
+  return `${n}:${len}`;
+}
+export function watchNewPictures(): void {
+  if (_watching) return;
+  _watching = true;
+  trace('PICTS: watching for new pictures (a preview each, when the device is idle)');
+  setInterval(() => {
+    if (_busy) return;
+    const sig = unsentSignature();
+    if (sig === _lastSig) return;
+    _lastSig = sig;
+    if (sig.startsWith('0:')) return;
+    _busy = true;
+    idle(() => void previewsForUnsent().finally(() => { _busy = false; }));
+  }, 4000);
+}
+async function previewsForUnsent(): Promise<void> {
+  const s = useStore.getState();
+  const mine: LocalPic[] = [];
+  picturesOf(s.frames, s.stripVersions, getCurrentProject().name || 'Untitled', mine);
+  for (const l of mine.filter((x) => !x.r2Key)) {
+    const fp = await fpOf(l.src);
+    if (await getPreview(previewId(fp))) continue;
+    const made = await shrinkWithSize(l.src).catch(() => null);
+    if (!made) continue;
+    await putPreview({ id: previewId(fp), fp, r2Key: null, at: Date.now(), label: l.label, w: made.w, h: made.h, bytes: made.bytes });
+    trace(`PICTS: preview made on this device for ${l.label} (${Math.round(made.bytes.byteLength / 1024)} KB, not uploaded yet)`);
+    await new Promise<void>((r) => idle(r));   // one per quiet moment
+  }
+}
+
+type Device = { byId: Map<string, PreviewRec>; byR2: Map<string, PreviewRec> };
+
+async function loadPic(p: Pic, token: string, dev: Device, online: boolean): Promise<Loaded | null> {
   try {
     let url = _thumbs.get(p.key);
+    let w = 0, h = 0;
+    const rec = p.local ? dev.byId.get(previewId(p.fp)) : (dev.byR2.get(p.key) ?? (p.fp ? dev.byId.get(previewId(p.fp)) : undefined));
     if (!url) {
-      let blob: Blob | null = null;
-      if (p.thumb) { const r = await authed(`/thumbs/${p.key}`, token); if (r.ok) blob = await r.blob(); }
-      if (!blob) blob = await makeThumb(p, token);
-      if (!blob) return null;
-      url = URL.createObjectURL(blob);
+      let bytes: ArrayBuffer | null = rec?.bytes ?? null;
+      let from = 'device';
+      if (rec) { w = rec.w; h = rec.h; }
+      const local = _localSrc.get(p.key);
+      if (!bytes && local) { const m = await shrinkWithSize(local); if (m) { bytes = m.bytes; w = m.w; h = m.h; from = 'made here'; } }
+      if (!bytes && online && p.thumb) { const r = await authed(`/thumbs/${p.key}`, token); if (r.ok) { bytes = await r.arrayBuffer(); from = 'downloaded'; } }
+      if (!bytes && online && !p.local) { const m = await makeThumb(p, token); if (m) { bytes = m.bytes; w = m.w; h = m.h; } from = 'made from the full picture'; }
+      if (!bytes) return null;
+      url = bytesToDataUrl(bytes);
       _thumbs.set(p.key, url);
+      if (!w || !h) { const img = await loadImg(url); w = img.naturalWidth; h = img.naturalHeight; }
+      // Kept on the device, under the fingerprint when there is one.
+      const fp = p.fp ?? (local ? await fpOf(local) : undefined);
+      const next: PreviewRec = { id: fp ? previewId(fp) : `r2:${p.key}:preview`, fp, r2Key: p.local ? null : p.key, at: p.uploaded_at, label: whereUsed(p), w, h, bytes };
+      if (!rec || rec.at !== next.at || rec.label !== next.label || (rec.r2Key ?? null) !== next.r2Key) void putPreview(next);
+      // Online, a server picture without a preview gets this one.
+      if (online && !p.local && !p.thumb && from === 'made here') void keepThumb(p.key, bytes, token, 'from this device');
+      _dims.set(p.key, { w, h });
+    } else {
+      const d = _dims.get(p.key);
+      if (d) { w = d.w; h = d.h; } else { const img = await loadImg(url); w = img.naturalWidth; h = img.naturalHeight; }
     }
-    const img = await loadImg(url);
-    return { ...p, url, w: img.naturalWidth, h: img.naturalHeight };
+    return { ...p, url, w, h };
   } catch { return null; }
 }
+const _dims = new Map<string, { w: number; h: number }>();
 
 /** At most n at a time — a first visit may have hundreds of previews to make. */
 async function pool<T, R>(items: T[], n: number, fn: (t: T) => Promise<R>): Promise<R[]> {
@@ -258,7 +450,8 @@ function canShareSheet(): boolean {
 function fileNames(pics: Pic[]): string[] {
   const seen = new Map<string, number>();
   return pics.map((p) => {
-    const ext = (p.key.split('.').pop() || 'jpg').toLowerCase();
+    const mime = (_localSrc.get(p.key) || '').slice(5, 30);
+    const ext = p.local ? (mime.startsWith('image/png') ? 'png' : 'jpg') : (p.key.split('.').pop() || 'jpg').toLowerCase();
     const base = (p.uses[0] ? whereUsed(p) : `Framehow picture ${new Date(p.uploaded_at).toISOString().slice(0, 10)}`).replace(/[\\/:*?"<>|]/g, '-');
     const n = (seen.get(base) ?? 0) + 1; seen.set(base, n);
     return `${base}${n > 1 ? ` (${n})` : ''}.${ext}`;
@@ -305,19 +498,59 @@ export async function openPicts(): Promise<void> {
     clearTimeout(flashT); flashT = window.setTimeout(() => flashEl.classList.remove('on'), 2200);
   };
 
-  let pics: Pic[] = [];
-  try { pics = (await api.get<{ pictures: Pic[] }>('/user/pictures', token)).pictures; }
-  catch { note.textContent = 'The library could not be reached — try again when online.'; return; }
+  // What this device holds, what the server lists, merged (27 Oct).
+  const devRecs = await allPreviews();
+  const dev: Device = { byId: new Map(devRecs.map((r) => [r.id, r])), byR2: new Map() };
+  for (const r of devRecs) if (r.r2Key) dev.byR2.set(r.r2Key, r);
+  const locals = await localPictures();
+  let server: Pic[] | null = null;
+  try {
+    server = await Promise.race([
+      api.get<{ pictures: Pic[] }>('/user/pictures', token).then((r) => r.pictures),
+      new Promise<null>((r) => setTimeout(() => r(null), 8000)),
+    ]);
+  } catch { server = null; }
   if (_root !== root) return;
-  trace(`PICTS: ${pics.length} picture(s) on the server, ${pics.filter((p) => p.thumb).length} with a preview`);
+  const online = server !== null;
+  const items = new Map<string, Pic>();
+  for (const p of server ?? []) items.set(p.key, p);
+  const blank = (key: string, at: number, label: string, extra: Partial<Pic>): Pic =>
+    ({ key, uploaded_at: at, size: 0, width: null, height: null, uses: [], label, ...extra });
+  for (const l of locals) {
+    if (items.has(l.key)) continue;
+    if (!l.r2Key) {
+      const fp = l.key.slice('local:'.length);
+      items.set(l.key, blank(l.key, dev.byId.get(previewId(fp))?.at ?? Date.now(), l.label, { local: true, fp }));
+    } else if (!online) {
+      items.set(l.key, blank(l.key, dev.byR2.get(l.key)?.at ?? Date.now(), l.label, {}));
+    }
+  }
+  if (!online) {
+    for (const r of devRecs) {
+      if (r.r2Key && !items.has(r.r2Key)) items.set(r.r2Key, blank(r.r2Key, r.at, r.label, { fp: r.fp }));
+    }
+  }
+  const pics = [...items.values()].sort((a, b) => a.uploaded_at - b.uploaded_at);
+  const unsent = pics.filter((p) => p.local).length;
+  trace(`PICTS: ${online ? `${server!.length} picture(s) on the server, ${server!.filter((p) => p.thumb).length} with a preview` : 'OFFLINE'}; on this device: ${devRecs.length} preview(s); not uploaded yet: ${unsent}`);
+  try {
+    const kept = await navigator.storage?.persisted?.();
+    trace(`PICTS: this device ${kept ? 'keeps the app\'s data (allowed)' : 'may clear the app\'s data after some days unused (not allowed to keep it)'}`);
+  } catch { /* not told */ }
+  if (!online) {
+    const off = document.createElement('p');
+    off.className = 'picts-offline';
+    off.textContent = 'Offline — the pictures kept on this device';
+    scroller.insertBefore(off, scroller.firstChild);
+  }
   {
-    const sizes = pics.map((p) => p.thumb_size).filter((n): n is number => !!n);
+    const sizes = (server ?? []).map((p) => p.thumb_size).filter((n): n is number => !!n);
     if (sizes.length) {
       const kb = (n: number) => `${Math.round(n / 1024)} KB`;
       trace(`PICTS: previews: ${sizes.length}, average ${kb(sizes.reduce((a, b) => a + b, 0) / sizes.length)}, smallest ${kb(Math.min(...sizes))}, largest ${kb(Math.max(...sizes))}`);
     }
   }
-  if (!pics.length) { note.textContent = 'No pictures yet. Every photo and picture you add appears here.'; return; }
+  if (!pics.length) { note.textContent = online ? 'No pictures yet. Every photo and picture you add appears here.' : 'Offline — no pictures kept on this device yet.'; return; }
   note.remove();
 
   // Days, oldest at the top; each day gets its line and a place for its rows.
@@ -534,15 +767,21 @@ export async function openPicts(): Promise<void> {
   window.addEventListener('resize', onTurn);
   window.addEventListener('orientationchange', onTurn);
 
-  // The newest day first, so what is on screen arrives first; a day is laid
-  // out when all its pictures are in, so its rows never jump.
-  for (let i = slots.length - 1; i >= 0; i--) {
+  // A day is laid out when all its pictures are in, so its rows never jump.
+  // The newest day first; the others when you scroll near them (27 Oct) —
+  // from the device at once, from the server only then.
+  const loaded = new Set<number>();
+  let done = 0;
+  const loadDay = async (i: number) => {
+    if (loaded.has(i)) return;
+    loaded.add(i);
     const s = slots[i];
-    const got = (await pool(s.pics, 6, (p) => loadPic(p, token))).filter(Boolean) as Loaded[];
+    const got = (await pool(s.pics, 6, (p) => loadPic(p, token, dev, online))).filter(Boolean) as Loaded[];
     if (_root !== root) return;
     loadedAll.push(...got);
     for (const p of got) byKey.set(p.key, p);
     const rows = buildDay(s.rows, got);
+    if (!got.length) s.rows.closest<HTMLElement>('.picts-day')!.style.display = 'none';
     for (const p of got) if (marked.has(p.key)) tileOf(p.key)?.classList.add('marked');
     const w = daysEl.clientWidth;
     allRows.push(...rows);
@@ -550,23 +789,70 @@ export async function openPicts(): Promise<void> {
     lastWidth = w;
     toBottom();
     refresh();
-  }
-  // What could not be shown, and whether a card uses it (27 Oct: 419 on the
-  // server, 381 with a preview — which are the 38?).
-  requestAnimationFrame(() => {
-    toBottom();
-    const gap = Math.round(scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight);
-    trace(`PICTS: all loaded — ${gap <= 2 ? 'at the bottom' : `${gap} px above the bottom`}${pinned ? '' : ' (you had scrolled)'}`);
+    done++;
+    if (i === slots.length - 1) {
+      requestAnimationFrame(() => {
+        toBottom();
+        const gap = Math.round(scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight);
+        trace(`PICTS: newest day loaded — ${gap <= 2 ? 'at the bottom' : `${gap} px above the bottom`}${pinned ? '' : ' (you had scrolled)'}`);
+      });
+    }
+    if (done === slots.length) finished();
+  };
+  const near = new IntersectionObserver((entries) => {
+    for (const e of entries) if (e.isIntersecting) void loadDay(Number((e.target as HTMLElement).dataset.slot));
+  }, { root: scroller, rootMargin: '200% 0px' });
+  slots.forEach((s, i) => {
+    const sec = s.rows.closest<HTMLElement>('.picts-day')!;
+    sec.dataset.slot = String(i);
+    // Days whose previews are all on the device come at once; the rest when near.
+    const allHere = s.pics.every((p) => _thumbs.has(p.key) || (p.local ? dev.byId.has(previewId(p.fp)) : dev.byR2.has(p.key)));
+    if (allHere) void loadDay(i); else near.observe(sec);
   });
-  const missing = pics.filter((p) => !byKey.has(p.key));
-  if (missing.length) {
-    const noCard = missing.filter((p) => !p.uses.length).length;
-    trace(`PICTS: shown ${pics.length - missing.length} of ${pics.length}; not shown ${missing.length} — not on any card: ${noCard}, on a card: ${missing.length - noCard}`);
-  } else trace(`PICTS: shown all ${pics.length}`);
+  void loadDay(slots.length - 1);
+
+  // What could not be shown, and whether a card uses it (27 Oct).
+  function finished(): void {
+    near.disconnect();
+    const missing = pics.filter((p) => !byKey.has(p.key));
+    if (missing.length) {
+      const noCard = missing.filter((p) => !p.uses.length && !p.local).length;
+      trace(`PICTS: shown ${pics.length - missing.length} of ${pics.length}; not shown ${missing.length} — not on any card: ${noCard}, on a card: ${missing.length - noCard}`);
+    } else trace(`PICTS: shown all ${pics.length}`);
+    idle(() => void makeRoom(pics, online, locals, devRecs));
+  }
+}
+
+/** WHAT THE DEVICE KEEPS (Roman, 27 Oct): everything not uploaded yet, the
+ *  open project's and unsent work's pictures, the whole of today and of the
+ *  last day with pictures, and the newest three screens. Only previews go. */
+async function makeRoom(pics: Pic[], online: boolean, locals: LocalPic[], devRecs: PreviewRec[]): Promise<void> {
+  const phone = Math.min(window.innerWidth, window.innerHeight) <= 430;
+  const per = phone ? PER_ROW.phone : PER_ROW.wide;
+  const rowH = window.innerWidth / (per.landscape * 16 / 9);
+  const screens = Math.ceil(3 * Math.max(1, window.innerHeight / rowH) * per.landscape);
+  const newest = new Set(pics.slice(-screens).map((p) => p.key));
+  const today = dayKey(Date.now());
+  const lastDay = pics.length ? dayKey(pics[pics.length - 1].uploaded_at) : today;
+  const onCards = new Set(locals.map((l) => l.key));
+  const atOf = new Map(pics.map((p) => [p.key, p.uploaded_at]));
+  const go: string[] = [];
+  for (const r of devRecs) {
+    const key = r.r2Key ?? `local:${r.fp}`;
+    if (!r.r2Key) { if (!onCards.has(key)) go.push(r.id); continue; }   // removed from its card before it was ever sent
+    if (onCards.has(key) || newest.has(key)) continue;
+    if (online && !atOf.has(key)) { go.push(r.id); continue; }           // gone from the server
+    const day = dayKey(atOf.get(key) ?? r.at);
+    if (day === today || day === lastDay) continue;
+    go.push(r.id);
+  }
+  await deletePreviews(go);
+  trace(`PICTS: on this device: kept ${devRecs.length - go.length} preview(s), made room by ${go.length} (keeping ${screens} newest, today, the last day, the open project, everything not uploaded)`);
 }
 
 /** Any other view button takes over: the library closes, the button does its work. */
 export function wirePictsButton(): void {
+  watchNewPictures();
   const btn = document.getElementById('pictsBtn');
   btn?.addEventListener('click', (e) => { e.stopPropagation(); togglePicts(); });
   document.addEventListener('click', (e) => {

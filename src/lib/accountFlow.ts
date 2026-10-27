@@ -2423,7 +2423,7 @@ async function uploadImageToR2(
   const out = await res.json() as { r2_key: string; size_bytes: number; content_type: string };
   // THE PICTS LIBRARY'S PREVIEW (27 Oct, Roman): made from the picture already
   // in hand — later, when the device has nothing else to do; never in the way.
-  void import('./picts').then((m) => m.queuePreview(out.r2_key, blob)).catch(() => { /* the library makes it on its first look */ });
+  void import('./picts').then((m) => m.queuePreview(out.r2_key, blob, src)).catch(() => { /* the library makes it on its first look */ });
   return out;
 }
 
