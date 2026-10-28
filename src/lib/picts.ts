@@ -822,6 +822,12 @@ export async function openPicts(): Promise<void> {
     void (async () => {
       const ok = await showConfirmDefaultNo('Are you sure you want to delete the selected pictures? This cannot be undone.');
       if (!ok || _root !== root) return;
+      // Stay on the next picture after the deleted ones (28 Oct, Roman: "it
+      // jumps somewhere"): where it sits now, and where it is again afterwards.
+      const ordered = loadedAll.slice().sort((x, y) => x.uploaded_at - y.uploaded_at);
+      const lastGone = Math.max(...chosen.map((p) => ordered.findIndex((x) => x.key === p.key)));
+      const next = ordered.slice(lastGone + 1).find((x) => !marked.has(x.key)) ?? ordered.slice(0, lastGone).reverse().find((x) => !marked.has(x.key)) ?? null;
+      const nextTop = next ? tileOf(next.key)?.getBoundingClientRect().top ?? null : null;
       const r = await deletePicturesForGood(chosen, token, online);
       // Out of the library: the tiles, the marks, the lists.
       for (const p of chosen) {
@@ -845,6 +851,10 @@ export async function openPicts(): Promise<void> {
         for (const p of got) if (marked.has(p.key)) tileOf(p.key)?.classList.add('marked');
         allRows.push(...rows);
         sizeRows(rows, daysEl.clientWidth);
+      }
+      if (next && nextTop !== null) {
+        const t = tileOf(next.key);
+        if (t) scroller.scrollTop += t.getBoundingClientRect().top - nextTop;
       }
       refresh();
       say(`${chosen.length === 1 ? 'Picture' : `${chosen.length} pictures`} deleted${r.offline ? ' — the server will hear when online' : ''}`);
