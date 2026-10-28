@@ -491,7 +491,7 @@ export function renderMainFrame(div: HTMLElement, fid: number): void {
         }" style="aspect-ratio:${f.cropW || 16}/${f.cropH || 9};${cCanvasBorder}"><canvas id="${cid}" width="${
         f.cropW || 960
       }" height="${f.cropH || 540}"${cVerHidden ? ' style="pointer-events:none;"' : ''}></canvas>${
-          !cVerHidden && ver.type === 'empty' ? `<div class="canvas-hint"><span>${canvasHintFor(ccStrip)}</span></div>` : ''
+          !cVerHidden && ver.pictureDeleted && !ver.bgImage ? `<div class="canvas-hint picts-deleted"><span>You deleted this picture</span></div>` : !cVerHidden && ver.type === 'empty' ? `<div class="canvas-hint"><span>${canvasHintFor(ccStrip)}</span></div>` : ''
         }${!cVerHidden ? starHTML(fid, ai, ccStrip) : ''}${!cVerHidden ? stripTagHTML(fid, ai, ccStrip) : ''}</div></div>
       </div>
       ${!cVerHidden && s.drawActive[fid] === ccStrip ? `<div class="color-row">${colorDots}</div>` : ''}
@@ -675,7 +675,7 @@ export function renderMainFrame(div: HTMLElement, fid: number): void {
       (f.drawMode || !f.src)
         ? `<canvas id="${mcid}" width="${f.cropW || 960}" height="${f.cropH || 540}"></canvas>`
         : `<img src="${f.src}" decoding="sync" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;">`
-    }${talentHintHTML(f)}${setupTagHTML(fid)}</div>`;
+    }${f.pictureDeleted && !f.src ? `<div class="canvas-hint picts-deleted"><span>You deleted this picture</span></div>` : ''}${talentHintHTML(f)}${setupTagHTML(fid)}</div>`;
   }
   const btnLabel2 =
     viewMode2 === 'text'
@@ -988,7 +988,7 @@ export function renderVersionFrame(div: HTMLElement, fid: number, strip: StripTy
       }" data-fid="${fid}" style="aspect-ratio:${f?.cropW || 16}/${f?.cropH || 9};${canvasBorder}"><canvas id="${cid}" width="${
     f?.cropW || 960
   }" height="${f?.cropH || 540}"${_verHidden ? ' style="pointer-events:none;"' : ''}></canvas>${
-      !_verHidden && ver && ver.type === 'empty' && (getStripCrossCompare(fid, strip) ?? -1) < 0 ? `<div class="canvas-hint"><span>${canvasHintFor(strip)}</span></div>` : ''
+      !_verHidden && ver && ver.pictureDeleted && !ver.bgImage ? `<div class="canvas-hint picts-deleted"><span>You deleted this picture</span></div>` : !_verHidden && ver && ver.type === 'empty' && (getStripCrossCompare(fid, strip) ?? -1) < 0 ? `<div class="canvas-hint"><span>${canvasHintFor(strip)}</span></div>` : ''
     }${!_verHidden ? starHTML(fid, ai, strip) : ''}${!_verHidden ? stripTagHTML(fid, ai, strip) : ''}</div></div>
       ${
         !_verHidden && s.drawActive[fid] === strip

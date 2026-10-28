@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import type { D1Database } from "@cloudflare/workers-types";
 import type { AppVariables, Env } from "../types";
 import { loadOwnedProject, requireUser, wasDeletedByOwner } from "../lib/auth";
-import { deleteProjectForGood, fillImageSizes, storageFigure, storageLimitBytes, sumProjectImageBytesOutsideFrames, sumUserImageBytes } from "../lib/storage";
+import { deleteProjectForGood, deletedKeysAmong, fillImageSizes, storageFigure, storageLimitBytes, sumProjectImageBytesOutsideFrames, sumUserImageBytes } from "../lib/storage";
 import { newId } from "../lib/crypto";
 import { isNonEmptyString, jsonError } from "../lib/response";
 import { decideFrame, decideVersion } from "../lib/syncDecide";
@@ -579,6 +579,16 @@ projects.post("/:id/sync", async (c) => {
   // projects. We delete + reinsert the syncing project's images, so its old
   // bytes don't count; everyone else's do.
   const storageLimit = storageLimitBytes(c.env, c.req.header(STORAGE_HEADER));
+  // A PICTURE DELETED IN THE LIBRARY NEVER COMES BACK (28 Oct, Roman): a device
+  // that was offline when it was deleted may still push the card with it — the
+  // picture row is dropped here, and the card keeps its "deleted" mark.
+  if (payload.images.length) {
+    const gone = await deletedKeysAmong(c.env.DB, me.id, payload.images.map((i) => i.r2_key));
+    if (gone.size) {
+      console.log(`[sync] ${gone.size} picture(s) deleted in the library — not re-attached`);
+      payload.images = payload.images.filter((i) => !gone.has(i.r2_key));
+    }
+  }
   await fillImageSizes(c.env.DB, c.env.IMAGES_BUCKET, payload.images);   // a re-sent picture keeps its size (#533)
   const otherImagesUsed = await sumUserImageBytes(c.env.DB, me.id, project.id)
     // ...plus this project's pictures the push does NOT replace (partial pushes
@@ -1342,6 +1352,8 @@ interface ProjectTree {
     size_bytes: number | null;
     content_type: string | null;
     updated_at: number;
+    /** Deleted in the PICTS library (28 Oct): the card stays, the picture is gone. */
+    deleted_at?: number | null;
   }>;
   drawings: Array<{ id: string; version_id: string; drawing_data: string; updated_at: number }>;
   deletions: Array<{ id: string; entity_type: string; entity_id: string; deleted_at: number; device_id: string | null }>;
@@ -1411,7 +1423,7 @@ async function loadProjectTree(db: D1Database, projectId: string, since?: number
          )${only('updated_at')} ORDER BY updated_at`,
     ).bind(projectId, ...arg),
     db.prepare(
-      `SELECT id, version_id, r2_key, width, height, size_bytes, content_type, updated_at
+      `SELECT id, version_id, r2_key, width, height, size_bytes, content_type, updated_at, deleted_at
          FROM images WHERE version_id IN (
            SELECT v.id FROM versions v
            JOIN frames f ON f.id = v.frame_id
@@ -1509,6 +1521,8 @@ interface SyncPayload {
     size_bytes: number | null;
     content_type: string | null;
     updated_at: number;
+    /** Deleted in the PICTS library (28 Oct): the card stays, the picture is gone. */
+    deleted_at?: number | null;
   }>;
   drawings: Array<{ id: string; version_id: string; drawing_data: string; updated_at: number }>;
   deletions: Array<{ id: string; entity_type: string; entity_id: string; deleted_at: number; device_id: string | null }>;
@@ -1741,8 +1755,10 @@ async function applySyncFull(db: D1Database, projectId: string, payload: SyncPay
         )`,
     ).bind(projectId),
     db.prepare(
+      // A card whose picture was deleted in the library keeps its marked row
+      // (28 Oct): the mark must outlive a full push from any device.
       `DELETE FROM images
-        WHERE version_id IN (
+        WHERE deleted_at IS NULL AND version_id IN (
           SELECT v.id FROM versions v
           JOIN frames f ON f.id = v.frame_id
           JOIN strips s ON s.id = f.strip_id
@@ -1982,7 +1998,7 @@ function appendFrameInserts(db: D1Database, stmts: D1PreparedStatement[], payloa
          ON CONFLICT(version_id) DO UPDATE SET
            r2_key = excluded.r2_key, width = excluded.width, height = excluded.height,
            size_bytes = excluded.size_bytes, content_type = excluded.content_type,
-           updated_at = excluded.updated_at`,
+           updated_at = excluded.updated_at, deleted_at = NULL`,
       ).bind(
         img.id, img.version_id, img.r2_key, img.width, img.height,
         img.size_bytes, img.content_type, now, now,

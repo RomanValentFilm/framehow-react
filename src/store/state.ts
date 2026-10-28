@@ -46,6 +46,9 @@ export interface Frame {
   serverMainVersionId?: string;
   /** R2 object key for the main frame image. Null/undefined = local or empty. */
   r2Key?: string;
+  /** The picture was deleted in the PICTS library (28 Oct): the card stays with
+   *  its drawings and text and says so. Cleared by a new picture. */
+  pictureDeleted?: boolean;
   /** Free-text note attached to this frame (shown via notepad icon in fullscreen canvas). */
   note?: string;
   /** Scribble strokes drawn over this frame in 3×2 view. Stored per-frame so they move with reorder. */
@@ -63,7 +66,7 @@ export interface Setup {
 
 /** 12-colour palette for setups. */
 /** App version — bump before every deploy. */
-export const APP_VERSION = 'v5.0.103';
+export const APP_VERSION = 'v5.0.104';
 
 /** Free-text fields printed in the header of every exported page. */
 export interface ExportMeta {
@@ -156,6 +159,8 @@ export interface Version {
   serverVersionId?: string;
   /** R2 object key for this version's image. Null/undefined = local or empty. */
   r2Key?: string;
+  /** The picture was deleted in the PICTS library (28 Oct). */
+  pictureDeleted?: boolean;
   /** Free-text note attached to this version (shown via notepad icon). */
   note?: string;
 }

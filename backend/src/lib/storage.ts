@@ -246,3 +246,63 @@ export async function sumProjectImageBytesOutsideFrames(
   }
   return Math.max(0, total);
 }
+
+// ---------------------------------------------------------------------------
+// PICTURES DELETED IN THE PICTS LIBRARY (28 October, Roman).
+// ---------------------------------------------------------------------------
+
+/** Of these keys, the ones this account deleted in the library. */
+export async function deletedKeysAmong(db: D1Database, userId: string, keys: string[]): Promise<Set<string>> {
+  const out = new Set<string>();
+  const uniq = Array.from(new Set(keys.filter(Boolean)));
+  const STEP = 90;
+  for (let i = 0; i < uniq.length; i += STEP) {
+    const chunk = uniq.slice(i, i + STEP);
+    const rows = await db
+      .prepare(`SELECT r2_key FROM deleted_pictures WHERE user_id = ? AND r2_key IN (${chunk.map(() => "?").join(",")})`)
+      .bind(userId, ...chunk)
+      .all<{ r2_key: string }>();
+    for (const r of rows.results) out.add(r.r2_key);
+  }
+  return out;
+}
+
+export interface DeletePicturesResult { deleted: string[]; bytesFreed: number; cardsMarked: number }
+
+/** Delete these pictures of this account for good: the file and its preview go
+ *  from storage, the figures come down, every card that used one keeps its
+ *  drawings and text and is marked "deleted", and the key is remembered so an
+ *  offline device cannot bring the picture back. Only the account's own keys. */
+export async function deletePictures(db: D1Database, bucket: R2Bucket | undefined, userId: string, keys: string[]): Promise<DeletePicturesResult> {
+  const { addBytes, addThumbBytes } = await import("./totals");
+  const { thumbOfPicture } = await import("./cleaner");
+  const own = Array.from(new Set(keys.filter((k) => k.startsWith(`users/${userId}/`) && !k.includes("/thumbs/"))));
+  const now = Date.now();
+  let bytesFreed = 0, thumbsFreed = 0, cardsMarked = 0;
+  const deleted: string[] = [];
+  for (const key of own) {
+    const thumb = thumbOfPicture(key);
+    let size = 0, tsize = 0;
+    if (bucket) {
+      const [h, th] = await Promise.all([bucket.head(key), thumb ? bucket.head(thumb) : Promise.resolve(null)]);
+      size = h?.size ?? 0; tsize = th?.size ?? 0;
+      await bucket.delete(thumb ? [key, thumb] : [key]);
+    }
+    const marked = await db
+      // size 0: the file is gone, the account's figure must not count it.
+      .prepare(`UPDATE images SET deleted_at = ?, updated_at = ?, size_bytes = 0 WHERE r2_key = ? AND deleted_at IS NULL`)
+      .bind(now, now, key)
+      .run();
+    cardsMarked += marked.meta.changes ?? 0;
+    await db
+      .prepare(`INSERT OR REPLACE INTO deleted_pictures (r2_key, user_id, deleted_at) VALUES (?, ?, ?)`)
+      .bind(key, userId, now)
+      .run();
+    bytesFreed += size + tsize; thumbsFreed += tsize;
+    deleted.push(key);
+    console.log(`[pictures] deleted ${key} (${size} B + preview ${tsize} B), cards marked: ${marked.meta.changes ?? 0}`);
+  }
+  if (bytesFreed) await addBytes(db, userId, -bytesFreed);
+  if (thumbsFreed) await addThumbBytes(db, userId, -thumbsFreed);
+  return { deleted, bytesFreed, cardsMarked };
+}

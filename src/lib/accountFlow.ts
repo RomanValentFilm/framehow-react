@@ -2471,7 +2471,9 @@ interface CloudProjectTree {
     /** When the change was MADE, not when it was sent. Absent on older rows. */
     content_changed_at?: number | null }>;
   versions: Array<{ id: string; frame_id: string; label: string | null; type: string; hidden: number; starred: number; note: string | null; updated_at: number; tags?: string | null; content_changed_at?: number | null; sort_order?: number | null }>;
-  images: Array<{ id: string; version_id: string; r2_key: string; width: number | null; height: number | null; size_bytes: number | null; content_type: string | null; updated_at: number }>;
+  images: Array<{ id: string; version_id: string; r2_key: string; width: number | null; height: number | null; size_bytes: number | null; content_type: string | null; updated_at: number;
+    /** Deleted in the PICTS library (28 Oct): the card keeps its drawings and text and says so. */
+    deleted_at?: number | null }>;
   drawings: Array<{ id: string; version_id: string; drawing_data: string; updated_at: number }>;
   deletions?: Array<{ id: string; entity_type: string; entity_id: string; deleted_at: number; device_id: string | null }>;
   /** Project settings, one entry per item. Absent from an older server. */
@@ -3703,7 +3705,14 @@ async function applyCloudTreeToStore(
 
   // Build image lookup: version_id → r2_key
   const imageByVersion = new Map<string, string>();
-  for (const img of tree.images) imageByVersion.set(img.version_id, img.r2_key);
+  // DELETED IN THE LIBRARY (28 Oct): the card's picture row stays, marked; no
+  // file to fetch, the card says "You deleted this picture".
+  const pictureDeletedFor = new Set<string>();
+  for (const img of tree.images) {
+    if (img.deleted_at) { pictureDeletedFor.add(img.version_id); continue; }
+    imageByVersion.set(img.version_id, img.r2_key);
+  }
+  if (pictureDeletedFor.size) trace(`  pictures deleted in the library: ${pictureDeletedFor.size} card(s) say so`);
 
   // ---------------------------------------------------------------------------
   // TOMBSTONES: Build a set of entity IDs that were explicitly deleted.
@@ -3915,7 +3924,8 @@ async function applyCloudTreeToStore(
                   label: sv.label ?? '',
                   type: (raw === 'drawing' || raw === 'upload' || raw === 'empty') ? raw as 'drawing' | 'upload' | 'empty' : 'empty',
                   strokes: parseStrokes(drawingByVersion.get(sv.id)),
-                  bgImage: sameImage ? held.bgImage : null,
+                  bgImage: pictureDeletedFor.has(sv.id) ? null : (sameImage ? held.bgImage : null),
+                  pictureDeleted: pictureDeletedFor.has(sv.id) || undefined,
                   hidden: !!sv.hidden, starred: !!sv.starred, stars: Number(sv.starred) || 0,
                   note: sv.note ?? '', r2Key: key || undefined,
                   // The server's word on the tag, INCLUDING "none" (#516) — or
@@ -3937,6 +3947,7 @@ async function applyCloudTreeToStore(
                   ? rawType as 'drawing' | 'upload' | 'empty' : 'empty' as const,
                 strokes: parseStrokes(drawingByVersion.get(sv.id)),
                 bgImage: null,
+                pictureDeleted: pictureDeletedFor.has(sv.id) || undefined,
                 hidden: !!sv.hidden,
                 starred: !!sv.starred,
                 stars: Number(sv.starred) || 0,
@@ -4013,7 +4024,7 @@ async function applyCloudTreeToStore(
         // Same rule as the versions below (#369): whatever we already hold stays
         // on screen until something better arrives, rather than being wiped and
         // fetched again.
-        src: mainImageUnchanged ? existingFrame!.src : existingFrame?.src ?? '',
+        src: mainV && pictureDeletedFor.has(mainV.id) ? '' : (mainImageUnchanged ? existingFrame!.src : existingFrame?.src ?? ''),
         label: sf.label ?? '',
         stripLabels,
         hidden: !!sf.hidden,
@@ -4029,6 +4040,7 @@ async function applyCloudTreeToStore(
         serverFrameId: sf.id,
         serverMainVersionId: mainV?.id,
         r2Key: mainR2Key || undefined,
+        pictureDeleted: mainV && pictureDeletedFor.has(mainV.id) ? true : undefined,
       });
 
       // Sort side versions into strips by parsing the type prefix.

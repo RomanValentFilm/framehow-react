@@ -1785,3 +1785,5 @@ body.picts-open #maxView{z-index:20000;}
 /* No overflow:hidden here (27 Oct, iPhone): it stopped the bars sticking at the top, they slid out of view. */
 html.picts-hold, html.picts-hold body{overscroll-behavior:none;}
 #pictsLibrary .picts-scroll{overscroll-behavior:contain;}
+/* A card whose picture was deleted in the PICTS library (28 Oct). */
+.canvas-hint.picts-deleted span{font-family:var(--font);font-size:12px;font-weight:500;color:#9a9a9a;}

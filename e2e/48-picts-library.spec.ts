@@ -266,6 +266,84 @@ test('picts library: a preview that misses its picture\'s upload goes with the n
   await d.close();
 });
 
+test('picts library: DELETE — confirm, the card says "You deleted this picture", the file is gone, another device learns it, an offline device cannot bring it back', async ({ browser }) => {
+  // 28 Oct, Roman: step 4 of the library.
+  const { token } = await freshAccount();
+  const d = await Device.open(browser, 'desktop', token);
+  const pid = await d.newProjectOfKind('DELETE ONE', 'landscape', 2);
+  await d.settle();
+  await d.page.evaluate(() => document.getElementById('projectListModal')?.classList.add('hidden'));
+  await d.uploadPicture(0, 'main', colourPng(200, 30, 30));
+  await d.settle();
+  await d.page.waitForTimeout(800);
+  await d.uploadPicture(1, 'main', colourPng(30, 30, 200));
+  await d.settle();
+  const list = async (t = token) => ((await (await fetch(`${API}/user/pictures`, { headers: { Authorization: `Bearer ${t}` } })).json()) as { pictures: Pic[] }).pictures;
+  await expect.poll(async () => (await list()).length, { timeout: 20_000 }).toBe(2);
+  const storage = async () => ((await (await fetch(`${API}/projects`, { headers: { Authorization: `Bearer ${token}` } })).json()) as { storage: { used: number } }).storage.used;
+  const usedBefore = await storage();
+
+  say('a second device has the project open too — then goes offline, still holding both pictures');
+  const d2 = await Device.open(browser, 'desktop-2', token);
+  await d2.openProject(pid!);
+  await d2.settle();
+  await d2.page.evaluate(() => document.getElementById('projectListModal')?.classList.add('hidden'));   // the list lay over the cards (run 506)
+  await d2.page.addLocatorHandler(d2.page.locator('#offlineDismiss'), async (btn) => { await btn.click(); });
+  await d2.offline(true);
+
+  say('SELECT the newest (shot 2), DELETE: the question, Cancel first — nothing happens');
+  await d.page.locator('#pictsBtn').click({ timeout: 15_000 });
+  const lib = d.page.locator('#pictsLibrary');
+  await expect.poll(() => lib.locator('.picts-tile').count(), { timeout: 15_000 }).toBe(2);
+  await lib.locator('.picts-select').click();
+  await lib.locator('.picts-tile').last().click();
+  await expect(lib.locator('.picts-count')).toHaveText('1 selected');
+  const delKey = (await lib.locator('.picts-tile.marked').getAttribute('data-key'))!;
+  await lib.locator('.picts-delete').click();
+  const modal = d.page.locator('#confirmModal');
+  await expect(modal).toBeVisible();
+  say(`   the question: "${await d.page.locator('#confirmMsg').textContent()}"`);
+  expect(await d.page.locator('#confirmMsg').textContent(), 'the exact words').toBe('Are you sure you want to delete the selected pictures? This cannot be undone.');
+  await d.page.locator('#confirmNo').click();
+  await expect(modal).toBeHidden();
+  expect(await lib.locator('.picts-tile').count(), 'nothing deleted').toBe(2);
+
+  say('DELETE again, Yes: gone from the library, from the server, from storage; the card says so');
+  await lib.locator('.picts-delete').click();
+  await expect(modal).toBeVisible();
+  await d.page.locator('#confirmModal .btn:not(#confirmNo)').click();
+  await expect(modal).toBeHidden();
+  await expect(lib.locator('.picts-tile')).toHaveCount(1);
+  await expect(lib.locator('.picts-count')).toHaveText('0 selected');
+  await expect.poll(async () => (await list()).length, { timeout: 15_000, message: 'one picture left on the server' }).toBe(1);
+  const file = await fetch(`${API}/images/${delKey}`, { headers: { Authorization: `Bearer ${token}` } });
+  const thumb = await fetch(`${API}/thumbs/${delKey}`, { headers: { Authorization: `Bearer ${token}` } });
+  say(`   the file answers ${file.status}, its preview ${thumb.status}`);
+  expect(file.status, 'the file is gone').toBe(404);
+  expect(thumb.status, 'its preview too').toBe(404);
+  await expect.poll(storage, { timeout: 15_000, message: 'storage came down' }).toBeLessThan(usedBefore);
+  say(`   storage ${usedBefore} → ${await storage()} bytes`);
+  await d.page.locator('#pictsBtn').click();
+  await expect(lib).toHaveCount(0);
+  await expect(d.page.locator('.picts-deleted').first(), 'the card says "You deleted this picture"').toBeVisible();
+  expect((await d.page.locator('.picts-deleted').first().textContent())!.trim()).toBe('You deleted this picture');
+  say(`   ${(await d.log()).find((l) => l.includes('PICTS: deleted')) ?? ''}`);
+
+  say('the offline device writes under shot 2, then comes back: its push still carries the picture — the server does not take it back');
+  await d2.setView('main');   // the text box lives on the main card, not in 3x2 (run 507)
+  await d2.typeUnder(1, 'still here');
+  await d2.offline(false);
+  await d2.settle();
+  await expect.poll(async () => d2.page.locator('.picts-deleted').count(), { timeout: 60_000, message: 'the other device\'s card says so' }).toBeGreaterThanOrEqual(1);
+  say(`   ${(await d2.log()).find((l) => l.includes('pictures deleted in the library')) ?? 'no marker line'}`);
+  await d.settle();
+  expect((await list()).length, 'still one picture on the server').toBe(1);
+  expect((await fetch(`${API}/images/${delKey}`, { headers: { Authorization: `Bearer ${token}` } })).status, 'the file is still gone').toBe(404);
+  expect(await d.page.locator('.picts-deleted').count(), 'the card still says so here').toBeGreaterThanOrEqual(1);
+  await d2.close();
+  await d.close();
+});
+
 test('picts library offline: pictures shot offline are in the library offline; online they upload with their preview, once', async ({ browser }) => {
   // 27 Oct, Roman: "a user offline shoots 10 pictures — he has to see 10 in the library".
   const { token } = await freshAccount();

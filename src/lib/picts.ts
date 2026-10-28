@@ -46,7 +46,10 @@ import { openMaxView } from './maxView';
 import { useStore } from '../store/state';
 import { getCurrentProject } from './currentProject';
 import { isArchived, listPending } from './persistence';
-import { allPreviews, deletePreviews, fingerprint, getPreview, putPreview, type PreviewRec } from './pictsStore';
+import { allPreviews, clearPendingDeletions, deletePreviews, fingerprint, getPreview, notePendingDeletion, pendingDeletions, putPreview, type PreviewRec } from './pictsStore';
+import { showConfirmDefaultNo } from './modals';
+import { markFrameDirty } from './currentProject';
+import { stampChangedContent } from './changeStamps';
 
 type Use = { project_id: string; project: string; shot: string | null; version: string | null };
 type Pic = { key: string; uploaded_at: number; size: number; width: number | null; height: number | null; uses: Use[]; thumb?: boolean; thumb_size?: number | null;
@@ -267,6 +270,7 @@ export async function sendUnsentPreviews(): Promise<void> {
   if (!token) return;
   _sending = true;
   try {
+    await sendPendingDeletions();
     if (!_waiting) return;   // nothing noted this session — no need to read the store
     const waiting = (await allPreviews()).filter((r) => r.r2Key && r.sent === false);
     if (!waiting.length) { _waiting = false; if (_retryT) { clearInterval(_retryT); _retryT = 0; } return; }
@@ -363,6 +367,7 @@ export function watchNewPictures(): void {
   // A preview left waiting from an earlier visit: found once, a little after start.
   setTimeout(() => idle(() => void allPreviews().then((all) => {
     if (all.some((r) => r.r2Key && r.sent === false)) { noteWaiting(); void sendUnsentPreviews(); }
+    void pendingDeletions().then((k) => { if (k.length) { noteWaiting(); void sendPendingDeletions(); } });
   })), 10_000);
   setInterval(() => {
     if (_busy) return;
@@ -518,6 +523,86 @@ function fileNames(pics: Pic[]): string[] {
   });
 }
 
+/** DELETE FOR GOOD (28 Oct, Roman). The cards keep their drawings and text and
+ *  say "You deleted this picture"; the device's previews go; the server deletes
+ *  file and preview, frees the storage and remembers the key — offline, the
+ *  deletion waits on the device and goes with the next sync. */
+async function deletePicturesForGood(chosen: Pic[], token: string, online: boolean): Promise<{ offline: boolean }> {
+  const keys = new Set(chosen.map((p) => p.key));
+  const fps = new Set(chosen.filter((p) => p.local && p.fp).map((p) => p.fp!));
+  // 1. The open project's cards: picture out, mark on, drawings and text kept.
+  const s = useStore.getState();
+  const touched: string[] = [];
+  let cards = 0;
+  const gone = (src: string | null | undefined, r2: string | undefined) =>
+    (r2 && keys.has(r2)) || (src && src.startsWith('data:image') && keys.has(`local:${_fpOf.get(src) ?? ''}`));
+  const frames = s.frames.map((f) => {
+    if (gone(f.src, f.r2Key)) { cards++; if (f.serverFrameId) touched.push(f.serverFrameId); return { ...f, src: '', r2Key: undefined, pictureDeleted: true }; }
+    return f;
+  });
+  const stripVersions: typeof s.stripVersions = {};
+  for (const st of Object.keys(s.stripVersions)) {
+    stripVersions[st] = {};
+    for (const fidStr of Object.keys(s.stripVersions[st])) {
+      const fid = Number(fidStr);
+      stripVersions[st][fid] = (s.stripVersions[st][fid] || []).map((v) => {
+        if (gone(v.bgImage, v.r2Key)) {
+          cards++;
+          const f = s.frames.find((x) => x.id === fid);
+          if (f?.serverFrameId) touched.push(f.serverFrameId);
+          return { ...v, bgImage: null, r2Key: undefined, pictureDeleted: true };
+        }
+        return v;
+      });
+    }
+  }
+  if (cards) {
+    useStore.setState({ frames, stripVersions } as never);
+    for (const id of new Set(touched)) markFrameDirty(id);
+    stampChangedContent();
+    (window as never as { __fh_renderAll?: () => void }).__fh_renderAll?.();
+  }
+  // 2. This device's previews and full copies.
+  const ids: string[] = [];
+  for (const p of chosen) {
+    ids.push(p.local ? previewId(p.fp) : `r2:${p.key}:preview`);
+    if (p.fp) ids.push(previewId(p.fp));
+    const u = _thumbs.get(p.key); if (u) { URL.revokeObjectURL(u); _thumbs.delete(p.key); }
+    _full.delete(p.key); _fullUrls.delete(p.key); _localSrc.delete(p.key); _dims.delete(p.key);
+  }
+  const recs = await allPreviews();
+  for (const r of recs) if ((r.r2Key && keys.has(r.r2Key)) || (r.fp && fps.has(r.fp))) ids.push(r.id);
+  await deletePreviews([...new Set(ids)]);
+  // 3. The server — now, or with the next sync.
+  const serverKeys = chosen.filter((p) => !p.local).map((p) => p.key);
+  let offline = false;
+  if (serverKeys.length) {
+    const sent = online ? await sendDeletions(serverKeys, token) : false;
+    if (!sent) { offline = true; for (const k of serverKeys) await notePendingDeletion(k); noteWaiting(); }
+  }
+  trace(`PICTS: deleted ${chosen.length} picture(s) — ${cards} card(s) of the open project say so; server: ${serverKeys.length ? (offline ? 'with the next sync' : 'done') : 'nothing to tell'}`);
+  return { offline };
+}
+
+async function sendDeletions(keys: string[], token: string): Promise<boolean> {
+  try {
+    const r = await authed('/user/pictures/delete', token, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keys }) });
+    if (!r.ok) return false;
+    const j = await r.json() as { deleted: string[]; bytes_freed: number; cards_marked: number; storage?: { used: number; limit: number } };
+    trace(`PICTS: server deleted ${j.deleted.length} picture(s), freed ${Math.round(j.bytes_freed / 1024)} KB, ${j.cards_marked} card(s) marked${j.storage ? `; storage now ${Math.round(j.storage.used / 1048576)} MB` : ''}`);
+    return true;
+  } catch { return false; }
+}
+
+/** After a sync went through: deletions made offline reach the server. */
+export async function sendPendingDeletions(): Promise<void> {
+  const token = getToken();
+  if (!token) return;
+  const keys = await pendingDeletions();
+  if (!keys.length) return;
+  if (await sendDeletions(keys, token)) { await clearPendingDeletions(keys); trace(`PICTS: ${keys.length} deletion(s) made offline reached the server`); }
+}
+
 export async function openPicts(): Promise<void> {
   const token = getToken();
   if (!token) { trace('PICTS: not signed in'); return; }
@@ -531,7 +616,7 @@ export async function openPicts(): Promise<void> {
     + `<button type="button" class="picts-btn picts-select">SELECT</button>`
     + `<div class="picts-bar"><button type="button" class="picts-btn picts-share" disabled>SHARE</button>`
     + `<span class="picts-count">0 selected</span>`
-    + `<button type="button" class="picts-btn picts-delete" disabled title="Comes next">DELETE</button></div>`
+    + `<button type="button" class="picts-btn picts-delete" disabled>DELETE</button></div>`
     + `<div class="picts-flash"></div>`;
   document.body.appendChild(root);
   _root = root;
@@ -571,6 +656,7 @@ export async function openPicts(): Promise<void> {
     trace(`PICTS: SELECT at ${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.width)}×${Math.round(r.height)} — ${top === selectBtn ? 'visible' : `covered by ${what(top)}`} (library top ${root.style.top}, screen ${window.innerWidth}×${window.innerHeight})`);
   }, 800);
   const shareBtn = root.querySelector<HTMLButtonElement>('.picts-share')!;
+  const deleteBtn = root.querySelector<HTMLButtonElement>('.picts-delete')!;
   const countEl = root.querySelector<HTMLElement>('.picts-count')!;
   const flashEl = root.querySelector<HTMLElement>('.picts-flash')!;
   let flashT = 0;
@@ -693,6 +779,8 @@ export async function openPicts(): Promise<void> {
     // Grey until something is marked, then white (Roman, 27 Oct) — CANCEL too.
     selectBtn.classList.toggle('ready', selecting && marked.size > 0);
     shareBtn.classList.toggle('ready', marked.size > 0);
+    deleteBtn.disabled = marked.size === 0;
+    deleteBtn.classList.toggle('ready', marked.size > 0);
     for (const s of slots) {
       const all = s.pics.filter((p) => byKey.has(p.key));
       const every = all.length > 0 && all.every((p) => marked.has(p.key));
@@ -726,6 +814,36 @@ export async function openPicts(): Promise<void> {
       refresh();
     });
   }
+
+  // ---- delete (28 Oct, Roman) ---------------------------------------------------
+  deleteBtn.addEventListener('click', () => {
+    const chosen = pics.filter((p) => marked.has(p.key));
+    if (!chosen.length) return;
+    void (async () => {
+      const ok = await showConfirmDefaultNo('Are you sure you want to delete the selected pictures? This cannot be undone.');
+      if (!ok || _root !== root) return;
+      const r = await deletePicturesForGood(chosen, token, online);
+      // Out of the library: the tiles, the marks, the lists.
+      for (const p of chosen) {
+        tileOf(p.key)?.remove();
+        marked.delete(p.key);
+        byKey.delete(p.key);
+        const i = loadedAll.findIndex((x) => x.key === p.key);
+        if (i >= 0) loadedAll.splice(i, 1);
+        const j = pics.indexOf(p);
+        if (j >= 0) pics.splice(j, 1);
+      }
+      for (const sl of slots) sl.pics = sl.pics.filter((p) => !chosen.includes(p));
+      for (const row of allRows) {
+        row.pics = row.pics.filter((p) => !chosen.includes(p));
+        if (!row.pics.length) row.el.remove();
+      }
+      sizeRows(allRows.filter((r) => r.pics.length), daysEl.clientWidth);
+      for (const sl of slots) if (!sl.pics.length) sl.rows.closest<HTMLElement>('.picts-day')?.remove();
+      refresh();
+      say(`${chosen.length === 1 ? 'Picture' : `${chosen.length} pictures`} deleted${r.offline ? ' — the server will hear when online' : ''}`);
+    })();
+  });
 
   // ---- share -----------------------------------------------------------------
   shareBtn.addEventListener('click', () => {

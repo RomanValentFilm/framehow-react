@@ -125,6 +125,7 @@ async function purgeDeletedAccounts(
       db.prepare(`DELETE FROM analytics_sessions WHERE uid = ?`).bind(user.id),
       // Its storage figures, pictures and previews (27 Oct).
       db.prepare(`DELETE FROM storage_totals WHERE scope IN (?, ?)`).bind(`user:${user.id}`, `thumbs:${user.id}`),
+      db.prepare(`DELETE FROM deleted_pictures WHERE user_id = ?`).bind(user.id),
       // Sessions, password resets and memberships go with the row (cascade).
       db.prepare(`DELETE FROM users WHERE id = ?`).bind(user.id),
     ]);

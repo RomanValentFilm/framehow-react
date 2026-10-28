@@ -4,6 +4,7 @@ import { requireUser } from "../lib/auth";
 import { hashPassword, verifyPassword } from "../lib/crypto";
 import { isNonEmptyString, jsonError } from "../lib/response";
 import { thumbOfPicture } from "../lib/cleaner";
+import { deletePictures, storageFigure } from "../lib/storage";
 
 const MIN_PASSWORD_LEN = 8;
 const MAX_PASSWORD_LEN = 200;
@@ -53,6 +54,11 @@ user.get("/pictures", async (c) => {
     e.uses.push({ project_id: u.project_id, project: u.project_name, shot: u.frame_label, version: u.version_label });
     byKey.set(u.key, e);
   }
+  // Deleted in the library: never listed, even if a file lingered (28 Oct).
+  const goneRows = await c.env.DB.prepare(`SELECT r2_key FROM deleted_pictures WHERE user_id = ?`).bind(me.id).all<{ r2_key: string }>();
+  const gone = new Set((goneRows.results ?? []).map((r) => r.r2_key));
+  const live = files.filter((f) => !gone.has(f.key));
+  files.length = 0; files.push(...live);
   files.sort((a, b) => a.uploaded_at - b.uploaded_at);   // oldest first: the app shows the newest at the bottom
   return c.json({
     pictures: files.map((f) => ({
@@ -63,6 +69,23 @@ user.get("/pictures", async (c) => {
       thumb_size: thumbs.get(thumbOfPicture(f.key) ?? '') ?? null,
     })),
   });
+});
+
+// POST /user/pictures/delete — DELETE IN THE PICTS LIBRARY (28 Oct, Roman).
+// Body: { keys: string[] }. For good: file and preview gone, storage freed, the
+// cards keep their drawings and text and say "You deleted this picture", and
+// the key is remembered so an offline device cannot bring the picture back.
+user.post("/pictures/delete", async (c) => {
+  const me = c.get("user");
+  let body: unknown;
+  try { body = await c.req.json(); } catch { return jsonError(c, 400, "invalid_json", "Body must be JSON."); }
+  const keys = (body as { keys?: unknown }).keys;
+  if (!Array.isArray(keys) || keys.some((k) => typeof k !== "string") || keys.length > 500) {
+    return jsonError(c, 400, "invalid_keys", "keys must be a list of up to 500 picture keys.");
+  }
+  const r = await deletePictures(c.env.DB, c.env.IMAGES_BUCKET, me.id, keys as string[]);
+  const storage = await storageFigure(c.env.DB, c.env, me.id, c.req.header("X-FH-Storage-Limit-MB"));
+  return c.json({ deleted: r.deleted, bytes_freed: r.bytesFreed, cards_marked: r.cardsMarked, storage });
 });
 
 // GET /user/me — current profile

@@ -73,7 +73,7 @@ const failed = (what: string, e: unknown) => {
 };
 
 export async function allPreviews(): Promise<PreviewRec[]> {
-  try { return ((await tx<PreviewRec[]>('readonly', (s) => s.getAll())) ?? []).filter((r) => r.bytes); }
+  try { return ((await tx<Array<PreviewRec & { pendingDeletion?: boolean }>>('readonly', (s) => s.getAll())) ?? []).filter((r) => r.bytes && r.bytes.byteLength && !r.pendingDeletion); }
   catch (e) { failed('read', e); return []; }
 }
 export async function putPreview(r: PreviewRec): Promise<void> {
@@ -99,4 +99,23 @@ export async function fingerprint(src: string): Promise<string> {
     for (let i = 0; i < src.length; i += 7) { const c = src.charCodeAt(i); h1 = Math.imul(h1 ^ c, 16777619); h2 = Math.imul(h2 + c, 2246822519); }
     return `x${(h1 >>> 0).toString(16)}${(h2 >>> 0).toString(16)}${src.length.toString(16)}`;
   }
+}
+
+// ---------------------------------------------------------------------------
+// DELETIONS WAITING FOR THE SERVER (28 Oct, Roman: delete works offline too).
+// Kept in the same database, under their own keys ("del:<r2 key>"), so a
+// deletion made offline reaches the server with the next sync.
+// ---------------------------------------------------------------------------
+export async function notePendingDeletion(r2Key: string): Promise<void> {
+  try { await tx('readwrite', (s) => s.put({ id: `del:${r2Key}`, r2Key, at: Date.now(), label: '', w: 0, h: 0, bytes: new ArrayBuffer(0), pendingDeletion: true })); }
+  catch (e) { failed('note a deletion of', e); }
+}
+export async function pendingDeletions(): Promise<string[]> {
+  try {
+    const all = (await tx<Array<PreviewRec & { pendingDeletion?: boolean }>>('readonly', (s) => s.getAll())) ?? [];
+    return all.filter((r) => r.pendingDeletion && r.r2Key).map((r) => r.r2Key!);
+  } catch { return []; }
+}
+export async function clearPendingDeletions(keys: string[]): Promise<void> {
+  await deletePreviews(keys.map((k) => `del:${k}`));
 }

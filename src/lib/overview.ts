@@ -99,7 +99,7 @@ export function renderOverviewRow(row: HTMLElement, fid: number): void {
       (f.drawMode || !f.src)
         ? `<canvas id="${mcid}" width="${f.cropW || 960}" height="${f.cropH || 540}"></canvas>`
         : `<img src="${f.src}" decoding="sync" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;">`
-    }${talentHintHTML(f)}${setupTagHTML(fid)}</div>`;
+    }${f.pictureDeleted && !f.src ? `<div class="canvas-hint picts-deleted"><span>You deleted this picture</span></div>` : ''}${talentHintHTML(f)}${setupTagHTML(fid)}</div>`;
   }
   const btnLabel =
     viewMode === 'text'
@@ -228,7 +228,7 @@ export function renderOverviewRow(row: HTMLElement, fid: number): void {
       <div class="ver-canvas-area"><div class="canvas-wrap${
         s.drawActive[fid] === companionStrip && isActive ? ' draw-active' : ''
       }" style="aspect-ratio:${f.cropW || 16}/${f.cropH || 9}"><canvas id="${vcid}" width="${f.cropW || 960}" height="${f.cropH || 540}"></canvas>${
-      ver.type === 'empty' ? `<div class="canvas-hint"><span>${canvasHintFor(companionStrip, 'click to choose action')}</span></div>` : ''
+      ver.pictureDeleted && !ver.bgImage ? `<div class="canvas-hint picts-deleted"><span>You deleted this picture</span></div>` : ver.type === 'empty' ? `<div class="canvas-hint"><span>${canvasHintFor(companionStrip, 'click to choose action')}</span></div>` : ''
     }${starHTML(fid, vi, companionStrip)}${stripTagHTML(fid, vi, companionStrip)}</div></div>
       ${s.drawActive[fid] === companionStrip && isActive ? `<div class="color-row">${colorDotsVer}</div>` : ''}
       <div class="version-actions">
@@ -469,7 +469,7 @@ export function renderGrid4Row(row: HTMLElement, fid: number): void {
       (f.drawMode || !f.src)
         ? `<canvas id="${mcid}" width="${f.cropW || 960}" height="${f.cropH || 540}"></canvas>`
         : `<img src="${f.src}" decoding="sync" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;">`
-    }${talentHintHTML(f)}${setupTagHTML(fid)}</div>`;
+    }${f.pictureDeleted && !f.src ? `<div class="canvas-hint picts-deleted"><span>You deleted this picture</span></div>` : ''}${talentHintHTML(f)}${setupTagHTML(fid)}</div>`;
   }
   const btnLabel =
     viewMode === 'text'
@@ -598,7 +598,7 @@ export function renderGrid4Row(row: HTMLElement, fid: number): void {
       <div class="ver-canvas-area"><div class="canvas-wrap${
         s.drawActive[fid] === companionStrip && isActive ? ' draw-active' : ''
       }" style="aspect-ratio:${ar}"><canvas id="${vcid}" width="${f.cropW || 960}" height="${f.cropH || 540}"></canvas>${
-      ver.type === 'empty' ? `<div class="canvas-hint"><span>${canvasHintFor(companionStrip, 'click to choose action')}</span></div>` : ''
+      ver.pictureDeleted && !ver.bgImage ? `<div class="canvas-hint picts-deleted"><span>You deleted this picture</span></div>` : ver.type === 'empty' ? `<div class="canvas-hint"><span>${canvasHintFor(companionStrip, 'click to choose action')}</span></div>` : ''
     }${starHTML(fid, vi, companionStrip)}${stripTagHTML(fid, vi, companionStrip)}</div></div>
       ${s.drawActive[fid] === companionStrip && isActive ? `<div class="color-row">${colorDotsVer}</div>` : ''}
       <div class="version-actions">
@@ -849,7 +849,7 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
       <div class="ver-canvas-area"><div class="canvas-wrap${
         s.drawActive[fid] === companionStrip ? ' draw-active' : ''
       }" style="aspect-ratio:${ar}"><canvas id="${vcid}" width="${f.cropW || 960}" height="${f.cropH || 540}"></canvas>${
-        ver.type === 'empty' ? `<div class="canvas-hint"><span>${canvasHintFor(companionStrip)}</span></div>` : ''
+        ver.pictureDeleted && !ver.bgImage ? `<div class="canvas-hint picts-deleted"><span>You deleted this picture</span></div>` : ver.type === 'empty' ? `<div class="canvas-hint"><span>${canvasHintFor(companionStrip)}</span></div>` : ''
       }${starHTML(fid, ai, companionStrip)}${stripTagHTML(fid, ai, companionStrip)}</div></div>
       ${s.drawActive[fid] === companionStrip ? `<div class="color-row">${colorDots}</div>` : ''}
       <div class="version-actions">
@@ -975,7 +975,7 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
         (f.drawMode || !f.src)
           ? `<canvas id="${mcid}" width="${f.cropW || 960}" height="${f.cropH || 540}"></canvas>`
           : `<img src="${f.src}" decoding="sync" style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;">`
-      }${talentHintHTML(f)}${setupTagHTML(fid)}</div>`;
+      }${f.pictureDeleted && !f.src ? `<div class="canvas-hint picts-deleted"><span>You deleted this picture</span></div>` : ''}${talentHintHTML(f)}${setupTagHTML(fid)}</div>`;
     }
     const btnLabel = viewMode === 'text'
       ? 'Pic/<span class="ptt-bold">Txt</span>'
