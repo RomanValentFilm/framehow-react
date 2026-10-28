@@ -2437,6 +2437,11 @@ async function uploadImageToR2(
 // that didn't actually change the images. Keyed by r2_key → data URL.
 const r2ImageCache = new Map<string, string>();
 
+/** The server has no such file any more: deleted in the PICTS library on
+ *  another device, before this one pulled the mark (28 Oct, Roman's iPad:
+ *  "could not load all the content"). Not a failed load — a deleted picture. */
+class PictureGone extends Error { constructor(public key: string) { super(`picture gone: ${key}`); } }
+
 async function fetchImageFromR2(r2Key: string, token: string): Promise<string> {
   const cached = r2ImageCache.get(r2Key);
   if (cached) return cached;
@@ -2444,6 +2449,7 @@ async function fetchImageFromR2(r2Key: string, token: string): Promise<string> {
   const res = await fetch(`${API_BASE_URL}/images/${r2Key}`, {
     headers: { 'Authorization': `Bearer ${token}` },
   });
+  if (res.status === 404) throw new PictureGone(r2Key);   // deleted in the library (28 Oct)
   if (!res.ok) throw new Error(`Failed to fetch image: ${res.status}`);
   const blob = await res.blob();
   return new Promise((resolve, reject) => {
@@ -4701,6 +4707,7 @@ async function applyCloudTreeToStore(
       try {
         return await fetchImageFromR2(r2Key, token!);
       } catch (e) {
+        if (e instanceof PictureGone) throw e;   // no point asking again
         if (attempt === retries) throw e;
         await new Promise((r) => setTimeout(r, 2000 * Math.pow(2, attempt)));
       }
@@ -4726,6 +4733,20 @@ async function applyCloudTreeToStore(
           onImageProgress?.(fetchedImageCount, expectedImageCount);
         })
         .catch((e) => {
+          if (e instanceof PictureGone) {
+            const st = useStore.getState();
+            const idx = st.frames.findIndex((f) => f.id === task.localId);
+            if (idx !== -1) {
+              const updated = [...st.frames];
+              updated[idx] = { ...updated[idx], src: '', r2Key: undefined, pictureDeleted: true };
+              useStore.setState((prev) => ({ frames: updated, renderTick: prev.renderTick + 1 }));
+              (window as any).__fh_renderAll?.();
+            }
+            trace(`  picture deleted in the library (server has no file): shot ${st.frames[idx]?.label ?? task.localId} main — the card says so`);
+            fetchedImageCount++;
+            onImageProgress?.(fetchedImageCount, expectedImageCount);
+            return;
+          }
           console.warn('[sync] failed to fetch main image after retries', task.r2Key, e);
           const frame = useStore.getState().frames.find((f) => f.id === task.localId);
           failedTasks.push(`Frame "${frame?.label || task.localId}" main image`);
@@ -4769,6 +4790,23 @@ async function applyCloudTreeToStore(
           onImageProgress?.(fetchedImageCount, expectedImageCount);
         })
         .catch((e) => {
+          if (e instanceof PictureGone) {
+            const st = useStore.getState();
+            const vers = st.stripVersions[task.strip]?.[task.localId];
+            if (vers && vers[task.versionIdx]) {
+              const updatedVers = [...vers];
+              updatedVers[task.versionIdx] = { ...updatedVers[task.versionIdx], bgImage: null, r2Key: undefined, pictureDeleted: true };
+              useStore.setState((prev) => ({
+                stripVersions: { ...prev.stripVersions, [task.strip]: { ...prev.stripVersions[task.strip], [task.localId]: updatedVers } },
+                renderTick: prev.renderTick + 1,
+              }));
+              (window as any).__fh_renderAll?.();
+            }
+            trace(`  picture deleted in the library (server has no file): ${task.strip} v${task.versionIdx + 1} — the card says so`);
+            fetchedImageCount++;
+            onImageProgress?.(fetchedImageCount, expectedImageCount);
+            return;
+          }
           console.warn('[sync] failed to fetch version image after retries', task.strip, task.r2Key, e);
           const frame = useStore.getState().frames.find((f) => f.id === task.localId);
           failedTasks.push(`Frame "${frame?.label || task.localId}" ${task.strip} v${task.versionIdx + 1}`);
