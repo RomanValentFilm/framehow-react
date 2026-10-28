@@ -121,7 +121,8 @@ function topOfContent(): number {
     const r = el.getBoundingClientRect();
     if (r.height > 0 && r.bottom > 0 && r.bottom > bottom) bottom = r.bottom;
   }
-  return Math.max(0, Math.round(bottom));
+  // One pixel up, so the seam under the last bar is covered (28 Oct, iPhone: a thin see-through line).
+  return Math.max(0, Math.round(bottom) - 1);
 }
 
 const dayKey = (t: number) => { const d = new Date(t); return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`; };
