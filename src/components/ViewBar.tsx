@@ -26,7 +26,7 @@ export function ViewBar() {
             layout of the bar is unchanged. */}
         {/* PICTS (26 Oct, Roman): the library of every picture, right end. */}
         <div className="view-btns vb-right">
-          <button className="picts-btn" id="pictsBtn" type="button" title="All your pictures">PICTS</button>
+          <button className="picts-btn" id="pictsBtn" type="button" title="All your pictures">LIBRARY</button>
         </div>
       </div>
 

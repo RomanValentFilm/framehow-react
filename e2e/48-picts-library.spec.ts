@@ -66,7 +66,7 @@ test('picts library: the server lists every picture of the account, oldest first
       .filter((b) => b.offsetParent && getComputedStyle(b).borderTopColor === accent).map((b) => b.textContent!.trim());
   });
   say(`   red outlines: ${reds.join(', ')}`);
-  expect(reds, 'only PICTS').toEqual(['PICTS']);
+  expect(reds, 'only LIBRARY').toEqual(['LIBRARY']);
   await expect.poll(() => d.page.locator('#pictsLibrary .picts-tile').count(), { timeout: 15_000 }).toBeGreaterThanOrEqual(2);
   const dates = await d.page.locator('#pictsLibrary .picts-date').allTextContents();
   say(`   date lines: ${dates.join(' | ')}`);

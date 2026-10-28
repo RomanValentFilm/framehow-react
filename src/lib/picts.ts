@@ -614,7 +614,7 @@ export async function openPicts(): Promise<void> {
   root.style.bottom = `${logStripHeight()}px`;
   root.innerHTML = `<div class="picts-scroll"><div class="picts-days"></div><p class="picts-empty">Loading your pictures…</p></div>`
     + `<button type="button" class="picts-btn picts-select">SELECT</button>`
-    + `<div class="picts-bar"><button type="button" class="picts-btn picts-share" disabled>SHARE</button>`
+    + `<div class="picts-bar"><button type="button" class="picts-btn picts-share" disabled>${canShareSheet() ? 'SHARE' : 'DOWNLOAD'}</button>`
     + `<span class="picts-count">0 selected</span>`
     + `<button type="button" class="picts-btn picts-delete" disabled>DELETE</button></div>`
     + `<div class="picts-flash"></div>`;
@@ -833,13 +833,19 @@ export async function openPicts(): Promise<void> {
         const j = pics.indexOf(p);
         if (j >= 0) pics.splice(j, 1);
       }
+      // The days that lost pictures are laid out afresh, so no gap stays
+      // (28 Oct, Roman: "a black gap stays"). Rows of other days are untouched.
+      const hit = new Set(slots.filter((sl) => sl.pics.some((p) => chosen.includes(p))));
       for (const sl of slots) sl.pics = sl.pics.filter((p) => !chosen.includes(p));
-      for (const row of allRows) {
-        row.pics = row.pics.filter((p) => !chosen.includes(p));
-        if (!row.pics.length) row.el.remove();
+      for (const sl of hit) {
+        for (let i = allRows.length - 1; i >= 0; i--) if (sl.rows.contains(allRows[i].el)) allRows.splice(i, 1);
+        if (!sl.pics.length) { sl.rows.closest<HTMLElement>('.picts-day')?.remove(); continue; }
+        const got = sl.pics.map((p) => byKey.get(p.key)).filter(Boolean) as Loaded[];
+        const rows = buildDay(sl.rows, got);
+        for (const p of got) if (marked.has(p.key)) tileOf(p.key)?.classList.add('marked');
+        allRows.push(...rows);
+        sizeRows(rows, daysEl.clientWidth);
       }
-      sizeRows(allRows.filter((r) => r.pics.length), daysEl.clientWidth);
-      for (const sl of slots) if (!sl.pics.length) sl.rows.closest<HTMLElement>('.picts-day')?.remove();
       refresh();
       say(`${chosen.length === 1 ? 'Picture' : `${chosen.length} pictures`} deleted${r.offline ? ' — the server will hear when online' : ''}`);
     })();

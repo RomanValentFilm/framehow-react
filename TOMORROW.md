@@ -1,5 +1,25 @@
 # Where things stand
 
+## 28 October — STANDING (newest first)
+- dev: **v5.0.104 · #656** (run 508, 5 library tests green). live: still **074**.
+  PICTS library steps 1–4 done: list, library screen, previews (made on the
+  device when a picture is added, sent with the picture, kept on the device:
+  unsent / today / last day / open project / 3 screens), SELECT/CANCEL, red
+  tick + white circles, SELECT DAY, drag to mark, SHARE (sheet / JPEG / ZIP),
+  DELETE for good (confirm text, "You deleted this picture" on the card,
+  offline queue, server remembers deleted keys), works offline.
+- DATABASE CHANGES ON THE REAL SERVER: `npm run db:migrate:remote` DOES NOT
+  WORK (its bookkeeping thinks 0014–0030 were never applied and fails on the
+  first). Use the direct line, one file at a time:
+  `cd backend && npx --yes wrangler d1 execute framehow-db --remote --file=migrations/00NN_x.sql && npx --yes wrangler deploy`
+  Server steps are NOT in the test log — Roman pastes the Terminal output.
+- Roman, 27 Oct: ONE deploy line per run; no new line before his zzz; short
+  explanations; one small change per run; real-device logs before test-browser
+  theories; never touch the real picture upload.
+- Next: full run, then live (since 074: max screen share/arrows, camera
+  texts, defaults fix, the whole PICTS library). Then BETA mark, etc.
+
+
 dev: **v4.9.173 · #476**, app AND backend. Next number: **v4.9.174 · #477**.
 A NEW NUMBER FOR EVERY DEPLOY — both parts, always.
 WE WORK ON DEV. try427 and try411 are old addresses; ignore them unless Roman
