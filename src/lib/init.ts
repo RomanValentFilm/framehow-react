@@ -844,7 +844,10 @@ export function initFramehow(): void {
         return;
       }
 
-      if (isPhone && (view === 'overview' || view === 'grid4')) {
+      // A fitting on an iPhone held sideways may open the LOOKS GALLERY (28 Oct,
+      // Roman); turning to portrait drops back to the single MAIN strip as always.
+      const fittingGalleryOnPhone = isPhone && view === 'grid4' && state().projectType === 'fitting' && window.innerWidth > window.innerHeight;
+      if (isPhone && (view === 'overview' || view === 'grid4') && !fittingGalleryOnPhone) {
         const om = document.getElementById('overviewPhoneMsg')!;
         om.classList.add('show');
         const dismiss = (e?: Event) => {

@@ -1223,7 +1223,9 @@ export function handleOrientationFlip(): void {
     // 5. Show rotate overlay on top — user taps to dismiss.
     // FITTING projects hide the CAST BOARD button in portrait, so the message
     // would be telling the user about a view they cannot reach from here.
-    const g3Msg = state().projectType === 'fitting' ? null : document.getElementById('g3RotateMsg');
+    // Nor while the LIBRARY lies over the page (28 Oct, Roman's iPad): the 3x2
+    // view underneath is not what the person is looking at.
+    const g3Msg = state().projectType === 'fitting' || document.body.classList.contains('picts-open') ? null : document.getElementById('g3RotateMsg');
     if (g3Msg) {
       g3Msg.classList.add('show');
       const dismiss = () => { g3Msg.classList.remove('show'); };
