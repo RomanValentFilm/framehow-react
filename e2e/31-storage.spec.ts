@@ -55,7 +55,11 @@ function noisePng(width: number, height: number): string {
   ]).toString('base64');
 }
 
-const LIMIT_MB = 6;
+// 7.3, not 6 (28 Oct, run 513): the library's previews count in the storage
+// now, about 45 KB each next to a 205 KB picture, so the same steps — 25
+// pictures past 80 %, 28 past 90 %, 30 past 95 %, the 31st full — need a
+// slightly bigger test account.
+const LIMIT_MB = 7.3;
 const PICTURE = () => noisePng(256, 200);   // ≈ 205 KB each
 
 test('storage: the figure, the 80/90/95 % notices, full, DELETE NOW, and the waiting work goes up', async ({ browser }) => {
@@ -76,12 +80,12 @@ test('storage: the figure, the 80/90/95 % notices, full, DELETE NOW, and the wai
   await desktop.settle();
   let st = await desktop.storage();
   expect(st.figure, 'the push answer must carry the storage figure').toBeTruthy();
-  expect(st.figure!.limit, 'the simulator limit').toBe(LIMIT_MB * 1024 * 1024);
+  expect(st.figure!.limit, 'the simulator limit').toBe(Math.round(LIMIT_MB * 1024 * 1024));
   expect(st.figure!.used, '5 pictures of ~205 KB').toBeGreaterThan(1_000_000);
   expect(st.noticedStep, 'no notice below 80 %').toBe(0);
 
   const line0 = await desktop.readStorageLine();
-  expect(line0.text).toMatch(/^Storage \d+(\.\d)? of 6 MB · \d+ %$/);
+  expect(line0.text).toMatch(/^Storage \d+(\.\d)? of \d+(\.\d)? MB · \d+ %$/);
   expect(line0.red, 'grey below 80 %').toBe(false);
   // Below 80 % a live row offers no Delete now (Roman, 21 Sept).
   expect((await desktop.countDeleteNow()).live, 'no Delete now on live rows below 80 %').toBe(0);
@@ -189,7 +193,7 @@ test('storage: the figure, the 80/90/95 % notices, full, DELETE NOW, and the wai
   // The other device sees the same figure from the list alone.
   const ipadLine = await ipad.readStorageLine();
   expect(ipadLine.red, 'still above 80 %').toBe(true);
-  expect(ipadLine.text).toMatch(/of 6 MB/);
+  expect(ipadLine.text).toMatch(/of \d+(\.\d)? MB/);
 
   await desktop.close();
   await ipad.close();

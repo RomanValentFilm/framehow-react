@@ -239,8 +239,12 @@ function colourPng(r: number, g: number, b: number): string {
 test('picts library: a preview that misses its picture\'s upload goes with the next sync', async ({ browser }) => {
   // 27 Oct, Roman: "can't it go together?" — the preview goes straight after its
   // picture; if the connection drops between the two, the next sync sends it.
+  // A FRESH BROWSER of its own (runs 499 and 513): after an earlier test has
+  // switched the network off and on, the shared test browser sends uploads
+  // empty ("400"). A real device does not; this test must not inherit it.
+  const own = await browser.browserType().launch();
   const { token } = await freshAccount();
-  const d = await Device.open(browser, 'desktop', token);
+  const d = await Device.open(own, 'desktop', token);
   await d.newProjectOfKind('PREVIEW LATE', 'landscape', 2);
   await d.settle();
   const thumbsOnServer = async () => ((await (await fetch(`${API}/user/pictures`, { headers: { Authorization: `Bearer ${token}` } })).json()) as { pictures: Pic[] }).pictures.filter((p) => p.thumb).length;
@@ -264,6 +268,7 @@ test('picts library: a preview that misses its picture\'s upload goes with the n
   say(`   previews sent after the sync: ${late}`);
   expect(late, 'the missed one went with the next sync').toBeGreaterThanOrEqual(1);
   await d.close();
+  await own.close();
 });
 
 test('picts library: DELETE — confirm, the card says "You deleted this picture", the file is gone, another device learns it, an offline device cannot bring it back', async ({ browser }) => {

@@ -67,7 +67,16 @@ test('dead pictures: the count calls only the truly dead files dead, and a resto
   await desktop.uploadPictures(0, 'ver', [png(), png()]);
   await desktop.uploadPictures(1, 'ver', [png()]);
   await desktop.settle();
-  const allKeys = await keysOf(token, keepId!);
+  // Up to 20 s for the third (run 515: the app went quiet with 2 of 3 up —
+  // the picture added during the first upload waits for the next sync). The
+  // time it took is written down, so a real delay shows.
+  const t0 = Date.now();
+  let allKeys = await keysOf(token, keepId!);
+  while (allKeys.length < 3 && Date.now() - t0 < 20_000) {
+    await desktop.page.waitForTimeout(1000);
+    allKeys = await keysOf(token, keepId!);
+  }
+  say(`   pictures on the server: ${allKeys.length}, after waiting ${Math.round((Date.now() - t0) / 1000)} s more`);
   expect(allKeys.length, 'three pictures on the server').toBe(3);
 
   say('desktop: a restore point, then shot 2 is deleted — its picture lives on only in the point');

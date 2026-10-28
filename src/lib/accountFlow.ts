@@ -2425,11 +2425,12 @@ async function uploadImageToR2(
   // go together?"): straight after the picture, in the same step. It never
   // holds the picture back — at most a few seconds, and a preview that does not
   // make it is noted on the device and sent with the next sync.
-  try {
-    const m = await import('./picts');
-    await Promise.race([m.sendPreviewNow(out.r2_key, src), new Promise((r) => setTimeout(r, 8000))]);
-    void m.sendUnsentPreviews();   // and any that missed an earlier picture's upload (run 496)
-  } catch { /* noted on the device; the next sync sends it */ }
+  // NOT AWAITED (run 516): the push waited for the preview, grew longer, and a
+  // picture added in that moment was lost to a pull before its own push. The
+  // preview goes out right now, beside the push; a miss is noted and retried.
+  void import('./picts')
+    .then((m) => { void m.sendPreviewNow(out.r2_key, src); void m.sendUnsentPreviews(); })
+    .catch(() => { /* noted on the device; the next sync sends it */ });
   return out;
 }
 

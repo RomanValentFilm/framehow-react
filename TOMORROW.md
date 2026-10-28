@@ -16,6 +16,20 @@
 - Roman, 27 Oct: ONE deploy line per run; no new line before his zzz; short
   explanations; one small change per run; real-device logs before test-browser
   theories; never touch the real picture upload.
+- TO LOOK AT, SEPARATELY (run 516, 28 Oct): a picture added WHILE a push is
+  running ("a shot changed while a sync was being applied — sending" → "push
+  skipped: a push is already running"), then a heartbeat PULL before the next
+  push "takes theirs" for that shot — the local picture is dropped, never
+  sent, and "recorded N frames as matching". Older gap in the sync rules; the
+  push was made short again so it is rare, but it is real. Test 33 shows it
+  when the push is slow.
+- PLAN AGREED 28 Oct (native app): 1) Capacitor wrap + TestFlight with
+  today's cameras (est. 3–5 days; Roman signs in to Apple + pays 99 $/yr,
+  installs Xcode; testers install TestFlight once, then tap a link). 2) Then
+  a native iOS camera screen with frame lines on the live picture, full
+  sensor / all lenses (est. +5–8 days), shipped as an update. Apple does not
+  allow betas in the App Store itself — TestFlight is the way. Android: web
+  for now.
 - Next: full run, then live (since 074: max screen share/arrows, camera
   texts, defaults fix, the whole PICTS library). Then BETA mark, etc.
 
