@@ -3192,7 +3192,7 @@ async function runFittingPdfExport(): Promise<void> {
   const COLS = 5, gutterX = 3.05;
   const contentW = pageW - 2 * MARGIN;
   const aspect = 9 / 16;
-  const noteH = c.notes ? 18 : 0;
+  const noteH = c.notes ? 36 : 0;   // photo notes + the talent's note below them
   let frameW = (contentW - gutterX * (COLS - 1)) / COLS;
   let frameH = frameW / aspect;
   const framesY = (0.85 + 0.07 * 7.5) * 25.4; // same place as in the PowerPoint
@@ -3212,18 +3212,21 @@ async function runFittingPdfExport(): Promise<void> {
   }
 
   // THE TALENT'S NAME, left, between the header and the photos (Roman, 29 Oct).
-  // In the 5-looks layout the talent's own note goes beside it — there is no
-  // talent slot to put it under.
   function drawTalentLine(row: FittingRow) {
-    const y = framesY - 7.5;
     pdf.setTextColor(0); pdf.setFont(PDF_FONT, 'bold'); pdf.setFontSize(12);
-    pdf.text(row.label, startX, y);
+    pdf.text(row.label, startX, framesY - 7.5);
+  }
+  // THE TALENT'S NOTE (the NOTES card) BELOW THE PICTURES, the row's full
+  // width, in both layouts (Roman, 29 Oct: "the notes have to be below the
+  // picts"). Under the photos' own notes when there are any.
+  function drawTalentNoteBelow(row: FittingRow) {
     const tn = talentNote(row.f);
-    if (c.notes && tn && c.layout === 'looks5') {
-      pdf.setFont(PDF_FONT, 'normal'); pdf.setFontSize(9.5); pdf.setTextColor(40);
-      const nx = startX + pdf.getTextWidth(row.label) * 12 / 9.5 + 5;
-      pdf.text(hardWrapLines(pdf, tn, contentW - (nx - startX))[0] ?? '', nx, y);
-    }
+    if (!c.notes || !tn) return;
+    const photoNotes = row.photos.some((p) => p.note);
+    let ty = framesY + frameH + 4 + (photoNotes ? 18 : 0);
+    pdf.setTextColor(0); pdf.setFont(PDF_FONT, 'normal'); pdf.setFontSize(9.5);
+    const rowW = COLS * frameW + (COLS - 1) * gutterX;
+    for (const line of hardWrapLines(pdf, tn, rowW).slice(0, 4)) { pdf.text(line, startX, ty); ty += 4.2; }
   }
 
   const rows = fittingRows(c.frames, c.layout, c.strips, c.keep);
@@ -3234,18 +3237,13 @@ async function runFittingPdfExport(): Promise<void> {
     if (ri > 0) pdf.addPage();
     drawHeader();
     drawTalentLine(row);
+    drawTalentNoteBelow(row);
     let col = 0;
     if (c.layout === 'talent4') {
       if (row.talent) {
         // (the name is on the talent line above — no second one here)
         const img = (await rasterizeMain(row.f)).toDataURL('image/jpeg', 0.92);
         pdf.addImage(img, 'JPEG', startX, framesY, frameW, frameH, undefined, 'FAST');
-        const tn = talentNote(row.f);
-        if (c.notes && tn) {
-          pdf.setTextColor(0); pdf.setFont(PDF_FONT, 'normal'); pdf.setFontSize(9.5);
-          let ty = framesY + frameH + 4;
-          for (const line of hardWrapLines(pdf, tn, frameW).slice(0, 4)) { pdf.text(line, startX, ty); ty += 4.2; }
-        }
       }
       col = 1;
     }
@@ -3290,7 +3288,7 @@ async function runFittingPptxExport(): Promise<void> {
   pptx.title = c.projectName;
   const SW = 13.333, SH = 7.5, MARGIN = 0.4, COLS = 5, gapX = 0.12;
   const aspect = 9 / 16;
-  const noteH = c.notes ? 0.75 : 0;
+  const noteH = c.notes ? 1.5 : 0;   // photo notes + the talent's note below them
   let fW = (SW - 2 * MARGIN - gapX * (COLS - 1)) / COLS;
   let fH = fW / aspect;
   const maxH = SH - 1.2 - noteH;
@@ -3309,23 +3307,21 @@ async function runFittingPptxExport(): Promise<void> {
     const right = [meta.userName, meta.date].filter(Boolean).join('   ');
     slide.addText(right, { x: SW / 2, y: 0.38, w: SW / 2 - MARGIN, h: 0.2, fontSize: 7, align: 'right', color: '787878', fontFace: 'Arial', margin: 0 });
     if (meta.version) slide.addText(meta.version, { x: MARGIN, y: 0.38, w: SW / 2, h: 0.2, fontSize: 7, color: '787878', fontFace: 'Arial', margin: 0 });
-    // The talent's name, left, between the header and the photos (Roman, 29 Oct);
-    // in the 5-looks layout the talent's note beside it.
+    // The talent's name, left, between the header and the photos (Roman, 29 Oct).
+    slide.addText(row.label, { x: startX, y: framesY - 0.56, w: SW - 2 * startX, h: 0.3, fontSize: 12, bold: true, color: '000000', fontFace: 'Arial', valign: 'bottom', margin: 0 });
+    // The talent's note BELOW the pictures, the row's full width, both layouts
+    // (Roman, 29 Oct); under the photos' own notes when there are any.
     {
       const tn = talentNote(row.f);
-      const withNote = c.notes && tn && c.layout === 'looks5';
-      const nameW = withNote ? Math.min(3.5, 0.11 * row.label.length + 0.3) : SW - 2 * startX;
-      slide.addText(row.label, { x: startX, y: framesY - 0.56, w: nameW, h: 0.3, fontSize: 12, bold: true, color: '000000', fontFace: 'Arial', valign: 'bottom', margin: 0 });
-      if (withNote) slide.addText(tn, { x: startX + nameW + 0.1, y: framesY - 0.56, w: SW - 2 * startX - nameW - 0.1, h: 0.3, fontSize: 9.5, color: '282828', fontFace: 'Arial', valign: 'bottom', margin: 0 });
+      if (c.notes && tn) {
+        const photoNotes = row.photos.some((p) => p.note);
+        slide.addText(tn, { x: startX, y: framesY + fH + 0.08 + (photoNotes ? 0.75 : 0), w: COLS * fW + (COLS - 1) * gapX, h: 0.75, fontSize: 9.5, color: '000000', fontFace: 'Arial', valign: 'top', wrap: true, margin: 0 });
+      }
     }
     let col = 0;
     if (c.layout === 'talent4') {
       if (row.talent) {
         slide.addImage({ data: b64((await rasterizeMain(row.f))), x: startX, y: framesY, w: fW, h: fH });
-        const tn = talentNote(row.f);
-        if (c.notes && tn) {
-          slide.addText(tn, { x: startX, y: framesY + fH + 0.08, w: fW, h: noteH, fontSize: 9.5, color: '000000', fontFace: 'Arial', valign: 'top', wrap: true, margin: 0 });
-        }
       }
       col = 1;
     }
