@@ -3203,11 +3203,12 @@ async function runFittingPdfExport(): Promise<void> {
   // The same header as the main export: name centred and bold, two small rows.
   function drawHeader() {
     pdf.setTextColor(20); pdf.setFont(PDF_FONT, 'bold'); pdf.setFontSize(10);
-    pdf.text(c.projectName, pageW / 2, MARGIN + 2.6, { align: 'center' });
+    const dy = 1.9;   // the header 1% of the page lower (Roman, 29 Oct)
+    pdf.text(c.projectName, pageW / 2, MARGIN + 2.6 + dy, { align: 'center' });
     pdf.setFont(PDF_FONT, 'normal'); pdf.setFontSize(6); pdf.setTextColor(120);
-    if (meta.userName) pdf.text(meta.userName, pageW - MARGIN, MARGIN + 6.4, { align: 'right' });
-    if (meta.version) pdf.text(meta.version, MARGIN, MARGIN + 9.2);
-    pdf.text(meta.date, pageW - MARGIN, MARGIN + 9.2, { align: 'right' });
+    if (meta.userName) pdf.text(meta.userName, pageW - MARGIN, MARGIN + 6.4 + dy, { align: 'right' });
+    if (meta.version) pdf.text(meta.version, MARGIN, MARGIN + 9.2 + dy);
+    pdf.text(meta.date, pageW - MARGIN, MARGIN + 9.2 + dy, { align: 'right' });
     pdf.setTextColor(30);
   }
 
@@ -3303,10 +3304,11 @@ async function runFittingPptxExport(): Promise<void> {
   for (const row of rows) {
     const slide = pptx.addSlide();
     slide.background = { color: 'FFFFFF' };
-    slide.addText(c.projectName, { x: MARGIN, y: 0.1, w: SW - 2 * MARGIN, h: 0.28, fontSize: 11, bold: true, align: 'center', color: '141414', fontFace: 'Arial', margin: 0 });
+    const dy = 0.075;   // the header 1% of the slide lower (Roman, 29 Oct)
+    slide.addText(c.projectName, { x: MARGIN, y: 0.1 + dy, w: SW - 2 * MARGIN, h: 0.28, fontSize: 11, bold: true, align: 'center', color: '141414', fontFace: 'Arial', margin: 0 });
     const right = [meta.userName, meta.date].filter(Boolean).join('   ');
-    slide.addText(right, { x: SW / 2, y: 0.38, w: SW / 2 - MARGIN, h: 0.2, fontSize: 7, align: 'right', color: '787878', fontFace: 'Arial', margin: 0 });
-    if (meta.version) slide.addText(meta.version, { x: MARGIN, y: 0.38, w: SW / 2, h: 0.2, fontSize: 7, color: '787878', fontFace: 'Arial', margin: 0 });
+    slide.addText(right, { x: SW / 2, y: 0.38 + dy, w: SW / 2 - MARGIN, h: 0.2, fontSize: 7, align: 'right', color: '787878', fontFace: 'Arial', margin: 0 });
+    if (meta.version) slide.addText(meta.version, { x: MARGIN, y: 0.38 + dy, w: SW / 2, h: 0.2, fontSize: 7, color: '787878', fontFace: 'Arial', margin: 0 });
     // The talent's name, left, between the header and the photos (Roman, 29 Oct).
     slide.addText(row.label, { x: startX, y: framesY - 0.56 - 0.075, w: SW - 2 * startX, h: 0.3, fontSize: 12, bold: true, color: '000000', fontFace: 'Arial', valign: 'bottom', margin: 0 });
     // The talent's note BELOW the pictures, the row's full width, both layouts
