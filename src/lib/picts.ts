@@ -95,15 +95,25 @@ function blockBehind(e: TouchEvent): void {
   if (t && t.closest('#maxView')) return;
   if (e.cancelable) e.preventDefault();
 }
+// THE BARS WHERE A FINGER CAN PRESS THEM (29 Oct, Roman's iPhone: library open,
+// turned to landscape, 3x2 needed many taps). On the iPhone the toolbar scrolls
+// with the page; scrolled down, the view bar sat at the very top edge (0–35 px),
+// where iOS takes the taps itself — the log showed none of them arriving. While
+// the library is open on a phone the page is held at the TOP, so the toolbar is
+// in view and the view bar below it; closing puts the page back where it was.
+let _backY = 0;
 function holdPage(): void {
   if (_heldY !== null) return;
+  _backY = window.scrollY;
+  const phone = Math.min(window.innerWidth, window.innerHeight) <= 430;
+  if (phone && window.scrollY > 0) window.scrollTo(0, 0);
   _heldY = window.scrollY;
   document.documentElement.classList.add('picts-hold');
   document.addEventListener('touchmove', blockBehind, { passive: false });
 }
 function releasePage(): void {
   if (_heldY === null) return;
-  const y = _heldY;
+  const y = _backY;
   _heldY = null;
   document.documentElement.classList.remove('picts-hold');
   document.removeEventListener('touchmove', blockBehind);

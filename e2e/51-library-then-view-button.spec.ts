@@ -52,12 +52,17 @@ test(`library open on an iPhone (${start === 'portrait' ? 'opened in portrait, t
     return `bars: toolbar ${tb ? Math.round(tb.top) + '–' + Math.round(tb.bottom) : '-'}, view bar ${vbr ? Math.round(vbr.top) + '–' + Math.round(vbr.bottom) : '-'}${vb?.classList.contains('vb-stuck') ? ' (stuck)' : ''}, detail bar ${db ? Math.round(db.top) + '–' + Math.round(db.bottom) : '-'}; button at ${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.width)}×${Math.round(r.height)}, display ${getComputedStyle(el).display}; on top there: ${top === el || el.contains(top) ? 'the button' : name(top)}; library ${lib ? `${Math.round(lib.top)}–${Math.round(lib.bottom)}` : 'gone'}; page at ${Math.round(window.scrollY)}`;
   });
   say(`   ${btn}: ${where}`);
+  // The view bar must not sit at the screen's top edge, where iOS takes the taps
+  // (Roman's log 20:52:47: view bar 0–35, page at 146 — three taps lost).
+  const vbTop = await d.page.evaluate(() => Math.round((document.querySelector('.view-bar') as HTMLElement).getBoundingClientRect().top));
+  expect(vbTop, 'THE VIEW BAR IS AT THE TOP EDGE with the library open (iOS takes taps there)').toBeGreaterThanOrEqual(40);
   let clickErr = '';
   await b.tap({ timeout: 5_000 }).catch((e) => { clickErr = String(e).split('\n').slice(0, 3).join(' | '); });
   if (clickErr) say(`   the click failed: ${clickErr}`);
   await d.page.waitForTimeout(800);
   for (const l of (await d.log()).slice(0, 8).reverse()) say(`   app: ${l.trim()}`);
   const open = await d.page.locator('#pictsLibrary').count();
+  if (scrolled && !open) say(`   page after closing: ${await d.page.evaluate(() => Math.round(window.scrollY))}`);
   say(`   library after the press: ${open ? 'STILL OPEN' : 'closed'}`);
   expect(clickErr, `THE ${btn.toUpperCase()} BUTTON COULD NOT BE PRESSED with the library open`).toBe('');
   expect(open, `THE LIBRARY STAYED OPEN after ${btn.toUpperCase()} (Roman: "it simply stays in library")`).toBe(0);
