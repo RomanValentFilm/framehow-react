@@ -1116,6 +1116,12 @@ export function resetToolbarState(): void {
   if ((window as any)._scrollHideReset) (window as any)._scrollHideReset(false);
 }
 
+/** The camera puts its own card back when the view did not change (actions.ts). */
+export function cancelOrientAnchors(): void {
+  _orientAnchorTimers.forEach(clearTimeout);
+  _orientAnchorTimers.length = 0;
+}
+
 export function handleOrientationFlip(): void {
   const newW = window.innerWidth,
     newH = window.innerHeight;
@@ -1146,11 +1152,11 @@ export function handleOrientationFlip(): void {
   // IPAD ONLY. Roman asked for the iPad and only the iPad. On a phone, turning
   // to portrait forces the single MAIN strip, and that is unchanged.
   // THE CAMERA IS OPEN (29 Oct, Roman): the turn changes NOTHING in the view —
-  // not the view mode, not the strips. The size is recorded, so nothing is
-  // owed afterwards: you come back to exactly the view you pressed CAM in, and
-  // the photo's card is put in the middle when it lands (actions.ts).
+  // not the view mode, not the strips.
+  // The size is NOT recorded: the page keeps the shape it had at CAM; when the
+  // session ends (camera.ts) a turn still owed is settled once, or not at all
+  // if the device is held as it was at CAM (landscape → CAM → portrait → back).
   if ((window as any).__fh_cameraBusy?.()) {
-    (window as any)._lastWinW = newW; (window as any)._lastWinH = newH;
     if (flipped) trace(`turn while the camera is open — the view stays ${state().currentViewMode}`);
     syncCardHeights();
     return;
@@ -1176,7 +1182,8 @@ export function handleOrientationFlip(): void {
 
   // Use centerFid captured BEFORE the layout started shifting
   // (set by _updateCenterFid() in the resize/orientationchange handler)
-  const fid = state().centerFid;
+  // The shot just photographed, until the person touches or scrolls (camera).
+  const fid = (window as any)._camLandFid || state().centerFid;
   const isPhone = Math.min(newW, newH) <= 430;
   const isPhonePortrait = isPhone && newH > newW;
   if (isPhonePortrait) {
@@ -1312,7 +1319,10 @@ export function wireScrollHandlers(): void {
 
   // If user starts scrolling/touching, cancel any pending anchor timers
   // (both orientation and action) so they don't yank the scroll position back.
+  const forgetCamShot = () => { (window as any)._camLandFid = null; };
+  window.addEventListener('wheel', forgetCamShot, { passive: true });
   window.addEventListener('touchstart', () => {
+    forgetCamShot();
     if (_orientAnchorTimers.length) {
       _orientAnchorTimers.forEach(clearTimeout);
       _orientAnchorTimers.length = 0;

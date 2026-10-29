@@ -7,7 +7,7 @@ import type { CamRatioKey } from '../store/state';
 import { showToast, showCamBlockedMsg } from './modals';
 import { fhTrack } from './tracking';
 import { trace } from './syncTrace';
-import { resetToolbarState, captureFrameAnchor } from './view';
+import { resetToolbarState, captureFrameAnchor, handleOrientationFlip, cancelOrientAnchors } from './view';
 import { flushSyncNow } from './currentProject';
 import { getCamMode, getFramelineLater, wireCamModeButton, shrinkForSaving, fillCrop, loadPhoneShot } from './camMode';
 import type { PhoneShot } from './camMode';
@@ -75,7 +75,11 @@ export async function openCamera(
   fhTrack('camera_opened');
   const ar = effectiveAspectRatio(fid);
   cameraTarget = { fid, div, aspectRatio: ar, fromCompare: !!fromCompare, fromMain: !!fromMain, stripType: strip,
-    openedLandscape: window.innerWidth > window.innerHeight };
+    openedLandscape: window.innerWidth > window.innerHeight,
+    // where the card sat on the screen when CAM was pressed (29 Oct, Roman:
+    // "give the photo back to exactly the same position")
+    cardTop: (() => { const el = (div && (div.closest('.grid3x2-card-wrap') || div.closest('.frame-card') || div)) as HTMLElement | null;
+      return el && el.isConnected ? el.getBoundingClientRect().top : null; })() };
   cameraSessionStart();
   // THE SHOT THE CAMERA IS FOR IS THE ONE TO COME BACK TO (29 Oct, Roman: "if I
   // shoot to shot 7, however I turn the device in between, I want to end up
@@ -158,16 +162,43 @@ export async function openCameraSetup(): Promise<void> {
 // same view"). While the camera, the phone's camera or the framing screen is
 // open, a turn of the device must not change the view underneath.
 // A CAMERA SESSION: from pressing CAM on a card until the photo lands in that
-// card (or the camera is closed). Nothing is timed. When it ends, the screen
-// size as it is NOW is recorded as the one the view belongs to — so a turn
-// that iOS reports only after its camera hands back is no turn at all, and
-// cannot change the view afterwards (29 Oct, Roman: no 1.5 s, no waiting).
-let _camOpenedAt = 0, _camOpen = false;
-export function cameraSessionStart(): void { _camOpenedAt = Date.now(); _camOpen = true; }
-export function cameraSessionEnd(): void {
-  if (!_camOpen) return;
+// card (or the camera is closed). Nothing is timed (29 Oct, Roman: no 1.5 s,
+// no waiting).
+// 29 Oct, Roman (2): "the orientation change has to be ignored for the page in
+// the background, so when the orientation is back to the same as it was it goes
+// to where it was". The page keeps the SHAPE it had at CAM for the whole session.
+// When the session ends that shape is what the view belongs to: held the same
+// way as at CAM → nothing happens; held the other way → the ordinary turn rule
+// runs ONCE now (iPad portrait: MAIN + VERSIONS, iPhone portrait: MAIN), on the
+// shot just taken. A turn iOS reports later is a real turn, handled as any turn.
+let _camOpenedAt = 0, _camOpen = false, _camW = 0, _camH = 0;
+export function cameraSessionStart(): void {
+  _camOpenedAt = Date.now(); _camOpen = true;
+  _camW = (window as any)._lastWinW || window.innerWidth; _camH = (window as any)._lastWinH || window.innerHeight;
+}
+/** true when the device is held the other way than when CAM was pressed */
+export function cameraTurnedSinceCam(): boolean {
+  return (_camW > _camH) !== (window.innerWidth > window.innerHeight);
+}
+/** Returns true when the view CHANGED because the device is held the other way
+ *  (then the turn rule has brought the shot on screen; nothing to put back). */
+export function cameraSessionEnd(): boolean {
+  if (!_camOpen) return false;
   _camOpen = false;
-  (window as any)._lastWinW = window.innerWidth; (window as any)._lastWinH = window.innerHeight;
+  (window as any)._lastWinW = _camW; (window as any)._lastWinH = _camH;
+  if (!cameraTurnedSinceCam()) return false;
+  const before = state().currentViewMode;
+  handleOrientationFlip();
+  const after = state().currentViewMode;
+  trace(`camera: held the other way than at CAM — view ${before === after ? `stays ${after}` : `${before} → ${after}`}`);
+  if (before !== after) {
+    // The new view STAYS. Turning back later does not bring 3x2 back by itself
+    // (29 Oct, Roman: "only when the user presses 3x2 and decides for himself").
+    (window as any)._returnTo3x2 = false;
+    return true;
+  }
+  cancelOrientAnchors();   // same view: the card goes back where it was (actions.ts)
+  return false;
 }
 export function cameraBusy(): boolean {
   return _camOpen && Date.now() - _camOpenedAt < 600_000;   // a missed close cannot freeze turns forever

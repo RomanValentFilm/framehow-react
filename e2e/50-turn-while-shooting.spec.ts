@@ -23,6 +23,19 @@ async function photo(page: Page): Promise<Buffer> {
   return Buffer.from(b64, 'base64');
 }
 
+/** Where the card's top is on the screen, in px. */
+async function topOf(page: Page, sel: string): Promise<{ top: number; h: number; vh: number }> {
+  return page.evaluate((q) => {
+    const el = document.querySelector(q) as HTMLElement | null;
+    const r = el ? el.getBoundingClientRect() : { top: 9999, height: 0 };
+    return { top: Math.round(r.top), h: Math.round(r.height), vh: window.innerHeight };
+  }, sel);
+}
+/** Where the app must put it back: the height it had at CAM, kept on the screen. */
+function wantTop(atCam: number, now: { h: number; vh: number }): number {
+  return Math.max(0, Math.min(atCam, now.vh - Math.min(now.h, now.vh)));
+}
+
 /** How far the card's middle is from the middle of the screen, in px. */
 async function offCentre(page: Page, fid: string): Promise<number> {
   return page.evaluate((id) => {
@@ -34,7 +47,7 @@ async function offCentre(page: Page, fid: string): Promise<number> {
 }
 
 for (const [from, to] of [[[820, 1180], [1180, 820]], [[1180, 820], [820, 1180]]] as const) {
-  test(`turn while shooting: ${from[0] < from[1] ? 'portrait → landscape' : 'landscape → portrait'}, the shot ends mid screen`, async ({ browser }) => {
+  test(`turn while shooting: ${from[0] < from[1] ? 'portrait → landscape' : 'landscape → portrait'}, the card goes back where it was`, async ({ browser }) => {
     const { token } = await freshAccount();
     const d = await Device.open(browser, 'desktop', token);
     await d.page.setViewportSize({ width: from[0], height: from[1] });
@@ -53,10 +66,15 @@ for (const [from, to] of [[[820, 1180], [1180, 820]], [[1180, 820], [820, 1180]]
     const card = d.page.locator(`#versionsScroll .frame-card[data-vfid="${fid}"]`);
     const nowNo = await d.page.locator('#versionsScroll .frame-card[data-vfid]').evaluateAll((els, id) => els.findIndex((e) => (e as HTMLElement).dataset.vfid === id) + 1, fid);
     say(`   two shots added above — that shot is now number ${nowNo}`);
+    // the list is redrawn after adding shots: wait until the card is in place (run 533)
+    await card.waitFor({ state: 'visible' }); await d.page.waitForTimeout(300);
     await card.scrollIntoViewIfNeeded();
     const viewBefore = await d.page.evaluate(() => (window as never as { __fh_test: { viewMode(): string } }).__fh_test.viewMode());
     say(`that shot (card ${fid}): CAM pressed at ${from[0]}×${from[1]} in the ${viewBefore} view`);
     const pic = await photo(d.page);
+    const selA = `#versionsScroll .frame-card[data-vfid="${fid}"]`;
+    const atCam = (await topOf(d.page, selA)).top;
+    say(`   the card's top at CAM: ${atCam} px`);
     const [chooser] = await Promise.all([
       d.page.waitForEvent('filechooser', { timeout: 10_000 }),
       card.locator('[data-action="camera"]').click(),
@@ -73,17 +91,25 @@ for (const [from, to] of [[[820, 1180], [1180, 820]], [[1180, 820], [820, 1180]]
       .toContain(`camera: landed on the card (shot ${nowNo}, ver`);
     const viewAfter = await d.page.evaluate(() => (window as never as { __fh_test: { viewMode(): string } }).__fh_test.viewMode());
     expect(viewAfter, 'THE VIEW CHANGED while shooting (Roman: "come back to the same view")').toBe(viewBefore);
-    const off = await offCentre(d.page, fid);
-    say(`   the shot is ${off} px from the middle of the screen`);
-    expect(Math.abs(off), 'SHOT 7 IS NOT IN THE MIDDLE after the turn (Roman: "mid screen, not above, not below").')
+    const now = await topOf(d.page, selA);
+    say(`   the card's top now: ${now.top} px (must be ${wantTop(atCam, now)})`);
+    expect(Math.abs(now.top - wantTop(atCam, now)), 'THE CARD IS NOT BACK WHERE IT WAS WHEN CAM WAS PRESSED (Roman: "do not move the screen")')
       .toBeLessThanOrEqual(4);
     await d.close();
   });
 }
 
-// STARTED IN 3x2 — BACK IN 3x2 (29 Oct, Roman). Turning an iPad to portrait in
-// 3x2 normally swaps to two strips; with the camera open it must not.
-test('turn while shooting: started in 3x2, comes back to 3x2 with the shot mid screen', async ({ browser }) => {
+// STARTED IN 3x2 (29 Oct, Roman). While the camera is open the page in the
+// background ignores every turn.
+//  · back: landscape → CAM → portrait → back to landscape → photo. Lands in
+//    landscape: 3x2, the card showing the new photo, exactly where it was.
+//  · portrait: landscape → CAM → portrait → photo. 3x2 does not exist in iPad
+//    portrait, so the view becomes the ordinary portrait view (MAIN + VERSIONS)
+//    on that shot. Turning back to landscape keeps that view — 3x2 only when
+//    the user presses it.
+const vm = (d: Device) => d.page.evaluate(() => (window as never as { __fh_test: { viewMode(): string } }).__fh_test.viewMode());
+const showingOf = (d: Device, i: number) => d.page.evaluate((n) => (window as never as { __fh_test: { cardShowing(i: number): string } }).__fh_test.cardShowing(n), i);
+for (const how of ['back', 'portrait'] as const) test(`turn while shooting in 3x2: ${how === 'back' ? 'turned and back before the photo — 3x2, the card where it was' : 'photo taken in portrait — portrait view, and it stays when turned back'}`, async ({ browser }) => {
   const { token } = await freshAccount();
   const d = await Device.open(browser, 'desktop', token);
   await d.page.setViewportSize({ width: 1180, height: 820 });
@@ -99,48 +125,55 @@ test('turn while shooting: started in 3x2, comes back to 3x2 with the shot mid s
   const wrap = d.page.locator(`#overviewScroll .grid3x2-card-wrap[data-g3fid="${fid}"]`);
   await wrap.scrollIntoViewIfNeeded();
   const pic = await photo(d.page);
-  // First a photo WITHOUT turning: shot 10 gets its main picture, so the next
-  // photo becomes a version — Roman's case ("the version photo was shown, and
-  // then the picture jumped to main").
-  {
-    const [ch] = await Promise.all([
-      d.page.waitForEvent('filechooser', { timeout: 10_000 }),
-      wrap.locator('[data-mact="camera"]').first().click(),
-    ]);
+  { // shot 10 gets its main picture first (no turn), so the next photo is a version
+    const [ch] = await Promise.all([d.page.waitForEvent('filechooser', { timeout: 10_000 }), wrap.locator('[data-mact="camera"]').first().click()]);
     await ch.setFiles({ name: 'first.jpg', mimeType: 'image/jpeg', buffer: pic });
     await d.page.waitForTimeout(1500);
-    say('   first photo (no turn) taken for shot 10');
   }
-  say(`shot 10 in 3x2 (card ${fid}): CAM pressed in landscape`);
-  const [chooser] = await Promise.all([
-    d.page.waitForEvent('filechooser', { timeout: 10_000 }),
-    wrap.locator('[data-mact="camera"]').first().click(),   // the 3x2 card's own CAM
-  ]);
+  const selB = `#overviewScroll .grid3x2-card-wrap[data-g3fid="${fid}"]`;
+  const atCam = (await topOf(d.page, selB)).top;
+  say(`shot 10 in 3x2 (card ${fid}): CAM pressed in landscape, card top ${atCam} px`);
+  const [chooser] = await Promise.all([d.page.waitForEvent('filechooser', { timeout: 10_000 }), wrap.locator('[data-mact="camera"]').first().click()]);
   say('   turning to portrait with the camera open');
   await d.page.setViewportSize({ width: 820, height: 1180 });
   await d.page.waitForTimeout(700);
+  if (how === 'back') {
+    say('   and back to landscape, camera still open');
+    await d.page.setViewportSize({ width: 1180, height: 820 });
+    await d.page.waitForTimeout(700);
+  }
   await chooser.setFiles({ name: 'turned.jpg', mimeType: 'image/jpeg', buffer: pic });
   await d.page.waitForTimeout(2200);
-  const view = await d.page.evaluate(() => (window as never as { __fh_test: { viewMode(): string } }).__fh_test.viewMode());
-  say(`   the view now: ${view}`);
-  expect(view, 'NOT BACK IN 3x2 after shooting from 3x2').toBe('grid3x2');
-  // the card shows the photo just taken — not the main picture (Roman: "the
-  // version photo was shown, and then the picture jumped to main")
-  // Where the photo landed (the app's own log line), and the card must show exactly that.
   const landed = (await d.log()).find((l) => l.includes('camera: landed on the card (shot 10, ver')) ?? '';
   say(`   ${landed.trim()}`);
   expect(landed, 'the second photo did not land as a version of shot 10').not.toBe('');
   const m = landed.match(/\(shot 10, (\w+) (\d+)\)/);
   const expected = m ? `${m[1]} ${m[2]}` : 'main';
-  const showing = await d.page.evaluate(() => (window as never as { __fh_test: { cardShowing(i: number): string } }).__fh_test.cardShowing(9));
-  say(`   the card shows: ${showing} (the photo is in: ${expected})`);
-  expect(showing, 'THE CARD DOES NOT SHOW THE PHOTO JUST TAKEN (Roman: "the version photo was shown, and then the picture jumped to main")').toBe(expected);
-  const off = await d.page.evaluate((id) => {
-    const el = document.querySelector(`#overviewScroll .grid3x2-card-wrap[data-g3fid="${id}"]`) as HTMLElement | null;
-    if (!el) return 9999; const r = el.getBoundingClientRect(); return Math.round(r.top + r.height / 2 - window.innerHeight / 2);
-  }, fid);
-  say(`   the card is ${off} px from the middle of the screen`);
-  expect(Math.abs(off), 'the 3x2 card is not in the middle').toBeLessThanOrEqual(4);
+  for (const l of (await d.log()).slice(0, 25).reverse()) say(`   app: ${l.trim()}`);   // newest last
+  if (how === 'back') {
+    const view = await vm(d);
+    say(`   the view: ${view}`);
+    expect(view, 'NOT IN 3x2 after landscape → CAM → portrait → landscape → photo').toBe('grid3x2');
+    const showing = await showingOf(d, 9);
+    expect(showing, 'THE CARD DOES NOT SHOW THE PHOTO JUST TAKEN').toBe(expected);
+    const now = await topOf(d.page, selB);
+    say(`   the card shows ${showing}; its top now ${now.top} px (at CAM ${atCam})`);
+    expect(Math.abs(now.top - atCam), 'THE CARD IS NOT WHERE IT WAS AT CAM (the page should have ignored the turn)').toBeLessThanOrEqual(4);
+  } else {
+    const view = await vm(d);
+    say(`   the view in portrait: ${view}`);
+    expect(view, 'iPad portrait after a 3x2 photo should be the ordinary portrait view').toBe('both');
+    await d.page.waitForTimeout(1300);   // the turn rule places the shot (its own steps, up to 1.2 s)
+    const card = await topOf(d.page, `#mainScroll .frame-card[data-mfid="${fid}"]`);
+    say(`   shot 10 in portrait: top ${card.top} px of ${card.vh}`);
+    expect(card.top >= 0 && card.top < card.vh, 'SHOT 10 IS NOT ON SCREEN in the portrait view').toBe(true);
+    say('   turning back to landscape');
+    await d.page.setViewportSize({ width: 1180, height: 820 });
+    await d.page.waitForTimeout(1800);
+    const back = await vm(d);
+    say(`   the view after turning back: ${back}`);
+    expect(back, 'THE APP WENT BACK TO 3x2 BY ITSELF (Roman: "only when the user presses 3x2")').toBe('both');
+  }
   await d.close();
 });
 
@@ -150,7 +183,7 @@ test('turn while shooting: started in 3x2, comes back to 3x2 with the shot mid s
 // card of a shot that already has its main picture, the phone is turned to
 // landscape, the photo is taken: same view, same card, showing the new photo,
 // in the middle.
-test('turn while shooting on an iPhone: portrait → landscape, same view, same card, the new photo, mid screen', async ({ browser }) => {
+test('turn while shooting on an iPhone: portrait → landscape, same view, same card, the new photo, where it was', async ({ browser }) => {
   const { token } = await freshAccount();
   const d = await Device.open(browser, 'desktop', token);
   await d.page.setViewportSize({ width: 390, height: 844 });
@@ -170,7 +203,9 @@ test('turn while shooting on an iPhone: portrait → landscape, same view, same 
     await ch.setFiles({ name: 'first.jpg', mimeType: 'image/jpeg', buffer: pic });
     await d.page.waitForTimeout(1500);
   }
-  say(`iPhone portrait, ${viewBefore} view: CAM on shot 7`);
+  const selC = `#mainScroll .frame-card[data-mfid="${fid}"]`;
+  const atCam = (await topOf(d.page, selC)).top;
+  say(`iPhone portrait, ${viewBefore} view: CAM on shot 7, card top ${atCam} px`);
   const [chooser] = await Promise.all([d.page.waitForEvent('filechooser', { timeout: 10_000 }), card.locator('[data-mact="camera"]').first().click()]);
   say('   turning the iPhone to landscape with the camera open');
   await d.page.setViewportSize({ width: 844, height: 390 });
@@ -186,11 +221,35 @@ test('turn while shooting on an iPhone: portrait → landscape, same view, same 
   const showing = await d.page.evaluate(() => (window as never as { __fh_test: { cardShowing(i: number): string } }).__fh_test.cardShowing(6));
   say(`   ${landed.trim()} — the card shows: ${showing}`);
   expect(showing, 'THE CARD JUMPED BACK TO THE MAIN PICTURE (iPhone)').toBe(m ? `${m[1]} ${m[2]}` : 'main');
-  const off = await d.page.evaluate((id) => {
-    const el = document.querySelector(`#mainScroll .frame-card[data-mfid="${id}"]`) as HTMLElement | null;
-    if (!el) return 9999; const r = el.getBoundingClientRect(); return Math.round(r.top + r.height / 2 - window.innerHeight / 2);
-  }, fid);
-  say(`   the card is ${off} px from the middle of the screen`);
-  expect(Math.abs(off), 'the card is not in the middle (iPhone)').toBeLessThanOrEqual(4);
+  const now = await topOf(d.page, selC);
+  for (const l of (await d.log()).slice(0, 25).reverse()) say(`   app: ${l.trim()}`);   // newest last
+  say(`   the card's top now: ${now.top} px (must be ${wantTop(atCam, now)})`);
+  expect(Math.abs(now.top - wantTop(atCam, now)), 'the card is not back where it was at CAM (iPhone)').toBeLessThanOrEqual(4);
+  await d.close();
+});
+
+// NO TURN: nothing moves at all (Roman: "do not move the screen").
+test('shooting without a turn: the card stays exactly where it was', async ({ browser }) => {
+  const { token } = await freshAccount();
+  const d = await Device.open(browser, 'desktop', token);
+  await d.page.setViewportSize({ width: 1180, height: 820 });
+  await d.newProjectOfKind('NO TURN', 'landscape', 15);
+  await d.settle();
+  await d.showStrip('ver');
+  if (await d.page.locator('#projectListModal').isVisible()) {
+    await d.page.locator('#projectListClose').click(); await d.page.waitForTimeout(300);
+  }
+  await d.page.evaluate(() => (window as never as { __fh_test: { setCamChoice(m: string, l: boolean): void } }).__fh_test.setCamChoice('phone', false));
+  const fid = (await d.page.locator('#versionsScroll .frame-card[data-vfid]').nth(8).getAttribute('data-vfid'))!;
+  const sel = `#versionsScroll .frame-card[data-vfid="${fid}"]`;
+  await d.page.locator(sel).scrollIntoViewIfNeeded();
+  const atCam = (await topOf(d.page, sel)).top;
+  const pic = await photo(d.page);
+  const [chooser] = await Promise.all([d.page.waitForEvent('filechooser', { timeout: 10_000 }), d.page.locator(sel).locator('[data-action="camera"]').click()]);
+  await chooser.setFiles({ name: 'still.jpg', mimeType: 'image/jpeg', buffer: pic });
+  await d.page.waitForTimeout(1500);
+  const now = await topOf(d.page, sel);
+  say(`   card top at CAM ${atCam} px, after the photo ${now.top} px`);
+  expect(Math.abs(now.top - atCam), 'THE SCREEN MOVED although the device was not turned').toBeLessThanOrEqual(2);
   await d.close();
 });

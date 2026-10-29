@@ -4,6 +4,7 @@
 #   npm run deploy -- <run> "<what changed>"               tests matching FH_T, then dev
 #   FH_T="max screen|phone cam" npm run deploy -- 413 "…"  only those tests first
 #   FH_LIVE=1 npm run deploy -- 414 "…"                    the full run, then dev AND live
+#   FH_NOTEST=1 npm run deploy -- 538 "…"                  no tests (just run green), then dev
 #
 # Always the same steps, in this order, and it stops at the first that fails:
 #   1. the tests (all of them when FH_T is empty)
@@ -28,7 +29,10 @@ finish() {
   osascript -e "display notification \"$1 — say zzz\" with title \"Framehow\"" 2>/dev/null
   echo "--- $1 ($VERSION · $TAG, run $RUN) — say zzz — $SND ---"
 }
-if [ -n "$FH_T" ]; then
+if [ -n "$FH_NOTEST" ]; then
+  # The tests were just run green on this same code (29 Oct, Roman: "we just did the tests").
+  echo "tests skipped (FH_NOTEST) — the last run proved this code"
+elif [ -n "$FH_T" ]; then
   FH_QUIET=1 FH_RUN="$RUN" sh scripts/e2e.sh -g "$FH_T" || { finish "Tests RED, nothing deployed"; exit 1; }
 else
   FH_QUIET=1 FH_RUN="$RUN" sh scripts/e2e.sh || { finish "Tests RED, nothing deployed"; exit 1; }

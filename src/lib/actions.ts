@@ -652,7 +652,6 @@ export function applyCapturedImage(dataURL: string, target: any): void {
   // The CAM button was pressed ON the card, so the card is on screen already.
   // The page must therefore not move at all. Remember where it is and put it
   // back, because re-rendering the card changes its height for a moment.
-  const _scrollY0 = window.scrollY;
   snapshotFrame(fid, fromMain ? 'main' : strip);
   let capturedToVersion = false;
   if (fromMain) {
@@ -724,57 +723,84 @@ export function applyCapturedImage(dataURL: string, target: any): void {
   }
   useStore.setState({ overviewAction: false });
   clearCameraTarget();
-  cameraSessionEnd();
+  // The shot just taken — the view follows it if the device is held the other
+  // way now (camera.ts).
+  (window as any)._camLandFid = String(fid);
+  const turned = cameraSessionEnd();
   // No centring anywhere: the card was on screen when CAM was pressed, so
   // moving the page only costs the user their bearings. Hold the position
   // across the re-render instead.
   markAppScroll();
-  // TURNED WHILE THE CAMERA WAS OPEN (29 Oct, Roman): the layout changed under
-  // the camera, so the old position means nothing — the shot just photographed
-  // is brought to the middle of the screen, in the column where it landed, and
-  // held there while iOS settles the new layout.
-  const turned = target.openedLandscape !== undefined && target.openedLandscape !== (window.innerWidth > window.innerHeight);
-  if (turned) {
-    trace(`camera: the device was turned while shooting — shot ${s.frames.findIndex((fr) => fr.id === fid) + 1} to the middle`);
-    // THE CARD THE PHOTO LANDED IN — found by the shot's id, never by its place
-    // in the list (shots may have been added above or below meanwhile): the
-    // version / sketch / refs card of THIS shot, or its main card.
-    const centre = () => {
-      const landed = (capturedToVersion
-        ? document.querySelector(`#${scrollId} .frame-card[data-vfid="${fid}"]`)
-        : null)
-        || document.querySelector(`#overviewScroll .grid3x2-card-wrap[data-g3fid="${fid}"]`)
-        || document.querySelector(`#mainScroll .frame-card[data-mfid="${fid}"]`);
-      const el = landed as HTMLElement | null;
-      if (el && el.offsetParent) el.scrollIntoView({ block: 'center', behavior: 'instant' as ScrollBehavior });
-      else { const fn = (window as any).__fh_scrollAnchorTo; if (fn) fn(fid); }
-    };
-    // NO TIMERS (Roman: "that's rubbish"). Centred once now; then again only
-    // when the layout really changes size (iOS redraws cards in the new width
-    // after a turn) — watched, not guessed. It stops when nothing has changed
-    // for 250 ms, or at the person's first touch or scroll.
+  // Bring the bars back properly (the detail bar needs repositioning, not just
+  // its class removed) so you can still see which strips you are in.
+  showBarsNow();
+  // BACK WHERE IT WAS (29 Oct, Roman: "do not move the screen — give the photo
+  // back to exactly the same position at which it was taken"). The card the
+  // photo landed in — found by the shot's id, in the strip where CAM was
+  // pressed — is put back at the height on the screen it had when CAM was
+  // pressed. Without a turn that is no movement at all. After a turn the screen
+  // has another shape: if that height is now below the screen, the card stops
+  // at the bottom edge, still to be seen.
+  // the card of this shot that is ON SCREEN — in the SHOT view on the iPhone the
+  // version card exists but is hidden (run 534: put-back never ran there)
+  const landedCard = (): HTMLElement | null => {
+    const cands = [
+      capturedToVersion ? `#${scrollId} .frame-card[data-vfid="${fid}"]` : '',
+      `#overviewScroll .grid3x2-card-wrap[data-g3fid="${fid}"]`,
+      `#mainScroll .frame-card[data-mfid="${fid}"]`,
+      `#${scrollId} .frame-card[data-vfid="${fid}"]`,
+    ].filter(Boolean);
+    for (const q of cands) {
+      const el = document.querySelector(q) as HTMLElement | null;
+      if (el && el.offsetParent && el.getBoundingClientRect().height > 0) return el;
+    }
+    return null;
+  };
+  const scrollerOf = (el: HTMLElement): HTMLElement | null => {
+    for (let n = el.parentElement; n; n = n.parentElement) {
+      const o = getComputedStyle(n).overflowY;
+      if ((o === 'auto' || o === 'scroll') && n.scrollHeight > n.clientHeight + 4) return n;
+    }
+    return null;
+  };
+  const putBack = () => {
+    const el = landedCard();
+    if (!el || target.cardTop == null) { trace(`camera: card back in place — ${!el ? 'no card of this shot on screen' : 'no place was noted at CAM'}`); return; }
+    const r = el.getBoundingClientRect();
+    const want = Math.max(0, Math.min(target.cardTop, window.innerHeight - Math.min(r.height, window.innerHeight)));
+    const move = Math.round(r.top - want);
+    if (Math.abs(move) < 1) return;
+    const sc = scrollerOf(el);
+    if (sc) sc.scrollTop += move; else window.scrollBy(0, move);
+    const after = Math.round(el.getBoundingClientRect().top);
+    trace(`camera: card back in place — wanted top ${Math.round(want)}, was ${Math.round(r.top)}, moved ${move} in ${sc ? (sc.id || sc.className.split(' ')[0] || 'a column') : 'the page'}, now ${after}`);
+  };
+  // AFTER the bars are back (run 533: placed before showBarsNow, the bars then
+  // pushed the card down by their own height — 135 px on the iPad, 43 on the iPhone).
+  // The VIEW changed because the device is held the other way than at CAM
+  // (iPad 3x2 → portrait): the turn rule brings this shot on screen itself.
+  if (!turned) {
+  putBack();
+  // The new layout may still change size (cards redrawn in the new width after
+  // a turn): watched, not timed — the card is put back again only when sizes
+  // really change, and the person's first touch or scroll ends it at once.
+  {
     let quiet = 0;
-    const ro = new ResizeObserver(() => { centre(); clearTimeout(quiet); quiet = window.setTimeout(stop, 250); });
+    const ro = new ResizeObserver(() => { putBack(); clearTimeout(quiet); quiet = window.setTimeout(stop, 250); });
     const stop = () => { ro.disconnect(); clearTimeout(quiet);
       window.removeEventListener('touchstart', stop); window.removeEventListener('wheel', stop); };
     window.addEventListener('touchstart', stop, { passive: true, once: true });
     window.addEventListener('wheel', stop, { passive: true, once: true });
     requestAnimationFrame(() => {
-      centre();
-      const col = (document.querySelector('.columns') as HTMLElement | null) || document.body;   // all strips
-      ro.observe(col);
-      const ov = document.getElementById('overviewScroll'); if (ov) ro.observe(ov);   // 3x2 / overview
-      document.querySelectorAll(`.frame-card[data-vfid="${fid}"], .frame-card[data-mfid="${fid}"]`).forEach((el) => ro.observe(el));
+      putBack();
+      requestAnimationFrame(putBack);   // the bars settle their place in the next frame
+      const col = document.querySelector('.columns') as HTMLElement | null; if (col) ro.observe(col);
+      const ov = document.getElementById('overviewScroll'); if (ov) ro.observe(ov);
+      const el = landedCard(); if (el) ro.observe(el);
       quiet = window.setTimeout(stop, 250);
     });
-  } else {
-    const _holdScroll = () => { if (window.scrollY !== _scrollY0) window.scrollTo(0, _scrollY0); };
-    _holdScroll();
-    requestAnimationFrame(() => { _holdScroll(); requestAnimationFrame(_holdScroll); });
   }
-  // Bring the bars back properly (the detail bar needs repositioning, not just
-  // its class removed) so you can still see which strips you are in.
-  showBarsNow();
+  }
   void flushSyncNow(); // FRM-17/VER-14: camera capture → snap
 
   // Zoom-out animation: image zooms from full-screen down to target card
