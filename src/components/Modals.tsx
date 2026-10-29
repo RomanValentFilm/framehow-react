@@ -879,28 +879,7 @@ export function Modals() {
           <div className="exp-field">
             <label>LAYOUT</label>
             <label className="exp-opt">
-              <input type="radio" name="fittingLayout" value="talent4" defaultChecked />
-              <span className="exp-opt-wrap">
-                <svg className="exp-opt-icon" width="76" height="40" viewBox="0 0 76 40">
-                  <rect x="0.5" y="0.5" width="75" height="39" rx="2" fill="#222" stroke="#555" strokeWidth="0.8" />
-                  <rect x="9" y="6" width="10" height="18" rx="1" fill="none" stroke="#ddd" strokeWidth="1.3" />
-                  <rect x="21" y="6" width="10" height="18" rx="1" fill="#aaa" stroke="#666" strokeWidth="0.9" />
-                  <rect x="33" y="6" width="10" height="18" rx="1" fill="#aaa" stroke="#666" strokeWidth="0.9" />
-                  <rect x="45" y="6" width="10" height="18" rx="1" fill="#aaa" stroke="#666" strokeWidth="0.9" />
-                  <rect x="57" y="6" width="10" height="18" rx="1" fill="#aaa" stroke="#666" strokeWidth="0.9" />
-                  <line x1="21" y1="29" x2="29" y2="29" stroke="#666" strokeWidth="0.6" strokeLinecap="round" />
-                  <line x1="33" y1="29" x2="41" y2="29" stroke="#666" strokeWidth="0.6" strokeLinecap="round" />
-                  <line x1="45" y1="29" x2="53" y2="29" stroke="#666" strokeWidth="0.6" strokeLinecap="round" />
-                  <line x1="57" y1="29" x2="65" y2="29" stroke="#666" strokeWidth="0.6" strokeLinecap="round" />
-                </svg>
-                <span className="exp-opt-text">
-                  <strong>TALENT + 4 LOOKS</strong>
-                  <span className="exp-sub">5 photos per row, the talent first</span>
-                </span>
-              </span>
-            </label>
-            <label className="exp-opt">
-              <input type="radio" name="fittingLayout" value="looks5" />
+              <input type="radio" name="fittingLayout" value="looks5" defaultChecked />
               <span className="exp-opt-wrap">
                 <svg className="exp-opt-icon" width="76" height="40" viewBox="0 0 76 40">
                   <rect x="0.5" y="0.5" width="75" height="39" rx="2" fill="#222" stroke="#555" strokeWidth="0.8" />
@@ -916,8 +895,29 @@ export function Modals() {
                   <line x1="57" y1="29" x2="65" y2="29" stroke="#666" strokeWidth="0.6" strokeLinecap="round" />
                 </svg>
                 <span className="exp-opt-text">
-                  <strong>5 LOOKS</strong>
+                  <strong>5 LOOKS PHOTOS</strong>
                   <span className="exp-sub">5 photos per row, no talent photo</span>
+                </span>
+              </span>
+            </label>
+            <label className="exp-opt">
+              <input type="radio" name="fittingLayout" value="talent4" />
+              <span className="exp-opt-wrap">
+                <svg className="exp-opt-icon" width="76" height="40" viewBox="0 0 76 40">
+                  <rect x="0.5" y="0.5" width="75" height="39" rx="2" fill="#222" stroke="#555" strokeWidth="0.8" />
+                  <rect x="9" y="6" width="10" height="18" rx="1" fill="none" stroke="#ddd" strokeWidth="1.3" />
+                  <rect x="21" y="6" width="10" height="18" rx="1" fill="#aaa" stroke="#666" strokeWidth="0.9" />
+                  <rect x="33" y="6" width="10" height="18" rx="1" fill="#aaa" stroke="#666" strokeWidth="0.9" />
+                  <rect x="45" y="6" width="10" height="18" rx="1" fill="#aaa" stroke="#666" strokeWidth="0.9" />
+                  <rect x="57" y="6" width="10" height="18" rx="1" fill="#aaa" stroke="#666" strokeWidth="0.9" />
+                  <line x1="21" y1="29" x2="29" y2="29" stroke="#666" strokeWidth="0.6" strokeLinecap="round" />
+                  <line x1="33" y1="29" x2="41" y2="29" stroke="#666" strokeWidth="0.6" strokeLinecap="round" />
+                  <line x1="45" y1="29" x2="53" y2="29" stroke="#666" strokeWidth="0.6" strokeLinecap="round" />
+                  <line x1="57" y1="29" x2="65" y2="29" stroke="#666" strokeWidth="0.6" strokeLinecap="round" />
+                </svg>
+                <span className="exp-opt-text">
+                  <strong>TALENT PHOTO + 4 LOOKS PHOTOS</strong>
+                  <span className="exp-sub">5 photos per row, the talent first</span>
                 </span>
               </span>
             </label>

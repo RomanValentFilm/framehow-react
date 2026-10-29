@@ -3085,7 +3085,7 @@ function fittingPhotosFor(f: Frame, strip: StripType, keep: (v: import('../store
     if (!keep(v, strip)) return;
     out.push({
       v,
-      label: `${sName} ${v.label || `v${vi + 1}`}` + starText(versionStarsOf(v)),
+      label: `${v.label || `v${vi + 1}`}` + starText(versionStarsOf(v)),
       note: (v.note || '').trim(),
     });
   });
@@ -3144,7 +3144,7 @@ export async function runFittingExport(): Promise<void> {
 
 function fittingChoices() {
   const on = (id: string) => (document.getElementById(id) as HTMLInputElement | null)?.checked ?? false;
-  const layout = ((document.querySelector('input[name="fittingLayout"]:checked') as HTMLInputElement)?.value || 'talent4') as 'talent4' | 'looks5';
+  const layout = ((document.querySelector('input[name="fittingLayout"]:checked') as HTMLInputElement)?.value || 'looks5') as 'talent4' | 'looks5';
   const strips: StripType[] = [];
   if (on('fittingStripLooks')) strips.push('ver');
   if (on('fittingStripRefs')) strips.push('refs');
@@ -3203,7 +3203,7 @@ async function runFittingPdfExport(): Promise<void> {
     let col = 0;
     if (c.layout === 'talent4') {
       if (row.talent) {
-        pdf.setTextColor(0); pdf.setFont(PDF_FONT, 'bold'); pdf.setFontSize(7.5);
+        pdf.setTextColor(0); pdf.setFont(PDF_FONT, 'bold'); pdf.setFontSize(9.5);
         pdf.text(row.label, startX, framesY - 1.2);
         const img = (await rasterizeMain(row.f)).toDataURL('image/jpeg', 0.92);
         pdf.addImage(img, 'JPEG', startX, framesY, frameW, frameH, undefined, 'FAST');
@@ -3218,7 +3218,7 @@ async function runFittingPdfExport(): Promise<void> {
     }
     for (const p of row.photos) {
       const x = startX + col * (frameW + gutterX);
-      pdf.setTextColor(100); pdf.setFont(PDF_FONT, 'normal'); pdf.setFontSize(7);
+      pdf.setTextColor(100); pdf.setFont(PDF_FONT, 'normal'); pdf.setFontSize(9);
       pdf.text(p.label, x, framesY - 1.2);
       const img = (await rasterizeVersion(p.v, row.f.cropW, row.f.cropH)).toDataURL('image/jpeg', 0.92);
       pdf.addImage(img, 'JPEG', x, framesY, frameW, frameH, undefined, 'FAST');
@@ -3262,7 +3262,7 @@ async function runFittingPptxExport(): Promise<void> {
   const maxH = SH - 1.2 - noteH;
   if (fH > maxH) { fH = maxH; fW = fH * aspect; }
   const startX = (SW - (COLS * fW + (COLS - 1) * gapX)) / 2;
-  const framesY = 0.85;
+  const framesY = 0.85 + 0.15 * SH; // 15% of the slide lower (Roman, 29 Oct): pictures were pressed to the top
   const b64 = (cvs: HTMLCanvasElement) => 'image/jpeg;base64,' + cvs.toDataURL('image/jpeg', 0.92).split(',')[1];
 
   const rows = fittingRows(c.frames, c.layout, c.strips, c.keep);
@@ -3278,7 +3278,7 @@ async function runFittingPptxExport(): Promise<void> {
     let col = 0;
     if (c.layout === 'talent4') {
       if (row.talent) {
-        slide.addText(row.label, { x: startX, y: framesY - 0.22, w: fW, h: 0.2, fontSize: 8, bold: true, color: '000000', fontFace: 'Arial', valign: 'bottom', margin: 0 });
+        slide.addText(row.label, { x: startX, y: framesY - 0.22, w: fW, h: 0.2, fontSize: 10, bold: true, color: '000000', fontFace: 'Arial', valign: 'bottom', margin: 0 });
         slide.addImage({ data: b64((await rasterizeMain(row.f))), x: startX, y: framesY, w: fW, h: fH });
         const tn = talentNote(row.f);
         if (c.notes && tn) {
@@ -3289,7 +3289,7 @@ async function runFittingPptxExport(): Promise<void> {
     }
     for (const p of row.photos) {
       const x = startX + col * (fW + gapX);
-      slide.addText(p.label, { x, y: framesY - 0.22, w: fW, h: 0.2, fontSize: 7, color: '888888', fontFace: 'Arial', valign: 'bottom', margin: 0 });
+      slide.addText(p.label, { x, y: framesY - 0.22, w: fW, h: 0.2, fontSize: 9, color: '888888', fontFace: 'Arial', valign: 'bottom', margin: 0 });
       slide.addImage({ data: b64((await rasterizeVersion(p.v, row.f.cropW, row.f.cropH))), x, y: framesY, w: fW, h: fH });
       if (c.notes && p.note) {
         slide.addText(p.note, { x, y: framesY + fH + 0.08, w: fW, h: noteH, fontSize: 9.5, color: '000000', fontFace: 'Arial', valign: 'top', wrap: true, margin: 0 });
