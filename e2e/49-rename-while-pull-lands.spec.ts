@@ -20,23 +20,26 @@ import { Device, freshAccount, say } from './harness';
 
 test.describe.configure({ timeout: 400_000 });
 
-test('fitting: a talent renamed on the main card keeps its name when a pull lands while the box is open', async ({ browser }) => {
+// BOTH KINDS (Roman, 29 Oct: "when a main frame name/label changes it has to
+// stick"). The main-view card is the same code in every project; a fitting
+// only showed it first because there is more sync traffic there.
+for (const kind of ['fitting', 'landscape'] as const) test(`${kind}: a name changed on the main card sticks when a pull lands while the box is open`, async ({ browser }) => {
   const { token } = await freshAccount();
   const desktop = await Device.open(browser, 'desktop', token);
   const tablet = await Device.open(browser, 'tablet', token, true);
 
-  const id = await desktop.newProjectOfKind('RENAME TWICE', 'fitting', 2);
+  const id = await desktop.newProjectOfKind('RENAME TWICE', kind, 2);
   await tablet.openProject(id!);
   await Device.waitUntilTheyAgree(desktop, tablet);
   await desktop.settle();
   await tablet.settle();
   await desktop.page.evaluate(() => document.getElementById('projectListModal')?.classList.add('hidden'));
 
-  say('desktop: opening the name box on the first talent, and leaving it open');
+  say(`desktop: opening the name box on the first ${kind === 'fitting' ? 'talent' : 'shot'}, and leaving it open`);
   await desktop.page.click('#mainScroll .frame-card [data-editlabel]');
   await desktop.page.waitForSelector('#labelModal:not(.hidden)');
 
-  say('tablet: renaming the second talent, so a pull lands on the desktop');
+  say('tablet: renaming the second one, so a pull lands on the desktop');
   await tablet.renameFrame(1, 'MEANWHILE');
   // One device awake at a time, as a person does (#496): the tablet to send,
   // the desktop to ask. A device nobody is looking at stays quiet.
@@ -57,7 +60,7 @@ test('fitting: a talent renamed on the main card keeps its name when a pull land
   await desktop.page.waitForTimeout(800);
 
   const after = (await desktop.read()).frames.map((f) => f.label);
-  say(`   the desktop's talents: ${after.join(', ')}`);
+  say(`   the desktop's names: ${after.join(', ')}`);
   expect(after[0], 'THE NAME WENT ONTO A DISCARDED CARD OBJECT (#396 on the '
     + 'main view): the pull replaced the cards while the box was open, and the '
     + 'new name was written onto the old one. Roman had to rename twice.')
