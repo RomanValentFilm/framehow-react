@@ -188,6 +188,11 @@ export function cameraSessionEnd(): boolean {
   (window as any)._lastWinW = _camW; (window as any)._lastWinH = _camH;
   if (!cameraTurnedSinceCam()) return false;
   const before = state().currentViewMode;
+  // A camera turn never brings 3x2 back by itself (29 Oct, Roman's iPad: CAM in
+  // the single/double strip view in portrait, turned to landscape, the photo
+  // landed in 3x2). The "came from 3x2" note left by an EARLIER turn to portrait
+  // made the turn rule restore 3x2. You land in the view you pressed CAM in.
+  (window as any)._returnTo3x2 = false;
   handleOrientationFlip();
   const after = state().currentViewMode;
   trace(`camera: held the other way than at CAM — view ${before === after ? `stays ${after}` : `${before} → ${after}`}`);

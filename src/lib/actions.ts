@@ -773,7 +773,7 @@ export function applyCapturedImage(dataURL: string, target: any): void {
     const sc = scrollerOf(el);
     if (sc) sc.scrollTop += move; else window.scrollBy(0, move);
     const after = Math.round(el.getBoundingClientRect().top);
-    trace(`camera: card back in place — wanted top ${Math.round(want)}, was ${Math.round(r.top)}, moved ${move} in ${sc ? (sc.id || sc.className.split(' ')[0] || 'a column') : 'the page'}, now ${after}`);
+    trace(`camera: card back in place — wanted top ${Math.round(want)} (card ${Math.round(r.height)} px tall, screen ${window.innerHeight}), was ${Math.round(r.top)}, moved ${move} in ${sc ? (sc.id || sc.className.split(' ')[0] || 'a column') : 'the page'}, now ${after}`);
   };
   // AFTER the bars are back (run 533: placed before showBarsNow, the bars then
   // pushed the card down by their own height — 135 px on the iPad, 43 on the iPhone).
