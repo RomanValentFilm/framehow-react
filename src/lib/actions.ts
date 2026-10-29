@@ -728,9 +728,49 @@ export function applyCapturedImage(dataURL: string, target: any): void {
   // moving the page only costs the user their bearings. Hold the position
   // across the re-render instead.
   markAppScroll();
-  const _holdScroll = () => { if (window.scrollY !== _scrollY0) window.scrollTo(0, _scrollY0); };
-  _holdScroll();
-  requestAnimationFrame(() => { _holdScroll(); requestAnimationFrame(_holdScroll); });
+  // TURNED WHILE THE CAMERA WAS OPEN (29 Oct, Roman): the layout changed under
+  // the camera, so the old position means nothing — the shot just photographed
+  // is brought to the middle of the screen, in the column where it landed, and
+  // held there while iOS settles the new layout.
+  const turned = target.openedLandscape !== undefined && target.openedLandscape !== (window.innerWidth > window.innerHeight);
+  if (turned) {
+    trace(`camera: the device was turned while shooting — shot ${s.frames.findIndex((fr) => fr.id === fid) + 1} to the middle`);
+    // THE CARD THE PHOTO LANDED IN — found by the shot's id, never by its place
+    // in the list (shots may have been added above or below meanwhile): the
+    // version / sketch / refs card of THIS shot, or its main card.
+    const centre = () => {
+      const landed = (capturedToVersion
+        ? document.querySelector(`#${scrollId} .frame-card[data-vfid="${fid}"]`)
+        : null)
+        || document.querySelector(`#overviewScroll .grid3x2-card-wrap[data-g3fid="${fid}"]`)
+        || document.querySelector(`#mainScroll .frame-card[data-mfid="${fid}"]`);
+      const el = landed as HTMLElement | null;
+      if (el && el.offsetParent) el.scrollIntoView({ block: 'center', behavior: 'instant' as ScrollBehavior });
+      else { const fn = (window as any).__fh_scrollAnchorTo; if (fn) fn(fid); }
+    };
+    // NO TIMERS (Roman: "that's rubbish"). Centred once now; then again only
+    // when the layout really changes size (iOS redraws cards in the new width
+    // after a turn) — watched, not guessed. It stops when nothing has changed
+    // for 250 ms, or at the person's first touch or scroll.
+    let quiet = 0;
+    const ro = new ResizeObserver(() => { centre(); clearTimeout(quiet); quiet = window.setTimeout(stop, 250); });
+    const stop = () => { ro.disconnect(); clearTimeout(quiet);
+      window.removeEventListener('touchstart', stop); window.removeEventListener('wheel', stop); };
+    window.addEventListener('touchstart', stop, { passive: true, once: true });
+    window.addEventListener('wheel', stop, { passive: true, once: true });
+    requestAnimationFrame(() => {
+      centre();
+      const col = (document.querySelector('.columns') as HTMLElement | null) || document.body;   // all strips
+      ro.observe(col);
+      const ov = document.getElementById('overviewScroll'); if (ov) ro.observe(ov);   // 3x2 / overview
+      document.querySelectorAll(`.frame-card[data-vfid="${fid}"], .frame-card[data-mfid="${fid}"]`).forEach((el) => ro.observe(el));
+      quiet = window.setTimeout(stop, 250);
+    });
+  } else {
+    const _holdScroll = () => { if (window.scrollY !== _scrollY0) window.scrollTo(0, _scrollY0); };
+    _holdScroll();
+    requestAnimationFrame(() => { _holdScroll(); requestAnimationFrame(_holdScroll); });
+  }
   // Bring the bars back properly (the detail bar needs repositioning, not just
   // its class removed) so you can still see which strips you are in.
   showBarsNow();

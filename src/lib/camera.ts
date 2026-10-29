@@ -74,7 +74,13 @@ export async function openCamera(
 ): Promise<void> {
   fhTrack('camera_opened');
   const ar = effectiveAspectRatio(fid);
-  cameraTarget = { fid, div, aspectRatio: ar, fromCompare: !!fromCompare, fromMain: !!fromMain, stripType: strip };
+  cameraTarget = { fid, div, aspectRatio: ar, fromCompare: !!fromCompare, fromMain: !!fromMain, stripType: strip,
+    openedLandscape: window.innerWidth > window.innerHeight };
+  // THE SHOT THE CAMERA IS FOR IS THE ONE TO COME BACK TO (29 Oct, Roman: "if I
+  // shoot to shot 7, however I turn the device in between, I want to end up
+  // seeing shot 7 mid screen"). A turn while the camera is open re-anchors the
+  // page on centerFid — so that is this shot, not whatever sat in the middle.
+  useStore.setState({ centerFid: String(fid) });
 
   // PHONE CAM (23 Oct): the phone's own camera, opened INSIDE this tap — iOS
   // opens its camera only from a tap, so nothing may be waited for first.

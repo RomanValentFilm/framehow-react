@@ -1,0 +1,18 @@
+# THE NEW FRONT PAGE, ON A TEST ADDRESS ONLY (29 October, Roman: "build it on
+# dev, not touching the main page yet").
+#
+# Same kind of Worker as wrangler.toml, but a different name and NO routes:
+# Cloudflare gives it its own *.workers.dev address and framehow.com is never
+# touched. /app, LOG IN and Open Framehow Beta do not work from there — they
+# belong to framehow.com.
+#
+#   deploy:   npx wrangler deploy --config site/wrangler.dev.toml     (from the project root)
+#
+# Going live later = copy public-dev/ over public/ and deploy wrangler.toml.
+
+name = "framehow-site-dev"
+compatibility_date = "2026-10-09"
+workers_dev = true
+
+[assets]
+directory = "./public-dev"

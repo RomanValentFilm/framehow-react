@@ -403,6 +403,10 @@ function _truncatePhoneLabels(): void {
 }
 
 export function _updateCenterFid(): void {
+  // Not while the camera is open: the page behind it reflows on a turn, and the
+  // shot being photographed must stay the one the page comes back to (29 Oct).
+  const cam = document.getElementById('cameraOverlay');
+  if (cam && !cam.classList.contains('hidden')) return;
   const s = state();
   const scrollEl =
     s.currentViewMode === 'overview' || s.currentViewMode === 'grid4' || s.currentViewMode === 'grid3x2'
