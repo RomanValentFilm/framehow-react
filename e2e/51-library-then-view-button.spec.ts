@@ -56,13 +56,18 @@ test(`library open on an iPhone (${start === 'portrait' ? 'opened in portrait, t
   // (Roman's log 20:52:47: view bar 0–35, page at 146 — three taps lost).
   const vbTop = await d.page.evaluate(() => Math.round((document.querySelector('.view-bar') as HTMLElement).getBoundingClientRect().top));
   expect(vbTop, 'THE VIEW BAR IS AT THE TOP EDGE with the library open (iOS takes taps there)').toBeGreaterThanOrEqual(40);
+  // Nothing behind the library may scroll (Roman, 27 Oct): try to move the page.
+  const vbBefore = vbTop;
+  await d.page.evaluate(() => window.scrollBy(0, 400)); await d.page.waitForTimeout(200);
+  const vbAfter = await d.page.evaluate(() => Math.round((document.querySelector('.view-bar') as HTMLElement).getBoundingClientRect().top));
+  expect(vbAfter, 'THE PAGE BEHIND THE LIBRARY SCROLLED').toBe(vbBefore);
   let clickErr = '';
   await b.tap({ timeout: 5_000 }).catch((e) => { clickErr = String(e).split('\n').slice(0, 3).join(' | '); });
   if (clickErr) say(`   the click failed: ${clickErr}`);
   await d.page.waitForTimeout(800);
   for (const l of (await d.log()).slice(0, 8).reverse()) say(`   app: ${l.trim()}`);
   const open = await d.page.locator('#pictsLibrary').count();
-  if (scrolled && !open) say(`   page after closing: ${await d.page.evaluate(() => Math.round(window.scrollY))}`);
+  if (scrolled && !open) say(`   page after closing: ${await d.page.evaluate(() => Math.round(window.scrollY))} (was 1500 before the library — the view button then moves it to its shot)`);
   say(`   library after the press: ${open ? 'STILL OPEN' : 'closed'}`);
   expect(clickErr, `THE ${btn.toUpperCase()} BUTTON COULD NOT BE PRESSED with the library open`).toBe('');
   expect(open, `THE LIBRARY STAYED OPEN after ${btn.toUpperCase()} (Roman: "it simply stays in library")`).toBe(0);

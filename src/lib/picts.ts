@@ -84,40 +84,44 @@ export function closePicts(): void {
 }
 
 // THE PAGE BEHIND IS HELD STILL while the library is open (Roman's iPhone,
-// 27 Oct: a swipe on the library scrolled the 3×2 view behind it). No swipe
-// outside the library's own pictures moves anything; on closing, the 3×2 view
-// is exactly where it was.
+// 27 Oct: a swipe on the library scrolled the 3×2 view behind it).
+//
+// FROZEN, NOT FINGER-BLOCKED (29 Oct, Roman: "we do not want the page to scroll,
+// we want to allow to press other buttons"). It used to cancel every finger
+// movement outside the library; a real finger moves a pixel during a tap, so
+// iOS dropped the taps on 3x2 / SETUPS / GROUP / SORT BY (v5.0.129: not one
+// arrived). Now no touch is touched: the page itself is pinned in place
+// (position: fixed at its own scroll height), so nothing behind can scroll and
+// every button takes a plain tap. Closing un-pins it exactly where it was.
+//
+// THE BARS WHERE A FINGER CAN PRESS THEM: on the iPhone the toolbar scrolls with
+// the page; scrolled down, the view bar sat at the very top edge (0–35 px),
+// where iOS takes taps itself. So on a phone the page is pinned at the TOP.
 let _heldY: number | null = null;
-function blockBehind(e: TouchEvent): void {
-  if (!_root) return;
-  const t = e.target as HTMLElement | null;
-  if (t && t.closest('#pictsLibrary .picts-scroll')) return;
-  if (t && t.closest('#maxView')) return;
-  if (e.cancelable) e.preventDefault();
-}
-// THE BARS WHERE A FINGER CAN PRESS THEM (29 Oct, Roman's iPhone: library open,
-// turned to landscape, 3x2 needed many taps). On the iPhone the toolbar scrolls
-// with the page; scrolled down, the view bar sat at the very top edge (0–35 px),
-// where iOS takes the taps itself — the log showed none of them arriving. While
-// the library is open on a phone the page is held at the TOP, so the toolbar is
-// in view and the view bar below it; closing puts the page back where it was.
 let _backY = 0;
+function noteStart(e: TouchEvent): void {
+  const b = (e.target as HTMLElement | null)?.closest<HTMLElement>('.view-btn, .strip-toggle, #pictsBtn');
+  if (b) trace(`view bar: finger down on ${b.dataset.view || b.dataset.strip || b.id || '?'} (library open)`);
+}
 function holdPage(): void {
   if (_heldY !== null) return;
   _backY = window.scrollY;
   const phone = Math.min(window.innerWidth, window.innerHeight) <= 430;
-  if (phone && window.scrollY > 0) window.scrollTo(0, 0);
-  _heldY = window.scrollY;
+  _heldY = phone ? 0 : _backY;
+  const body = document.body.style;
+  body.position = 'fixed'; body.top = `${-_heldY}px`; body.left = '0'; body.right = '0'; body.width = '100%';
   document.documentElement.classList.add('picts-hold');
-  document.addEventListener('touchmove', blockBehind, { passive: false });
+  document.addEventListener('touchstart', noteStart, { passive: true, capture: true });
 }
 function releasePage(): void {
   if (_heldY === null) return;
   const y = _backY;
   _heldY = null;
+  const body = document.body.style;
+  body.position = ''; body.top = ''; body.left = ''; body.right = ''; body.width = '';
   document.documentElement.classList.remove('picts-hold');
-  document.removeEventListener('touchmove', blockBehind);
-  if (Math.abs(window.scrollY - y) > 1) window.scrollTo(0, y);
+  document.removeEventListener('touchstart', noteStart, { capture: true });
+  window.scrollTo(0, y);
 }
 
 function topOfContent(): number {
@@ -1021,7 +1025,7 @@ export async function openPicts(): Promise<void> {
     // A turn makes the app scroll the page to its shot; held still, the page
     // then stayed where the bars were out of view (27 Oct, iPhone). Back to
     // where it was held, so the bars are in place.
-    if (_heldY !== null && Math.abs(window.scrollY - _heldY) > 1) window.scrollTo(0, _heldY);
+    // the page is pinned (holdPage): a turn cannot scroll it, nothing to put back
     root.style.top = `${topOfContent()}px`;
     root.style.bottom = `${logStripHeight()}px`;
     const w = daysEl.clientWidth;
