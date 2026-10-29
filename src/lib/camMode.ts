@@ -29,9 +29,15 @@ function write(key: string, v: string): void {
   try { localStorage.setItem(key, v); } catch { /* private mode: not remembered */ }
 }
 
+/** A desktop has no phone camera: PHONE CAM there is only a file picker, and
+ *  LOAD does that already (Roman, 29 Oct). So FH CAM is the default on every
+ *  desktop project, fittings included; the choice window stays. */
+const isDesktop = (): boolean => !(navigator.maxTouchPoints > 1);
+
 export function getCamMode(): CamMode {
   const v = read(modeKey());
   if (v === 'fh' || v === 'phone') return v;
+  if (isDesktop()) return 'fh';
   return isFitting() ? 'phone' : 'fh';
 }
 export function setCamMode(m: CamMode): void {

@@ -23,13 +23,18 @@
   sent, and "recorded N frames as matching". Older gap in the sync rules; the
   push was made short again so it is rare, but it is real. Test 33 shows it
   when the push is slow.
-- PLAN AGREED 28 Oct (native app): 1) Capacitor wrap + TestFlight with
-  today's cameras (est. 3–5 days; Roman signs in to Apple + pays 99 $/yr,
-  installs Xcode; testers install TestFlight once, then tap a link). 2) Then
-  a native iOS camera screen with frame lines on the live picture, full
-  sensor / all lenses (est. +5–8 days), shipped as an update. Apple does not
-  allow betas in the App Store itself — TestFlight is the way. Android: web
-  for now.
+- PLAN AGREED 28 Oct evening (native app, Roman's decisions):
+  ONE camera in the app — the native iOS camera screen with the project's
+  frame lines over the full-quality live picture (all lenses, tap to focus),
+  opened by CAM; NO FH CAM / PHONE CAM choice in the app (the web keeps both).
+  Order: 1) Capacitor wrap running on Roman's iPad from Xcode (a few days);
+  2) the native framed camera (1–2 weeks); 3) TestFlight to testers (one app
+  for iPhone + iPad, layouts by screen size as now). Roman: Apple account +
+  99 $/yr, Xcode; I drive the Apple site in the browser with him watching.
+  Updates: the web part (everything but the camera/icon) deploys as now and
+  the installed app picks it up on next open; only the native shell goes
+  through TestFlight. Android later if there are testers; desktops = web.
+  BEFORE STARTING: Roman uses 109 live on real projects for a day.
 - Next: full run, then live (since 074: max screen share/arrows, camera
   texts, defaults fix, the whole PICTS library). Then BETA mark, etc.
 
