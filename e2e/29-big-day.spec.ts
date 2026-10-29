@@ -967,6 +967,15 @@ test('big day, part 7: every export produces its file',
     await desktop.settle();
     await desktop.uploadPicture(0, 'ver', RED_PNG);
     await desktop.settle();
+    // The photo has no stars and "unrated" is unticked by default: nothing to
+    // export, so a message and no file (run 552: the test waited for a file;
+    // Roman, 29 Oct: "show a message, that no pics are selected").
+    await desktop.page.evaluate(() => (window as never as { __fh_test: { exportVia(k: string): void } }).__fh_test.exportVia('fitting-pdf'));
+    await expect.poll(async () => (await desktop.log()).some((l) => l.includes('export: No photos selected for export')),
+      { timeout: 10_000, message: 'fitting with only unrated photos, default ticks: the message must say no photos are selected' }).toBe(true);
+    say('   only unrated photos, default ticks: "No photos selected for export" — no file');
+    // tick "unrated" in both fitting export boxes, then every export has its photo
+    await desktop.page.evaluate(() => { for (const id of ['fittingUnrated', 'fittingImgUnrated']) { const b = document.getElementById(id) as HTMLInputElement | null; if (b) b.checked = true; } });
     expectFile(await desktop.exportAndCatch('fitting-pdf'), 'fitting PDF', '%PDF', 'pdf');
     expectFile(await desktop.exportAndCatch('fitting-pptx'), 'fitting Keynote/PowerPoint', 'PK', 'pptx');
     expectFile(await desktop.exportAndCatch('fitting-images'), 'fitting images', 'PK', 'zip');

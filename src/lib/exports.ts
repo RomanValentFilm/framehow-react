@@ -1,6 +1,7 @@
 // Export pipelines — PDF (jsPDF), PPTX (pptxgenjs), per-frame images (jszip).
 // Replaces CDN globals with NPM imports.
 
+import { trace } from './syncTrace';
 import jsPDF from 'jspdf';
 // @ts-ignore — pptxgenjs ships its own bundled types
 import PptxGenJS from 'pptxgenjs';
@@ -3156,6 +3157,15 @@ export function openFittingExportModal(mode: 'pdf' | 'pptx'): void {
   document.getElementById('fittingExportModal')!.classList.remove('hidden');
 }
 
+// NOTHING TO EXPORT (29 Oct, Roman: "show a message, that no pics are selected
+// for export, because they are not meeting the selected criteria"). Said, and
+// no file is made.
+const NO_FITTING_PHOTOS = 'No photos selected for export — none meet the selected criteria (stars, unrated, hidden, strips)';
+function noFittingPhotos(): void {
+  showToast(NO_FITTING_PHOTOS);
+  trace(`export: ${NO_FITTING_PHOTOS}`);
+}
+
 export async function runFittingExport(): Promise<void> {
   if (_fittingExportMode === 'pptx') await runFittingPptxExport();
   else await runFittingPdfExport();
@@ -3231,7 +3241,7 @@ async function runFittingPdfExport(): Promise<void> {
   }
 
   const rows = fittingRows(c.frames, c.layout, c.strips, c.keep);
-  if (rows.length === 0) { showToast('No photos match the ticks'); return; }
+  if (rows.length === 0) { noFittingPhotos(); return; }
 
   for (let ri = 0; ri < rows.length; ri++) {
     const row = rows[ri];
@@ -3299,7 +3309,7 @@ async function runFittingPptxExport(): Promise<void> {
   const b64 = (cvs: HTMLCanvasElement) => 'image/jpeg;base64,' + cvs.toDataURL('image/jpeg', 0.92).split(',')[1];
 
   const rows = fittingRows(c.frames, c.layout, c.strips, c.keep);
-  if (rows.length === 0) { showToast('No photos match the ticks'); return; }
+  if (rows.length === 0) { noFittingPhotos(); return; }
 
   for (const row of rows) {
     const slide = pptx.addSlide();
@@ -3393,6 +3403,7 @@ export async function runFittingImageExport(): Promise<void> {
       }
     }
   }
+  if (Object.keys(zip.files).length === 0) { noFittingPhotos(); return; }
   const blob = await zip.generateAsync({ type: 'blob' });
   offerSave(blob, `${baseName}_images.zip`);
   showToast('Images ready');

@@ -92,6 +92,19 @@ So: when a symbol, a string, a status code or a decision is changed, run
 EVERY hit before reporting. The five seconds that costs is the cheapest thing
 in this project.
 
+## FACTS, NOT ASSUMPTIONS (29 Oct, Roman: "you guess and touch only the surface")
+1. Before saying anything: read the CURRENT code and the LATEST log. Say only
+   what is in them; anything not proven is said to be not proven.
+2. No change without the cause shown in the code or the log. Look in our own
+   code first (29 Oct: the cause was our own 27 Oct finger block, found last).
+3. Durations from the last real run (e2e-log), never from old notes. BIG DAY: 15.7 min (run 552, 29 Oct).
+4. Before handing over a test: check it measures the right thing at the right
+   moment (29 Oct: card measured before the click; middle shot found "none").
+5. A pasted log: check its times are new before reading anything into it.
+6. EVERY line handed over (test or deploy) starts with one header line:
+   "Run <n> · <what it does> · about <time>" — the number and the time ALWAYS,
+   the time from the last real run, or "not measured yet" plus a rough figure.
+
 ## TURNING THE DEVICE WHILE A BUTTON'S SCREEN IS OPEN — docs/turn-rules.md
 DRAW, CAM, WRITE, MAX VIEW — the interaction with the pictures/canvases, only these four: the page ignores turns until it is closed, then
 lands in the view where the button was pressed, the card at the same place;
