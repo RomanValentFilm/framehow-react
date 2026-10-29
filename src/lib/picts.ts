@@ -43,7 +43,7 @@ import { api, API_BASE_URL } from './api';
 import { getToken } from './session';
 import { logStripHeight, trace } from './syncTrace';
 import { openMaxView } from './maxView';
-import { useStore } from '../store/state';
+import { useStore, state } from '../store/state';
 import { getCurrentProject } from './currentProject';
 import { isArchived, listPending } from './persistence';
 import { allPreviews, clearPendingDeletions, deletePreviews, fingerprint, getPreview, notePendingDeletion, pendingDeletions, putPreview, type PreviewRec } from './pictsStore';
@@ -1128,10 +1128,19 @@ async function makeRoom(pics: Pic[], online: boolean, locals: LocalPic[], devRec
 export function wirePictsButton(): void {
   watchNewPictures();
   const btn = document.getElementById('pictsBtn');
-  btn?.addEventListener('click', (e) => { e.stopPropagation(); togglePicts(); });
+  btn?.addEventListener('click', (e) => { e.stopPropagation(); trace(`PICTS: LIBRARY button tapped (${_root ? 'closing' : 'opening'}; at ${Math.round((e as MouseEvent).clientX)},${Math.round((e as MouseEvent).clientY)}, real tap: ${e.isTrusted})`); togglePicts(); });
   document.addEventListener('click', (e) => {
-    if (!_root) return;
     const t = e.target as HTMLElement;
+    // WHICH BUTTON, AND WHAT CAME OF IT (29 Oct, Roman's iPhone: "with the
+    // library open, 3x2 / SETUPS / GROUP / SORT BY do nothing" — the log had
+    // no line for a view-bar tap, so it could not say).
+    const vbtn = t.closest<HTMLElement>('.view-btn, .strip-toggle');
+    if (vbtn) {
+      const name = vbtn.dataset.view || vbtn.dataset.strip || vbtn.textContent?.trim() || '?';
+      const was = state().currentViewMode, libWas = !!_root;
+      setTimeout(() => trace(`view bar: ${name} tapped${libWas ? ' (library was open)' : ''} — view ${was} → ${state().currentViewMode}; library ${_root ? 'OPEN' : 'closed'}; sort ${state().sortMode ? 'open' : 'closed'}, setups ${state().setupMode ? 'open' : 'closed'}; screen ${window.innerWidth}×${window.innerHeight}`), 400);
+    }
+    if (!_root) return;
     if (t.closest('#pictsBtn')) return;
     if (t.closest('.view-btn, .strip-toggle, #mainMenuBtn')) closePicts();
   }, true);

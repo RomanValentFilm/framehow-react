@@ -92,6 +92,11 @@ So: when a symbol, a string, a status code or a decision is changed, run
 EVERY hit before reporting. The five seconds that costs is the cheapest thing
 in this project.
 
+## TURNING THE DEVICE WHILE A BUTTON'S SCREEN IS OPEN — docs/turn-rules.md
+DRAW, CAM, WRITE, MAX VIEW — the interaction with the pictures/canvases, only these four: the page ignores turns until it is closed, then
+lands in the view where the button was pressed, the card at the same place;
+3x2 never comes back by itself. Read docs/turn-rules.md before touching any of them.
+
 ## ALWAYS SAY HOW LONG A TEST RUN WILL TAKE
 
 Roman is waiting at the other end with nothing to look at. Every time a run is

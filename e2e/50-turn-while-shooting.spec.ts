@@ -302,3 +302,49 @@ for (const view of ['both', 'main'] as const) test(`turn while shooting: iPad po
   expect(Math.abs(now.top - wantTop(atCam, now)), 'the card is not back where it was at CAM').toBeLessThanOrEqual(4);
   await d.close();
 });
+
+// FITTING (29 Oct, Roman: "are you checking fitting too?"). The same turn with
+// the camera open, both ways, in a fitting: same view, the card where it was.
+for (const [from, to] of [[[820, 1180], [1180, 820]], [[1180, 820], [820, 1180]]] as const) test(`turn while shooting in a FITTING: ${from[0] < from[1] ? 'portrait → landscape' : 'landscape → portrait'}, same view, the card where it was`, async ({ browser }) => {
+  const { token } = await freshAccount();
+  const d = await Device.open(browser, 'desktop', token);
+  await d.page.setViewportSize({ width: from[0], height: from[1] });
+  await d.newProjectOfKind('FITTING TURN', 'fitting', 12);
+  await d.settle();
+  if (await d.page.locator('#projectListModal').isVisible()) {
+    await d.page.locator('#projectListClose').click(); await d.page.waitForTimeout(300);
+  }
+  await d.page.evaluate(() => (window as never as { __fh_test: { setCamChoice(m: string, l: boolean): void } }).__fh_test.setCamChoice('phone', false));
+  const before = await vm(d);
+  // the talent card on screen in this view (CAST BOARD = 3x2 grid, else the main strip)
+  const sel = before === 'grid3x2'
+    ? (id: string) => `#overviewScroll .grid3x2-card-wrap[data-g3fid="${id}"]`
+    : (id: string) => `#mainScroll .frame-card[data-mfid="${id}"]`;
+  const all = before === 'grid3x2' ? '#overviewScroll .grid3x2-card-wrap[data-g3fid]' : '#mainScroll .frame-card[data-mfid]';
+  const first = d.page.locator(all).nth(4);
+  const fid = (await first.getAttribute(before === 'grid3x2' ? 'data-g3fid' : 'data-mfid'))!;
+  const card = d.page.locator(sel(fid));
+  await card.scrollIntoViewIfNeeded();
+  const pic = await photo(d.page);
+  const [chooser] = await Promise.all([d.page.waitForEvent('filechooser', { timeout: 10_000 }), card.locator('[data-mact="camera"]').first().click()]);
+  const atCam = (await topOf(d.page, sel(fid))).top;
+  say(`fitting, ${from[0]}×${from[1]}, ${before} view: CAM on talent 5, card top ${atCam} px`);
+  await d.page.setViewportSize({ width: to[0], height: to[1] });
+  await d.page.waitForTimeout(700);
+  await chooser.setFiles({ name: 'turned.jpg', mimeType: 'image/jpeg', buffer: pic });
+  await d.page.waitForTimeout(2200);
+  for (const l of (await d.log()).slice(0, 12).reverse()) say(`   app: ${l.trim()}`);
+  const landed = (await d.log()).find((l) => l.includes('camera: landed on the card (shot 5')) ?? '';
+  expect(landed, 'the photo did not land on talent 5').not.toBe('');
+  const after = await vm(d);
+  say(`   the view: ${before} → ${after}`);
+  // 3x2 does not exist in iPad portrait: from CAST BOARD the ordinary portrait view
+  if (before === 'grid3x2' && to[1] > to[0]) expect(after, 'cast board → portrait must give the portrait view').toBe('both');
+  else {
+    expect(after, 'THE VIEW CHANGED while shooting in a fitting').toBe(before);
+    const now = await topOf(d.page, sel(fid));
+    say(`   card top: at CAM ${atCam} px, now ${now.top} px (must be ${wantTop(atCam, now)})`);
+    expect(Math.abs(now.top - wantTop(atCam, now)), 'the card is not back where it was at CAM (fitting)').toBeLessThanOrEqual(4);
+  }
+  await d.close();
+});

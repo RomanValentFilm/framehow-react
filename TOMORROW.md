@@ -1,5 +1,18 @@
 # Where things stand
 
+## 29 October — STANDING (newest first)
+- dev: **v5.0.127 · #679** (run 541 + 542 green). live: unchanged.
+- CAMERA TURN done (test 50, 13 cases incl. fitting): page ignores turns while
+  the camera is open, lands in the view where CAM was pressed, card at the same
+  place; 3x2 never comes back by itself. Rule: **docs/turn-rules.md**.
+- **NEXT (Roman: "tomorrow"): apply docs/turn-rules.md to DRAW, WRITE, MAX VIEW**
+  — only these (interaction with the pictures/canvases). Ideally one shared
+  "open over a card" session for all four. Tests like test 50 for each.
+- Roman still to check on the real iPhone/iPad: FH CAM + native camera.
+- Uncommitted: fitting cases in test 50, docs/turn-rules.md, CLAUDE.md line,
+  scripts/deploy.sh FH_NOTEST=1 — go in with the next deploy.
+- Paused: tutorial video (memo in FH design/video-tools), new framehow.com page.
+
 ## 28 October — STANDING (newest first)
 - dev: **v5.0.104 · #656** (run 508, 5 library tests green). live: still **074**.
   PICTS library steps 1–4 done: list, library screen, previews (made on the

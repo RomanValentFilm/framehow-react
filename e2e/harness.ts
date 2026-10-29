@@ -150,11 +150,25 @@ export class Device {
                     /** EXTRA IN THE ADDRESS (9 Oct): what a person's browser
                      *  carries when they open a link out of a mail, e.g.
                      *  `&reset=<token>`. */
-                    opts: { storageLimitMb?: number; openWith?: string } = {}): Promise<Device> {
+                    opts: { storageLimitMb?: number; openWith?: string;
+                      /** A TOUCH iPHONE from the start (29 Oct): the app decides "phone"
+                       *  and "touch" once at startup, so the size and touch must be
+                       *  there before the first load — resizing a desktop later is not it. */
+                      phone?: { width: number; height: number } } = {}): Promise<Device> {
     const extra = opts.storageLimitMb
       ? { extraHTTPHeaders: { 'X-FH-Storage-Limit-MB': String(opts.storageLimitMb) } }
       : {};
-    const ctx = await browser.newContext(asTablet
+    const ctx = await browser.newContext(opts.phone
+      ? {
+        viewport: opts.phone,
+        userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15'
+          + ' (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+        hasTouch: true,
+        isMobile: false,
+        deviceScaleFactor: 3,
+        ...extra,
+      }
+      : asTablet
       ? {
         viewport: { width: 1180, height: 820 },
         userAgent: 'Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15'
