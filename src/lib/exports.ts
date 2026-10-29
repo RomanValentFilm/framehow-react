@@ -3214,7 +3214,7 @@ async function runFittingPdfExport(): Promise<void> {
   // THE TALENT'S NAME, left, between the header and the photos (Roman, 29 Oct).
   function drawTalentLine(row: FittingRow) {
     pdf.setTextColor(0); pdf.setFont(PDF_FONT, 'bold'); pdf.setFontSize(12);
-    pdf.text(row.label, startX, framesY - 7.5);
+    pdf.text(row.label, startX, framesY - 7.5 - 1.9);   // 1% of the page higher (Roman, 29 Oct)
   }
   // THE TALENT'S NOTE (the NOTES card) BELOW THE PICTURES, the row's full
   // width, in both layouts (Roman, 29 Oct: "the notes have to be below the
@@ -3308,7 +3308,7 @@ async function runFittingPptxExport(): Promise<void> {
     slide.addText(right, { x: SW / 2, y: 0.38, w: SW / 2 - MARGIN, h: 0.2, fontSize: 7, align: 'right', color: '787878', fontFace: 'Arial', margin: 0 });
     if (meta.version) slide.addText(meta.version, { x: MARGIN, y: 0.38, w: SW / 2, h: 0.2, fontSize: 7, color: '787878', fontFace: 'Arial', margin: 0 });
     // The talent's name, left, between the header and the photos (Roman, 29 Oct).
-    slide.addText(row.label, { x: startX, y: framesY - 0.56, w: SW - 2 * startX, h: 0.3, fontSize: 12, bold: true, color: '000000', fontFace: 'Arial', valign: 'bottom', margin: 0 });
+    slide.addText(row.label, { x: startX, y: framesY - 0.56 - 0.075, w: SW - 2 * startX, h: 0.3, fontSize: 12, bold: true, color: '000000', fontFace: 'Arial', valign: 'bottom', margin: 0 });
     // The talent's note BELOW the pictures, the row's full width, both layouts
     // (Roman, 29 Oct); under the photos' own notes when there are any.
     {
