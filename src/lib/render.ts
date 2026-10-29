@@ -40,6 +40,7 @@ import { setupTagHTML, wireSetupClicks, stripTagHTML } from './setups';
 import { buildNeedsCard } from './needs';
 import { buildNotesCard } from './notes';
 import { flushSyncNow } from './currentProject';
+import { renameFrame } from './actions';
 
 /** iPhone + 9:16 project → strip cards skip the repeated main-frame name. */
 function _phonePortraitProject(): boolean {
@@ -746,10 +747,13 @@ export function renderMainFrame(div: HTMLElement, fid: number): void {
       if (!currentF) return;
       const result = await showLabelEdit(currentF.label);
       if (result === null) return;
-      currentF.label = result;
+      // Through the store, by id — never onto `currentF`: a sync answer that
+      // lands while the box is open replaces every card object, and the name
+      // would go onto the discarded one (#396; Roman, 29 Oct: a talent in a
+      // fitting had to be renamed twice).
+      renameFrame(fid, result);
       bumpRenderTick();
       renderAll();
-      void flushSyncNow(); // FRM-6: rename frame label → OK/Enter
     })
   );
   if (f.drawMode) {
@@ -917,10 +921,9 @@ export function renderVersionFrame(div: HTMLElement, fid: number, strip: StripTy
         if (!currentF) return;
         const result = await showLabelEdit(currentF.label);
         if (result === null) return;
-        currentF.label = result;
+        renameFrame(fid, result);   // through the store, not onto a stale object (#396)
         bumpRenderTick();
         renderAll();
-        void flushSyncNow(); // FRM-6: rename frame label (inline-main) → OK/Enter
       })
     );
     if (f.drawMode) {

@@ -3040,7 +3040,7 @@ export async function runPortraitImageExport(): Promise<void> {
 // Looks come in star order (the same order the screen shows, #500).
 // ---------------------------------------------------------------------------
 
-type FittingPhoto = { v: import('../store/state').Version; label: string; note: string };
+type FittingPhoto = { v: import('../store/state').Version; label: string; stars: number; note: string };
 
 /** Which photos the ticks let through. `idPrefix` is 'fitting' or 'fittingImg'. */
 function fittingPhotoFilter(idPrefix: string): (v: import('../store/state').Version, strip?: StripType) => boolean {
@@ -3075,6 +3075,24 @@ function talentNote(f: Frame): string {
 
 function starText(n: number): string { return n > 0 ? ' ' + '★'.repeat(Math.min(3, n)) : ''; }
 
+/** Stars as shapes: DM Sans has no ★, so the PDF showed none (Roman, 29 Oct).
+ *  `x` is where the first star starts, `y` the text baseline, in mm. */
+function drawPdfStars(pdf: any, x: number, y: number, n: number): void {
+  const r = 1.25, ri = r * 0.42, step = r * 2.3;
+  pdf.setFillColor(100, 100, 100);
+  for (let k = 0; k < Math.min(3, n); k++) {
+    const cx = x + r + k * step, cy = y - r * 0.85;
+    const pts: Array<[number, number]> = [];
+    for (let i = 0; i < 10; i++) {
+      const a = -Math.PI / 2 + (i * Math.PI) / 5, rr = i % 2 === 0 ? r : ri;
+      pts.push([cx + rr * Math.cos(a), cy + rr * Math.sin(a)]);
+    }
+    const segs: Array<[number, number]> = [];
+    for (let i = 1; i < pts.length; i++) segs.push([pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]]);
+    pdf.lines(segs, pts[0][0], pts[0][1], [1, 1], 'F', true);
+  }
+}
+
 /** The photos of one strip for one talent, in the order the screen shows them. */
 function fittingPhotosFor(f: Frame, strip: StripType, keep: (v: import('../store/state').Version, strip?: StripType) => boolean, _frameLabel: string): FittingPhoto[] {
   const s = state();
@@ -3085,7 +3103,8 @@ function fittingPhotosFor(f: Frame, strip: StripType, keep: (v: import('../store
     if (!keep(v, strip)) return;
     out.push({
       v,
-      label: `${v.label || `v${vi + 1}`}` + starText(versionStarsOf(v)),
+      label: `${v.label || `v${vi + 1}`}`,
+      stars: versionStarsOf(v),
       note: (v.note || '').trim(),
     });
   });
@@ -3192,6 +3211,21 @@ async function runFittingPdfExport(): Promise<void> {
     pdf.setTextColor(30);
   }
 
+  // THE TALENT'S NAME, left, between the header and the photos (Roman, 29 Oct).
+  // In the 5-looks layout the talent's own note goes beside it — there is no
+  // talent slot to put it under.
+  function drawTalentLine(row: FittingRow) {
+    const y = framesY - 7.5;
+    pdf.setTextColor(0); pdf.setFont(PDF_FONT, 'bold'); pdf.setFontSize(12);
+    pdf.text(row.label, startX, y);
+    const tn = talentNote(row.f);
+    if (c.notes && tn && c.layout === 'looks5') {
+      pdf.setFont(PDF_FONT, 'normal'); pdf.setFontSize(9.5); pdf.setTextColor(40);
+      const nx = startX + pdf.getTextWidth(row.label) * 12 / 9.5 + 5;
+      pdf.text(hardWrapLines(pdf, tn, contentW - (nx - startX))[0] ?? '', nx, y);
+    }
+  }
+
   const rows = fittingRows(c.frames, c.layout, c.strips, c.keep);
   if (rows.length === 0) { showToast('No photos match the ticks'); return; }
 
@@ -3199,11 +3233,11 @@ async function runFittingPdfExport(): Promise<void> {
     const row = rows[ri];
     if (ri > 0) pdf.addPage();
     drawHeader();
+    drawTalentLine(row);
     let col = 0;
     if (c.layout === 'talent4') {
       if (row.talent) {
-        pdf.setTextColor(0); pdf.setFont(PDF_FONT, 'bold'); pdf.setFontSize(9.5);
-        pdf.text(row.label, startX, framesY - 1.2);
+        // (the name is on the talent line above — no second one here)
         const img = (await rasterizeMain(row.f)).toDataURL('image/jpeg', 0.92);
         pdf.addImage(img, 'JPEG', startX, framesY, frameW, frameH, undefined, 'FAST');
         const tn = talentNote(row.f);
@@ -3219,6 +3253,7 @@ async function runFittingPdfExport(): Promise<void> {
       const x = startX + col * (frameW + gutterX);
       pdf.setTextColor(100); pdf.setFont(PDF_FONT, 'normal'); pdf.setFontSize(9);
       pdf.text(p.label, x, framesY - 1.2);
+      drawPdfStars(pdf, x + pdf.getTextWidth(p.label) + 1.6, framesY - 1.2, p.stars);
       const img = (await rasterizeVersion(p.v, row.f.cropW, row.f.cropH)).toDataURL('image/jpeg', 0.92);
       pdf.addImage(img, 'JPEG', x, framesY, frameW, frameH, undefined, 'FAST');
       if (c.notes && p.note) {
@@ -3274,10 +3309,18 @@ async function runFittingPptxExport(): Promise<void> {
     const right = [meta.userName, meta.date].filter(Boolean).join('   ');
     slide.addText(right, { x: SW / 2, y: 0.38, w: SW / 2 - MARGIN, h: 0.2, fontSize: 7, align: 'right', color: '787878', fontFace: 'Arial', margin: 0 });
     if (meta.version) slide.addText(meta.version, { x: MARGIN, y: 0.38, w: SW / 2, h: 0.2, fontSize: 7, color: '787878', fontFace: 'Arial', margin: 0 });
+    // The talent's name, left, between the header and the photos (Roman, 29 Oct);
+    // in the 5-looks layout the talent's note beside it.
+    {
+      const tn = talentNote(row.f);
+      const withNote = c.notes && tn && c.layout === 'looks5';
+      const nameW = withNote ? Math.min(3.5, 0.11 * row.label.length + 0.3) : SW - 2 * startX;
+      slide.addText(row.label, { x: startX, y: framesY - 0.56, w: nameW, h: 0.3, fontSize: 12, bold: true, color: '000000', fontFace: 'Arial', valign: 'bottom', margin: 0 });
+      if (withNote) slide.addText(tn, { x: startX + nameW + 0.1, y: framesY - 0.56, w: SW - 2 * startX - nameW - 0.1, h: 0.3, fontSize: 9.5, color: '282828', fontFace: 'Arial', valign: 'bottom', margin: 0 });
+    }
     let col = 0;
     if (c.layout === 'talent4') {
       if (row.talent) {
-        slide.addText(row.label, { x: startX, y: framesY - 0.22, w: fW, h: 0.2, fontSize: 10, bold: true, color: '000000', fontFace: 'Arial', valign: 'bottom', margin: 0 });
         slide.addImage({ data: b64((await rasterizeMain(row.f))), x: startX, y: framesY, w: fW, h: fH });
         const tn = talentNote(row.f);
         if (c.notes && tn) {
@@ -3288,7 +3331,7 @@ async function runFittingPptxExport(): Promise<void> {
     }
     for (const p of row.photos) {
       const x = startX + col * (fW + gapX);
-      slide.addText(p.label, { x, y: framesY - 0.22, w: fW, h: 0.2, fontSize: 9, color: '888888', fontFace: 'Arial', valign: 'bottom', margin: 0 });
+      slide.addText(p.label + starText(p.stars), { x, y: framesY - 0.22, w: fW, h: 0.2, fontSize: 9, color: '888888', fontFace: 'Arial', valign: 'bottom', margin: 0 });
       slide.addImage({ data: b64((await rasterizeVersion(p.v, row.f.cropW, row.f.cropH))), x, y: framesY, w: fW, h: fH });
       if (c.notes && p.note) {
         slide.addText(p.note, { x, y: framesY + fH + 0.08, w: fW, h: noteH, fontSize: 9.5, color: '000000', fontFace: 'Arial', valign: 'top', wrap: true, margin: 0 });
