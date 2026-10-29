@@ -3152,7 +3152,6 @@ function fittingChoices() {
     layout,
     strips: strips.length ? strips : (['ver'] as StripType[]),
     notes: on('fittingIncludeNotes'),
-    letter: on('fittingPaperLetter'),
     keep: fittingPhotoFilter('fitting'),
     projectName: ((document.getElementById('fittingExportName') as HTMLInputElement).value || 'Fitting').trim(),
     frames: state().frames.filter((f) => !f.hidden),
@@ -3165,22 +3164,22 @@ async function runFittingPdfExport(): Promise<void> {
   const meta = fittingHeaderMeta();
   document.getElementById('fittingExportModal')!.classList.add('hidden');
   showToast('Generating PDF…');
-
-  const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: c.letter ? 'letter' : 'a4' });
+  // 16:9, the same page as the PowerPoint (13.333 x 7.5 in), no A4/Letter (Roman, 29 Oct)
+  const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: [338.667, 190.5] });
   registerPdfFont(pdf);
   const pageW = pdf.internal.pageSize.getWidth();
   const pageH = pdf.internal.pageSize.getHeight();
-  const MARGIN = 8, HEADER_H = 10.5, FOOTER_H = 2, LABEL_H = 4.5;
-  const COLS = 5, gutterX = 3;
+  const MARGIN = 10.16, HEADER_H = 10.5, FOOTER_H = 2, LABEL_H = 4.5;
+  const COLS = 5, gutterX = 3.05;
   const contentW = pageW - 2 * MARGIN;
   const aspect = 9 / 16;
   const noteH = c.notes ? 18 : 0;
   let frameW = (contentW - gutterX * (COLS - 1)) / COLS;
   let frameH = frameW / aspect;
-  const maxFrameH = pageH - 2 * MARGIN - HEADER_H - FOOTER_H - LABEL_H - noteH - 4;
+  const framesY = (0.85 + 0.07 * 7.5) * 25.4; // same place as in the PowerPoint
+  const maxFrameH = pageH - framesY - MARGIN / 2 - FOOTER_H - noteH - 4;
   if (frameH > maxFrameH) { frameH = maxFrameH; frameW = frameH * aspect; }
   const startX = MARGIN + (contentW - (COLS * frameW + (COLS - 1) * gutterX)) / 2;
-  const framesY = MARGIN + HEADER_H + LABEL_H;
 
   // The same header as the main export: name centred and bold, two small rows.
   function drawHeader() {
@@ -3262,7 +3261,7 @@ async function runFittingPptxExport(): Promise<void> {
   const maxH = SH - 1.2 - noteH;
   if (fH > maxH) { fH = maxH; fW = fH * aspect; }
   const startX = (SW - (COLS * fW + (COLS - 1) * gapX)) / 2;
-  const framesY = 0.85 + 0.15 * SH; // 15% of the slide lower (Roman, 29 Oct): pictures were pressed to the top
+  const framesY = 0.85 + 0.07 * SH; // 7% of the slide lower (Roman, 29 Oct; 15% was too much)
   const b64 = (cvs: HTMLCanvasElement) => 'image/jpeg;base64,' + cvs.toDataURL('image/jpeg', 0.92).split(',')[1];
 
   const rows = fittingRows(c.frames, c.layout, c.strips, c.keep);

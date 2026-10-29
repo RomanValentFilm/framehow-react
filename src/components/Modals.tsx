@@ -942,11 +942,6 @@ export function Modals() {
               <label className="exp-strip-opt"><input type="checkbox" id="fittingHidden" /> <span>hidden</span></label>
             </div>
           </div>
-          <div className="exp-field exp-block">
-            <label className="exp-inline">
-              <input type="checkbox" id="fittingPaperLetter" /> US Letter paper (default A4)
-            </label>
-          </div>
           <div className="text-modal-btns">
             <button className="btn" id="fittingExportCancel">Cancel</button>
             <button className="btn btn-accent" id="fittingExportGo">Export</button>
