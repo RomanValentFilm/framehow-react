@@ -40,7 +40,7 @@ import { recordTombstone } from './accountFlow';
 import { openFullscreen } from './fullscreen';
 import { openLoadPicturesSheet } from './loadPictures';
 import { markAppScroll, showBarsNow } from './view';
-import { flushSyncNow, markSomethingToSend, getCurrentProject } from './currentProject';
+import { flushSyncNow, markSomethingToSend, getCurrentProject, saveLocalNow } from './currentProject';
 import { stampChangedContent } from './changeStamps';
 import { addFrameToSortOrders, removeFrameFromSortOrders } from './sortOrder';
 import { nextFrameLabel } from './frameLabel';
@@ -379,6 +379,11 @@ export function renameFrame(fid: number, label: string): void {
   useStore.setState({ frames: s.frames.map((f) => (f.id === fid ? { ...f, label } : f)) });
   stampChangedContent(getCurrentProject().projectId);
   markSomethingToSend();
+  // WRITTEN TO THE DEVICE AT ONCE (Roman, 29 Oct: reload right after OK, name
+  // gone). The device copy waits two seconds after the last change, for fast
+  // actions; a rename is one action, and a reload inside those seconds — before
+  // the push had finished, too — found the name nowhere.
+  void saveLocalNow();
   void flushSyncNow();
 }
 

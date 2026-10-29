@@ -79,3 +79,30 @@ for (const kind of ['fitting', 'landscape'] as const) test(`${kind}: a name chan
   await desktop.close();
   await tablet.close();
 });
+
+// RELOAD RIGHT AFTER OK (Roman, 29 Oct: "when I reload the page right after
+// the name was changed, it is not stored"). The device copy used to wait two
+// seconds after the last change; the push was still in the air. A reload in
+// that window found the name nowhere. A rename now writes to the device at once.
+test('a name changed on the main card survives a reload right after OK', async ({ browser }) => {
+  const { token } = await freshAccount();
+  const desktop = await Device.open(browser, 'desktop', token);
+  await desktop.newProjectOfKind('RELOAD AT ONCE', 'fitting', 2);
+  await desktop.settle();
+  await desktop.page.evaluate(() => document.getElementById('projectListModal')?.classList.add('hidden'));
+
+  say('desktop: renaming the first talent and reloading the page at once');
+  await desktop.page.click('#mainScroll .frame-card [data-editlabel]');
+  await desktop.page.waitForSelector('#labelModal:not(.hidden)');
+  await desktop.page.fill('#labelModalInput', 'ANNA');
+  await desktop.page.click('#labelOk');
+  await desktop.page.waitForTimeout(150);
+  await desktop.reload();
+
+  const after = (await desktop.read()).frames.map((f) => f.label);
+  say(`   after the reload: ${after.join(', ')}`);
+  expect(after[0], 'THE NAME WAS LOST TO THE RELOAD: neither the device copy '
+    + '(written two seconds after the change) nor the server (push cut off) had it.')
+    .toBe('ANNA');
+  await desktop.close();
+});
