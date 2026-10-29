@@ -76,6 +76,7 @@ export async function openCamera(
   const ar = effectiveAspectRatio(fid);
   cameraTarget = { fid, div, aspectRatio: ar, fromCompare: !!fromCompare, fromMain: !!fromMain, stripType: strip,
     openedLandscape: window.innerWidth > window.innerHeight };
+  cameraSessionStart();
   // THE SHOT THE CAMERA IS FOR IS THE ONE TO COME BACK TO (29 Oct, Roman: "if I
   // shoot to shot 7, however I turn the device in between, I want to end up
   // seeing shot 7 mid screen"). A turn while the camera is open re-anchors the
@@ -152,6 +153,25 @@ export async function openCameraSetup(): Promise<void> {
 }
 
 /** Open the phone's own camera for the current target. */
+// SHOOTING IN PROGRESS (29 Oct, Roman: "if I started in 3x2 view I have to be
+// back in 3x2 view; if I started in any other view I have to come back to the
+// same view"). While the camera, the phone's camera or the framing screen is
+// open, a turn of the device must not change the view underneath.
+// A CAMERA SESSION: from pressing CAM on a card until the photo lands in that
+// card (or the camera is closed). Nothing is timed. When it ends, the screen
+// size as it is NOW is recorded as the one the view belongs to — so a turn
+// that iOS reports only after its camera hands back is no turn at all, and
+// cannot change the view afterwards (29 Oct, Roman: no 1.5 s, no waiting).
+let _camOpenedAt = 0, _camOpen = false;
+export function cameraSessionStart(): void { _camOpenedAt = Date.now(); _camOpen = true; }
+export function cameraSessionEnd(): void {
+  if (!_camOpen) return;
+  _camOpen = false;
+  (window as any)._lastWinW = window.innerWidth; (window as any)._lastWinH = window.innerHeight;
+}
+export function cameraBusy(): boolean {
+  return _camOpen && Date.now() - _camOpenedAt < 600_000;   // a missed close cannot freeze turns forever
+}
 function openPhoneCamera(): void {
   phoneShot = true;
   (document.getElementById('camFallbackInput') as HTMLInputElement).click();
@@ -262,6 +282,9 @@ export function captureFromViewfinder(): void {
 
 export function closeCamera(): void {
   teardownPinchZoom();
+  // The FH camera closing ends the session — unless the photo goes on to the
+  // framing screen, which keeps it going until that one closes too.
+  if (!document.getElementById('cropOverlay') || document.getElementById('cropOverlay')!.classList.contains('hidden')) cameraSessionEnd();
   if (cameraStream) {
     cameraStream.getTracks().forEach((t) => t.stop());
     cameraStream = null;
@@ -553,8 +576,11 @@ export function wireCameraEvents(): void {
   })();
 
   // Native-camera fallback → crop UI
+  // the phone's camera closed without a photo (iOS 16.4+ says so)
+  document.getElementById('camFallbackInput')!.addEventListener('cancel', () => cameraSessionEnd());
   document.getElementById('camFallbackInput')!.addEventListener('change', (e) => {
     const file = (e.target as HTMLInputElement).files?.[0];
+    if (!file) cameraSessionEnd();
     if (!file || !cameraTarget) return;
     const byItself = phoneShot && !getFramelineLater();
     phoneShot = false;
@@ -766,6 +792,7 @@ function applyCropTransform(): void {
 }
 
 function closeCropUI(): void {
+  cameraSessionEnd();
   document.getElementById('cropOverlay')!.classList.add('hidden');
   const area = document.getElementById('cropArea')! as any;
   area.onmousedown = area.onmousemove = area.onmouseup = area.onmouseleave = null;

@@ -37,7 +37,7 @@ import { handlePDF } from './pdf';
 import { handleFolderImages, startFromScratch, startPortrait, startFitting } from './files';
 import { installTestDoor } from './testHooks';
 import { openExportModal, openPptxModal, runExport, runPptxExport, openImageExportModal, runImageExport, openPortraitExportModal, runPortraitExport, openPortraitImageExportModal, runPortraitImageExport, openFittingExportModal, runFittingExport, openFittingImageExportModal, runFittingImageExport, updateExportVisibility, buildVersionPicker, buildPptxVersionPicker, lockPageScroll, unlockPageScroll } from './exports';
-import { wireCameraEvents } from './camera';
+import { wireCameraEvents, cameraBusy } from './camera';
 import { loadPicturesIntoVersions } from './loadPictures';
 // openFullscreen is now triggered by DRAW button (actions.ts), not the fs-btn
 import { toggleGroupSidebar } from './groups';
@@ -82,6 +82,7 @@ export function initFramehow(): void {
   (window as any).__fh_clearAllDrawActive = clearAllDrawActive;
   (window as any).__fh_setupDrawing = setupDrawing;
   (window as any).__fh_scrollAnchorTo = scrollAnchorTo;
+  (window as any).__fh_cameraBusy = cameraBusy;
   (window as any).__fh_flushSyncNow = flushSyncNow;
 
   // Drawing-suppress click cleanup (mouseup/touchend at document level)

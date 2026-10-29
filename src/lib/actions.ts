@@ -35,7 +35,7 @@ import { fhTrack } from './tracking';
 import { trace } from './syncTrace';
 import { newFrameId } from './ids';
 import { drawFit } from './drawing';
-import { openCamera, getCameraTarget, clearCameraTarget, setOnCapturedImage } from './camera';
+import { openCamera, getCameraTarget, clearCameraTarget, setOnCapturedImage, cameraSessionEnd } from './camera';
 import { recordTombstone } from './accountFlow';
 import { openFullscreen } from './fullscreen';
 import { openLoadPicturesSheet } from './loadPictures';
@@ -724,6 +724,7 @@ export function applyCapturedImage(dataURL: string, target: any): void {
   }
   useStore.setState({ overviewAction: false });
   clearCameraTarget();
+  cameraSessionEnd();
   // No centring anywhere: the card was on screen when CAM was pressed, so
   // moving the page only costs the user their bearings. Hold the position
   // across the re-render instead.

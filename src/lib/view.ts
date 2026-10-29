@@ -1145,6 +1145,16 @@ export function handleOrientationFlip(): void {
   // leaving a shooting order in portrait does not drop you into 3x2 portrait.
   // IPAD ONLY. Roman asked for the iPad and only the iPad. On a phone, turning
   // to portrait forces the single MAIN strip, and that is unchanged.
+  // THE CAMERA IS OPEN (29 Oct, Roman): the turn changes NOTHING in the view —
+  // not the view mode, not the strips. The size is recorded, so nothing is
+  // owed afterwards: you come back to exactly the view you pressed CAM in, and
+  // the photo's card is put in the middle when it lands (actions.ts).
+  if ((window as any).__fh_cameraBusy?.()) {
+    (window as any)._lastWinW = newW; (window as any)._lastWinH = newH;
+    if (flipped) trace(`turn while the camera is open — the view stays ${state().currentViewMode}`);
+    syncCardHeights();
+    return;
+  }
   const busyElsewhere = Math.min(newW, newH) > 430
     && (state().sortMode || state().setupMode);
   if (!busyElsewhere) {
