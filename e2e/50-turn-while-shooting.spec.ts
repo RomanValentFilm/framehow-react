@@ -68,7 +68,12 @@ for (const [from, to] of [[[820, 1180], [1180, 820]], [[1180, 820], [820, 1180]]
     say(`   two shots added above — that shot is now number ${nowNo}`);
     // the list is redrawn after adding shots: wait until the card is in place (run 533)
     await card.waitFor({ state: 'visible' }); await d.page.waitForTimeout(300);
-    await card.scrollIntoViewIfNeeded();
+    // A late redraw can still swap the card under the scroll (run 555: "not
+    // attached to the DOM"). The locator finds the new card; try again.
+    for (let t = 0; ; t++) {
+      try { await card.scrollIntoViewIfNeeded({ timeout: 3_000 }); break; }
+      catch (e) { if (t >= 4) throw e; await d.page.waitForTimeout(400); }
+    }
     const viewBefore = await d.page.evaluate(() => (window as never as { __fh_test: { viewMode(): string } }).__fh_test.viewMode());
     say(`that shot (card ${fid}): CAM pressed at ${from[0]}×${from[1]} in the ${viewBefore} view`);
     const pic = await photo(d.page);

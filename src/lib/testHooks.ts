@@ -14,7 +14,7 @@
 // real user never has it. And it is deliberately tiny: anything that grows a
 // decision of its own belongs in the app, where the app's own tests can see it.
 
-import { useStore, bumpRenderTick } from '../store/state';
+import { useStore, bumpRenderTick, state } from '../store/state';
 import type { SortOrder, StripType } from '../store/state';
 import { getVisibleFrames, createGroup, enterGroup, reorderFrameInGroup, saveGroupEdit, deleteGroup, hideFrameInGroup, removeFrameFromGroup } from './groups';
 import { newFrameId } from './ids';
@@ -26,7 +26,7 @@ import { toggleScribbleMode, attachScribbleOverlays } from './scribble';
 import { trace } from './syncTrace';
 import { startFromScratch, startPortrait, startFitting, handleFolderImages } from './files';
 import { applyCustomise } from './customise';
-import { openExportModal, openPptxModal, openImageExportModal, openPortraitExportModal, openPortraitImageExportModal, openFittingExportModal, openFittingImageExportModal } from './exports';
+import { pickDoubleVersion, openExportModal, openPptxModal, openImageExportModal, openPortraitExportModal, openPortraitImageExportModal, openFittingExportModal, openFittingImageExportModal } from './exports';
 import { handlePDF } from './pdf';
 import { deleteFrameForGood, handleMainAction, handleAction, renameFrame, hideFrame, unhideFrame } from './actions';
 import { createSetup, handleSetupFrameClick, handleStripTagClick } from './setups';
@@ -197,6 +197,11 @@ export interface TestDoor {
    *  GO — the app's own modal and its own button; the file leaves as a download. */
   exportVia(kind: 'pdf' | 'pptx' | 'images' | 'portrait-pdf' | 'portrait-pptx' | 'portrait-images'
     | 'fitting-pdf' | 'fitting-pptx' | 'fitting-images'): void;
+  /** 30 Oct: which version "Main Frame + One Selected Strip Frame" picks for
+   *  shot i in each of its four modes (labels, or "none"). */
+  doublePick(i: number, strip: string): { v1: string; last: string; starred: string; tagged: string };
+  /** Star (1) or unstar (0) version vi of shot i's strip — the plain data, for tests. */
+  setVersionStar(i: number, strip: string, vi: number, on: boolean): void;
   /** PART 9 (#515): restore points, delete and recover — the app's own functions. */
   makeRestorePoint(): Promise<void>;
   restorePoints(): Promise<Array<{ id: string; created_at: number; reason?: string; label?: string | null }>>;
@@ -1266,6 +1271,16 @@ export function installTestDoor(): void {
       delete snap.settingStamps;
       await saveSnapshot(snap);
       return n;
+    },
+    doublePick(i, strip) {
+      const f = state().frames[i];
+      const lab = (m: string) => pickDoubleVersion(f.id, strip as StripType, m)?.label ?? 'none';
+      return { v1: lab('v1'), last: lab('last'), starred: lab('starred'), tagged: lab('tagged') };
+    },
+    setVersionStar(i, strip, vi, on) {
+      const f = state().frames[i];
+      const v = getStripVersions(f.id, strip as StripType)[vi] as { starred?: boolean; stars?: number };
+      v.starred = on; v.stars = on ? 1 : 0;
     },
     exportVia(kind) {
       const press = (id: string) => {

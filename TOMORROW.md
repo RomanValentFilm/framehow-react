@@ -1,7 +1,26 @@
 # Where things stand
 
 ## 29 October — STANDING (newest first)
-- dev: **v5.0.127 · #679** (run 541 + 542 green). live: unchanged.
+- dev: **v5.0.131 · #683** (deploy 554, 22:12). live: unchanged.
+- iPhone LIBRARY: buttons (3x2/SETUPS/GROUP/SORT BY) work again — the 27 Oct
+  finger block swallowed taps; the page behind is now PINNED (position:fixed),
+  no finger blocking. Tests 51 (16) + 52 (4) green. Roman: OK on iPad + iPhone.
+- Fitting export: "No photos selected for export — none meet the selected
+  criteria (stars, unrated, hidden, strips)" when nothing passes (5 LOOKS
+  PDF/Keynote, images ZIP). BIG DAY part 7 checks it.
+- BIG DAY run 552: 15.7 min, 9/11; part 7 fixed; **part 4 ("THE IPAD'S TAG DID
+  NOT MEET": iPad holds one version the desktop does not) is INTERMITTENT —
+  red 552, green 553, same as run 342. Cause NOT traced. Trace before next live.**
+- Earlier today: v5.0.127 · #679 (run 541 + 542 green).
+- ON THE LIST (Roman, 30 Oct: "maybe, don't know now"): device logs to the
+  server — a SEND LOG button + automatic on real errors (FAILED/refused trace
+  lines, page crashes: the app has NO window error/unhandledrejection catcher
+  yet). Privacy policy must say so (project/shot names). Cost ≈ 0 (Workers
+  Paid includes 50 GB logs/month; Observability events today: 0).
+  Reading: `npm run logs` fetches sent logs into a folder Claude reads.
+  Automation: A) Worker cron trigger mails Roman a daily error count (runs
+  alone); B) a Cowork scheduled task where Claude reads + explains each morning.
+  Only worth it once outside users come (App Store launch) — Roman, 30 Oct.
 - CAMERA TURN done (test 50, 13 cases incl. fitting): page ignores turns while
   the camera is open, lands in the view where CAM was pressed, card at the same
   place; 3x2 never comes back by itself. Rule: **docs/turn-rules.md**.

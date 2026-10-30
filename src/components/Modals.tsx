@@ -329,25 +329,30 @@ export function Modals() {
                   <rect x="22" y="46" width="18" height="10" rx="1" fill="#aaa" stroke="#666" strokeWidth="1.2" />
                 </svg>
                 <span className="exp-opt-text">
-                  <strong>Double Strip</strong>
-                  <span className="exp-sub">Main Frame + Selected strip</span>
+                  <strong>Main Frame + One Selected Strip Frame</strong>
                 </span>
               </span>
             </label>
             <div className="exp-inline-controls" id="exportDoubleStripWrap" style={{ display: 'none' }}>
               <div className="exp-strip-picker" id="exportDoubleStripPicker"></div>
               <div className="exp-double-mode">
+                {/* 30 Oct, Roman: v1 first and the default; "last" = the last version
+                    in the row with a picture (v1, v2 … v9 → v9); Active Frame gone. */}
                 <label className="exp-strip-opt">
-                  <input type="radio" name="exportDoubleMode" value="starred" defaultChecked />
+                  <input type="radio" name="exportDoubleMode" value="v1" defaultChecked />
+                  <span>Main Frame + (v1) 1st Version Frame</span>
+                </label>
+                <label className="exp-strip-opt">
+                  <input type="radio" name="exportDoubleMode" value="last" />
+                  <span>Main Frame + last captured Version Frame</span>
+                </label>
+                <label className="exp-strip-opt">
+                  <input type="radio" name="exportDoubleMode" value="starred" />
                   <span>Main Frame + 1st Starred Frame</span>
                 </label>
                 <label className="exp-strip-opt">
                   <input type="radio" name="exportDoubleMode" value="tagged" />
                   <span>Main Frame + 1st Tagged Frame</span>
-                </label>
-                <label className="exp-strip-opt">
-                  <input type="radio" name="exportDoubleMode" value="active" />
-                  <span>Main Frame + Active Frame</span>
                 </label>
               </div>
             </div>
@@ -531,25 +536,30 @@ export function Modals() {
                   <rect x="56" y="28" width="18" height="10" rx="1" fill="#aaa" stroke="#666" strokeWidth="1.2" />
                 </svg>
                 <span className="exp-opt-text">
-                  <strong>Double Strip</strong>
-                  <span className="exp-sub">Main Frame + Selected strip</span>
+                  <strong>Main Frame + One Selected Strip Frame</strong>
                 </span>
               </span>
             </label>
             <div className="exp-inline-controls" id="pptxDoubleStripWrap" style={{ display: 'none' }}>
               <div className="exp-strip-picker" id="pptxDoubleStripPicker"></div>
               <div className="exp-double-mode">
+                {/* 30 Oct, Roman: v1 first and the default; "last" = the last version
+                    in the row with a picture (v1, v2 … v9 → v9); Active Frame gone. */}
                 <label className="exp-strip-opt">
-                  <input type="radio" name="pptxDoubleMode" value="starred" defaultChecked />
+                  <input type="radio" name="pptxDoubleMode" value="v1" defaultChecked />
+                  <span>Main Frame + (v1) 1st Version Frame</span>
+                </label>
+                <label className="exp-strip-opt">
+                  <input type="radio" name="pptxDoubleMode" value="last" />
+                  <span>Main Frame + last captured Version Frame</span>
+                </label>
+                <label className="exp-strip-opt">
+                  <input type="radio" name="pptxDoubleMode" value="starred" />
                   <span>Main Frame + 1st Starred Frame</span>
                 </label>
                 <label className="exp-strip-opt">
                   <input type="radio" name="pptxDoubleMode" value="tagged" />
                   <span>Main Frame + 1st Tagged Frame</span>
-                </label>
-                <label className="exp-strip-opt">
-                  <input type="radio" name="pptxDoubleMode" value="active" />
-                  <span>Main Frame + Active Frame</span>
                 </label>
               </div>
             </div>

@@ -77,6 +77,11 @@ test('a random day', async ({ browser }) => {
     const who = pick([desktop, tablet]);
     const other = who === desktop ? tablet : desktop;
     const name = who.name as 'desktop' | 'tablet';
+    // Let what the other device sent land FIRST (run 555, seed 10205: the
+    // tablet counted 6 shots, then writeUnder's own nudge pulled the desktop's
+    // delete, and shot 6 was gone — "no frame at 5"). The step is picked from
+    // what the device holds after that pull.
+    await who.nudge();
     const before = await snapshot(who);
 
     const doable = ['write', 'write', 'move', 'order', 'break', 'setup', 'category', 'travel'];

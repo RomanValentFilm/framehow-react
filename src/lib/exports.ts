@@ -516,16 +516,24 @@ function noteContent(fid: number): { text: string; table: TableData | null } {
 }
 
 /**
- * Which version the Double Strip layout should print beside the main frame.
+ * Which version "Main Frame + One Selected Strip Frame" prints beside the main
+ * frame (30 Oct, Roman):
+ *   v1      — the first version in the row, starred, tagged or not (default)
+ *   last    — the last version in the row with a picture (v1, v2 … v9 → v9);
+ *             new pictures always land at the end, so this is the latest one
  *   starred — first one the user starred
  *   tagged  — first carrying a SETUP tag pill (origin or copy)
- *   active  — whichever tab is currently open
+ * ("active" — the open tab — is gone; an old choice falls back to v1.)
  */
-function pickDoubleVersion(fid: number, strip: StripType, mode: string) {
+export function pickDoubleVersion(fid: number, strip: StripType, mode: string) {
   const vers = getStripVersions(fid, strip);
   if (mode === 'starred') return vers.find((v) => versionHasContent(v) && (v as any).starred);
   if (mode === 'tagged') return vers.find((v) => versionHasContent(v) && !!(v as any).setupTagged);
-  return vers[getStripActiveTab(fid, strip)];
+  if (mode === 'last') {
+    for (let i = vers.length - 1; i >= 0; i--) if (!vers[i].hidden && versionHasContent(vers[i])) return vers[i];
+    return undefined;
+  }
+  return vers[0];
 }
 
 /**
@@ -1343,7 +1351,7 @@ export async function runExport(): Promise<void> {
     const dataDef = DATA_STRIPS.find((d) => d.id === dblStrip);
     const dblDef = (s.stripDefs || DEFAULT_STRIP_DEFS).find(d => d.id === dblStrip);
     const dblStripName = dataDef ? dataDef.label : dblDef ? dblDef.defaultFrameLabel : dblStrip;
-    const dblMode = (document.querySelector('input[name="exportDoubleMode"]:checked') as HTMLInputElement)?.value || 'starred';
+    const dblMode = (document.querySelector('input[name="exportDoubleMode"]:checked') as HTMLInputElement)?.value || 'v1';
     const perPage = g.rows;
     totalPages = Math.ceil(frames.length / perPage);
     for (let i = 0; i < frames.length; i++) {
@@ -2124,7 +2132,7 @@ export async function runPptxExport(): Promise<void> {
     const pDataDef = DATA_STRIPS.find((d) => d.id === pDblKey);
     const pptxDblDef = (s.stripDefs || DEFAULT_STRIP_DEFS).find(d => d.id === pptxDblStrip);
     const pptxDblName = pDataDef ? pDataDef.label : pptxDblDef ? pptxDblDef.defaultFrameLabel : pptxDblStrip;
-    const pptxDblMode = (document.querySelector('input[name="pptxDoubleMode"]:checked') as HTMLInputElement)?.value || 'starred';
+    const pptxDblMode = (document.querySelector('input[name="pptxDoubleMode"]:checked') as HTMLInputElement)?.value || 'v1';
     const pairsPerSlide = 4;
     const pairCols = 2;
     const pairRows = 2;
