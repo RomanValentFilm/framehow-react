@@ -1,5 +1,13 @@
 # Where things stand
 
+## 2 November — NEW WEBSITE LIVE on framehow.com (backup of old: Framehow Files/framehow-site-backup-2026-11-02)
+- Workflow pictures 10% smaller (81%), footer: Imprint link + company line,
+  /imprint page. Still to do: the VIDEO, a FITTING page, Terms + Privacy
+  rewritten (now "Beta"; fine for TestFlight, must change for the App Store).
+- Apple: TestFlight needs the developer membership; as a company that needs
+  the D-U-N-S first. External TestFlight asks only a beta description + a
+  feedback email (Apple help page) — no finished website.
+
 ## 29 October — STANDING (newest first)
 - dev: **v5.0.131 · #683** (deploy 554, 22:12). live: unchanged.
 - iPhone LIBRARY: buttons (3x2/SETUPS/GROUP/SORT BY) work again — the 27 Oct
@@ -12,6 +20,15 @@
   NOT MEET": iPad holds one version the desktop does not) is INTERMITTENT —
   red 552, green 553, same as run 342. Cause NOT traced. Trace before next live.**
 - Earlier today: v5.0.127 · #679 (run 541 + 542 green).
+- IDEA (Roman, 1 Nov: "crazy but makes sense"): TWO APPS, ONE BACKEND —
+  Framehow (all project types except fitting) and Fitting (fittings only),
+  built from the same code (shared core + per-app name/icon/types), one
+  Apple developer account, one Cloudflare account, one server/database/R2.
+  Prepare: new pictures under `framehow/…` and `fitting/…` prefixes in R2 so
+  a later split is copying a folder. Nothing built yet.
+  Roman: fittings will be REMOVED from Framehow (only in the Fitting app). If
+  Apple rejects Fitting as too similar, make it more different. Existing
+  fitting projects must stay reachable (Fitting app + its own web address).
 - ON THE LIST (Roman, 30 Oct: "maybe, don't know now"): device logs to the
   server — a SEND LOG button + automatic on real errors (FAILED/refused trace
   lines, page crashes: the app has NO window error/unhandledrejection catcher

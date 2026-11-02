@@ -39,5 +39,9 @@ pattern = "framehow.com/privacy*"
 zone_name = "framehow.com"
 
 [[routes]]
+pattern = "framehow.com/imprint*"
+zone_name = "framehow.com"
+
+[[routes]]
 pattern = "framehow.com/img/*"
 zone_name = "framehow.com"

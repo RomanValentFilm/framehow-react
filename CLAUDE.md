@@ -92,6 +92,17 @@ So: when a symbol, a string, a status code or a decision is changed, run
 EVERY hit before reporting. The five seconds that costs is the cheapest thing
 in this project.
 
+## READ FACTS.md FIRST — before ANY advice that makes Roman act, pay or ask others
+(2 Nov: Claude sent him to change tingefilms.com and get a new mailbox — he
+started paying people in Germany — while framehow.com already named Tinge
+Films and info@framehow.com already existed. Both were in TOMORROW.md.)
+Rule: grep the notes and code for the thing first, quote what is already
+there, THEN advise. New accounts/domains/mails go into FACTS.md at once.
+EVERY answer that asks Roman to act, decide or pay ENDS with one line:
+  checked: <file/line, log line, test run, or link>   — or —
+  NOT checked: <what is a guess>
+No such line = Roman treats it as a guess and does not act (2 Nov).
+
 ## FACTS, NOT ASSUMPTIONS (29 Oct, Roman: "you guess and touch only the surface")
 1. Before saying anything: read the CURRENT code and the LATEST log. Say only
    what is in them; anything not proven is said to be not proven.
@@ -105,7 +116,11 @@ in this project.
    "Run <n> · <what it does> · about <time>" — the number and the time ALWAYS,
    the time from the last real run, or "not measured yet" plus a rough figure.
 7. ANSWERS: only what is interesting — short notes, no lists of what went fine
-   unless asked (30 Oct, Roman).
+   unless asked (30 Oct, Roman). A deploy line is given EXACTLY like this:
+     new export, Main Frame + One Selected Frame, PDF and Keynote,
+     v5.0.132 · #684,
+     run 558 1 min to dev (not live)
+   then the code block. Nothing else.
 
 ## TURNING THE DEVICE WHILE A BUTTON'S SCREEN IS OPEN — docs/turn-rules.md
 DRAW, CAM, WRITE, MAX VIEW — the interaction with the pictures/canvases, only these four: the page ignores turns until it is closed, then

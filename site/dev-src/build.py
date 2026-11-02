@@ -35,7 +35,7 @@ def step_html(s):
     small = (s['img'] or '').replace('.jpg', '-1200.jpg')
     # Full size for big and sharp screens, 1200 px for phones; the browser picks.
     srcset = f'{small} 1200w, {s["img"]} {s["w"]}w' if s['w'] > 1200 else s['img'] + f' {s["w"]}w'
-    pic = (f'<img src="{s["img"]}" srcset="{srcset}" sizes="(max-width: 1148px) 90vw, 990px" width="{s["w"]}" height="{s["h"]}" loading="lazy" decoding="async" alt="{esc(s["title"])}">'
+    pic = (f'<img src="{s["img"]}" srcset="{srcset}" sizes="(max-width: 1148px) 81vw, 891px" width="{s["w"]}" height="{s["h"]}" loading="lazy" decoding="async" alt="{esc(s["title"])}">'
            if s['img'] else '')
     body = f'<p>{esc(s["body"])}</p>' if s['body'] else ''
     return f'''    <article class="step">

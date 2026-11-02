@@ -30,12 +30,15 @@
   .hero-cta:hover{background:#b01f2a;transform:translateY(-1px);}
 
   /* VIDEO (placeholder until the film exists) */
-  .video{width:100%;max-width:1200px;margin:0 auto;padding:0 24px;}
+  .video{width:100%;max-width:960px;/* 20% smaller (Roman, 2 Nov; was 1200px) */margin:0 auto;padding:0 24px;}
   .video-box{position:relative;border-radius:12px;overflow:hidden;background:var(--surface);aspect-ratio:2359/1521;}
   .video-box img{width:100%;height:100%;object-fit:cover;display:block;}
   .video-play{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:rgba(0,0,0,.28);}
   .video-play .circle{width:88px;height:88px;border-radius:50%;background:rgba(213,38,50,.92);display:flex;align-items:center;justify-content:center;box-shadow:0 6px 30px rgba(0,0,0,.45);}
   .video-play .circle::after{content:"";margin-left:7px;border-style:solid;border-width:16px 0 16px 26px;border-color:transparent transparent transparent #fff;}
+  .video-play{cursor:pointer;}
+  .video-play .soon{display:none;}
+  .video-box.soon-on .video-play .soon{display:inline-block;}
   .video-play .soon{font-size:13px;font-weight:700;letter-spacing:2px;color:#fff;background:rgba(0,0,0,.55);padding:5px 12px;border-radius:4px;}
 
   /* JUMP BUTTONS */
@@ -66,7 +69,7 @@
   .step-n{display:block;font-size:12px;font-weight:700;letter-spacing:2px;color:#666;margin-bottom:4px;}
   .step h3{font-size:clamp(22px,calc(2.4vw + 5px),28px);font-weight:700;line-height:1.3;margin-bottom:6.8px;text-transform:uppercase;letter-spacing:.5px;}
   .step p{font-size:16px;color:var(--muted);line-height:1.6;}
-  .step img{width:90%;margin:0 auto;height:auto;display:block;border-radius:14px;background:var(--surface);border:1px solid #777;box-shadow:0 0 0 12px #2a2a2a,0 0 0 13px #888,0 0 0 14px #444,0 16px 50px rgba(0,0,0,.75);}
+  .step img{width:81%;/* 10% smaller (Roman, 2 Nov; was 90%) */margin:0 auto;height:auto;display:block;border-radius:14px;background:var(--surface);border:1px solid #777;box-shadow:0 0 0 12px #2a2a2a,0 0 0 13px #888,0 0 0 14px #444,0 16px 50px rgba(0,0,0,.75);}
 
   /* FITTINGS */
   .fittings{max-width:1100px;margin:0 auto;padding:0 24px;}
@@ -91,6 +94,7 @@
 
   /* FOOTER */
   .footer{padding:32px 24px;text-align:center;border-top:1px solid var(--border);color:#555;font-size:12px;}
+  .footer-co{margin-top:10px;color:#4a4a4a;font-size:11px;}
   .footer a{color:#777;text-decoration:underline;}.footer a:hover{color:var(--text);}
 
   @media (max-width:500px){
@@ -127,7 +131,8 @@ if(window.navigator.standalone || window.matchMedia('(display-mode: standalone)'
   <!-- THE VIDEO GOES HERE. Until it exists: Roman's thumbnail and "coming soon". -->
   <div class="video-box">
     <img src="/img/video-thumb.jpg" width="2359" height="1521" alt="Framehow — the 3x2 view with storyboard frames, drawings and setups">
-    <div class="video-play"><span class="circle"></span><span class="soon">VIDEO COMING SOON</span></div>
+    <!-- "COMING SOON" shows only when the field is pressed (Roman, 2 Nov) -->
+    <div class="video-play" onclick="this.parentNode.classList.toggle('soon-on')"><span class="circle"></span><span class="soon">VIDEO COMING SOON</span></div>
   </div>
 </div>
 
@@ -143,95 +148,95 @@ if(window.navigator.standalone || window.matchMedia('(display-mode: standalone)'
   <div class="workflow">
     <article class="step">
       <div class="step-text"><h3>Load storyboards from PDFs, images, or start drawing from scratch.</h3></div>
-      <img src="/img/wf/01.jpg" srcset="/img/wf/01-1200.jpg 1200w, /img/wf/01.jpg 2360w" sizes="(max-width: 1148px) 90vw, 990px" width="2360" height="1595" loading="lazy" decoding="async" alt="Load storyboards from PDFs, images, or start drawing from scratch.">
+      <img src="/img/wf/01.jpg" srcset="/img/wf/01-1200.jpg 1200w, /img/wf/01.jpg 2360w" sizes="(max-width: 1148px) 81vw, 891px" width="2360" height="1595" loading="lazy" decoding="async" alt="Load storyboards from PDFs, images, or start drawing from scratch.">
     </article>
     <article class="step">
       <div class="step-text"><h3>EXTRACT storyboard pictures from PDF</h3><p>Framehow automatically extracts frames from the PDF, including frame numbers and text descriptions. You can manually adjust the results if needed.</p></div>
-      <img src="/img/wf/02.jpg" srcset="/img/wf/02-1200.jpg 1200w, /img/wf/02.jpg 2360w" sizes="(max-width: 1148px) 90vw, 990px" width="2360" height="1595" loading="lazy" decoding="async" alt="EXTRACT storyboard pictures from PDF">
+      <img src="/img/wf/02.jpg" srcset="/img/wf/02-1200.jpg 1200w, /img/wf/02.jpg 2360w" sizes="(max-width: 1148px) 81vw, 891px" width="2360" height="1595" loading="lazy" decoding="async" alt="EXTRACT storyboard pictures from PDF">
     </article>
     <article class="step">
       <div class="step-text"><h3>Storyboard loads into 3x2 view</h3><p>Change frame numbers, edit text descriptions, or choose from the available actions for each frame.</p></div>
-      <img src="/img/wf/03.jpg" srcset="/img/wf/03-1200.jpg 1200w, /img/wf/03.jpg 2360w" sizes="(max-width: 1148px) 90vw, 990px" width="2360" height="1595" loading="lazy" decoding="async" alt="Storyboard loads into 3x2 view">
+      <img src="/img/wf/03.jpg" srcset="/img/wf/03-1200.jpg 1200w, /img/wf/03.jpg 2360w" sizes="(max-width: 1148px) 81vw, 891px" width="2360" height="1595" loading="lazy" decoding="async" alt="Storyboard loads into 3x2 view">
     </article>
     <article class="step">
       <div class="step-text"><h3>SCRIBBLE all over</h3><p>Used to scribbling all over your PDF? Go ahead — even though in FRAMEHOW each frame is editable on its own.</p></div>
-      <img src="/img/wf/04.jpg" srcset="/img/wf/04-1200.jpg 1200w, /img/wf/04.jpg 2360w" sizes="(max-width: 1148px) 90vw, 990px" width="2360" height="1595" loading="lazy" decoding="async" alt="SCRIBBLE all over">
+      <img src="/img/wf/04.jpg" srcset="/img/wf/04-1200.jpg 1200w, /img/wf/04.jpg 2360w" sizes="(max-width: 1148px) 81vw, 891px" width="2360" height="1595" loading="lazy" decoding="async" alt="SCRIBBLE all over">
     </article>
     <article class="step">
       <div class="step-text"><h3>Rearrange frames by drag &amp; drop, rename, or create new ones.</h3><p>Want to change the story flow? Simply drag a frame to a new position.</p></div>
-      <img src="/img/wf/05.jpg" srcset="/img/wf/05-1200.jpg 1200w, /img/wf/05.jpg 2360w" sizes="(max-width: 1148px) 90vw, 990px" width="2360" height="1595" loading="lazy" decoding="async" alt="Rearrange frames by drag &amp; drop, rename, or create new ones.">
+      <img src="/img/wf/05.jpg" srcset="/img/wf/05-1200.jpg 1200w, /img/wf/05.jpg 2360w" sizes="(max-width: 1148px) 81vw, 891px" width="2360" height="1595" loading="lazy" decoding="async" alt="Rearrange frames by drag &amp; drop, rename, or create new ones.">
     </article>
     <article class="step">
       <div class="step-text"><h3>On the RECCE: Use your tablet’s/phone’s camera to shoot storyboard angles.</h3><p>Find the shooting angles for your storyboard frames on the scout / recce. Adjust the shooting ratio and exposure as needed.</p></div>
-      <img src="/img/wf/06.jpg" srcset="/img/wf/06-1200.jpg 1200w, /img/wf/06.jpg 2360w" sizes="(max-width: 1148px) 90vw, 990px" width="2360" height="1595" loading="lazy" decoding="async" alt="On the RECCE: Use your tablet’s/phone’s camera to shoot storyboard angles.">
+      <img src="/img/wf/06.jpg" srcset="/img/wf/06-1200.jpg 1200w, /img/wf/06.jpg 2360w" sizes="(max-width: 1148px) 81vw, 891px" width="2360" height="1595" loading="lazy" decoding="async" alt="On the RECCE: Use your tablet’s/phone’s camera to shoot storyboard angles.">
     </article>
     <article class="step">
       <div class="step-text"><h3>Shoot multiple SHOOTING ANGLES for each frame on the recce and decide which to use later.</h3><p>Capture multiple versions for each frame to compare and refine your creative choices. Rate camera angles or rearrange them by preference.</p></div>
-      <img src="/img/wf/07.jpg" srcset="/img/wf/07-1200.jpg 1200w, /img/wf/07.jpg 2360w" sizes="(max-width: 1148px) 90vw, 990px" width="2360" height="1595" loading="lazy" decoding="async" alt="Shoot multiple SHOOTING ANGLES for each frame on the recce and decide which to use later.">
+      <img src="/img/wf/07.jpg" srcset="/img/wf/07-1200.jpg 1200w, /img/wf/07.jpg 2360w" sizes="(max-width: 1148px) 81vw, 891px" width="2360" height="1595" loading="lazy" decoding="async" alt="Shoot multiple SHOOTING ANGLES for each frame on the recce and decide which to use later.">
     </article>
     <article class="step">
       <div class="step-text"><h3>Draw and write directly into your shooting angles.</h3></div>
-      <img src="/img/wf/08.jpg" srcset="/img/wf/08-1200.jpg 1200w, /img/wf/08.jpg 2360w" sizes="(max-width: 1148px) 90vw, 990px" width="2360" height="1595" loading="lazy" decoding="async" alt="Draw and write directly into your shooting angles.">
+      <img src="/img/wf/08.jpg" srcset="/img/wf/08-1200.jpg 1200w, /img/wf/08.jpg 2360w" sizes="(max-width: 1148px) 81vw, 891px" width="2360" height="1595" loading="lazy" decoding="async" alt="Draw and write directly into your shooting angles.">
     </article>
     <article class="step">
       <div class="step-text"><h3>SWIPE through your SHOOTING ANGLES directly in your storyboard.</h3><p>On the shoot or during prep, you can always access the shooting angles linked to each storyboard frame — so you know how you planned the shot, where you want to shoot it, and which versions you intended to capture. Simply swipe through them on your Tablet.</p></div>
-      <img src="/img/wf/09.jpg" srcset="/img/wf/09-1200.jpg 1200w, /img/wf/09.jpg 2360w" sizes="(max-width: 1148px) 90vw, 990px" width="2360" height="1595" loading="lazy" decoding="async" alt="SWIPE through your SHOOTING ANGLES directly in your storyboard.">
+      <img src="/img/wf/09.jpg" srcset="/img/wf/09-1200.jpg 1200w, /img/wf/09.jpg 2360w" sizes="(max-width: 1148px) 81vw, 891px" width="2360" height="1595" loading="lazy" decoding="async" alt="SWIPE through your SHOOTING ANGLES directly in your storyboard.">
     </article>
     <article class="step">
       <div class="step-text"><h3>Draw and write</h3><p>Annotate each of your shots separately during the recce.</p></div>
-      <img src="/img/wf/10.jpg" srcset="/img/wf/10-1200.jpg 1200w, /img/wf/10.jpg 2360w" sizes="(max-width: 1148px) 90vw, 990px" width="2360" height="1595" loading="lazy" decoding="async" alt="Draw and write">
+      <img src="/img/wf/10.jpg" srcset="/img/wf/10-1200.jpg 1200w, /img/wf/10.jpg 2360w" sizes="(max-width: 1148px) 81vw, 891px" width="2360" height="1595" loading="lazy" decoding="async" alt="Draw and write">
     </article>
     <article class="step">
       <div class="step-text"><h3>SKETCHES, FLOOR PLANS, STAGING IDEAS.</h3><p>Draw floor plans, camera moves, staging ideas, and actor positions in a shot.</p></div>
-      <img src="/img/wf/11.jpg" srcset="/img/wf/11-1200.jpg 1200w, /img/wf/11.jpg 2360w" sizes="(max-width: 1148px) 90vw, 990px" width="2360" height="1595" loading="lazy" decoding="async" alt="SKETCHES, FLOOR PLANS, STAGING IDEAS.">
+      <img src="/img/wf/11.jpg" srcset="/img/wf/11-1200.jpg 1200w, /img/wf/11.jpg 2360w" sizes="(max-width: 1148px) 81vw, 891px" width="2360" height="1595" loading="lazy" decoding="async" alt="SKETCHES, FLOOR PLANS, STAGING IDEAS.">
     </article>
     <article class="step">
       <div class="step-text"><h3>SKETCHES</h3><p>Each sketch is linked to a specific frame in the storyboard.</p></div>
-      <img src="/img/wf/12.jpg" srcset="/img/wf/12-1200.jpg 1200w, /img/wf/12.jpg 2360w" sizes="(max-width: 1148px) 90vw, 990px" width="2360" height="1595" loading="lazy" decoding="async" alt="SKETCHES">
+      <img src="/img/wf/12.jpg" srcset="/img/wf/12-1200.jpg 1200w, /img/wf/12.jpg 2360w" sizes="(max-width: 1148px) 81vw, 891px" width="2360" height="1595" loading="lazy" decoding="async" alt="SKETCHES">
     </article>
     <article class="step">
       <div class="step-text"><h3>Work with REFERENCES for your shots.</h3><p>Load references. Just drop in the pictures you want to find instantly while browsing your shots — moods, props, or post-production ideas.</p></div>
-      <img src="/img/wf/13.jpg" srcset="/img/wf/13-1200.jpg 1200w, /img/wf/13.jpg 1286w" sizes="(max-width: 1148px) 90vw, 990px" width="1286" height="849" loading="lazy" decoding="async" alt="Work with REFERENCES for your shots.">
+      <img src="/img/wf/13.jpg" srcset="/img/wf/13-1200.jpg 1200w, /img/wf/13.jpg 1286w" sizes="(max-width: 1148px) 81vw, 891px" width="1286" height="849" loading="lazy" decoding="async" alt="Work with REFERENCES for your shots.">
     </article>
     <article class="step">
       <div class="step-text"><h3>Create SETUPS to visually differentiate your shots.</h3><p>Assign shots to camera setups, mark them by location, gear, or your own categories, and link specific references to selected shots.</p></div>
-      <img src="/img/wf/14.jpg" srcset="/img/wf/14-1200.jpg 1200w, /img/wf/14.jpg 2360w" sizes="(max-width: 1148px) 90vw, 990px" width="2360" height="1595" loading="lazy" decoding="async" alt="Create SETUPS to visually differentiate your shots.">
+      <img src="/img/wf/14.jpg" srcset="/img/wf/14-1200.jpg 1200w, /img/wf/14.jpg 2360w" sizes="(max-width: 1148px) 81vw, 891px" width="2360" height="1595" loading="lazy" decoding="async" alt="Create SETUPS to visually differentiate your shots.">
     </article>
     <article class="step">
       <div class="step-text"><h3>Each frame has its NEEDS</h3><p>Mark frames by categories: shooting day, unit, location, shooting direction, talent names, gear, post-production process… Rename each category to fit what your shoot needs.</p></div>
-      <img src="/img/wf/15.jpg" srcset="/img/wf/15-1200.jpg 1200w, /img/wf/15.jpg 2360w" sizes="(max-width: 1148px) 90vw, 990px" width="2360" height="1595" loading="lazy" decoding="async" alt="Each frame has its NEEDS">
+      <img src="/img/wf/15.jpg" srcset="/img/wf/15-1200.jpg 1200w, /img/wf/15.jpg 2360w" sizes="(max-width: 1148px) 81vw, 891px" width="2360" height="1595" loading="lazy" decoding="async" alt="Each frame has its NEEDS">
     </article>
     <article class="step">
       <div class="step-text"><h3>NEEDS strip</h3><p>Rename &amp; edit each frame’s categories in a side-by-side view.</p></div>
-      <img src="/img/wf/16.jpg" srcset="/img/wf/16-1200.jpg 1200w, /img/wf/16.jpg 2360w" sizes="(max-width: 1148px) 90vw, 990px" width="2360" height="1595" loading="lazy" decoding="async" alt="NEEDS strip">
+      <img src="/img/wf/16.jpg" srcset="/img/wf/16-1200.jpg 1200w, /img/wf/16.jpg 2360w" sizes="(max-width: 1148px) 81vw, 891px" width="2360" height="1595" loading="lazy" decoding="async" alt="NEEDS strip">
     </article>
     <article class="step">
       <div class="step-text"><h3>Overview the STORY FLOW of all frames at once.</h3><p>Rearrange frames manually, add scene breaks, mark where scenes start or end, or where you change to another location.</p></div>
-      <img src="/img/wf/17.jpg" srcset="/img/wf/17-1200.jpg 1200w, /img/wf/17.jpg 2360w" sizes="(max-width: 1148px) 90vw, 990px" width="2360" height="1595" loading="lazy" decoding="async" alt="Overview the STORY FLOW of all frames at once.">
+      <img src="/img/wf/17.jpg" srcset="/img/wf/17-1200.jpg 1200w, /img/wf/17.jpg 2360w" sizes="(max-width: 1148px) 81vw, 891px" width="2360" height="1595" loading="lazy" decoding="async" alt="Overview the STORY FLOW of all frames at once.">
     </article>
     <article class="step">
       <div class="step-text"><h3>SORT frames into SHOOTING ORDERS, make SCHEDULES.</h3><p>Frames can be automatically sorted by the categories you created into shooting orders. Select the shot continuity for DAY 2, or build the schedule around an actor’s availability. You decide the criteria your shots are ordered by.</p></div>
-      <img src="/img/wf/18.jpg" srcset="/img/wf/18-1200.jpg 1200w, /img/wf/18.jpg 2360w" sizes="(max-width: 1148px) 90vw, 990px" width="2360" height="1595" loading="lazy" decoding="async" alt="SORT frames into SHOOTING ORDERS, make SCHEDULES.">
+      <img src="/img/wf/18.jpg" srcset="/img/wf/18-1200.jpg 1200w, /img/wf/18.jpg 2360w" sizes="(max-width: 1148px) 81vw, 891px" width="2360" height="1595" loading="lazy" decoding="async" alt="SORT frames into SHOOTING ORDERS, make SCHEDULES.">
     </article>
     <article class="step">
       <div class="step-text"><h3>SHOOTING ORDER overview, BREAKS, COMPANY MOVES, etc.</h3><p>Sort automatically, rearrange manually. See what each frame needs, preferred shooting angles, floor plans, breaks, and company moves. Or simply move shots by hand.</p></div>
-      <img src="/img/wf/19.jpg" srcset="/img/wf/19-1200.jpg 1200w, /img/wf/19.jpg 2360w" sizes="(max-width: 1148px) 90vw, 990px" width="2360" height="1595" loading="lazy" decoding="async" alt="SHOOTING ORDER overview, BREAKS, COMPANY MOVES, etc.">
+      <img src="/img/wf/19.jpg" srcset="/img/wf/19-1200.jpg 1200w, /img/wf/19.jpg 2360w" sizes="(max-width: 1148px) 81vw, 891px" width="2360" height="1595" loading="lazy" decoding="async" alt="SHOOTING ORDER overview, BREAKS, COMPANY MOVES, etc.">
     </article>
     <article class="step">
       <div class="step-text"><h3>GROUP your frames by CUTDOWNS, SCENES, or LOCATIONS.</h3><p>Make groups of frames that belong to another edit, a shorter story, a location, or a scene. View only frames from selected groups, arrange shooting orders for 2nd Unit, or show the editor which shots belong in the cutdown.</p></div>
-      <img src="/img/wf/20.jpg" srcset="/img/wf/20-1200.jpg 1200w, /img/wf/20.jpg 2360w" sizes="(max-width: 1148px) 90vw, 990px" width="2360" height="1595" loading="lazy" decoding="async" alt="GROUP your frames by CUTDOWNS, SCENES, or LOCATIONS.">
+      <img src="/img/wf/20.jpg" srcset="/img/wf/20-1200.jpg 1200w, /img/wf/20.jpg 2360w" sizes="(max-width: 1148px) 81vw, 891px" width="2360" height="1595" loading="lazy" decoding="async" alt="GROUP your frames by CUTDOWNS, SCENES, or LOCATIONS.">
     </article>
     <article class="step">
       <div class="step-text"><h3>NOTES and CELL TABLES</h3><p>Create customisable cells and notes associated with each frame.</p></div>
-      <img src="/img/wf/21.jpg" srcset="/img/wf/21-1200.jpg 1200w, /img/wf/21.jpg 2360w" sizes="(max-width: 1148px) 90vw, 990px" width="2360" height="1595" loading="lazy" decoding="async" alt="NOTES and CELL TABLES">
+      <img src="/img/wf/21.jpg" srcset="/img/wf/21-1200.jpg 1200w, /img/wf/21.jpg 2360w" sizes="(max-width: 1148px) 81vw, 891px" width="2360" height="1595" loading="lazy" decoding="async" alt="NOTES and CELL TABLES">
     </article>
     <article class="step">
       <div class="step-text"><h3>EXPORT and SHARE… PDFs, KEYNOTE, single IMAGES.</h3><p>Be prepared on set. Create boards with all the info needed for the shoot, share shooting angles with crew members, photograph props for the set build, or send references for the shots.</p></div>
-      <img src="/img/wf/22.jpg" srcset="/img/wf/22-1200.jpg 1200w, /img/wf/22.jpg 2360w" sizes="(max-width: 1148px) 90vw, 990px" width="2360" height="1595" loading="lazy" decoding="async" alt="EXPORT and SHARE… PDFs, KEYNOTE, single IMAGES.">
+      <img src="/img/wf/22.jpg" srcset="/img/wf/22-1200.jpg 1200w, /img/wf/22.jpg 2360w" sizes="(max-width: 1148px) 81vw, 891px" width="2360" height="1595" loading="lazy" decoding="async" alt="EXPORT and SHARE… PDFs, KEYNOTE, single IMAGES.">
     </article>
     <article class="step">
       <div class="step-text"><h3>Find your preferred EXPORT LAYOUT.</h3><p>Select only the shots you want to share… sketches of all camera positions, or only the final selected shooting angles, drawings or versions. The choice is yours.</p></div>
-      <img src="/img/wf/23.jpg" srcset="/img/wf/23-1200.jpg 1200w, /img/wf/23.jpg 2360w" sizes="(max-width: 1148px) 90vw, 990px" width="2360" height="1595" loading="lazy" decoding="async" alt="Find your preferred EXPORT LAYOUT.">
+      <img src="/img/wf/23.jpg" srcset="/img/wf/23-1200.jpg 1200w, /img/wf/23.jpg 2360w" sizes="(max-width: 1148px) 81vw, 891px" width="2360" height="1595" loading="lazy" decoding="async" alt="Find your preferred EXPORT LAYOUT.">
     </article>
     <article class="step">
       <div class="step-text"><h3>SYNCHRONISATION</h3><p>It all syncs between your laptop, tablet, and phone. Work offline and Framehow remembers your progress, then uploads it once you’re online again. Editable across all your devices.</p></div>
@@ -279,7 +284,8 @@ if(window.navigator.standalone || window.matchMedia('(display-mode: standalone)'
 </section>
 
 <footer class="footer">
-  Framehow &copy; 2026 &nbsp;·&nbsp; <a href="/terms">Terms</a> &nbsp;·&nbsp; <a href="/privacy">Privacy</a> &nbsp;·&nbsp; <a href="#" class="support-link" onclick="this.href='mail'+'to:'+'info'+'@'+'framehow.com';return true;">Support</a>
+  Framehow &copy; 2026 &nbsp;·&nbsp; <a href="/terms">Terms</a> &nbsp;·&nbsp; <a href="/privacy">Privacy</a> &nbsp;·&nbsp; <a href="/imprint">Imprint</a> &nbsp;·&nbsp; <a href="#" class="support-link" onclick="this.href='mail'+'to:'+'info'+'@'+'framehow.com';return true;">Support</a>
+  <div class="footer-co">Framehow is operated by Tinge Films s.r.o. · Mělnická 579/7, 150 00 Praha, Czech Republic · Company ID (IČO) 01574400 · VAT CZ01574400</div>
 </footer>
 
 </body>
