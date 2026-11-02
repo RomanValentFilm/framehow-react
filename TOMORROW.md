@@ -1,5 +1,19 @@
 # Where things stand
 
+## 2 November, evening — APPLE: THE 4 STEPS (Roman)
+- DONE today: Apple ID roman@framehow.com (= Roman's valentfilm inbox, alias domain);
+  D-U-N-S for "Tinge Films s.r.o." found; enrolment SUBMITTED as Company/Organization
+  (web). Everything pushed to GitHub branch v4.4 (commit 2a686da; main/live untouched, v5.0.109).
+- 1. UPDATE macOS: Xcode needs 26.6+, Roman has 26.5.1 → System Settings → General → Software Update.
+- 2. INSTALL Xcode (Mac App Store) after the update. Tell Claude if it works.
+     Then one quick test run to see Node + the tests still work on the new macOS (not checked).
+- 3. WAIT for Apple's email (to roman@framehow.com): authority verified → pay 99 USD.
+     Apple may ask for company documents (commercial register extract).
+- 4. Claude builds the Capacitor iPhone/iPad shell (runs from Xcode on the iPad, needs no
+     paid account); then the native framed camera; then TestFlight once the membership is active.
+- LATER: EU "trader status" in App Store Connect (Apple requirement for EU apps); DKIM for
+  framehow.com in Google Admin (optional); regenerate the GitHub token (it sits in the git remote URL).
+
 ## 2 November — NEW WEBSITE LIVE on framehow.com (backup of old: Framehow Files/framehow-site-backup-2026-11-02)
 - Workflow pictures 10% smaller (81%), footer: Imprint link + company line,
   /imprint page. Still to do: the VIDEO, a FITTING page, Terms + Privacy
