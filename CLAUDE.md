@@ -121,6 +121,9 @@ No such line = Roman treats it as a guess and does not act (2 Nov).
      v5.0.132 · #684,
      run 558 1 min to dev (not live)
    then the code block. Nothing else.
+   THE THREE LINES ARE PLAIN TEXT — NEVER inside a code block. ONLY the command to
+   paste goes in the box (2 Nov, Roman: he pasted the label lines into the Terminal
+   because they sat in a box and got "command not found").
 
 ## TURNING THE DEVICE WHILE A BUTTON'S SCREEN IS OPEN — docs/turn-rules.md
 DRAW, CAM, WRITE, MAX VIEW — the interaction with the pictures/canvases, only these four: the page ignores turns until it is closed, then

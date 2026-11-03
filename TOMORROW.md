@@ -11,6 +11,54 @@
      Apple may ask for company documents (commercial register extract).
 - 4. Claude builds the Capacitor iPhone/iPad shell (runs from Xcode on the iPad, needs no
      paid account); then the native framed camera; then TestFlight once the membership is active.
+- CAMERA TEST PASSED (3 Nov, 15:xx, Roman): "perfect in resolution and detail" vs the Camera
+  app, same scene. A touch darker — candidates: Photographic Style in Settings › Camera, or
+  Apple's own tone curve → a small default EV lift in Framehow (to be measured). Payment OK.
+  Test app: Framehow Files/FramehowCamTest (Xcode, Swift, ~300 lines): Dual Wide camera (24 MP,
+  1x/0.5x button, lens switching only by the button), best-quality capture (HEIF), the RULE
+  (frame long side = chip long side, screen zooms to the frame, never cropped on screen),
+  frame fills the screen, controls float, tap to focus + slide for EV with the yellow square
+  and sun, RATIO top left, EV top right, lens bottom left, shutter bottom middle / right
+  middle, saved photo cropped to the frame (4:3 = the camera's own file). Shutter waits
+  ~1–2 s for the merge — Framehow must show the picture at once and finish in the background.
+- CAMERA DECISIONS (Roman, 3 Nov, 16:45): MID off ≈ the Camera app photo → NO gamma lift.
+  HDR fold-in tried (CIToneMapHeadroom, iOS 18+) → Roman: "keep the HDR off, that's better".
+  So Framehow's pipeline = capture (best quality, HEIF) → crop to the frame (centred band,
+  long side = chip) → resize 2400 → save. Nothing else. The test app keeps the MID and HDR
+  buttons only as experiments (both off by default). Processed (cropped) files lose the
+  HDR display layer — fine, Framehow never shows it anyway.
+  Test-app facts: iPhone 15 1x lens offers 12 or 48 MP only; Dual Wide offers 24 MP
+  (5712×4284) and the 0.5x; lens switching restricted to the zoom button.
+- HDR KEPT — WORKS (3 Nov, 17:30): 16:9 crop saved as JPEG with the layer, app reports
+  "saved file: HDR layer kept", Roman in the PHOTOS APP: "looks the same" as the Camera app.
+  Shutter feel: flash at capture, live picture continues, processing behind, thumbnail.
+- HDR DECISION (Roman, 3 Nov, 17:10): the PHOTOS APP boosts photos that carry the HDR layer
+  (gain map); users compare Framehow's photos with that look → Framehow KEEPS the layer:
+  crop + resize picture AND layer together, natively, written as JPEG with the layer
+  (iOS 18 API: read .auxiliaryHDRGainMap, write .hdrGainMapImage). Safari/WebKit 26+ show
+  gain-map HDR images, so Framehow's viewer shows the boost by itself (web search 3 Nov;
+  WebKit bug: CSS transform/position on an <img> can drop it to normal — check the views).
+  CONSEQUENCE: the native camera hands Framehow a FINISHED 2400 px JPEG; the web layer must
+  store it as is — the canvas resize in camMode.ts strips the layer. PDF/Keynote stay normal.
+  SHUTTER FEEL in Framehow: shutter → flash + sound → camera closes AT ONCE → photo lands on
+  the version canvas (zoom-out as today) → the finished file replaces it ~1 s later, unseen.
+- UPDATE evening 2 Nov: macOS Tahoe 26.7.2 installed (Roman chose Update, not the macOS 27 upgrade),
+  Xcode DOWNLOADED. TOMORROW FIRST: Roman opens Xcode once (Agree, install components, iOS platform).
+  Then Claude sets up Capacitor, camera test on Roman's iPhone BEFORE he pays the 99 USD
+  (Apple: purchase only after verification; Xcode on own device needs no membership).
+- DECIDE after the camera test: web files INSIDE the app (every change = Apple review) or app
+  loads framehow.com/app (instant updates, but Apple guideline 2.5.2 "download or execute code which
+  changes features" is a risk; not verified in the developer licence agreement). Data/backend
+  changes never need Apple. Guideline 4.2: not "a repackaged website".
+- Uncommitted: version bump v5.0.133 · #685, docs/release-notes-109-to-132.md, this note.
+- STANDING DECISION (Roman, 3 Nov): FITTING BECOMES ITS OWN APP, same backend.
+  One account/storage/sync/server; fitting stays a project kind in the data. Two App Store
+  listings, two icons, two bundle IDs (placeholders com.framehow.app / com.framehow.fitting),
+  both built from THIS project with a build flag (Fitting build hides everything else).
+  Costume designers want a simple app. ORDER: split the build before the first submission,
+  submit Framehow FIRST, Fitting second (first review teaches; two similar apps at once from
+  a new account = 4.3 spam risk). Fitting can go to testers via TestFlight meanwhile.
+  From now on: every new feature asks "does this belong to Framehow, Fitting or both?"
 - LATER: EU "trader status" in App Store Connect (Apple requirement for EU apps); DKIM for
   framehow.com in Google Admin (optional); regenerate the GitHub token (it sits in the git remote URL).
 
