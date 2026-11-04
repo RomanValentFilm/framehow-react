@@ -199,6 +199,20 @@ Write the helper, then replace the callers, then READ THE HELPER BACK. A one-lin
 check that its body does not contain its own name costs nothing and would have
 caught it before the build.
 
+## THE DEPLOY COMMAND IS THE SCRIPT, NEVER HAND-WRITTEN (4 Nov, Roman)
+
+On 4 Nov I hand-wrote the deploy chain all afternoon and dropped the beep,
+the version echo and once the GitHub push. The script has all of it. The ONLY
+deploy command ever handed over is:
+
+    FH_NOTEST=1 npm run deploy -- <run> "<what changed>"
+
+(FH_T="…" instead of FH_NOTEST=1 when tests should run first; FH_LIVE=1 for
+live.) It commits, pushes to GitHub, copies to framehow-react-versions, builds,
+uploads to dev, prints `--- Dev is up (vX · #N, run R) — say zzz — sound played ---`.
+Shell steps (`npx cap sync ios`, `npm i …`) go BEFORE it in the same line.
+The three plain-text label lines above the box stay as they are.
+
 ## THE DEPLOY LINE MUST PRINT WHAT IT DEPLOYED
 
 Roman asked for this and it is not optional: every deploy command ends by

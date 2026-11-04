@@ -44,7 +44,10 @@ fi
   { git diff --cached --quiet && echo "nothing new to commit — $VERSION is already committed"; } ||
   git commit -q -m "$MSG ($VERSION $TAG)
 
-Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>" &&
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>" &&
+  # NEVER LOSE WORK (4 Nov): the commit goes to GitHub at once, same as the
+  # hand-written "4 steps save" always did. If the push fails the deploy goes on.
+  { git push -q origin v4.4 || echo "push to GitHub failed — commit is local, push later"; } &&
   mkdir -p "$HOME/Desktop/Framehow Files/framehow-react-versions/$VERSION" &&
   rsync -a --exclude node_modules --exclude .git --exclude e2e-report --exclude e2e-log --exclude test-results \
     --exclude dist --exclude e2e/fixtures --exclude .wrangler --exclude .wrangler-e2e --exclude site --exclude .bench \
