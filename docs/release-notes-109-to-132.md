@@ -61,3 +61,6 @@ v5.0.136 · #688
 - iPhone app shell: the top row keeps the real inset below the clock
 - iPhone: a PDF loads nothing; note "PDF IMAGE EXTRACTION AND IMPORT is available only on a tablet or computer"
 - note boxes: button "OK, got it."
+
+v5.0.137 · #689
+- iPhone: LOAD PDF shows the note before the file picker, centred
