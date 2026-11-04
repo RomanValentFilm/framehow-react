@@ -67,3 +67,6 @@ v5.0.137 · #689
 
 v5.0.138 · #690
 - iPhone: LOAD PDF note then the NEW PROJECT menu; WRITE shows changed text at once; no keyboard suggestions/autocorrect anywhere
+
+v5.0.139 · #691
+- note headline breaks after EXTRACTION; OPEN PROJECT and other cards scroll in iPhone landscape; turning to portrait keeps a single strip

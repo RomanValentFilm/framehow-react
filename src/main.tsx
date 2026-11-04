@@ -3,6 +3,12 @@ import { createRoot } from 'react-dom/client';
 import './styles/globals.css';
 import App from './App';
 
+// THE FRAMEHOW APP: no glass bar (arrows + tick) above the keyboard (Roman, 4 Nov).
+if ((window as any).Capacitor?.isNativePlatform?.()) {
+  // (the plugin's web side is not bundled: the shell registers it natively)
+  (window as any).Capacitor?.Plugins?.Keyboard?.setAccessoryBarVisible?.({ isVisible: false });
+}
+
 // NO SUGGESTIONS, NO AUTOCORRECT, ANYWHERE (Roman, 4 Nov): on the iPhone in
 // landscape the suggestion strip on top of the keyboard ate the last of the
 // screen. Every field, present and future, gets the three attributes.

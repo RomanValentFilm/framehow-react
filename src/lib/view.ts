@@ -1187,8 +1187,14 @@ export function handleOrientationFlip(): void {
   const isPhone = Math.min(newW, newH) <= 430;
   const isPhonePortrait = isPhone && newH > newW;
   if (isPhonePortrait) {
-    // iPhone portrait: always MAIN single strip (including 3x2 exit)
-    useStore.setState({ activeStrips: ['main'], currentViewMode: 'main', crossCompare: {}, needsStripVisible: false, notesStripVisible: false });
+    // iPhone portrait: ONE strip. It used to be always MAIN; a single strip
+    // you were already in (ANGLE alone, say) stays (Roman, 4 Nov). Anything
+    // wider — two strips, NEEDS/NOTES, 3x2 — becomes MAIN alone, as before.
+    const s0 = state();
+    const single = s0.activeStrips.length === 1 && !s0.needsStripVisible && !s0.notesStripVisible
+      && (s0.currentViewMode === 'main' || s0.currentViewMode === 'ver');
+    if (single) trace(`turn to portrait: staying on the single ${s0.activeStrips[0]} strip`);
+    useStore.setState({ activeStrips: single ? s0.activeStrips : ['main'], currentViewMode: single ? s0.currentViewMode : 'main', crossCompare: {}, needsStripVisible: false, notesStripVisible: false });
     // Also update the NEEDS/NOTES button visuals
     const needsBtn = document.getElementById('needsStripBtn');
     if (needsBtn) needsBtn.classList.remove('active');

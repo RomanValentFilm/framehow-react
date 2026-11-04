@@ -13,6 +13,16 @@ const config: CapacitorConfig = {
     url: 'https://dev.framehow-react.pages.dev/app/',
     cleartext: false,
   },
+  plugins: {
+    Keyboard: {
+      // THE KEYBOARD LIES OVER THE PAGE, AS IN SAFARI (Roman, 4 Nov): the shell
+      // used to shrink the page to the strip above the keys — in landscape
+      // the sticky bars alone filled it, no field to see, nothing to scroll.
+      // 'none' = the page keeps its height and the visual viewport shrinks,
+      // which is what keyboardRoom.ts (13 Oct) is built for.
+      resize: 'none',
+    },
+  },
   ios: {
     // The page runs under the clock ('automatic' only insets the SCROLL, so a
     // sticky top row stuck behind the clock). The iPhone-portrait CSS pads the
