@@ -73,3 +73,6 @@ v5.0.139 · #691
 
 v5.0.140 · #692
 - turning to portrait keeps a single strip; app shell: keyboard lies over the page, no glass bar above the keys
+
+v5.0.141 · #693
+- app shell: boxes sit above the keyboard (WRITE, rename, needs…); OPEN PROJECT box scrolls itself

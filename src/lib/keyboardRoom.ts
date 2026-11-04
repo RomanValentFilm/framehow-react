@@ -199,6 +199,11 @@ function fit(): void {
     box.style.maxHeight = _boxWas.maxHeight;
     box.style.overflowY = _boxWas.overflowY;
   }
+  // THE FIELD ITSELF IN VIEW (4 Nov, Roman: the Groups box — ticked shots
+  // down the list, tapped the name field at the top, and the field was
+  // scrolled out of the fitted box). 'nearest' moves nothing when it is
+  // already visible.
+  if (box) (active as HTMLElement).scrollIntoView({ block: 'nearest' });
 }
 
 /** Wire once at start. Harmless where there is no on-screen keyboard. */

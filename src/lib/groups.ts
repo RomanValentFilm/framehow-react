@@ -364,14 +364,16 @@ function openGroupEditor(existing: FrameGroup | null): void {
         background:#2a2a2a;color:#fff;font-size:14px;outline:none;
         font-family:-apple-system,BlinkMacSystemFont,sans-serif;">
     </div>
-    <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;">
+    <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap;">
+      <!-- flex-wrap (4 Nov, Roman): on the iPhone in portrait the four buttons
+           did not fit on one row — Save ran off the edge. They wrap to two. -->
       <button class="group-select-all-btn" style="
-        padding:6px 14px;border-radius:6px;border:1px solid #555;
+        padding:6px 14px;border-radius:6px;border:1px solid #555;white-space:nowrap;
         background:#2a2a2a;color:#ccc;font-size:12px;font-weight:500;cursor:pointer;
         font-family:-apple-system,BlinkMacSystemFont,sans-serif;
       ">Select All</button>
       <button class="group-deselect-all-btn" style="
-        padding:6px 14px;border-radius:6px;border:1px solid #555;
+        padding:6px 14px;border-radius:6px;border:1px solid #555;white-space:nowrap;
         background:#2a2a2a;color:#ccc;font-size:12px;font-weight:500;cursor:pointer;
         font-family:-apple-system,BlinkMacSystemFont,sans-serif;
       ">Deselect All</button>
