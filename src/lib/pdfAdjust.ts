@@ -280,7 +280,7 @@ export function showPhoneAdjustMessage(): void {
   const overlay = document.createElement('div');
   overlay.className = 'rotate-msg show';
   overlay.style.zIndex = '100000';
-  overlay.innerHTML = '<span>To adjust the imported storyboard,<br>please use iPad or desktop.</span>';
+  overlay.innerHTML = '<span>PDF image extraction is available<br>only on iPad or Mac,<br>because it needs a bigger screen.</span>';
   const dismiss = (e?: Event) => { if (e) { e.stopPropagation(); e.preventDefault(); } overlay.remove(); };
   overlay.addEventListener('click', dismiss);
   document.body.appendChild(overlay);

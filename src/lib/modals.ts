@@ -748,7 +748,7 @@ export function showImportantNote(headline: string, body: string): Promise<void>
     box.appendChild(p);
 
     const ok = document.createElement('button');
-    ok.textContent = 'GOT IT';
+    ok.textContent = 'OK, got it.';
     ok.style.cssText =
       'display:block;width:100%;padding:12px;background:#2a2a2a;border:1px solid #555;' +
       'border-radius:8px;color:#fff;font-size:14px;cursor:pointer;';

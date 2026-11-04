@@ -641,6 +641,17 @@ export function matchText(
 }
 
 export async function handlePDF(file: File): Promise<void> {
+  // NOT ON THE PHONE (Roman, 4 Nov): the frames the extraction finds can be
+  // wrong, and without the Adjust tool nobody can fix them — worse than no
+  // frames. The phone says so and loads nothing. (The iPhone Adjust tool is on
+  // THE LIST for after submission.)
+  if (Math.min(window.innerWidth, window.innerHeight) <= 430) {
+    const { showImportantNote } = await import('./modals');
+    await showImportantNote('PDF IMAGE EXTRACTION AND IMPORT', 'is available only on a tablet or computer, because it needs a bigger screen.');
+    const { openProjectList } = await import('./accountFlow');
+    await openProjectList();   // back to OPEN PROJECT (Roman, 4 Nov)
+    return;
+  }
   fhTrack('pdf_loaded');
   const lastPdfName = file.name.replace(/\.pdf$/i, '');
   resetStoryboardState();
