@@ -787,11 +787,15 @@
      in it, so inside a shooting order there was no way to switch orders or get
      out. Three stacked sticky bars: 44 (toolbar) + 26 (view bar) = 70. */
   @media (hover:none) and (pointer:coarse) and (max-width:430px) and (orientation:portrait){
-    .toolbar{position:-webkit-sticky;position:sticky;top:0;}
+    /* THE FRAMEHOW APP (4 Nov): in the app shell the page runs under the clock
+       and --sat is the real inset (Safari and the home-screen version have 0
+       here), so the row takes ALL of it and its own fill continues behind the
+       clock. The 0.55 is the iPad's translucent bar and stays there. */
+    .toolbar{position:-webkit-sticky;position:sticky;top:0;padding-top:var(--sat);height:calc(44px + var(--sat));}
     .view-bar{display:flex!important;position:-webkit-sticky;position:sticky;
-              top:calc(44px + var(--sat) * 0.55);z-index:20;}
+              top:calc(44px + var(--sat));z-index:20;}
     .detail-bar{display:flex!important;position:-webkit-sticky;position:sticky;
-                top:calc(70px + var(--sat) * 0.55);z-index:19;}
+                top:calc(70px + var(--sat));z-index:19;}
     .detail-bar .db-left{display:none;}
     .detail-bar .db-middle{flex:1;min-width:0;overflow-x:auto;-webkit-overflow-scrolling:touch;flex-wrap:nowrap;scrollbar-width:none;}
     .detail-bar .db-middle::-webkit-scrollbar{display:none;}

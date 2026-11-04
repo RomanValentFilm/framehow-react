@@ -14,11 +14,12 @@ const config: CapacitorConfig = {
     cleartext: false,
   },
   ios: {
-    // The page starts below the clock, like the home-screen version; the strip
-    // behind the clock is the menu bar's grey, not black (Roman, 4 Nov: "go 2
-    // steps back" — 'never' put the top row behind the clock).
-    contentInset: 'automatic',
-    backgroundColor: '#333333',
+    // The page runs under the clock ('automatic' only insets the SCROLL, so a
+    // sticky top row stuck behind the clock). The iPhone-portrait CSS pads the
+    // top row by the full safe area; its fill (#202020) continues behind the
+    // clock (Roman, 4 Nov).
+    contentInset: 'never',
+    backgroundColor: '#202020',
   },
 };
 
