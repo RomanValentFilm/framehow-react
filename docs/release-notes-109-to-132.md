@@ -50,3 +50,6 @@ v5.0.133 · #685
 
 v5.0.133 · #685
 - iPhone app shell: the text box's OK and CANCEL work on the first tap
+
+v5.0.134 · #686
+- iPhone app shell: the top row sits below the clock, grey strip behind the clock

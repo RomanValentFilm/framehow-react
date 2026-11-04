@@ -14,12 +14,11 @@ const config: CapacitorConfig = {
     cleartext: false,
   },
   ios: {
-    // The page runs under the status bar, as in Safari (viewport-fit=cover); the
-    // app's own CSS pads the menu bar with env(safe-area-inset-top). 'automatic'
-    // pushed the page down below the status bar as well: black above the menu
-    // bar and a double gap (Roman, 4 Nov).
-    contentInset: 'never',
-    backgroundColor: '#333333',   // the menu bar's grey, for any strip the page does not cover
+    // The page starts below the clock, like the home-screen version; the strip
+    // behind the clock is the menu bar's grey, not black (Roman, 4 Nov: "go 2
+    // steps back" — 'never' put the top row behind the clock).
+    contentInset: 'automatic',
+    backgroundColor: '#333333',
   },
 };
 
