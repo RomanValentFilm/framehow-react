@@ -16,7 +16,8 @@
 // added to the home screen, so this runs before that moment.
 (function(){var ipad=/iPad/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
 if(ipad){var m=document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]');if(m)m.setAttribute('content','black-translucent');}
-else{document.documentElement.classList.add('fh-opaque-bar');}})();
+else if(!(window.Capacitor&&window.Capacitor.isNativePlatform&&window.Capacitor.isNativePlatform())){document.documentElement.classList.add('fh-opaque-bar');}})();
+// THE FRAMEHOW APP (4 Nov): the shell runs the page UNDER the clock, so the iPhone keeps the real inset there (no fh-opaque-bar).
 </script>
 <meta name="apple-mobile-web-app-title" content="Framehow">
 <link rel="apple-touch-icon" href="/app/icons/icon_512.png">

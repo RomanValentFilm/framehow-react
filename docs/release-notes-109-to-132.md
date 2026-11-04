@@ -53,3 +53,6 @@ v5.0.133 · #685
 
 v5.0.134 · #686
 - iPhone app shell: the top row sits below the clock, grey strip behind the clock
+
+v5.0.135 · #687
+- iPhone app shell: the top row stays visible below the clock, same grey behind the clock
