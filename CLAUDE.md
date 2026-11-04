@@ -1,5 +1,32 @@
 # Framehow React — Project Notes
 
+## THE SHORT RULES — when Roman says "rules", re-read THIS block and say so (4 Nov)
+
+Every one of these was agreed in a working session. Breaking one costs an hour.
+
+1. READ FIRST: CLAUDE.md, TOMORROW.md, and FACTS.md before any advice that costs time or money.
+2. NO GUESSING. Trace the path, grep every place. End an answer that asks him to act,
+   decide or pay with "checked: <what>" or "NOT checked: <what>".
+3. SHORT ANSWERS. Only notes that are interesting. Plain words.
+4. ONLY A COMMAND GOES IN A CODE BOX. The three label lines stay PLAIN TEXT above it:
+   what changed · `vX.Y.ZZZ · #N` · `run R ~time to dev (not live)`.
+5. APPROX TIME above every command and every test run — always.
+6. THE DEPLOY COMMAND IS THE SCRIPT, one line, nothing else:
+   `cd ~/Desktop/"Framehow Files"/framehow-react && FH_NOTEST=1 npm run deploy -- <run> "<what changed>"`
+   It ends with a SOUND and the line `--- Dev is up (vX · #N, run R) — say zzz — sound played ---`.
+   If the box shows anything else, Roman says "script" and does not run it.
+7. "4 STEPS SAVE": 1 check the current version in state.ts · 2 the one command (rule 6) ·
+   3 Roman pastes the output · 4 ONLY THEN bump state.ts AND syncTrace.ts, add the release note.
+8. RUN NUMBERS count up by one per deploy or test run; the app's #N must match syncTrace.ts.
+   Roman reads the number in the app log (tap the logo three times) — he checks it, so get it right.
+9. "zzz" = Roman is done with what he was asked to do; continue.
+10. NEVER LOSE WORK: every deploy commits and pushes to GitHub, copies to framehow-react-versions.
+11. ROMAN IS IN PRAGUE (CET). Run `date` before any time-of-day word.
+12. iPad scrolling and bar rules are hard-won (#481 and friends): iPhone-only fixes stay iPhone-only.
+13. Do ONLY what was asked; if something next to it is worth doing, say so and wait.
+14. The app runs on Roman's Mac/phone; I never run his commands. He pastes the output.
+
+
 ## HOW WE WORK — READ THIS FIRST, EVERY SESSION
 
 Agreed with Roman on 8 September, after a run of days where things settled weeks
@@ -199,6 +226,12 @@ Write the helper, then replace the callers, then READ THE HELPER BACK. A one-lin
 check that its body does not contain its own name costs nothing and would have
 caught it before the build.
 
+## ROMAN IS IN PRAGUE (CET) — LOOK AT THE CLOCK BEFORE NAMING THE TIME OF DAY
+
+Run `date` before writing "tonight", "tomorrow morning", "good night" or any
+other time-of-day word. 4 Nov: I wished him good night in the morning, from a
+guess. The sandbox clock is already CET; there is no excuse for guessing.
+
 ## THE DEPLOY COMMAND IS THE SCRIPT, NEVER HAND-WRITTEN (4 Nov, Roman)
 
 On 4 Nov I hand-wrote the deploy chain all afternoon and dropped the beep,
@@ -234,11 +267,11 @@ Git branch is `v4.4`. Cloudflare Pages production branch is `main`.
 
 **Step 1.** Claude checks the CURRENT version in `src/store/state.ts` is the one being saved (NOT bumped yet). Claude tells the user the CURRENT VERSION number.
 
-**Step 2.** Claude gives the user ONE terminal command that does all of this in order:
-  - `git add -A && git commit -m "..." && git push` (pushes current version to GitHub)
-  - `rsync -a --exclude=node_modules --exclude=dist --exclude=.git . ~/Desktop/Framehow\ Files/framehow-react-versions/v{CURRENT_VERSION}/` (copies source to versions folder, MUST be under 5MB — no node_modules, no dist, no .git)
-  - `npm run build` (compiles TypeScript + bundles with Vite into dist/)
-  - `npx wrangler pages deploy dist --project-name=framehow-react --branch=dev --commit-dirty=true` (deploys to dev)
+**Step 2.** Claude gives the user ONE terminal command — THE SCRIPT (4 Nov):
+  `cd ~/Desktop/"Framehow Files"/framehow-react && FH_NOTEST=1 npm run deploy -- <run> "<what changed>"`
+  It commits, pushes to GitHub, copies to framehow-react-versions/v{CURRENT}, builds,
+  uploads to dev and ends with "--- Dev is up (vX · #N, run R) — say zzz — sound played ---".
+  Never the steps typed out by hand (that dropped the beep and the push on 4 Nov).
 
 **Step 3.** User pastes the terminal output. Claude confirms it worked.
 
@@ -248,8 +281,9 @@ CRITICAL: This procedure is ALWAYS exactly the same. Only the commit message and
 
 ### Dev / preview (commit + build + deploy)
 ```
-cd ~/Desktop/Framehow\ Files/framehow-react && git add -A && git commit -m "v4.6.0XX: description" && npm run build && npx wrangler pages deploy dist --project-name framehow-react --branch dev
+cd ~/Desktop/"Framehow Files"/framehow-react && FH_NOTEST=1 npm run deploy -- <run> "<what changed>"
 ```
+(the old hand-typed chain is gone — scripts/deploy.sh does every step, 4 Nov)
 - Deploys to preview URL (e.g. `dev.framehow-react.pages.dev`)
 - Every deploy MUST be committed to git first so we can diff/rollback
 
@@ -291,37 +325,9 @@ NEVER add a `framehow.com/*` route to the site Worker — it would take /app wit
 - Build must run on Mac (node_modules are darwin-arm64)
 
 ## "4 STEPS SAVE" — triggered when user says "4 steps save", "save", "new version", or "save everywhere"
-##
-## CRITICAL: Follow this EXACT order. Do NOT bump the version until AFTER the
-## user has run the terminal command and it succeeded.
-##
-## Step 1: Verify state.ts has the CURRENT version (NOT the next one)
-## Step 2: Give user ONE terminal command that does steps A+B+C below
-## Step 3: WAIT for user to paste the terminal output confirming success
-## Step 4: ONLY THEN bump version in state.ts + CLAUDE.md
-##
-## The terminal command (steps A+B+C combined):
-## A = git add + commit + push (saves current version to GitHub)
-## B = cp backup to ~/Desktop/Framehow Files/framehow-react-versions/vCURRENT/ (< 5MB, no node_modules/dist/.git)
-##     IMPORTANT: backup path is ~/Desktop/Framehow\ Files/framehow-react-versions/ (INSIDE "Framehow Files")
-##     DO NOT use ~/Desktop/framehow-react-versions/ — that is WRONG
-## C = npm run build + wrangler pages deploy --branch=dev (deploys current version)
-##
-## Template (replace vX.Y.ZZZ with current version, e.g. v4.7.011):
-## ```
-## cd ~/Desktop/Framehow\ Files/framehow-react && git add -A && git commit -m "vX.Y.ZZZ – DESCRIPTION" && git push origin v4.4 && cd ../framehow-react-versions && cp -R ../framehow-react vX.Y.ZZZ && rm -rf vX.Y.ZZZ/node_modules vX.Y.ZZZ/dist vX.Y.ZZZ/.git vX.Y.ZZZ/framehow-react-versions vX.Y.ZZZ/backend/node_modules vX.Y.ZZZ/backend/.wrangler && cd ../framehow-react && npm run build && npx wrangler pages deploy dist --project-name=framehow-react --branch=dev
-## ```
-##
-## After success, Claude bumps state.ts to vX.Y.ZZZ+1 and adds a new
-## "working copy" entry in CLAUDE.md Versions section.
-## The backup must be < 5MB (currently ~2.3MB).
-## Production deploy ONLY when user explicitly says so.
-##
-## REPORTING: After 4 steps save is complete, tell the user:
-##   1. vX.Y.ZZZ saved to GitHub, desktop, and deployed to dev
-##   2. vX.Y.ZZZ pushed to GitHub
-##   3. vX.Y.ZZZ backed up to desktop › framehow-react-versions
-##   4. New working version is vX.Y.ZZZ+1
+## → the section "4 STEPS SAVE" under Deployment above is the only one. The command is the
+##   script (FH_NOTEST=1 npm run deploy -- <run> "…"); bump the version in state.ts AND
+##   syncTrace.ts only AFTER the output says "Dev is up". (Old duplicate removed 4 Nov.)
 
 ## CRITICAL RULES
 - User controls when to deploy. NEVER deploy without explicit permission.
