@@ -703,6 +703,14 @@ export function openTextModal(
         e.preventDefault();
       }
     }
+    // THE BUTTON DOES NOT TAKE THE CURSOR EITHER (4 Nov, iPhone shell): in the
+    // app shell the first tap on OK only pulled the cursor out of the field —
+    // keyboard down, page resized, button moved from under the finger — and
+    // the tap was lost; the second tap worked. Same cure as the colour dots.
+    for (const b of [okBtn, cancelBtn]) {
+      b.onpointerdown = (e) => e.preventDefault();
+      b.onmousedown = (e) => e.preventDefault();
+    }
     okBtn.addEventListener('click', onOk);
     cancelBtn.addEventListener('click', onCancel);
     area.addEventListener('keydown', onKey);

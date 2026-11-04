@@ -15,12 +15,13 @@
     "e2e:webkit": "playwright test --project=webkit",
     "e2e:watch": "playwright test --project=chromium --debug",
     "e2e:go": "playwright test --project=webkit 2>&1 | tee /tmp/e2e.log | grep -v WebServer; grep -v WebServer /tmp/e2e.log | tail -60 | pbcopy; npm run ping --silent; echo; echo '--- done. the last 60 lines are on your clipboard, just paste ---'",
-    "ping": "afplay /System/Library/Sounds/Glass.aiff & osascript -e 'display notification \"Framehow: done \u2014 ready for you\" with title \"Framehow\" sound name \"Glass\"'",
+    "ping": "afplay /System/Library/Sounds/Glass.aiff & osascript -e 'display notification \"Framehow: done — ready for you\" with title \"Framehow\" sound name \"Glass\"'",
     "t": "sh scripts/e2e.sh",
     "deploy": "sh scripts/deploy.sh",
     "bench:label": "tsc test/frame-label-bench.ts --module commonjs --moduleResolution node --target es2022 --esModuleInterop --skipLibCheck --outDir .bench --types node && node -e \"require('fs').writeFileSync('.bench/package.json','{\\\"type\\\":\\\"commonjs\\\"}')\" && node .bench/test/frame-label-bench.js"
   },
   "dependencies": {
+    "@capacitor/core": "^8.6.0",
     "jspdf": "^2.5.2",
     "jszip": "^3.10.1",
     "pdfjs-dist": "^4.10.38",
@@ -31,11 +32,13 @@
     "zustand": "^4.5.5"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.6.0",
+    "@capacitor/ios": "^8.6.0",
+    "@playwright/test": "^1.49.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
     "typescript": "^5.6.3",
-    "vite": "^5.4.11",
-    "@playwright/test": "^1.49.0"
+    "vite": "^5.4.11"
   }
 }

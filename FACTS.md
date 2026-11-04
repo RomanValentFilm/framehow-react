@@ -55,6 +55,9 @@ this, quote the line here — never answer from general knowledge first.
 - 2 Nov: ENROLMENT SUBMITTED (Company/Organization, web). Apple: "being processed —
   once we verify your authority to sign, we'll email instructions" (to roman@framehow.com
   = Roman's valentfilm inbox). Then pay 99 USD. Apple may ask for company documents.
-- No developer account yet (2 Nov). Plan: enrol as "Tinge Films s.r.o."
+- 4 Nov: Apple accepted the enrolment (Tinge Films s.r.o.). Roman accepted the Program
+  License Agreement (LYL262) and BOUGHT the membership: Kč 2,799/yr, order W1801267897,
+  Apple Store Online (invoice there: Stav objednávky, sign in roman@framehow.com; Irish
+  VAT 23%). Activation email pending. Auto-renew: Roman's choice at checkout. Plan: enrol as "Tinge Films s.r.o."
   (needs D-U-N-S — check Apple's lookup first; company website + work email:
   framehow.com + info@framehow.com).

@@ -1,5 +1,34 @@
 # Where things stand
 
+## 4 November — CAPACITOR SHELL RUNS ON ROMAN'S iPHONE (afternoon)
+- Capacitor 8.6 added to framehow-react: capacitor.config.ts (server.url =
+  dev.framehow-react.pages.dev/app/, webDir dist/app), ios/App Xcode project, Info.plist
+  camera/photo texts. `npx cap open ios` opens it; Personal Team + xy phone + Cmd+R.
+  Tinge Films team gave "no profiles / data couldn't be read" = membership not yet active.
+- Apple: membership BOUGHT (order W1801267897), activation email pending.
+- Uncommitted: capacitor.config.ts, ios/, package.json changes — next save.
+- SHELL DIFFERENCES seen by Roman (4 Nov): WRITE → OK works only the second time, and
+  jumps (keyboard/viewport in WKWebView differs from Safari). Log requested. More to come.
+
+## THE LIST (Roman + Claude, 4 Nov) — order agreed
+NOW (app track): 1 Capacitor shell (today) · 2 native camera into Framehow, instant landing
+(preview on the card at the shutter, finished JPEG swapped in ~1 s later) · 3 Apple: pay when
+the "verified" email comes, then TestFlight (free Xcode signing expires ~7 days → Cmd+R).
+SOON (web, ~1 h each, between app steps): 4 bug: multi-load into an EMPTY version strip lands
+in v2+ (v1 stays empty) · 5 LOAD several MAIN frames at once in a normal project (as START
+FROM SCRATCH) · 6 sign-in modal: "keep me signed in"; sign-up modal: newsletter consent ·
+7 check the reload-on-new-version behaviour, decide the rule.
+MEDIUM (½ day): 8 NEEDS clickable on frame set cards in STORY FLOWS / SHOOTING ORDERS
+(hover highlight → click opens the frame's NEEDS card as in 3x2 → closing re-sorts).
+PRE-SUBMISSION CHECKLIST (from the licence agreement, 4 Nov): untick Mac + Apple Vision
+availability in App Store Connect (6.3); real Privacy + Terms (3.3.3 C); EU trader status;
+age-rating questions. Agreement 3.3.1 B allows an app that loads framehow.com/app
+(interpreted code OK if the app's purpose doesn't change) → DECISION: loaded, not bundled.
+LATER: 9 Fitting as its own app (before first submission) · 10 Face ID / Touch ID sign-in
+(native, after the camera) · 11 professions in analytics · 12 break colours, synced ·
+13 guest link (view + rate) · 14 board merge/compare, PDF import adjust, copy frame data ·
+15 FH CAM ratio delay — gone with the native camera.
+
 ## 2 November, evening — APPLE: THE 4 STEPS (Roman)
 - DONE today: Apple ID roman@framehow.com (= Roman's valentfilm inbox, alias domain);
   D-U-N-S for "Tinge Films s.r.o." found; enrolment SUBMITTED as Company/Organization
