@@ -723,7 +723,7 @@ export function openTextModal(
  * read but has no decision to make about — a confirm dialog with OK/Cancel
  * would wrongly imply a choice.
  */
-export function showImportantNote(headline: string, body: string): Promise<void> {
+export function showImportantNote(headline: string, body: string, opts?: { centred?: boolean }): Promise<void> {
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
     overlay.id = 'importantNote';            // so the simulator can read what it says (12 Oct)
@@ -735,7 +735,7 @@ export function showImportantNote(headline: string, body: string): Promise<void>
     const box = document.createElement('div');
     box.style.cssText =
       'background:#1a1a1a;border-radius:12px;padding:24px;max-width:380px;width:100%;' +
-      'color:#fff;text-align:left;';
+      `color:#fff;text-align:${opts?.centred ? 'center' : 'left'};`;
 
     const h = document.createElement('div');
     h.textContent = headline;

@@ -333,6 +333,16 @@ export function initFramehow(): void {
     switch (choice) {
       case 'pdf':
         clearAllDrawActive();
+        // NOT ON THE PHONE (Roman, 4 Nov): the note comes BEFORE the file
+        // picker, not after — no choosing a file for nothing.
+        if (Math.min(window.innerWidth, window.innerHeight) <= 430) {
+          void import('./modals').then(async ({ showImportantNote }) => {
+            await showImportantNote('PDF IMAGE EXTRACTION AND IMPORT', 'is available only on a tablet or computer, because it needs a bigger screen.', { centred: true });
+            const { openProjectList } = await import('./accountFlow');
+            await openProjectList();
+          });
+          break;
+        }
         (document.getElementById('pdfInput') as HTMLInputElement).click();
         break;
       case 'images':
