@@ -365,6 +365,23 @@
     body::before{content:'';position:fixed;top:0;left:0;right:0;height:env(safe-area-inset-top);background:var(--surface);z-index:15;pointer-events:none;}
   }
 
+  /* THE FRAMEHOW APP (Capacitor shell, 4 Nov): the page runs under the clock,
+     the full safe area is real there (the home-screen version starts below an
+     opaque status bar). The top row takes the whole inset and the strip behind
+     the clock is the menu bar's grey, not black (Roman, 4 Nov). */
+  html.fh-shell body::before{content:'';position:fixed;top:0;left:0;right:0;height:env(safe-area-inset-top);background:var(--surface);z-index:15;pointer-events:none;}
+  html.fh-shell .toolbar{padding-top:env(safe-area-inset-top);height:calc(52px + env(safe-area-inset-top));}
+  @media (hover:none) and (pointer:coarse){
+    html.fh-shell .view-bar{top:calc(52px + env(safe-area-inset-top));}
+    html.fh-shell .view-bar.tb-hide{transform:translateY(calc(-52px - env(safe-area-inset-top)));}
+    html.fh-shell .columns{padding-top:calc(82px + env(safe-area-inset-top));}
+  }
+  @media (hover:none) and (pointer:coarse) and (max-width:430px),
+         (hover:none) and (pointer:coarse) and (max-height:430px){
+    html.fh-shell .toolbar{padding-top:env(safe-area-inset-top);height:calc(52px + env(safe-area-inset-top));}
+    html.fh-shell .columns{padding-top:0;}
+  }
+
   /* ========================================================================
      v1.6 — Account / sync UI
      ======================================================================== */

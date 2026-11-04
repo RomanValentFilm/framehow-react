@@ -46,4 +46,7 @@ v5.0.132 · #684
 - "Main Frame + Active Frame" is gone
 
 v5.0.133 · #685
-- working version, no changes yet
+
+
+v5.0.133 · #685
+- iPhone app shell: the text box's OK and CANCEL work on the first tap
