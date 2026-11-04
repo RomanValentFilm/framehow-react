@@ -832,7 +832,11 @@
   .save-toaster-btns{display:flex;gap:8px;justify-content:flex-end;}
 
   /* Generic account modal overlay (mirrors existing modal patterns). */
-  .account-modal{position:fixed;inset:0;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;z-index:400;padding:16px;overflow-y:auto;}
+  /* align-items:center → margin:auto (4 Nov, Roman): a card taller than the
+     iPhone in landscape was centred with its top cut off and could not be
+     scrolled to. margin:auto centres a short card and lets a tall one scroll. */
+  .account-modal{position:fixed;inset:0;background:rgba(0,0,0,.85);display:flex;align-items:flex-start;justify-content:center;z-index:400;padding:16px;overflow-y:auto;}
+  .account-modal > *{margin:auto;}
   .account-modal.hidden{display:none!important;}
   .account-card{background:var(--surface);border:1px solid var(--border-strong);border-radius:var(--radius);padding:20px 22px;width:min(420px,100%);max-height:calc(100dvh - 32px);overflow-y:auto;}
   .account-card-wide{width:min(560px,100%);}

@@ -647,7 +647,7 @@ export async function handlePDF(file: File): Promise<void> {
   // THE LIST for after submission.)
   if (Math.min(window.innerWidth, window.innerHeight) <= 430) {
     const { showImportantNote } = await import('./modals');
-    await showImportantNote('PDF IMAGE EXTRACTION AND IMPORT', 'is available only on a tablet or computer, because it needs a bigger screen.', { centred: true });
+    await showImportantNote('PDF IMAGE EXTRACTION\nAND IMPORT', 'is available only on a tablet or computer, because it needs a bigger screen.', { centred: true });
     return;
   }
   fhTrack('pdf_loaded');

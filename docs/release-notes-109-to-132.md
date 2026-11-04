@@ -64,3 +64,6 @@ v5.0.136 · #688
 
 v5.0.137 · #689
 - iPhone: LOAD PDF shows the note before the file picker, centred
+
+v5.0.138 · #690
+- iPhone: LOAD PDF note then the NEW PROJECT menu; WRITE shows changed text at once; no keyboard suggestions/autocorrect anywhere
