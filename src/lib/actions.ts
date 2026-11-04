@@ -237,7 +237,14 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
         if (cardWrap && renderFn) renderFn(cardWrap, fid);
         useStore.setState({ overviewAction: false });
       } else {
-        renderMainFrame(div, fid);
+        // THE CARD AS IT IS NOW, ON SCREEN TOO (4 Nov, Roman): the text went
+        // onto the live shot (above) but was drawn into `div` — the card from
+        // when WRITE was pressed, which a pull in the meantime had replaced.
+        // Drawn into a card nobody sees, the new text showed only at the next
+        // rebuild, seconds later. Draw into the card that is on screen.
+        const mdiv = div.isConnected ? div
+          : (document.querySelector(`#mainScroll .frame-card[data-mfid="${fid}"]`) as HTMLElement | null) ?? div;
+        renderMainFrame(mdiv, fid);
         const vdiv2 = document.querySelector(`.frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
         if (vdiv2) renderVersionFrame(vdiv2, fid);
         scrollFrameIntoView(fid, 'main');
@@ -453,13 +460,16 @@ export function handleAction(action: string, fid: number, div: HTMLElement, from
   const scrollId = stripScrollId(strip);
 
   function rerender() {
+    // THE CARD ON SCREEN (4 Nov): `div` is the card from when the button was
+    // pressed; a pull while a box was open replaces the cards, and drawing
+    // into the old one shows nothing until the next rebuild. Find the live one.
+    const vd = document.querySelector(`#${scrollId} .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
+    const md = document.querySelector(`#mainScroll .frame-card[data-mfid="${fid}"]`) as HTMLElement | null;
     if (fromCompare) {
-      renderMainFrame(div, fid);
-      const vd = document.querySelector(`#${scrollId} .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
+      renderMainFrame(div.isConnected ? div : (md ?? div), fid);
       if (vd) renderVersionFrame(vd, fid, strip);
     } else {
-      renderVersionFrame(div, fid, strip);
-      const md = document.querySelector(`#mainScroll .frame-card[data-mfid="${fid}"]`) as HTMLElement | null;
+      renderVersionFrame(div.isConnected ? div : (vd ?? div), fid, strip);
       if (md) renderMainFrame(md, fid);
     }
   }

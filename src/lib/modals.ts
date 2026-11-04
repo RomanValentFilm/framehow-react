@@ -739,7 +739,7 @@ export function showImportantNote(headline: string, body: string, opts?: { centr
 
     const h = document.createElement('div');
     h.textContent = headline;
-    h.style.cssText = 'color:#d52632;font-weight:700;font-size:15px;margin-bottom:12px;';
+    h.style.cssText = `color:#d52632;font-weight:700;font-size:15px;line-height:1.5;margin-bottom:${opts?.centred ? '0' : '12px'};`;
     box.appendChild(h);
 
     const p = document.createElement('div');

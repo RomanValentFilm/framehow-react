@@ -338,8 +338,10 @@ export function initFramehow(): void {
         if (Math.min(window.innerWidth, window.innerHeight) <= 430) {
           void import('./modals').then(async ({ showImportantNote }) => {
             await showImportantNote('PDF IMAGE EXTRACTION AND IMPORT', 'is available only on a tablet or computer, because it needs a bigger screen.', { centred: true });
-            const { openProjectList } = await import('./accountFlow');
-            await openProjectList();
+            // back to the NEW PROJECT menu (it has Open project too) — Roman, 4 Nov
+            showNewProjectModal((again: NewProjectChoice) => {
+              if (again !== 'cancel') openNewProjectModal_dispatch(again);
+            });
           });
           break;
         }

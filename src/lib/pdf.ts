@@ -648,8 +648,6 @@ export async function handlePDF(file: File): Promise<void> {
   if (Math.min(window.innerWidth, window.innerHeight) <= 430) {
     const { showImportantNote } = await import('./modals');
     await showImportantNote('PDF IMAGE EXTRACTION AND IMPORT', 'is available only on a tablet or computer, because it needs a bigger screen.', { centred: true });
-    const { openProjectList } = await import('./accountFlow');
-    await openProjectList();   // back to OPEN PROJECT (Roman, 4 Nov)
     return;
   }
   fhTrack('pdf_loaded');
