@@ -15,6 +15,25 @@
 
 const KEYBOARD_MIN_PX = 120;   // less than this is a toolbar, not a keyboard
 
+/** THE FRAMEHOW APP SAYS HOW TALL THE KEYBOARD IS (4 Nov). In the app shell
+ *  the keyboard lies over the page but the page is not told — the visual
+ *  viewport keeps its full height. The shell's keyboard plugin reports the
+ *  height instead (window events keyboardWillShow / keyboardWillHide), and
+ *  while it is set, the free area is the window minus that. Never set in
+ *  Safari or on the iPad home-screen version — those read as before. */
+let _shellKeyboardPx: number | null = null;
+export function setShellKeyboardHeight(px: number | null): void {
+  _shellKeyboardPx = px && px > 0 ? px : null;
+  setTimeout(fit, 0);
+}
+/** The free part of the screen: what the browser says, or what the shell says. */
+function freeArea(): { top: number; height: number } | null {
+  const vv = window.visualViewport;
+  if (_shellKeyboardPx !== null) return { top: 0, height: window.innerHeight - _shellKeyboardPx };
+  if (!vv) return null;
+  return { top: vv.offsetTop, height: vv.height };
+}
+
 let _held: HTMLElement | null = null;
 let _was: { top: string; height: string; bottom: string } | null = null;
 /** The box inside the overlay — capped to the free height so its bottom
@@ -94,8 +113,8 @@ function releaseSoon(): void {
   if (_releaseTimer !== null) return;
   _releaseTimer = window.setTimeout(() => {
     _releaseTimer = null;
-    const vv = window.visualViewport;
-    const stillUp = !!vv && vv.height >= 100 && window.innerHeight - vv.height >= KEYBOARD_MIN_PX;
+    const fa = freeArea();
+    const stillUp = !!fa && fa.height >= 100 && window.innerHeight - fa.height >= KEYBOARD_MIN_PX;
     if (isTyping(document.activeElement) && stillUp) return;   // back in a field — keep the box
     release();
   }, RELEASE_GRACE_MS);
@@ -126,7 +145,7 @@ function boxOf(overlay: HTMLElement, field: Element): HTMLElement | null {
 }
 
 function fit(): void {
-  const vv = window.visualViewport;
+  const vv = freeArea();
   if (!vv) return;
   // A READING OF (NEAR) ZERO IS NOISE (15 Oct, Roman's log): with a hardware
   // keyboard attached, iPadOS reports the visible area as 0 pixels high.
@@ -161,7 +180,7 @@ function fit(): void {
     _held = overlay;
     _was = { top: overlay.style.top, height: overlay.style.height, bottom: overlay.style.bottom };
   }
-  overlay.style.top = `${vv.offsetTop}px`;
+  overlay.style.top = `${vv.top}px`;
   overlay.style.height = `${vv.height}px`;
   overlay.style.bottom = 'auto';
   const box = boxOf(overlay, active!);
@@ -188,6 +207,11 @@ export function keepBoxesAboveTheKeyboard(): void {
   if (!vv) return;
   vv.addEventListener('resize', fit);
   vv.addEventListener('scroll', fit);
+  // The app shell's keyboard plugin (see setShellKeyboardHeight above).
+  window.addEventListener('keyboardWillShow', (e: any) => setShellKeyboardHeight(e?.keyboardHeight ?? null));
+  window.addEventListener('keyboardDidShow', (e: any) => setShellKeyboardHeight(e?.keyboardHeight ?? null));
+  window.addEventListener('keyboardWillHide', () => setShellKeyboardHeight(null));
+  window.addEventListener('keyboardDidHide', () => setShellKeyboardHeight(null));
   document.addEventListener('focusin', () => setTimeout(fit, 50));
   document.addEventListener('focusout', () => { unpinPage(); setTimeout(fit, 50); });
   // The first touch after the field went away: a pinned page with nobody

@@ -70,3 +70,6 @@ v5.0.138 · #690
 
 v5.0.139 · #691
 - note headline breaks after EXTRACTION; OPEN PROJECT and other cards scroll in iPhone landscape; turning to portrait keeps a single strip
+
+v5.0.140 · #692
+- turning to portrait keeps a single strip; app shell: keyboard lies over the page, no glass bar above the keys
