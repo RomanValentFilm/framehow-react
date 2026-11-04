@@ -56,3 +56,8 @@ v5.0.134 · #686
 
 v5.0.135 · #687
 - iPhone app shell: the top row stays visible below the clock, same grey behind the clock
+
+v5.0.136 · #688
+- iPhone app shell: the top row keeps the real inset below the clock
+- iPhone: a PDF loads nothing; note "PDF IMAGE EXTRACTION AND IMPORT is available only on a tablet or computer"
+- note boxes: button "OK, got it."
