@@ -95,7 +95,16 @@ export function strokesFp(strokes: Stroke[] | undefined | null): string {
   const tail = last?.points?.length
     ? `${last.points[last.points.length - 1]?.x},${last.points[last.points.length - 1]?.y}`
     : (last?.text ?? '');
-  return `${strokes.length}:${points}:${tail}`;
+  // THE COLOUR IS PART OF IT (5 Nov, Roman's phone log): WRITE, then open it
+  // again and only change the colour — same text, same count, same tail, so
+  // the fingerprint did not move, the change got no new time, and the push
+  // went up stamped with the OLD time (fd75af@…931309 three pushes running).
+  // The server keeps its row against an older-or-equal time, the next
+  // heartbeat pulls "remote is newer", and the colour is back to what it was.
+  // The text stroke is the one changed in place; a drawn stroke's colour is
+  // fixed at birth and a new stroke changes the count.
+  const text = strokes.find((st) => st.type === 'text');
+  return `${strokes.length}:${points}:${tail}:${text?.color ?? ''}`;
 }
 
 function frameFp(f: Frame, _sortOrder: number, needs: string, notes: string): string {

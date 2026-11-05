@@ -568,6 +568,29 @@ const check = (what: string, got: unknown, want: unknown) =>
 }
 
 // ---------------------------------------------------------------------------
+// 20. CHANGING ONLY THE COLOUR OF WRITTEN TEXT IS A CHANGE (5 Nov, Roman's phone)
+// ---------------------------------------------------------------------------
+// WRITE "hi" in white, then open the box again and pick red. Same text, same
+// stroke count — the fingerprint did not move, the frame kept its OLD time,
+// the push went up with that old time, the server kept its (white) row, and
+// the next heartbeat pulled white back over red.
+{
+  const written = { id: 7, serverFrameId: 'w1', label: '7',
+    strokes: [{ type: 'text', text: 'hi', color: '#fff', x: 20, y: 50 }] } as never;
+  useStore.setState({ frames: [written], stripVersions: {}, frameNeeds: {}, frameNotes: {} } as never);
+  seedContentStamps('p20');
+  later(3);
+  // (the first look is age unknown; a pull bringing the same text does not
+  // re-date it, so there is nothing to check here — the old code answered
+  // "undefined" below, i.e. time zero, which loses to the server's own row)
+  later(2);
+  useStore.setState({ frames: [{ ...(written as object),
+    strokes: [{ type: 'text', text: 'hi', color: '#d52632', x: 20, y: 50 }] }] } as never);
+  stampChangedContent();
+  check('only the colour changed: the frame is stamped NOW, not left on the old time', frameChangedAt('w1'), NOW);
+}
+
+// ---------------------------------------------------------------------------
 // report
 // ---------------------------------------------------------------------------
 

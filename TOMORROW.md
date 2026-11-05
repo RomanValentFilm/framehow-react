@@ -64,7 +64,57 @@ FINDINGS so far (not fixed yet):
   VERIFY on the phone whether it should show a sign-in notice when signed out.
 - F3 RESOLVED: "+ New Group" works. The earlier failure was the simulator (plain clicks stopped
   landing after a rotation). The New Group box opens above the keyboard in landscape.
-- F8 FIXED in v5.0.144 #696 (untested on screen): keyboardRoom.ts now, in portrait, caps a box
+- BIG DAY ON THE IPHONE SIMULATOR (Roman 5 Nov: "all the scenarios of the BIG DAY on the simulator,
+  so we know the app works"). Walk e2e/29-BIG-DAY.outline.md by hand on the iPhone shell, by part:
+  1 starting projects (new, open, load pictures from Photos, PDF notice)  2 shots: make, name, move,
+  hide, delete  3 pictures, drawings, versions, stars  4 strips and names, Customise  5 needs, notes,
+  setups  6 groups  7 shooting orders and boxes  8 exports (share sheet). DOABLE signed out.
+  9 offline day, 10 restore/delete/recover, 11 reload and switch: need an account signed in INSIDE
+  the simulator (Roman signs in himself; I never type his password) and, for the two-device checks,
+  the desktop open on the same account. Same method as the long test plan below; findings only.
+- F10 FIXED v5.0.145 #697 — WRITE COLOUR CAME BACK (Roman's phone, PWA on dev, 21:05 log): write,
+  then open WRITE again and only change the colour → the colour reverts a few seconds later.
+  Cause: `strokesFp` (changeStamps.ts) was count:points:tail — the TEXT COLOUR was not in it, so a
+  colour-only change moved no fingerprint, got no new time, and the push went up with the old time
+  (log: `change times: fd75af@1793908931309` on three pushes in a row). The server kept its row,
+  the heartbeat pulled "remote is newer", colour back. Fix: the text stroke's colour is in the
+  fingerprint. Bench: needs-bench 20 (WRONG on the old code, ok now). Also: the app bench had been
+  dead since the log started reading location.hostname — shim.cjs now provides it (59/59).
+- F11 OPEN — THE GLASS BAR (arrows + tick) ABOVE THE KEYBOARD IN THE PWA (Roman's photo, 5 Nov).
+  The 4 Nov removal is `Keyboard.setAccessoryBarVisible` — a shell (App Store app) call, no effect
+  in the home-screen PWA. Safari's form bar has no page-side switch; the PWA cannot hide it. Only
+  the shell can. The "Passwords" key in the suggestion strip: NOT traced (autocomplete=off is set).
+- LONG TEST, STOPPED when Roman closed the Mac (5 Nov, v5.0.144). Done so far: DRAW in landscape (bar
+  fits, scribble drawn, turning the device mid-DRAW keeps strokes and bar, closing it leaves the
+  scribble and the "Hi" text on the card); New makes a blank version (01#1) and the arrow steps to it,
+  layout fine. F4 seen again: the island covers the left edge of a card in landscape-left.
+  RESUME HERE: versions (star, hide, copy/paste, arrows), then plan items 2 onwards.
+- LONG TEST PLAN (Roman 5 Nov: "do the long test when I'm back, faster, don't ask, just collect").
+  Method: batch 4-6 actions per call, 0.5-scale screenshots, a second screenshot to beat the lag.
+  Take every finding to THIS list, no fixing, no questions. Soft keyboard on (Device > Keyboard >
+  Toggle Software Keyboard). Tap = 1-2 px drag. Rotate: find "Rotate" by ax_find each time.
+  For EACH item: portrait, landscape, keyboard open, then TURN while it is open, then look.
+  1 WRITE / DRAW / rename / versions (new, load, copy/paste, hide, star, arrows)  2 strips ANGLE,
+  SKETCH, REFS (add, edit, clear)  3 NOTES landscape + F9 retest  4 NEEDS all four tabs, + / -
+  rows, radio select, Copy settings / Paste / Reset  5 SETUPS: make, tag, untag, rename, delete,
+  EDIT  6 GROUP: new, edit (buttons), delete, shooting order inside a group  7 SORT BY: story flow,
+  shooting orders, add / rename / delete order, EDIT ORDER, ADD BREAK  8 3x2VIEW + M=2 / M=3,
+  rotate notice  9 MAX view  10 LIBRARY (signed out: what happens)  11 Menu: New, Open, Save,
+  Restore, Customise (all six strips), Cam Set Up, Sign in, Export (every kind, share sheet)
+  12 Photos picker: Load -> Photo Library, F1 labels  13 scrolling long lists in both
+  orientations  14 the F2 "save it first" notice: count how often it appears.
+- F9 NOTES strip, typing a note in portrait (fine, field scrolls above the keys, "Ok" kept), then
+  TURN TO LANDSCAPE with the keyboard open: the field you were typing in is no longer in view;
+  the strip above the keys shows only the top of the FIRST note card ("01 note"). The page is not
+  scrolled to the active field after the turn (keyboardRoom.ts only calls scrollIntoView for a
+  field inside a box, not for a field on the page). Fix idea: after a turn (resize/orientation
+  event) while a page field is active, scrollIntoView({block:'center'}) once the new free area is
+  known.
+- PASSED 5 Nov (simulator, v5.0.144): WRITE box in portrait above the keys; NEEDS strip (SHOOT /
+  TALENTS tabs), renaming a need inline with the keyboard (ACTOR 1 -> ED); NOTES typing in portrait.
+- F8 + group-box buttons CONFIRMED by Roman in the simulator ("works", 5 Nov, 571 / v5.0.144 #696).
+  Boxes other than Groups in portrait still to check (WRITE, rename, NEEDS, NOTES).
+- F8 FIXED in v5.0.144 #696 (was untested at the time of writing): keyboardRoom.ts now, in portrait, caps a box
   taller than the free area (own scroll) and leaves the clock/island clear above it
   (overlay paddingTop = 16 + safe-area top). It applies to every box in portrait with the
   keyboard up, not only Groups: CHECK WRITE, rename, NEEDS and NOTES boxes in portrait.

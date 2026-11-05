@@ -8,3 +8,6 @@ globalThis.navigator = globalThis.navigator ?? { userAgent: 'bench' };
 // this the whole settings bench died on `location is not defined` — and had been
 // dead for a while, unnoticed, because nothing looks at a bench that never runs.
 globalThis.location = globalThis.location ?? { search: '', href: 'http://bench/' };
+// ...and location.hostname since 5 Nov (the log asks "is this dev?"); without it
+// the bench died again the same way, on `startsWith` of undefined.
+if (!globalThis.location.hostname) globalThis.location.hostname = 'bench';
