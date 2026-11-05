@@ -765,6 +765,11 @@ export function initFramehow(): void {
         }
         // iPhone portrait: single strip — show only NEEDS
         if (isPhonePortrait) {
+          // A LONE COLUMN STAYS (5 Nov, Roman): NEEDS alone, NEEDS pressed again
+          // used to leave a black page with only the bars. Like ANGLE alone, the
+          // button of the only column on screen does nothing; another button
+          // takes you elsewhere.
+          if (cur && s.activeStrips.length === 0) return;
           const show = !cur;
           useStore.setState({ activeStrips: show ? [] as any : ['main'] as any, needsStripVisible: show, notesStripVisible: false, currentViewMode: show ? 'ver' as any : 'main' as any });
           const btn = document.getElementById('needsStripBtn');
@@ -813,6 +818,7 @@ export function initFramehow(): void {
         }
         // iPhone portrait: single strip — show only NOTES
         if (isPhonePortrait) {
+          if (cur && s.activeStrips.length === 0) return;   // a lone column stays (see NEEDS)
           const show = !cur;
           useStore.setState({ activeStrips: show ? [] as any : ['main'] as any, notesStripVisible: show, needsStripVisible: false, currentViewMode: show ? 'ver' as any : 'main' as any });
           const btn = document.getElementById('notesStripBtn');

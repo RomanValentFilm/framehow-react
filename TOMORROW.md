@@ -73,6 +73,9 @@ FINDINGS so far (not fixed yet):
   the simulator (Roman signs in himself; I never type his password) and, for the two-device checks,
   the desktop open on the same account. Same method as the long test plan below; findings only.
 - F12 CONFIRMED by Roman ("all works perfect", 21:38).
+- F14 FIXED v5.0.149 #701 (untested): NEEDS alone (or NOTES alone) in iPhone portrait, its own button
+  pressed again → black page with only the bars. init.ts: the button of the only column on screen
+  does nothing (like ANGLE alone). Another button moves you on.
 - F13 (2nd try) v5.0.148 #700: #699 used the PORTRAIT-PROJECT cap only (portraitMode = project shape, Roman's is landscape) → nothing changed. Now the hidden main column is shown for one invisible layout at the lone column's width and its canvas bottom read off. (was #699, untested) — NEEDS / NOTES alone in iPhone portrait came up short. Cause:
   a lone column reused the body height remembered from the last time a picture column stood next
   to it (landscape → short), and on a first tap nothing was remembered. view.ts syncCardHeights:
