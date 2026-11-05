@@ -64,6 +64,11 @@ FINDINGS so far (not fixed yet):
   VERIFY on the phone whether it should show a sign-in notice when signed out.
 - F3 RESOLVED: "+ New Group" works. The earlier failure was the simulator (plain clicks stopped
   landing after a rotation). The New Group box opens above the keyboard in landscape.
+- F8 FIXED in v5.0.144 #696 (untested on screen): keyboardRoom.ts now, in portrait, caps a box
+  taller than the free area (own scroll) and leaves the clock/island clear above it
+  (overlay paddingTop = 16 + safe-area top). It applies to every box in portrait with the
+  keyboard up, not only Groups: CHECK WRITE, rename, NEEDS and NOTES boxes in portrait.
+  Group box buttons: two pairs, both lines centred on phones (globals.css .group-btn-row/-pair).
 - F8 NEW GROUP box, turn to portrait with the keyboard open: the buttons DO wrap (Select All /
   Deselect All / Cancel on one row, Save on the next), but the box is pushed up so its title and
   the group NAME field are above the top of the screen (hidden under the clock/island) and a drag

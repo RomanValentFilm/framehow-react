@@ -908,6 +908,9 @@
     .save-toaster{width:calc(100vw - 16px);}
     .account-card{padding:18px 16px;}
     .account-btns{flex-wrap:wrap;}
+    /* Group box buttons (5 Nov, Roman): two pairs on two lines, BOTH lines centred. */
+    .group-btn-row{justify-content:center;}
+    .group-btn-pair{margin-left:0 !important;}
   }
 
   /* ── Portrait (9:16) mode — fit frame card to viewport ── */

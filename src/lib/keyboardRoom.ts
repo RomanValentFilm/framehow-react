@@ -35,7 +35,18 @@ function freeArea(): { top: number; height: number } | null {
 }
 
 let _held: HTMLElement | null = null;
-let _was: { top: string; height: string; bottom: string } | null = null;
+let _was: { top: string; height: string; bottom: string; paddingTop: string } | null = null;
+
+/** The top safe-area inset in pixels (the clock / Dynamic Island), measured
+ *  through a throw-away element so it works wherever env() does. */
+function safeTopPx(): number {
+  const p = document.createElement('div');
+  p.style.cssText = 'position:fixed;top:0;left:0;visibility:hidden;pointer-events:none;padding-top:env(safe-area-inset-top,0px);';
+  document.body.appendChild(p);
+  const px = parseFloat(getComputedStyle(p).paddingTop) || 0;
+  p.remove();
+  return px;
+}
 /** The box inside the overlay — capped to the free height so its bottom
  *  buttons stay above the keys (Roman, 13 Oct: the needs, notes and table
  *  boxes were pushed up and their buttons covered). Height only; the width is
@@ -129,6 +140,7 @@ function release(): void {
     _held.style.top = _was.top;
     _held.style.height = _was.height;
     _held.style.bottom = _was.bottom;
+    _held.style.paddingTop = _was.paddingTop;
   }
   if (_box && _boxWas) {
     _box.style.maxHeight = _boxWas.maxHeight;
@@ -178,7 +190,7 @@ function fit(): void {
   if (_held !== overlay) {
     release();
     _held = overlay;
-    _was = { top: overlay.style.top, height: overlay.style.height, bottom: overlay.style.bottom };
+    _was = { top: overlay.style.top, height: overlay.style.height, bottom: overlay.style.bottom, paddingTop: overlay.style.paddingTop };
   }
   overlay.style.top = `${vv.top}px`;
   overlay.style.height = `${vv.height}px`;
@@ -196,8 +208,17 @@ function fit(): void {
     box.style.maxHeight = `${Math.max(120, vv.height - 16)}px`;
     box.style.overflowY = 'auto';
   } else if (box && _boxWas) {
-    box.style.maxHeight = _boxWas.maxHeight;
-    box.style.overflowY = _boxWas.overflowY;
+    // PORTRAIT, A BOX TALLER THAN THE FREE AREA (5 Nov, Roman: the Groups box —
+    // its title and name field slid up under the clock, nothing to see where
+    // you type). The box keeps its width and its size when it fits; only when
+    // it is taller than the free area is it capped, with its own scroll, and
+    // the overlay leaves the clock / island clear above it.
+    const sat = safeTopPx();
+    const padTop = 16 + sat;
+    overlay.style.paddingTop = `${padTop}px`;
+    const room = Math.max(120, vv.height - padTop - 16);
+    box.style.maxHeight = `${room}px`;
+    box.style.overflowY = 'auto';
   }
   // THE FIELD ITSELF IN VIEW (4 Nov, Roman: the Groups box — ticked shots
   // down the list, tapped the name field at the top, and the field was
