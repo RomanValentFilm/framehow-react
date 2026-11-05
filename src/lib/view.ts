@@ -155,12 +155,42 @@ export function syncCardHeights(): void {
   const isPhoneW = Math.min(window.innerWidth, window.innerHeight) <= 430;
   const phMult = (s.portraitMode && isTouch && _isIOS)
     ? (_isPWA ? (isPhoneW ? 1.03 : 1.06) : (isPhoneW ? 1.28 : 1.12)) : 1;
+  // For a LANDSCAPE project (the usual one) nothing is capped on a phone: the
+  // main card is as tall as its width makes it. So the hidden main column is
+  // shown for one layout — invisible, out of the flow, at the lone column's
+  // width — and the canvas bottom of its first card is read off, exactly as
+  // the paired branch reads it off a visible one. (First attempt, #699, used
+  // the portrait cap for every project and changed nothing for Roman's
+  // landscape storyboard — `portraitMode` is the PROJECT's shape.)
+  let _hiddenCanvasBottom: number | null | undefined;   // measured once per call
+  const hiddenMainCanvasBottom = (width: number): number | undefined => {
+    if (_hiddenCanvasBottom !== undefined) return _hiddenCanvasBottom ?? undefined;
+    _hiddenCanvasBottom = null;
+    const mc = document.getElementById('mainCol');
+    const first = mc?.querySelector('.frame-card') as HTMLElement | null;
+    const wrap = first?.querySelector('.canvas-wrap') as HTMLElement | null;
+    if (!mc || !first || !wrap || mc.style.display !== 'none') return undefined;
+    const was = mc.getAttribute('style') || '';
+    mc.style.cssText = `${was};display:block;position:absolute;left:0;top:0;visibility:hidden;pointer-events:none;width:${Math.round(width)}px;`;
+    void mc.offsetHeight;
+    const cr = first.getBoundingClientRect();
+    const wr = wrap.getBoundingClientRect();
+    _hiddenCanvasBottom = wr.bottom - cr.top;
+    mc.setAttribute('style', was);
+    return _hiddenCanvasBottom;
+  };
   const loneBodyHeight = (card: HTMLElement, body: HTMLElement): number | undefined => {
-    if (!s.portraitMode) return undefined;
     const cr = card.getBoundingClientRect();
     const br = body.getBoundingClientRect();
-    const overhead = (br.top - cr.top) + (cr.bottom - br.bottom);
-    return Math.max(50, Math.floor(target * phMult) - overhead);
+    const topOverhead = br.top - cr.top;
+    if (s.portraitMode) {
+      const overhead = topOverhead + (cr.bottom - br.bottom);
+      return Math.max(50, Math.floor(target * phMult) - overhead);
+    }
+    const col = card.closest('.strip-col') as HTMLElement | null;
+    const canvasBottom = hiddenMainCanvasBottom(col?.getBoundingClientRect().width || cr.width);
+    if (canvasBottom === undefined) return undefined;
+    return Math.max(50, canvasBottom - topOverhead);
   };
 
   if (s.portraitMode || capLandscape) {

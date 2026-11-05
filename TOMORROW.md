@@ -73,7 +73,7 @@ FINDINGS so far (not fixed yet):
   the simulator (Roman signs in himself; I never type his password) and, for the two-device checks,
   the desktop open on the same account. Same method as the long test plan below; findings only.
 - F12 CONFIRMED by Roman ("all works perfect", 21:38).
-- F13 FIXED v5.0.147 #699 (untested) — NEEDS / NOTES alone in iPhone portrait came up short. Cause:
+- F13 (2nd try) v5.0.148 #700: #699 used the PORTRAIT-PROJECT cap only (portraitMode = project shape, Roman's is landscape) → nothing changed. Now the hidden main column is shown for one invisible layout at the lone column's width and its canvas bottom read off. (was #699, untested) — NEEDS / NOTES alone in iPhone portrait came up short. Cause:
   a lone column reused the body height remembered from the last time a picture column stood next
   to it (landscape → short), and on a first tap nothing was remembered. view.ts syncCardHeights:
   in portrait a lone column's body is sized from the same cap a main card gets (target × phMult
