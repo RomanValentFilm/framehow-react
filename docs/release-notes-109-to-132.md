@@ -76,3 +76,6 @@ v5.0.140 · #692
 
 v5.0.141 · #693
 - app shell: boxes sit above the keyboard (WRITE, rename, needs…); OPEN PROJECT box scrolls itself
+
+v5.0.142 · #694
+- Groups box: buttons wrap on iPhone portrait; the field you type into stays in view

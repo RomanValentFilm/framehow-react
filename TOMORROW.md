@@ -1,5 +1,88 @@
 # Where things stand
 
+## 5 November — THE SIMULATOR IS THE TEST BENCH (for the next session, any model)
+HOW TO DRIVE IT (computer-use, background mode — Roman granted the app once per session):
+- The simulator window belongs to the app "Device Hub" (bundle com.apple.dt.Devices), NOT
+  "Simulator". request_access(["Device Hub"]). app_list_windows → one window "iPhone 17 – iOS 27.2".
+  Re-take app_screenshot after every rotation: the window bounds change (337×745 portrait,
+  657×425 landscape).
+- Taps: app_click with coordinates works for the WEB PAGE. The first click after a pause only
+  wakes the window — click again if nothing changed.
+- Apple's own sheets (Photo Library / Take Photo / Choose File, the photo picker): a click is
+  turned into "Dismiss context menu". Use a TINY DRAG instead (drag from [x,y] to [x+2,y+1])
+  — that is a raw tap and lands. Same for the blue tick, album tiles, Later/Save Now notices.
+- Scrolling: scroll wheel does nothing; swipe with app_drag path [[x,620],[x,450],[x,250],[x,120]].
+- Rotation: only "Rotate Left" exists. Portrait → 1× = landscape; 3× = back to portrait
+  (2× is upside-down portrait, where the app stays landscape — not a bug).
+- Typing: app_type does NOT reach the page. Tap the simulator's keyboard keys instead — they are
+  AX buttons in the screenshot summary ("q","w",…) and AXPress works. Letters land, exactness
+  does not matter for a test. No cmd+a in background.
+- Photos were loaded with: xcrun simctl addmedia booted <files> (Roman runs it). The library has
+  27 pictures from "Framehow Files/TEST picts and PDFs to load " (trailing space in the name):
+  9 board picts + 18 picts. PDFs only on an iPad simulator (iPhone refuses PDFs since 4 Nov).
+- Not signed in there; scratch projects only. Camera impossible (no camera in the simulator).
+- Each screenshot costs tokens: use scale 0.5–0.6, zoom only to read small text.
+
+DONE 5 Nov in the simulator (all OK): status bar/top row, WRITE portrait+landscape (box above
+keys, OK first tap, text at once), no suggestion strip, no glass bar, Load → Photo Library →
+picture lands, Load Images from Folder with 9 pictures → 9 shots, scrolling, rotation both
+ways, 3x2 in landscape, NEEDS card opens in 3x2, rename box above the keyboard.
+
+FINDINGS so far (not fixed yet):
+- F1 pictures from the Photos picker get UUID names → shot labels like "9406091e 2a7"
+  (full label "9406091e-2a71-4759-80ad-76b1b6478787"). Same in Safari. Should fall back to
+  numbering when the file name looks like a UUID/hash. (where: the folder-import naming)
+- F2 "To edit this project on your desktop, you'll need to save it first." (Later / Save Now)
+  pops up again and again on an unsaved project — seen twice, once after rotation, once after
+  WRITE. Check what triggers it and whether "Later" should silence it for the session.
+- F3 "+ New Group" in the Groups side panel does NOTHING in the simulator (iPhone landscape,
+  unsaved scratch project, 9 shots from the Photos picker, 5 taps incl. a fresh reopen of
+  the panel; the panel's X and reopening work, so taps arrive). The handler (groups.ts 295)
+  is a plain click → openGroupEditor(null); no notice appears. Verify on the phone whether
+  it is the app or the simulator; if the app, look for an exception in openGroupEditor.
+- F4 landscape iPhone: the page's left edge sits under the rounded corner / Dynamic Island
+  (the logo "F" is clipped, the Groups panel text starts under the island). The shell uses
+  contentInset 'never', so the page gets no left inset; check env(safe-area-inset-left) in
+  the landscape CSS. VERIFY on the phone first (the simulator draws the island clearly).
+- F5 landscape iPhone Menu: the list is taller than the screen; New/Open/Save scroll out of
+  view and Export sits at the very bottom. It scrolls, so it works, but it is cramped.
+- F6 landscape SETUPS: the create row (NAME, colours, CREATE, CANCEL) opens, but the name
+  field shows no keyboard after a tap (simulator). VERIFY on the phone whether the keyboard
+  comes up and the field stays visible.
+- F4 EXTENDED (keyboard on): in landscape the SETUPS name field sits under the Dynamic Island,
+  so the first letters typed are hidden behind it. Same cause as F4 (no left safe-area).
+- KEYBOARD x ROTATION, PASSED (simulator, soft keyboard on via Device > Keyboard > Toggle
+  Software Keyboard): WRITE box re-fits above the keys in landscape L, landscape R and portrait,
+  keeps typed text, OK/Cancel reachable. SETUPS create row stays visible above the keys.
+- PASSED (portrait, keyboard on): SETUPS create row wraps to two rows above the keys, name kept
+  through the turn, CREATE makes the setup (chip DAYV), tapping a card tags it ("TAP BELOW TO
+  REMOVE"), DONE closes it and the card shows the DAYV label. SORT BY menu (Story flow,
+  Shooting order, + Add order) works; + Add order makes "SHOOTING ORDER 2" with EDIT ORDER and
+  ADD BREAK. The F4 island overlap shows only with the island on the LEFT (landscape left);
+  with the island on the right the field is fully visible.
+- F7 LIBRARY in portrait: tapping LIBRARY did nothing visible in the simulator (not signed in).
+  VERIFY on the phone whether it should show a sign-in notice when signed out.
+- F3 RESOLVED: "+ New Group" works. The earlier failure was the simulator (plain clicks stopped
+  landing after a rotation). The New Group box opens above the keyboard in landscape.
+- F8 NEW GROUP box, turn to portrait with the keyboard open: the buttons DO wrap (Select All /
+  Deselect All / Cancel on one row, Save on the next), but the box is pushed up so its title and
+  the group NAME field are above the top of the screen (hidden under the clock/island) and a drag
+  down does not bring them back. In portrait the user cannot see what they type. Fix: keep the
+  name field in view (box top clamped below the safe area, list scrolls inside). GROUP itself is
+  hidden in iPhone portrait by design (vb-desktop-only), so the box only reaches portrait by a turn.
+- SIM NOTE 2: with the Mac keyboard "connected" the soft keyboard never shows; toggle it from
+  the Device menu. Tap keys with a 1-2 px drag; app_type does not reach the page.
+- SIM NOTE: after a rotation plain clicks stop landing; a 1-2 px drag works as a tap. The
+  screenshot lags one frame, so take a second one before concluding "nothing happened".
+- NEEDS in 3x2 (landscape): card opens, radios select (first tap after a pause only wakes the
+  window), "+" adds an item (DAY 4), tap outside closes it — OK.
+- (not a fault) Load on a main card that already holds text/strokes adds a VERSION (actions.ts
+  toVersion = !isMainEmpty) — by design.
+
+STILL TO TEST (pass 2/3): DRAW, versions ◀▶/star/hide, ANGLE/SKETCH/REFS strips, MAX view,
+NOTES, SETUPS (make one, tag), GROUP (make, edit), SORT BY, LIBRARY, Menu: Customise, Cam Set Up,
+Export (share sheet), Save Project (needs sign-in — skip), both orientations for each.
+
 ## 4 November — CAPACITOR SHELL RUNS ON ROMAN'S iPHONE (afternoon)
 - Capacitor 8.6 added to framehow-react: capacitor.config.ts (server.url =
   dev.framehow-react.pages.dev/app/, webDir dist/app), ios/App Xcode project, Info.plist
@@ -7,8 +90,22 @@
   Tinge Films team gave "no profiles / data couldn't be read" = membership not yet active.
 - Apple: membership BOUGHT (order W1801267897), activation email pending.
 - Uncommitted: capacitor.config.ts, ios/, package.json changes — next save.
-- SHELL DIFFERENCES seen by Roman (4 Nov): WRITE → OK works only the second time, and
-  jumps (keyboard/viewport in WKWebView differs from Safari). Log requested. More to come.
+- SHELL DIFFERENCES, all fixed by evening (v5.0.142 · #694, run 569), the box is now
+  behaving: status bar (index.html fh-opaque-bar skipped in the shell, contentInset never,
+  bg #202020) · first tap on OK/CANCEL (pointerdown preventDefault) · keyboard: plugin
+  @capacitor/keyboard, resize none, accessory bar hidden, keyboardWillShow height fed to
+  keyboardRoom.ts (setShellKeyboardHeight) · no suggestions/autocorrect on any field
+  (main.tsx MutationObserver) · WRITE draws into the live card (actions.ts) · note box
+  "OK, got it." · LOAD PDF on iPhone = note, no picker · account cards scroll (margin:auto)
+  · turn to portrait keeps a single strip · Groups buttons wrap, typed field in view.
+- STILL OPEN from today: the push-then-pull-back pattern (after every own push the
+  heartbeat pulls it again, #320 design — bench it, own item) · reload-on-new-version
+  (THE LIST 7; today every deploy needed quit+reopen) · file picker / share sheet / camera
+  in the shell: not yet looked at once.
+- NEXT MORNING FIRST: iOS Simulator in Xcode (device menu → an iPhone) + grant the
+  Simulator app to Claude → Claude taps/rotates/screens itself for box things.
+- Deploy rule: THE SHORT RULES block at the top of CLAUDE.md; the only deploy command is
+  `FH_NOTEST=1 npm run deploy -- <run> "…"` (script pushes to GitHub since today).
 
 ## THE LIST (Roman + Claude, 4 Nov) — order agreed
 NOW (app track): 1 Capacitor shell (today) · 2 native camera into Framehow, instant landing
