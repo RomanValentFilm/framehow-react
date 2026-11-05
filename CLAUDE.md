@@ -15,6 +15,9 @@ Every one of these was agreed in a working session. Breaking one costs an hour.
    `cd ~/Desktop/"Framehow Files"/framehow-react && FH_NOTEST=1 npm run deploy -- <run> "<what changed>"`
    It ends with a SOUND and the line `--- Dev is up (vX · #N, run R) — say zzz — sound played ---`.
    If the box shows anything else, Roman says "script" and does not run it.
+   CAFFEINATED (5 Nov, Roman): every deploy or test line keeps the Mac awake for its whole
+   length — `npm run deploy` is `caffeinate -dims sh scripts/deploy.sh`, and e2e.sh runs its
+   tests under caffeinate too. Never a bare `npx playwright` or `sh scripts/deploy.sh`.
 7. "4 STEPS SAVE": 1 check the current version in state.ts · 2 the one command (rule 6) ·
    3 Roman pastes the output · 4 ONLY THEN bump state.ts AND syncTrace.ts, add the release note.
 8. RUN NUMBERS count up by one per deploy or test run; the app's #N must match syncTrace.ts.

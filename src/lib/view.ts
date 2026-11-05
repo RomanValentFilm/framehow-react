@@ -313,7 +313,6 @@ export function syncCardHeights(): void {
           if (!needsBody) return;
           const lone = loneBodyHeight(needsCard, needsBody);
           const h = lone ?? (isNaN(nfid2) ? undefined : _needsBodyH[nfid2]);
-          if (nfid2 === s.frames[0]?.id) trace(`needs alone: strips [${s.activeStrips.join(',')}] · col ${Math.round(needsCard.closest('.strip-col')?.getBoundingClientRect().width ?? 0)}px · main hidden: ${document.getElementById('mainCol')?.style.display || 'shown'} · measured ${lone ?? 'none'} · remembered ${_needsBodyH[nfid2] ?? 'none'} · using ${h ?? 'natural'} · card now ${Math.round(needsCard.getBoundingClientRect().height)}px`);
           if (!h) return;
           needsBody.style.flex = 'none';
           needsBody.style.height = h + 'px';
@@ -370,7 +369,6 @@ export function syncCardHeights(): void {
           if (!notesBody) return;
           const lone = loneBodyHeight(notesCard, notesBody);
           const h = lone ?? (isNaN(nfid) ? undefined : _notesBodyH[nfid]);
-          if (nfid === s.frames[0]?.id) trace(`notes alone: measured ${lone ?? 'none'} · remembered ${_notesBodyH[nfid] ?? 'none'} · using ${h ?? 'natural'} · card now ${Math.round(notesCard.getBoundingClientRect().height)}px`);
           if (!h) return;
           notesBody.style.flex = 'none';
           notesBody.style.height = h + 'px';

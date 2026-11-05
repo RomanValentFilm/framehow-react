@@ -73,6 +73,15 @@ FINDINGS so far (not fixed yet):
   the simulator (Roman signs in himself; I never type his password) and, for the two-device checks,
   the desktop open on the same account. Same method as the long test plan below; findings only.
 - F12 CONFIRMED by Roman ("all works perfect", 21:38).
+- TOMORROW 1: THE WRITE-THEN-PULL RACE (run 579, BIG DAY part 3 red; green in 572). iPad writes on
+  shot 1, a heartbeat pull lands before the push ("push skipped: a fetch is running"), the pull
+  "recorded 4 frames as matching the server" — the unsent text included — and the text never
+  leaves the device. accountFlow.ts, unchanged since 572. Needs: a test that forces the pull into
+  the gap (door: write, then trigger the heartbeat before the autosave), then the fix (a frame
+  with a local change newer than the last confirmed fingerprint is never "recorded as matching").
+- TOMORROW 2: SLOW PROJECT OPENS (Roman, 5 Nov). No timing in the log. Add one line at open:
+  "project open: N frames · pull whole/changes-only · X pictures fetched · S s"; then compare a
+  slow and a fast project.
 - F14 FIXED v5.0.149 #701 (untested): NEEDS alone (or NOTES alone) in iPhone portrait, its own button
   pressed again → black page with only the bars. init.ts: the button of the only column on screen
   does nothing (like ANGLE alone). Another button moves you on.

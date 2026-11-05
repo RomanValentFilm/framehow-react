@@ -79,3 +79,24 @@ v5.0.141 · #693
 
 v5.0.142 · #694
 - Groups box: buttons wrap on iPhone portrait; the field you type into stays in view
+
+v5.0.143 · #695
+- Group box: buttons in two pairs; findings notes F1–F8
+
+v5.0.144 · #696
+- Group box: both button rows centred on phones; boxes taller than the free area scroll above the keyboard in portrait
+
+v5.0.145 · #697
+- WRITE: changing only the colour of the text is a change (the text colour is in the change fingerprint) — the colour no longer comes back
+
+v5.0.146 · #698
+- A field on the page hidden under the keyboard is scrolled into view (NEEDS items, notes, rename)
+
+v5.0.147 · #699, v5.0.148 · #700
+- NEEDS and NOTES alone in iPhone portrait are as tall as the main card (measured from the hidden main card)
+
+v5.0.149 · #701, v5.0.150 · #702
+- NEEDS / NOTES alone: its own button no longer empties the screen (every device, both orientations)
+
+v5.0.151 · #703
+- The measuring log lines taken out again
