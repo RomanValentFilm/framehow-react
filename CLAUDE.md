@@ -129,6 +129,9 @@ EVERY answer that asks Roman to act, decide or pay ENDS with one line:
   checked: <file/line, log line, test run, or link>   — or —
   NOT checked: <what is a guess>
 No such line = Roman treats it as a guess and does not act (2 Nov).
+SHORT (5 Nov, Roman: "a bit vague... shorten"): one line, at most two
+sources, no explanations in brackets. "checked: changeStamps.ts, your log 21:05."
+If nothing in the answer is a guess, the NOT-checked half is left out.
 
 ## FACTS, NOT ASSUMPTIONS (29 Oct, Roman: "you guess and touch only the surface")
 1. Before saying anything: read the CURRENT code and the LATEST log. Say only

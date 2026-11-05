@@ -72,6 +72,12 @@ FINDINGS so far (not fixed yet):
   9 offline day, 10 restore/delete/recover, 11 reload and switch: need an account signed in INSIDE
   the simulator (Roman signs in himself; I never type his password) and, for the two-device checks,
   the desktop open on the same account. Same method as the long test plan below; findings only.
+- F10 CONFIRMED by Roman on the phone ("writing colour works", 5 Nov 21:30).
+- F12 FIXED v5.0.146 #698 (untested) — a field ON THE PAGE (NEEDS item) under the keyboard did not
+  move; boxes do. keyboardRoom.fit(): a page field outside the free area is scrollIntoView'd
+  (block center), only when it is actually hidden. Covers F9 (note field lost to a turn) too.
+  PWA and shell alike (both go through fit). CHECK on the phone: NEEDS item low on the page,
+  NOTES, rename on the card; and that a VISIBLE field never jumps (#363).
 - F10 FIXED v5.0.145 #697 — WRITE COLOUR CAME BACK (Roman's phone, PWA on dev, 21:05 log): write,
   then open WRITE again and only change the colour → the colour reverts a few seconds later.
   Cause: `strokesFp` (changeStamps.ts) was count:points:tail — the TEXT COLOUR was not in it, so a

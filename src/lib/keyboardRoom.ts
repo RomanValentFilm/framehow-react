@@ -185,7 +185,21 @@ function fit(): void {
   const keyboardUp = window.innerHeight - vv.height >= KEYBOARD_MIN_PX;
   if (!typing || !keyboardUp) { releaseSoon(); return; }
   const overlay = overlayOf(active);
-  if (!overlay) { release(); return; }
+  if (!overlay) {
+    release();
+    // A FIELD ON THE PAGE, UNDER THE KEYS (5 Nov, Roman: a NEEDS item — the
+    // keyboard came up over it and nothing moved; every box moves, the page
+    // did not). Safari's own nudge does not reach a field inside the app's
+    // scroll column, and the shell (resize 'none') nudges nothing. Only when
+    // the field is actually outside the free area, so a visible field is
+    // never moved (#363); the same brings back a field lost to a turn (F9).
+    const r = (active as HTMLElement).getBoundingClientRect();
+    const low = vv.top + vv.height;
+    if (r.bottom > low - 8 || r.top < vv.top + 8) {
+      (active as HTMLElement).scrollIntoView({ block: 'center', behavior: 'auto' });
+    }
+    return;
+  }
   keepHeld();
   if (_held !== overlay) {
     release();
