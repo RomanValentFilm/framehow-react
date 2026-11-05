@@ -72,6 +72,13 @@ FINDINGS so far (not fixed yet):
   9 offline day, 10 restore/delete/recover, 11 reload and switch: need an account signed in INSIDE
   the simulator (Roman signs in himself; I never type his password) and, for the two-device checks,
   the desktop open on the same account. Same method as the long test plan below; findings only.
+- F12 CONFIRMED by Roman ("all works perfect", 21:38).
+- F13 FIXED v5.0.147 #699 (untested) — NEEDS / NOTES alone in iPhone portrait came up short. Cause:
+  a lone column reused the body height remembered from the last time a picture column stood next
+  to it (landscape → short), and on a first tap nothing was remembered. view.ts syncCardHeights:
+  in portrait a lone column's body is sized from the same cap a main card gets (target × phMult
+  minus the card's own top/bottom chrome). CHECK: NEEDS and NOTES alone in portrait, then
+  landscape M+NEEDS still aligned to the canvas bottom.
 - F10 CONFIRMED by Roman on the phone ("writing colour works", 5 Nov 21:30).
 - F12 FIXED v5.0.146 #698 (untested) — a field ON THE PAGE (NEEDS item) under the keyboard did not
   move; boxes do. keyboardRoom.fit(): a page field outside the free area is scrollIntoView'd

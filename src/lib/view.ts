@@ -144,6 +144,25 @@ export function syncCardHeights(): void {
   //            TWIN/VRSN/GRID columns are narrow enough to self-constrain).
   const capLandscape = !s.portraitMode && !isTouch && s.activeStrips.length === 1;
 
+  // THE HEIGHT A MAIN CARD GETS HERE, WITH NO MAIN CARD ON SCREEN (5 Nov, Roman:
+  // NEEDS alone in iPhone portrait came up short). A lone NEEDS/NOTES column
+  // used to reuse the height it had the LAST time a picture column stood next
+  // to it — which was landscape, where the card is short; and on a first tap
+  // there was nothing remembered at all. The main card in portrait is capped to
+  // `target` (× the per-device multiplier below), so a lone column is given a
+  // body that makes its card exactly that tall. The memory stays for the other
+  // cases (iPad landscape, desktop), where nothing is capped.
+  const isPhoneW = Math.min(window.innerWidth, window.innerHeight) <= 430;
+  const phMult = (s.portraitMode && isTouch && _isIOS)
+    ? (_isPWA ? (isPhoneW ? 1.03 : 1.06) : (isPhoneW ? 1.28 : 1.12)) : 1;
+  const loneBodyHeight = (card: HTMLElement, body: HTMLElement): number | undefined => {
+    if (!s.portraitMode) return undefined;
+    const cr = card.getBoundingClientRect();
+    const br = body.getBoundingClientRect();
+    const overhead = (br.top - cr.top) + (cr.bottom - br.bottom);
+    return Math.max(50, Math.floor(target * phMult) - overhead);
+  };
+
   if (s.portraitMode || capLandscape) {
     allCards.forEach((card) => {
       const wrap = card.querySelector('.canvas-wrap') as HTMLElement;
@@ -260,13 +279,13 @@ export function syncCardHeights(): void {
         needsCards.forEach((c) => {
           const needsCard = c as HTMLElement;
           const nfid2 = parseInt(needsCard.dataset.needsFid || '', 10);
-          const remembered = isNaN(nfid2) ? undefined : _needsBodyH[nfid2];
-          if (!remembered) return;
           const needsBody = needsCard.querySelector('.needs-body') as HTMLElement | null;
           if (!needsBody) return;
+          const h = loneBodyHeight(needsCard, needsBody) ?? (isNaN(nfid2) ? undefined : _needsBodyH[nfid2]);
+          if (!h) return;
           needsBody.style.flex = 'none';
-          needsBody.style.height = remembered + 'px';
-          needsCard.dataset.needsBodyH = String(remembered);
+          needsBody.style.height = h + 'px';
+          needsCard.dataset.needsBodyH = String(h);
         });
       }
     }
@@ -315,13 +334,13 @@ export function syncCardHeights(): void {
         notesCards.forEach((c) => {
           const notesCard = c as HTMLElement;
           const nfid = parseInt(notesCard.dataset.notesFid || '', 10);
-          const remembered = isNaN(nfid) ? undefined : _notesBodyH[nfid];
-          if (!remembered) return;
           const notesBody = notesCard.querySelector('.notes-body') as HTMLElement | null;
           if (!notesBody) return;
+          const h = loneBodyHeight(notesCard, notesBody) ?? (isNaN(nfid) ? undefined : _notesBodyH[nfid]);
+          if (!h) return;
           notesBody.style.flex = 'none';
-          notesBody.style.height = remembered + 'px';
-          notesCard.dataset.notesBodyH = String(remembered);
+          notesBody.style.height = h + 'px';
+          notesCard.dataset.notesBodyH = String(h);
         });
       }
     }
