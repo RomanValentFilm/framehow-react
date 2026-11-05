@@ -796,6 +796,10 @@ export function initFramehow(): void {
           if (isTablet && h > w && totalVisible > 3) { showMaxStripsOverlay(3); return; }
           if (isTablet && w > h && totalVisible > 4) { showMaxStripsOverlay(4); return; }
         }
+        // THE LAST COLUMN STAYS (5 Nov, Roman: the same on the Mac and in
+        // landscape): NEEDS the only thing on screen, its button leaves a
+        // black page. Nothing happens; another button moves you on.
+        if (cur && s.activeStrips.length === 0 && !s.notesStripVisible) return;
         useStore.setState({ needsStripVisible: !cur });
         const btn = document.getElementById('needsStripBtn');
         if (btn) btn.classList.toggle('active', !cur);
@@ -845,6 +849,7 @@ export function initFramehow(): void {
           if (isTablet && h > w && totalVisible > 3) { showMaxStripsOverlay(3); return; }
           if (isTablet && w > h && totalVisible > 4) { showMaxStripsOverlay(4); return; }
         }
+        if (cur && s.activeStrips.length === 0 && !s.needsStripVisible) return;   // the last column stays (see NEEDS)
         useStore.setState({ notesStripVisible: !cur });
         const btn = document.getElementById('notesStripBtn');
         if (btn) btn.classList.toggle('active', !cur);
