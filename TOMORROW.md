@@ -73,9 +73,23 @@ FINDINGS so far (not fixed yet):
   the simulator (Roman signs in himself; I never type his password) and, for the two-device checks,
   the desktop open on the same account. Same method as the long test plan below; findings only.
 - F12 CONFIRMED by Roman ("all works perfect", 21:38).
-**LIVE: framehow.com/app = v5.0.151 · #703, pushed to main 6 Nov 10:25 (96c94f0, 8dd3f92..96c94f0). Full run 581: 137 green, 2 timing reds (TOMORROW 3). Tester day.**
+**LIVE: framehow.com/app = v5.0.152 · #704, 6 Nov ~11:05 (e28bdc6; push to main + direct wrangler upload — the GitHub build alone did not publish). Full run 581 on v151: 137 green, 2 timing reds (TOMORROW 3). Tester day.**
 
 - APPLE DEVELOPER PROGRAM ACTIVE (5 Nov 2026, ~22:30 CET): both mails arrived — "Thank you for joining the Apple Developer Program" and "You now have access to App Store Connect" (Tinge Films s.r.o., order W1801267897). Next: Xcode signing → Tinge Films team, App ID com.framehow.app, first TestFlight build.
+- 6 Nov ~15:20: TESTFLIGHT WORKS. Build 1.0 (1) processed, compliance "none", internal group
+  "Framehow team" with Roman, installed from the TestFlight app on the phone, opens. A NEW BUILD
+  from now on: Xcode → device "Any iOS Device (arm64)" → Product → Archive → Distribute App →
+  App Store Connect → Distribute (3 clicks; bump CFBundleVersion first or Apple refuses a duplicate).
+  For outside testers: TestFlight → External Testing → a public link (Apple checks the first build
+  once, 1–2 days). THE SHELL LOADS DEV: switch capacitor.config.ts server.url to framehow.com/app
+  before the build that goes to real testers.
+- TODO (Roman 6 Nov): TELL PHONE USERS ABOUT THE DESKTOP. (1) one line in the Menu under Sign in
+  and on the sign-up screen: "Also on your Mac/PC: framehow.com/app — same account, same projects";
+  (2) first line of the App Store description says the same; (3) the welcome mail, if any.
+- 6 Nov ~14:55: FIRST TESTFLIGHT BUILD UPLOADED — Xcode archive, Distribute → App Store Connect,
+  "Upload Successful". App "Framehow" (com.framehow.ios, SKU framehow-ios) exists in App Store
+  Connect, iOS 1.0 (build 1). Next: wait for "completed processing" mail, TestFlight → internal
+  tester Roman → install from the TestFlight app on the phone.
 - TOMORROW 3: RUN 581 (full, v5.0.151): 137 green, 2 red, both timing. (a) BIG DAY part 7: the
   fitting PDF after ticking "unrated" gave no download in 120 s (passed 572/579/580). (b) test 33:
   three uploads fired within 0.1 s, the server kept two — an upload lost in the overlap (passed
@@ -195,8 +209,11 @@ Export (share sheet), Save Project (needs sign-in — skip), both orientations f
   `FH_NOTEST=1 npm run deploy -- <run> "…"` (script pushes to GitHub since today).
 
 ## THE LIST (Roman + Claude, 4 Nov) — order agreed
-NOW (app track): 1 Capacitor shell (today) · 2 native camera into Framehow, instant landing
-(preview on the card at the shutter, finished JPEG swapped in ~1 s later) · 3 Apple: pay when
+NOW (app track): 1 Capacitor shell (today) · 2 native camera into Framehow — NO SWAP, IMMEDIATE (Roman, 6 Nov): the 2400 px JPEG lands on the
+card the moment the phone hands it over (native capture→JPEG is ~100–300 ms; MEASURE on the phone);
+no preview, no second picture, no waiting screen; from then on it is any picture
+(draw at once, move, offline, upload in the background, nothing on the card changes when it lands).
+PWA keeps FH CAM and PHONE CAM (PHONE CAM = any device's own camera via the file input — iPhone, Samsung; decide later whether to hide it); the App Store app replaces FH CAM with native, keeps PHONE CAM · 3 Apple: pay when
 the "verified" email comes, then TestFlight (free Xcode signing expires ~7 days → Cmd+R).
 SOON (web, ~1 h each, between app steps): 4 bug: multi-load into an EMPTY version strip lands
 in v2+ (v1 stays empty) · 5 LOAD several MAIN frames at once in a normal project (as START

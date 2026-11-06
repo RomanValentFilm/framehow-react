@@ -64,6 +64,50 @@ function guideRatio(ar: number, photoW?: number, photoH?: number): number {
   return photoW && photoH ? photoW / photoH : 3 / 4;
 }
 
+/** The shell's camera plugin, when the app runs inside the iPhone app. */
+function nativeCamera(): { take(o: any): Promise<any> } | null {
+  const w = window as any;
+  if (!w.Capacitor?.isNativePlatform?.()) return null;
+  return w.Capacitor?.Plugins?.FramehowCamera ?? null;
+}
+
+/** Opens the native camera for this shot. True = handled here (photo landed or
+ *  cancelled); false = no native camera, carry on with the web one. */
+async function takeNativePhoto(fid: number): Promise<boolean> {
+  const cam = nativeCamera();
+  if (!cam || !cameraTarget) return false;
+  const kind = state().projectType;
+  const list = kind === 'fitting' ? FITTING_RATIOS : kind === 'portrait' ? PORTRAIT_RATIOS : CAM_RATIOS;
+  const ratios = list.map((r) => ({ key: r.key, label: r.label, value: r.value == null ? canvasAspectRatio(fid) : r.value }));
+  const ratioKey = state().camAspectRatio || 'canvas';
+  const t0 = Date.now();
+  trace(`camera: native · ratio ${ratioKey} · ${ratios.length} choices`);
+  let res: any;
+  try {
+    res = await cam.take({ ratios, ratioKey, maxSide: 2400 });
+  } catch (e: any) {
+    trace(`camera: native failed — ${e?.message || e}; falling back to the web camera`);
+    return false;
+  }
+  if (!res || res.cancelled || !res.jpegBase64) {
+    trace(`camera: native closed without a photo (${Math.round((Date.now() - t0) / 100) / 10} s)`);
+    closeCamera();
+    return true;
+  }
+  if (res.ratioKey && res.ratioKey !== ratioKey) {
+    useStore.setState({ camAspectRatio: res.ratioKey });
+    void flushSyncNow();
+  }
+  if (cameraTarget) cameraTarget.aspectRatio = effectiveAspectRatio(fid);
+  fhTrack('photo_taken');
+  const kb = Math.round(res.jpegBase64.length * 3 / 4 / 1024);
+  trace(`camera: native photo ${res.width}×${res.height} · ${kb} KB · HDR layer ${res.hdrKept ? 'kept' : 'lost'} · ratio ${res.ratioKey} · ${Math.round((Date.now() - t0) / 100) / 10} s from CAM to card`);
+  const url = `data:image/jpeg;base64,${res.jpegBase64}`;
+  if (onCapturedImage && cameraTarget) onCapturedImage(url, cameraTarget);
+  closeCamera();
+  return true;
+}
+
 export async function openCamera(
   fid: number,
   div: HTMLElement,
@@ -92,6 +136,15 @@ export async function openCamera(
   // CAM SET UP always shows the Framehow camera, whatever is chosen.
   if (!setup && getCamMode() === 'phone') { openPhoneCamera(); return; }
   phoneShot = false;
+
+  // THE NATIVE CAMERA (6 Nov, Roman): in the app shell, CAM is the iPhone's own
+  // camera (the 3 Nov test app, now the FramehowCamera plugin) — the picture
+  // quality the web camera can never get. It gets the same RATIO list as FH CAM
+  // (CANVAS resolved to the card's shape, GROUP PHOTO = the chip itself) and the
+  // ratio in force; it hands back ONE 2400 px JPEG, which lands on the card at
+  // once like any picture. CAM SET UP keeps the web screen (it is a settings page).
+  // No swap, no preview, no second picture.
+  if (!setup && await takeNativePhoto(fid)) return;
 
   let hasCamera = false;
   let camBlocked = false;

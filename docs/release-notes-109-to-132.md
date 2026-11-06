@@ -100,3 +100,9 @@ v5.0.149 · #701, v5.0.150 · #702
 
 v5.0.151 · #703
 - The measuring log lines taken out again
+
+v5.0.152 · #704 — LIVE 6 Nov
+- DRAW bar: one tool lit at a time (eraser on darkens colour and pen; off brings them back)
+
+v5.0.153 · #705
+- App shell: CAM opens the iPhone's native camera (FramehowCamera plugin — the 3 Nov test camera with Framehow's RATIO list); one 2400 px JPEG lands on the card at once. PWA unchanged.

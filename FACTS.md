@@ -63,3 +63,5 @@ this, quote the line here — never answer from general knowledge first.
   framehow.com + info@framehow.com).
 
 - APPLE DEVELOPER PROGRAM ACTIVE (5 Nov 2026, ~22:30 CET): both mails arrived — "Thank you for joining the Apple Developer Program" and "You now have access to App Store Connect" (Tinge Films s.r.o., order W1801267897). Next: Xcode signing → Tinge Films team, App ID com.framehow.app, first TestFlight build.
+- 6 Nov: BUNDLE ID IS com.framehow.ios (com.framehow.app was taken by yesterday's Personal-Team build and Apple binds an ID to one team). Team in Xcode: Tinge Films s.r.o. capacitor.config.ts appId changed to match.
+- 6 Nov: App Store Connect app 'Framehow' created (com.framehow.ios, SKU framehow-ios, company name Tinge Films s.r.o.). First build 1.0 (1) uploaded ~14:55. Xcode Cloud: declined.

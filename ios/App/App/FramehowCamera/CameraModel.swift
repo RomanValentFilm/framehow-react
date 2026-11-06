@@ -1,0 +1,235 @@
+// THE FRAMEHOW CAMERA (6 Nov 2026) — the 3 Nov test app (native/FramehowCamTest),
+// lifted into the app shell. Same camera, same rules:
+//   · the iPhone's own quality: Dual Wide, up to 24 MP, "quality" prioritisation
+//     (Smart HDR / Deep Fusion), no tone changes, the HDR layer kept in the JPEG
+//   · lens switching only by the 1x / 0.5x button, never by distance
+//   · tap to focus and expose, slide up/down for EV
+//   · the shutter: a dark flash, the live picture goes on at once, the crop and
+//     the resize happen on the camera's thread
+// What is new: the photo does not go to Photos; it is cropped to the chosen frame,
+// resized to `maxSide` on its long side (2400), and handed to the plugin, which
+// hands it to the web app — the one and only picture that lands on the card.
+
+import AVFoundation
+import Combine
+import CoreImage
+import ImageIO
+import UniformTypeIdentifiers
+import SwiftUI
+
+@MainActor
+final class CameraModel: NSObject, ObservableObject {
+    let session = AVCaptureSession()
+    private let photoOutput = AVCapturePhotoOutput()
+    @Published private(set) var device: AVCaptureDevice?
+    var rotationCoordinator: AVCaptureDevice.RotationCoordinator?
+    var devicePoint: ((CGPoint) -> CGPoint)?
+
+    @Published var status = "starting…"
+    @Published var exposureBias: Float = 0 { didSet { applyExposure() } }
+    @Published var lensName = ""
+    /// The chosen frame, long side / short side (≥ 1); the photo is cropped to it.
+    var frameRatio: CGFloat = 16.0 / 9.0
+    /// The long side of the photo handed over (Roman: 2400).
+    var maxSide: CGFloat = 2400
+    @Published var flash = false
+    @Published var busy = 0
+    @Published var photoSize = ""
+    @Published var wide = false
+
+    /// The finished photo: JPEG data, its size, and whether the HDR layer survived.
+    var onPhoto: ((Data, Int, Int, Bool) -> Void)?
+
+    func start() {
+        AVCaptureDevice.requestAccess(for: .video) { ok in
+            Task { @MainActor in
+                if ok { self.configure() } else { self.status = "no camera permission — Settings › Framehow › Camera" }
+            }
+        }
+    }
+
+    func stop() {
+        let s = session
+        DispatchQueue.global(qos: .userInitiated).async { if s.isRunning { s.stopRunning() } }
+    }
+
+    private func configure() {
+        guard let cam = AVCaptureDevice.default(.builtInDualWideCamera, for: .video, position: .back)
+                     ?? AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) else {
+            status = "no back camera found"; return
+        }
+        device = cam
+        session.beginConfiguration()
+        session.sessionPreset = .photo
+        do {
+            let input = try AVCaptureDeviceInput(device: cam)
+            if session.canAddInput(input) { session.addInput(input) }
+            if session.canAddOutput(photoOutput) { session.addOutput(photoOutput) }
+            photoOutput.maxPhotoQualityPrioritization = .quality
+            if photoOutput.isResponsiveCaptureSupported { photoOutput.isResponsiveCaptureEnabled = true }
+            if photoOutput.isFastCapturePrioritizationSupported { photoOutput.isFastCapturePrioritizationEnabled = true }
+            let sizes = cam.activeFormat.supportedMaxPhotoDimensions
+            let upTo24 = sizes.filter { Int($0.width) * Int($0.height) <= 24_500_000 }
+            if let dims = upTo24.max(by: { Int($0.width) * Int($0.height) < Int($1.width) * Int($1.height) }) ?? sizes.first {
+                photoOutput.maxPhotoDimensions = dims
+                photoSize = "\(dims.width)×\(dims.height)"
+            }
+            session.commitConfiguration()
+            if cam.isVirtualDevice {
+                oneX = cam.virtualDeviceSwitchOverVideoZoomFactors.first.map { CGFloat(truncating: $0) } ?? 1
+                try cam.lockForConfiguration()
+                cam.setPrimaryConstituentDeviceSwitchingBehavior(.restricted, restrictedSwitchingBehaviorConditions: [.videoZoomChanged])
+                cam.videoZoomFactor = oneX
+                cam.unlockForConfiguration()
+            }
+            lensName = cam.isVirtualDevice ? "1x" : cam.localizedName
+        } catch {
+            session.commitConfiguration()
+            status = "camera setup failed: \(error.localizedDescription)"; return
+        }
+        let s = session
+        DispatchQueue.global(qos: .userInitiated).async { s.startRunning() }
+        status = "ready"
+    }
+
+    private func applyExposure() {
+        guard let cam = device else { return }
+        do {
+            try cam.lockForConfiguration()
+            let v = max(cam.minExposureTargetBias, min(cam.maxExposureTargetBias, exposureBias))
+            cam.setExposureTargetBias(v)
+            cam.unlockForConfiguration()
+        } catch { status = "exposure: \(error.localizedDescription)" }
+    }
+
+    func focus(atPreviewPoint p: CGPoint) {
+        guard let cam = device, let conv = devicePoint else { return }
+        let dp = conv(p)
+        do {
+            try cam.lockForConfiguration()
+            if cam.isFocusPointOfInterestSupported { cam.focusPointOfInterest = dp }
+            if cam.isFocusModeSupported(.autoFocus) { cam.focusMode = .autoFocus }
+            if cam.isExposurePointOfInterestSupported { cam.exposurePointOfInterest = dp }
+            if cam.isExposureModeSupported(.autoExpose) { cam.exposureMode = .autoExpose }
+            cam.unlockForConfiguration()
+        } catch { status = "focus: \(error.localizedDescription)" }
+    }
+
+    /// The chip's zoom factor that means "1x" (on a Dual Wide device 1.0 is the 0.5x lens).
+    private var oneX: CGFloat = 1
+    /// What the user sees: 0.5 … 1 … 3, as the Camera app counts.
+    @Published var zoomShown: CGFloat = 1
+    func setLens(wide w: Bool) { setZoom(w ? 0.5 : 1) }
+
+    /// Zoom as the user counts it (0.5 = the wide lens, 1 = the main lens, up to 3 digital).
+    /// THE LENS FOLLOWS THE ZOOM (Roman, 6 Nov: button AND two-finger spread): below 1x
+    /// the wide lens, from 1x the main one — the only moments the camera may switch.
+    func setZoom(_ shown: CGFloat) {
+        guard let cam = device else { return }
+        let z = max(0.5, min(3, shown))
+        do {
+            try cam.lockForConfiguration()
+            let factor: CGFloat
+            if cam.isVirtualDevice { factor = max(1, min(cam.activeFormat.videoMaxZoomFactor, z * oneX)) }   // 0.5 → 1.0 (the wide lens), 1 → oneX
+            else { factor = max(1, min(cam.activeFormat.videoMaxZoomFactor, max(1, z))) }
+            cam.videoZoomFactor = factor
+            cam.unlockForConfiguration()
+            zoomShown = z
+            wide = z < 1
+            lensName = z < 1 ? "0.5x" : (z == 1 ? "1x" : String(format: "%.1fx", z))
+        } catch { status = "lens: \(error.localizedDescription)" }
+    }
+
+    nonisolated(unsafe) private var pending: (CGFloat, CGFloat) = (16.0 / 9.0, 2400)
+
+    func takePhoto() {
+        pending = (frameRatio, maxSide)
+        let settings: AVCapturePhotoSettings
+        if photoOutput.availablePhotoCodecTypes.contains(.hevc) {
+            settings = AVCapturePhotoSettings(format: [AVVideoCodecKey: AVVideoCodecType.hevc])
+        } else {
+            settings = AVCapturePhotoSettings()
+        }
+        settings.photoQualityPrioritization = .quality
+        settings.maxPhotoDimensions = photoOutput.maxPhotoDimensions
+        if let cam = device, cam.hasFlash { settings.flashMode = .auto }
+        if let c = photoOutput.connection(with: .video), let coord = rotationCoordinator {
+            let a = coord.videoRotationAngleForHorizonLevelCapture
+            if c.isVideoRotationAngleSupported(a) { c.videoRotationAngle = a }
+        }
+        busy += 1
+        photoOutput.capturePhoto(with: settings, delegate: self)
+    }
+}
+
+extension CameraModel: AVCapturePhotoCaptureDelegate {
+    nonisolated func photoOutput(_ output: AVCapturePhotoOutput, willCapturePhotoFor resolvedSettings: AVCaptureResolvedPhotoSettings) {
+        Task { @MainActor in
+            self.flash = true
+            try? await Task.sleep(for: .milliseconds(90))
+            self.flash = false
+        }
+    }
+
+    nonisolated func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
+        let err = error?.localizedDescription
+        let (ratio, maxSide) = pending
+        let result = Self.croppedAndResized(photo, ratio: ratio, maxSide: maxSide)
+        Task { @MainActor in
+            self.busy = max(0, self.busy - 1)
+            if let err { self.status = "capture failed: \(err)"; return }
+            guard let data = result.data else { self.status = "no photo data"; return }
+            self.onPhoto?(data, result.w, result.h, result.hdrKept)
+        }
+    }
+
+    /// The frame (a centred band along the chip's short side — the frame's long side IS
+    /// the chip's long side), the HDR layer cropped and scaled the same way, resized so
+    /// the long side is `maxSide`, written as one JPEG with the layer inside.
+    nonisolated static func croppedAndResized(_ photo: AVCapturePhoto, ratio: CGFloat, maxSide: CGFloat) -> (data: Data?, w: Int, h: Int, hdrKept: Bool) {
+        guard let file = photo.fileDataRepresentation(),
+              var image = CIImage(data: file, options: [.applyOrientationProperty: true]) else { return (nil, 0, 0, false) }
+        var gain: CIImage? = nil
+        if #available(iOS 18, *) {
+            gain = CIImage(data: file, options: [.auxiliaryHDRGainMap: true, .applyOrientationProperty: true])
+        }
+        let w = image.extent.width, h = image.extent.height
+        let long = max(w, h), short = min(w, h)
+        // 4:3 is the chip itself: no crop
+        if ratio > 4.0 / 3.0 + 0.001 {
+            var band = min(short, (long / ratio).rounded())
+            let k = gain.map { $0.extent.width / w } ?? 1
+            if k < 1 { band = (band * k).rounded(.down) / k }
+            let rect = w >= h ? CGRect(x: 0, y: ((h - band) / 2 * k).rounded(.down) / k, width: w, height: band)
+                              : CGRect(x: ((w - band) / 2 * k).rounded(.down) / k, y: 0, width: band, height: h)
+            image = image.cropped(to: rect.offsetBy(dx: image.extent.minX, dy: image.extent.minY))
+            image = image.transformed(by: CGAffineTransform(translationX: -image.extent.minX, y: -image.extent.minY))
+            if let g = gain {
+                let gr = CGRect(x: rect.minX * k, y: rect.minY * k, width: rect.width * k, height: rect.height * k)
+                let gc = g.cropped(to: gr.offsetBy(dx: g.extent.minX, dy: g.extent.minY))
+                gain = gc.transformed(by: CGAffineTransform(translationX: -gc.extent.minX, y: -gc.extent.minY))
+            }
+        }
+        // THE RESIZE (Roman: 2400 on the long side). Picture and layer are scaled by the
+        // same factor, so the layer keeps its place and its relative size (a layer scaled
+        // on its own made it worse, 3 Nov).
+        let curLong = max(image.extent.width, image.extent.height)
+        if curLong > maxSide {
+            let s = maxSide / curLong
+            image = image.transformed(by: CGAffineTransform(scaleX: s, y: s))
+            image = image.transformed(by: CGAffineTransform(translationX: -image.extent.minX, y: -image.extent.minY))
+            if let g = gain {
+                let gs = g.transformed(by: CGAffineTransform(scaleX: s, y: s))
+                gain = gs.transformed(by: CGAffineTransform(translationX: -gs.extent.minX, y: -gs.extent.minY))
+            }
+        }
+        let ctx = CIContext()
+        let space = CGColorSpace(name: CGColorSpace.displayP3) ?? CGColorSpaceCreateDeviceRGB()
+        var opts: [CIImageRepresentationOption: Any] = [kCGImageDestinationLossyCompressionQuality as CIImageRepresentationOption: 0.92]
+        if #available(iOS 18, *), let g = gain { opts[.hdrGainMapImage] = g }
+        guard let out = ctx.jpegRepresentation(of: image, colorSpace: space, options: opts) else { return (nil, 0, 0, false) }
+        var kept = false
+        if #available(iOS 18, *) { kept = (CIImage(data: out, options: [.expandToHDR: true])?.contentHeadroom ?? 1) > 1 }
+        return (out, Int(image.extent.width.rounded()), Int(image.extent.height.rounded()), kept)
+    }
+}

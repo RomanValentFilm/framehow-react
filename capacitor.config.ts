@@ -6,7 +6,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 // deploy shows up in the app at once, nothing is bundled. Switch `url` to
 // https://framehow.com/app/ for the live app. The native camera comes as a plugin.
 const config: CapacitorConfig = {
-  appId: 'com.framehow.app',
+  appId: 'com.framehow.ios',
   appName: 'Framehow',
   webDir: 'dist/app',
   server: {
