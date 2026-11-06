@@ -870,7 +870,9 @@ export function applyCapturedImage(dataURL: string, target: any): void {
       // start, so a little longer to feel the same).
       (window as any).__fh_startShrink = () => {
         (window as any).__fh_startShrink = undefined;
-        thumb.style.transition = 'left 0.4s ease-in, top 0.4s ease-in, width 0.4s ease-in, height 0.4s ease-in, opacity 0.4s ease-in, border-radius 0.4s ease-in';
+        // the move as before; the fade only in the last third (Roman, 6 Nov: it went
+        // see-through too soon) — opaque for 0.27 s, then 0.13 s to nothing
+        thumb.style.transition = 'left 0.4s ease-in, top 0.4s ease-in, width 0.4s ease-in, height 0.4s ease-in, opacity 0.13s linear 0.27s, border-radius 0.4s ease-in';
         thumb.style.left = `${tr.left}px`; thumb.style.top = `${tr.top}px`;
         thumb.style.width = `${tr.width}px`; thumb.style.height = `${tr.height}px`;
         thumb.style.borderRadius = '4px';
