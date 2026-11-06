@@ -861,25 +861,28 @@ export function applyCapturedImage(dataURL: string, target: any): void {
     if (sr) {
       // THE NATIVE CAMERA (6 Nov, Roman): the shot sat in the frame's rectangle on the
       // camera screen; the copy starts exactly there, opaque, and shrinks into the card.
+      // DRAWN BY THE GRAPHICS CHIP (6 Nov, Roman's film): moving left/top/width/height
+      // needs the page's main thread for every frame, and in that second it is busy
+      // (sync, redraws) — the copy stood still and vanished. A transform is composited:
+      // it moves whatever the page is doing. The copy sits at the CARD and is pushed
+      // out to the frame's rectangle by the transform; the transform then goes to none.
+      const sx = sr.width / tr.width, sy = sr.height / tr.height;
+      const dx = sr.left - tr.left, dy = sr.top - tr.top;
       thumb.style.cssText = `position:fixed;z-index:100000;pointer-events:none;object-fit:cover;` +
-        `left:${sr.left}px;top:${sr.top}px;width:${sr.width}px;height:${sr.height}px;border-radius:0;opacity:1;`;
+        `left:${tr.left}px;top:${tr.top}px;width:${tr.width}px;height:${tr.height}px;border-radius:0;opacity:1;` +
+        `transform-origin:0 0;transform:translate(${dx}px,${dy}px) scale(${sx},${sy});will-change:transform,opacity;`;
       document.body.appendChild(thumb);
       void thumb.offsetWidth;   // laid out now, so the transition below has a start
       // THE SHRINK STARTS WHEN THE CAMERA SCREEN GOES (camera.ts calls this on the
-      // camera's answer) — 0.4 s (Roman, 6 Nov: it travels less than FH CAM's full-screen
-      // start, so a little longer to feel the same).
+      // camera's answer) — 1 s TEST BUILD (Roman, 6 Nov); the fade only in the last third.
       (window as any).__fh_startShrink = () => {
         (window as any).__fh_startShrink = undefined;
-        // the move as before; the fade only in the last third (Roman, 6 Nov: it went
-        // see-through too soon) — opaque for 0.27 s, then 0.13 s to nothing
-        // TEST BUILD (Roman, 6 Nov): 1 s move so the shape of it can be seen; fade in the last third
-        thumb.style.transition = 'left 1s ease-in, top 1s ease-in, width 1s ease-in, height 1s ease-in, opacity 0.33s linear 0.67s, border-radius 1s ease-in';
-        thumb.style.left = `${tr.left}px`; thumb.style.top = `${tr.top}px`;
-        thumb.style.width = `${tr.width}px`; thumb.style.height = `${tr.height}px`;
+        thumb.style.transition = 'transform 1s ease-in, opacity 0.33s linear 0.67s, border-radius 1s ease-in';
+        thumb.style.transform = 'translate(0px,0px) scale(1,1)';
         thumb.style.borderRadius = '4px';
         thumb.style.opacity = '0';
         const t0 = Date.now();
-        thumb.addEventListener('transitionend', (ev) => { if (ev.propertyName === 'left') trace(`camera: shrink moved for ${Date.now() - t0} ms, from ${Math.round(sr.width)}×${Math.round(sr.height)} at ${Math.round(sr.left)},${Math.round(sr.top)} to ${Math.round(tr.width)}×${Math.round(tr.height)} at ${Math.round(tr.left)},${Math.round(tr.top)}`); });
+        thumb.addEventListener('transitionend', (ev) => { if (ev.propertyName === 'transform') trace(`camera: shrink moved for ${Date.now() - t0} ms, from ${Math.round(sr.width)}×${Math.round(sr.height)} at ${Math.round(sr.left)},${Math.round(sr.top)} to ${Math.round(tr.width)}×${Math.round(tr.height)} at ${Math.round(tr.left)},${Math.round(tr.top)}`); });
         setTimeout(() => thumb.remove(), 1100);
       };
       setTimeout(() => (window as any).__fh_startShrink?.(), 1500);   // never stuck, whatever the camera says
