@@ -548,10 +548,17 @@ export function openFullscreen(
     overlay.querySelectorAll('.eraser-btn').forEach((d) =>
       d.addEventListener('click', () => {
         state().drawEraser[fid] = !state().drawEraser[fid];
-        d.classList.toggle('selected', state().drawEraser[fid]);
-        if (state().drawEraser[fid]) {
-          overlay.querySelectorAll('.color-dot').forEach((dd) => dd.classList.remove('selected'));
-        }
+        const on = state().drawEraser[fid];
+        d.classList.toggle('selected', on);
+        // ONE TOOL LIT AT A TIME (6 Nov, Roman: eraser and a pen both red at
+        // once). Eraser on: the colour AND the pen go dark. Eraser off again:
+        // the pen comes back as it was, the colour too.
+        const cc = state().penColor;
+        const tw = String(state().drawWidth[fid] || _lastWidth);
+        overlay.querySelectorAll('.color-dot').forEach((dd) =>
+          dd.classList.toggle('selected', !on && (dd as HTMLElement).dataset.color === cc));
+        overlay.querySelectorAll('.thick-btn').forEach((dd) =>
+          dd.classList.toggle('selected', !on && (dd as HTMLElement).dataset.tw === tw));
       })
     );
     // Undo button — remove last drawn stroke

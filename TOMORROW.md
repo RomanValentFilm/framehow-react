@@ -73,6 +73,13 @@ FINDINGS so far (not fixed yet):
   the simulator (Roman signs in himself; I never type his password) and, for the two-device checks,
   the desktop open on the same account. Same method as the long test plan below; findings only.
 - F12 CONFIRMED by Roman ("all works perfect", 21:38).
+**LIVE: framehow.com/app = v5.0.151 · #703, pushed to main 6 Nov 10:25 (96c94f0, 8dd3f92..96c94f0). Full run 581: 137 green, 2 timing reds (TOMORROW 3). Tester day.**
+
+- APPLE DEVELOPER PROGRAM ACTIVE (5 Nov 2026, ~22:30 CET): both mails arrived — "Thank you for joining the Apple Developer Program" and "You now have access to App Store Connect" (Tinge Films s.r.o., order W1801267897). Next: Xcode signing → Tinge Films team, App ID com.framehow.app, first TestFlight build.
+- TOMORROW 3: RUN 581 (full, v5.0.151): 137 green, 2 red, both timing. (a) BIG DAY part 7: the
+  fitting PDF after ticking "unrated" gave no download in 120 s (passed 572/579/580). (b) test 33:
+  three uploads fired within 0.1 s, the server kept two — an upload lost in the overlap (passed
+  572). (b) needs a test of two uploads at once, then the fix in the upload queue.
 - TOMORROW 1: THE WRITE-THEN-PULL RACE (run 579, BIG DAY part 3 red; green in 572). iPad writes on
   shot 1, a heartbeat pull lands before the push ("push skipped: a fetch is running"), the pull
   "recorded 4 frames as matching the server" — the unsent text included — and the text never

@@ -61,3 +61,5 @@ this, quote the line here — never answer from general knowledge first.
   VAT 23%). Activation email pending. Auto-renew: Roman's choice at checkout. Plan: enrol as "Tinge Films s.r.o."
   (needs D-U-N-S — check Apple's lookup first; company website + work email:
   framehow.com + info@framehow.com).
+
+- APPLE DEVELOPER PROGRAM ACTIVE (5 Nov 2026, ~22:30 CET): both mails arrived — "Thank you for joining the Apple Developer Program" and "You now have access to App Store Connect" (Tinge Films s.r.o., order W1801267897). Next: Xcode signing → Tinge Films team, App ID com.framehow.app, first TestFlight build.
