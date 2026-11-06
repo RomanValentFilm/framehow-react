@@ -27,6 +27,9 @@ Every one of these was agreed in a working session. Breaking one costs an hour.
 11. ROMAN IS IN PRAGUE (CET). Run `date` before any time-of-day word.
 12. iPad scrolling and bar rules are hard-won (#481 and friends): iPhone-only fixes stay iPhone-only.
 13. Do ONLY what was asked; if something next to it is worth doing, say so and wait.
+    DECISIONS (6 Nov, Roman): small layout/wording calls (where a button sits, a label) I make
+    and say so; anything that changes what the app IS or what a photo looks like — picture
+    quality, what is kept or dropped, speed vs quality — is a question with the options first.
 14. The app runs on Roman's Mac/phone; I never run his commands. He pastes the output.
 
 

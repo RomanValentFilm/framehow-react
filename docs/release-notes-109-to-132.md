@@ -106,3 +106,8 @@ v5.0.152 · #704 — LIVE 6 Nov
 
 v5.0.153 · #705
 - App shell: CAM opens the iPhone's native camera (FramehowCamera plugin — the 3 Nov test camera with Framehow's RATIO list); one 2400 px JPEG lands on the card at once. PWA unchanged.
+
+v5.0.154–157 · #706–709
+- Native camera in the iPhone app: RATIO list, pinch zoom with the lens following, tap focus (back to auto when the scene changes), EV, Cancel; Deep Fusion kept
+- The two-step landing: the live frame lands on the card at the shutter, the real 2400 px photo (HDR layer in it) replaces it on the same version a second later; the live frame is never uploaded
+- The iPhone app has one camera: no FH CAM / PHONE CAM switch there

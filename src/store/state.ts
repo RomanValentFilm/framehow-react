@@ -30,6 +30,9 @@ export interface TableData {
 export interface Frame {
   id: number;
   src: string;
+  /** The picture is the camera's LIVE FRAME; the real photo is on its way (6 Nov,
+   *  the two-step landing). Not uploaded until the real one replaces it. */
+  awaitingPhoto?: boolean;
   label: string;
   cropW: number;
   cropH: number;
@@ -66,7 +69,7 @@ export interface Setup {
 
 /** 12-colour palette for setups. */
 /** App version — bump before every deploy. */
-export const APP_VERSION = 'v5.0.155';
+export const APP_VERSION = 'v5.0.157';
 
 /** Free-text fields printed in the header of every exported page. */
 export interface ExportMeta {
@@ -136,6 +139,8 @@ export const SETUP_COLORS: { name: string; hex: string }[] = [
 export interface Version {
   id: number;
   label: string;
+  /** See Frame.awaitingPhoto. */
+  awaitingPhoto?: boolean;
   type: 'empty' | 'drawing' | 'upload';
   strokes: Stroke[];
   bgImage: string | null;

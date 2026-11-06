@@ -213,9 +213,11 @@ Export (share sheet), Save Project (needs sign-in — skip), both orientations f
   `FH_NOTEST=1 npm run deploy -- <run> "…"` (script pushes to GitHub since today).
 
 ## THE LIST (Roman + Claude, 4 Nov) — order agreed
-NOW (app track): 1 Capacitor shell (today) · 2 native camera into Framehow — NO SWAP, IMMEDIATE (Roman, 6 Nov): the 2400 px JPEG lands on the
-card the moment the phone hands it over (native capture→JPEG is ~100–300 ms; MEASURE on the phone);
-no preview, no second picture, no waiting screen; from then on it is any picture
+NOW (app track): 1 Capacitor shell (today) · 2 native camera into Framehow — TWO-STEP LANDING, AGREED (Roman, 6 Nov 16:50, after measuring:
+Deep Fusion = 1.2 s per shot, kept): at the shutter the LIVE FRAME (screen size, same crop) lands on
+the card at once and the camera screen closes; ~1 s later the real 2400 px JPEG (HDR layer in it)
+replaces it on the same version, addressed by version id, not by what is on screen; strokes drawn
+meanwhile stay; upload starts only with the real photo. Nothing to do with the server. from then on it is any picture
 (draw at once, move, offline, upload in the background, nothing on the card changes when it lands).
 PWA keeps FH CAM and PHONE CAM (PHONE CAM = any device's own camera via the file input — iPhone, Samsung; decide later whether to hide it); the App Store app replaces FH CAM with native, keeps PHONE CAM · 3 Apple: pay when
 the "verified" email comes, then TestFlight (free Xcode signing expires ~7 days → Cmd+R).

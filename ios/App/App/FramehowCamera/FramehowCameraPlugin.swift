@@ -1,15 +1,19 @@
-// THE BRIDGE (6 Nov 2026): one call from the web app, one answer.
+// THE BRIDGE (6 Nov 2026): one call from the web app, two answers.
 //
 //   window.Capacitor.Plugins.FramehowCamera.take({
 //     ratios: [{ key, label, value }],   // the FH CAM list, values = long/short (CANVAS resolved)
 //     ratioKey: '16:9',                  // the one in force
 //     maxSide: 2400                      // long side of the photo handed back
 //   })
-//   → { jpegBase64, width, height, hdrKept, ratioKey }   or   { cancelled: true }
+//   1. event "preview"  { jpegBase64, width, height, ratioKey }   — the live frame, at the
+//      shutter, ~100 ms; the camera screen is gone by then and the card shows it
+//   2. the promise      { jpegBase64, width, height, hdrKept, ratioKey, msCapture, msProcess }
+//      — the real photo, ~1 s later (Deep Fusion, 2400 px, HDR layer in it)
+//   or the promise { cancelled: true }
 //
-// The screen is presented over the web view, full screen; the web app does not
-// see it and goes on believing the camera is open (cameraSessionStart), so the
-// turn rules for CAM hold exactly as with FH CAM.
+// THE TWO-STEP LANDING (Roman, 6 Nov): the live frame fills the card at once, the
+// real photo replaces it on the same version a second later. The camera session
+// keeps running after the screen is closed until the real photo has arrived.
 
 import Capacitor
 import SwiftUI
@@ -24,13 +28,13 @@ public class FramehowCameraPlugin: CAPPlugin, CAPBridgedPlugin {
     ]
 
     private var host: UIViewController?
+    private var model: CameraModel?
 
     @objc func take(_ call: CAPPluginCall) {
         let list = (call.getArray("ratios") as? [[String: Any]] ?? []).compactMap { d -> RatioChoice? in
             guard let key = d["key"] as? String, let label = d["label"] as? String else { return nil }
             let v = (d["value"] as? NSNumber).map { CGFloat(truncating: $0) } ?? 16.0 / 9.0
-            // long / short, never below 1 (a portrait project sends 9/16 → 16/9 held upright)
-            let r = v > 0 ? max(v, 1 / v) : 4.0 / 3.0
+            let r = v > 0 ? max(v, 1 / v) : 4.0 / 3.0   // long / short, never below 1
             return RatioChoice(key: key, label: label, value: r)
         }
         let ratios = list.isEmpty ? [RatioChoice(key: "16:9", label: "16:9", value: 16.0 / 9.0)] : list
@@ -40,23 +44,36 @@ public class FramehowCameraPlugin: CAPPlugin, CAPBridgedPlugin {
 
         DispatchQueue.main.async { [weak self] in
             guard let self, let top = self.bridge?.viewController else { call.reject("no view controller"); return }
+            let cam = CameraModel()
+            self.model = cam
+            var keyInForce = ratioKey
+            cam.onPreview = { [weak self] data, w, h in
+                // the live frame: to the web at once, and the screen goes
+                self?.notifyListeners("preview", data: [
+                    "jpegBase64": data.base64EncodedString(), "width": w, "height": h, "ratioKey": keyInForce,
+                ])
+                self?.dismissScreen()
+            }
+            cam.onPhoto = { [weak self] data, w, h, kept, msCapture, msProcess in
+                self?.dismissScreen()
+                cam.stop()
+                self?.model = nil
+                call.resolve([
+                    "jpegBase64": data.base64EncodedString(),
+                    "width": w, "height": h, "hdrKept": kept, "ratioKey": keyInForce,
+                    "msCapture": msCapture, "msProcess": msProcess,
+                ])
+                self?.bridge?.releaseCall(call)
+            }
             let screen = CameraScreen(
-                ratios: ratios, ratioKey: ratioKey, maxSide: maxSide,
-                onPhoto: { [weak self] data, w, h, kept, key, msCapture, msProcess in
-                    self?.dismiss {
-                        call.resolve([
-                            "jpegBase64": data.base64EncodedString(),
-                            "width": w, "height": h, "hdrKept": kept, "ratioKey": key,
-                            "msCapture": msCapture, "msProcess": msProcess,
-                        ])
-                        self?.bridge?.releaseCall(call)
-                    }
-                },
+                cam: cam, ratios: ratios, ratioKey: ratioKey, maxSide: maxSide,
+                onRatio: { key in keyInForce = key },
                 onCancel: { [weak self] in
-                    self?.dismiss {
-                        call.resolve(["cancelled": true])
-                        self?.bridge?.releaseCall(call)
-                    }
+                    self?.dismissScreen()
+                    cam.stop()
+                    self?.model = nil
+                    call.resolve(["cancelled": true])
+                    self?.bridge?.releaseCall(call)
                 })
             let vc = UIHostingController(rootView: screen)
             vc.modalPresentationStyle = .fullScreen
@@ -66,9 +83,9 @@ public class FramehowCameraPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
-    private func dismiss(_ then: @escaping () -> Void) {
-        guard let vc = host else { then(); return }
+    private func dismissScreen() {
+        guard let vc = host else { return }
         host = nil
-        vc.dismiss(animated: false, completion: then)
+        vc.dismiss(animated: false)
     }
 }

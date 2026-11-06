@@ -73,12 +73,14 @@ struct RatioChoice: Identifiable {
 }
 
 struct CameraScreen: View {
-    @StateObject private var cam = CameraModel()
+    /// Owned by the plugin: it outlives this screen, so the real photo can still
+    /// arrive after the screen has closed on the live frame.
+    @ObservedObject var cam: CameraModel
     let ratios: [RatioChoice]
     @State var ratioKey: String
     let maxSide: CGFloat
-    /// Called once with the photo (JPEG, w, h, HDR kept, the ratio key in force) — then the screen closes.
-    let onPhoto: (Data, Int, Int, Bool, String, Int, Int) -> Void
+    /// The RATIO in force changed (the plugin reports it with both answers).
+    let onRatio: (String) -> Void
     let onCancel: () -> Void
 
     @State private var showRatios = false
@@ -147,11 +149,7 @@ struct CameraScreen: View {
         .ignoresSafeArea()
         .background(.black)
         .foregroundStyle(.white)
-        .onAppear {
-            cam.onPhoto = { data, w, h, kept, msC, msP in onPhoto(data, w, h, kept, ratioKey, msC, msP) }
-            cam.start()
-        }
-        .onDisappear { cam.stop() }
+        .onAppear { cam.start() }
     }
 
     @ViewBuilder
@@ -173,8 +171,8 @@ struct CameraScreen: View {
         // CANCEL left of the shutter (Roman, 6 Nov: the top right is the EV's place) — the
         // way out without a photo, where the thumb already is.
         let cancel = Button("Cancel") { onCancel() }
-            .font(.system(size: 15)).tint(.white)
-            .padding(.horizontal, 12).padding(.vertical, 8).background(pill, in: Capsule())
+            .font(.system(size: 12)).tint(.white).opacity(0.85)
+            .padding(8)   // a plain word, no pill (Roman, 6 Nov); touch area stays finger-sized
         let info = Text(cam.busy > 0 ? "processing…" : (cam.status == "ready" ? "" : cam.status))
             .font(.caption2).padding(6).background(pill, in: RoundedRectangle(cornerRadius: 8))
             .opacity(cam.busy > 0 || cam.status != "ready" ? 1 : 0)
@@ -185,7 +183,7 @@ struct CameraScreen: View {
                 VStack { HStack { ratioButton; Spacer(); ev }; Spacer() }
                     .padding(.horizontal, 16).padding(.top, landscape ? 16 : 60)
                 VStack { Spacer(); HStack { lens; Spacer() } }
-                    .padding(.horizontal, 16).padding(.bottom, landscape ? 16 : 36)
+                    .padding(.horizontal, 16).padding(.bottom, landscape ? 16 : 24)   // portrait: a row below Cancel
                 if landscape {
                     // shutter right-middle (Camera app), Cancel under it, info bottom right
                     shutter.position(x: W - 24 - 33, y: H / 2)
@@ -194,7 +192,7 @@ struct CameraScreen: View {
                 } else {
                     // shutter bottom-middle, Cancel to its left, info under
                     shutter.position(x: W / 2, y: H - 28 - 33 - 24)
-                    cancel.position(x: W / 2 - 110, y: H - 28 - 33 - 24)
+                    cancel.position(x: W / 2 - 100, y: H - 28 - 33 - 24)   // left of the shutter (Roman), a plain word — short enough to stay clear of 1x
                     info.position(x: W / 2, y: H - 28)
                 }
             }
@@ -206,7 +204,7 @@ struct CameraScreen: View {
     private func ratioMenu(landscape: Bool) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(ratios) { r in
-                Button(action: { ratioKey = r.key; showRatios = false }) {
+                Button(action: { ratioKey = r.key; onRatio(r.key); showRatios = false }) {
                     Text(r.label)
                         .font(.system(size: 15, weight: r.key == ratioKey ? .bold : .regular, design: .monospaced))
                         .foregroundStyle(r.key == ratioKey ? Color(red: 0.84, green: 0.15, blue: 0.20) : .white)

@@ -36,6 +36,11 @@ let onCapturedImage: ((dataURL: string, target: CameraTarget) => void) | null = 
 export function setOnCapturedImage(fn: (dataURL: string, target: CameraTarget) => void): void {
   onCapturedImage = fn;
 }
+/** The second step of the native camera's landing (actions.ts applyFinalPhoto). */
+let onFinalPhoto: ((landing: any, dataURL: string) => void) | null = null;
+export function setOnFinalPhoto(fn: (landing: any, dataURL: string) => void): void {
+  onFinalPhoto = fn;
+}
 
 /** Aspect ratio of the frame's own canvas (the 'canvas' preset). */
 function canvasAspectRatio(fid: number): number {
@@ -65,14 +70,20 @@ function guideRatio(ar: number, photoW?: number, photoH?: number): number {
 }
 
 /** The shell's camera plugin, when the app runs inside the iPhone app. */
-function nativeCamera(): { take(o: any): Promise<any> } | null {
+function nativeCamera(): { take(o: any): Promise<any>; addListener(ev: string, fn: (e: any) => void): Promise<{ remove(): void }> } | null {
   const w = window as any;
   if (!w.Capacitor?.isNativePlatform?.()) return null;
   return w.Capacitor?.Plugins?.FramehowCamera ?? null;
 }
 
 /** Opens the native camera for this shot. True = handled here (photo landed or
- *  cancelled); false = no native camera, carry on with the web one. */
+ *  cancelled); false = no native camera, carry on with the web one.
+ *
+ *  THE TWO-STEP LANDING (Roman, 6 Nov): at the shutter the plugin sends the
+ *  LIVE FRAME ("preview" event) — it goes onto the card at once, the camera
+ *  screen is already gone; about a second later the promise answers with the
+ *  real photo (Deep Fusion, 2400 px, HDR layer), which replaces the live frame
+ *  on the same frame/version. The live frame is never uploaded. */
 async function takeNativePhoto(fid: number): Promise<boolean> {
   const cam = nativeCamera();
   if (!cam) {
@@ -81,37 +92,63 @@ async function takeNativePhoto(fid: number): Promise<boolean> {
     return false;
   }
   if (!cameraTarget) return false;
+  const target = cameraTarget;
   const kind = state().projectType;
   const list = kind === 'fitting' ? FITTING_RATIOS : kind === 'portrait' ? PORTRAIT_RATIOS : CAM_RATIOS;
   const ratios = list.map((r) => ({ key: r.key, label: r.label, value: r.value == null ? canvasAspectRatio(fid) : r.value }));
   const ratioKey = state().camAspectRatio || 'canvas';
   const t0 = Date.now();
   trace(`camera: native · ratio ${ratioKey} · ${ratios.length} choices`);
+  let landing: any = null;
+  let previewAt = 0;
+  const landPreview = (e: any) => {
+    if (!e?.jpegBase64 || landing) return;
+    previewAt = Date.now();
+    if (e.ratioKey && e.ratioKey !== ratioKey) { useStore.setState({ camAspectRatio: e.ratioKey }); void flushSyncNow(); }
+    target.aspectRatio = effectiveAspectRatio(fid);
+    fhTrack('photo_taken');
+    if (onCapturedImage) onCapturedImage(`data:image/jpeg;base64,${e.jpegBase64}`, target);
+    landing = lastLandingOf();
+    if (landing) { if (landing.main) { const f = state().frames.find((x: any) => x.id === fid); if (f) f.awaitingPhoto = true; } else if (landing.version) landing.version.awaitingPhoto = true; }
+    trace(`camera: live frame ${e.width}×${e.height} on the card · ${Math.round((previewAt - t0) / 100) / 10} s from CAM · real photo on its way`);
+    closeCamera();
+  };
+  let sub: any = null;
+  try { sub = await cam.addListener('preview', landPreview); } catch { sub = null; }
   let res: any;
   try {
     res = await cam.take({ ratios, ratioKey, maxSide: 2400 });
   } catch (e: any) {
+    try { sub?.remove?.(); } catch { /* gone */ }
     trace(`camera: native failed — ${e?.message || e}; falling back to the web camera`);
     return false;
   }
+  try { sub?.remove?.(); } catch { /* gone */ }
   if (!res || res.cancelled || !res.jpegBase64) {
     trace(`camera: native closed without a photo (${Math.round((Date.now() - t0) / 100) / 10} s)`);
-    closeCamera();
+    if (!landing) closeCamera();
     return true;
   }
-  if (res.ratioKey && res.ratioKey !== ratioKey) {
-    useStore.setState({ camAspectRatio: res.ratioKey });
-    void flushSyncNow();
-  }
-  if (cameraTarget) cameraTarget.aspectRatio = effectiveAspectRatio(fid);
-  fhTrack('photo_taken');
   const kb = Math.round(res.jpegBase64.length * 3 / 4 / 1024);
-  trace(`camera: native photo ${res.width}×${res.height} · ${kb} KB · HDR layer ${res.hdrKept ? 'in' : 'not in'} the file · ratio ${res.ratioKey} · shutter→photo ${res.msCapture ?? '?'} ms · crop+resize ${res.msProcess ?? '?'} ms · ${Math.round((Date.now() - t0) / 100) / 10} s from CAM to card`);
   const url = `data:image/jpeg;base64,${res.jpegBase64}`;
-  if (onCapturedImage && cameraTarget) onCapturedImage(url, cameraTarget);
+  if (landing && onFinalPhoto) {
+    onFinalPhoto(landing, url);
+    trace(`camera: real photo ${res.width}×${res.height} · ${kb} KB · HDR layer ${res.hdrKept ? 'in' : 'not in'} the file · ratio ${res.ratioKey} · shutter→photo ${res.msCapture ?? '?'} ms · crop+resize ${res.msProcess ?? '?'} ms · replaced the live frame ${Math.round((Date.now() - previewAt) / 100) / 10} s after it`);
+    return true;
+  }
+  // no live frame came (older shell, or the frame was missed): the photo lands the plain way
+  if (res.ratioKey && res.ratioKey !== ratioKey) { useStore.setState({ camAspectRatio: res.ratioKey }); void flushSyncNow(); }
+  target.aspectRatio = effectiveAspectRatio(fid);
+  fhTrack('photo_taken');
+  trace(`camera: native photo ${res.width}×${res.height} · ${kb} KB · HDR layer ${res.hdrKept ? 'in' : 'not in'} the file · ratio ${res.ratioKey} · shutter→photo ${res.msCapture ?? '?'} ms · crop+resize ${res.msProcess ?? '?'} ms · ${Math.round((Date.now() - t0) / 100) / 10} s from CAM to card`);
+  if (onCapturedImage) onCapturedImage(url, target);
   closeCamera();
   return true;
 }
+
+/** Where the last captured picture landed (actions.ts keeps it; read at call time). */
+let lastLandingOf: () => any = () => null;
+export function setLastLandingReader(fn: () => any): void { lastLandingOf = fn; }
 
 export async function openCamera(
   fid: number,

@@ -1,7 +1,7 @@
 // Action handlers for Main strip and Version/Floor/Refs strip cards.
 
 import { COLORS, state, useStore, bumpRenderTick } from '../store/state';
-import type { StripType } from '../store/state';
+import type { StripType, Version } from '../store/state';
 import { reorderFrameInGroup, addFrameToActiveGroup, removeFrameFromGroup, hideFrameInGroup } from './groups';
 import {
   addNewVersion,
@@ -35,7 +35,7 @@ import { fhTrack } from './tracking';
 import { trace } from './syncTrace';
 import { newFrameId } from './ids';
 import { drawFit } from './drawing';
-import { openCamera, getCameraTarget, clearCameraTarget, setOnCapturedImage, cameraSessionEnd } from './camera';
+import { openCamera, getCameraTarget, clearCameraTarget, setOnCapturedImage, setOnFinalPhoto, setLastLandingReader, cameraSessionEnd } from './camera';
 import { recordTombstone } from './accountFlow';
 import { openFullscreen } from './fullscreen';
 import { openLoadPicturesSheet } from './loadPictures';
@@ -644,6 +644,11 @@ export function handleAction(action: string, fid: number, div: HTMLElement, from
   }
 }
 
+/** Where the last captured picture landed — the frame itself, or one version
+ *  of one strip (6 Nov: the native camera's real photo replaces the live frame
+ *  there a second later, whatever is on screen by then). */
+export let lastCaptureLanding: { fid: number; main: boolean; strip: StripType; version: Version | null } | null = null;
+
 export function applyCapturedImage(dataURL: string, target: any): void {
   const s = state();
   const { fid, fromCompare, fromMain } = target;
@@ -669,6 +674,7 @@ export function applyCapturedImage(dataURL: string, target: any): void {
     if (f && isMainEmpty(f)) {
       f.src = dataURL;
       f.drawMode = false;
+      lastCaptureLanding = { fid, main: true, strip, version: null };
       const md = document.querySelector(`#mainScroll .frame-card[data-mfid="${fid}"]`) as HTMLElement | null;
       if (md) renderMainFrame(md, fid);
     } else {
@@ -677,6 +683,7 @@ export function applyCapturedImage(dataURL: string, target: any): void {
       t.type = 'upload';
       t.bgImage = dataURL;
       t.r2Key = undefined; // Clear so sync uploads the new image
+      lastCaptureLanding = { fid, main: false, strip, version: t };
       if (s.currentViewMode === 'main') {
         // Show captured version inline in main card (cross-compare)
         s.crossCompare[fid] = getStripActiveTab(fid, strip);
@@ -693,6 +700,7 @@ export function applyCapturedImage(dataURL: string, target: any): void {
     t.type = 'upload';
     t.bgImage = dataURL;
     t.r2Key = undefined; // Clear so sync uploads the new image
+    lastCaptureLanding = { fid, main: false, strip, version: t };
     setStripCrossCompare(fid, strip, getStripActiveTab(fid, strip));
     renderMainFrame(div, fid);
     const vd = document.querySelector(`#${scrollId} .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
@@ -703,6 +711,7 @@ export function applyCapturedImage(dataURL: string, target: any): void {
     t.type = 'upload';
     t.bgImage = dataURL;
     t.r2Key = undefined; // Clear so sync uploads the new image
+    lastCaptureLanding = { fid, main: false, strip, version: t };
     // THE CARD SHOWS THE PHOTO JUST TAKEN (25 Oct, Roman, fittings): the new
     // version is the active one, but a card that was cross-showing main kept
     // showing main. The cross pointer is cleared, so the card turns to it.
@@ -866,3 +875,44 @@ export function applyCapturedImage(dataURL: string, target: any): void {
 
 // Wire up the camera capture pipeline → applyCapturedImage
 setOnCapturedImage(applyCapturedImage);
+
+/** THE SECOND STEP OF THE LANDING (6 Nov, Roman): the camera's live frame went
+ *  onto the card at the shutter (applyCapturedImage, with awaitingPhoto set by
+ *  camera.ts); a second later the real 2400 px photo arrives and replaces it on
+ *  the SAME frame or version — found by the objects remembered at the landing,
+ *  not by what is on screen, so a turn, a scroll or a strip change in between
+ *  does not matter. Strokes drawn meanwhile live beside the picture and stay.
+ *  Only now is the picture uploaded (the live frame never was). */
+export function applyFinalPhoto(landing: { fid: number; main: boolean; strip: StripType; version: Version | null }, dataURL: string): void {
+  const s = state();
+  const f = s.frames.find((fr) => fr.id === landing.fid);
+  if (!f) { trace('camera: the shot of the live frame is gone — real photo dropped'); return; }
+  if (landing.main) {
+    f.src = dataURL;
+    f.r2Key = undefined;
+    f.awaitingPhoto = false;
+  } else if (landing.version) {
+    landing.version.bgImage = dataURL;
+    landing.version.r2Key = undefined;
+    landing.version.awaitingPhoto = false;
+  } else return;
+  const fid = landing.fid;
+  const md = document.querySelector(`#mainScroll .frame-card[data-mfid="${fid}"]`) as HTMLElement | null;
+  if (md) renderMainFrame(md, fid);
+  if (!landing.main) {
+    const vd = document.querySelector(`#${stripScrollId(landing.strip)} .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
+    if (vd) renderVersionFrame(vd, fid, landing.strip);
+  }
+  if (s.currentViewMode === 'grid3x2') {
+    const cw = document.querySelector(`#overviewScroll .grid3x2-card-wrap[data-g3fid="${fid}"]`) as HTMLElement | null;
+    if (cw) renderGrid3x2Card(cw, fid);
+  } else if (s.currentViewMode === 'overview' || s.currentViewMode === 'grid4') {
+    const ovRow = document.querySelector(`#overviewScroll .overview-row[data-ofid="${fid}"]`) as HTMLElement | null;
+    if (ovRow) { s.currentViewMode === 'grid4' ? renderGrid4Row(ovRow, fid) : renderOverviewRow(ovRow, fid); }
+  }
+  if (s.fsOverlayActive && s.fsOverlayActive.fid === fid) window.dispatchEvent(new Event('fs-refresh'));
+  bumpRenderTick();
+  void flushSyncNow();
+}
+setOnFinalPhoto(applyFinalPhoto);
+setLastLandingReader(() => lastCaptureLanding);

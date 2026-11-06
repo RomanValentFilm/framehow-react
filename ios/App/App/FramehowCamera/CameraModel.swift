@@ -21,6 +21,12 @@ import SwiftUI
 final class CameraModel: NSObject, ObservableObject {
     let session = AVCaptureSession()
     private let photoOutput = AVCapturePhotoOutput()
+    /// THE LIVE FRAME (6 Nov, Roman: the two-step landing). The camera hands every
+    /// preview frame to `frames`; the newest one is kept. At the shutter it goes to
+    /// the card at once, cropped like the photo, while the chip makes the real one.
+    private let videoOutput = AVCaptureVideoDataOutput()
+    private let frameQueue = DispatchQueue(label: "framehow.camera.frames")
+    nonisolated(unsafe) private var latestFrame: CVPixelBuffer?
     @Published private(set) var device: AVCaptureDevice?
     var rotationCoordinator: AVCaptureDevice.RotationCoordinator?
     var devicePoint: ((CGPoint) -> CGPoint)?
@@ -40,6 +46,8 @@ final class CameraModel: NSObject, ObservableObject {
     /// The finished photo: JPEG data, its size, whether the HDR layer is in it,
     /// and the two times — shutter→photo from the chip (ms), crop+resize+encode (ms).
     var onPhoto: ((Data, Int, Int, Bool, Int, Int) -> Void)?
+    /// The live frame at the shutter: a small JPEG (long side 1200), same crop, at once.
+    var onPreview: ((Data, Int, Int) -> Void)?
     /// One drawing context for every photo (making one costs hundreds of ms).
     nonisolated static let ci = CIContext()
     nonisolated(unsafe) private var shutterAt = Date()
@@ -69,6 +77,10 @@ final class CameraModel: NSObject, ObservableObject {
             let input = try AVCaptureDeviceInput(device: cam)
             if session.canAddInput(input) { session.addInput(input) }
             if session.canAddOutput(photoOutput) { session.addOutput(photoOutput) }
+            videoOutput.alwaysDiscardsLateVideoFrames = true
+            videoOutput.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
+            videoOutput.setSampleBufferDelegate(self, queue: frameQueue)
+            if session.canAddOutput(videoOutput) { session.addOutput(videoOutput) }
             photoOutput.maxPhotoQualityPrioritization = .quality
             if photoOutput.isResponsiveCaptureSupported { photoOutput.isResponsiveCaptureEnabled = true }
             if photoOutput.isFastCapturePrioritizationSupported { photoOutput.isFastCapturePrioritizationEnabled = true }
@@ -176,6 +188,8 @@ final class CameraModel: NSObject, ObservableObject {
         } else {
             settings = AVCapturePhotoSettings()
         }
+        // QUALITY = Deep Fusion kept (Roman, 6 Nov: "we keep deep fusion"): the detail in
+        // dim light is worth the ~1.2 s the chip takes per shot (measured 6 Nov).
         settings.photoQualityPrioritization = .quality
         settings.maxPhotoDimensions = photoOutput.maxPhotoDimensions
         if let cam = device, cam.hasFlash { settings.flashMode = .auto }
@@ -186,6 +200,22 @@ final class CameraModel: NSObject, ObservableObject {
         busy += 1
         shutterAt = Date()
         photoOutput.capturePhoto(with: settings, delegate: self)
+        // THE LIVE FRAME GOES FIRST: rotated upright by the same angle the photo
+        // gets, cropped by the same rule, small, no HDR — on the card in ~100 ms.
+        let angle = rotationCoordinator?.videoRotationAngleForHorizonLevelCapture ?? 0
+        let ratio = frameRatio
+        let frame = latestFrame
+        frameQueue.async { [weak self] in
+            guard let frame else { return }
+            var img = CIImage(cvPixelBuffer: frame)
+            let exif: Int32 = angle == 90 ? 6 : angle == 180 ? 3 : angle == 270 ? 8 : 1
+            img = img.oriented(forExifOrientation: exif)
+            let r = Self.cropAndResize(img, gain: nil, ratio: ratio, maxSide: 1200)
+            let opts: [CIImageRepresentationOption: Any] = [kCGImageDestinationLossyCompressionQuality as CIImageRepresentationOption: 0.8]
+            guard let data = Self.ci.jpegRepresentation(of: r.image, colorSpace: CGColorSpaceCreateDeviceRGB(), options: opts) else { return }
+            let w = Int(r.image.extent.width.rounded()), h = Int(r.image.extent.height.rounded())
+            Task { @MainActor in self?.onPreview?(data, w, h) }
+        }
     }
 }
 
@@ -215,17 +245,12 @@ extension CameraModel: AVCapturePhotoCaptureDelegate {
 
     /// The frame (a centred band along the chip's short side — the frame's long side IS
     /// the chip's long side), the HDR layer cropped and scaled the same way, resized so
-    /// the long side is `maxSide`, written as one JPEG with the layer inside.
-    nonisolated static func croppedAndResized(_ photo: AVCapturePhoto, ratio: CGFloat, maxSide: CGFloat) -> (data: Data?, w: Int, h: Int, hdrKept: Bool) {
-        guard let file = photo.fileDataRepresentation(),
-              var image = CIImage(data: file, options: [.applyOrientationProperty: true]) else { return (nil, 0, 0, false) }
-        var gain: CIImage? = nil
-        if #available(iOS 18, *) {
-            gain = CIImage(data: file, options: [.auxiliaryHDRGainMap: true, .applyOrientationProperty: true])
-        }
+    /// the long side is `maxSide`. Used for the photo AND the live frame.
+    nonisolated static func cropAndResize(_ input: CIImage, gain gainIn: CIImage?, ratio: CGFloat, maxSide: CGFloat) -> (image: CIImage, gain: CIImage?) {
+        var image = input
+        var gain = gainIn
         let w = image.extent.width, h = image.extent.height
         let long = max(w, h), short = min(w, h)
-        // 4:3 is the chip itself: no crop
         if ratio > 4.0 / 3.0 + 0.001 {
             var band = min(short, (long / ratio).rounded())
             let k = gain.map { $0.extent.width / w } ?? 1
@@ -240,19 +265,28 @@ extension CameraModel: AVCapturePhotoCaptureDelegate {
                 gain = gc.transformed(by: CGAffineTransform(translationX: -gc.extent.minX, y: -gc.extent.minY))
             }
         }
-        // THE RESIZE (Roman: 2400 on the long side). Picture and layer are scaled by the
-        // same factor, so the layer keeps its place and its relative size (a layer scaled
-        // on its own made it worse, 3 Nov).
         let curLong = max(image.extent.width, image.extent.height)
         if curLong > maxSide {
-            let s = maxSide / curLong
-            image = image.transformed(by: CGAffineTransform(scaleX: s, y: s))
+            let sc = maxSide / curLong
+            image = image.transformed(by: CGAffineTransform(scaleX: sc, y: sc))
             image = image.transformed(by: CGAffineTransform(translationX: -image.extent.minX, y: -image.extent.minY))
             if let g = gain {
-                let gs = g.transformed(by: CGAffineTransform(scaleX: s, y: s))
+                let gs = g.transformed(by: CGAffineTransform(scaleX: sc, y: sc))
                 gain = gs.transformed(by: CGAffineTransform(translationX: -gs.extent.minX, y: -gs.extent.minY))
             }
         }
+        return (image, gain)
+    }
+
+    nonisolated static func croppedAndResized(_ photo: AVCapturePhoto, ratio: CGFloat, maxSide: CGFloat) -> (data: Data?, w: Int, h: Int, hdrKept: Bool) {
+        guard let file = photo.fileDataRepresentation(),
+              let raw = CIImage(data: file, options: [.applyOrientationProperty: true]) else { return (nil, 0, 0, false) }
+        var gainIn: CIImage? = nil
+        if #available(iOS 18, *) {
+            gainIn = CIImage(data: file, options: [.auxiliaryHDRGainMap: true, .applyOrientationProperty: true])
+        }
+        let r = cropAndResize(raw, gain: gainIn, ratio: ratio, maxSide: maxSide)
+        let image = r.image, gain = r.gain
         let ctx = Self.ci
         let space = CGColorSpace(name: CGColorSpace.displayP3) ?? CGColorSpaceCreateDeviceRGB()
         var opts: [CIImageRepresentationOption: Any] = [kCGImageDestinationLossyCompressionQuality as CIImageRepresentationOption: 0.92]
@@ -261,5 +295,11 @@ extension CameraModel: AVCapturePhotoCaptureDelegate {
         // (reading the file back to prove the layer survived cost a second decode of a
         // 2400 px picture on every shot — proven once on 3 Nov, not repeated here)
         return (out, Int(image.extent.width.rounded()), Int(image.extent.height.rounded()), gain != nil)
+    }
+}
+
+extension CameraModel: AVCaptureVideoDataOutputSampleBufferDelegate {
+    nonisolated func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+        latestFrame = CMSampleBufferGetImageBuffer(sampleBuffer)
     }
 }
