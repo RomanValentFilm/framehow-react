@@ -872,12 +872,13 @@ export function applyCapturedImage(dataURL: string, target: any): void {
         (window as any).__fh_startShrink = undefined;
         // the move as before; the fade only in the last third (Roman, 6 Nov: it went
         // see-through too soon) — opaque for 0.27 s, then 0.13 s to nothing
-        thumb.style.transition = 'left 0.4s ease-in, top 0.4s ease-in, width 0.4s ease-in, height 0.4s ease-in, opacity 0.13s linear 0.27s, border-radius 0.4s ease-in';
+        // TEST BUILD (Roman, 6 Nov): 1 s move so the shape of it can be seen; fade in the last third
+        thumb.style.transition = 'left 1s ease-in, top 1s ease-in, width 1s ease-in, height 1s ease-in, opacity 0.33s linear 0.67s, border-radius 1s ease-in';
         thumb.style.left = `${tr.left}px`; thumb.style.top = `${tr.top}px`;
         thumb.style.width = `${tr.width}px`; thumb.style.height = `${tr.height}px`;
         thumb.style.borderRadius = '4px';
         thumb.style.opacity = '0';
-        setTimeout(() => thumb.remove(), 450);
+        setTimeout(() => thumb.remove(), 1100);
       };
       setTimeout(() => (window as any).__fh_startShrink?.(), 1500);   // never stuck, whatever the camera says
       return;
