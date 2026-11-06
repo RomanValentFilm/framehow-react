@@ -119,7 +119,7 @@ async function takeNativePhoto(fid: number): Promise<boolean> {
     closeCamera();
     // THE HAND-OVER (Roman, 6 Nov): the copy that shrinks into the card is in place
     // now (actions.ts put it there, no frame clock needed). The camera is told so;
-    // it answers the moment its fixed frozen time (240 ms from the shutter) is up and
+    // it answers the moment its fixed frozen time (390 ms from the shutter: 90 flash + 300 frozen) is up and
     // the screen is gone — and the shrink starts on that answer, the same instant.
     const start = () => { const f = (window as any).__fh_startShrink as (() => void) | undefined; f?.(); };
     cam.close().then(start).catch(start);

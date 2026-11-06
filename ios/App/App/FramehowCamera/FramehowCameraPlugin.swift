@@ -30,7 +30,7 @@ public class FramehowCameraPlugin: CAPPlugin, CAPBridgedPlugin {
 
     private var host: UIViewController?
     private var model: CameraModel?
-    /// THE FROZEN MOMENT IS ALWAYS THE SAME (Roman, 6 Nov): 90 ms flash + 150 ms frozen,
+    /// THE FROZEN MOMENT IS ALWAYS THE SAME (Roman, 6 Nov): 90 ms flash + 300 ms frozen,
     /// counted from the shutter by the camera itself, whatever the page is doing. The
     /// screen goes when that time is up AND the page has its copy ready (close()).
     private var timeUp = false
@@ -56,7 +56,7 @@ public class FramehowCameraPlugin: CAPPlugin, CAPBridgedPlugin {
             var keyInForce = ratioKey
             cam.onShutter = { [weak self] in
                 self?.timeUp = false; self?.webReady = false
-                DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(240)) { [weak self] in
+                DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(390)) { [weak self] in
                     self?.timeUp = true; self?.goIfBothReady()
                 }
             }
