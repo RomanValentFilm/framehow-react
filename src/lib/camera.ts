@@ -121,8 +121,13 @@ async function takeNativePhoto(fid: number): Promise<boolean> {
     // now (actions.ts put it there, no frame clock needed). The camera is told so;
     // it answers the moment its fixed frozen time (390 ms from the shutter: 90 flash + 300 frozen) is up and
     // the screen is gone — and the shrink starts on that answer, the same instant.
-    const start = () => { const f = (window as any).__fh_startShrink as (() => void) | undefined; f?.(); };
-    cam.close().then(start).catch(start);
+    const askedAt = Date.now();
+    const start = (how: string) => () => {
+      const f = (window as any).__fh_startShrink as (() => void) | undefined;
+      trace(`camera: shrink starts ${Date.now() - previewAt} ms after the live frame (camera ${how} ${Date.now() - askedAt} ms after being asked)${f ? '' : ' — nothing to start'}`);
+      f?.();
+    };
+    cam.close().then(start('answered')).catch(start('failed'));
   };
   let sub: any = null;
   try { sub = await cam.addListener('preview', landPreview); } catch { sub = null; }
