@@ -851,12 +851,29 @@ export function applyCapturedImage(dataURL: string, target: any): void {
     if (tr.width === 0 || tr.height === 0) return;
     const vw = window.innerWidth, vh = window.innerHeight;
 
+    const thumb = document.createElement('img');
+    thumb.src = dataURL;
+    const sr = target.startRect as { left: number; top: number; width: number; height: number } | undefined;
+    if (sr) {
+      // THE NATIVE CAMERA (6 Nov, Roman): the shot sat in the frame's rectangle on the
+      // camera screen; the copy starts exactly there, opaque, and shrinks into the card.
+      thumb.style.cssText = `position:fixed;z-index:100000;pointer-events:none;object-fit:cover;` +
+        `left:${sr.left}px;top:${sr.top}px;width:${sr.width}px;height:${sr.height}px;border-radius:0;opacity:1;`;
+      document.body.appendChild(thumb);
+      requestAnimationFrame(() => { requestAnimationFrame(() => {
+        thumb.style.transition = 'left 0.28s ease-in, top 0.28s ease-in, width 0.28s ease-in, height 0.28s ease-in, opacity 0.28s ease-in, border-radius 0.28s ease-in';
+        thumb.style.left = `${tr.left}px`; thumb.style.top = `${tr.top}px`;
+        thumb.style.width = `${tr.width}px`; thumb.style.height = `${tr.height}px`;
+        thumb.style.borderRadius = '4px';
+        thumb.style.opacity = '0';
+        setTimeout(() => thumb.remove(), 320);
+      }); });
+      return;
+    }
     // Place thumb at target card position, scaled up to fill screen
     const scaleX = vw / tr.width;
     const scaleY = vh / tr.height;
     const scale = Math.max(scaleX, scaleY);
-    const thumb = document.createElement('img');
-    thumb.src = dataURL;
     thumb.style.cssText = `position:fixed;z-index:100000;pointer-events:none;object-fit:cover;` +
       `left:${tr.left}px;top:${tr.top}px;width:${tr.width}px;height:${tr.height}px;` +
       `transform-origin:center center;transform:scale(${scale});border-radius:0;opacity:0.85;`;

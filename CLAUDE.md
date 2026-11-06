@@ -28,8 +28,9 @@ Every one of these was agreed in a working session. Breaking one costs an hour.
 12. iPad scrolling and bar rules are hard-won (#481 and friends): iPhone-only fixes stay iPhone-only.
 13. Do ONLY what was asked; if something next to it is worth doing, say so and wait.
     DECISIONS (6 Nov, Roman): small layout/wording calls (where a button sits, a label) I make
-    and say so; anything that changes what the app IS or what a photo looks like — picture
-    quality, what is kept or dropped, speed vs quality — is a question with the options first.
+    and say so; anything creative or logical — how a moment looks or behaves, picture quality,
+    what is kept or dropped, the order of things — is AGREED FIRST, in words, BEFORE any deploy
+    line is given. The deploy line comes only after "yes".
 14. The app runs on Roman's Mac/phone; I never run his commands. He pastes the output.
 
 

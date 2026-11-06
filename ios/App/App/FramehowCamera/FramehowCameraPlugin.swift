@@ -51,8 +51,10 @@ public class FramehowCameraPlugin: CAPPlugin, CAPBridgedPlugin {
             cam.onPreview = { [weak self] data, w, h in
                 // the live frame: to the web at once; the screen stays, frozen on the shot,
                 // until the web says close() — it has drawn its own copy by then
+                let f = cam.frameOnScreen
                 self?.notifyListeners("preview", data: [
                     "jpegBase64": data.base64EncodedString(), "width": w, "height": h, "ratioKey": keyInForce,
+                    "frame": ["x": f.minX, "y": f.minY, "w": f.width, "h": f.height],
                 ])
             }
             cam.onPhoto = { [weak self] data, w, h, kept, msCapture, msProcess in

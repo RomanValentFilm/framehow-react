@@ -42,6 +42,10 @@ final class CameraModel: NSObject, ObservableObject {
     /// THE SHOT, FROZEN ON SCREEN (6 Nov, Roman): from the shutter until the web app has
     /// drawn its own full-screen copy — then the shrink into the card starts from the same picture.
     @Published var frozen: UIImage?
+    private var frozenPending: UIImage?
+    /// Where the frame lies on screen (points), set by the screen at every layout —
+    /// the web app starts its shrink-into-the-card from exactly there.
+    var frameOnScreen: CGRect = .zero
     @Published var busy = 0
     @Published var photoSize = ""
     @Published var wide = false
@@ -202,6 +206,15 @@ final class CameraModel: NSObject, ObservableObject {
         }
         busy += 1
         shutterAt = Date()
+        // THE FLASH FIRST (Roman, 6 Nov): black at once, 90 ms; the frozen shot appears as
+        // the flash lifts, never under it.
+        flash = true
+        frozenPending = nil
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(90))
+            self.flash = false
+            if let p = self.frozenPending { self.frozen = p; self.frozenPending = nil }
+        }
         photoOutput.capturePhoto(with: settings, delegate: self)
         // THE LIVE FRAME GOES FIRST: rotated upright by the same angle the photo
         // gets, cropped by the same rule, small, no HDR — on the card in ~100 ms.
@@ -213,23 +226,26 @@ final class CameraModel: NSObject, ObservableObject {
             var img = CIImage(cvPixelBuffer: frame)
             let exif: Int32 = angle == 90 ? 6 : angle == 180 ? 3 : angle == 270 ? 8 : 1
             img = img.oriented(forExifOrientation: exif)
+            // THE SCREEN FREEZES AS IT IS (Roman, 6 Nov): the whole live picture, not the
+            // crop — the mask and the frame line stay exactly where they were.
+            let whole = Self.cropAndResize(img, gain: nil, ratio: 1, maxSide: 1600).image
+            let frozenUI = Self.ci.createCGImage(whole, from: whole.extent).map { UIImage(cgImage: $0) }
+            Task { @MainActor in
+                guard let self else { return }
+                if self.flash { self.frozenPending = frozenUI } else { self.frozen = frozenUI }
+            }
             let r = Self.cropAndResize(img, gain: nil, ratio: ratio, maxSide: 1200)
             let opts: [CIImageRepresentationOption: Any] = [kCGImageDestinationLossyCompressionQuality as CIImageRepresentationOption: 0.8]
             guard let data = Self.ci.jpegRepresentation(of: r.image, colorSpace: CGColorSpaceCreateDeviceRGB(), options: opts) else { return }
             let w = Int(r.image.extent.width.rounded()), h = Int(r.image.extent.height.rounded())
-            let ui = UIImage(data: data)
-            Task { @MainActor in self?.frozen = ui; self?.onPreview?(data, w, h) }
+            Task { @MainActor in self?.onPreview?(data, w, h) }
         }
     }
 }
 
 extension CameraModel: AVCapturePhotoCaptureDelegate {
     nonisolated func photoOutput(_ output: AVCapturePhotoOutput, willCapturePhotoFor resolvedSettings: AVCaptureResolvedPhotoSettings) {
-        Task { @MainActor in
-            self.flash = true
-            try? await Task.sleep(for: .milliseconds(90))
-            self.flash = false
-        }
+        // (the flash is shown by takePhoto itself, at the shutter — not here, which can come later)
     }
 
     nonisolated func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {

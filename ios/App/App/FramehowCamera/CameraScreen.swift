@@ -97,7 +97,7 @@ struct CameraScreen: View {
             let landscape = geo.size.width > geo.size.height
             let free = CGRect(origin: .zero, size: geo.size)
             let fg = FrameGeometry(ratio: current.value, landscape: landscape, free: free)
-            let _ = { cam.frameRatio = current.value; cam.maxSide = maxSide }()
+            let _ = { cam.frameRatio = current.value; cam.maxSide = maxSide; cam.frameOnScreen = fg.frame }()
             let touch = DragGesture(minimumDistance: 0)
                 .onChanged { g in
                     let dy = g.translation.height
@@ -131,10 +131,10 @@ struct CameraScreen: View {
                     .frame(width: fg.chip.width, height: fg.chip.height)
                     .position(x: fg.chip.midX, y: fg.chip.midY)
                 if let fr = cam.frozen {
-                    // the shot itself, where the frame was, until the page beneath has it
-                    Image(uiImage: fr).resizable().scaledToFill()
-                        .frame(width: fg.frame.width, height: fg.frame.height).clipped()
-                        .position(x: fg.frame.midX, y: fg.frame.midY)
+                    // the whole live picture, frozen where it was; mask and frame line unchanged
+                    Image(uiImage: fr).resizable().scaledToFit()
+                        .frame(width: fg.chip.width, height: fg.chip.height)
+                        .position(x: fg.chip.midX, y: fg.chip.midY)
                 }
                 FrameLine(frame: fg.frame)
                 Color.clear.contentShape(Rectangle()).gesture(touch).simultaneousGesture(pinch)

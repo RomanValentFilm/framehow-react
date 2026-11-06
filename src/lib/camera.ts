@@ -29,6 +29,8 @@ export interface CameraTarget {
   fromCompare: boolean;
   fromMain: boolean;
   stripType?: string;
+  /** Where the shot sat on the native camera screen: the shrink into the card starts there (6 Nov). */
+  startRect?: { left: number; top: number; width: number; height: number };
 }
 
 // Lazily-bound applyCapturedImage so this module stays free of core-renderer deps.
@@ -106,6 +108,9 @@ async function takeNativePhoto(fid: number): Promise<boolean> {
     previewAt = Date.now();
     if (e.ratioKey && e.ratioKey !== ratioKey) { useStore.setState({ camAspectRatio: e.ratioKey }); void flushSyncNow(); }
     target.aspectRatio = effectiveAspectRatio(fid);
+    // where the frame lay on the camera screen (points = CSS px here): the shrink
+    // into the card starts from exactly that rectangle (actions.ts)
+    if (e.frame && e.frame.w > 0) target.startRect = { left: e.frame.x, top: e.frame.y, width: e.frame.w, height: e.frame.h };
     fhTrack('photo_taken');
     if (onCapturedImage) onCapturedImage(`data:image/jpeg;base64,${e.jpegBase64}`, target);
     landing = lastLandingOf();
