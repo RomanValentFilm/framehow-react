@@ -76,7 +76,10 @@ public class FramehowCameraPlugin: CAPPlugin, CAPBridgedPlugin {
                     self?.bridge?.releaseCall(call)
                 })
             let vc = UIHostingController(rootView: screen)
-            vc.modalPresentationStyle = .fullScreen
+            // OVER the web view, not instead of it (Roman, 6 Nov: a grey screen after the
+            // shutter): with .fullScreen iOS stops drawing the covered page and shows grey
+            // for a frame when it comes back; .overFullScreen keeps the page alive beneath.
+            vc.modalPresentationStyle = .overFullScreen
             vc.view.backgroundColor = .black
             self.host = vc
             top.present(vc, animated: false)

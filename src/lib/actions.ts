@@ -912,7 +912,14 @@ export function applyFinalPhoto(landing: { fid: number; main: boolean; strip: St
   }
   if (s.fsOverlayActive && s.fsOverlayActive.fid === fid) window.dispatchEvent(new Event('fs-refresh'));
   bumpRenderTick();
+  // THE REAL PHOTO MUST GO UP (6 Nov, Roman's log 16:46: it landed while a push was in
+  // the air, the push was refused and nothing asked again — "nothing changed — not
+  // sending", then silence). Marked as work by hand, asked now, and asked again
+  // after the push in the air has had its time.
+  markSomethingToSend();
   void flushSyncNow();
+  window.setTimeout(() => void flushSyncNow(), 3000);
+  window.setTimeout(() => void flushSyncNow(), 8000);
 }
 setOnFinalPhoto(applyFinalPhoto);
 setLastLandingReader(() => lastCaptureLanding);

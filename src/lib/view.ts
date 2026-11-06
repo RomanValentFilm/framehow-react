@@ -1245,7 +1245,10 @@ export function handleOrientationFlip(): void {
     const single = s0.activeStrips.length === 1 && !s0.needsStripVisible && !s0.notesStripVisible
       && (s0.currentViewMode === 'main' || s0.currentViewMode === 'ver');
     if (single) trace(`turn to portrait: staying on the single ${s0.activeStrips[0]} strip`);
-    useStore.setState({ activeStrips: single ? s0.activeStrips : ['main'], currentViewMode: single ? s0.currentViewMode : 'main', crossCompare: {}, needsStripVisible: false, notesStripVisible: false });
+    // THE VERSION ON THE CARD STAYS (Roman, 6 Nov): a photo just taken shows on the
+    // main card as its version; a turn to portrait used to clear that and show the
+    // main picture again. The cross pointer is kept; the card goes on showing it.
+    useStore.setState({ activeStrips: single ? s0.activeStrips : ['main'], currentViewMode: single ? s0.currentViewMode : 'main', crossCompare: s0.crossCompare, needsStripVisible: false, notesStripVisible: false });
     // Also update the NEEDS/NOTES button visuals
     const needsBtn = document.getElementById('needsStripBtn');
     if (needsBtn) needsBtn.classList.remove('active');

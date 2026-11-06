@@ -192,7 +192,7 @@ struct CameraScreen: View {
                 } else {
                     // shutter bottom-middle, Cancel to its left, info under
                     shutter.position(x: W / 2, y: H - 28 - 33 - 24)
-                    cancel.position(x: W / 2 - 100, y: H - 28 - 33 - 24)   // left of the shutter (Roman), a plain word — short enough to stay clear of 1x
+                    cancel.position(x: W / 2 - 72, y: H - 28 - 33 - 24)   // left of the shutter (Roman), a plain word — short enough to stay clear of 1x
                     info.position(x: W / 2, y: H - 28)
                 }
             }
