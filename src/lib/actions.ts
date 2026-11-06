@@ -874,16 +874,16 @@ export function applyCapturedImage(dataURL: string, target: any): void {
       document.body.appendChild(thumb);
       void thumb.offsetWidth;   // laid out now, so the transition below has a start
       // THE SHRINK STARTS WHEN THE CAMERA SCREEN GOES (camera.ts calls this on the
-      // camera's answer) — 1 s TEST BUILD (Roman, 6 Nov); the fade only in the last third.
+      // camera's answer) — 0.5 s (Roman, 6 Nov, "hallelujah"); the fade only in the last third.
       (window as any).__fh_startShrink = () => {
         (window as any).__fh_startShrink = undefined;
-        thumb.style.transition = 'transform 1s ease-in, opacity 0.33s linear 0.67s, border-radius 1s ease-in';
+        thumb.style.transition = 'transform 0.5s ease-in, opacity 0.17s linear 0.33s, border-radius 0.5s ease-in';
         thumb.style.transform = 'translate(0px,0px) scale(1,1)';
         thumb.style.borderRadius = '4px';
         thumb.style.opacity = '0';
         const t0 = Date.now();
         thumb.addEventListener('transitionend', (ev) => { if (ev.propertyName === 'transform') trace(`camera: shrink moved for ${Date.now() - t0} ms, from ${Math.round(sr.width)}×${Math.round(sr.height)} at ${Math.round(sr.left)},${Math.round(sr.top)} to ${Math.round(tr.width)}×${Math.round(tr.height)} at ${Math.round(tr.left)},${Math.round(tr.top)}`); });
-        setTimeout(() => thumb.remove(), 1100);
+        setTimeout(() => thumb.remove(), 600);
       };
       setTimeout(() => (window as any).__fh_startShrink?.(), 1500);   // never stuck, whatever the camera says
       return;

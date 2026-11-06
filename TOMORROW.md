@@ -94,6 +94,13 @@ FINDINGS so far (not fixed yet):
   PHONE CAM, no switch — done v5.0.154). Every PWA (iPhone Safari, Android, desktop) = FH CAM is the
   DEFAULT, PHONE CAM (the device's own camera app, any brand, frame lines placed afterwards) stays as
   the alternative; a FITTING in the PWA still starts on PHONE CAM (23 Oct). Nothing is built per phone brand.
+- THE MOMENT OF TAKING A PICTURE, AGREED AND SEEN (Roman, 6 Nov 17:50, "hallelujah"): shutter →
+  black flash 90 ms → the camera screen frozen exactly as it was, 300 ms (fixed, counted by the
+  camera itself) → the screen goes and in the same instant the page's copy of the shot shrinks
+  from the frame's rectangle into the card, 0.5 s, ease-in, fading only in its last third; drawn as
+  a composited transform (left/top/width/height stood still while the page was busy — the film
+  showed it). The live frame lands on the version at the shutter; the real 2400 px photo (Deep
+  Fusion kept, HDR layer in the file) replaces it on that version ~1.3 s later and is then pushed.
 - TOMORROW 3: RUN 581 (full, v5.0.151): 137 green, 2 red, both timing. (a) BIG DAY part 7: the
   fitting PDF after ticking "unrated" gave no download in 120 s (passed 572/579/580). (b) test 33:
   three uploads fired within 0.1 s, the server kept two — an upload lost in the overlap (passed
