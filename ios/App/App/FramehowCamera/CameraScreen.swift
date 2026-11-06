@@ -78,7 +78,7 @@ struct CameraScreen: View {
     @State var ratioKey: String
     let maxSide: CGFloat
     /// Called once with the photo (JPEG, w, h, HDR kept, the ratio key in force) — then the screen closes.
-    let onPhoto: (Data, Int, Int, Bool, String) -> Void
+    let onPhoto: (Data, Int, Int, Bool, String, Int, Int) -> Void
     let onCancel: () -> Void
 
     @State private var showRatios = false
@@ -148,7 +148,7 @@ struct CameraScreen: View {
         .background(.black)
         .foregroundStyle(.white)
         .onAppear {
-            cam.onPhoto = { data, w, h, kept in onPhoto(data, w, h, kept, ratioKey) }
+            cam.onPhoto = { data, w, h, kept, msC, msP in onPhoto(data, w, h, kept, ratioKey, msC, msP) }
             cam.start()
         }
         .onDisappear { cam.stop() }
@@ -161,7 +161,7 @@ struct CameraScreen: View {
             Circle().fill(.white).frame(width: 66, height: 66)
                 .overlay(Circle().stroke(.gray, lineWidth: 3).padding(4))
         }
-        let ratioButton = Button(current.label) { showRatios.toggle() }
+        let ratioButton = Button("RATIO") { showRatios.toggle() }
             .buttonStyle(.bordered).tint(.white).background(pill, in: Capsule())
         let ev = Button(action: { cam.exposureBias = 0 }) {
             Text("EV \(cam.exposureBias, specifier: "%+.1f")").monospacedDigit().font(.footnote)
@@ -179,26 +179,24 @@ struct CameraScreen: View {
             .font(.caption2).padding(6).background(pill, in: RoundedRectangle(cornerRadius: 8))
             .opacity(cam.busy > 0 || cam.status != "ready" ? 1 : 0)
 
-        ZStack {
-            VStack { HStack { ratioButton; Spacer(); ev }; Spacer() }
-                .padding(.horizontal, 16).padding(.top, landscape ? 16 : 60)
-            VStack { Spacer(); HStack { lens; Spacer() } }
-                .padding(.horizontal, 16).padding(.bottom, landscape ? 16 : 36)
-            if landscape {
-                // shutter right-middle, Cancel below it in the same column
-                HStack { Spacer(); VStack(spacing: 18) { shutter; cancel }.padding(.trailing, 24) }
-                VStack { Spacer(); HStack { Spacer(); info } }.padding(16)
-            } else {
-                // shutter bottom-middle, Cancel to its left
-                VStack {
-                    Spacer()
-                    HStack(spacing: 0) {
-                        cancel.frame(maxWidth: .infinity)
-                        shutter.frame(maxWidth: .infinity)
-                        Color.clear.frame(maxWidth: .infinity, maxHeight: 1)
-                    }
-                    info.padding(.top, 8)
-                }.padding(.bottom, 28)
+        GeometryReader { g in
+            let W = g.size.width, H = g.size.height
+            ZStack {
+                VStack { HStack { ratioButton; Spacer(); ev }; Spacer() }
+                    .padding(.horizontal, 16).padding(.top, landscape ? 16 : 60)
+                VStack { Spacer(); HStack { lens; Spacer() } }
+                    .padding(.horizontal, 16).padding(.bottom, landscape ? 16 : 36)
+                if landscape {
+                    // shutter right-middle (Camera app), Cancel under it, info bottom right
+                    shutter.position(x: W - 24 - 33, y: H / 2)
+                    cancel.position(x: W - 24 - 33, y: H / 2 + 72)
+                    info.position(x: W - 24 - 33, y: H - 40)
+                } else {
+                    // shutter bottom-middle, Cancel to its left, info under
+                    shutter.position(x: W / 2, y: H - 28 - 33 - 24)
+                    cancel.position(x: W / 2 - 110, y: H - 28 - 33 - 24)
+                    info.position(x: W / 2, y: H - 28)
+                }
             }
         }
     }

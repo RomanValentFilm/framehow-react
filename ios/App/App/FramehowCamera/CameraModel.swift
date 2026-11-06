@@ -37,8 +37,12 @@ final class CameraModel: NSObject, ObservableObject {
     @Published var photoSize = ""
     @Published var wide = false
 
-    /// The finished photo: JPEG data, its size, and whether the HDR layer survived.
-    var onPhoto: ((Data, Int, Int, Bool) -> Void)?
+    /// The finished photo: JPEG data, its size, whether the HDR layer is in it,
+    /// and the two times — shutter→photo from the chip (ms), crop+resize+encode (ms).
+    var onPhoto: ((Data, Int, Int, Bool, Int, Int) -> Void)?
+    /// One drawing context for every photo (making one costs hundreds of ms).
+    nonisolated static let ci = CIContext()
+    nonisolated(unsafe) private var shutterAt = Date()
 
     func start() {
         AVCaptureDevice.requestAccess(for: .video) { ok in
@@ -83,6 +87,18 @@ final class CameraModel: NSObject, ObservableObject {
                 cam.unlockForConfiguration()
             }
             lensName = cam.isVirtualDevice ? "1x" : cam.localizedName
+            // FOCUS BY ITSELF (Roman, 6 Nov: "does it focus when pointed at something?"):
+            // continuous autofocus and exposure are the camera's default; a tap locks
+            // them on a point, and when the scene changes the camera goes back to
+            // continuous — the Camera app's behaviour.
+            try cam.lockForConfiguration()
+            cam.isSubjectAreaChangeMonitoringEnabled = true
+            if cam.isFocusModeSupported(.continuousAutoFocus) { cam.focusMode = .continuousAutoFocus }
+            if cam.isExposureModeSupported(.continuousAutoExposure) { cam.exposureMode = .continuousAutoExposure }
+            cam.unlockForConfiguration()
+            NotificationCenter.default.addObserver(forName: .AVCaptureDeviceSubjectAreaDidChange, object: cam, queue: .main) { [weak self] _ in
+                Task { @MainActor in self?.backToContinuous() }
+            }
         } catch {
             session.commitConfiguration()
             status = "camera setup failed: \(error.localizedDescription)"; return
@@ -100,6 +116,16 @@ final class CameraModel: NSObject, ObservableObject {
             cam.setExposureTargetBias(v)
             cam.unlockForConfiguration()
         } catch { status = "exposure: \(error.localizedDescription)" }
+    }
+
+    private func backToContinuous() {
+        guard let cam = device else { return }
+        do {
+            try cam.lockForConfiguration()
+            if cam.isFocusModeSupported(.continuousAutoFocus) { cam.focusMode = .continuousAutoFocus }
+            if cam.isExposureModeSupported(.continuousAutoExposure) { cam.exposureMode = .continuousAutoExposure }
+            cam.unlockForConfiguration()
+        } catch {}
     }
 
     func focus(atPreviewPoint p: CGPoint) {
@@ -158,6 +184,7 @@ final class CameraModel: NSObject, ObservableObject {
             if c.isVideoRotationAngleSupported(a) { c.videoRotationAngle = a }
         }
         busy += 1
+        shutterAt = Date()
         photoOutput.capturePhoto(with: settings, delegate: self)
     }
 }
@@ -174,12 +201,15 @@ extension CameraModel: AVCapturePhotoCaptureDelegate {
     nonisolated func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
         let err = error?.localizedDescription
         let (ratio, maxSide) = pending
+        let t1 = Date()
+        let msCapture = Int(t1.timeIntervalSince(shutterAt) * 1000)
         let result = Self.croppedAndResized(photo, ratio: ratio, maxSide: maxSide)
+        let msProcess = Int(Date().timeIntervalSince(t1) * 1000)
         Task { @MainActor in
             self.busy = max(0, self.busy - 1)
             if let err { self.status = "capture failed: \(err)"; return }
             guard let data = result.data else { self.status = "no photo data"; return }
-            self.onPhoto?(data, result.w, result.h, result.hdrKept)
+            self.onPhoto?(data, result.w, result.h, result.hdrKept, msCapture, msProcess)
         }
     }
 
@@ -223,13 +253,13 @@ extension CameraModel: AVCapturePhotoCaptureDelegate {
                 gain = gs.transformed(by: CGAffineTransform(translationX: -gs.extent.minX, y: -gs.extent.minY))
             }
         }
-        let ctx = CIContext()
+        let ctx = Self.ci
         let space = CGColorSpace(name: CGColorSpace.displayP3) ?? CGColorSpaceCreateDeviceRGB()
         var opts: [CIImageRepresentationOption: Any] = [kCGImageDestinationLossyCompressionQuality as CIImageRepresentationOption: 0.92]
         if #available(iOS 18, *), let g = gain { opts[.hdrGainMapImage] = g }
         guard let out = ctx.jpegRepresentation(of: image, colorSpace: space, options: opts) else { return (nil, 0, 0, false) }
-        var kept = false
-        if #available(iOS 18, *) { kept = (CIImage(data: out, options: [.expandToHDR: true])?.contentHeadroom ?? 1) > 1 }
-        return (out, Int(image.extent.width.rounded()), Int(image.extent.height.rounded()), kept)
+        // (reading the file back to prove the layer survived cost a second decode of a
+        // 2400 px picture on every shot — proven once on 3 Nov, not repeated here)
+        return (out, Int(image.extent.width.rounded()), Int(image.extent.height.rounded()), gain != nil)
     }
 }

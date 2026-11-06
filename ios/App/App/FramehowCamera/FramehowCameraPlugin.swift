@@ -42,11 +42,12 @@ public class FramehowCameraPlugin: CAPPlugin, CAPBridgedPlugin {
             guard let self, let top = self.bridge?.viewController else { call.reject("no view controller"); return }
             let screen = CameraScreen(
                 ratios: ratios, ratioKey: ratioKey, maxSide: maxSide,
-                onPhoto: { [weak self] data, w, h, kept, key in
+                onPhoto: { [weak self] data, w, h, kept, key, msCapture, msProcess in
                     self?.dismiss {
                         call.resolve([
                             "jpegBase64": data.base64EncodedString(),
                             "width": w, "height": h, "hdrKept": kept, "ratioKey": key,
+                            "msCapture": msCapture, "msProcess": msProcess,
                         ])
                         self?.bridge?.releaseCall(call)
                     }

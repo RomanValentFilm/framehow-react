@@ -106,7 +106,7 @@ async function takeNativePhoto(fid: number): Promise<boolean> {
   if (cameraTarget) cameraTarget.aspectRatio = effectiveAspectRatio(fid);
   fhTrack('photo_taken');
   const kb = Math.round(res.jpegBase64.length * 3 / 4 / 1024);
-  trace(`camera: native photo ${res.width}×${res.height} · ${kb} KB · HDR layer ${res.hdrKept ? 'kept' : 'lost'} · ratio ${res.ratioKey} · ${Math.round((Date.now() - t0) / 100) / 10} s from CAM to card`);
+  trace(`camera: native photo ${res.width}×${res.height} · ${kb} KB · HDR layer ${res.hdrKept ? 'in' : 'not in'} the file · ratio ${res.ratioKey} · shutter→photo ${res.msCapture ?? '?'} ms · crop+resize ${res.msProcess ?? '?'} ms · ${Math.round((Date.now() - t0) / 100) / 10} s from CAM to card`);
   const url = `data:image/jpeg;base64,${res.jpegBase64}`;
   if (onCapturedImage && cameraTarget) onCapturedImage(url, cameraTarget);
   closeCamera();
