@@ -851,7 +851,7 @@ export function applyCapturedImage(dataURL: string, target: any): void {
       }
     }
     if (!targetEl) return;
-    const tr = targetEl.getBoundingClientRect();
+    let tr = targetEl.getBoundingClientRect();
     if (tr.width === 0 || tr.height === 0) return;
     const vw = window.innerWidth, vh = window.innerHeight;
 
@@ -877,6 +877,19 @@ export function applyCapturedImage(dataURL: string, target: any): void {
       // camera's answer) — 0.5 s (Roman, 6 Nov, "hallelujah"); the fade only in the last third.
       (window as any).__fh_startShrink = () => {
         (window as any).__fh_startShrink = undefined;
+        // THE CARD AS IT IS NOW (6 Nov, Roman: "it stops before the card"): the page is
+        // put back by ~140 px right after the landing, so the card is not where it was
+        // measured. Measured again here, at the start of the shrink, and the copy re-aimed.
+        const now = targetEl!.getBoundingClientRect();
+        if (now.width > 0 && now.height > 0) {
+          const sx2 = sr.width / now.width, sy2 = sr.height / now.height;
+          thumb.style.transition = 'none';
+          thumb.style.left = `${now.left}px`; thumb.style.top = `${now.top}px`;
+          thumb.style.width = `${now.width}px`; thumb.style.height = `${now.height}px`;
+          thumb.style.transform = `translate(${sr.left - now.left}px,${sr.top - now.top}px) scale(${sx2},${sy2})`;
+          void thumb.offsetWidth;
+          tr = now;
+        }
         thumb.style.transition = 'transform 0.5s ease-in, opacity 0.17s linear 0.33s, border-radius 0.5s ease-in';
         thumb.style.transform = 'translate(0px,0px) scale(1,1)';
         thumb.style.borderRadius = '4px';
