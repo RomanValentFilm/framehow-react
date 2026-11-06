@@ -70,7 +70,7 @@ function guideRatio(ar: number, photoW?: number, photoH?: number): number {
 }
 
 /** The shell's camera plugin, when the app runs inside the iPhone app. */
-function nativeCamera(): { take(o: any): Promise<any>; addListener(ev: string, fn: (e: any) => void): Promise<{ remove(): void }> } | null {
+function nativeCamera(): { take(o: any): Promise<any>; close(): Promise<any>; addListener(ev: string, fn: (e: any) => void): Promise<{ remove(): void }> } | null {
   const w = window as any;
   if (!w.Capacitor?.isNativePlatform?.()) return null;
   return w.Capacitor?.Plugins?.FramehowCamera ?? null;
@@ -112,6 +112,10 @@ async function takeNativePhoto(fid: number): Promise<boolean> {
     if (landing) { if (landing.main) { const f = state().frames.find((x: any) => x.id === fid); if (f) f.awaitingPhoto = true; } else if (landing.version) landing.version.awaitingPhoto = true; }
     trace(`camera: live frame ${e.width}×${e.height} on the card · ${Math.round((previewAt - t0) / 100) / 10} s from CAM · real photo on its way`);
     closeCamera();
+    // THE HAND-OVER (Roman, 6 Nov: no bare page between the camera and the shrink):
+    // the native screen stays frozen on the shot until the full-screen copy that
+    // shrinks into the card (actions.ts) is on screen — two frames from now.
+    requestAnimationFrame(() => requestAnimationFrame(() => { void cam.close().catch(() => {}); }));
   };
   let sub: any = null;
   try { sub = await cam.addListener('preview', landPreview); } catch { sub = null; }

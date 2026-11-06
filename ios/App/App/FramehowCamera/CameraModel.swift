@@ -39,6 +39,9 @@ final class CameraModel: NSObject, ObservableObject {
     /// The long side of the photo handed over (Roman: 2400).
     var maxSide: CGFloat = 2400
     @Published var flash = false
+    /// THE SHOT, FROZEN ON SCREEN (6 Nov, Roman): from the shutter until the web app has
+    /// drawn its own full-screen copy — then the shrink into the card starts from the same picture.
+    @Published var frozen: UIImage?
     @Published var busy = 0
     @Published var photoSize = ""
     @Published var wide = false
@@ -214,7 +217,8 @@ final class CameraModel: NSObject, ObservableObject {
             let opts: [CIImageRepresentationOption: Any] = [kCGImageDestinationLossyCompressionQuality as CIImageRepresentationOption: 0.8]
             guard let data = Self.ci.jpegRepresentation(of: r.image, colorSpace: CGColorSpaceCreateDeviceRGB(), options: opts) else { return }
             let w = Int(r.image.extent.width.rounded()), h = Int(r.image.extent.height.rounded())
-            Task { @MainActor in self?.onPreview?(data, w, h) }
+            let ui = UIImage(data: data)
+            Task { @MainActor in self?.frozen = ui; self?.onPreview?(data, w, h) }
         }
     }
 }

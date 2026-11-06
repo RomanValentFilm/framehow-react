@@ -25,6 +25,7 @@ public class FramehowCameraPlugin: CAPPlugin, CAPBridgedPlugin {
     public let jsName = "FramehowCamera"
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "take", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "close", returnType: CAPPluginReturnPromise),
     ]
 
     private var host: UIViewController?
@@ -48,11 +49,11 @@ public class FramehowCameraPlugin: CAPPlugin, CAPBridgedPlugin {
             self.model = cam
             var keyInForce = ratioKey
             cam.onPreview = { [weak self] data, w, h in
-                // the live frame: to the web at once, and the screen goes
+                // the live frame: to the web at once; the screen stays, frozen on the shot,
+                // until the web says close() — it has drawn its own copy by then
                 self?.notifyListeners("preview", data: [
                     "jpegBase64": data.base64EncodedString(), "width": w, "height": h, "ratioKey": keyInForce,
                 ])
-                self?.dismissScreen()
             }
             cam.onPhoto = { [weak self] data, w, h, kept, msCapture, msProcess in
                 self?.dismissScreen()
@@ -84,6 +85,11 @@ public class FramehowCameraPlugin: CAPPlugin, CAPBridgedPlugin {
             self.host = vc
             top.present(vc, animated: false)
         }
+    }
+
+    /// The web app has drawn the shot full screen beneath: the frozen screen can go.
+    @objc func close(_ call: CAPPluginCall) {
+        DispatchQueue.main.async { [weak self] in self?.dismissScreen(); call.resolve() }
     }
 
     private func dismissScreen() {

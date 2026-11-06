@@ -130,6 +130,12 @@ struct CameraScreen: View {
                 CameraPreview(cam: cam)
                     .frame(width: fg.chip.width, height: fg.chip.height)
                     .position(x: fg.chip.midX, y: fg.chip.midY)
+                if let fr = cam.frozen {
+                    // the shot itself, where the frame was, until the page beneath has it
+                    Image(uiImage: fr).resizable().scaledToFill()
+                        .frame(width: fg.frame.width, height: fg.frame.height).clipped()
+                        .position(x: fg.frame.midX, y: fg.frame.midY)
+                }
                 FrameLine(frame: fg.frame)
                 Color.clear.contentShape(Rectangle()).gesture(touch).simultaneousGesture(pinch)
                 if let m = focusMark {
