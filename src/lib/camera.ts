@@ -120,7 +120,9 @@ async function takeNativePhoto(fid: number): Promise<boolean> {
     // THE HAND-OVER (Roman, 6 Nov: no bare page between the camera and the shrink):
     // the native screen stays frozen on the shot until the full-screen copy that
     // shrinks into the card (actions.ts) is on screen — two frames from now.
-    requestAnimationFrame(() => requestAnimationFrame(() => { void cam.close().catch(() => {}); }));
+    // (a plain timer: the page's frame clock does not tick while the camera screen covers it)
+    // 150 ms frozen (Roman, 6 Nov) — the flash is 90 ms before that, inside the plugin
+    setTimeout(() => { void cam.close().catch(() => {}); }, 150);
   };
   let sub: any = null;
   try { sub = await cam.addListener('preview', landPreview); } catch { sub = null; }

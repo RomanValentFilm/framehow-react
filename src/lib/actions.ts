@@ -825,7 +825,11 @@ export function applyCapturedImage(dataURL: string, target: any): void {
   // Zoom-out animation: image zooms from full-screen down to target card
   // Skip when fullscreen overlay is open (camera from 3x2 fullscreen refreshes in place)
   if (s.fsOverlayActive) return;
-  requestAnimationFrame(() => {
+  // THE NATIVE CAMERA COVERS THE PAGE (6 Nov): while it does, the page's frame clock
+  // (requestAnimationFrame) does not tick — so the copy is placed at once and the
+  // shrink is started by a plain timer, not a frame.
+  const onFrame = target.startRect ? (fn: () => void) => fn() : requestAnimationFrame;
+  onFrame(() => {
     let targetEl: HTMLElement | null = null;
     if (s.currentViewMode === 'grid3x2') {
       targetEl = document.querySelector(`.grid3x2-card-wrap[data-g3fid="${fid}"] .canvas-wrap`) as HTMLElement | null;
@@ -860,14 +864,15 @@ export function applyCapturedImage(dataURL: string, target: any): void {
       thumb.style.cssText = `position:fixed;z-index:100000;pointer-events:none;object-fit:cover;` +
         `left:${sr.left}px;top:${sr.top}px;width:${sr.width}px;height:${sr.height}px;border-radius:0;opacity:1;`;
       document.body.appendChild(thumb);
-      requestAnimationFrame(() => { requestAnimationFrame(() => {
+      void thumb.offsetWidth;   // laid out now, so the transition below has a start
+      setTimeout(() => { {
         thumb.style.transition = 'left 0.28s ease-in, top 0.28s ease-in, width 0.28s ease-in, height 0.28s ease-in, opacity 0.28s ease-in, border-radius 0.28s ease-in';
         thumb.style.left = `${tr.left}px`; thumb.style.top = `${tr.top}px`;
         thumb.style.width = `${tr.width}px`; thumb.style.height = `${tr.height}px`;
         thumb.style.borderRadius = '4px';
         thumb.style.opacity = '0';
         setTimeout(() => thumb.remove(), 320);
-      }); });
+      } }, 170);   // the camera screen is gone by then (close() at 150 ms): the shrink starts as it goes
       return;
     }
     // Place thumb at target card position, scaled up to fill screen
