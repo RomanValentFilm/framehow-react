@@ -859,44 +859,44 @@ export function applyCapturedImage(dataURL: string, target: any): void {
     thumb.src = dataURL;
     const sr = target.startRect as { left: number; top: number; width: number; height: number } | undefined;
     if (sr) {
-      // THE NATIVE CAMERA (6 Nov, Roman): the shot sat in the frame's rectangle on the
-      // camera screen; the copy starts exactly there, opaque, and shrinks into the card.
-      // DRAWN BY THE GRAPHICS CHIP (6 Nov, Roman's film): moving left/top/width/height
-      // needs the page's main thread for every frame, and in that second it is busy
-      // (sync, redraws) — the copy stood still and vanished. A transform is composited:
-      // it moves whatever the page is doing. The copy sits at the CARD and is pushed
-      // out to the frame's rectangle by the transform; the transform then goes to none.
-      const sx = sr.width / tr.width, sy = sr.height / tr.height;
-      const dx = sr.left - tr.left, dy = sr.top - tr.top;
+      // THE NATIVE CAMERA — THE AGREED MOVE (Roman, 6 Nov, 18:00): after the frozen moment
+      // the copy starts at 95% of the screen, centred, full brightness; moves towards the
+      // card where it is AT THAT MOMENT (the page is put back ~140 px after the landing,
+      // so the card is measured again at the start); the fade runs from the middle of
+      // the move to 0% exactly at the landing — at that instant only the card's own
+      // picture is there. Drawn by the graphics chip (a transform), and driven by the
+      // Web Animations API, because a CSS transition's fade did not run on the phone.
+      void sr;
+      const startW = vw * 0.95, startH = vh * 0.95;
+      const start0 = { left: (vw - startW) / 2, top: (vh - startH) / 2, width: startW, height: startH };
       thumb.style.cssText = `position:fixed;z-index:100000;pointer-events:none;object-fit:cover;` +
         `left:${tr.left}px;top:${tr.top}px;width:${tr.width}px;height:${tr.height}px;border-radius:0;opacity:1;` +
-        `transform-origin:0 0;transform:translate(${dx}px,${dy}px) scale(${sx},${sy});will-change:transform,opacity;`;
+        `transform-origin:0 0;transform:translate(${start0.left - tr.left}px,${start0.top - tr.top}px) scale(${startW / tr.width},${startH / tr.height});will-change:transform,opacity;`;
       document.body.appendChild(thumb);
-      void thumb.offsetWidth;   // laid out now, so the transition below has a start
-      // THE SHRINK STARTS WHEN THE CAMERA SCREEN GOES (camera.ts calls this on the
-      // camera's answer) — 0.5 s (Roman, 6 Nov, "hallelujah"); the fade only in the last third.
+      void thumb.offsetWidth;
       (window as any).__fh_startShrink = () => {
         (window as any).__fh_startShrink = undefined;
-        // THE CARD AS IT IS NOW (6 Nov, Roman: "it stops before the card"): the page is
-        // put back by ~140 px right after the landing, so the card is not where it was
-        // measured. Measured again here, at the start of the shrink, and the copy re-aimed.
         const now = targetEl!.getBoundingClientRect();
-        if (now.width > 0 && now.height > 0) {
-          const sx2 = sr.width / now.width, sy2 = sr.height / now.height;
-          thumb.style.transition = 'none';
-          thumb.style.left = `${now.left}px`; thumb.style.top = `${now.top}px`;
-          thumb.style.width = `${now.width}px`; thumb.style.height = `${now.height}px`;
-          thumb.style.transform = `translate(${sr.left - now.left}px,${sr.top - now.top}px) scale(${sx2},${sy2})`;
-          void thumb.offsetWidth;
-          tr = now;
-        }
-        thumb.style.transition = 'transform 0.5s ease-in, opacity 0.17s linear 0.33s, border-radius 0.5s ease-in';
-        thumb.style.transform = 'translate(0px,0px) scale(1,1)';
-        thumb.style.borderRadius = '4px';
-        thumb.style.opacity = '0';
+        const to = (now.width > 0 && now.height > 0) ? now : tr;
+        thumb.style.left = `${to.left}px`; thumb.style.top = `${to.top}px`;
+        thumb.style.width = `${to.width}px`; thumb.style.height = `${to.height}px`;
+        const from = `translate(${start0.left - to.left}px,${start0.top - to.top}px) scale(${startW / to.width},${startH / to.height})`;
+        thumb.style.transform = from;
+        void thumb.offsetWidth;
         const t0 = Date.now();
-        thumb.addEventListener('transitionend', (ev) => { if (ev.propertyName === 'transform') trace(`camera: shrink moved for ${Date.now() - t0} ms, from ${Math.round(sr.width)}×${Math.round(sr.height)} at ${Math.round(sr.left)},${Math.round(sr.top)} to ${Math.round(tr.width)}×${Math.round(tr.height)} at ${Math.round(tr.left)},${Math.round(tr.top)}`); });
-        setTimeout(() => thumb.remove(), 600);
+        const anim = thumb.animate(
+          [
+            { transform: from, opacity: 1, offset: 0 },
+            { opacity: 1, offset: 0.5, easing: 'linear' },
+            { transform: 'translate(0px,0px) scale(1,1)', opacity: 0, offset: 1 },
+          ],
+          { duration: 500, easing: 'ease-in', fill: 'forwards' },
+        );
+        anim.onfinish = () => {
+          trace(`camera: shrink moved for ${Date.now() - t0} ms, from ${Math.round(startW)}×${Math.round(startH)} (95% of the screen) to ${Math.round(to.width)}×${Math.round(to.height)} at ${Math.round(to.left)},${Math.round(to.top)}`);
+          thumb.remove();
+        };
+        setTimeout(() => thumb.remove(), 900);
       };
       setTimeout(() => (window as any).__fh_startShrink?.(), 1500);   // never stuck, whatever the camera says
       return;
