@@ -30,6 +30,12 @@ public class FramehowCameraPlugin: CAPPlugin, CAPBridgedPlugin {
 
     private var host: UIViewController?
     private var model: CameraModel?
+    /// THE FROZEN MOMENT IS ALWAYS THE SAME (Roman, 6 Nov): 90 ms flash + 150 ms frozen,
+    /// counted from the shutter by the camera itself, whatever the page is doing. The
+    /// screen goes when that time is up AND the page has its copy ready (close()).
+    private var timeUp = false
+    private var webReady = false
+    private var webReadyCall: CAPPluginCall?
 
     @objc func take(_ call: CAPPluginCall) {
         let list = (call.getArray("ratios") as? [[String: Any]] ?? []).compactMap { d -> RatioChoice? in
@@ -48,9 +54,15 @@ public class FramehowCameraPlugin: CAPPlugin, CAPBridgedPlugin {
             let cam = CameraModel()
             self.model = cam
             var keyInForce = ratioKey
+            cam.onShutter = { [weak self] in
+                self?.timeUp = false; self?.webReady = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(240)) { [weak self] in
+                    self?.timeUp = true; self?.goIfBothReady()
+                }
+            }
             cam.onPreview = { [weak self] data, w, h in
                 // the live frame: to the web at once; the screen stays, frozen on the shot,
-                // until the web says close() — it has drawn its own copy by then
+                // until the fixed time is up and the web has drawn its copy (close())
                 let f = cam.frameOnScreen
                 self?.notifyListeners("preview", data: [
                     "jpegBase64": data.base64EncodedString(), "width": w, "height": h, "ratioKey": keyInForce,
@@ -89,14 +101,29 @@ public class FramehowCameraPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
-    /// The web app has drawn the shot full screen beneath: the frozen screen can go.
+    /// The web app has its copy in place beneath: the frozen screen can go once the
+    /// fixed time is up. The call is answered the moment the screen is gone — the
+    /// web starts its shrink on that answer, so both happen in the same instant.
     @objc func close(_ call: CAPPluginCall) {
-        DispatchQueue.main.async { [weak self] in self?.dismissScreen(); call.resolve() }
+        call.keepAlive = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { call.resolve(); return }
+            self.webReady = true
+            self.webReadyCall = call
+            self.goIfBothReady()
+        }
+    }
+
+    private func goIfBothReady() {
+        guard timeUp, webReady, host != nil else { return }
+        dismissScreen()
+        if let c = webReadyCall { webReadyCall = nil; c.resolve(); bridge?.releaseCall(c) }
     }
 
     private func dismissScreen() {
         guard let vc = host else { return }
         host = nil
         vc.dismiss(animated: false)
+        if let c = webReadyCall { webReadyCall = nil; c.resolve(); bridge?.releaseCall(c) }
     }
 }

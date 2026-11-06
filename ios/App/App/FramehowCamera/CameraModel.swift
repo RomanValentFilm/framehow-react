@@ -55,6 +55,8 @@ final class CameraModel: NSObject, ObservableObject {
     var onPhoto: ((Data, Int, Int, Bool, Int, Int) -> Void)?
     /// The live frame at the shutter: a small JPEG (long side 1200), same crop, at once.
     var onPreview: ((Data, Int, Int) -> Void)?
+    /// The shutter was pressed (the plugin starts its fixed clock here).
+    var onShutter: (() -> Void)?
     /// One drawing context for every photo (making one costs hundreds of ms).
     nonisolated static let ci = CIContext()
     nonisolated(unsafe) private var shutterAt = Date()
@@ -206,6 +208,7 @@ final class CameraModel: NSObject, ObservableObject {
         }
         busy += 1
         shutterAt = Date()
+        onShutter?()
         // THE FLASH FIRST (Roman, 6 Nov): black at once, 90 ms; the frozen shot appears as
         // the flash lifts, never under it.
         flash = true

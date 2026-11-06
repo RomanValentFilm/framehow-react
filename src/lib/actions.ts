@@ -865,14 +865,19 @@ export function applyCapturedImage(dataURL: string, target: any): void {
         `left:${sr.left}px;top:${sr.top}px;width:${sr.width}px;height:${sr.height}px;border-radius:0;opacity:1;`;
       document.body.appendChild(thumb);
       void thumb.offsetWidth;   // laid out now, so the transition below has a start
-      setTimeout(() => { {
-        thumb.style.transition = 'left 0.28s ease-in, top 0.28s ease-in, width 0.28s ease-in, height 0.28s ease-in, opacity 0.28s ease-in, border-radius 0.28s ease-in';
+      // THE SHRINK STARTS WHEN THE CAMERA SCREEN GOES (camera.ts calls this on the
+      // camera's answer) — 0.4 s (Roman, 6 Nov: it travels less than FH CAM's full-screen
+      // start, so a little longer to feel the same).
+      (window as any).__fh_startShrink = () => {
+        (window as any).__fh_startShrink = undefined;
+        thumb.style.transition = 'left 0.4s ease-in, top 0.4s ease-in, width 0.4s ease-in, height 0.4s ease-in, opacity 0.4s ease-in, border-radius 0.4s ease-in';
         thumb.style.left = `${tr.left}px`; thumb.style.top = `${tr.top}px`;
         thumb.style.width = `${tr.width}px`; thumb.style.height = `${tr.height}px`;
         thumb.style.borderRadius = '4px';
         thumb.style.opacity = '0';
-        setTimeout(() => thumb.remove(), 320);
-      } }, 170);   // the camera screen is gone by then (close() at 150 ms): the shrink starts as it goes
+        setTimeout(() => thumb.remove(), 450);
+      };
+      setTimeout(() => (window as any).__fh_startShrink?.(), 1500);   // never stuck, whatever the camera says
       return;
     }
     // Place thumb at target card position, scaled up to fill screen
