@@ -132,6 +132,9 @@ EVERY answer that asks Roman to act, decide or pay ENDS with one line:
   checked: <file/line, log line, test run, or link>   — or —
   NOT checked: <what is a guess>
 No such line = Roman treats it as a guess and does not act (2 Nov).
+NO INTERNALS IN ANSWERS (6 Nov, Roman): no commit ids, hashes, file paths or line numbers in
+the text he reads — after "zzz" the answer is "deploy worked" or what went wrong, plus the
+version that is up (vX · #N) and the next step he has to do. Such details belong in the checked line only when they say something to him.
 SHORT (5 Nov, Roman: "a bit vague... shorten"): one line, at most two
 sources, no explanations in brackets. "checked: changeStamps.ts, your log 21:05."
 If nothing in the answer is a guess, the NOT-checked half is left out.

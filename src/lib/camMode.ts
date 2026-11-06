@@ -34,7 +34,12 @@ function write(key: string, v: string): void {
  *  desktop project, fittings included; the choice window stays. */
 const isDesktop = (): boolean => !(navigator.maxTouchPoints > 1);
 
+/** The iPhone app: its camera IS the phone's camera, so there is nothing to
+ *  choose (Roman, 6 Nov) — FH CAM always, the FH/PHONE switch hidden (.fh-shell). */
+const inShell = (): boolean => !!(window as any).Capacitor?.isNativePlatform?.();
+
 export function getCamMode(): CamMode {
+  if (inShell()) return 'fh';
   const v = read(modeKey());
   if (v === 'fh' || v === 'phone') return v;
   if (isDesktop()) return 'fh';

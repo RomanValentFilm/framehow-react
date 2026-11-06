@@ -75,7 +75,12 @@ function nativeCamera(): { take(o: any): Promise<any> } | null {
  *  cancelled); false = no native camera, carry on with the web one. */
 async function takeNativePhoto(fid: number): Promise<boolean> {
   const cam = nativeCamera();
-  if (!cam || !cameraTarget) return false;
+  if (!cam) {
+    const w = window as any;
+    if (w.Capacitor?.isNativePlatform?.()) trace(`camera: no native camera plugin — the shell has: ${Object.keys(w.Capacitor?.Plugins ?? {}).join(', ') || 'none'}`);
+    return false;
+  }
+  if (!cameraTarget) return false;
   const kind = state().projectType;
   const list = kind === 'fitting' ? FITTING_RATIOS : kind === 'portrait' ? PORTRAIT_RATIOS : CAM_RATIOS;
   const ratios = list.map((r) => ({ key: r.key, label: r.label, value: r.value == null ? canvasAspectRatio(fid) : r.value }));

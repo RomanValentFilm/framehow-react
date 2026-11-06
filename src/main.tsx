@@ -5,6 +5,7 @@ import App from './App';
 
 // THE FRAMEHOW APP: no glass bar (arrows + tick) above the keyboard (Roman, 4 Nov).
 if ((window as any).Capacitor?.isNativePlatform?.()) {
+  document.documentElement.classList.add('fh-shell');   // CSS: what only the iPhone app hides/shows
   // (the plugin's web side is not bundled: the shell registers it natively)
   (window as any).Capacitor?.Plugins?.Keyboard?.setAccessoryBarVisible?.({ isVisible: false });
 }

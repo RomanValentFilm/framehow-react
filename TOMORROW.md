@@ -90,6 +90,10 @@ FINDINGS so far (not fixed yet):
   "Upload Successful". App "Framehow" (com.framehow.ios, SKU framehow-ios) exists in App Store
   Connect, iOS 1.0 (build 1). Next: wait for "completed processing" mail, TestFlight → internal
   tester Roman → install from the TestFlight app on the phone.
+- CAMERAS, AGREED (Roman, 6 Nov 16:10): iPhone App Store app = the native camera only (no FH CAM, no
+  PHONE CAM, no switch — done v5.0.154). Every PWA (iPhone Safari, Android, desktop) = FH CAM is the
+  DEFAULT, PHONE CAM (the device's own camera app, any brand, frame lines placed afterwards) stays as
+  the alternative; a FITTING in the PWA still starts on PHONE CAM (23 Oct). Nothing is built per phone brand.
 - TOMORROW 3: RUN 581 (full, v5.0.151): 137 green, 2 red, both timing. (a) BIG DAY part 7: the
   fitting PDF after ticking "unrated" gave no download in 120 s (passed 572/579/580). (b) test 33:
   three uploads fired within 0.1 s, the server kept two — an upload lost in the overlap (passed

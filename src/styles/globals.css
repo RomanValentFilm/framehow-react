@@ -64,6 +64,8 @@
   body.picts-open .view-btn.active{color:#808080;border-color:var(--border);border-width:1px;background:var(--btn-fill);}
   .vb-off-btn{background:#d52632;color:#fff;border-color:#d52632;font-size:10px;padding:0 6px;height:20px;display:flex;align-items:center;gap:2px;}
   .vb-desktop-only{display:flex;}
+  /* THE iPHONE APP has one camera, the phone's own: no FH CAM / PHONE CAM switch (6 Nov). */
+  html.fh-shell .cam-mode-btn{display:none !important;}
   @media (max-width:430px) and (orientation:portrait){.vb-desktop-only{display:none;}}
   /* iPhone PORTRAIT gets 3×2VIEW and SORT BY back (#483). DETAIL used to be the
      only button in this bar and it did nothing here — pressing it returned
