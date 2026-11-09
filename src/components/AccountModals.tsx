@@ -109,7 +109,7 @@ export function AccountModals() {
           <div className="account-row" id="accountRowNews" style={{ flexDirection: 'row', alignItems: 'flex-start', gap: '8px' }}>
             <input type="checkbox" id="accountNews" style={{ width: 'auto', marginTop: '2px' }} />
             <label htmlFor="accountNews" className="account-terms-text">
-              Send me news and updates about Framehow (optional).
+              Send me Framehow news and updates.
             </label>
           </div>
 

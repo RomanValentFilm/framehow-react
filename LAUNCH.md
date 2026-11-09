@@ -1,7 +1,7 @@
-# LAUNCH — the one list (9 Nov 2026)
-Cross out with ~~strike~~ and the date. Blocks are groups; the RUNNING ORDER is:
-1 B3a B3b (done) → A1 → A9 → A11 → A4 → 2 C1, C2, C2b, C3, C4 → 3 B3e (r2_key), A13, A12, B3d, A14, B3c, B3f, A2, A3 →
-4 A7 → 5 D1, D2 → 6 A8–A10, D7, submission.
+# LAUNCH — THE ONE LIST (9 Nov 2026). Nothing else counts; TOMORROW.md is history + notes.
+Cross out with [x] and the date. Blocks are groups; the RUNNING ORDER is:
+1 done today (A1 A4 A9 A11 A12 A13a B3a–e1 B3d) → A6a A6b (deploy 596) → 2 full run, C1 live, C2, C2b, C3, C4 →
+3 A15, G1–G4, A2, A3, B3c, B3e-2 → 4 A7 → 5 D1 → 6 A8, A10, A13b, A14, B3f, D7, submission.
 ROMAN IN PARALLEL (no Claude needed): D3 D4 D5 (App Store Connect), D8 decision, A5 text,
 D7 video + Fitting page text, F1 new token.
 
@@ -10,12 +10,12 @@ D7 video + Fitting page text, F1 new token.
 - [ ] A2 Library preview is made from the live frame → remake from the real photo when it lands
 - [ ] A3 Version strip's own card in landscape after a shot — check
 - [x] A4 (9 Nov, v5.0.176) Library permanent delete: second confirmation, text says "cannot be undone, frees X MB"
-- [ ] A5 Welcome mail text reviewed (today: 4 plain lines) — Roman's wording
-- [ ] A6a Email confirmation: 150 MB until the welcome-mail link is opened, full allowance after; Resend; all devices (9 Nov, in test 58)
-- [ ] A6b Sign-up tick box "Send me news and updates (optional)" → users.newsletter_consent_at (9 Nov)
+- [x] A5 (9 Nov) Welcome mail: confirmation link + 150/500 MB lines + "kept on your device when offline…" (Roman's wording)
+- [ ] A6a (9 Nov, deploy 596) Email confirmation: 150 MB until the welcome-mail link is opened, full allowance after; Resend; all devices (9 Nov, in test 58)
+- [ ] A6b (9 Nov, deploy 596) Sign-up tick box "Send me Framehow news and updates." → users.newsletter_consent_at
 - [ ] A6 "Free during launch — paid plans later" line in the account box; `plan` field on the account (free), no billing code
 - [ ] A7 Fitting as its own app: build flag, second bundle id (com.framehow.fitting), Fitting build hides the rest
-- [ ] A8 Long simulator test (plan in TOMORROW.md) + the faults it finds
+- [ ] A8 Long simulator test on the iPhone simulator (plan: TOMORROW.md 5 Nov section) + the faults it finds
 - [x] A9 (9 Nov, v5.0.173, test 55) HIGH: a picture added while a push is in flight can be lost (test 33 red in runs 581/582: 3 uploads in 0.1 s, server keeps 2) — upload queue; also write-then-pull race (BIG DAY part 3), BIG DAY 7 timing red
 - [x] A11 (9 Nov, v5.0.174) Account deletion: sign in again within 7 days = restored; app text says 7 days (today admin-only, text says cannot be undone)
 - [x] A12 (9 Nov, v5.0.178, test 56) HIGH (privacy): pictures from LOAD / folder / drag-drop are stored as the original file, EXIF+GPS included → resize to 2400 and re-encode (strips EXIF) like the camera paths
@@ -23,7 +23,18 @@ D7 video + Fitting page text, F1 new token.
 - [ ] A13b Logout keeps unsent copies but clears project cache + previews; account deletion wipes everything local
 - [ ] A14 Self-host the Google Fonts (one subprocessor less); note OCR CDN loads in the Privacy text
 - [ ] A15 LOAD several pictures at once onto the SHOT strip (several main frames in one go) — TOMORROW 5
-- [ ] A10 F4 island overlap · reload-on-new-version rule · "tell phone users about the desktop"
+- [ ] A10 "Tell phone users about the desktop" note (where/when)
+
+## G. Small bugs and comforts carried over from TOMORROW.md (one list, Roman 9 Nov)
+- [ ] G1 Multi-load into an EMPTY version strip lands in v2+ (v1 stays empty) — bug, ~1 h
+- [ ] G2 Sign-in box: "keep me signed in" (sessions are 30 days sliding today — decide if needed at all)
+- [ ] G3 Reload-on-new-version: check the behaviour, decide the rule
+- [ ] G4 Slow project opens (Roman, 5 Nov): one timing line at open, then look
+- [ ] G5 NEEDS clickable on frame-set cards in STORY FLOWS / SHOOTING ORDERS (½ day)
+- [ ] G6 Simulator findings: F1 UUID names from the Photos picker → number instead; F2 "save it first" notice repeats; F4 landscape-left Dynamic Island covers the page's left edge (no left safe-area)
+- [ ] G7 Two timing reds from run 581: BIG DAY part 7 fitting PDF download; write-then-pull race (BIG DAY part 3, run 579)
+- [ ] G8 Face ID / Touch ID sign-in in the iPhone app (after launch)
+- [ ] G9 Later ideas (not launch): professions in analytics · break colours synced · guest link (view + rate) · board merge/compare, PDF import adjust, copy frame data
 
 ## B. Audit (report first, no code) — running in the background from 9 Nov
 - [x] B1 (report 9 Nov: docs/audit-launch-2026-11-09.md) Security & storage audit (Roman's prompt): offline photos, quota, access control, abuse, recovery/GDPR — graded report in docs/

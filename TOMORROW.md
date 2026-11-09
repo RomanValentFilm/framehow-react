@@ -1,3 +1,5 @@
+# NOTE (9 Nov): THE LIST IS LAUNCH.md. This file is history and notes only — nothing here is a to-do unless it is in LAUNCH.md.
+
 # Where things stand
 
 ## 5 November — THE SIMULATOR IS THE TEST BENCH (for the next session, any model)
