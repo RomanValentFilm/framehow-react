@@ -2154,9 +2154,13 @@ async function confirmEmailFromLink(token: string): Promise<void> {
     trace('email confirmed from the link');
     const u = getUser();
     if (u) setUser({ ...u, email_verified: true });
-    // The storage figure says the rest (and raises the toast) with the next
-    // answer; said here too, so the person sees it even before any sync.
-    showToast('Email confirmed — thank you.');
+    // A BOX, NOT A TOAST (9 Nov, Roman): the person has just come from their
+    // mail; two seconds of toast is easy to miss. The figure follows.
+    const { showImportantNote } = await import('./modals');
+    const full = lastStorageFigure()?.full_limit;
+    await showImportantNote('EMAIL CONFIRMED',
+      `Thank you — your Framehow account now has ${full ? `${Math.round(full / 1048576)} MB of` : 'its full'} storage.`
+      + (isLoggedIn() ? '' : ' Sign in to continue.'));
     void refreshStorageFigure();
   } catch (e) {
     trace(`email confirmation link refused: ${asMessage(e, '?')}`);

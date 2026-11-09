@@ -25,6 +25,29 @@ interface EmailMessage {
   to: string;
   subject: string;
   text: string;
+  /** The same mail as HTML (9 Nov, Roman: "a nicer link, not a long URL").
+   *  The text is always there too — some readers show only that. */
+  html?: string;
+}
+
+// ---------------------------------------------------------------------------
+// THE HTML VERSION (9 Nov): the text, line for line, with the one link as a
+// button. Plain and dark like the app; nothing that needs images or fonts.
+// ---------------------------------------------------------------------------
+function escapeHtml(x: string): string {
+  return x.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+/** Paragraphs in, HTML out; `{{BUTTON}}` in a paragraph becomes the link button. */
+function htmlMail(paragraphs: string[], button?: { href: string; label: string }): string {
+  const body = paragraphs.map((p) => {
+    if (p === "{{BUTTON}}" && button) {
+      return `<p style="margin:22px 0"><a href="${escapeHtml(button.href)}" style="display:inline-block;background:#d52632;color:#fff;text-decoration:none;font-weight:600;padding:12px 22px;border-radius:8px;font-size:15px">${escapeHtml(button.label)}</a></p>`
+        + `<p style="margin:0 0 18px;font-size:12px;color:#888">If the button does not work, open this link:<br><a href="${escapeHtml(button.href)}" style="color:#4fc3f7;word-break:break-all">${escapeHtml(button.href)}</a></p>`;
+    }
+    return `<p style="margin:0 0 16px">${escapeHtml(p)}</p>`;
+  }).join("");
+  return `<!DOCTYPE html><html><body style="margin:0;padding:24px;background:#111;color:#e8e8e8;font-family:-apple-system,system-ui,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.5">`
+    + `<div style="max-width:520px;margin:0 auto">${body}</div></body></html>`;
 }
 
 /**
@@ -44,6 +67,7 @@ async function send(env: Env, msg: EmailMessage): Promise<boolean> {
       from: `${FROM_NAME} <${FROM}>`,
       subject: msg.subject,
       text: msg.text,
+      ...(msg.html ? { html: msg.html } : {}),
     });
     console.log(`[email] sent to=${msg.to} subject="${msg.subject}" id=${sent?.messageId ?? "?"}`);
     return true;
@@ -94,43 +118,69 @@ export function verifyLink(env: Env, token: string, asked?: string | null): stri
 /** The welcome mail carries the confirmation link (9 Nov): one mail, not two.
  *  Until the link is opened the account has 150 MB; after it, the full 500. */
 export async function sendWelcomeEmail(env: Env, to: string, name: string, verifyToken: string, asked?: string | null): Promise<boolean> {
+  const link = verifyLink(env, verifyToken, asked);
   return send(env, {
     to,
     subject: "Welcome to Framehow",
     text: `Hi ${name},\n\n`
       + `Your Framehow account is ready — please confirm your email address by opening this link:\n`
-      + `${verifyLink(env, verifyToken, asked)}\n\n`
+      + `${link}\n\n`
       + `Until then your account has 150 MB of storage; the link unlocks the full 500 MB.\n\n`
       + `Your work is kept on your device when you are offline, and syncs between your devices as soon as you are connected.\n\n`
       + `Feel free to send us a note if you have ideas about improvements.\n\n`
       + `Framehow\n`,
+    html: htmlMail([
+      `Hi ${name},`,
+      `Your Framehow account is ready — please confirm your email address:`,
+      `{{BUTTON}}`,
+      `Until then your account has 150 MB of storage; confirming unlocks the full 500 MB.`,
+      `Your work is kept on your device when you are offline, and syncs between your devices as soon as you are connected.`,
+      `Feel free to send us a note if you have ideas about improvements.`,
+      `Framehow`,
+    ], { href: link, label: "Confirm email" }),
   });
 }
 
 /** "Resend" (9 Nov): the confirmation link alone. */
 export async function sendVerifyEmail(env: Env, to: string, name: string, verifyToken: string, asked?: string | null): Promise<boolean> {
+  const link = verifyLink(env, verifyToken, asked);
   return send(env, {
     to,
     subject: "Confirm your Framehow email",
     text: `Hi ${name},\n\n`
       + `Open this link to confirm your email address for your Framehow account:\n`
-      + `${verifyLink(env, verifyToken, asked)}\n\n`
+      + `${link}\n\n`
       + `It unlocks the full 500 MB of storage for your account.\n\n`
       + `Framehow\n`,
+    html: htmlMail([
+      `Hi ${name},`,
+      `Confirm your email address for your Framehow account:`,
+      `{{BUTTON}}`,
+      `It unlocks the full 500 MB of storage for your account.`,
+      `Framehow`,
+    ], { href: link, label: "Confirm email" }),
   });
 }
 
 export async function sendPasswordResetEmail(
   env: Env, to: string, name: string, token: string, asked?: string | null,
 ): Promise<boolean> {
+  const link = resetLink(env, token, asked);
   return send(env, {
     to,
     subject: "Your Framehow password",
     text: `Hi ${name},\n\n`
       + `Open the link below to choose a new password:\n`
-      + `${resetLink(env, token, asked)}\n\n`
+      + `${link}\n\n`
       + `This link works for one hour.\n\n`
       + `Framehow\n`,
+    html: htmlMail([
+      `Hi ${name},`,
+      `Choose a new password for your Framehow account:`,
+      `{{BUTTON}}`,
+      `This link works for one hour.`,
+      `Framehow`,
+    ], { href: link, label: "Choose a new password" }),
   });
 }
 
