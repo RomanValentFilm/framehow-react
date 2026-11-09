@@ -308,13 +308,27 @@ test('picts library: DELETE — confirm, the card says "You deleted this picture
   const modal = d.page.locator('#confirmModal');
   await expect(modal).toBeVisible();
   say(`   the question: "${await d.page.locator('#confirmMsg').textContent()}"`);
-  expect(await d.page.locator('#confirmMsg').textContent(), 'the exact words').toBe('Are you sure you want to delete the selected pictures? This cannot be undone.');
+  // TWO STEPS (A4, 9 Nov): what goes and what it frees, then the last check.
+  expect(await d.page.locator('#confirmMsg').textContent(), 'the first question says what goes and what it frees').toMatch(/^Delete this picture for good\? It is used in 1 shot, which will show "You deleted this picture"\. This frees \d+ KB of your storage\.$/);
   await d.page.locator('#confirmNo').click();
   await expect(modal).toBeHidden();
   expect(await lib.locator('.picts-tile').count(), 'nothing deleted').toBe(2);
 
-  say('DELETE again, Yes: gone from the library, from the server, from storage; the card says so');
+  say('DELETE again, Yes — then No at the last check: still nothing deleted');
   await lib.locator('.picts-delete').click();
+  await expect(modal).toBeVisible();
+  await d.page.locator('#confirmModal .btn:not(#confirmNo)').click();
+  await expect(modal).toBeVisible();
+  say(`   the last check: "${await d.page.locator('#confirmMsg').textContent()}"`);
+  expect(await d.page.locator('#confirmMsg').textContent(), 'the last check').toBe('Last check: this cannot be undone. The picture will be erased for good, there is no way back. Delete?');
+  await d.page.locator('#confirmNo').click();
+  await expect(modal).toBeHidden();
+  expect(await lib.locator('.picts-tile').count(), 'still nothing deleted').toBe(2);
+
+  say('DELETE again, Yes, Yes: gone from the library, from the server, from storage; the card says so');
+  await lib.locator('.picts-delete').click();
+  await expect(modal).toBeVisible();
+  await d.page.locator('#confirmModal .btn:not(#confirmNo)').click();
   await expect(modal).toBeVisible();
   await d.page.locator('#confirmModal .btn:not(#confirmNo)').click();
   await expect(modal).toBeHidden();

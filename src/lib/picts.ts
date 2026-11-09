@@ -834,8 +834,19 @@ export async function openPicts(): Promise<void> {
     const chosen = pics.filter((p) => marked.has(p.key));
     if (!chosen.length) return;
     void (async () => {
-      const ok = await showConfirmDefaultNo('Are you sure you want to delete the selected pictures? This cannot be undone.');
+      // TWO STEPS FOR A PERMANENT DELETE (A4, 9 Nov, Roman: "one more step to
+      // ask — this cannot be undone"). The first says what goes and what it
+      // frees; the second is the last check. Both default to No.
+      const n = chosen.length;
+      const bytes = chosen.reduce((a, p) => a + (p.size || 0) + (p.thumb_size || 0), 0);
+      const mb = bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+      const shots = new Set(chosen.flatMap((p) => p.uses.map((u) => `${u.project_id}/${u.shot ?? ''}`))).size;
+      const what = n === 1 ? 'this picture' : `these ${n} pictures`;
+      const where = shots > 0 ? ` ${n === 1 ? 'It is' : 'They are'} used in ${shots} shot${shots === 1 ? '' : 's'}, which will show "You deleted this picture".` : '';
+      const ok = await showConfirmDefaultNo(`Delete ${what} for good?${where} This frees ${mb} of your storage.`);
       if (!ok || _root !== root) return;
+      const sure = await showConfirmDefaultNo(`Last check: this cannot be undone. ${n === 1 ? 'The picture' : `The ${n} pictures`} will be erased for good, there is no way back. Delete?`);
+      if (!sure || _root !== root) return;
       // Stay on the next picture after the deleted ones (28 Oct, Roman: "it
       // jumps somewhere"): where it sits now, and where it is again afterwards.
       const ordered = loadedAll.slice().sort((x, y) => x.uploaded_at - y.uploaded_at);

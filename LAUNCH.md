@@ -15,7 +15,7 @@ D7 video + Fitting page text, F1 new token.
 - [ ] A7 Fitting as its own app: build flag, second bundle id (com.framehow.fitting), Fitting build hides the rest
 - [ ] A8 Long simulator test (plan in TOMORROW.md) + the faults it finds
 - [x] A9 (9 Nov, v5.0.173, test 55) HIGH: a picture added while a push is in flight can be lost (test 33 red in runs 581/582: 3 uploads in 0.1 s, server keeps 2) — upload queue; also write-then-pull race (BIG DAY part 3), BIG DAY 7 timing red
-- [ ] A11 Account deletion: sign in again within 7 days = restored; app text says 7 days (today admin-only, text says cannot be undone)
+- [x] A11 (9 Nov, v5.0.174) Account deletion: sign in again within 7 days = restored; app text says 7 days (today admin-only, text says cannot be undone)
 - [ ] A10 F4 island overlap · reload-on-new-version rule · "tell phone users about the desktop"
 
 ## B. Audit (report first, no code) — running in the background from 9 Nov
