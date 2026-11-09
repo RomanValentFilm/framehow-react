@@ -558,7 +558,18 @@ export async function flushSyncNow(askedByTheFetch = false): Promise<void> {
   // each saying "pull held back: local work is not on the server yet" — and the
   // push asked for just before that line was turned away here without a word.
   // Only when there IS something to send, so a quiet device stays quiet.
-  if (cloudSyncInFlight) { if (_dirty) traceOnce('push skipped: a push is already running'); return; }
+  if (cloudSyncInFlight) {
+    // ASKED WHILE A PUSH IS IN THE AIR (A9, 9 Nov; test 33 runs 581/582, test 55).
+    // A picture loaded onto a card changes the card IN PLACE — the store never
+    // says "work", only the fingerprint check below finds it, and only when
+    // somebody asks for a push. This ask came while a push was running and
+    // used to be dropped on the floor: nothing asked again, the picture sat
+    // on the device until the next heartbeat — or, with three pictures in a
+    // row, for ever. The ask is kept and repeated the moment the push is done.
+    _askedWhileInFlight = true;
+    if (_dirty) traceOnce('push skipped: a push is already running');
+    return;
+  }
   // THE ACCOUNT IS FULL (#533): the server has said no, and every try would
   // upload the pictures again for the same no. The work is filed on the
   // device instead, and goes up by itself the moment space is freed.
@@ -600,7 +611,12 @@ export async function flushSyncNow(askedByTheFetch = false): Promise<void> {
     // only now is it safe to drop the copy held on this device — and only the
     // work this push carried (#496).
     const more = pushSucceeded(began);
-    if (more) setTimeout(() => void flushSyncNow(), 300);
+    const asked = _askedWhileInFlight;
+    _askedWhileInFlight = false;
+    if (more || asked) {
+      if (!more) trace('  a push was asked for while this one was in the air — asking again');
+      setTimeout(() => void flushSyncNow(), 300);
+    }
     cp = { ...cp, lastSavedAt: Date.now(), dirty: more };
     _pendingSyncIds.delete(pid);
     // Clear both keys: a project saved to the cloud for the first time was
@@ -687,6 +703,8 @@ export async function flushSyncNow(askedByTheFetch = false): Promise<void> {
 // ---------------------------------------------------------------------------
 
 const _pendingSyncIds = new Set<string>();
+/** flushSyncNow was asked for while a push was running (A9). */
+let _askedWhileInFlight = false;
 
 
 /**
