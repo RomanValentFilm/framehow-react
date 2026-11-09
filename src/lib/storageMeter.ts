@@ -121,9 +121,8 @@ export function storageFullFromServer(f: (StorageFigure & { pending?: number }) 
       // full; the link in the inbox gives the whole 500 at once.
       await showImportantNote(
         'STORAGE FULL',
-        `Your storage is full. Confirm your email — the link is in your inbox — and you get ${mbText(_figure.full_limit ?? _figure.limit)} MB at once. ` +
-        'Your work stays safe on this device meanwhile. ' +
-        'No mail? Open the project list and press "Resend mail" under the storage line.',
+        `Your current ${mbText(_figure.limit)} MB storage is full — to get ${mbText(_figure.full_limit ?? _figure.limit)} MB, confirm your account's email — the link is in your inbox. ` +
+        'If you cannot find the email, open MENU > OPEN PROJECT and press "Resend mail" under the storage line.',
       );
     } else {
       await showImportantNote(
