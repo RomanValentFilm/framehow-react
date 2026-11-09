@@ -9,6 +9,7 @@ import {
 } from "../lib/crypto";
 import { sendPasswordResetEmail, sendWelcomeEmail } from "../lib/email";
 import { isEmail, isNonEmptyString, jsonError } from "../lib/response";
+import { allow, clear, ipOf } from "../lib/rateLimit";
 
 // Minimum password length. The spec doesn't pin a number; 8 is a sane floor
 // and matches NIST 800-63B guidance (with provider-side breach checks layered
@@ -57,6 +58,10 @@ auth.post("/signup", async (c) => {
   const email = typeof b.email === "string" ? b.email.trim().toLowerCase() : "";
   const password = typeof b.password === "string" ? b.password : "";
   const profession = typeof b.profession === "string" ? b.profession.trim() : null;
+  // 5 new accounts per address per hour (rate limits, 9 Nov).
+  if (!await allow(c.env, "signup", `ip:${ipOf(c.req)}`, c.req)) {
+    return jsonError(c, 429, "rate_limited", "Too many new accounts from here. Please try again later.");
+  }
 
   if (!isNonEmptyString(name, MAX_NAME_LEN)) {
     return jsonError(c, 400, "invalid_name", "Name is required.");
@@ -169,6 +174,12 @@ auth.post("/login", async (c) => {
     return jsonError(c, 400, "invalid_credentials", "Email and password are required.");
   }
 
+  // 10 wrong passwords per email per 15 minutes (rate limits, 9 Nov); the
+  // right one clears the count below.
+  if (!await allow(c.env, "login", email, c.req)) {
+    return jsonError(c, 429, "rate_limited", "Too many attempts. Please wait a few minutes and try again.");
+  }
+
   // SIGNING IN BRINGS A DELETED ACCOUNT BACK (A11, 9 Nov, Roman: "the easiest
   // is they sign back themselves within 7 days"). A deleted account is kept
   // for seven days (users.deleted_at; the nightly sweep erases it after). Until
@@ -204,6 +215,7 @@ auth.post("/login", async (c) => {
   if (!user || !ok || gone) {
     return jsonError(c, 401, "invalid_credentials", "Email or password is incorrect.");
   }
+  await clear(c.env, "login", email);
   let restored = false;
   if (user.deleted_at) {
     await c.env.DB.batch([
@@ -269,6 +281,10 @@ auth.post("/forgot-password", async (c) => {
   const email = typeof b.email === "string" ? b.email.trim().toLowerCase() : "";
   if (!isEmail(email)) {
     return jsonError(c, 400, "invalid_email", "A valid email is required.");
+  }
+  // 3 mails per email per hour, 20 per address per hour (rate limits, 9 Nov).
+  if (!await allow(c.env, "forgotEmail", email, c.req) || !await allow(c.env, "forgotIp", `ip:${ipOf(c.req)}`, c.req)) {
+    return jsonError(c, 429, "rate_limited", "Too many requests. Please wait an hour and try again.");
   }
 
   const user = await c.env.DB

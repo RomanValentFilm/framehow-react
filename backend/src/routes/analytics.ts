@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { Env, AppVariables } from "../types";
 import { storageLimitBytes } from "../lib/storage";
 import { countDeadPictures, deleteDeadPictures } from "../lib/cleaner";
+import { allow, ipOf } from "../lib/rateLimit";
 
 // ---------------------------------------------------------------------------
 // THE STORAGE BAR (12 Oct, Roman): how much the whole of Framehow holds at
@@ -42,6 +43,8 @@ const router = new Hono<{ Bindings: Env; Variables: AppVariables }>();
 // Body: { event, sid, device, browser, pwa, uid?, meta? }
 // Country is extracted from Cloudflare's cf-ipcountry header automatically.
 router.post("/track", async (c) => {
+  // 600 beacons per address per hour (rate limits, 9 Nov).
+  if (!await allow(c.env, "track", `ip:${ipOf(c.req)}`, c.req)) return c.json({ ok: false }, 429);
   try {
     const body = await c.req.json();
     const { event, sid, device, browser, pwa, uid, meta } = body;

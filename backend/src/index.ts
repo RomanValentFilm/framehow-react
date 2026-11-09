@@ -7,6 +7,7 @@ import projectsRouter from "./routes/projects";
 import uploadRouter from "./routes/upload";
 import analyticsRouter from "./routes/analytics";
 import cleanupRouter, { purgeExpiredProjects, purgeDeletedAccounts } from "./routes/cleanup";
+import { sweepRateHits } from "./lib/rateLimit";
 import { deleteDeadPictures } from "./lib/cleaner";
 
 const app = new Hono<{ Bindings: Env; Variables: AppVariables }>();
@@ -59,6 +60,7 @@ export default {
         }
         const result = await purgeExpiredProjects(env.DB, env.IMAGES_BUCKET);
         console.log("[cron] daily cleanup done:", JSON.stringify(result));
+        try { console.log(`[cron] rate windows swept: ${await sweepRateHits(env)}`); } catch (e) { console.error("[cron] rate sweep failed:", e); }
         // Accounts deleted more than seven days ago are erased for good,
         // with their projects, pictures and visit history (22 Sept).
         try {

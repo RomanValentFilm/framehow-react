@@ -7,6 +7,7 @@ import { jsonError } from "../lib/response";
 import { storageLimitBytes } from "../lib/storage";
 import { addBytes, addThumbBytes, ceilingBytes, mailIfStepCrossed, totalBytes, userBytes } from "../lib/totals";
 import { thumbOfPicture } from "../lib/cleaner";
+import { allow } from "../lib/rateLimit";
 
 // Spec: 10 MB per image. Enforced here from Content-Length first, then again
 // against the actual stream length below.
@@ -50,6 +51,10 @@ const upload = new Hono<{ Bindings: Env; Variables: AppVariables }>();
 // with the storage-full answer the app already understands. See lib/totals.ts.
 // ---------------------------------------------------------------------------
 upload.post("/upload", requireUser, async (c) => {
+  // 60 pictures per account per minute — a burst guard, not a day's cap (9 Nov).
+  if (!await allow(c.env, "upload", c.get("user").id, c.req)) {
+    return jsonError(c, 429, "rate_limited", "Too many pictures at once. Please wait a moment.");
+  }
   if (!c.env.IMAGES_BUCKET) {
     return jsonError(
       c,

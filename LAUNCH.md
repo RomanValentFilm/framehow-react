@@ -16,8 +16,9 @@ D7 video + Fitting page text, F1 new token.
 - [ ] A8 Long simulator test (plan in TOMORROW.md) + the faults it finds
 - [x] A9 (9 Nov, v5.0.173, test 55) HIGH: a picture added while a push is in flight can be lost (test 33 red in runs 581/582: 3 uploads in 0.1 s, server keeps 2) — upload queue; also write-then-pull race (BIG DAY part 3), BIG DAY 7 timing red
 - [x] A11 (9 Nov, v5.0.174) Account deletion: sign in again within 7 days = restored; app text says 7 days (today admin-only, text says cannot be undone)
-- [ ] A12 HIGH (privacy): pictures from LOAD / folder / drag-drop are stored as the original file, EXIF+GPS included → resize to 2400 and re-encode (strips EXIF) like the camera paths
-- [ ] A13 Remove the admin Set-password button (reset mail exists now); logout keeps unsent copies but clears project cache + previews; account deletion wipes everything local
+- [x] A12 (9 Nov, v5.0.178, test 56) HIGH (privacy): pictures from LOAD / folder / drag-drop are stored as the original file, EXIF+GPS included → resize to 2400 and re-encode (strips EXIF) like the camera paths
+- [x] A13a (9 Nov, v5.0.177) Remove the admin Set-password button
+- [ ] A13b Logout keeps unsent copies but clears project cache + previews; account deletion wipes everything local
 - [ ] A14 Self-host the Google Fonts (one subprocessor less); note OCR CDN loads in the Privacy text
 - [ ] A10 F4 island overlap · reload-on-new-version rule · "tell phone users about the desktop"
 
@@ -28,7 +29,8 @@ D7 video + Fitting page text, F1 new token.
 - [x] B3b HIGH: analytics page — sign-in form + cookie, token out of the URL, /track whitelist, output escaped (9 Nov) 
 - [ ] B3c HIGH: restore on projects > 900 KB wipes without a pre-restore point → make the point (or refuse the restore)
 - [ ] B3d MEDIUM: rate limits on sign-up, sign-in, reset mail, /track, upload (per IP/email)
-- [ ] B3e MEDIUM: server measures the upload size itself (client-sent size_bytes not trusted); r2_key ownership checked on sync
+- [x] B3e-1 (9 Nov, v5.0.177) r2_key ownership checked on sync
+- [ ] B3e-2 MEDIUM: server measures the upload size itself (client-sent size_bytes not trusted)
 - [ ] B3f MEDIUM: caps on object/project/frame/snapshot counts per account
 - [ ] B3g LOW: User-Agent and country kept in sessions/analytics — decide what to keep (Privacy text)
 
