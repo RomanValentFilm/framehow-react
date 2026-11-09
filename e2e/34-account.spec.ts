@@ -8,7 +8,7 @@
 // question, the fault is proven rather than guessed.
 //
 // Then Roman's rules for deleting, in order:
-//   press → signed out everywhere, cannot sign in again, space stops counting
+//   press → signed out everywhere, space stops counting; signing in again within 7 days undoes it (A11)
 //   seven days → everything still there, Roman can bring it back
 //   after that → projects, pictures, restore points and the account itself
 //                are erased; the address is free again
@@ -145,21 +145,37 @@ test('account: the delete question is in front, and deleting erases everything a
   await desktop.page.getByRole('button', { name: 'Yes' }).click();
   await desktop.page.waitForTimeout(2_000);
 
-  say('the account cannot sign in, and the address is not free yet');
-  const login = await fetch(`${API}/auth/login`, {
+  say('a wrong password is refused as ever, and the address is not free yet');
+  const wrong = await fetch(`${API}/auth/login`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email, password: 'not-the-password-1' }),
   });
-  expect(login.status, 'signing in is refused').toBeGreaterThanOrEqual(400);
+  expect(wrong.status, 'a wrong password is refused').toBeGreaterThanOrEqual(400);
   const retake = await fetch(`${API}/auth/signup`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name: 'Someone Else', email, password: 'another-password-9' }),
   });
   expect(retake.status, 'the address stays reserved for the seven days').toBe(409);
 
-  say('the work is still there — Roman can bring the account back');
+  say('the work is still there, but the old key no longer opens it');
   const stillThere = await fetch(`${API}/projects/${projectId}/sync`, { headers: { Authorization: `Bearer ${token}` } });
   expect(stillThere.status, 'the old key no longer opens it').toBeGreaterThanOrEqual(400);
+
+  // ── UNDO BY SIGNING IN (A11, 9 Nov) ── the person's own way back, within 7 days.
+  say('they sign in again with the right password — the account and its project are back');
+  const undo = await fetch(`${API}/auth/login`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+  expect(undo.status, 'signing in within 7 days is the undo').toBe(200);
+  const undone = await undo.json() as { restored?: boolean; session: { token: string } };
+  expect(undone.restored, 'the answer says the account was brought back').toBe(true);
+  const listBack = await (await fetch(`${API}/projects`, { headers: { Authorization: `Bearer ${undone.session.token}` } })).json() as { projects: Array<{ name: string; deleted_at: number | null }> };
+  expect(listBack.projects.filter((p) => !p.deleted_at).map((p) => p.name), 'the project is back in their list').toContain('MINE');
+
+  say('deleted once more, so the analytics-page way can be tried too');
+  const again = await fetch(`${API}/user/me`, { method: 'DELETE', headers: { Authorization: `Bearer ${undone.session.token}` } });
+  expect(again.status, 'deleted again').toBe(200);
 
   // ── RESTORE, from the analytics page ───────────────────────────────────
   say('Roman presses Restore on the analytics page');

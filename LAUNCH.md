@@ -6,7 +6,7 @@ ROMAN IN PARALLEL (no Claude needed): D3 D4 D5 (App Store Connect), D8 decision,
 D7 video + Fitting page text, F1 new token.
 
 ## A. Code — the app itself
-- [ ] A1 Busy page after the shutter: own push comes back as "remote is newer" and redraws all cards → recognise own push, skip redraw (bench test first)
+- [x] A1 (9 Nov, v5.0.172) Busy page after the shutter: own push comes back as "remote is newer" and redraws all cards → recognise own push, skip redraw (bench test first)
 - [ ] A2 Library preview is made from the live frame → remake from the real photo when it lands
 - [ ] A3 Version strip's own card in landscape after a shot — check
 - [ ] A4 Library permanent delete: second confirmation, text says "cannot be undone, frees X MB"
@@ -14,15 +14,15 @@ D7 video + Fitting page text, F1 new token.
 - [ ] A6 "Free during launch — paid plans later" line in the account box; `plan` field on the account (free), no billing code
 - [ ] A7 Fitting as its own app: build flag, second bundle id (com.framehow.fitting), Fitting build hides the rest
 - [ ] A8 Long simulator test (plan in TOMORROW.md) + the faults it finds
-- [ ] A9 HIGH: a picture added while a push is in flight can be lost (test 33 red in runs 581/582: 3 uploads in 0.1 s, server keeps 2) — upload queue; also write-then-pull race (BIG DAY part 3), BIG DAY 7 timing red
+- [x] A9 (9 Nov, v5.0.173, test 55) HIGH: a picture added while a push is in flight can be lost (test 33 red in runs 581/582: 3 uploads in 0.1 s, server keeps 2) — upload queue; also write-then-pull race (BIG DAY part 3), BIG DAY 7 timing red
 - [ ] A11 Account deletion: sign in again within 7 days = restored; app text says 7 days (today admin-only, text says cannot be undone)
 - [ ] A10 F4 island overlap · reload-on-new-version rule · "tell phone users about the desktop"
 
 ## B. Audit (report first, no code) — running in the background from 9 Nov
 - [x] B1 (report 9 Nov: docs/audit-launch-2026-11-09.md) Security & storage audit (Roman's prompt): offline photos, quota, access control, abuse, recovery/GDPR — graded report in docs/
 - [x] B2 (in the report, §5 table) Deletion inventory: which deletes are soft (7 days) / hard, when R2 objects really go, backups/versions, account deletion — facts for the Terms
-- [x] B3a CRITICAL: a failed picture upload fails the save and is retried (9 Nov, test 54) — run 582 pending
-- [x] B3b HIGH: analytics page — sign-in form + cookie, token out of the URL, /track whitelist, output escaped (9 Nov) — run 582 pending
+- [x] B3a CRITICAL: a failed picture upload fails the save and is retried (9 Nov, test 54) 
+- [x] B3b HIGH: analytics page — sign-in form + cookie, token out of the URL, /track whitelist, output escaped (9 Nov) 
 - [ ] B3c HIGH: restore on projects > 900 KB wipes without a pre-restore point → make the point (or refuse the restore)
 - [ ] B3d MEDIUM: rate limits on sign-up, sign-in, reset mail, /track, upload (per IP/email)
 - [ ] B3e MEDIUM: server measures the upload size itself (client-sent size_bytes not trusted); r2_key ownership checked on sync

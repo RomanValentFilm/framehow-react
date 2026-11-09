@@ -169,10 +169,19 @@ auth.post("/login", async (c) => {
     return jsonError(c, 400, "invalid_credentials", "Email and password are required.");
   }
 
+  // SIGNING IN BRINGS A DELETED ACCOUNT BACK (A11, 9 Nov, Roman: "the easiest
+  // is they sign back themselves within 7 days"). A deleted account is kept
+  // for seven days (users.deleted_at; the nightly sweep erases it after). Until
+  // today only Roman could restore it, from the analytics page, while the app
+  // said "cannot be undone". Now the right password within those seven days
+  // IS the undo: the account and the projects that went with it come back,
+  // and the answer says so (`restored: true`) so the app can tell the person.
+  // Past the seven days the row may still be there until 03:00 — it is treated
+  // as gone, exactly as the Terms promise.
   const user = await c.env.DB
     .prepare(
-      `SELECT id, name, email, password_hash, profession, email_verified, preferences
-         FROM users WHERE LOWER(email) = LOWER(?) AND deleted_at IS NULL LIMIT 1`,
+      `SELECT id, name, email, password_hash, profession, email_verified, preferences, deleted_at
+         FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1`,
     )
     .bind(email)
     .first<{
@@ -183,16 +192,30 @@ auth.post("/login", async (c) => {
       profession: string | null;
       email_verified: number;
       preferences: string | null;
+      deleted_at: number | null;
     }>();
 
   // Always do the password verify work to mitigate user-enumeration via timing.
   const stored = user?.password_hash ?? "pbkdf2$1$AAAA$AAAA";
   const ok = await verifyPassword(password, stored);
-  if (!user || !ok) {
+  const now = Date.now();
+  const RECOVERY_MS = 7 * 24 * 60 * 60 * 1000;
+  const gone = !!user?.deleted_at && now - user.deleted_at > RECOVERY_MS;
+  if (!user || !ok || gone) {
     return jsonError(c, 401, "invalid_credentials", "Email or password is incorrect.");
   }
+  let restored = false;
+  if (user.deleted_at) {
+    await c.env.DB.batch([
+      c.env.DB.prepare(`UPDATE users SET deleted_at = NULL, updated_at = ? WHERE id = ?`).bind(now, user.id),
+      // Only the projects that went with the account deletion — they all carry
+      // that same moment. A project the person had deleted earlier stays deleted.
+      c.env.DB.prepare(`UPDATE projects SET deleted_at = NULL, updated_at = ? WHERE user_id = ? AND deleted_at = ?`).bind(now, user.id, user.deleted_at),
+    ]);
+    restored = true;
+    console.log(`[auth] account ${user.id} brought back by signing in, ${Math.round((now - user.deleted_at) / 3600000)} h after deletion`);
+  }
 
-  const now = Date.now();
   const sessionToken = generateToken();
   const sessionTokenHash = await hashToken(sessionToken);
   const sessionId = newId();
@@ -216,6 +239,7 @@ auth.post("/login", async (c) => {
       preferences: user.preferences ?? null,
     },
     session: { token: sessionToken, expires_at: sessionExpiresAt },
+    restored,
   });
 });
 

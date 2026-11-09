@@ -335,9 +335,12 @@ export function openAccountModal(initialMode: AccountMode = 'signup'): Promise<A
           const res = await api.post<{
             user: SessionUser;
             session: { token: string; expires_at: number };
+            restored?: boolean;
           }>('/auth/login', { email, password });
           setSession(res.session.token, res.user);
           fhTrack('login');
+          // A deleted account, signed into within its seven days: it is back (A11).
+          if (res.restored) showToast('Welcome back — your account and your projects are restored.');
           finish({ user: res.user, token: res.session.token });
         }
       } catch (e) {
@@ -2088,8 +2091,12 @@ export async function openAccountSettings(): Promise<void> {
       showToast('Logged out.');
     };
     deleteBtn.onclick = async () => {
+      // THE WORDS MATCH WHAT HAPPENS (A11, 9 Nov). The account is kept for
+      // seven days and signing in again within them brings it back; after
+      // that everything is erased for good. "Cannot be undone" was untrue.
       const okDelete = await showConfirm(
-        'Are you sure you want to delete your account? All your data on Framehow will be permanently deleted. This cannot be undone.',
+        'Delete your account? Your account and all your projects will be erased for good after 7 days. '
+        + 'If you change your mind, sign in again within those 7 days and everything is restored.',
       );
       if (!okDelete) return;
       try {
@@ -2101,7 +2108,7 @@ export async function openAccountSettings(): Promise<void> {
         clearPushedFingerprints();
         (window as any).__fh_renderAll?.();
         cleanup();
-        showToast('Account deleted.');
+        showToast('Account deleted. Sign in again within 7 days to undo.');
       } catch (e) {
         errorEl.textContent = asMessage(e, 'Could not delete account.');
       }
