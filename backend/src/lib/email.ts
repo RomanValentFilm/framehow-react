@@ -98,8 +98,7 @@ export async function sendWelcomeEmail(env: Env, to: string, name: string, verif
     to,
     subject: "Welcome to Framehow",
     text: `Hi ${name},\n\n`
-      + `Your Framehow account is ready — you can start straight away.\n\n`
-      + `Please confirm your email address by opening this link:\n`
+      + `Your Framehow account is ready — please confirm your email address by opening this link:\n`
       + `${verifyLink(env, verifyToken, asked)}\n\n`
       + `Until then your account has 150 MB of storage; the link unlocks the full 500 MB.\n\n`
       + `Your work is kept on your device when you are offline, and syncs between your devices as soon as you are connected.\n\n`

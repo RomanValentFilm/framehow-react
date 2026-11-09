@@ -109,7 +109,7 @@ export function AccountModals() {
           <div className="account-row" id="accountRowNews" style={{ flexDirection: 'row', alignItems: 'flex-start', gap: '8px' }}>
             <input type="checkbox" id="accountNews" style={{ width: 'auto', marginTop: '2px' }} />
             <label htmlFor="accountNews" className="account-terms-text">
-              Send me Framehow news and updates.
+              Send me news and updates about Framehow.
             </label>
           </div>
 
@@ -201,7 +201,11 @@ export function AccountModals() {
           <div className="account-btns" style={{justifyContent:'space-between',alignItems:'center'}}>
             <button className="btn" id="projectListEdit" type="button" style={{fontSize:'12px'}}>Edit Projects</button>
             {/* The account's storage, as the server last said it (#533): grey below 80 %, red from 80 %. */}
-            <span id="projectListStorage" style={{fontSize:'11px',color:'#888',textAlign:'center'}}></span>
+            {/* One centred column (9 Nov): the figure, and under it — only until the
+                email is confirmed — "Confirm your email for 500 MB · Resend mail". */}
+            <div id="projectListStorageBox" style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px'}}>
+              <span id="projectListStorage" style={{fontSize:'11px',color:'#888',textAlign:'center'}}></span>
+            </div>
             <button className="btn" id="projectListClose" type="button">Close</button>
           </div>
         </div>

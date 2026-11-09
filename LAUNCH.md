@@ -11,8 +11,8 @@ D7 video + Fitting page text, F1 new token.
 - [ ] A3 Version strip's own card in landscape after a shot — check
 - [x] A4 (9 Nov, v5.0.176) Library permanent delete: second confirmation, text says "cannot be undone, frees X MB"
 - [x] A5 (9 Nov) Welcome mail: confirmation link + 150/500 MB lines + "kept on your device when offline…" (Roman's wording)
-- [ ] A6a (9 Nov, deploy 596) Email confirmation: 150 MB until the welcome-mail link is opened, full allowance after; Resend; all devices (9 Nov, in test 58)
-- [ ] A6b (9 Nov, deploy 596) Sign-up tick box "Send me Framehow news and updates." → users.newsletter_consent_at
+- [x] A6a (9 Nov, v5.0.181, test 58) Email confirmation: 150 MB until the welcome-mail link is opened, full allowance after; Resend; all devices (9 Nov, in test 58)
+- [x] A6b (9 Nov, v5.0.181) Sign-up tick box "Send me news and updates about Framehow." → users.newsletter_consent_at
 - [ ] A6 "Free during launch — paid plans later" line in the account box; `plan` field on the account (free), no billing code
 - [ ] A7 Fitting as its own app: build flag, second bundle id (com.framehow.fitting), Fitting build hides the rest
 - [ ] A8 Long simulator test on the iPhone simulator (plan: TOMORROW.md 5 Nov section) + the faults it finds

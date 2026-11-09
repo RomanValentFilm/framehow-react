@@ -855,8 +855,8 @@ export async function openProjectList(): Promise<void> {
     if (!hintEl) {
       hintEl = document.createElement('div');
       hintEl.id = 'projectListConfirmHint';
-      hintEl.style.cssText = 'font-size:12px;color:#888;margin-top:2px;text-align:center';
-      storageLine.insertAdjacentElement('afterend', hintEl);
+      hintEl.style.cssText = 'font-size:11px;color:#888;text-align:center';
+      (document.getElementById('projectListStorageBox') ?? storageLine.parentElement)!.appendChild(hintEl);
     }
     hintEl.innerHTML = `${hint} · <button type="button" id="resendVerifyBtn" style="background:none;border:0;padding:0;color:#4fc3f7;font:inherit;cursor:pointer;text-decoration:underline">Resend mail</button>`;
     hintEl.querySelector<HTMLButtonElement>('#resendVerifyBtn')!.onclick = () => void resendVerificationMail();
