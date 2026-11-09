@@ -1,7 +1,7 @@
 # LAUNCH — THE ONE LIST (9 Nov 2026). Nothing else counts; TOMORROW.md is history + notes.
 Cross out with [x] and the date. Blocks are groups; the RUNNING ORDER is:
-1 done today (A1 A4 A9 A11 A12 A13a B3a–e1 B3d) → A6a A6b (deploy 596) → 2 full run, C1 live, C2, C2b, C3, C4 →
-3 A15, G1–G4, A2, A3, B3c, B3e-2 → 4 A7 → 5 D1 → 6 A8, A10, A13b, A14, B3f, D7, submission.
+1 done 9 Nov → 2 C1 live, C2, C2b →
+3 A15, G1–G4, A2, A3, B3c, B3e-2 → 4 D1–D9 (Roman), C3 shell to live → 5 D11 SUBMIT → 6 A7 Fitting → 7 A8, A10, B3f, G-items.
 ROMAN IN PARALLEL (no Claude needed): D3 D4 D5 (App Store Connect), D8 decision, A5 text,
 D7 video + Fitting page text, F1 new token.
 
@@ -21,7 +21,7 @@ D7 video + Fitting page text, F1 new token.
 - [x] A12 (9 Nov, v5.0.178, test 56) HIGH (privacy): pictures from LOAD / folder / drag-drop are stored as the original file, EXIF+GPS included → resize to 2400 and re-encode (strips EXIF) like the camera paths
 - [x] A13a (9 Nov, v5.0.177) Remove the admin Set-password button
 - [x] A13b (9 Nov, v5.0.188, tests 34+61) Logout warns about unsent work and keeps unsent copies but clears project cache + previews; account deletion wipes everything local
-- [ ] A14 Self-host the Google Fonts (one subprocessor less); note OCR CDN loads in the Privacy text
+- [x] A14 (9 Nov, v5.0.190) Fonts bundled with the app — Google Fonts gone from the Privacy text; OCR CDN loads (PDF import) still to note in the Privacy text
 - [x] A15 (9 Nov, v5.0.184, test 59) LOAD several pictures at once onto the SHOT strip: first on the shot, the rest new shots after it
 - [ ] A10 "Tell phone users about the desktop" note (where/when)
 
@@ -49,12 +49,12 @@ D7 video + Fitting page text, F1 new token.
 - [ ] B3f MEDIUM: caps on object/project/frame/snapshot counts per account
 - [ ] B3g LOW: User-Agent and country kept in sessions/analytics — decide what to keep (Privacy text)
 
-## C. TestFlight — before real testers
-- [ ] C1 Shell `server.url` dev → framehow.com/app; camera build live (4 steps)
-- [ ] C2 TestFlight build 2 with the camera (CFBundleVersion 2, Archive → Distribute)
+## C. Go live, and Roman's own device check (TestFlight = Roman only, 9 Nov: testers get the App Store app)
+- [ ] C1 Full run → live with the 4 steps (push v4.4:main + direct wrangler upload)
+- [ ] C2 TestFlight build 2 with the camera on Roman's iPhone (CFBundleVersion 2, Archive → Distribute) — shell still on dev while we test
 - [ ] C2b iPad: build 2 on Roman's iPad — rotation, layout, Pencil drawing, keyboard, camera (lenses differ); PDFs in the iPad simulator
-- [ ] C3 Beta description + feedback email in TestFlight
-- [ ] C4 Invite the first tester
+- [ ] C3 BEFORE SUBMISSION: shell `server.url` dev → framehow.com/app, one more build — reviewers and store users must see live, never dev
+- ~~C4 external testers~~ none: testers test the App Store app (and the browser version meanwhile)
 
 ## D. Before the first App Store submission (not needed for TestFlight)
 - [ ] D1 Terms + Privacy rewritten — they still say "Beta"; must describe real deletion/recovery behaviour (from B2); agreement 3.3.3 C
@@ -66,6 +66,7 @@ D7 video + Fitting page text, F1 new token.
 - [ ] D7 Website: the video, a Fitting page, "browser or App Store" two doors, pricing page (Roman's "Free during launch" text)
 - [ ] D8 Decide: noindex on the site until launch (Roman)
 - [ ] D9 Roman: 2FA on the Cloudflare account; confirm nobody else has a login; one line in the Privacy page about restricted admin access
+- [ ] D11 SUBMIT FRAMEHOW TO APPLE (after C and D1–D9): store screenshots (iPhone + iPad), description, keywords, support URL framehow.com, App Privacy labels from the facts sheet, review notes with a test account → Submit for Review (1–3 days, expect one round of questions). Fitting (A7) submitted separately later.
 - [ ] D10 docs/legal-facts-2026-11-09.md = the facts sheet for Terms/Privacy (9 Nov); fix the privacy page's "backup cycle" sentence
 
 ## E. Pricing — decided so far

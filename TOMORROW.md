@@ -1,5 +1,26 @@
 # NOTE (9 Nov): THE LIST IS LAUNCH.md. This file is history and notes only — nothing here is a to-do unless it is in LAUNCH.md.
 
+## 9 November — THE AUDIT DAY (dev v5.0.190 · #742; live still v5.0.152 · #704)
+Security & storage audit (docs/audit-launch-2026-11-09.md) and the legal facts sheet
+(docs/legal-facts-2026-11-09.md) written; then 20 fixes, each with a test, all on dev:
+upload failure fails the save and retries (54) · picture added during a push not lost (55) ·
+own push not redrawn (A1) · account recovery by signing in within 7 days · library delete
+asks twice · analytics page sign-in + cookie, /track whitelist · r2_key ownership · admin
+Set-password gone · every loaded picture ≤ 2400 and re-encoded, EXIF gone (56) · rate limits
+(57) · email confirmation: 150 MB until the welcome-mail link is opened, 500 after, Resend,
+heartbeat carries the storage figure (58); existing accounts confirmed by migration 0034 ·
+news tick box · LOAD on a shot takes several pictures → new shots after it (59) · empty-strip
+multiload proven fine, also after a delete (60) · library preview waits for the real photo ·
+server measures picture sizes · restore refused when no pre-restore point · logout warns
+about unsent work, keeps only the unsent copies, clears cache/previews/session; account
+deletion wipes the device (61, 34) · project list: one row per project, unsent work as a note ·
+fonts bundled (no Google). New scripts: `npm run server -- <run> "<what>"` for the worker
+(FH_MIGRATION=… runs a migration first); e2e.sh ends with the run number.
+NEXT MORNING: full run (~1 h) → live with the 4 steps (push v4.4:main + direct wrangler upload,
+see CLAUDE.md) → shell server.url → framehow.com/app → TestFlight build 2 → iPad.
+Roman's side: Terms/Privacy from the facts sheet (note: no backups; OCR files load from a CDN
+on PDF import), 2FA on Cloudflare, D3–D5 in App Store Connect.
+
 # Where things stand
 
 ## 5 November — THE SIMULATOR IS THE TEST BENCH (for the next session, any model)

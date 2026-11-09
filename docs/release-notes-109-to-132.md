@@ -111,3 +111,55 @@ v5.0.154–157 · #706–709
 - Native camera in the iPhone app: RATIO list, pinch zoom with the lens following, tap focus (back to auto when the scene changes), EV, Cancel; Deep Fusion kept
 - The two-step landing: the live frame lands on the card at the shutter, the real 2400 px photo (HDR layer in it) replaces it on the same version a second later; the live frame is never uploaded
 - The iPhone app has one camera: no FH CAM / PHONE CAM switch there
+
+v5.0.158–171 · #710–723 (6 Nov)
+- The moment of taking a picture, agreed: black flash 90 ms, the camera screen frozen 300 ms (always the same), then the page copy moves from 95 % of the screen to its card in 0.5 s, fading from the middle; the real photo replaces it ~1.3 s later
+- Real photo always uploaded (manual mark + retries); lone NEEDS/NOTES as tall as the main card; Cancel left of the shutter, no pill
+
+v5.0.172 · #724 (9 Nov — the audit day begins)
+- A picture whose upload fails (timeout, 5xx, dropped line) fails the save; it is filed as unsent and retried — no more silent loss
+- Analytics page: a sign-in form and a cookie instead of the token in the address; the public beacon takes only clean short values; output escaped
+- The pull after your own push no longer redraws every card (the rows are recognised as your own)
+
+v5.0.173 · #725
+- A picture added while a push is in the air goes up with the very next push (a push asked for during a push is asked again)
+
+v5.0.174 · #726
+- A deleted account is restored by signing in again within 7 days; the words say so (delete question, toast)
+
+v5.0.175–176 · #727–728
+- Library DELETE asks twice: what goes and what it frees, then the last check — No is red and preselected on both
+
+v5.0.177 · #729
+- A push may only name pictures in the account's own folder
+- The admin "New password" button is gone — Forgot password is the one way
+
+v5.0.178 · #730
+- Every picture loaded from files (LOAD, folder, drag-drop) is shrunk to a long side of 2400 px at most, re-encoded (EXIF and GPS gone); PNG stays PNG; smaller pictures unchanged
+
+v5.0.179 · #731
+- Rate limits: sign-in 10 wrong per email per 15 min, sign-up 5 per address per hour, forgot mail 3 per email + 20 per address per hour, upload 60 per account per minute, beacon 600 per address per hour
+
+v5.0.180–183 · #732–735
+- Confirm your email: 150 MB of storage until the link in the welcome mail is opened, the full 500 MB after; the project list says so with "Resend mail"; the STORAGE FULL box points to the inbox; confirmed on one device, every device learns it from the heartbeat and held pushes go
+- Sign-up tick box "Send me news and updates about Framehow." (optional, stored with the account)
+- Welcome mail with Roman's words; toasts above the modals; "Resend mail" answers the click
+
+v5.0.184 · #736
+- LOAD on a shot takes several pictures: the first onto the shot, the rest become new shots after it (2#1, 2#2 … or the next numbers at the end)
+
+v5.0.185 · #737
+- Library preview waits for the real photo (not the live frame); server measures picture sizes itself; a restore on a project too large for a restore point is refused with a clear message
+
+v5.0.186–187 · #738–739
+- STORAGE FULL box in Roman's words; mails with a "Confirm email" / "Choose a new password" button; the confirmation link opens an EMAIL CONFIRMED box
+
+v5.0.188 · #740
+- Logout warns about unsent work and keeps only the unsent copies; project cache, previews and session cleared; account deletion wipes everything of it from the device
+
+v5.0.189 · #741
+- Project list: one row per project; unsent work on the device is a red note on the row ("opens with it"); copy rows only when the project is not in the cloud list
+
+v5.0.190 · #742
+- The typeface (DM Sans, DM Mono) comes with the app — no Google Fonts call, works offline
+- Server today: migration 0032 (rate windows), 0033 (news consent), 0034 (accounts from before the confirmation rule count as confirmed); `npm run server` for worker deploys
