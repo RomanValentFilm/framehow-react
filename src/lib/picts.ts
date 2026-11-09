@@ -840,12 +840,10 @@ export async function openPicts(): Promise<void> {
       const n = chosen.length;
       const bytes = chosen.reduce((a, p) => a + (p.size || 0) + (p.thumb_size || 0), 0);
       const mb = bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
-      const shots = new Set(chosen.flatMap((p) => p.uses.map((u) => `${u.project_id}/${u.shot ?? ''}`))).size;
       const what = n === 1 ? 'this picture' : `these ${n} pictures`;
-      const where = shots > 0 ? ` ${n === 1 ? 'It is' : 'They are'} used in ${shots} shot${shots === 1 ? '' : 's'}, which will show "You deleted this picture".` : '';
-      const ok = await showConfirmDefaultNo(`Delete ${what} for good?${where} This frees ${mb} of your storage.`);
+      const ok = await showConfirmDefaultNo(`Delete ${what} for good? This frees ${mb} of your storage.`);
       if (!ok || _root !== root) return;
-      const sure = await showConfirmDefaultNo(`Last check: this cannot be undone. ${n === 1 ? 'The picture' : `The ${n} pictures`} will be erased for good, there is no way back. Delete?`);
+      const sure = await showConfirmDefaultNo(`Last check: this cannot be undone. The ${n === 1 ? 'picture' : 'pictures'} you selected will be erased for good, there is no way back. Delete?`);
       if (!sure || _root !== root) return;
       // Stay on the next picture after the deleted ones (28 Oct, Roman: "it
       // jumps somewhere"): where it sits now, and where it is again afterwards.
