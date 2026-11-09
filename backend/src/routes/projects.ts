@@ -613,6 +613,11 @@ projects.post("/:id/sync", async (c) => {
       payload.images = payload.images.filter((i) => !gone.has(i.r2_key));
     }
   }
+  // THE SERVER MEASURES, THE CLIENT DOES NOT SAY (audit 9 Nov, B3e-2). The
+  // size a push claims for a picture is dropped here: a key already known
+  // takes the size on record, a new key is measured in the bucket. A client
+  // claiming 0 bytes could otherwise read as empty until the nightly recount.
+  for (const im of payload.images) im.size_bytes = null;
   await fillImageSizes(c.env.DB, c.env.IMAGES_BUCKET, payload.images);   // a re-sent picture keeps its size (#533)
   const otherImagesUsed = await sumUserImageBytes(c.env.DB, me.id, project.id)
     // ...plus this project's pictures the push does NOT replace (partial pushes
@@ -1267,7 +1272,16 @@ projects.post("/:id/restore/:snapshotId", async (c) => {
   // can always offer it back by name — this is the user's way out of a restore
   // they did not like.
   const now = Date.now();
-  await forceCreateSnapshot(c.env.DB, project.id, now, 'pre_restore');
+  const wayBack = await forceCreateSnapshot(c.env.DB, project.id, now, 'pre_restore');
+  // NO WAY BACK, NO RESTORE (audit 9 Nov, B3c). A project too large for a
+  // restore point (over 900 KB of strokes and notes) got none here — and the
+  // restore then replaced everything with no way to undo it. Now the restore
+  // is refused instead, and the app says why. The project as it is stays.
+  if (!wayBack) {
+    console.log(`[restore] refused for project ${project.id}: no pre-restore point could be made`);
+    return jsonError(c, 409, "no_way_back",
+      "This project is too large for a restore point, so a restore could not be undone. Nothing was changed.");
+  }
 
   // Parse the snapshot tree and re-apply it as a full sync
   const tree: ProjectTree = JSON.parse(snap.tree_json);

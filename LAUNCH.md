@@ -7,7 +7,7 @@ D7 video + Fitting page text, F1 new token.
 
 ## A. Code — the app itself
 - [x] A1 (9 Nov, v5.0.172) Busy page after the shutter: own push comes back as "remote is newer" and redraws all cards → recognise own push, skip redraw (bench test first)
-- [ ] A2 Library preview is made from the live frame → remake from the real photo when it lands
+- [x] A2 (9 Nov, v5.0.185) Library preview is made from the live frame → remake from the real photo when it lands
 - [ ] A3 Version strip's own card in landscape after a shot — check
 - [x] A4 (9 Nov, v5.0.176) Library permanent delete: second confirmation, text says "cannot be undone, frees X MB"
 - [x] A5 (9 Nov) Welcome mail: confirmation link + 150/500 MB lines + "kept on your device when offline…" (Roman's wording)
@@ -22,11 +22,11 @@ D7 video + Fitting page text, F1 new token.
 - [x] A13a (9 Nov, v5.0.177) Remove the admin Set-password button
 - [ ] A13b Logout keeps unsent copies but clears project cache + previews; account deletion wipes everything local
 - [ ] A14 Self-host the Google Fonts (one subprocessor less); note OCR CDN loads in the Privacy text
-- [ ] A15 LOAD several pictures at once onto the SHOT strip (several main frames in one go) — TOMORROW 5
+- [x] A15 (9 Nov, v5.0.184, test 59) LOAD several pictures at once onto the SHOT strip: first on the shot, the rest new shots after it
 - [ ] A10 "Tell phone users about the desktop" note (where/when)
 
 ## G. Small bugs and comforts carried over from TOMORROW.md (one list, Roman 9 Nov)
-- [ ] G1 Multi-load into an EMPTY version strip lands in v2+ (v1 stays empty) — bug, ~1 h
+- [x] G1 (9 Nov, test 60 green) Multi-load into an EMPTY version strip — already fine, guarded by test 60
 - [ ] G2 Sign-in box: "keep me signed in" (sessions are 30 days sliding today — decide if needed at all)
 - [ ] G3 Reload-on-new-version: check the behaviour, decide the rule
 - [ ] G4 Slow project opens (Roman, 5 Nov): one timing line at open, then look
@@ -41,10 +41,10 @@ D7 video + Fitting page text, F1 new token.
 - [x] B2 (in the report, §5 table) Deletion inventory: which deletes are soft (7 days) / hard, when R2 objects really go, backups/versions, account deletion — facts for the Terms
 - [x] B3a CRITICAL: a failed picture upload fails the save and is retried (9 Nov, test 54) 
 - [x] B3b HIGH: analytics page — sign-in form + cookie, token out of the URL, /track whitelist, output escaped (9 Nov) 
-- [ ] B3c HIGH: restore on projects > 900 KB wipes without a pre-restore point → make the point (or refuse the restore)
+- [x] B3c (9 Nov, server) HIGH: restore on projects > 900 KB is refused with a clear message instead of wiping without a way back — wipes without a pre-restore point → make the point (or refuse the restore)
 - [x] B3d (9 Nov, v5.0.179, test 57) rate limits: sign-in 10/email/15 min, sign-up 5/IP/h, forgot mail 3/email/h + 20/IP/h, upload 60/account/min (burst), beacon 600/IP/h
 - [x] B3e-1 (9 Nov, v5.0.177) r2_key ownership checked on sync
-- [ ] B3e-2 MEDIUM: server measures the upload size itself (client-sent size_bytes not trusted)
+- [x] B3e-2 (9 Nov, server) MEDIUM: server measures the upload size itself (client-sent size_bytes not trusted)
 - [ ] B3f MEDIUM: caps on object/project/frame/snapshot counts per account
 - [ ] B3g LOW: User-Agent and country kept in sessions/analytics — decide what to keep (Privacy text)
 

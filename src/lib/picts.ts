@@ -313,14 +313,18 @@ async function fpOf(src: string): Promise<string> {
 // ---- the pictures this device holds (27 Oct) ---------------------------------
 type LocalPic = { key: string; src: string; r2Key: string | null; label: string };
 
-function picturesOf(frames: Array<{ id: number; src: string; label: string; r2Key?: string }> | undefined,
-  stripVersions: Record<string, Record<number, Array<{ label: string; bgImage: string | null; r2Key?: string }>>> | undefined,
+// A CARD STILL WAITING FOR ITS PHOTO IS NOT A PICTURE YET (A2, 9 Nov). The
+// native camera puts the live frame on the card first and the real photo a
+// second later (awaitingPhoto); a preview made in between is a preview of the
+// wrong picture. Such a card is left out until the photo has landed.
+function picturesOf(frames: Array<{ id: number; src: string; label: string; r2Key?: string; awaitingPhoto?: boolean }> | undefined,
+  stripVersions: Record<string, Record<number, Array<{ label: string; bgImage: string | null; r2Key?: string; awaitingPhoto?: boolean }>>> | undefined,
   project: string, out: LocalPic[]): void {
   for (const f of frames || []) {
-    if (f.src && f.src.startsWith('data:image')) out.push({ key: '', src: f.src, r2Key: f.r2Key || null, label: `${project} – shot ${f.label} – main` });
+    if (f.src && f.src.startsWith('data:image') && !f.awaitingPhoto) out.push({ key: '', src: f.src, r2Key: f.r2Key || null, label: `${project} – shot ${f.label} – main` });
     for (const st of Object.keys(stripVersions || {})) {
       for (const v of stripVersions![st]?.[f.id] || []) {
-        if (v.bgImage && v.bgImage.startsWith('data:image')) out.push({ key: '', src: v.bgImage, r2Key: v.r2Key || null, label: `${project} – shot ${f.label} – ${v.label}` });
+        if (v.bgImage && v.bgImage.startsWith('data:image') && !v.awaitingPhoto) out.push({ key: '', src: v.bgImage, r2Key: v.r2Key || null, label: `${project} – shot ${f.label} – ${v.label}` });
       }
     }
   }
