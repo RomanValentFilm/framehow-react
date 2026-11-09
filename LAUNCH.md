@@ -1,4 +1,5 @@
 # LAUNCH — THE ONE LIST (9 Nov 2026). Nothing else counts; TOMORROW.md is history + notes.
+TOMORROW (10 Nov) FIRST: read run 613 (full run) → replay each fault of docs/simulator-session-2026-11-09.md live in the simulator while Roman watches, one by one; Roman decides fault / not a fault / design question → then go live.
 Cross out with [x] and the date. Blocks are groups; the RUNNING ORDER is:
 1 done 9 Nov → 2 C1 live, C2, C2b →
 3 A15, G1–G4, A2, A3, B3c, B3e-2 → 4 D1–D9 (Roman), C3 shell to live → 5 D11 SUBMIT → 6 A7 Fitting → 7 A8, A10, B3f, G-items.

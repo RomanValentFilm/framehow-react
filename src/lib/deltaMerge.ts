@@ -201,7 +201,7 @@ export interface SentRows {
   versions: Set<string>;
   images: Set<string>;     // version_id
   drawings: Set<string>;   // version_id
-  settings: Set<string>;   // kind/item_id
+  settings: Map<string, number>;   // kind/item_id → the change time (or deletion time) this device sent
   deletions: Set<string>;  // entity_type/entity_id
 }
 
@@ -247,6 +247,10 @@ export function deltaAlreadyHeld(held: MergeableTree, delta: MergeableTree, sent
   for (const s of delta.settings ?? []) {
     const k = `${s.kind}/${s.item_id}`;
     if (!sent.settings.has(k) || !same(heldSettings.get(k), s)) return false;
+    // ...and it must be MY change the server holds, not the other device's
+    // newer one filed under the same item (run 613).
+    const theirs = s as { changed_at?: number; deleted_at?: number | null };
+    if ((theirs.deleted_at ?? theirs.changed_at) !== sent.settings.get(k)) return false;
   }
   for (const d of delta.deletions ?? []) if (!sent.deletions.has(`${d.entity_type}/${d.entity_id}`)) return false;
   // The project row carries updated_at and the last device: the push reply

@@ -107,7 +107,7 @@ const ids = (rows: Array<{ id: string }>) => rows.map((r) => r.id).sort().join('
   const img = { id: 'img-new', version_id: 'f3-v0', r2_key: 'users/u/new.jpg', updated_at: 5000 } as never;
   held.images = held.images.map((i) => ((i as { version_id: string }).version_id === 'f3-v0' ? img : i));
   held.project = { id: 'p', name: 'Bench', updated_at: 5000, last_device_id: 'me' };
-  const sent: SentRows = { frames: new Set(['f3']), versions: new Set(), images: new Set(['f3-v0']), drawings: new Set(), settings: new Set(), deletions: new Set(['frame/f7']) };
+  const sent: SentRows = { frames: new Set(['f3']), versions: new Set(), images: new Set(['f3-v0']), drawings: new Set(), settings: new Map([['sortOrder/day1', 4192]]), deletions: new Set(['frame/f7']) };
 
   // The pull that follows: the same rows, copied field for field.
   const same = emptyDelta({ project: { ...(held.project as object) }, frames: [{ ...(f3 as object) } as never], images: [{ ...(img as object) } as never] });
@@ -133,6 +133,14 @@ const ids = (rows: Array<{ id: string }>) => rows.map((r) => r.id).sort().join('
   const theirsInReply = emptyDelta({ project: { ...(held.project as object) }, frames: [{ ...(held.frames[5] as object) } as never] });
   check('a row equal to the held copy but NOT sent by me (the other device\'s, in the reply) → news', deltaAlreadyHeld(held, theirsInReply, sent), false);
   check('nothing sent (no push yet) → news', deltaAlreadyHeld(held, same, null), false);
+  // RUN 613: the same setting sent by both devices — the server holds the
+  // OTHER device's newer change under my key. Equal to the held copy, not mine.
+  const heldWithTheirs = { ...held, settings: [{ kind: 'sortOrder', item_id: 'day1', changed_at: 5000, deleted_at: null } as never] };
+  const theirSetting = emptyDelta({ project: { ...(held.project as object) }, settings: [{ kind: 'sortOrder', item_id: 'day1', changed_at: 5000, deleted_at: null } as never] });
+  check('a setting I sent, but the server holds the other device\'s newer change of it → news', deltaAlreadyHeld(heldWithTheirs, theirSetting, sent), false);
+  const heldWithMine = { ...held, settings: [{ kind: 'sortOrder', item_id: 'day1', changed_at: 4192, deleted_at: null } as never] };
+  const mySetting = emptyDelta({ project: { ...(held.project as object) }, settings: [{ kind: 'sortOrder', item_id: 'day1', changed_at: 4192, deleted_at: null } as never] });
+  check('a setting I sent and the server holds MY change time → nothing new', deltaAlreadyHeld(heldWithMine, mySetting, sent), true);
   check('a FULL answer is never "already held"', deltaAlreadyHeld(held, { ...same, full: true }, sent), false);
 }
 

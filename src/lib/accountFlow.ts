@@ -3462,14 +3462,26 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
     holdTree(cp.projectId, res as CloudProjectTree, false);
     // ...and WHAT THIS PUSH CARRIED, by id (A1, 9 Nov): the only rows the pull
     // that follows may call "my own push coming back" — see deltaAlreadyHeld.
-    _lastSent = {
+    // A PUSH THE SERVER REFUSED ANY PART OF IS NOT "MINE COMING BACK" (run 613,
+    // tests 28 and 29 red). When the server keeps the OTHER device's newer copy
+    // of a shot or a version, its reply — and the pull after it — carry THEIR
+    // row under an id this device sent. Sent and equal to the reply, yes; on
+    // this screen, no. Skipping that pull left the two devices disagreeing for
+    // good. So: anything refused, stale or foreign → no memory of the push,
+    // and the pull is applied the ordinary way.
+    const refusedAnything = (res.rejected_frames?.length ?? 0) + (res.stale_frames?.length ?? 0)
+      + (res.stale_versions?.length ?? 0) + (res.foreign_frames?.length ?? 0) + (res.foreign_versions?.length ?? 0) > 0;
+    _lastSent = refusedAnything ? null : {
       frames: new Set(frames.map((f) => f.id)),
       versions: new Set(versions.map((v) => v.id)),
       images: new Set(images.map((i) => i.version_id)),
       drawings: new Set(drawings.map((d) => d.version_id)),
-      settings: new Set(settingsOut.map((x) => `${x.kind}/${x.item_id}`)),
+      // A setting is mine only if the server's copy carries MY change time —
+      // the same item sent by both devices comes back as the newer one's.
+      settings: new Map(settingsOut.map((x) => [`${x.kind}/${x.item_id}`, x.deleted_at ?? x.changed_at])),
       deletions: new Set(sentTombstones.map((t) => `${t.entity_type}/${t.entity_id}`)),
     };
+    if (refusedAnything) trace('  the server kept its own copy of something — the next fetch is applied in full');
   }
   // The reply carries the MERGED settings — ours where ours were newer, the
   // server's where they were not. Take both the values and their stamps, or
@@ -3999,7 +4011,15 @@ async function applyCloudTreeToStore(
                 : stripId === 'floor' ? floorVersions
                 : stripId === 'refs' ? refsVersions : null;
               if (target) {
-                target[localId] = map[existingFrame.id].map((v, i) => ({ ...v, id: i + 1 }));
+                // ...BUT NOT A VERSION THE OTHER DEVICE DELETED (run 615, BIG DAY
+                // part 4). Keeping this shot's own work does not mean keeping a
+                // version whose deletion has just arrived: the untag made on the
+                // desktop took its copy off shot 2, the iPad held unsent work on
+                // that shot, kept everything — and showed the copy for ever.
+                const kept = map[existingFrame.id].filter((v) => !(v.serverVersionId && tombstonedIds.has(v.serverVersionId)));
+                const gone = map[existingFrame.id].length - kept.length;
+                if (gone > 0) trace(`    keep-local ${sf.id.slice(0, 6)}: ${gone} ${stripId} version(s) deleted elsewhere — taken off`);
+                if (kept.length > 0) target[localId] = kept.map((v, i) => ({ ...v, id: i + 1 }));
               }
               const tabTarget = stripId === 'ver' ? verActiveTab
                 : stripId === 'floor' ? floorActiveTab
