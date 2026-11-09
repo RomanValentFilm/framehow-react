@@ -7,7 +7,7 @@ import { applyCustomise, currentCustomiseValues } from './customise';
 import { state, useStore, isTouch, resetStoryboardState } from '../store/state';
 import { renderAll, renderMainFrame, renderVersionFrame } from './render';
 import { renderOverview, renderOverviewRow, renderGrid4, renderGrid4Row, renderGrid3x2, renderGrid3x2Card, recalcGrid3x2Margins, resetGrid3x2Zoom } from './overview';
-import { handleAction, handleMainAction } from './actions';
+import { handleAction, handleMainAction, insertPictureShotsAfter } from './actions';
 import { setViewMode, autoPhoneMainView, wireScrollHandlers, scrollAnchorTo, captureFrameAnchor, restoreFrameAnchor, syncCardHeights, showBarsNow } from './view';
 import {
   toggleStar,
@@ -1081,7 +1081,12 @@ export function initFramehow(): void {
 
   // imgInput / mainImgInput change
   document.getElementById('mainImgInput')!.addEventListener('change', (e) => {
-    const file = (e.target as HTMLInputElement).files?.[0];
+    // SEVERAL AT ONCE (A15, 9 Nov, Roman): the first file goes onto this shot
+    // as before; every further one becomes a new shot right after it, in file
+    // order — the way START FROM SCRATCH takes a folder, now inside a project.
+    const picked = Array.from((e.target as HTMLInputElement).files ?? []);
+    const file = picked[0];
+    const more = picked.slice(1);
     const s = state();
     if (!file) return;
     if (!s.mainImgTarget) {
@@ -1137,6 +1142,18 @@ export function initFramehow(): void {
     }).catch((err: unknown) => {
       trace(`picture: could not read "${file.name}" — ${err instanceof Error ? err.message : String(err)}`);
       showToast('Could not read that picture.');
+    }).then(async () => {
+      if (!more.length) return;
+      // The rest, in order, each read the same way; unreadable ones are skipped and said.
+      const { readPictureForSaving } = await import('./camMode');
+      const pictures: string[] = [];
+      for (const f2 of more) {
+        try { pictures.push(await readPictureForSaving(f2)); } catch (err) {
+          trace(`picture: could not read "${f2.name}" — ${err instanceof Error ? err.message : String(err)}`);
+          showToast(`Could not read "${f2.name}".`);
+        }
+      }
+      if (pictures.length) insertPictureShotsAfter(fid, pictures);
     });
     (e.target as HTMLInputElement).value = '';
     useStore.setState({ mainImgTarget: null });

@@ -15,6 +15,12 @@ Every one of these was agreed in a working session. Breaking one costs an hour.
    `cd ~/Desktop/"Framehow Files"/framehow-react && FH_NOTEST=1 npm run deploy -- <run> "<what changed>"`
    It ends with a SOUND and the line `--- Dev is up (vX · #N, run R) — say zzz — sound played ---`.
    If the box shows anything else, Roman says "script" and does not run it.
+   EVERY LINE ENDS WITH ITS NUMBER (Roman, 9 Nov): deploy or test, the last line in the
+   Terminal names the run and says zzz — `--- Dev is up (vX · #N, run R) — say zzz … ---` or
+   `--- Run R tests done (green|RED) — say zzz — sound played ---` — so Roman always knows
+   which one just finished. The same number stands above the command Claude handed over.
+   THE SERVER has its own one line with the same ending (9 Nov): `npm run server -- <run> "<what>"`
+   (`FH_MIGRATION=00NN_x.sql` in front runs that migration first). Never a bare `wrangler deploy`.
    CAFFEINATED (5 Nov, Roman): every deploy or test line keeps the Mac awake for its whole
    length — `npm run deploy` is `caffeinate -dims sh scripts/deploy.sh`, and e2e.sh runs its
    tests under caffeinate too. Never a bare `npx playwright` or `sh scripts/deploy.sh`.

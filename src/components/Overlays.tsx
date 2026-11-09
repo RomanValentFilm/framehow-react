@@ -60,7 +60,7 @@ export function Overlays() {
       <input type="file" id="pdfInput" accept="application/pdf" className="hidden" />
       <input type="file" id="folderImgInput" accept="image/*" multiple className="hidden" />
       <input type="file" id="imgInput" accept="image/*" multiple className="hidden" />
-      <input type="file" id="mainImgInput" accept="image/*" className="hidden" />
+      <input type="file" id="mainImgInput" accept="image/*" multiple className="hidden" />
       <input type="file" id="camFallbackInput" accept="image/*" capture="environment" className="hidden" />
     </>
   );

@@ -1,7 +1,7 @@
 // Action handlers for Main strip and Version/Floor/Refs strip cards.
 
 import { COLORS, state, useStore, bumpRenderTick } from '../store/state';
-import type { StripType, Version } from '../store/state';
+import type { Frame, StripType, Version } from '../store/state';
 import { reorderFrameInGroup, addFrameToActiveGroup, removeFrameFromGroup, hideFrameInGroup } from './groups';
 import {
   addNewVersion,
@@ -44,6 +44,57 @@ import { flushSyncNow, markSomethingToSend, getCurrentProject, saveLocalNow } fr
 import { stampChangedContent } from './changeStamps';
 import { addFrameToSortOrders, removeFrameFromSortOrders } from './sortOrder';
 import { nextFrameLabel } from './frameLabel';
+
+/**
+ * SEVERAL PICTURES ON A MAIN LOAD (A15, 9 Nov, Roman). The first file goes
+ * onto the shot LOAD was pressed on (as before, with its override question);
+ * every further file becomes a NEW SHOT right after it, in file order — the
+ * same shot a press on NEW would make, with the picture already on it. One
+ * redraw and one push for all of them. Version strips keep their own LOAD.
+ */
+export function insertPictureShotsAfter(fid: number, pictures: string[]): number[] {
+  const made: number[] = [];
+  let anchor = fid;
+  for (const src of pictures) {
+    const s2 = state();
+    const f2 = s2.frames.find((fr) => fr.id === anchor);
+    if (!f2) break;
+    const idx2 = s2.frames.indexOf(f2);
+    const nid = s2.nextId;
+    useStore.setState({ nextId: nid + 1 });
+    const newFrame: Frame = {
+      id: nid,
+      src,
+      label: nextFrameLabel(s2.frames.map((fr) => fr.label || ''), idx2, s2.projectType),
+      cropW: f2.cropW || (s2.portraitMode ? 540 : 960),
+      cropH: f2.cropH || (s2.portraitMode ? 960 : 540),
+      strokes: [],
+      drawMode: false,
+      textContent: '',
+      tableData: null,
+      serverFrameId: newFrameId(),   // its identity, from the start (#405)
+    };
+    if (s2.activeGroupId !== null) newFrame.hidden = true;
+    s2.frames.splice(idx2 + 1, 0, newFrame);
+    s2.versions[nid] = [{ id: 1, label: firstVerLabel(), type: 'empty', strokes: [], bgImage: null }];
+    s2.activeTab[nid] = 0;
+    s2.drawColor[nid] = COLORS[0];
+    s2.drawWidth[nid] = 6;
+    s2.drawEraser[nid] = false;
+    addFrameToActiveGroup(nid, anchor);
+    addFrameToSortOrders(nid, anchor);
+    made.push(nid);
+    anchor = nid;
+  }
+  if (made.length) {
+    updateFrameBadge();
+    renderAll();
+    trace(`LOAD: ${made.length} more picture(s) became new shots after shot ${fid}`);
+    markSomethingToSend();
+    void flushSyncNow();
+  }
+  return made;
+}
 
 export function handleMainAction(action: string, fid: number, div: HTMLElement): void {
   const s = state();

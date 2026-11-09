@@ -18,6 +18,7 @@
     "ping": "afplay /System/Library/Sounds/Glass.aiff & osascript -e 'display notification \"Framehow: done — ready for you\" with title \"Framehow\" sound name \"Glass\"'",
     "t": "sh scripts/e2e.sh",
     "deploy": "caffeinate -dims sh scripts/deploy.sh",
+    "server": "caffeinate -dims sh scripts/server.sh",
     "bench:label": "tsc test/frame-label-bench.ts --module commonjs --moduleResolution node --target es2022 --esModuleInterop --skipLibCheck --outDir .bench --types node && node -e \"require('fs').writeFileSync('.bench/package.json','{\\\"type\\\":\\\"commonjs\\\"}')\" && node .bench/test/frame-label-bench.js"
   },
   "dependencies": {

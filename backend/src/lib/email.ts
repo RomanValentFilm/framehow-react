@@ -113,7 +113,7 @@ export async function sendVerifyEmail(env: Env, to: string, name: string, verify
     to,
     subject: "Confirm your Framehow email",
     text: `Hi ${name},\n\n`
-      + `Open this link to confirm your email address:\n`
+      + `Open this link to confirm your email address for your Framehow account:\n`
       + `${verifyLink(env, verifyToken, asked)}\n\n`
       + `It unlocks the full 500 MB of storage for your account.\n\n`
       + `Framehow\n`,

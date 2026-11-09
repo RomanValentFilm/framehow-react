@@ -46,7 +46,7 @@ echo
 # line scrolls away long before a run ends, and Roman pastes the tail — so this
 # is where he can see which run he just finished without hunting for it.
 if [ -z "$FH_QUIET" ]; then
-  echo "--- FH_RUN=${FH_RUN:-unnumbered} finished. say  zzz  ---"
+  echo "--- Run ${FH_RUN:-unnumbered} tests done ($([ $RESULT -eq 0 ] && echo green || echo RED)) — say zzz — sound played ---"
 else
   echo "--- FH_RUN=${FH_RUN:-unnumbered} tests done ($([ $RESULT -eq 0 ] && echo green || echo RED)) — going on ---"
 fi
