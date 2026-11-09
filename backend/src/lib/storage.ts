@@ -29,13 +29,25 @@ const DEFAULT_LIMIT_MB = 350;
  *  350 MB default; the simulator's local worker (`FH_E2E=1`) may lower it per
  *  request with the `X-FH-Storage-Limit-MB` header so a test can fill an
  *  account in seconds. The header is ignored everywhere else. */
-export function storageLimitBytes(env: Env, requestHeader?: string | null): number {
+export function storageLimitBytes(env: Env, requestHeader?: string | null, verified = true): number {
   if (env.FH_E2E === "1" && requestHeader) {
     const mb = Number(requestHeader);
     if (Number.isFinite(mb) && mb > 0) return Math.round(mb * 1024 * 1024);
   }
   const mb = Number(env.STORAGE_LIMIT_MB);
-  return (Number.isFinite(mb) && mb > 0 ? mb : DEFAULT_LIMIT_MB) * 1024 * 1024;
+  const full = (Number.isFinite(mb) && mb > 0 ? mb : DEFAULT_LIMIT_MB) * 1024 * 1024;
+  // UNTIL THE EMAIL IS CONFIRMED, LESS (Roman, 9 Nov: 150 MB). The account works
+  // from the first second — sync, devices, everything — but a robot making one
+  // account after another gets 150 MB a piece, not 500. The link in the welcome
+  // mail unlocks the whole allowance.
+  if (!verified) return Math.min(full, unverifiedLimitBytes(env));
+  return full;
+}
+
+export const DEFAULT_UNVERIFIED_LIMIT_MB = 150;
+export function unverifiedLimitBytes(env: Env): number {
+  const mb = Number(env.UNVERIFIED_STORAGE_LIMIT_MB);
+  return (Number.isFinite(mb) && mb > 0 ? mb : DEFAULT_UNVERIFIED_LIMIT_MB) * 1024 * 1024;
 }
 
 /** Bytes of pictures in the user's LIVE projects (deleted-but-recoverable ones
@@ -67,10 +79,16 @@ export async function sumUserImageBytes(
   return (row?.used ?? 0) + await thumbBytes(db, userId);
 }
 
-export interface StorageFigure { used: number; limit: number }
+/** `verified` false = the limit shown is the 150 MB allowance; `full_limit` is what confirming unlocks. */
+export interface StorageFigure { used: number; limit: number; verified?: boolean; full_limit?: number }
 
-export async function storageFigure(db: D1Database, env: Env, userId: string, header?: string | null): Promise<StorageFigure> {
-  return { used: await sumUserImageBytes(db, userId), limit: storageLimitBytes(env, header) };
+export async function storageFigure(db: D1Database, env: Env, userId: string, header?: string | null, verified = true): Promise<StorageFigure> {
+  return {
+    used: await sumUserImageBytes(db, userId),
+    limit: storageLimitBytes(env, header, verified),
+    verified,
+    full_limit: storageLimitBytes(env, header, true),
+  };
 }
 
 /** Of these keys, which are still named by another project's picture rows or

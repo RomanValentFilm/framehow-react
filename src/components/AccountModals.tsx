@@ -103,6 +103,16 @@ export function AccountModals() {
             </label>
           </div>
 
+          {/* NEWS AND UPDATES (9 Nov): unticked, optional, only when creating an
+              account. The moment of the tick is kept with the account; no mail
+              is sent by the app itself. */}
+          <div className="account-row" id="accountRowNews" style={{ flexDirection: 'row', alignItems: 'flex-start', gap: '8px' }}>
+            <input type="checkbox" id="accountNews" style={{ width: 'auto', marginTop: '2px' }} />
+            <label htmlFor="accountNews" className="account-terms-text">
+              Send me news and updates about Framehow (optional).
+            </label>
+          </div>
+
           <div className="account-error" id="accountError" />
 
           <div className="account-btns">

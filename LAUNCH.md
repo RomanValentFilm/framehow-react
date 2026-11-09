@@ -11,6 +11,8 @@ D7 video + Fitting page text, F1 new token.
 - [ ] A3 Version strip's own card in landscape after a shot — check
 - [x] A4 (9 Nov, v5.0.176) Library permanent delete: second confirmation, text says "cannot be undone, frees X MB"
 - [ ] A5 Welcome mail text reviewed (today: 4 plain lines) — Roman's wording
+- [ ] A6a Email confirmation: 150 MB until the welcome-mail link is opened, full allowance after; Resend; all devices (9 Nov, in test 58)
+- [ ] A6b Sign-up tick box "Send me news and updates (optional)" → users.newsletter_consent_at (9 Nov)
 - [ ] A6 "Free during launch — paid plans later" line in the account box; `plan` field on the account (free), no billing code
 - [ ] A7 Fitting as its own app: build flag, second bundle id (com.framehow.fitting), Fitting build hides the rest
 - [ ] A8 Long simulator test (plan in TOMORROW.md) + the faults it finds
@@ -20,6 +22,7 @@ D7 video + Fitting page text, F1 new token.
 - [x] A13a (9 Nov, v5.0.177) Remove the admin Set-password button
 - [ ] A13b Logout keeps unsent copies but clears project cache + previews; account deletion wipes everything local
 - [ ] A14 Self-host the Google Fonts (one subprocessor less); note OCR CDN loads in the Privacy text
+- [ ] A15 LOAD several pictures at once onto the SHOT strip (several main frames in one go) — TOMORROW 5
 - [ ] A10 F4 island overlap · reload-on-new-version rule · "tell phone users about the desktop"
 
 ## B. Audit (report first, no code) — running in the background from 9 Nov
@@ -28,7 +31,7 @@ D7 video + Fitting page text, F1 new token.
 - [x] B3a CRITICAL: a failed picture upload fails the save and is retried (9 Nov, test 54) 
 - [x] B3b HIGH: analytics page — sign-in form + cookie, token out of the URL, /track whitelist, output escaped (9 Nov) 
 - [ ] B3c HIGH: restore on projects > 900 KB wipes without a pre-restore point → make the point (or refuse the restore)
-- [ ] B3d MEDIUM: rate limits on sign-up, sign-in, reset mail, /track, upload (per IP/email)
+- [x] B3d (9 Nov, v5.0.179, test 57) rate limits: sign-in 10/email/15 min, sign-up 5/IP/h, forgot mail 3/email/h + 20/IP/h, upload 60/account/min (burst), beacon 600/IP/h
 - [x] B3e-1 (9 Nov, v5.0.177) r2_key ownership checked on sync
 - [ ] B3e-2 MEDIUM: server measures the upload size itself (client-sent size_bytes not trusted)
 - [ ] B3f MEDIUM: caps on object/project/frame/snapshot counts per account

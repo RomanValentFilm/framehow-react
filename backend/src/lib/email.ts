@@ -87,14 +87,36 @@ export function resetLink(env: Env, token: string, asked?: string | null): strin
 // THE TWO MAILS — Roman's own words, 9 October. Do not reword without him.
 // ---------------------------------------------------------------------------
 
-export async function sendWelcomeEmail(env: Env, to: string, name: string): Promise<boolean> {
+export function verifyLink(env: Env, token: string, asked?: string | null): string {
+  return `${appBase(env, asked)}/?verify=${encodeURIComponent(token)}`;
+}
+
+/** The welcome mail carries the confirmation link (9 Nov): one mail, not two.
+ *  Until the link is opened the account has 150 MB; after it, the full 500. */
+export async function sendWelcomeEmail(env: Env, to: string, name: string, verifyToken: string, asked?: string | null): Promise<boolean> {
   return send(env, {
     to,
     subject: "Welcome to Framehow",
     text: `Hi ${name},\n\n`
       + `Your Framehow account is ready — you can start straight away.\n\n`
-      + `Your storyboards sync between your devices on their own, and your work is kept even when you are offline.\n\n`
+      + `Please confirm your email address by opening this link:\n`
+      + `${verifyLink(env, verifyToken, asked)}\n\n`
+      + `Until then your account has 150 MB of storage; the link unlocks the full 500 MB.\n\n`
+      + `Your work is kept on your device when you are offline, and syncs between your devices as soon as you are connected.\n\n`
       + `Feel free to send us a note if you have ideas about improvements.\n\n`
+      + `Framehow\n`,
+  });
+}
+
+/** "Resend" (9 Nov): the confirmation link alone. */
+export async function sendVerifyEmail(env: Env, to: string, name: string, verifyToken: string, asked?: string | null): Promise<boolean> {
+  return send(env, {
+    to,
+    subject: "Confirm your Framehow email",
+    text: `Hi ${name},\n\n`
+      + `Open this link to confirm your email address:\n`
+      + `${verifyLink(env, verifyToken, asked)}\n\n`
+      + `It unlocks the full 500 MB of storage for your account.\n\n`
       + `Framehow\n`,
   });
 }

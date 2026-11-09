@@ -87,13 +87,13 @@ upload.post("/upload", requireUser, async (c) => {
   const me = c.get("user");
 
   // THE WALL: this account, orphans included, may not pass its limit.
-  const limit = storageLimitBytes(c.env, c.req.header("X-FH-Storage-Limit-MB"));
+  const limit = storageLimitBytes(c.env, c.req.header("X-FH-Storage-Limit-MB"), !!me.email_verified);
   const mine = await userBytes(c.env.DB, me.id);
   if (mine + buf.byteLength > limit) {
     console.log(`[upload] refused: account ${me.id} at ${mine} + ${buf.byteLength} > ${limit}`);
     return c.json({
       error: { code: "storage_full", message: "This account's storage is full." },
-      storage: { used: mine, limit, pending: buf.byteLength },
+      storage: { used: mine, limit, pending: buf.byteLength, verified: !!me.email_verified, full_limit: storageLimitBytes(c.env, c.req.header("X-FH-Storage-Limit-MB"), true) },
     }, 413);
   }
   // THE CEILING: the whole of Framehow may not pass the number Roman set.
@@ -103,7 +103,7 @@ upload.post("/upload", requireUser, async (c) => {
     console.log(`[upload] REFUSED AT THE CEILING: Framehow holds ${all} + ${buf.byteLength} > ${ceiling}`);
     return c.json({
       error: { code: "storage_full", message: "Framehow's storage is full for the moment." },
-      storage: { used: mine, limit, pending: buf.byteLength },
+      storage: { used: mine, limit, pending: buf.byteLength, verified: !!me.email_verified, full_limit: storageLimitBytes(c.env, c.req.header("X-FH-Storage-Limit-MB"), true) },
     }, 413);
   }
 
@@ -227,7 +227,7 @@ upload.put("/thumbs/*", requireUser, async (c) => {
   const delta = buf.byteLength - (old?.size ?? 0);
   // The same wall as any picture: a full account gets no new previews (the
   // library then shows the picture itself).
-  const limit = storageLimitBytes(c.env, c.req.header("X-FH-Storage-Limit-MB"));
+  const limit = storageLimitBytes(c.env, c.req.header("X-FH-Storage-Limit-MB"), !!me.email_verified);
   if (delta > 0 && (await userBytes(c.env.DB, me.id)) + delta > limit) {
     return c.json({ error: { code: "storage_full", message: "This account's storage is full." } }, 413);
   }

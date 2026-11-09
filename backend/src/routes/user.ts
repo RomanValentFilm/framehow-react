@@ -84,11 +84,17 @@ user.post("/pictures/delete", async (c) => {
     return jsonError(c, 400, "invalid_keys", "keys must be a list of up to 500 picture keys.");
   }
   const r = await deletePictures(c.env.DB, c.env.IMAGES_BUCKET, me.id, keys as string[]);
-  const storage = await storageFigure(c.env.DB, c.env, me.id, c.req.header("X-FH-Storage-Limit-MB"));
+  const storage = await storageFigure(c.env.DB, c.env, me.id, c.req.header("X-FH-Storage-Limit-MB"), !!me.email_verified);
   return c.json({ deleted: r.deleted, bytes_freed: r.bytesFreed, cards_marked: r.cardsMarked, storage });
 });
 
 // GET /user/me — current profile
+// The storage figure alone (9 Nov) — asked right after the confirmation link.
+user.get("/storage", async (c) => {
+  const me = c.get("user");
+  return c.json({ storage: await storageFigure(c.env.DB, c.env, me.id, c.req.header("X-FH-Storage-Limit-MB"), !!me.email_verified) });
+});
+
 user.get("/me", (c) => {
   return c.json({ user: c.get("user") });
 });

@@ -11,7 +11,7 @@
 
 import { trace } from './syncTrace';
 
-export interface StorageFigure { used: number; limit: number }
+export interface StorageFigure { used: number; limit: number; verified?: boolean; full_limit?: number }
 
 let _figure: StorageFigure | null = null;
 let _noticedStep = 0;          // 0, 80, 90 or 95 — the highest step already said
@@ -39,6 +39,17 @@ export function storageLineText(f: StorageFigure | null = _figure): string {
   return `Storage ${mbText(f.used)} of ${mbText(f.limit)} MB · ${storagePercent(f)} %`;
 }
 
+/** UNTIL THE EMAIL IS CONFIRMED (9 Nov): 150 MB; the link in the welcome mail
+ *  unlocks the full allowance. True while the server says the account is unconfirmed. */
+export function storageAwaitsConfirmation(f: StorageFigure | null = _figure): boolean {
+  return !!f && f.verified === false;
+}
+/** "Confirm your email for 500 MB" — the second line under the figure. */
+export function confirmHintText(f: StorageFigure | null = _figure): string {
+  if (!f || f.verified !== false) return '';
+  return `Confirm your email for ${mbText(f.full_limit ?? f.limit)} MB`;
+}
+
 /** True from 80 % — the modal draws the line red then. */
 export function storageIsHigh(f: StorageFigure | null = _figure): boolean {
   return !!f && storagePercent(f) >= 80;
@@ -56,7 +67,14 @@ export function onStorageFreed(fn: () => void): void { _onFreed = fn; }
  */
 export function noteStorage(f: StorageFigure | undefined | null): void {
   if (!f || typeof f.used !== 'number' || typeof f.limit !== 'number' || f.limit <= 0) return;
-  _figure = { used: f.used, limit: f.limit };
+  // CONFIRMED, SEEN FROM ANY DEVICE (9 Nov): the link was opened somewhere;
+  // this device learns it from the next figure and says so once.
+  if (_figure?.verified === false && f.verified === true) {
+    trace(`storage: email confirmed — ${mbText(f.limit)} MB unlocked`);
+    void import('./modals').then(({ showToast }) => showToast(`Email confirmed — ${mbText(f.limit)} MB unlocked`));
+    void import('./session').then((m) => { const u = m.getUser(); if (u && !u.email_verified) m.setUser({ ...u, email_verified: true }); });
+  }
+  _figure = { used: f.used, limit: f.limit, verified: f.verified, full_limit: f.full_limit };
   const pct = storagePercent(_figure);
   window.dispatchEvent(new CustomEvent('fh:storage', { detail: _figure }));
 
@@ -77,7 +95,8 @@ export function noteStorage(f: StorageFigure | undefined | null): void {
   if (step === 0) { _noticedStep = 0; return; }
   if (step <= _noticedStep) return;
   _noticedStep = step;
-  const text = `Storage ${pct} % full — ${mbText(f.used)} of ${mbText(f.limit)} MB`;
+  const text = `Storage ${pct} % full — ${mbText(f.used)} of ${mbText(f.limit)} MB`
+    + (f.verified === false ? `. Confirm your email (link in your inbox) to unlock ${mbText(f.full_limit ?? f.limit)} MB.` : '');
   trace(`storage: ${text}`);
   void import('./modals').then(({ showToast }) => showToast(text));
 }
@@ -88,7 +107,7 @@ export function noteStorage(f: StorageFigure | undefined | null): void {
  * The work is safe on the device meanwhile — the caller files the copy.
  */
 export function storageFullFromServer(f: (StorageFigure & { pending?: number }) | undefined | null): void {
-  if (f) { _figure = { used: f.used, limit: f.limit }; window.dispatchEvent(new CustomEvent('fh:storage', { detail: _figure })); }
+  if (f) { _figure = { used: f.used, limit: f.limit, verified: f.verified ?? _figure?.verified, full_limit: f.full_limit ?? _figure?.full_limit }; window.dispatchEvent(new CustomEvent('fh:storage', { detail: _figure })); }
   _pendingBytes = Math.max(_pendingBytes, f?.pending ?? 0);
   _full = true;
   _noticedStep = 95;
@@ -97,13 +116,24 @@ export function storageFullFromServer(f: (StorageFigure & { pending?: number }) 
   trace(`storage FULL — ${_figure ? `${mbText(_figure.used)} of ${mbText(_figure.limit)} MB` : 'no figure'}; pushes wait until a project is deleted`);
   void (async () => {
     const { showImportantNote } = await import('./modals');
-    await showImportantNote(
-      'STORAGE FULL',
-      'The beta version of Framehow has limited storage, and this account is full. ' +
-      'Your work stays safe on this device, but it cannot upload until space is freed. ' +
-      'Open the project list, press Edit Projects and use DELETE NOW on a project you no longer need — ' +
-      'or Delete it first and then DELETE NOW on the greyed row.',
-    );
+    if (_figure?.verified === false) {
+      // THE WAY OUT IS THE MAIL, NOT A DELETE (9 Nov): the 150 MB allowance is
+      // full; the link in the inbox gives the whole 500 at once.
+      await showImportantNote(
+        'STORAGE FULL',
+        `Your storage is full. Confirm your email — the link is in your inbox — and you get ${mbText(_figure.full_limit ?? _figure.limit)} MB at once. ` +
+        'Your work stays safe on this device meanwhile. ' +
+        'No mail? Open the project list and press "Resend mail" under the storage line.',
+      );
+    } else {
+      await showImportantNote(
+        'STORAGE FULL',
+        'The beta version of Framehow has limited storage, and this account is full. ' +
+        'Your work stays safe on this device, but it cannot upload until space is freed. ' +
+        'Open the project list, press Edit Projects and use DELETE NOW on a project you no longer need — ' +
+        'or Delete it first and then DELETE NOW on the greyed row.',
+      );
+    }
     const { openProjectList } = await import('./accountFlow');
     void openProjectList();
   })();

@@ -90,7 +90,7 @@ import { closeSortMode, refreshOpenSortView, removeFrameFromSortOrders } from '.
 import { resetStoryboardState, state, useStore, bumpRenderTick, freshNeedDefinitions, DEFAULT_STRIP_DEFS, migrateNeedDefinitions, createDefaultExportMeta, blankNeeds, blankNote } from '../store/state';
 import type { Frame, Stroke, Version, FrameNeedState, FrameNoteState, NeedDefinitions, BracketNodeData, ProjectType } from '../store/state';
 import { clearRectsForProject } from './pdfAdjust';
-import { noteStorage, storageLineText, storageIsHigh, storageFigure as lastStorageFigure } from './storageMeter';
+import { noteStorage, storageLineText, storageIsHigh, storageFigure as lastStorageFigure, confirmHintText } from './storageMeter';
 
 // ---------------------------------------------------------------------------
 // Device identification — persistent ID + human-readable name
@@ -242,6 +242,7 @@ export function openAccountModal(initialMode: AccountMode = 'signup'): Promise<A
   const passInput = el<HTMLInputElement>('accountPassword');
   const profSelect = el<HTMLSelectElement>('accountProfession');
   const termsBox = el<HTMLInputElement>('accountTerms');
+  const newsBox = el<HTMLInputElement>('accountNews');
   wirePasswordEye('accountPassword', 'accountPasswordEye', 'accountPasswordEyeSlash');
   wireLegalLinks();
 
@@ -260,6 +261,7 @@ export function openAccountModal(initialMode: AccountMode = 'signup'): Promise<A
       setVisible('accountRowName', true);
       setVisible('accountRowProfession', true);
       setVisible('accountRowTerms', true);
+      setVisible('accountRowNews', true);
       // Top toggle hidden in signup; bottom toggle visible
       topToggleWrap.style.display = 'none';
       toggle.style.display = '';
@@ -272,6 +274,7 @@ export function openAccountModal(initialMode: AccountMode = 'signup'): Promise<A
       setVisible('accountRowName', false);
       setVisible('accountRowProfession', false);
       setVisible('accountRowTerms', false);      // logging in agrees to nothing new
+      setVisible('accountRowNews', false);
       // Top toggle visible in login; bottom toggle hidden
       topToggleWrap.style.display = '';
       toggle.style.display = 'none';
@@ -284,6 +287,7 @@ export function openAccountModal(initialMode: AccountMode = 'signup'): Promise<A
   passInput.value = '';
   profSelect.value = '';
   termsBox.checked = false;
+  newsBox.checked = false;
   applyMode();
   show('accountModal');
   focusFirstInput('accountModal');
@@ -323,7 +327,7 @@ export function openAccountModal(initialMode: AccountMode = 'signup'): Promise<A
           const res = await api.post<{
             user: SessionUser;
             session: { token: string; expires_at: number };
-          }>('/auth/signup', { name, email, password, profession, terms_agreed_at: Date.now() });
+          }>('/auth/signup', { name, email, password, profession, terms_agreed_at: Date.now(), newsletter: newsBox.checked, app: `${window.location.origin}${import.meta.env.BASE_URL}`.replace(/\/+$/, '') });
           setSession(res.session.token, res.user);
           fhTrack('signup', { profession: profession || 'none' });
           finish({ user: res.user, token: res.session.token });
@@ -843,6 +847,19 @@ export async function openProjectList(): Promise<void> {
     storageLine.textContent = storageLineText(lastStorageFigure());
     storageLine.style.color = storageIsHigh(lastStorageFigure()) ? '#d52632' : '#888';
     storageLine.style.fontWeight = storageIsHigh(lastStorageFigure()) ? '600' : '400';
+    // UNTIL THE EMAIL IS CONFIRMED (9 Nov): a second line with the way to the
+    // full allowance, and "Resend mail" for the one whose mail did not come.
+    const hint = confirmHintText(lastStorageFigure());
+    let hintEl = document.getElementById('projectListConfirmHint');
+    if (!hint) { hintEl?.remove(); return; }
+    if (!hintEl) {
+      hintEl = document.createElement('div');
+      hintEl.id = 'projectListConfirmHint';
+      hintEl.style.cssText = 'font-size:12px;color:#888;margin-top:2px;text-align:center';
+      storageLine.insertAdjacentElement('afterend', hintEl);
+    }
+    hintEl.innerHTML = `${hint} · <button type="button" id="resendVerifyBtn" style="background:none;border:0;padding:0;color:#4fc3f7;font:inherit;cursor:pointer;text-decoration:underline">Resend mail</button>`;
+    hintEl.querySelector<HTMLButtonElement>('#resendVerifyBtn')!.onclick = () => void resendVerificationMail();
   };
   drawStorage();
   const onStorage = (): void => drawStorage();
@@ -2114,6 +2131,49 @@ export async function openAccountSettings(): Promise<void> {
       }
     };
   });
+}
+
+// ---------------------------------------------------------------------------
+// EMAIL CONFIRMATION (9 Nov): 150 MB until the link in the welcome mail is
+// opened, the full allowance after. The link opens the app with ?verify=.
+// ---------------------------------------------------------------------------
+async function confirmEmailFromLink(token: string): Promise<void> {
+  try {
+    await api.get<{ ok: boolean }>(`/auth/verify-email?token=${encodeURIComponent(token)}`, getToken() ?? undefined);
+    trace('email confirmed from the link');
+    const u = getUser();
+    if (u) setUser({ ...u, email_verified: true });
+    // The storage figure says the rest (and raises the toast) with the next
+    // answer; said here too, so the person sees it even before any sync.
+    showToast('Email confirmed — thank you.');
+    void refreshStorageFigure();
+  } catch (e) {
+    trace(`email confirmation link refused: ${asMessage(e, '?')}`);
+    const { showConfirm } = await import('./modals');
+    if (!isLoggedIn()) { showToast('This confirmation link has expired. Sign in and press "Resend mail" in the project list.'); return; }
+    const again = await showConfirm('This confirmation link has expired. Send a new one to your email?');
+    if (again) await resendVerificationMail();
+  }
+}
+
+async function resendVerificationMail(): Promise<void> {
+  if (!isLoggedIn()) { showToast('Please sign in first.'); return; }
+  try {
+    const app = `${window.location.origin}${import.meta.env.BASE_URL}`.replace(/\/+$/, '');
+    const r = await api.post<{ ok: boolean; already?: boolean }>('/auth/resend-verification', { app }, getToken());
+    showToast(r.already ? 'Your email is already confirmed.' : 'Confirmation mail sent — check your inbox.');
+    trace(`confirmation mail ${r.already ? 'not needed — already confirmed' : 'sent again'}`);
+  } catch (e) {
+    showToast(asMessage(e, 'Could not send the mail. Please try again later.'));
+  }
+}
+
+/** Ask the server for the storage figure now (after a confirmation). */
+async function refreshStorageFigure(): Promise<void> {
+  try {
+    const r = await api.get<{ storage?: { used: number; limit: number; verified?: boolean; full_limit?: number } }>('/user/storage', getToken());
+    noteStorage(r.storage);
+  } catch { /* the next sync brings it */ }
 }
 
 // The old Change password box (current password + new one) was removed on
@@ -5383,6 +5443,7 @@ async function sendHeartbeat(): Promise<void> {
       open_setting_conflicts?: number;
       project_updated_at?: number | null;
       project_last_device_id?: string | null;
+      storage?: { used: number; limit: number; verified?: boolean; full_limit?: number };
     }>(
       `/projects/${encodeURIComponent(cp.projectId)}/heartbeat`,
       { device_id: getDeviceId(), device_name: getDeviceName() },
@@ -5410,6 +5471,9 @@ async function sendHeartbeat(): Promise<void> {
     // Nothing is lost by removing it. serverHasSomethingNew already compares
     // against what this device has actually TAKEN, so a device that really is
     // up to date still does not pull.
+    // The storage figure rides with the heartbeat (9 Nov): a held push wakes
+    // when the email is confirmed elsewhere or space is freed — see noteStorage.
+    if (beat?.storage) noteStorage(beat.storage);
     const remoteAt = beat?.project_updated_at ?? null;
     if (remoteAt !== null) {
       if (serverHasSomethingNew({ takenFromServerAt: takenFromServerAt ?? 0 } as DeviceMemory, remoteAt)) {
@@ -7340,8 +7404,16 @@ export async function bootstrapAccountSystem(): Promise<void> {
   // to anything watching, as though it had never come up at all.
   (window as any).__fh_booted = true;
 
-  // 3. Handle ?reset=token URLs (from the password reset email).
+  // 3a. Handle ?verify=token URLs (the link in the welcome mail, 9 Nov).
   const url = new URL(window.location.href);
+  const verifyToken = url.searchParams.get('verify');
+  if (verifyToken) {
+    url.searchParams.delete('verify');
+    window.history.replaceState({}, '', url.toString());
+    await confirmEmailFromLink(verifyToken);
+  }
+
+  // 3. Handle ?reset=token URLs (from the password reset email).
   const resetToken = url.searchParams.get('reset');
   if (resetToken) {
     url.searchParams.delete('reset');

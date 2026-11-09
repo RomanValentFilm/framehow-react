@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { D1Database } from "@cloudflare/workers-types";
 import type { AppVariables, Env } from "../types";
 import { loadOwnedProject, requireUser, wasDeletedByOwner } from "../lib/auth";
+import { userBytes } from "../lib/totals";
 import { deleteProjectForGood, deletedKeysAmong, fillImageSizes, storageFigure, storageLimitBytes, sumProjectImageBytesOutsideFrames, sumUserImageBytes } from "../lib/storage";
 import { newId } from "../lib/crypto";
 import { isNonEmptyString, jsonError } from "../lib/response";
@@ -78,7 +79,7 @@ projects.get("/", async (c) => {
     .all<{ id: string; name: string; created_at: number; updated_at: number; deleted_at: number | null }>();
   // The account's storage figure travels with the list (#533): the OPEN modal
   // shows it at the bottom, so it must be right even when nothing was pushed.
-  const storage = await storageFigure(c.env.DB, c.env, me.id, c.req.header(STORAGE_HEADER));
+  const storage = await storageFigure(c.env.DB, c.env, me.id, c.req.header(STORAGE_HEADER), !!me.email_verified);
   return c.json({ projects: result.results, storage });
 });
 
@@ -201,7 +202,7 @@ projects.delete("/:id/now", async (c) => {
   if (!row) return jsonError(c, 404, "not_found", "Project not found.");
   const r = await deleteProjectForGood(c.env.DB, c.env.IMAGES_BUCKET, me.id, row.id);
   console.log(`[storage] delete now: "${row.name}" (${row.id}) — files=${r.deletedFiles} keptShared=${r.keptShared} freed=${r.bytesFreed}B`);
-  const storage = await storageFigure(c.env.DB, c.env, me.id, c.req.header(STORAGE_HEADER));
+  const storage = await storageFigure(c.env.DB, c.env, me.id, c.req.header(STORAGE_HEADER), !!me.email_verified);
   return c.json({ ok: true, deleted_files: r.deletedFiles, kept_shared: r.keptShared, storage });
 });
 
@@ -265,6 +266,17 @@ projects.post("/:id/heartbeat", async (c) => {
     open_setting_conflicts: openSettings?.n ?? 0,
     project_updated_at: proj?.updated_at ?? null,
     project_last_device_id: proj?.last_device_id ?? null,
+    // THE STORAGE FIGURE RIDES ALONG (9 Nov): from the running total, so it
+    // costs one small row. A device whose pushes are held because the account
+    // is full learns here that the email was confirmed on another device (or
+    // that space was freed) and goes on by itself — nothing waits for the
+    // person to open the project list.
+    storage: {
+      used: await userBytes(c.env.DB, me.id),
+      limit: storageLimitBytes(c.env, c.req.header(STORAGE_HEADER), !!me.email_verified),
+      verified: !!me.email_verified,
+      full_limit: storageLimitBytes(c.env, c.req.header(STORAGE_HEADER), true),
+    },
   });
 });
 
@@ -590,7 +602,7 @@ projects.post("/:id/sync", async (c) => {
   // Storage quota: total of new images + existing images on this user's other
   // projects. We delete + reinsert the syncing project's images, so its old
   // bytes don't count; everyone else's do.
-  const storageLimit = storageLimitBytes(c.env, c.req.header(STORAGE_HEADER));
+  const storageLimit = storageLimitBytes(c.env, c.req.header(STORAGE_HEADER), !!me.email_verified);
   // A PICTURE DELETED IN THE LIBRARY NEVER COMES BACK (28 Oct, Roman): a device
   // that was offline when it was deleted may still push the card with it — the
   // picture row is dropped here, and the card keeps its "deleted" mark.
@@ -620,7 +632,7 @@ projects.post("/:id/sync", async (c) => {
       // `pending` is what this push carries: the app counts it on top of every
       // figure that follows, so a list answer (which cannot know about the
       // refused pictures) is not mistaken for "room again" (run 308).
-      storage: { used: otherImagesUsed + incomingBytes, limit: storageLimit, pending: incomingBytes },
+      storage: { used: otherImagesUsed + incomingBytes, limit: storageLimit, pending: incomingBytes, verified: !!me.email_verified, full_limit: storageLimitBytes(c.env, c.req.header(STORAGE_HEADER), true) },
     }, 413);
   }
 
@@ -766,7 +778,7 @@ projects.post("/:id/sync", async (c) => {
     : {};
   // The account's storage figure, as it stands after this push (#533). One
   // small sum; the app shows it and raises the 80/90/95 % notices from it.
-  const storage = { used: await sumUserImageBytes(c.env.DB, me.id), limit: storageLimit };
+  const storage = { used: await sumUserImageBytes(c.env.DB, me.id), limit: storageLimit, verified: !!me.email_verified, full_limit: storageLimitBytes(c.env, c.req.header(STORAGE_HEADER), true) };
   // Some frames were refused because they moved underneath this device. The
   // rest went in. The client shows the picker for these and nothing else.
   if (rejectedFrames.length > 0) {

@@ -7,7 +7,8 @@ import {
   newId,
   verifyPassword,
 } from "../lib/crypto";
-import { sendPasswordResetEmail, sendWelcomeEmail } from "../lib/email";
+import { sendPasswordResetEmail, sendWelcomeEmail, sendVerifyEmail } from "../lib/email";
+import { requireUser } from "../lib/auth";
 import { isEmail, isNonEmptyString, jsonError } from "../lib/response";
 import { allow, clear, ipOf } from "../lib/rateLimit";
 
@@ -117,16 +118,18 @@ auth.post("/signup", async (c) => {
   // moment the account was made, which is never later than the truth.
   const claimed = Number((body as { terms_agreed_at?: unknown }).terms_agreed_at);
   const termsAgreedAt = Number.isFinite(claimed) && claimed > 0 && claimed <= now + 60_000 ? claimed : now;
+  // NEWS AND UPDATES (9 Nov): the tick is optional; its moment is the consent record.
+  const newsletterAt = (body as { newsletter?: unknown }).newsletter === true ? now : null;
 
   await c.env.DB
     .prepare(
       `INSERT INTO users
          (id, name, email, password_hash, profession, email_verified,
           email_verification_token_hash, email_verification_expires_at,
-          terms_agreed_at, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)`,
+          terms_agreed_at, newsletter_consent_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)`,
     )
-    .bind(userId, name, email, passwordHash, profession, verifyTokenHash, verifyExpiresAt, termsAgreedAt, now, now)
+    .bind(userId, name, email, passwordHash, profession, verifyTokenHash, verifyExpiresAt, termsAgreedAt, newsletterAt, now, now)
     .run();
 
   // Issue a session immediately — spec: "account works immediately, but remind
@@ -147,7 +150,7 @@ auth.post("/signup", async (c) => {
   // WELCOME, AND NOTHING WAITS FOR IT (9 Oct). The session above is already
   // issued: the account works this second whether the mail arrives, is slow,
   // or never goes at all. No address is confirmed during the beta.
-  await sendWelcomeEmail(c.env, email, name);
+  await sendWelcomeEmail(c.env, email, name, verifyToken, typeof b.app === "string" ? b.app : null);
 
   return c.json({
     user: { id: userId, name, email, profession, email_verified: false },
@@ -437,6 +440,26 @@ auth.get("/verify-email", async (c) => {
     .run();
 
   return c.json({ ok: true });
+});
+
+// ---------------------------------------------------------------------------
+// POST /auth/resend-verification (9 Nov) — a fresh link, for the signed-in
+// person who did not get or lost the first mail. 3 per hour per email.
+// ---------------------------------------------------------------------------
+auth.post("/resend-verification", requireUser, async (c) => {
+  const me = c.get("user");
+  const asked = await c.req.json().then((j: unknown) => (j && typeof (j as { app?: unknown }).app === "string" ? (j as { app: string }).app : null)).catch(() => null);
+  if (me.email_verified) return c.json({ ok: true, already: true });
+  if (!await allow(c.env, "forgotEmail", me.email, c.req)) {
+    return jsonError(c, 429, "rate_limited", "Too many requests. Please wait an hour and try again.");
+  }
+  const token = generateToken();
+  const now = Date.now();
+  await c.env.DB.prepare(
+    `UPDATE users SET email_verification_token_hash = ?, email_verification_expires_at = ?, updated_at = ? WHERE id = ?`,
+  ).bind(await hashToken(token), now + ttlMs(c.env, "EMAIL_VERIFY_TTL_HOURS"), now, me.id).run();
+  await sendVerifyEmail(c.env, me.email, me.name, token, asked);
+  return c.json({ ok: true, ...devTokenEcho(c.env, token) });
 });
 
 export default auth;

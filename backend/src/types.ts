@@ -25,6 +25,8 @@ export interface Env {
   // Cloudflare caps storage; this does. Default 50.
   GLOBAL_STORAGE_LIMIT_GB?: string;
   FH_E2E?: string;
+  /** Storage until the email is confirmed (MB, default 150) — 9 Nov. */
+  UNVERIFIED_STORAGE_LIMIT_MB?: string;
 
   // Secrets (set via `wrangler secret put`)
   // Kept only so an older deployment's vars do not break the type. Mail goes
