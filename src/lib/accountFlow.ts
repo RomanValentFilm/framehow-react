@@ -1291,7 +1291,18 @@ function renderProjectList(
         return row;
     });
   }
-  for (const rec of deviceOnly) fileCopy(rec, () => localRow(rec, false));
+  // ONE ROW PER PROJECT (G10, 9 Nov, Roman: three rows for one project — "which
+  // do I open?"). A copy whose project is in the cloud list is NOT a row of its
+  // own any more: opening the project starts from the device copy and syncs
+  // (the log says "an unsent copy of this project is on the device — starting
+  // from it"), so the project row carries a note and that is all. A copy
+  // whose project is not in the list — never saved, or gone from the server —
+  // keeps its own row: it is the only way to that work.
+  const cloudIds = new Set(projects.filter((p) => !p.deleted_at).map((p) => p.id));
+  for (const rec of deviceOnly) {
+    if (rec.projectId && cloudIds.has(rec.projectId)) continue;
+    fileCopy(rec, () => localRow(rec, false));
+  }
 
   if (projects.length === 0 && deviceOnly.length === 0 && archived.length === 0) {
     const empty = document.createElement('div');
@@ -1360,13 +1371,14 @@ function renderProjectList(
       row.appendChild(off);
     }
 
-    const waiting = pendingOnDevice().find((w) => w.projectId === p.id);
+    // From the copies the modal just read, not the boot-time list (G10, run 608).
+    const waiting = deviceOnly.find((w) => w.projectId === p.id) ?? pendingOnDevice().find((w) => w.projectId === p.id);
     if (waiting) {
       const tag = document.createElement('span');
       // It used to say "open here to upload", and opening this row does no such
       // thing — it loads the cloud copy and leaves the device copy sitting
       // there (#409). The copy has its own row now, directly above this one.
-      tag.textContent = 'offline changes on this device — see the copy above';
+      tag.textContent = 'unsent work on this device — opens with it';
       tag.style.cssText = 'color:#d52632;font-size:11px;margin-left:8px;';
       row.appendChild(tag);
     }

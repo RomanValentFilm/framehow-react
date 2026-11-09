@@ -20,7 +20,7 @@ D7 video + Fitting page text, F1 new token.
 - [x] A11 (9 Nov, v5.0.174) Account deletion: sign in again within 7 days = restored; app text says 7 days (today admin-only, text says cannot be undone)
 - [x] A12 (9 Nov, v5.0.178, test 56) HIGH (privacy): pictures from LOAD / folder / drag-drop are stored as the original file, EXIF+GPS included → resize to 2400 and re-encode (strips EXIF) like the camera paths
 - [x] A13a (9 Nov, v5.0.177) Remove the admin Set-password button
-- [ ] A13b Logout keeps unsent copies but clears project cache + previews; account deletion wipes everything local
+- [x] A13b (9 Nov, v5.0.188, tests 34+61) Logout warns about unsent work and keeps unsent copies but clears project cache + previews; account deletion wipes everything local
 - [ ] A14 Self-host the Google Fonts (one subprocessor less); note OCR CDN loads in the Privacy text
 - [x] A15 (9 Nov, v5.0.184, test 59) LOAD several pictures at once onto the SHOT strip: first on the shot, the rest new shots after it
 - [ ] A10 "Tell phone users about the desktop" note (where/when)

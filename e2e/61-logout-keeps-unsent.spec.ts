@@ -49,10 +49,13 @@ test('logout keeps the unsent copy of offline work, and clears the project cache
   await desktop.settle();
   expect(pid).toBeTruthy();
 
-  say('the server goes away (every call to it fails) and the desktop adds a picture — the push fails, the copy is filed on the device');
+  say('saving and uploading fail (the server drops them) and the desktop adds a picture — the push fails, the copy is filed on the device');
   // Not airplane mode: that would also cut the dev server the page loads its
-  // own code from. The SERVER is unreachable; the app itself still runs.
-  await desktop.page.route('**/127.0.0.1:8787/**', (r) => r.abort('connectionfailed'));
+  // own code from. Only the SAVE and the UPLOAD fail; the project list still
+  // answers, so the list can be looked at with the copy unsent.
+  const cut = (r: { abort(code: string): Promise<void> }) => r.abort('connectionfailed');
+  await desktop.page.route('**/127.0.0.1:8787/projects/*/sync*', cut);
+  await desktop.page.route('**/127.0.0.1:8787/upload', cut);
   await desktop.uploadPicture(0, 'ver', PICTURE);
   await desktop.page.waitForTimeout(1500);
   const mark = await desktop.mark();
@@ -64,7 +67,18 @@ test('logout keeps the unsent copy of offline work, and clears the project cache
   expect(before.pending, 'an unsent copy is filed').toBeGreaterThan(0);
   expect(before.session).toBe(true);
 
-  say('Logout, the server still away');
+  say('the list shows ONE row for the project, with the note — no copy rows (G10)');
+  await desktop.page.evaluate(() => { void (window as never as { __fh_test: { openProjectList(): Promise<void> } }).__fh_test.openProjectList(); });
+  await desktop.page.waitForTimeout(1500);
+  const rows = await desktop.page.evaluate(() => Array.from(document.querySelectorAll('#projectListContent .project-list-row'))
+    .map((r) => ({ copy: r.classList.contains('project-list-copy'), text: (r.textContent ?? '').replace(/\s+/g, ' ').trim() })));
+  for (const r of rows) say(`   row: ${r.copy ? '[copy] ' : ''}${r.text}`);
+  const mine = rows.filter((r) => r.text.includes('OFFLINE WORK'));
+  expect(mine.filter((r) => r.copy), 'no separate copy rows for a project that is in the cloud list').toHaveLength(0);
+  expect(mine.some((r) => r.text.includes('unsent work on this device — opens with it')), 'the project row carries the note').toBe(true);
+  await desktop.page.locator('#projectListClose').click();
+
+  say('Logout — the copy is still unsent');
   await desktop.page.evaluate(() => { void (window as never as { __fh_test: { openAccountSettings(): Promise<void> } }).__fh_test.openAccountSettings(); });
   await desktop.page.locator('#settingsLogout').click({ timeout: 10_000 });
   // THE WARNING (Roman, 9 Nov): unsent work on the device is said before logging out.
@@ -82,6 +96,7 @@ test('logout keeps the unsent copy of offline work, and clears the project cache
   expect(after.previews, 'the previews are gone').toBe(0);
   expect(after.session, 'signed out').toBe(false);
 
-  await desktop.page.unroute('**/127.0.0.1:8787/**');
+  await desktop.page.unroute('**/127.0.0.1:8787/projects/*/sync*');
+  await desktop.page.unroute('**/127.0.0.1:8787/upload');
   await desktop.close();
 });
