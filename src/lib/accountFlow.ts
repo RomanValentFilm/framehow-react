@@ -82,7 +82,7 @@ import { tagText, readTagText } from './ids';
 import { serverHasSomethingNew, whoseFrameWins, type DeviceMemory } from './sessionRules';
 import { mergeDelta, lastMergeRefusal, answerIsSafeToApply, untouchedByDelta, deltaAlreadyHeld, type MergeableTree, type SentRows } from './deltaMerge';
 import { settingsForPush, adoptSettingsFromServer, applySettingsToStore, importSettingStamps, stampChangedSettings, seedSettings, forgetAnotherProjectsSettings, settingsNeedPush, reconcileRestoredSettings, captureMySettings, keepMyUnsentSettings, unsentSettingNames, settingsMemorySummary, seedSettingsAgeUnknown, type SettingItem } from './projectSettings';
-import { applySnapshotToStore, loadSnapshot, snapshotFromStore, listPending, isArchived, getPending, markPendingUploaded, markPendingParked, saveProjectListCache, loadProjectListCache, deletePending, deleteEveryCopyOf, recoverPending, isDeletedCopy, requestDurableStorage, clearPending } from './persistence';
+import { clearDeviceOnLogout, wipeDeviceOnAccountDeletion, applySnapshotToStore, loadSnapshot, snapshotFromStore, listPending, isArchived, getPending, markPendingUploaded, markPendingParked, saveProjectListCache, loadProjectListCache, deletePending, deleteEveryCopyOf, recoverPending, isDeletedCopy, requestDurableStorage, clearPending } from './persistence';
 import type { PendingRecord } from './persistence';
 import { showThreeWayConflict, showConfirm, showConfirmDefaultNo, showToast, showLabelEdit } from './modals';
 import { saveOpenTextEdits, saveOpenTableEdits, versionStars, inStarOrder } from './helpers';
@@ -2109,12 +2109,25 @@ export async function openAccountSettings(): Promise<void> {
       await openForgotModal(me?.email ?? '');
     };
     logoutBtn.onclick = async () => {
+      // UNSENT WORK IS SAID BEFORE LOGGING OUT (Roman, 9 Nov). The copies stay
+      // on the device and go up when this account signs in here again — the
+      // person should know that before they walk away from this device.
+      const waiting = (await listPending()).filter((r) => !isArchived(r) && !r.deletedAt && r.projectId);
+      if (waiting.length > 0) {
+        const n = new Set(waiting.map((r) => r.projectId)).size;
+        const { showConfirmDefaultNo } = await import('./modals');
+        const go = await showConfirmDefaultNo(
+          `You have unsent work on this device (${n} project${n === 1 ? '' : 's'}). It stays here and uploads when you sign in again on this device. Log out anyway?`);
+        if (!go) return;
+      }
       cleanup();
       await serverLogout();
       if (state().sortEditingId) closeSortMode();
       resetStoryboardState();
       clearCurrentProject();
       clearPushedFingerprints();
+      // The device keeps only the unsent copies (A13b, 9 Nov).
+      await clearDeviceOnLogout().catch(() => undefined);
       (window as any).__fh_renderAll?.();
       showToast('Logged out.');
     };
@@ -2134,6 +2147,8 @@ export async function openAccountSettings(): Promise<void> {
         resetStoryboardState();
         clearCurrentProject();
         clearPushedFingerprints();
+        // Everything of the account leaves this device too (A13b, 9 Nov).
+        await wipeDeviceOnAccountDeletion().catch(() => undefined);
         (window as any).__fh_renderAll?.();
         cleanup();
         showToast('Account deleted. Sign in again within 7 days to undo.');

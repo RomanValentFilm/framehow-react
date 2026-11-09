@@ -119,3 +119,12 @@ export async function pendingDeletions(): Promise<string[]> {
 export async function clearPendingDeletions(keys: string[]): Promise<void> {
   await deletePreviews(keys.map((k) => `del:${k}`));
 }
+
+/** The previews store emptied (A13b, 9 Nov). On logout the deletions made
+ *  offline are KEPT — they still have to reach the server; account deletion
+ *  takes everything. */
+export async function clearAllPreviews(keepPendingDeletions: boolean): Promise<void> {
+  if (!keepPendingDeletions) { await tx('readwrite', (s) => s.clear()); return; }
+  const all = (await tx<Array<PreviewRec & { pendingDeletion?: boolean }>>('readonly', (s) => s.getAll())) ?? [];
+  await deletePreviews(all.filter((r) => !r.pendingDeletion).map((r) => r.id));
+}

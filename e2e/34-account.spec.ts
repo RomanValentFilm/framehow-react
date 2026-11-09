@@ -145,6 +145,32 @@ test('account: the delete question is in front, and deleting erases everything a
   await desktop.page.getByRole('button', { name: 'Yes' }).click();
   await desktop.page.waitForTimeout(2_000);
 
+  // THE DEVICE FORGETS THE ACCOUNT (A13b, 9 Nov): nothing of it stays on the
+  // device — not the project cache, not the unsent copies, not the previews,
+  // not the session. The device id may stay.
+  say('nothing of the account stays on the device');
+  const left = await desktop.page.evaluate(async () => {
+    const count = (dbName: string, store: string) => new Promise<number>((ok) => {
+      const req = indexedDB.open(dbName);
+      req.onsuccess = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(store)) { db.close(); ok(0); return; }
+        const c = db.transaction(store, 'readonly').objectStore(store).count();
+        c.onsuccess = () => { db.close(); ok(c.result); };
+        c.onerror = () => { db.close(); ok(-1); };
+      };
+      req.onerror = () => ok(-1);
+    });
+    const keys: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && !k.startsWith('fh_device_id') && !k.startsWith('fh_test')) keys.push(k); }
+    return { state: await count('framehow', 'state'), pending: await count('framehow', 'pending'), previews: await count('framehow-picts', 'previews'), keys };
+  });
+  say(`   left on the device: state ${left.state}, unsent copies ${left.pending}, previews ${left.previews}, local notes ${left.keys.join(', ') || 'none'}`);
+  expect(left.state, 'no project cache').toBe(0);
+  expect(left.pending, 'no unsent copies').toBe(0);
+  expect(left.previews, 'no previews').toBe(0);
+  expect(left.keys, 'no session or notes in localStorage').toEqual([]);
+
   say('a wrong password is refused as ever, and the address is not free yet');
   const wrong = await fetch(`${API}/auth/login`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },

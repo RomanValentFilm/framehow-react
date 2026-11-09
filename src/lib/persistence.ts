@@ -563,3 +563,44 @@ export async function storageEstimate(): Promise<{ usage: number; quota: number 
     return null;
   }
 }
+
+// ---------------------------------------------------------------------------
+// WHAT A DEVICE KEEPS WHEN YOU LEAVE (A13b, 9 Nov).
+//
+// LOGOUT keeps the UNSENT copies — a photo taken offline lives nowhere else,
+// and it belongs to the account that signs in again. Everything else goes:
+// the open project's cache, the project list, the previews, the per-project
+// notes in localStorage. The device id and the camera preferences stay.
+//
+// ACCOUNT DELETION wipes it all, unsent copies included: the person asked for
+// their data to go, and the account they would upload to is gone.
+// ---------------------------------------------------------------------------
+const KEEP_ON_LOGOUT_PREFIXES = ['fh_device_id', 'fh_cam', 'fh_test', 'fh_resort_note_off', 'fh_default_names'];
+
+function clearLocalStorageExcept(keep: string[]): number {
+  const gone: string[] = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k && !keep.some((p) => k.startsWith(p))) gone.push(k);
+  }
+  for (const k of gone) localStorage.removeItem(k);
+  return gone.length;
+}
+
+export async function clearDeviceOnLogout(): Promise<void> {
+  await withStore('readwrite', (s) => s.clear());                 // the 'state' store: snapshot, project list cache
+  const { clearAllPreviews } = await import('./pictsStore');
+  await clearAllPreviews(true).catch(() => undefined);
+  const n = clearLocalStorageExcept(KEEP_ON_LOGOUT_PREFIXES);
+  const pending = await listPending();
+  console.log(`[device] logout: project cache and previews cleared, ${n} local note(s) removed, ${pending.length} unsent cop${pending.length === 1 ? 'y' : 'ies'} kept`);
+}
+
+export async function wipeDeviceOnAccountDeletion(): Promise<void> {
+  await withStore('readwrite', (s) => s.clear());
+  await withStore('readwrite', (s) => s.clear(), PENDING_STORE);
+  const { clearAllPreviews } = await import('./pictsStore');
+  await clearAllPreviews(false).catch(() => undefined);
+  const n = clearLocalStorageExcept(['fh_device_id', 'fh_test']);
+  console.log(`[device] account deleted: everything of it removed from this device (${n} local note(s))`);
+}

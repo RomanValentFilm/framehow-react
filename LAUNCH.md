@@ -8,7 +8,7 @@ D7 video + Fitting page text, F1 new token.
 ## A. Code — the app itself
 - [x] A1 (9 Nov, v5.0.172) Busy page after the shutter: own push comes back as "remote is newer" and redraws all cards → recognise own push, skip redraw (bench test first)
 - [x] A2 (9 Nov, v5.0.185) Library preview is made from the live frame → remake from the real photo when it lands
-- [ ] A3 Version strip's own card in landscape after a shot — check
+- [x] A3 (9 Nov, Roman on the PWA) Version strip's own card in landscape after a shot — fine
 - [x] A4 (9 Nov, v5.0.176) Library permanent delete: second confirmation, text says "cannot be undone, frees X MB"
 - [x] A5 (9 Nov) Welcome mail: confirmation link + 150/500 MB lines + "kept on your device when offline…" (Roman's wording)
 - [x] A6a (9 Nov, v5.0.181, test 58) Email confirmation: 150 MB until the welcome-mail link is opened, full allowance after; Resend; all devices (9 Nov, in test 58)
