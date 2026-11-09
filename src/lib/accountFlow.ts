@@ -858,8 +858,19 @@ export async function openProjectList(): Promise<void> {
       hintEl.style.cssText = 'font-size:11px;color:#888;text-align:center';
       (document.getElementById('projectListStorageBox') ?? storageLine.parentElement)!.appendChild(hintEl);
     }
+    // THE LINK ANSWERS THE CLICK (9 Nov, Roman: "it does nothing"): the toast was
+    // drawn under the list; now the toast is above everything AND the link
+    // itself says "Mail sent ✓" and rests for a minute.
+    if (_resendSentAt && Date.now() - _resendSentAt < 60_000) {
+      hintEl.innerHTML = `${hint} · <span style="color:#81c784">Mail sent ✓</span>`;
+      return;
+    }
     hintEl.innerHTML = `${hint} · <button type="button" id="resendVerifyBtn" style="background:none;border:0;padding:0;color:#4fc3f7;font:inherit;cursor:pointer;text-decoration:underline">Resend mail</button>`;
-    hintEl.querySelector<HTMLButtonElement>('#resendVerifyBtn')!.onclick = () => void resendVerificationMail();
+    const btn = hintEl.querySelector<HTMLButtonElement>('#resendVerifyBtn')!;
+    btn.onclick = () => {
+      btn.disabled = true; btn.textContent = 'Sending…'; btn.style.textDecoration = 'none'; btn.style.color = '#888';
+      void resendVerificationMail().then((ok) => { if (ok) _resendSentAt = Date.now(); drawStorage(); });
+    };
   };
   drawStorage();
   const onStorage = (): void => drawStorage();
@@ -2156,15 +2167,20 @@ async function confirmEmailFromLink(token: string): Promise<void> {
   }
 }
 
-async function resendVerificationMail(): Promise<void> {
-  if (!isLoggedIn()) { showToast('Please sign in first.'); return; }
+/** When "Resend mail" last went, so the link can say so for a minute. */
+let _resendSentAt = 0;
+
+async function resendVerificationMail(): Promise<boolean> {
+  if (!isLoggedIn()) { showToast('Please sign in first.'); return false; }
   try {
     const app = `${window.location.origin}${import.meta.env.BASE_URL}`.replace(/\/+$/, '');
     const r = await api.post<{ ok: boolean; already?: boolean }>('/auth/resend-verification', { app }, getToken());
     showToast(r.already ? 'Your email is already confirmed.' : 'Confirmation mail sent — check your inbox.');
     trace(`confirmation mail ${r.already ? 'not needed — already confirmed' : 'sent again'}`);
+    return true;
   } catch (e) {
     showToast(asMessage(e, 'Could not send the mail. Please try again later.'));
+    return false;
   }
 }
 
