@@ -43,7 +43,7 @@ function noisePngBuffer(width: number, height: number): Buffer {
 }
 
 async function figures(): Promise<{ total: number; ceiling: number; estimatedUsd: number; step: number }> {
-  const res = await fetch(`${API}/analytics/storage?token=${ADMIN}&format=json`);
+  const res = await fetch(`${API}/analytics/storage?format=json`, { headers: { Authorization: `Bearer ${ADMIN}` } });
   expect(res.status, 'the figures answer').toBe(200);
   return await res.json() as { total: number; ceiling: number; estimatedUsd: number; step: number };
 }
@@ -108,7 +108,7 @@ test('the ceiling: the wall holds at the door, the ceiling holds for everyone, a
   say('the night: the sweep lists the bucket and the figures match it');
   const sweep = await fetch(`${API}/__scheduled?cron=0+3+*+*+*`);
   expect(sweep.status, 'the sweep ran').toBe(200);
-  const counted = await (await fetch(`${API}/analytics/dead-pictures?token=${ADMIN}&format=json`)).json() as { files: number; bytes: number };
+  const counted = await (await fetch(`${API}/analytics/dead-pictures?format=json`, { headers: { Authorization: `Bearer ${ADMIN}` } })).json() as { files: number; bytes: number };
   const f = await figures();
   say(`   bucket ${counted.bytes} bytes in ${counted.files} files · running total ${f.total} · ceiling ${f.ceiling} · $${f.estimatedUsd}/month`);
   expect(f.total, 'the running total equals the bucket').toBe(counted.bytes);

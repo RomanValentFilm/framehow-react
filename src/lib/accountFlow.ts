@@ -80,7 +80,7 @@ import { frameChangedAt, versionChangedAt, frameChangedAtForSending, versionChan
 import { shouldSendOnlyChanges } from './pushMode';
 import { tagText, readTagText } from './ids';
 import { serverHasSomethingNew, whoseFrameWins, type DeviceMemory } from './sessionRules';
-import { mergeDelta, lastMergeRefusal, answerIsSafeToApply, untouchedByDelta, type MergeableTree } from './deltaMerge';
+import { mergeDelta, lastMergeRefusal, answerIsSafeToApply, untouchedByDelta, deltaAlreadyHeld, type MergeableTree, type SentRows } from './deltaMerge';
 import { settingsForPush, adoptSettingsFromServer, applySettingsToStore, importSettingStamps, stampChangedSettings, seedSettings, forgetAnotherProjectsSettings, settingsNeedPush, reconcileRestoredSettings, captureMySettings, keepMyUnsentSettings, unsentSettingNames, settingsMemorySummary, seedSettingsAgeUnknown, type SettingItem } from './projectSettings';
 import { applySnapshotToStore, loadSnapshot, snapshotFromStore, listPending, isArchived, getPending, markPendingUploaded, markPendingParked, saveProjectListCache, loadProjectListCache, deletePending, deleteEveryCopyOf, recoverPending, isDeletedCopy, requestDurableStorage, clearPending } from './persistence';
 import type { PendingRecord } from './persistence';
@@ -3135,7 +3135,19 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
     //                             no longer waited with it). The refusal is
     //                             thrown on, and the one storage-full path in
     //                             the sync files the work and holds pushes.
+    // ANY OTHER FAILURE FAILS THE SAVE (audit 9 Nov, CRITICAL). Until today a
+    // timeout, a dropped connection or a 5xx on the upload was logged and
+    // SKIPPED: the shot went up without its picture, was recorded as "on the
+    // server", never retried, and the device copy was swept after 72 h — the
+    // one silent way to lose a photograph. Now the error is thrown on like
+    // storage-full: the push fails, the work is filed as unsent, and the retry
+    // clock (20 s … 5 min, and at once when the connection returns) carries
+    // the picture up with the next push. Only a 4xx refusal of THIS picture
+    // (bad file, 400/415/422) is still skipped — retrying cannot help there —
+    // and is said in a box instead of swallowed.
     let saidTooLarge = false;
+    let saidRefused = false;
+    let failed: unknown = null;
     let full: (ApiError & { storage?: { used: number; limit: number; pending?: number } }) | null = null;
     const results = await Promise.all(
       imageUploads.map(async (task) => {
@@ -3162,12 +3174,27 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
             trace(`  picture refused: storage full (version ${task.versionId.slice(0, 6)}) — the save stops here`);
             return null;
           }
-          console.warn('[sync] image upload failed for version', task.versionId, e);
-          return null; // Skip failed uploads — structure still syncs
+          const st = err?.status ?? 0;
+          if (st >= 400 && st < 500 && st !== 401 && st !== 403 && st !== 408 && st !== 429) {
+            trace(`  picture refused by the server (${st} ${err.code}) (version ${task.versionId.slice(0, 6)}) — it stays on this device`);
+            if (!saidRefused) {
+              saidRefused = true;
+              void (async () => {
+                const { showImportantNote } = await import('./modals');
+                await showImportantNote('PICTURE NOT ACCEPTED',
+                  'The server did not accept one of your pictures, it stays on this device only. Please load it again.');
+              })();
+            }
+            return null;
+          }
+          trace(`  picture upload failed (status ${st || 'no response'}) (version ${task.versionId.slice(0, 6)}) — the save fails and will be retried`);
+          failed = e;
+          return null;
         }
       }),
     );
     if (full) throw full;
+    if (failed) throw failed;
     for (const r of results) {
       if (!r) continue;
       images.push({
@@ -3317,7 +3344,19 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   // means the next pull can ask only for what changed after this moment (#280).
   // Good ground, but NOT proof of having heard — the frames in this reply are
   // not applied to the store, so the mark must not move (#320).
-  if (cp.projectId && res.frames) holdTree(cp.projectId, res as CloudProjectTree, false);
+  if (cp.projectId && res.frames) {
+    holdTree(cp.projectId, res as CloudProjectTree, false);
+    // ...and WHAT THIS PUSH CARRIED, by id (A1, 9 Nov): the only rows the pull
+    // that follows may call "my own push coming back" — see deltaAlreadyHeld.
+    _lastSent = {
+      frames: new Set(frames.map((f) => f.id)),
+      versions: new Set(versions.map((v) => v.id)),
+      images: new Set(images.map((i) => i.version_id)),
+      drawings: new Set(drawings.map((d) => d.version_id)),
+      settings: new Set(settingsOut.map((x) => `${x.kind}/${x.item_id}`)),
+      deletions: new Set(sentTombstones.map((t) => `${t.entity_type}/${t.entity_id}`)),
+    };
+  }
   // The reply carries the MERGED settings — ours where ours were newer, the
   // server's where they were not. Take both the values and their stamps, or
   // this device would keep pushing its older copy for ever.
@@ -5801,6 +5840,8 @@ const PULL_COOLDOWN_MS = 3_000; // Don't check more often than every 3s
 const DELTA_PULL = true;
 
 let _heldTree: CloudProjectTree | null = null;
+/** The rows the last push carried, by id — cleared the moment a pull applies anything (A1). */
+let _lastSent: SentRows | null = null;
 let _heldTreeProjectId: string | null = null;
 /** The SERVER's clock as of its last answer. Never this device's. */
 let _heardAt = 0;
@@ -5838,6 +5879,7 @@ export function adoptHeardAt(at: number | undefined): void {
 
 export function forgetHeldTree(): void {
   _heldTree = null;
+  _lastSent = null;
   _heldTreeProjectId = null;
   _heardAt = 0;
 }
@@ -6570,8 +6612,24 @@ async function tryPullFromCloud(force = false): Promise<void> {
         lastKnownUpdatedAt = tree.project.updated_at;
         return;
       }
+      // MY OWN PUSH, COMING BACK (A1, 9 Nov). Pushing is not hearing (#320),
+      // so the pull after a push asks "since I last heard" and is handed the
+      // rows that push wrote — and applied them: the storyboard rebuilt, every
+      // card redrawn, for rows this device already stands on. On the phone
+      // that redraw is what made the page busy after the shutter, so the
+      // picture's move to its card started late. If every row is the row
+      // held (the push reply) and every tombstone is known, there is nothing
+      // to show: take the watermark, leave the screen alone.
+      if (_heldTree && deltaAlreadyHeld(_heldTree as unknown as MergeableTree, raw as unknown as MergeableTree, _lastSent)) {
+        trace(`  ${changed} row(s), all of them what this device already holds (its own push) — leaving the screen alone`);
+        holdTree(cp.projectId, tree, true);
+        takenFromServerAt = tree.project.updated_at;
+        lastKnownUpdatedAt = tree.project.updated_at;
+        return;
+      }
     }
     holdTree(cp.projectId, tree, true);      // a real pull — the mark may move
+    _lastSent = null;                        // and the last push is no longer "mine alone" (A1)
     const remoteUpdatedAt = tree.project.updated_at;
     // What I last TOOK, not what I last said (#299).
     const localUpdatedAt = takenFromServerAt ?? 0;

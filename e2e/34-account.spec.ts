@@ -167,13 +167,13 @@ test('account: the delete question is in front, and deleting erases everything a
   const me = users.users.find((u) => u.email.toLowerCase() === email.toLowerCase());
   expect(me, 'the account is still listed while it is closing').toBeTruthy();
   // The page Roman reaches from the link under All Users.
-  const page = await (await fetch(`${API}/analytics/deleted-users?token=${ADMIN}`)).text();
+  const page = await (await fetch(`${API}/analytics/deleted-users`, { headers: { Authorization: `Bearer ${ADMIN}` } })).text();
   expect(page, 'the deleted account is listed there').toContain(email);
   expect(page, 'with a way to bring it back').toContain('Restore');
 
   const restored = await fetch(`${API}/analytics/restore-account`, {
-    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ token: ADMIN, user: me!.id }),
+    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', Authorization: `Bearer ${ADMIN}` },
+    body: new URLSearchParams({ user: me!.id }),
   });
   expect(restored.status, 'the restore answers').toBe(200);
 
@@ -190,8 +190,8 @@ test('account: the delete question is in front, and deleting erases everything a
   // no way to send mail: Roman presses the button and reads the word out.
   say('Roman gives them a new password from the users page');
   const set = await fetch(`${API}/analytics/set-password`, {
-    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ token: ADMIN, user: me!.id }),
+    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', Authorization: `Bearer ${ADMIN}` },
+    body: new URLSearchParams({ user: me!.id }),
   });
   expect(set.status, 'the page answers').toBe(200);
   const shown = (await set.text()).match(/font-size:28px">([a-z0-9-]+)</);

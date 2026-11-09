@@ -105,6 +105,21 @@ FINDINGS so far (not fixed yet):
   fitting PDF after ticking "unrated" gave no download in 120 s (passed 572/579/580). (b) test 33:
   three uploads fired within 0.1 s, the server kept two — an upload lost in the overlap (passed
   572). (b) needs a test of two uploads at once, then the fix in the upload queue.
+## 6 November, evening — THE NATIVE CAMERA IS IN (v5.0.171 · #723 on dev; the shell from Xcode Cmd R)
+What works, seen by Roman on the phone: CAM = the iPhone's camera (RATIO list incl. CANVAS, lens
+1x/0.5x button + pinch, tap focus + EV, Cancel left of the shutter, Deep Fusion kept, HDR layer in
+the file); the agreed moment (flash 90 ms, 300 ms frozen, 0.5 s move from 95% of the screen to
+the card with the fade from the middle); the live frame lands, the real 2400 px photo replaces it
+1.3 s later and is pushed; the version stays on the card through a turn to portrait.
+NEXT, IN THIS ORDER (Roman, 6 Nov 18:10, "park it today"):
+ 1. THE PUSH-THEN-PULL-BACK (#320 design): every own push comes back as "remote is newer" and
+    redraws all 9 cards — it busies the page in the second after the shutter (the move waits up to
+    0.4 s to start; the log says "shrink moved for 0.9 s" for a 0.5 s move) and it is behind the
+    redraws seen on turns. Bench test first.
+ 2. The library preview is made from the live frame; remake it from the real photo (picts.ts).
+ 3. iOS: the version strip's own card in landscape after a shot — Roman has not complained; check.
+ 4. TestFlight build 2 with the camera (bump CFBundleVersion to 2; Archive → Distribute).
+ 5. Then the long simulator test (plan below) and the write-then-pull race (TOMORROW 1).
 - TOMORROW 1: THE WRITE-THEN-PULL RACE (run 579, BIG DAY part 3 red; green in 572). iPad writes on
   shot 1, a heartbeat pull lands before the push ("push skipped: a fetch is running"), the pull
   "recorded 4 frames as matching the server" — the unsent text included — and the text never

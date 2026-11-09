@@ -9,7 +9,7 @@ import { hashPassword } from "../lib/crypto";
 // Cloudflare, against the free 10 GB and the ceiling Roman set, with the
 // estimated monthly cost. Red from 8 GB. On the front page and the storage page.
 // ---------------------------------------------------------------------------
-async function storageBarHtml(env: Env, token: string): Promise<string> {
+async function storageBarHtml(env: Env): Promise<string> {
   const { totalBytes, ceilingBytes, estimatedUsdPerMonth, gbText, FREE_GB, GB } = await import("../lib/totals");
   const used = await totalBytes(env.DB);
   const ceiling = ceilingBytes(env);
@@ -31,7 +31,7 @@ async function storageBarHtml(env: Env, token: string): Promise<string> {
   </div>
   <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px">
     <div style="font-size:11px;color:#666">The mark is the end of the free 10 GB; the bar ends at the ceiling. Figures are the running total; the nightly sweep sets them to the bucket's exact count.</div>
-    <form method="post" action="/analytics/recount" style="margin:0"><input type="hidden" name="token" value="${token.replace(/"/g, "&quot;")}"><button class="expand-btn" style="margin:0;padding:4px 10px;font-size:12px">Recount now</button></form>
+    <form method="post" action="/analytics/recount" style="margin:0"><button class="expand-btn" style="margin:0;padding:4px 10px;font-size:12px">Recount now</button></form>
   </div>
 </div>`;
 }
@@ -47,6 +47,16 @@ router.post("/track", async (c) => {
     const body = await c.req.json();
     const { event, sid, device, browser, pwa, uid, meta } = body;
     if (!event || !sid) return c.json({ ok: false }, 400);
+    // ONLY WHAT A BEACON CAN HONESTLY BE (audit 9 Nov): this door is public,
+    // and what comes in is shown on the admin page. Names are short words,
+    // ids are short tokens, meta is small. Anything else is dropped here.
+    const word = /^[A-Za-z0-9_:.\-]{1,48}$/;
+    if (typeof event !== "string" || !word.test(event)) return c.json({ ok: false }, 400);
+    if (typeof sid !== "string" || !/^[A-Za-z0-9_\-]{4,64}$/.test(sid)) return c.json({ ok: false }, 400);
+    if (uid != null && (typeof uid !== "string" || !/^[A-Za-z0-9_\-]{1,64}$/.test(uid))) return c.json({ ok: false }, 400);
+    if (device != null && (typeof device !== "string" || !word.test(device))) return c.json({ ok: false }, 400);
+    if (browser != null && (typeof browser !== "string" || !word.test(browser))) return c.json({ ok: false }, 400);
+    if (meta != null && JSON.stringify(meta).length > 600) return c.json({ ok: false }, 400);
 
     const now = Date.now();
     const country = c.req.header("cf-ipcountry") || null;
@@ -245,13 +255,80 @@ const PAGE_STYLES = `
   @media (max-width: 600px) { .cards { flex-direction: column; } table { font-size: 12px; } }
 `;
 
-// ─── GET /analytics — HTML Dashboard ───────────────────────────────────────
-// Visual dashboard. Auth via ?token= query param so it's bookmarkable.
-router.get("/analytics", async (c) => {
-  const token = c.req.query("token");
-  if (!token || token !== c.env.ADMIN_API_TOKEN) {
-    return c.html("<h2>Enter token: <form><input name=token><button>Go</button></form></h2>");
+
+// ---------------------------------------------------------------------------
+// THE DOOR (audit 9 Nov, HIGH). Until today the admin token travelled in the
+// URL (?token=…): bookmarked, in the browser history, in every Referer, and
+// one unescaped string on the page away from being read by a script. Now:
+//   · the page asks for the admin password ONCE and sets an HttpOnly cookie
+//     (a hash of the token, never the token itself), 30 days, this path only;
+//   · scripts and tests use the Authorization: Bearer header as before;
+//   · nothing is read from the query string any more.
+// ---------------------------------------------------------------------------
+const ADMIN_COOKIE = "fh_admin";
+
+async function adminCookieValue(token: string): Promise<string> {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`fh-admin-cookie:${token}`));
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function cookieNamed(header: string | undefined, name: string): string | undefined {
+  if (!header) return undefined;
+  for (const part of header.split(";")) {
+    const [k, ...v] = part.trim().split("=");
+    if (k === name) return v.join("=");
   }
+  return undefined;
+}
+
+async function isAdminRequest(c: { req: { header(n: string): string | undefined }; env: Env }): Promise<boolean> {
+  const want = c.env.ADMIN_API_TOKEN;
+  if (!want) return false;
+  const bearer = c.req.header("Authorization")?.replace("Bearer ", "");
+  if (bearer && bearer === want) return true;
+  const cookie = cookieNamed(c.req.header("Cookie"), ADMIN_COOKIE);
+  return !!cookie && cookie === await adminCookieValue(want);
+}
+
+function loginPage(wrong = false): string {
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="robots" content="noindex"><title>Framehow Analytics</title>
+<style>${PAGE_STYLES} form { margin-top: 40px; display: flex; gap: 8px; } input { padding: 10px 12px; border-radius: 8px; border: 1px solid #333; background: #1a1a1a; color: #fff; font-size: 15px; width: 280px; }
+button { padding: 10px 16px; border-radius: 8px; border: 0; background: #4fc3f7; color: #000; font-weight: 600; font-size: 15px; cursor: pointer; }</style></head>
+<body><h1>Framehow Analytics</h1>
+<form method="post" action="/analytics/login" autocomplete="off"><input type="password" name="password" placeholder="admin password" autofocus><button>Sign in</button></form>
+${wrong ? '<p style="color:#ef5350;margin-top:12px">Wrong password.</p>' : ''}
+</body></html>`;
+}
+
+router.post("/analytics/login", async (c) => {
+  const form = await c.req.parseBody();
+  const given = String(form["password"] ?? "");
+  const want = c.env.ADMIN_API_TOKEN;
+  if (!want || given !== want) return c.html(loginPage(true), 401);
+  const value = await adminCookieValue(want);
+  c.header("Set-Cookie", `${ADMIN_COOKIE}=${value}; Path=/analytics; HttpOnly; Secure; SameSite=Strict; Max-Age=${30 * 86400}`);
+  return c.redirect("/analytics", 303);
+});
+
+router.post("/analytics/logout", (c) => {
+  c.header("Set-Cookie", `${ADMIN_COOKIE}=; Path=/analytics; HttpOnly; Secure; SameSite=Strict; Max-Age=0`);
+  return c.redirect("/analytics", 303);
+});
+
+router.use("/analytics", async (c, next) => {
+  if (await isAdminRequest(c)) return next();
+  return c.html(loginPage(), 401);
+});
+router.use("/analytics/*", async (c, next) => {
+  if (c.req.path === "/analytics/login" || c.req.path === "/analytics/logout") return next();
+  if (await isAdminRequest(c)) return next();
+  if (c.req.method === "GET" && !c.req.query("format")) return c.html(loginPage(), 401);
+  return c.json({ error: "unauthorized" }, 401);
+});
+
+// ─── GET /analytics — HTML Dashboard ───────────────────────────────────────
+// Visual dashboard. The door is the admin middleware above: a signed-in cookie or the Bearer header.
+router.get("/analytics", async (c) => {
 
   const db = c.env.DB;
   const [sessionsR, activeUsersR, totalUsersR, topEventsR,
@@ -388,7 +465,7 @@ router.get("/analytics", async (c) => {
   .hidden-items { display: none; }
   .hidden-items.show { display: block; }
 </style></head><body>
-<h1>Framehow Analytics</h1>
+<h1>Framehow Analytics <form method="post" action="/analytics/logout" style="display:inline;margin-left:12px"><button style="background:none;border:1px solid #333;color:#888;border-radius:6px;padding:3px 8px;font-size:12px;cursor:pointer">sign out</button></form></h1>
 
 <div class="cards">
   <div class="card"><div class="num">${totalUsers}</div><div class="label">Registered users</div></div>
@@ -399,16 +476,16 @@ router.get("/analytics", async (c) => {
   <div class="card"><div class="num">${phoneSessions}</div><div class="label">Phone sessions</div></div>
 </div>
 
-${await storageBarHtml(c.env, token)}
+${await storageBarHtml(c.env)}
 
 <div style="display:flex;gap:10px;flex-wrap:wrap;margin:16px 0 28px">
-  <a href="/analytics/users-list?token=${encodeURIComponent(token)}" class="expand-btn" style="font-size:13px;padding:8px 14px">All registered users (${totalUsers})</a>
-  <a href="/analytics/projects?token=${encodeURIComponent(token)}" class="expand-btn" style="font-size:13px;padding:8px 14px">Projects created (${totalProjects})</a>
-  <a href="/analytics/device-users?device=desktop&token=${encodeURIComponent(token)}" class="expand-btn" style="font-size:13px;padding:8px 14px">Desktop (${desktopUsers} users)</a>
-  <a href="/analytics/device-users?device=tablet&pwa=1&token=${encodeURIComponent(token)}" class="expand-btn" style="font-size:13px;padding:8px 14px">PWA Tablet (${pwaTabletUsers} users)</a>
-  <a href="/analytics/device-users?device=phone&pwa=1&token=${encodeURIComponent(token)}" class="expand-btn" style="font-size:13px;padding:8px 14px">PWA iPhone (${pwaPhoneUsers} users)</a>
-  <a href="/analytics/browser-mobile?token=${encodeURIComponent(token)}" class="expand-btn" style="font-size:13px;padding:8px 14px">Browser Mobile (${browserMobileSessions})</a>
-  <a href="/analytics/storage?token=${encodeURIComponent(token)}" class="expand-btn" style="font-size:13px;padding:8px 14px">Storage</a>
+  <a href="/analytics/users-list" class="expand-btn" style="font-size:13px;padding:8px 14px">All registered users (${totalUsers})</a>
+  <a href="/analytics/projects" class="expand-btn" style="font-size:13px;padding:8px 14px">Projects created (${totalProjects})</a>
+  <a href="/analytics/device-users?device=desktop" class="expand-btn" style="font-size:13px;padding:8px 14px">Desktop (${desktopUsers} users)</a>
+  <a href="/analytics/device-users?device=tablet&pwa=1" class="expand-btn" style="font-size:13px;padding:8px 14px">PWA Tablet (${pwaTabletUsers} users)</a>
+  <a href="/analytics/device-users?device=phone&pwa=1" class="expand-btn" style="font-size:13px;padding:8px 14px">PWA iPhone (${pwaPhoneUsers} users)</a>
+  <a href="/analytics/browser-mobile" class="expand-btn" style="font-size:13px;padding:8px 14px">Browser Mobile (${browserMobileSessions})</a>
+  <a href="/analytics/storage" class="expand-btn" style="font-size:13px;padding:8px 14px">Storage</a>
 </div>
 
 <h2>Funnel <span style="font-size:12px;color:#666;font-weight:400">(unique sessions per step, since tracking deployed)</span></h2>
@@ -422,8 +499,8 @@ ${funnelSteps.map((s: any) => {
 <tbody>
 ${top10Sessions.map((s: any) => {
   const who = s.uid
-    ? `<a href="/analytics/user/${s.uid}?token=${encodeURIComponent(token)}">${esc(s.name || s.email || s.uid)}</a>`
-    : `<a href="/analytics/session/${s.sid}?token=${encodeURIComponent(token)}" class="meta">anonymous</a>`;
+    ? `<a href="/analytics/user/${s.uid}">${esc(s.name || s.email || s.uid)}</a>`
+    : `<a href="/analytics/session/${s.sid}" class="meta">anonymous</a>`;
   return `<tr>
   <td>${who}${s.pwa ? ' <span class="pwa">PWA</span>' : ''}</td>
   <td>${esc(s.device) || '-'}</td>
@@ -438,8 +515,8 @@ ${top10Sessions.map((s: any) => {
 ${restSessions.length > 0 ? `<tbody id="more-sessions" class="hidden-rows">
 ${restSessions.map((s: any) => {
   const who = s.uid
-    ? `<a href="/analytics/user/${s.uid}?token=${encodeURIComponent(token)}">${esc(s.name || s.email || s.uid)}</a>`
-    : `<a href="/analytics/session/${s.sid}?token=${encodeURIComponent(token)}" class="meta">anonymous</a>`;
+    ? `<a href="/analytics/user/${s.uid}">${esc(s.name || s.email || s.uid)}</a>`
+    : `<a href="/analytics/session/${s.sid}" class="meta">anonymous</a>`;
   return `<tr>
   <td>${who}${s.pwa ? ' <span class="pwa">PWA</span>' : ''}</td>
   <td>${esc(s.device) || '-'}</td>
@@ -456,14 +533,14 @@ ${restSessions.length > 0 ? `<a class="expand-btn" onclick="document.getElementB
 
 <h2>Signpost choices</h2>
 <div class="signpost">
-${Object.entries(signpostCounts).map(([k, v]) => `<div class="chip"><b>${v}</b> ${k}</div>`).join("") || "<span class='meta'>No data yet</span>"}
+${Object.entries(signpostCounts).map(([k, v]) => `<div class="chip"><b>${v}</b> ${esc(k)}</div>`).join("") || "<span class='meta'>No data yet</span>"}
 </div>
 
 <h2>Top users</h2>
 <table><thead><tr><th>User</th><th>Sessions</th><th>Events</th><th>Devices</th><th>Last seen</th></tr></thead>
 <tbody>
 ${top10Users.map((u: any) => `<tr>
-  <td><a href="/analytics/user/${u.id}?token=${encodeURIComponent(token)}">${esc(u.name || u.email || u.id)}</a>${u.profession ? ` <span class="meta">${esc(u.profession)}</span>` : ''}</td>
+  <td><a href="/analytics/user/${u.id}">${esc(u.name || u.email || u.id)}</a>${u.profession ? ` <span class="meta">${esc(u.profession)}</span>` : ''}</td>
   <td>${u.session_count}</td>
   <td>${u.total_events}</td>
   <td>${esc(u.devices) || '-'}</td>
@@ -472,7 +549,7 @@ ${top10Users.map((u: any) => `<tr>
 </tbody>
 ${restUsers.length > 0 ? `<tbody id="more-users" class="hidden-rows">
 ${restUsers.map((u: any) => `<tr>
-  <td><a href="/analytics/user/${u.id}?token=${encodeURIComponent(token)}">${esc(u.name || u.email || u.id)}</a>${u.profession ? ` <span class="meta">${esc(u.profession)}</span>` : ''}</td>
+  <td><a href="/analytics/user/${u.id}">${esc(u.name || u.email || u.id)}</a>${u.profession ? ` <span class="meta">${esc(u.profession)}</span>` : ''}</td>
   <td>${u.session_count}</td>
   <td>${u.total_events}</td>
   <td>${esc(u.devices) || '-'}</td>
@@ -485,10 +562,10 @@ ${restUsers.length > 0 ? `<a class="expand-btn" onclick="document.getElementById
 <h2>Top events</h2>
 <table><thead><tr><th>Event</th><th>Count</th></tr></thead>
 <tbody>
-${top10Events.map((e: any) => `<tr><td>${e.event}</td><td>${e.n}</td></tr>`).join("")}
+${top10Events.map((e: any) => `<tr><td>${esc(e.event)}</td><td>${e.n}</td></tr>`).join("")}
 </tbody>
 ${restEvents.length > 0 ? `<tbody id="more-events" class="hidden-rows">
-${restEvents.map((e: any) => `<tr><td>${e.event}</td><td>${e.n}</td></tr>`).join("")}
+${restEvents.map((e: any) => `<tr><td>${esc(e.event)}</td><td>${e.n}</td></tr>`).join("")}
 </tbody>` : ''}
 </table>
 ${restEvents.length > 0 ? `<a class="expand-btn" onclick="document.getElementById('more-events').classList.toggle('show');this.textContent=this.textContent.includes('more')?'Show less':'Show ${restEvents.length} more events &darr;'">Show ${restEvents.length} more events &darr;</a>` : ''}
@@ -525,8 +602,6 @@ ${restRecentEvents.length > 0 ? `<a class="expand-btn" onclick="document.getElem
 
 // ─── GET /analytics/user/:uid — User detail: profile + sessions list ──────
 router.get("/analytics/user/:uid", async (c) => {
-  const token = c.req.query("token");
-  if (!token || token !== c.env.ADMIN_API_TOKEN) return c.json({ error: "unauthorized" }, 401);
 
   const uid = c.req.param("uid");
   const db = c.env.DB;
@@ -547,7 +622,7 @@ router.get("/analytics/user/:uid", async (c) => {
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(u?.name || u?.email || uid)} — Framehow Analytics</title>
 <style>${PAGE_STYLES}</style></head><body>
-<a class="back" href="/analytics/users-list?token=${encodeURIComponent(token)}">&larr; All users</a>
+<a class="back" href="/analytics/users-list">&larr; All users</a>
 <div class="user-header">
   <div class="name">${esc(u?.name || 'Unknown user')}</div>
   <div class="detail">${esc(u?.email || '')}</div>
@@ -560,7 +635,7 @@ router.get("/analytics/user/:uid", async (c) => {
 <table>
 <tr><th>Started</th><th>Device</th><th>Browser</th><th>Country</th><th>Duration</th><th>Events</th></tr>
 ${allSessions.map((s: any) => `<tr>
-  <td><a href="/analytics/session/${s.sid}?token=${encodeURIComponent(token)}">${fmtTime(s.started_at)}</a></td>
+  <td><a href="/analytics/session/${s.sid}">${fmtTime(s.started_at)}</a></td>
   <td>${esc(s.device) || '-'}${s.pwa ? ' <span class="pwa">PWA</span>' : ''}</td>
   <td>${esc(s.browser) || '-'}</td>
   <td>${flag(s.country)} ${esc(s.country) || '-'}</td>
@@ -576,8 +651,6 @@ ${allSessions.map((s: any) => `<tr>
 
 // ─── GET /analytics/session/:sid — Anonymous session detail ───────────────
 router.get("/analytics/session/:sid", async (c) => {
-  const token = c.req.query("token");
-  if (!token || token !== c.env.ADMIN_API_TOKEN) return c.json({ error: "unauthorized" }, 401);
 
   const sid = c.req.param("sid");
   const db = c.env.DB;
@@ -594,7 +667,7 @@ router.get("/analytics/session/:sid", async (c) => {
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Session ${esc(sid.slice(0, 8))} — Framehow Analytics</title>
 <style>${PAGE_STYLES}</style></head><body>
-<a class="back" href="/analytics?token=${encodeURIComponent(token)}">&larr; Dashboard</a>
+<a class="back" href="/analytics">&larr; Dashboard</a>
 <div class="user-header">
   <div class="name">Session ${esc(sid.slice(0, 12))}...</div>
   ${s ? `<div class="detail">${esc(s.device)} / ${esc(s.browser)} ${s.pwa ? '<span class="pwa">PWA</span>' : ''} &middot; ${flag(s.country)} ${esc(s.country)}</div>
@@ -626,8 +699,6 @@ ${allEvents.map((e: any) => {
 
 // ─── GET /analytics/users-list — All registered users ─────────────────────
 router.get("/analytics/users-list", async (c) => {
-  const token = c.req.query("token");
-  if (!token || token !== c.env.ADMIN_API_TOKEN) return c.json({ error: "unauthorized" }, 401);
 
   const db = c.env.DB;
   const result = await db.prepare(
@@ -659,14 +730,14 @@ router.get("/analytics/users-list", async (c) => {
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>All Users — Framehow Analytics</title>
 <style>${PAGE_STYLES}</style></head><body>
-<a class="back" href="/analytics?token=${encodeURIComponent(token)}">&larr; Dashboard</a>
+<a class="back" href="/analytics">&larr; Dashboard</a>
 <h1>All Users (${users.length})</h1>
 
 
 <table>
 <tr><th>Name</th><th>Email</th><th>Profession</th><th>Registered</th><th>Sessions</th><th>Events</th><th>Time in app</th><th>Devices</th><th>Countries</th><th>Last seen</th><th></th></tr>
 ${users.map((u: any) => `<tr>
-  <td><a href="/analytics/user/${u.id}?token=${encodeURIComponent(token)}">${esc(u.name) || '<span class="meta">—</span>'}</a></td>
+  <td><a href="/analytics/user/${u.id}">${esc(u.name) || '<span class="meta">—</span>'}</a></td>
   <td>${esc(u.email)}</td>
   <td>${esc(u.profession) || '-'}</td>
   <td style="white-space:nowrap">${u.user_created ? fmtDate(u.user_created) : '-'}</td>
@@ -677,11 +748,11 @@ ${users.map((u: any) => `<tr>
   <td>${(u.countries || '').split(',').filter(Boolean).map((cc: string) => flag(cc.trim())).join(' ') || '-'}</td>
   <td style="white-space:nowrap">${u.last_seen ? fmtTime(u.last_seen) : '<span class="meta">no activity</span>'}</td>
   <td><form method="post" action="/analytics/set-password" onsubmit="return confirm('Give ${esc(u.name || u.email).replace(/'/g, "")} a new password? Their old one stops working at once and they are signed out everywhere.')">
-    <input type="hidden" name="token" value="${esc(token)}"><input type="hidden" name="user" value="${esc(u.id)}">
+    <input type="hidden" name="user" value="${esc(u.id)}">
     <button class="expand-btn" style="margin:0;white-space:nowrap">New password</button></form></td>
 </tr>`).join("")}
 </table>
-<p style="margin-top:16px"><a href="/analytics/deleted-users?token=${encodeURIComponent(token)}" class="expand-btn">Deleted accounts (${closing.length})</a></p>
+<p style="margin-top:16px"><a href="/analytics/deleted-users" class="expand-btn">Deleted accounts (${closing.length})</a></p>
 
 </body></html>`;
 
@@ -696,14 +767,12 @@ ${users.map((u: any) => `<tr>
 // they are signed in on drops out — so a stolen password cannot outlive this.
 router.post("/analytics/set-password", async (c) => {
   const form = await c.req.parseBody();
-  const token = String(form["token"] ?? "");
-  if (!token || token !== c.env.ADMIN_API_TOKEN) return c.json({ error: "unauthorized" }, 401);
   const userId = String(form["user"] ?? "").trim();
   if (!userId) return c.json({ error: "user_required" }, 400);
 
   const who = await c.env.DB.prepare(`SELECT id, name, email FROM users WHERE id = ? AND deleted_at IS NULL`)
     .bind(userId).first<{ id: string; name: string | null; email: string }>();
-  if (!who) return c.html(`<p>No such account. <a href="/analytics/users-list?token=${encodeURIComponent(token)}">Back</a></p>`);
+  if (!who) return c.html(`<p>No such account. <a href="/analytics/users-list">Back</a></p>`);
 
   // Words, not a jumble: this is read aloud or typed by hand on a phone.
   const WORDS = ["amber", "anchor", "basalt", "cedar", "cobalt", "dune", "ember", "fjord", "granite", "harbour",
@@ -724,7 +793,7 @@ router.post("/analytics/set-password", async (c) => {
   console.log(`[analytics] new password set by hand for ${userId}`);
 
   return c.html(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>New password</title><style>${PAGE_STYLES}</style></head><body>
-<p><a href="/analytics/users-list?token=${encodeURIComponent(token)}">← All users</a></p>
+<p><a href="/analytics/users-list">← All users</a></p>
 <h1>New password for ${esc(who.name || who.email)}</h1>
 <div class="card" style="margin:16px 0"><div class="num" style="font-family:monospace;font-size:28px">${esc(password)}</div>
 <div class="label">${esc(who.email)}</div></div>
@@ -734,9 +803,6 @@ router.post("/analytics/set-password", async (c) => {
 
 // ─── GET /analytics/deleted-users — accounts on their way out, with Restore ──
 router.get("/analytics/deleted-users", async (c) => {
-  const token = c.req.query("token");
-  if (!token || token !== c.env.ADMIN_API_TOKEN) return c.json({ error: "unauthorized" }, 401);
-  const t = encodeURIComponent(token);
 
   const rows = await c.env.DB.prepare(
     `SELECT u.id, u.name, u.email, u.deleted_at,
@@ -749,7 +815,7 @@ router.get("/analytics/deleted-users", async (c) => {
   const html = `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Deleted accounts — Framehow Analytics</title><style>${PAGE_STYLES}</style></head><body>
-<a class="back" href="/analytics/users-list?token=${t}">&larr; All users</a>
+<a class="back" href="/analytics/users-list">&larr; All users</a>
 <h1>Deleted accounts (${closing.length})</h1>
 <p class="meta">Kept for seven days, then the nightly sweep erases the account, its projects, its pictures and its visit history. Nothing can be brought back after that.</p>
 <table><thead><tr><th>Account</th><th>Deleted</th><th>Erased on</th><th>Days left</th><th>Projects held</th><th></th></tr></thead>
@@ -762,7 +828,7 @@ router.get("/analytics/deleted-users", async (c) => {
   <td style="color:${left <= 1 ? '#ff6b6b' : '#ccc'}">${left > 0 ? left : 'due'}</td>
   <td>${u.projects}</td>
   <td><form method="post" action="/analytics/restore-account" onsubmit="return confirm('Bring back the account of ${esc(u.name || u.email).replace(/'/g, "")} with all its projects?')">
-    <input type="hidden" name="token" value="${esc(token)}"><input type="hidden" name="user" value="${esc(u.id)}">
+    <input type="hidden" name="user" value="${esc(u.id)}">
     <button class="expand-btn" style="margin:0">Restore</button></form></td>
 </tr>`;
 }).join('') || '<tr><td colspan="6" class="meta">None — nobody has deleted their account.</td></tr>'}</tbody></table>
@@ -772,8 +838,6 @@ router.get("/analytics/deleted-users", async (c) => {
 
 // ─── GET /analytics/projects — Projects breakdown ─────────────────────────
 router.get("/analytics/projects", async (c) => {
-  const token = c.req.query("token");
-  if (!token || token !== c.env.ADMIN_API_TOKEN) return c.json({ error: "unauthorized" }, 401);
 
   const db = c.env.DB;
   const [totalR, projectsR, signpostR] = await Promise.all([
@@ -814,7 +878,7 @@ router.get("/analytics/projects", async (c) => {
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Projects — Framehow Analytics</title>
 <style>${PAGE_STYLES}</style></head><body>
-<a class="back" href="/analytics?token=${encodeURIComponent(token)}">&larr; Dashboard</a>
+<a class="back" href="/analytics">&larr; Dashboard</a>
 <h1>Projects (${total})</h1>
 
 <div class="cards">
@@ -844,8 +908,6 @@ ${projects.map((p: any) => `<tr>
 
 // ─── GET /analytics/device-users — Users filtered by device + pwa ──────────
 router.get("/analytics/device-users", async (c) => {
-  const token = c.req.query("token");
-  if (!token || token !== c.env.ADMIN_API_TOKEN) return c.json({ error: "unauthorized" }, 401);
 
   const device = c.req.query("device") || "desktop";
   const pwaFilter = c.req.query("pwa");
@@ -882,7 +944,7 @@ router.get("/analytics/device-users", async (c) => {
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${label} Users — Framehow Analytics</title>
 <style>${PAGE_STYLES}</style></head><body>
-<a class="back" href="/analytics?token=${encodeURIComponent(token)}">&larr; Dashboard</a>
+<a class="back" href="/analytics">&larr; Dashboard</a>
 <h1>${label} Users (${users.length}) ${emails.length > 0
   ? `<a href="#" onclick="navigator.clipboard.writeText('${emails.join(',')}');this.textContent='Copied!';setTimeout(()=>this.textContent='Copy all emails',1500);return false" style="font-size:13px;font-weight:400;margin-left:12px">Copy all emails</a>`
   : ''}</h1>
@@ -890,7 +952,7 @@ router.get("/analytics/device-users", async (c) => {
 <table>
 <tr><th>Name</th><th>Email</th><th>Profession</th><th>Sessions</th><th>Events</th><th>Browsers</th><th>Countries</th><th>Last seen</th></tr>
 ${users.map((u: any) => `<tr>
-  <td><a href="/analytics/user/${u.id}?token=${encodeURIComponent(token)}">${esc(u.name) || '<span class="meta">—</span>'}</a></td>
+  <td><a href="/analytics/user/${u.id}">${esc(u.name) || '<span class="meta">—</span>'}</a></td>
   <td>${esc(u.email)}</td>
   <td>${esc(u.profession) || '-'}</td>
   <td>${u.session_count}</td>
@@ -908,8 +970,6 @@ ${users.map((u: any) => `<tr>
 
 // ─── GET /analytics/browser-mobile — Mobile browser users (not PWA) ───────
 router.get("/analytics/browser-mobile", async (c) => {
-  const token = c.req.query("token");
-  if (!token || token !== c.env.ADMIN_API_TOKEN) return c.json({ error: "unauthorized" }, 401);
 
   const db = c.env.DB;
   const [sessionsR, usersR] = await Promise.all([
@@ -942,7 +1002,7 @@ router.get("/analytics/browser-mobile", async (c) => {
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Browser Mobile — Framehow Analytics</title>
 <style>${PAGE_STYLES}</style></head><body>
-<a class="back" href="/analytics?token=${encodeURIComponent(token)}">&larr; Dashboard</a>
+<a class="back" href="/analytics">&larr; Dashboard</a>
 <h1>Browser Mobile (not PWA)</h1>
 <p style="color:#888;font-size:13px;margin-bottom:20px">Users on phone or tablet who use the browser instead of the installed PWA. These users could benefit from adding the app to their home screen.</p>
 
@@ -952,7 +1012,7 @@ router.get("/analytics/browser-mobile", async (c) => {
 <table>
 <tr><th>Name</th><th>Email</th><th>Profession</th><th>Device</th><th>Browser</th><th>Country</th></tr>
 ${browserOnlyUsers.map((u: any) => `<tr>
-  <td><a href="/analytics/user/${u.id}?token=${encodeURIComponent(token)}">${esc(u.name) || '<span class="meta">—</span>'}</a></td>
+  <td><a href="/analytics/user/${u.id}">${esc(u.name) || '<span class="meta">—</span>'}</a></td>
   <td>${esc(u.email)}</td>
   <td>${esc(u.profession) || '-'}</td>
   <td>${esc(u.device)}</td>
@@ -966,8 +1026,8 @@ ${browserOnlyUsers.map((u: any) => `<tr>
 <tr><th>Who</th><th>Device</th><th>Browser</th><th>Country</th><th>Duration</th><th>Events</th><th>Last seen</th></tr>
 ${sessions.map((s: any) => {
   const who = s.uid
-    ? `<a href="/analytics/user/${s.uid}?token=${encodeURIComponent(token)}">${esc(s.name || s.email || s.uid)}</a>`
-    : `<a href="/analytics/session/${s.sid}?token=${encodeURIComponent(token)}" class="meta">anonymous</a>`;
+    ? `<a href="/analytics/user/${s.uid}">${esc(s.name || s.email || s.uid)}</a>`
+    : `<a href="/analytics/session/${s.sid}" class="meta">anonymous</a>`;
   return `<tr>
   <td>${who}</td>
   <td>${esc(s.device) || '-'}</td>
@@ -990,8 +1050,6 @@ ${sessions.map((s: any) => {
 // project row names. Read-only: this page deletes nothing.
 // ---------------------------------------------------------------------------
 router.get("/analytics/storage", async (c) => {
-  const token = c.req.query("token");
-  if (!token || token !== c.env.ADMIN_API_TOKEN) return c.json({ error: "unauthorized" }, 401);
   // THE FIGURES AS NUMBERS (12 Oct), for the simulator: the running total,
   // the ceiling, the estimated cost — what the bar on the page is drawn from.
   if (c.req.query("format") === "json") {
@@ -1083,9 +1141,9 @@ router.get("/analytics/storage", async (c) => {
   const html = `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Framehow Storage</title><style>${PAGE_STYLES}</style></head><body>
-<p><a href="/analytics?token=${encodeURIComponent(token)}" style="color:#4fc3f7">← Analytics</a></p>
+<p><a href="/analytics" style="color:#4fc3f7">← Analytics</a></p>
 <h1>Storage</h1>
-${await storageBarHtml(c.env, token)}
+${await storageBarHtml(c.env)}
 <p class="meta">Limit per account: ${mb(limit)} MB. Sizes are what the server has recorded; pictures uploaded before sizes were kept count as 0 until they are re-sent or measured.</p>
 
 <div class="cards">
@@ -1100,7 +1158,7 @@ ${await storageBarHtml(c.env, token)}
 <table><thead><tr><th>Account</th><th>Projects</th><th>Pictures</th><th>Used</th><th>Of limit</th><th>In deleted</th></tr></thead>
 <tbody>${rows}</tbody></table>
 <p class="meta">Named files in the bucket: ${mb(namedBytes)} MB.</p>
-<p><a href="/analytics/dead-pictures?token=${encodeURIComponent(token)}" class="expand-btn">Dead pictures — the cleaner's count (checks restore points and age; deletes nothing)</a></p>
+<p><a href="/analytics/dead-pictures" class="expand-btn">Dead pictures — the cleaner's count (checks restore points and age; deletes nothing)</a></p>
 </body></html>`;
   return c.html(html);
 });
@@ -1110,25 +1168,20 @@ ${await storageBarHtml(c.env, token)}
 // RECOUNT NOW (12 Oct): what the nightly sweep does to the figures, on
 // demand — the bucket is listed and the running totals set to the truth.
 router.post("/analytics/recount", async (c) => {
-  const form = await c.req.parseBody();
-  const token = String(form["token"] ?? "");
-  if (!token || token !== c.env.ADMIN_API_TOKEN) return c.json({ error: "unauthorized" }, 401);
   if (!c.env.IMAGES_BUCKET) return c.json({ error: "no bucket" }, 500);
   const { recalibrate } = await import("../lib/totals");
   const t = await recalibrate(c.env.DB, c.env.IMAGES_BUCKET);
   console.log(`[analytics] recount: ${t.files} files, ${t.bytes} bytes`);
-  return c.redirect(`/analytics/storage?token=${encodeURIComponent(token)}`);
+  return c.redirect(`/analytics/storage`);
 });
 
 router.post("/analytics/restore-account", async (c) => {
   const form = await c.req.parseBody();
-  const token = String(form["token"] ?? "");
-  if (!token || token !== c.env.ADMIN_API_TOKEN) return c.json({ error: "unauthorized" }, 401);
   const userId = String(form["user"] ?? "").trim();
   if (!userId) return c.json({ error: "user_required" }, 400);
 
   const row = await c.env.DB.prepare(`SELECT id, deleted_at FROM users WHERE id = ?`).bind(userId).first<{ id: string; deleted_at: number | null }>();
-  if (!row) return c.html(`<p>That account no longer exists — it has been erased. <a href="/analytics/users-list?token=${encodeURIComponent(token)}">Back</a></p>`);
+  if (!row) return c.html(`<p>That account no longer exists — it has been erased. <a href="/analytics/users-list">Back</a></p>`);
 
   const now = Date.now();
   await c.env.DB.batch([
@@ -1139,7 +1192,7 @@ router.post("/analytics/restore-account", async (c) => {
   ]);
   console.log(`[analytics] account ${userId} brought back`);
   return c.html(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Restored</title><style>${PAGE_STYLES}</style></head><body>
-<p><a href="/analytics/users-list?token=${encodeURIComponent(token)}">← All users</a></p>
+<p><a href="/analytics/users-list">← All users</a></p>
 <h1>The account is back</h1>
 <p class="meta">They can sign in again, and the projects deleted with the account are back in their list.</p>
 </body></html>`);
@@ -1149,10 +1202,7 @@ router.post("/analytics/restore-account", async (c) => {
 // DEAD PICTURES — the cleaner in COUNTING MODE (22 Sept). Deletes nothing.
 // ---------------------------------------------------------------------------
 router.get("/analytics/dead-pictures", async (c) => {
-  const token = c.req.query("token");
-  if (!token || token !== c.env.ADMIN_API_TOKEN) return c.json({ error: "unauthorized" }, 401);
   if (!c.env.IMAGES_BUCKET) return c.html("<p>No bucket bound.</p>");
-  const t = encodeURIComponent(token);
   const mb = (b: number) => (b / 1048576).toFixed(b < 10 * 1048576 ? 1 : 0);
 
   // The simulator may move the clock forward (FH_E2E only), so a file it
@@ -1167,7 +1217,7 @@ router.get("/analytics/dead-pictures", async (c) => {
   const html = `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Framehow — Dead pictures</title><style>${PAGE_STYLES}</style></head><body>
-<p><a href="/analytics/storage?token=${t}" style="color:#4fc3f7">← Storage</a></p>
+<p><a href="/analytics/storage" style="color:#4fc3f7">← Storage</a></p>
 <h1>Dead pictures <span style="font-size:13px;color:#888;font-weight:400">counting only — nothing is deleted on this page</span></h1>
 <p class="meta">A picture file is dead when no project (live or recoverable) names it, no restore point names it, and it is older than 24 hours. ${count.restorePoints} restore point(s) were checked.${count.truncated ? " <b style='color:#ff6b6b'>The bucket has more files than one pass can list — the numbers are partial.</b>" : ""}</p>
 
@@ -1181,7 +1231,7 @@ router.get("/analytics/dead-pictures", async (c) => {
 <table><thead><tr><th>Account</th><th>Files</th><th>Size</th><th></th></tr></thead>
 <tbody>${count.deadByOwner.map((o) => `<tr><td>${esc(who.get(o.userId) ?? o.userId)}</td><td>${o.files}</td><td>${mb(o.bytes)} MB</td>
   <td><form method="post" action="/analytics/dead-pictures/delete" onsubmit="return confirm('Delete ${o.files} dead picture file(s) of ${esc(who.get(o.userId) ?? o.userId).replace(/'/g, "")} for good (${mb(o.bytes)} MB)? Nothing any project or restore point holds is touched. This cannot be undone.')">
-    <input type="hidden" name="token" value="${esc(token)}"><input type="hidden" name="owner" value="${esc(o.userId)}">
+    <input type="hidden" name="owner" value="${esc(o.userId)}">
     <button class="expand-btn" style="color:#ff6b6b;margin:0">Delete this account's dead files</button></form></td></tr>`).join("") || `<tr><td colspan="4" class="meta">none</td></tr>`}</tbody></table>
 <p class="meta">Deleting decides again at that moment (never from this page's count), one account at a time, and writes every deleted file to the worker log. Files younger than 24 hours are never touched.</p>
 
@@ -1195,8 +1245,6 @@ router.get("/analytics/dead-pictures", async (c) => {
 // afresh here. FH_E2E may move the clock, as for the count.
 router.post("/analytics/dead-pictures/delete", async (c) => {
   const form = await c.req.parseBody();
-  const token = String(form["token"] ?? c.req.query("token") ?? "");
-  if (!token || token !== c.env.ADMIN_API_TOKEN) return c.json({ error: "unauthorized" }, 401);
   if (!c.env.IMAGES_BUCKET) return c.json({ error: "no bucket" }, 500);
   const owner = String(form["owner"] ?? c.req.query("owner") ?? "").trim();
   if (!owner) return c.json({ error: "owner_required", message: "one account at a time" }, 400);
@@ -1206,7 +1254,7 @@ router.post("/analytics/dead-pictures/delete", async (c) => {
   if (c.req.query("format") === "json" || c.req.header("Accept")?.includes("application/json")) return c.json(result);
   const mb = (b: number) => (b / 1048576).toFixed(b < 10 * 1048576 ? 1 : 0);
   return c.html(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Deleted</title><style>${PAGE_STYLES}</style></head><body>
-<p><a href="/analytics/dead-pictures?token=${encodeURIComponent(token)}">← Dead pictures</a></p>
+<p><a href="/analytics/dead-pictures">← Dead pictures</a></p>
 <h1>Deleted ${result.deleted} dead picture file(s) — ${mb(result.bytesFreed)} MB freed</h1>
 <p class="meta">Every file is listed in the worker log. Open the Dead pictures page again for the new count.</p>
 </body></html>`);

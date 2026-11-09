@@ -45,8 +45,8 @@ function noisePng(width: number, height: number): Buffer {
 interface Count { files: number; inUse: number; young: number; dead: number; deadKeys: string[]; restorePoints: number }
 
 async function count(now?: number): Promise<Count> {
-  const url = `${API}/analytics/dead-pictures?token=${ADMIN}&format=json${now ? `&now=${now}` : ''}`;
-  const res = await fetch(url);
+  const url = `${API}/analytics/dead-pictures?format=json${now ? `&now=${now}` : ''}`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${ADMIN}` } });
   expect(res.status, 'the count answers').toBe(200);
   return await res.json() as Count;
 }
@@ -130,8 +130,8 @@ test('dead pictures: the count calls only the truly dead files dead, and a resto
   say('DELETE the dead files of this account, as if a day had passed');
   const meId = orphan.split('/')[1];
   const del = await fetch(`${API}/analytics/dead-pictures/delete?format=json`, {
-    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ token: ADMIN, owner: meId, now: String(Date.now() + 25 * 60 * 60 * 1000) }),
+    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', Authorization: `Bearer ${ADMIN}` },
+    body: new URLSearchParams({ owner: meId, now: String(Date.now() + 25 * 60 * 60 * 1000) }),
   });
   expect(del.status, 'the delete answers').toBe(200);
   const deleted = await del.json() as { deleted: number; keys: string[] };

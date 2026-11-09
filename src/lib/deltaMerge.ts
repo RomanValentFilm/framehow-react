@@ -194,3 +194,63 @@ export function untouchedByDelta(
   const mentioned = new Set(delta.frames.map((f) => f.id));
   return new Set(folded.frames.map((f) => f.id).filter((id) => !mentioned.has(id)));
 }
+
+/** What the last push carried, by id — the only rows a pull may call "mine". */
+export interface SentRows {
+  frames: Set<string>;
+  versions: Set<string>;
+  images: Set<string>;     // version_id
+  drawings: Set<string>;   // version_id
+  settings: Set<string>;   // kind/item_id
+  deletions: Set<string>;  // entity_type/entity_id
+}
+
+/**
+ * IS THIS ANSWER MY OWN PUSH COMING BACK? (#320 → audit 9 Nov, A1)
+ *
+ * A push's reply is the whole project as the server then holds it, and it is
+ * kept (holdTree). The pull that follows — "what changed since I last HEARD?"
+ * — brings back the very rows that push wrote, because pushing is not hearing
+ * (#320) and the mark did not move. Those rows are then applied: the whole
+ * storyboard is rebuilt and the page redrawn, for nothing. After the shutter
+ * on the phone that redraw is what makes the page busy and the picture's move
+ * to its card start late.
+ *
+ * So, before applying: if every row the delta carries is one THIS DEVICE SENT
+ * in its last push, byte-for-byte the row the server handed back for it, and
+ * every tombstone is one it sent, the answer is news to nobody. The caller
+ * takes the watermark and leaves the screen alone — as for an empty answer
+ * (#349).
+ *
+ * "Sent" is the whole point (run 583). The push reply also holds the OTHER
+ * device's rows, which this device has never shown — the push path keeps the
+ * reply's settings and throws its frames away. Comparing against the reply
+ * alone called those rows "already held" and the iPad kept a version the
+ * desktop had deleted. A row this device did not send is news, whatever the
+ * held copy says.
+ *
+ * Strict on purpose: one row not sent, one field different → false → the
+ * ordinary path. Being wrong here can only cost a redraw, never a row.
+ */
+export function deltaAlreadyHeld(held: MergeableTree, delta: MergeableTree, sent: SentRows | null): boolean {
+  if (delta.full !== false || !sent) return false;
+  const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
+  const heldFrames = byId(held.frames);
+  for (const f of delta.frames) if (!sent.frames.has(f.id) || !same(heldFrames.get(f.id), f)) return false;
+  const heldVersions = byId(held.versions);
+  for (const v of delta.versions) if (!sent.versions.has(v.id) || !same(heldVersions.get(v.id), v)) return false;
+  const heldImages = new Map(held.images.map((i) => [i.version_id, i]));
+  for (const i of delta.images) if (!sent.images.has(i.version_id) || !same(heldImages.get(i.version_id), i)) return false;
+  const heldDrawings = new Map(held.drawings.map((d) => [d.version_id, d]));
+  for (const d of delta.drawings) if (!sent.drawings.has(d.version_id) || !same(heldDrawings.get(d.version_id), d)) return false;
+  const heldSettings = new Map((held.settings ?? []).map((s) => [`${s.kind}/${s.item_id}`, s]));
+  for (const s of delta.settings ?? []) {
+    const k = `${s.kind}/${s.item_id}`;
+    if (!sent.settings.has(k) || !same(heldSettings.get(k), s)) return false;
+  }
+  for (const d of delta.deletions ?? []) if (!sent.deletions.has(`${d.entity_type}/${d.entity_id}`)) return false;
+  // The project row carries updated_at and the last device: the push reply
+  // has the same values as long as nobody else wrote in between.
+  if (delta.project && !same(held.project, delta.project)) return false;
+  return true;
+}

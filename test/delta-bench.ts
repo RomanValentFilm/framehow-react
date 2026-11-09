@@ -9,7 +9,7 @@
 
 import {
   mergeDelta, lastMergeRefusal, answerIsSafeToApply,
-  untouchedByDelta, type MergeableTree,
+  untouchedByDelta, deltaAlreadyHeld, type MergeableTree, type SentRows,
 } from '../src/lib/deltaMerge';
 import { nextRetryWait, timeToTryAgain, makeRetryClock } from '../src/lib/retryWait';
 import {
@@ -94,6 +94,46 @@ const ids = (rows: Array<{ id: string }>) => rows.map((r) => r.id).sort().join('
   check('an empty delta leaves all 45 frames', merged.frames.length, 45);
   check('...and all their versions', merged.versions.length, 45);
   check('...and all their pictures', merged.images.length, 45);
+}
+
+// ---------------------------------------------------------------------------
+// 1b. My own push comes back — the answer is what I already stand on (A1, 9 Nov)
+// ---------------------------------------------------------------------------
+{
+  // The push reply: frame f3 and its picture as the server now holds them.
+  const held = project(45);
+  const f3 = frame('f3', 5000, { text_content: 'after the shutter' });
+  held.frames = held.frames.map((f) => ((f as { id: string }).id === 'f3' ? f3 : f));
+  const img = { id: 'img-new', version_id: 'f3-v0', r2_key: 'users/u/new.jpg', updated_at: 5000 } as never;
+  held.images = held.images.map((i) => ((i as { version_id: string }).version_id === 'f3-v0' ? img : i));
+  held.project = { id: 'p', name: 'Bench', updated_at: 5000, last_device_id: 'me' };
+  const sent: SentRows = { frames: new Set(['f3']), versions: new Set(), images: new Set(['f3-v0']), drawings: new Set(), settings: new Set(), deletions: new Set(['frame/f7']) };
+
+  // The pull that follows: the same rows, copied field for field.
+  const same = emptyDelta({ project: { ...(held.project as object) }, frames: [{ ...(f3 as object) } as never], images: [{ ...(img as object) } as never] });
+  check('the pull brings back exactly my own push → nothing new', deltaAlreadyHeld(held, same, sent), true);
+
+  const other = emptyDelta({ project: { ...(held.project as object) }, frames: [frame('f3', 5200, { text_content: 'the iPad wrote' })] });
+  check('one field differs (another device wrote f3) → news', deltaAlreadyHeld(held, other, sent), false);
+
+  const newFrame = emptyDelta({ project: { ...(held.project as object) }, frames: [frame('f99', 5300)] });
+  check('a frame I never had → news', deltaAlreadyHeld(held, newFrame, sent), false);
+
+  const knownGone = { ...held, deletions: [{ entity_type: 'frame', entity_id: 'f7', deleted_at: 4000 }] };
+  check('a tombstone I already know → nothing new',
+    deltaAlreadyHeld(knownGone, emptyDelta({ project: { ...(held.project as object) }, deletions: [{ entity_type: 'frame', entity_id: 'f7', deleted_at: 4000 }] }), sent), true);
+  check('a tombstone I do not know → news',
+    deltaAlreadyHeld(held, emptyDelta({ project: { ...(held.project as object) }, deletions: [{ entity_type: 'frame', entity_id: 'f8', deleted_at: 4000 }] }), sent), false);
+
+  const moved = emptyDelta({ project: { id: 'p', name: 'Bench', updated_at: 5900, last_device_id: 'ipad' }, frames: [{ ...(f3 as object) } as never] });
+  check('same rows but the project row says another device wrote since → news', deltaAlreadyHeld(held, moved, sent), false);
+
+  // RUN 583: the push reply holds the iPad's row too — identical to the held
+  // copy, never shown here. Not sent by me → news, whatever the held copy says.
+  const theirsInReply = emptyDelta({ project: { ...(held.project as object) }, frames: [{ ...(held.frames[5] as object) } as never] });
+  check('a row equal to the held copy but NOT sent by me (the other device\'s, in the reply) → news', deltaAlreadyHeld(held, theirsInReply, sent), false);
+  check('nothing sent (no push yet) → news', deltaAlreadyHeld(held, same, null), false);
+  check('a FULL answer is never "already held"', deltaAlreadyHeld(held, { ...same, full: true }, sent), false);
 }
 
 // ---------------------------------------------------------------------------
