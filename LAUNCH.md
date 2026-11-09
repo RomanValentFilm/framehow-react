@@ -34,6 +34,7 @@ D7 video + Fitting page text, F1 new token.
 - [ ] G6 Simulator findings: F1 UUID names from the Photos picker → number instead; F2 "save it first" notice repeats; F4 landscape-left Dynamic Island covers the page's left edge (no left safe-area)
 - [ ] G7 Two timing reds from run 581: BIG DAY part 7 fitting PDF download; write-then-pull race (BIG DAY part 3, run 579)
 - [ ] G8 Face ID / Touch ID sign-in in the iPhone app (after launch)
+- [x] G10 (9 Nov, v5.0.189, test 61) Project list: one row per project; unsent work on the device is a note on the row, copy rows only when the project is not in the cloud list
 - [ ] G9 Later ideas (not launch): professions in analytics · break colours synced · guest link (view + rate) · board merge/compare, PDF import adjust, copy frame data
 
 ## B. Audit (report first, no code) — running in the background from 9 Nov

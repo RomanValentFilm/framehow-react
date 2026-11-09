@@ -1,4 +1,4 @@
-  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;700&family=DM+Mono:wght@400;500&display=swap');
+  /* The fonts are bundled with the app (A14, 9 Nov) — see main.tsx; no Google call. */
   *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
   html{width:100%;}
   @media (hover:none) and (pointer:coarse){html{overflow-x:hidden;}}

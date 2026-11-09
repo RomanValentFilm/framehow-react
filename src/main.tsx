@@ -1,5 +1,15 @@
 import { StrictMode, lazy, Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
+// THE TYPEFACE COMES WITH THE APP (A14, 9 Nov): DM Sans 300/400/500/700 and
+// DM Mono 400/500 from the @fontsource packages, bundled by Vite — the same
+// files Google served, now from framehow.com. Google no longer sees who opens
+// Framehow, and the first paint does not wait for a second host.
+import '@fontsource/dm-sans/300.css';
+import '@fontsource/dm-sans/400.css';
+import '@fontsource/dm-sans/500.css';
+import '@fontsource/dm-sans/700.css';
+import '@fontsource/dm-mono/400.css';
+import '@fontsource/dm-mono/500.css';
 import './styles/globals.css';
 import App from './App';
 

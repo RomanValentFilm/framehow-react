@@ -29,7 +29,9 @@ const assetsDir = 'dist/app/assets';
 const swPath = 'dist/app/sw.js';
 if (fs.existsSync(assetsDir) && fs.existsSync(swPath)) {
   const files = fs.readdirSync(assetsDir);
-  const needed = files.filter((f) => /\.(js|mjs|css)$/.test(f) && !f.endsWith('.map'));
+  // The font files ride along (A14, 9 Nov): bundled DM Sans / DM Mono, so the
+  // app's typeface is there offline too, as it was from Google's cache before.
+  const needed = files.filter((f) => /\.(js|mjs|css|woff2)$/.test(f) && !f.endsWith('.map'));
   const main = needed.find((f) => /^index-.*\.js$/.test(f));
   const worker = needed.find((f) => /^pdf\.worker.*\.mjs$/.test(f));
 
