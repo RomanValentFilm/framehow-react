@@ -206,3 +206,37 @@ export function loadPhoneShot(file: File, maxLong = 2400): Promise<PhoneShot> {
     return { src, w, h, img, url, release() { bmp?.close(); URL.revokeObjectURL(url); } };
   });
 }
+
+/**
+ * EVERY PICTURE THAT IS LOADED, MADE READY FOR SAVING (A12, 9 Nov).
+ *
+ * The three load paths — LOAD on a card, Load Images from Folder, drag and
+ * drop — read the file as it was and stored THAT: a 12-megapixel photo from
+ * Files went up at full size (under the 10 MB wall), with its EXIF block,
+ * GPS position included. Only the cameras shrank to 2400. The Privacy text
+ * cannot say "private" with a position in every file.
+ *
+ * Now one rule for everything: the long side at most 2400 px (smaller stays
+ * as it is, never stretched), the shape kept, the picture re-encoded — which
+ * leaves EXIF and GPS behind, and applies the file's rotation note so the
+ * picture stands upright. PNG stays PNG (sketches keep their transparency),
+ * everything else becomes JPEG at 0.9, as the cameras do.
+ */
+export async function readPictureForSaving(file: File): Promise<string> {
+  const shot = await loadPhoneShot(file, 2400);
+  try {
+    const ow = shot.img.naturalWidth, oh = shot.img.naturalHeight;
+    const cvs = document.createElement('canvas');
+    cvs.width = shot.w; cvs.height = shot.h;
+    const ctx = cvs.getContext('2d')!;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(shot.src, 0, 0, shot.w, shot.h);
+    const png = file.type === 'image/png';
+    const url = png ? cvs.toDataURL('image/png') : cvs.toDataURL('image/jpeg', 0.9);
+    trace(`picture loaded: "${file.name}" ${ow}×${oh} → ${shot.w}×${shot.h} ${png ? 'PNG' : 'JPEG'} · ${(url.length * 0.75 / 1048576).toFixed(1)} MB (metadata removed)`);
+    return url;
+  } finally {
+    shot.release();
+  }
+}

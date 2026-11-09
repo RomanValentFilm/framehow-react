@@ -65,8 +65,8 @@ export function handleFolderImages(e: Event): void {
       const arW = probe.naturalWidth,
         arH = probe.naturalHeight;
       withNum.forEach((item) => {
-        const reader = new FileReader();
-        reader.onload = (re) => {
+        // Shrunk to 2400 and re-encoded, metadata gone (A12, 9 Nov).
+        void import('./camMode').then(({ readPictureForSaving }) => readPictureForSaving(item.file)).then((picture) => {
           const img = new Image();
           img.onload = () => {
             const s = state();
@@ -113,9 +113,12 @@ export function handleFolderImages(e: Event): void {
               // toast removed
             }
           };
-          img.src = (re.target as FileReader).result as string;
-        };
-        reader.readAsDataURL(item.file);
+          img.src = picture;
+        }).catch((err: unknown) => {
+          trace(`picture: could not read "${item.file.name}" — ${err instanceof Error ? err.message : String(err)}`);
+          loaded++;
+          if (loaded === total) document.getElementById('progressOverlay')!.classList.add('hidden');
+        });
       });
     };
     probe.src = (fe.target as FileReader).result as string;

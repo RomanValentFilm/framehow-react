@@ -25,6 +25,7 @@ import { renderOverviewRow, renderGrid4Row, renderGrid3x2Card } from './overview
 import { showToast } from './modals';
 import { trace } from './syncTrace';
 import { flushSyncNow } from './currentProject';
+import { readPictureForSaving } from './camMode';
 
 /** Put these pictures into the card LOAD was pressed on (`imgTarget`). */
 export function loadPicturesIntoVersions(files: ArrayLike<File>): void {
@@ -55,13 +56,13 @@ export function loadPicturesIntoVersions(files: ArrayLike<File>): void {
   let loaded = 0;
   const total = files.length;
   for (let i = 0; i < total; i++) {
-    const reader = new FileReader();
-    reader.onerror = () => {
-      trace(`picture: could not read "${files[i].name}" — ${reader.error?.name ?? 'unknown error'}: ${reader.error?.message ?? ''}`);
+    // Shrunk to 2400 and re-encoded, metadata gone (A12) — see readPictureForSaving.
+    readPictureForSaving(files[i]).catch((e: unknown) => {
+      trace(`picture: could not read "${files[i].name}" — ${e instanceof Error ? e.message : String(e)}`);
       showToast('Could not read that picture.');
-    };
-    reader.onload = (ev) => {
-      const dataURL = (ev.target as FileReader).result as string;
+      return null;
+    }).then((dataURL) => {
+      if (!dataURL) return;
       if (i === 0) {
         // First file: use autoNewStripVersionIfNeeded (respects current tab state)
         const target = autoNewStripVersionIfNeeded(fid, strip);
@@ -100,8 +101,7 @@ export function loadPicturesIntoVersions(files: ArrayLike<File>): void {
         if (document.querySelector('.fs-overlay')) window.dispatchEvent(new Event('fs-refresh'));
         void flushSyncNow(); // VER-3/VER-4: upload to version → file(s) loaded
       }
-    };
-    reader.readAsDataURL(files[i]);
+    });
   }
 }
 

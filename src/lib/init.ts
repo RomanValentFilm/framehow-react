@@ -1098,19 +1098,15 @@ export function initFramehow(): void {
     const div = (document.contains(remembered)
       ? remembered
       : document.querySelector(`#mainScroll .frame-card[data-mfid="${fid}"]`) as HTMLElement | null) ?? remembered;
-    const reader = new FileReader();
     // SAY IT WHEN A PICTURE CANNOT BE READ (#514). It failed in silence before;
-    // the card simply stayed as it was.
-    reader.onerror = () => {
-      trace(`picture: could not read "${file.name}" — ${reader.error?.name ?? 'unknown error'}: ${reader.error?.message ?? ''}`);
-      showToast('Could not read that picture.');
-    };
-    reader.onload = (ev) => {
+    // the card simply stayed as it was. Shrunk to 2400 and re-encoded, metadata
+    // gone (A12, 9 Nov) — see readPictureForSaving.
+    void import('./camMode').then(({ readPictureForSaving }) => readPictureForSaving(file)).then((loaded) => {
       snapshotFrame(fid, 'main');
       if (toVersion) {
         const target = autoNewVersionIfNeeded(fid);
         target.type = 'upload';
-        target.bgImage = (ev.target as FileReader).result as string;
+        target.bgImage = loaded;
         target.r2Key = undefined; // Clear so sync uploads the new image
         if (state().currentViewMode === 'main') s.crossCompare[fid] = s.activeTab[fid];
         renderMainFrame(div, fid);
@@ -1118,7 +1114,7 @@ export function initFramehow(): void {
         if (vd) renderVersionFrame(vd, fid);
         // toast removed
       } else {
-        f.src = (ev.target as FileReader).result as string;
+        f.src = loaded;
         f.r2Key = undefined; // Clear so sync uploads the new image
         f.drawMode = false;
         // Redraw with the renderer that matches the CURRENT view. Using the
@@ -1138,8 +1134,10 @@ export function initFramehow(): void {
         }
       }
       void flushSyncNow(); // FRM-7: upload image to main → file selected
-    };
-    reader.readAsDataURL(file);
+    }).catch((err: unknown) => {
+      trace(`picture: could not read "${file.name}" — ${err instanceof Error ? err.message : String(err)}`);
+      showToast('Could not read that picture.');
+    });
     (e.target as HTMLInputElement).value = '';
     useStore.setState({ mainImgTarget: null });
   });
