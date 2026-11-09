@@ -335,6 +335,18 @@ projects.post("/:id/sync", async (c) => {
   }
   const payload = parsed.value;
 
+  // A PICTURE KEY MUST BE ONE'S OWN (audit 9 Nov, B3e). The key names the file
+  // in the bucket; it is taken from the client as sent. Until today any key was
+  // accepted, so a crafted push could attach another account's file to one's
+  // own shot — and read it through the authenticated /images route, which asks
+  // only whether the picture row belongs to the caller. Every key must sit
+  // under this account's own folder, the one /upload writes into.
+  const foreignKey = payload.images.find((i) => !i.r2_key.startsWith(`users/${me.id}/`));
+  if (foreignKey) {
+    console.log(`[sync] refused: image key outside the account's folder (user ${me.id})`);
+    return jsonError(c, 400, "invalid_payload", "images[].r2_key: not this account's picture");
+  }
+
   // A SHOT STAYS IN THE PROJECT IT WAS BORN IN (#523).
   //
   // Shots were filed by their name alone: a push carrying a shot that already

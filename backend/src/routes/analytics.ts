@@ -2,7 +2,6 @@ import { Hono } from "hono";
 import type { Env, AppVariables } from "../types";
 import { storageLimitBytes } from "../lib/storage";
 import { countDeadPictures, deleteDeadPictures } from "../lib/cleaner";
-import { hashPassword } from "../lib/crypto";
 
 // ---------------------------------------------------------------------------
 // THE STORAGE BAR (12 Oct, Roman): how much the whole of Framehow holds at
@@ -747,9 +746,6 @@ ${users.map((u: any) => `<tr>
   <td>${esc(u.devices) || '-'}</td>
   <td>${(u.countries || '').split(',').filter(Boolean).map((cc: string) => flag(cc.trim())).join(' ') || '-'}</td>
   <td style="white-space:nowrap">${u.last_seen ? fmtTime(u.last_seen) : '<span class="meta">no activity</span>'}</td>
-  <td><form method="post" action="/analytics/set-password" onsubmit="return confirm('Give ${esc(u.name || u.email).replace(/'/g, "")} a new password? Their old one stops working at once and they are signed out everywhere.')">
-    <input type="hidden" name="user" value="${esc(u.id)}">
-    <button class="expand-btn" style="margin:0;white-space:nowrap">New password</button></form></td>
 </tr>`).join("")}
 </table>
 <p style="margin-top:16px"><a href="/analytics/deleted-users" class="expand-btn">Deleted accounts (${closing.length})</a></p>
@@ -759,47 +755,10 @@ ${users.map((u: any) => `<tr>
   return c.html(html);
 });
 
-// ─── POST /analytics/set-password — a new password, by hand (22 Sept) ──────
-//
-// The beta has no way to send mail, so "I forgot my password" is answered by
-// Roman, who knows every tester personally: he presses this, reads the new
-// password once, and passes it on. The old one dies at once and every device
-// they are signed in on drops out — so a stolen password cannot outlive this.
-router.post("/analytics/set-password", async (c) => {
-  const form = await c.req.parseBody();
-  const userId = String(form["user"] ?? "").trim();
-  if (!userId) return c.json({ error: "user_required" }, 400);
-
-  const who = await c.env.DB.prepare(`SELECT id, name, email FROM users WHERE id = ? AND deleted_at IS NULL`)
-    .bind(userId).first<{ id: string; name: string | null; email: string }>();
-  if (!who) return c.html(`<p>No such account. <a href="/analytics/users-list">Back</a></p>`);
-
-  // Words, not a jumble: this is read aloud or typed by hand on a phone.
-  const WORDS = ["amber", "anchor", "basalt", "cedar", "cobalt", "dune", "ember", "fjord", "granite", "harbour",
-                 "indigo", "juniper", "kestrel", "lantern", "meadow", "nimbus", "onyx", "pebble", "quartz",
-                 "raven", "saffron", "thistle", "umber", "velvet", "willow", "zephyr"];
-  const pick = () => WORDS[Math.floor(Math.random() * WORDS.length)];
-  const password = `${pick()}-${pick()}-${Math.floor(Math.random() * 90 + 10)}`;
-
-  const now = Date.now();
-  await c.env.DB.batch([
-    c.env.DB.prepare(`UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?`)
-      .bind(await hashPassword(password), now, userId),
-    // Every device signed in with the old password is dropped.
-    c.env.DB.prepare(`DELETE FROM sessions WHERE user_id = ?`).bind(userId),
-    // ...and any reset links asked for earlier are dead too.
-    c.env.DB.prepare(`DELETE FROM password_resets WHERE user_id = ?`).bind(userId),
-  ]);
-  console.log(`[analytics] new password set by hand for ${userId}`);
-
-  return c.html(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>New password</title><style>${PAGE_STYLES}</style></head><body>
-<p><a href="/analytics/users-list">← All users</a></p>
-<h1>New password for ${esc(who.name || who.email)}</h1>
-<div class="card" style="margin:16px 0"><div class="num" style="font-family:monospace;font-size:28px">${esc(password)}</div>
-<div class="label">${esc(who.email)}</div></div>
-<p class="meta">This is shown once — it is not stored anywhere in readable form. Pass it on, and tell them to change it in Account settings. They have been signed out on every device.</p>
-</body></html>`);
-});
+// THE "NEW PASSWORD" BUTTON IS GONE (A13, 9 Nov). It existed because the beta
+// could not send mail; the forgot-password mail works now, and an admin who
+// can set anyone's password can take over anyone's account. There is one way
+// to a new password: the person's own "Forgot password".
 
 // ─── GET /analytics/deleted-users — accounts on their way out, with Restore ──
 router.get("/analytics/deleted-users", async (c) => {

@@ -202,32 +202,16 @@ test('account: the delete question is in front, and deleting erases everything a
   const list = await (await fetch(`${API}/projects`, { headers: { Authorization: `Bearer ${fresh.token}` } })).json() as { projects: Array<{ name: string; deleted_at: number | null }> };
   expect(list.projects.filter((p) => !p.deleted_at).map((p) => p.name), 'the project is back in their list').toContain('MINE');
 
-  // ── A NEW PASSWORD BY HAND ── the answer to "I forgot mine" while there is
-  // no way to send mail: Roman presses the button and reads the word out.
-  say('Roman gives them a new password from the users page');
+  // ── THE "NEW PASSWORD" BUTTON IS GONE (A13, 9 Nov) ── an admin must not be
+  // able to take over an account; the person's own Forgot password is the way.
+  say('there is no admin way to set a password any more');
   const set = await fetch(`${API}/analytics/set-password`, {
     method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', Authorization: `Bearer ${ADMIN}` },
     body: new URLSearchParams({ user: me!.id }),
   });
-  expect(set.status, 'the page answers').toBe(200);
-  const shown = (await set.text()).match(/font-size:28px">([a-z0-9-]+)</);
-  expect(shown, 'the new password is shown once').toBeTruthy();
-  const fresh2 = shown![1];
-  say(`   the new password is "${fresh2}"`);
-
-  const oldWay = await fetch(`${API}/auth/login`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password }),
-  });
-  expect(oldWay.status, 'the old password is dead').toBeGreaterThanOrEqual(400);
-  const newWay = await fetch(`${API}/auth/login`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password: fresh2 }),
-  });
-  expect(newWay.status, 'the new one works').toBe(200);
-  const afterToken = (await newWay.json() as { session: { token: string } }).session.token;
-  const stillMine = await (await fetch(`${API}/projects`, { headers: { Authorization: `Bearer ${afterToken}` } })).json() as { projects: Array<{ name: string; deleted_at: number | null }> };
-  expect(stillMine.projects.filter((p) => !p.deleted_at).map((p) => p.name), 'their work is untouched').toContain('MINE');
+  expect(set.status, 'the door is gone').toBe(404);
+  const usersPage = await (await fetch(`${API}/analytics/users-list`, { headers: { Authorization: `Bearer ${ADMIN}` } })).text();
+  expect(usersPage, 'no New password button on the users page').not.toContain('New password');
 
   await desktop.close();
 });

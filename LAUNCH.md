@@ -1,6 +1,6 @@
 # LAUNCH — the one list (9 Nov 2026)
 Cross out with ~~strike~~ and the date. Blocks are groups; the RUNNING ORDER is:
-1 B3a B3b (done) → A1 → A9 → A11 → A4 → 2 C1, C2, C2b, C3, C4 → 3 B3c–B3f, A2, A3 →
+1 B3a B3b (done) → A1 → A9 → A11 → A4 → 2 C1, C2, C2b, C3, C4 → 3 B3e (r2_key), A13, A12, B3d, A14, B3c, B3f, A2, A3 →
 4 A7 → 5 D1, D2 → 6 A8–A10, D7, submission.
 ROMAN IN PARALLEL (no Claude needed): D3 D4 D5 (App Store Connect), D8 decision, A5 text,
 D7 video + Fitting page text, F1 new token.
@@ -9,13 +9,16 @@ D7 video + Fitting page text, F1 new token.
 - [x] A1 (9 Nov, v5.0.172) Busy page after the shutter: own push comes back as "remote is newer" and redraws all cards → recognise own push, skip redraw (bench test first)
 - [ ] A2 Library preview is made from the live frame → remake from the real photo when it lands
 - [ ] A3 Version strip's own card in landscape after a shot — check
-- [ ] A4 Library permanent delete: second confirmation, text says "cannot be undone, frees X MB"
+- [x] A4 (9 Nov, v5.0.176) Library permanent delete: second confirmation, text says "cannot be undone, frees X MB"
 - [ ] A5 Welcome mail text reviewed (today: 4 plain lines) — Roman's wording
 - [ ] A6 "Free during launch — paid plans later" line in the account box; `plan` field on the account (free), no billing code
 - [ ] A7 Fitting as its own app: build flag, second bundle id (com.framehow.fitting), Fitting build hides the rest
 - [ ] A8 Long simulator test (plan in TOMORROW.md) + the faults it finds
 - [x] A9 (9 Nov, v5.0.173, test 55) HIGH: a picture added while a push is in flight can be lost (test 33 red in runs 581/582: 3 uploads in 0.1 s, server keeps 2) — upload queue; also write-then-pull race (BIG DAY part 3), BIG DAY 7 timing red
 - [x] A11 (9 Nov, v5.0.174) Account deletion: sign in again within 7 days = restored; app text says 7 days (today admin-only, text says cannot be undone)
+- [ ] A12 HIGH (privacy): pictures from LOAD / folder / drag-drop are stored as the original file, EXIF+GPS included → resize to 2400 and re-encode (strips EXIF) like the camera paths
+- [ ] A13 Remove the admin Set-password button (reset mail exists now); logout keeps unsent copies but clears project cache + previews; account deletion wipes everything local
+- [ ] A14 Self-host the Google Fonts (one subprocessor less); note OCR CDN loads in the Privacy text
 - [ ] A10 F4 island overlap · reload-on-new-version rule · "tell phone users about the desktop"
 
 ## B. Audit (report first, no code) — running in the background from 9 Nov
@@ -45,6 +48,8 @@ D7 video + Fitting page text, F1 new token.
 - [ ] D6 Fitting split done (A7) — submit Framehow first, Fitting second
 - [ ] D7 Website: the video, a Fitting page, "browser or App Store" two doors, pricing page (Roman's "Free during launch" text)
 - [ ] D8 Decide: noindex on the site until launch (Roman)
+- [ ] D9 Roman: 2FA on the Cloudflare account; confirm nobody else has a login; one line in the Privacy page about restricted admin access
+- [ ] D10 docs/legal-facts-2026-11-09.md = the facts sheet for Terms/Privacy (9 Nov); fix the privacy page's "backup cycle" sentence
 
 ## E. Pricing — decided so far
 - Launch free, all features and exports, no end date announced. Six months = internal review target.
