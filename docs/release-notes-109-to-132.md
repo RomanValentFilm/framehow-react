@@ -237,3 +237,8 @@ v5.0.212 · #764 (10 Nov)
 - "Framehow is updated." centred; RULE: all new text and its buttons are centred, and every user-facing sentence is agreed with Roman before the deploy line (CLAUDE.md 11, 12)
 - After an update a card returns to the VERSION it showed on a phone too: the version is written into both records the app keeps (the card's and the one the fetch after the start reads)
 - The "swipe over the image" hint is gone (the arrows say it)
+
+v5.0.213–215 · #765–767 (10 Nov, evening)
+- The update card and the save reminder also wait while a photo taken is still arriving (the live frame on the card until the real photo lands)
+- The update card has the same timing on every device — the test shortcuts for devices with the log on are gone
+- Shell (not deployed, for build 2): the camera keeps clear of the Dynamic Island sideways

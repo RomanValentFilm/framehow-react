@@ -1,5 +1,5 @@
 # LAUNCH — THE ONE LIST (9 Nov 2026). Nothing else counts; TOMORROW.md is history + notes.
-TODAY (10 Nov): dev is v5.0.195 · #747 (save point before the stars: v5.0.192). Roman works on; the FULL RUN goes at the END OF THE DAY (nothing live before it is green). Still open from the plan: replay each fault of docs/simulator-session-2026-11-09.md live in the simulator while Roman watches, one by one → then go live.
+TODAY (10 Nov, evening): dev is v5.0.215 · #767. THE FULL RUN IS STILL TO DO — nothing live before it is green. Then: A20 (Dynamic Island in the app), the four phone checks (create-account box + keyboard, NEEDS last column, New Group speed, New Group sideways), C1 live, C2 build 2.
 Cross out with [x] and the date. Blocks are groups; the RUNNING ORDER is:
 1 done 9 Nov → 2 C1 live, C2, C2b →
 3 A15, G1–G4, A2, A3, B3c, B3e-2 → 4 D1–D9 (Roman), C3 shell to live → 5 D11 SUBMIT → 6 A7 Fitting → 7 A8, A10, B3f, G-items.
@@ -32,7 +32,7 @@ D7 video + Fitting page text, F1 new token.
 ## G. Small bugs and comforts carried over from TOMORROW.md (one list, Roman 9 Nov)
 - [x] G1 (9 Nov, test 60 green) Multi-load into an EMPTY version strip — already fine, guarded by test 60
 - [ ] G2 Sign-in box: "keep me signed in" (sessions are 30 days sliding today — decide if needed at all)
-- [x] G3 (10 Nov, v5.0.208, test 63) A NEW VERSION ONLY INFORMS (Roman: no automatic switch, no background download): after 5 min of use a card NOT NOW / RELOAD, twice per version at most; RELOAD checks the line; a fresh start loads the newest as always. STILL TO PROVE ON REAL DEVICES: a project opens with NO connection after a fresh start, pictures included (iPad + iPhone, and the App Store shell — C2)
+- [x] G3 (10 Nov, v5.0.208, test 63) A NEW VERSION ONLY INFORMS (Roman: no automatic switch, no background download): after 5 min of use a card NOT NOW / RELOAD, twice per version at most; RELOAD checks the line; a fresh start loads the newest as always. PROVEN on Roman's iPhone 10 Nov 19:11 and 19:17 (home-screen app, airplane mode, fresh start: WF 7, 25 shots, all pictures there; back online it carried on by itself). STILL TO PROVE: the same inside the App Store shell (C2)
 - [ ] G4 Slow project opens (Roman, 5 Nov): one timing line at open, then look
 - [ ] G5 NEEDS clickable on frame-set cards in STORY FLOWS / SHOOTING ORDERS (½ day)
 - [x] G6-F2 (10 Nov, v5.0.198–199, test 62) the save reminder waits while a box / DRAW / the camera / SETUPS / an order edit is open, comes ~3 s after, never lost
@@ -61,6 +61,9 @@ D7 video + Fitting page text, F1 new token.
 
 ## C. Go live, and Roman's own device check (TestFlight = Roman only, 9 Nov: testers get the App Store app)
 - [ ] C1 Full run → live with the 4 steps (push v4.4:main + direct wrangler upload)
+- [ ] C2a IN BUILD 2 (written 10 Nov, UNBUILT, untested): the camera keeps clear of the Dynamic Island sideways — picture, frame line, shutter, Cancel, RATIO, EV, 1x start where the island ends; follows the phone turned the other way (ios/App/App/FramehowCamera/CameraScreen.swift). Check on the iPhone both ways round, and upright unchanged.
+- [ ] C2c IN THE SHELL: a fresh start with NO connection opens the project with its pictures (proven for the home-screen app, not yet for the shell)
+- [ ] A20 DYNAMIC ISLAND IN THE APP (Roman, 10 Nov, after first leaving it): on an iPhone sideways the app starts where the island ends, on the island's side only — bars, 3×2, GROUP, SETUPS, LIBRARY, boxes; switches sides with the phone; upright and iPad unchanged. One rule for the page, not panel by panel. 2–3 h + simulator + phone.
 - [ ] C2 TestFlight build 2 with the camera on Roman's iPhone (CFBundleVersion 2, Archive → Distribute) — shell still on dev while we test
 - [ ] C2b iPad: build 2 on Roman's iPad — rotation, layout, Pencil drawing, keyboard, camera (lenses differ); PDFs in the iPad simulator
 - [ ] C3 BEFORE SUBMISSION: shell `server.url` dev → framehow.com/app, one more build — reviewers and store users must see live, never dev

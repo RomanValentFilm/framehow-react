@@ -1264,6 +1264,9 @@ export function initFramehow(): void {
     }
   }
 
+  // The Dynamic Island: sideways, the app starts where it ends (10 Nov).
+  void import('./island').then((m) => m.watchTheIsland());
+
   // The newest version by itself, once a day, at a quiet moment (10 Nov).
   void import('./appUpdate').then((m) => m.startUpdateCheck());
 
