@@ -189,3 +189,7 @@ v5.0.196 · #748 (10 Nov)
 v5.0.197 · #749 (10 Nov)
 - Text in the notice boxes (one OK button, red headline) is centred
 - Server (run 630): "Framehow" at the end of the mails in bold
+
+v5.0.198 · #750 (10 Nov)
+- THE NEWEST VERSION BY ITSELF: the first time each day the app comes to the front it asks whether a newer build is out and reloads at a quiet moment (no box open, nobody typing or drawing, camera off, nothing to send); nobody signs in again, the page returns to its shot. A debug device asks every time.
+- THE SAVE REMINDER WAITS ITS TURN: not on top of a box, the keyboard, a drawing or the camera — it comes about 3 s after; showing, it steps aside for a box and comes back. Never counted as "Later".

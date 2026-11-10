@@ -11,26 +11,58 @@
 // gives up — and calls once the device has been quiet for two looks in a row.
 
 import { useStore } from '../store/state';
+import { trace } from './syncTrace';
 import { handIsBusy } from './currentProject';
+import { cameraBusy } from './camera';
 
-/** Boxes that sit on top of the page. The save reminder itself is not one. */
+/** Anything that sits on top of the page: every box, sheet, menu and overlay
+ *  the app has is named ...Modal, ...Overlay, ...Sheet or is one of the few
+ *  below. The save reminder itself and the log are not among them. */
 const ON_TOP = [
-  '.account-modal:not(.hidden)', '.text-modal:not(.hidden)', '.export-modal:not(.hidden)',
-  '.label-modal:not(.hidden)', '.confirm-modal:not(.hidden)', '.progress-overlay:not(.hidden)',
-  '.crop-overlay:not(.hidden)', '#importantNote', '.fs-overlay', '.strip-tag-overlay',
-  '#maxView', '#pictsLibrary',
+  '[id$="Modal"]', '[id$="Overlay"]', '[id$="Sheet"]',
+  '#importantNote', '.fs-overlay', '.strip-tag-overlay', '.new-project-overlay', '#maxView', '#pictsLibrary',
+  '#mainMenu', '#sortDropdown', '#cameraModeMenu', '#cameraRatioMenu', '#cropModeMenu', '#cropRatioMenu',
 ].join(',');
 
-/** Why this is not the moment — or null when it is. */
+function onScreen(el: Element): boolean {
+  const h = el as HTMLElement;
+  if (h.classList.contains('hidden') || h.getClientRects().length === 0) return false;
+  const cs = getComputedStyle(h);
+  return cs.display !== 'none' && cs.visibility !== 'hidden' && Number(cs.opacity) > 0.01 && cs.pointerEvents !== 'none';
+}
+
+/**
+ * Why this is not the moment — or null when it is.
+ *
+ * THE LIST (Roman, 10 Nov: "anything else to wait for?"):
+ *   a drawing in progress, or DRAW mode open (card, big view, scribble);
+ *   the keyboard: any text field being typed in (WRITE, a name, a note, a need);
+ *   the camera, the app's own or the phone's;
+ *   SETUPS open; a shooting order being edited (SORT BY); a shot or a version
+ *   being moved (◀ ▶ / reorder);
+ *   any box, sheet, menu or overlay on top of the page — WRITE, account, export,
+ *   project list, crop, PDF adjust, the library, MAX view, a question, a notice.
+ */
 export function busyNow(): string | null {
   const s = useStore.getState();
   if (s.drawingInProgress || handIsBusy()) return 'drawing';
-  if (Object.values(s.drawActive ?? {}).some((v) => v != null)) return 'draw mode';
+  if (Object.values(s.drawActive ?? {}).some((v) => v != null)) return 'DRAW mode';
+  if (s.scribbleMode) return 'scribble';
+  if (s.fsOverlayActive) return 'the big view';
+  if (cameraBusy()) return 'the camera';
+  if (s.setupMode || s.setupEditing) return 'SETUPS';
+  if (s.sortEditingId) return 'a shooting order being edited';
+  if (s.reorderFid != null || s.verReorderFid != null) return 'moving a shot or a version';
   const a = document.activeElement as HTMLElement | null;
-  if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable)) return 'typing';
-  // The camera: a live picture on the page.
+  if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable)
+    && (a as HTMLInputElement).type !== 'checkbox' && (a as HTMLInputElement).type !== 'file') return 'typing';
   for (const v of Array.from(document.querySelectorAll('video'))) if ((v as HTMLVideoElement).srcObject) return 'the camera';
-  try { if (document.querySelector(ON_TOP)) return 'a box is open'; } catch { /* a selector the browser dislikes: not busy */ }
+  try {
+    for (const el of Array.from(document.querySelectorAll(ON_TOP))) {
+      if (el.id === 'updatingNote' || el.id === 'progressOverlay' && !onScreen(el)) continue;
+      if (onScreen(el)) return `${el.id || 'a box'} is open`;
+    }
+  } catch { /* a selector the browser dislikes: not busy */ }
   return null;
 }
 
@@ -38,8 +70,15 @@ export function busyNow(): string | null {
  *  `also` may add its own reason to wait. Returns a function that cancels. */
 export function whenQuiet(fn: () => void, also?: () => boolean): () => void {
   let quietLooks = 0;
+  let saidAt = 0;
   const id = window.setInterval(() => {
-    if (document.visibilityState !== 'visible' || busyNow() || (also && !also())) { quietLooks = 0; return; }
+    const why = document.visibilityState !== 'visible' ? 'the app is not in front' : busyNow() ?? (also && !also() ? 'something is still to be sent' : null);
+    if (why) {
+      quietLooks = 0;
+      // Now and then, so a wait that never ends can be read in the log.
+      if (Date.now() - saidAt > 30_000) { saidAt = Date.now(); trace(`  waiting for a quiet moment: ${why}`); }
+      return;
+    }
     if (++quietLooks < 2) return;
     window.clearInterval(id);
     fn();

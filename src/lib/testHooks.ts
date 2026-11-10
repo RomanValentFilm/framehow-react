@@ -31,7 +31,7 @@ import { handlePDF } from './pdf';
 import { deleteFrameForGood, handleMainAction, handleAction, renameFrame, hideFrame, unhideFrame } from './actions';
 import { createSetup, handleSetupFrameClick, handleStripTagClick } from './setups';
 import { renameNeedTab, renameNeedTable, renameNeedItem, ensureFrameNeeds } from './needs';
-import { saveNow, carryOnAsNewProject, openCloudProjectById, beginNewProject, untouchedStrip, makeRestorePoint, listRestorePoints, restoreToPoint, deleteCloudProject, recoverCloudProject, saveRestorePoint, deleteRestorePoint, deleteCloudProjectNow, openProjectList, openAccountSettings, openForgotModal, openAccountModal } from './accountFlow';
+import { saveNow, showSaveToaster, carryOnAsNewProject, openCloudProjectById, beginNewProject, untouchedStrip, makeRestorePoint, listRestorePoints, restoreToPoint, deleteCloudProject, recoverCloudProject, saveRestorePoint, deleteRestorePoint, deleteCloudProjectNow, openProjectList, openAccountSettings, openForgotModal, openAccountModal } from './accountFlow';
 import { storageState } from './storageMeter';
 import { flushSyncNow, markFrameDirty, getDirtyFrameIds, pullNow } from './currentProject';
 import { openNeedsModal } from './overview';
@@ -264,6 +264,12 @@ export interface TestDoor {
   deleteVersion(index: number, strip: StripType, versionIndex: number): Promise<void>;
   /** Move the version on show one place (#531) — the overview's ◀ ▶, the app's own path. */
   moveVersion(index: number, strip: StripType, versionIndex: number, dir: 'left' | 'right'): void;
+  /** A project made here and NOT saved — the state the save reminder is for (10 Nov). */
+  newUnsavedProject(count: number): Promise<void>;
+  /** The save reminder's clock has run out, now (10 Nov). */
+  fireSaveReminder(): void;
+  /** Ask about a new version now, as if `build` were the one running (10 Nov). */
+  askForUpdate(build: string): Promise<void>;
   /** WRITE on the main card ('main') or TEXT on a strip card's version — the
    *  app's own text box, filled and OK'd. */
   writeOnCard(index: number, strip: 'main' | StripType, versionIndex: number, text: string): Promise<void>;
@@ -1483,6 +1489,21 @@ export function installTestDoor(): void {
         localStorage.setItem(useStore.getState().projectType === 'fitting' ? 'fh_camFramelineLater_fitting' : 'fh_camFramelineLater', framelineLater ? 'yes' : 'no');
       } catch { /* */ }
     },
+    async newUnsavedProject(count) {
+      await beginNewProject();
+      startFromScratch();
+      const first = useStore.getState().frames[0];
+      if (!first) throw new Error('no first shot');
+      const extra = Array.from({ length: Math.max(0, count - 1) }, (_, i) => ({
+        ...first, id: first.id + i + 1, label: String(i + 2), serverFrameId: newFrameId(), serverMainVersionId: undefined,
+      }));
+      useStore.setState({ frames: [first, ...extra], nextId: first.id + extra.length + 1 } as never);
+      // The start's "new project" chooser has been answered — by this.
+      (await import('./modals')).dismissNewProjectModal();
+      (window as never as { __fh_renderAll?: () => void }).__fh_renderAll?.();
+    },
+    fireSaveReminder() { showSaveToaster(); },
+    async askForUpdate(build) { const m = await import('./appUpdate'); await m.askNowAsIfRunning(build); },
     openWriteBox(index, strip, versionIndex) {
       const f = useStore.getState().frames[index];
       if (!f) throw new Error(`no frame at ${index}`);
