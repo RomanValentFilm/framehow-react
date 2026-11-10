@@ -31,7 +31,7 @@
 // app and inside the App Store shell (which opens the app from the server).
 
 import { useStore } from '../store/state';
-import { trace, isDebugDevice } from './syncTrace';
+import { trace } from './syncTrace';
 import { busyNow } from './quietMoment';
 import { getActiveMs } from './activity';
 import { framesNeedingPush, projectSettingsUnsent, isToasterShowing } from './accountFlow';
@@ -68,8 +68,9 @@ let planned = false;
 const ASKED_KEY = 'fh_update_asked';
 const FROM_KEY = 'fh_update_from';
 const CARD_ID = 'updateCard';
-/** Use before the card may show: five minutes; a debug device, twenty seconds. */
-const useBeforeAsking = () => (isDebugDevice() ? 20_000 : 5 * 60_000);
+/** Use before anything is asked or shown: five minutes — on every device, Roman's own too
+ *  (the twenty-second shortcut for testing went on his nerves, 10 Nov). */
+const useBeforeAsking = () => 5 * 60_000;
 
 /** Where the person is — written down for the page that comes back. */
 function rememberThePlace(): void {
@@ -125,8 +126,8 @@ async function withinReach(): Promise<boolean> {
   } catch { return false; }
 }
 
-/** How long to stay quiet. A debug device (the log on) waits 30 s, so it can be watched. */
-const waitFor = (ms: number) => (isDebugDevice() ? 30_000 : ms);
+/** How long to stay quiet — the same on every device. */
+const waitFor = (ms: number) => ms;
 /** After a NOW that could not go on: not asked again for a while. */
 let heldUntil = 0;
 
@@ -231,10 +232,6 @@ let benchSaysUsedEnough = false;
 
 /** May the card show for this build today? At most twice per build, on two days. */
 function mayAsk(build: string): boolean {
-  // A debug device is told every time (so it can be watched) — the bench is not: it proves the count.
-  let bench = false;
-  try { bench = localStorage.getItem('fh_test') === '1'; } catch { /* not the bench */ }
-  if (isDebugDevice() && !bench) return true;
   try {
     const a = JSON.parse(localStorage.getItem(ASKED_KEY) ?? 'null') as { build?: string; days?: string[] } | null;
     if (!a || a.build !== build) return true;            // a build never asked about
@@ -344,7 +341,7 @@ function watch(): void {
     if (!benchSaysUsedEnough && getActiveMs() < useBeforeAsking()) return;
     let said: string | null = null;
     try { said = localStorage.getItem(DAY_KEY); } catch { /* asked again, no harm */ }
-    if (!newer && !asking && (said !== today() || isDebugDevice()) && Date.now() - lastAsked > 60_000) {
+    if (!newer && !asking && said !== today() && Date.now() - lastAsked > 60_000) {
       lastAsked = Date.now();
       void askTheServer();
       return;

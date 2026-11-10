@@ -89,13 +89,24 @@ struct CameraScreen: View {
     @State private var sliding = false
     @State private var markGeneration = 0
     @State private var pinchStart: CGFloat?
+    /// Counts the device's turns: turned straight from one sideways to the other, the screen's
+    /// size does not change and nothing would be laid out again — but the island changes sides.
+    @State private var turns = 0
 
     private var current: RatioChoice { ratios.first { $0.key == ratioKey } ?? ratios.first ?? RatioChoice(key: "16:9", label: "16:9", value: 16.0 / 9.0) }
 
     var body: some View {
         GeometryReader { geo in
             let landscape = geo.size.width > geo.size.height
-            let free = CGRect(origin: .zero, size: geo.size)
+            let _ = turns
+            // THE DYNAMIC ISLAND (Roman, 10 Nov). Sideways, the island sits on one short
+            // side of the screen — and the shutter sat half under it. The camera now
+            // starts where the island ends: on the island's side the picture, the frame
+            // line and every button keep clear of it; the strip beside the island stays
+            // black. The other side keeps its full width. Upright nothing changes, and an
+            // iPad has no island (its side insets are zero).
+            let island = landscape ? Self.islandInsets() : (left: CGFloat(0), right: CGFloat(0))
+            let free = CGRect(x: island.left, y: 0, width: geo.size.width - island.left - island.right, height: geo.size.height)
             let fg = FrameGeometry(ratio: current.value, landscape: landscape, free: free)
             let _ = { cam.frameRatio = current.value; cam.maxSide = maxSide; cam.frameOnScreen = fg.frame }()
             let touch = DragGesture(minimumDistance: 0)
@@ -146,8 +157,8 @@ struct CameraScreen: View {
                         .allowsHitTesting(false)
                 }
                 if cam.flash { Color.black.allowsHitTesting(false) }
-                controls(landscape: landscape)
-                if showRatios { ratioMenu(landscape: landscape) }
+                controls(landscape: landscape, left: island.left, right: island.right)
+                if showRatios { ratioMenu(landscape: landscape, left: island.left) }
             }
             .frame(width: geo.size.width, height: geo.size.height)
             .clipped()
@@ -156,10 +167,28 @@ struct CameraScreen: View {
         .background(.black)
         .foregroundStyle(.white)
         .onAppear { cam.start() }
+        .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
+            // a moment later: the window's own orientation follows the device's
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { turns += 1 }
+        }
+    }
+
+    /// How far the Dynamic Island reaches in from the left and from the right, sideways.
+    /// The system reports the same inset on both short sides; only the side the island is
+    /// really on is kept. `landscapeRight` = the device's top (the island) is on the LEFT.
+    private static func islandInsets() -> (left: CGFloat, right: CGFloat) {
+        guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first,
+              let window = scene.windows.first(where: { $0.isKeyWindow }) ?? scene.windows.first else { return (0, 0) }
+        let i = window.safeAreaInsets
+        switch scene.interfaceOrientation {
+        case .landscapeRight: return (i.left, 0)
+        case .landscapeLeft: return (0, i.right)
+        default: return (0, 0)
+        }
     }
 
     @ViewBuilder
-    private func controls(landscape: Bool) -> some View {
+    private func controls(landscape: Bool, left: CGFloat, right: CGFloat) -> some View {
         let pill = Color.black.opacity(0.45)
         let shutter = Button(action: { if cam.busy == 0 { cam.takePhoto() } }) {
             Circle().fill(.white).frame(width: 66, height: 66)
@@ -187,14 +216,14 @@ struct CameraScreen: View {
             let W = g.size.width, H = g.size.height
             ZStack {
                 VStack { HStack { ratioButton; Spacer(); ev }; Spacer() }
-                    .padding(.horizontal, 16).padding(.top, landscape ? 16 : 60)
+                    .padding(.leading, 16 + left).padding(.trailing, 16 + right).padding(.top, landscape ? 16 : 60)
                 VStack { Spacer(); HStack { lens; Spacer() } }
-                    .padding(.horizontal, 16).padding(.bottom, landscape ? 16 : 24)   // portrait: a row below Cancel
+                    .padding(.leading, 16 + left).padding(.trailing, 16 + right).padding(.bottom, landscape ? 16 : 24)   // portrait: a row below Cancel
                 if landscape {
                     // shutter right-middle (Camera app), Cancel under it, info bottom right
-                    shutter.position(x: W - 24 - 33, y: H / 2)
-                    cancel.position(x: W - 24 - 33, y: H / 2 + 72)
-                    info.position(x: W - 24 - 33, y: H - 40)
+                    shutter.position(x: W - right - 24 - 33, y: H / 2)
+                    cancel.position(x: W - right - 24 - 33, y: H / 2 + 72)
+                    info.position(x: W - right - 24 - 33, y: H - 40)
                 } else {
                     // shutter bottom-middle, Cancel to its left, info under
                     shutter.position(x: W / 2, y: H - 28 - 33 - 24)
@@ -207,7 +236,7 @@ struct CameraScreen: View {
 
     /// The RATIO list, as the web's menu: one tap chooses and closes.
     @ViewBuilder
-    private func ratioMenu(landscape: Bool) -> some View {
+    private func ratioMenu(landscape: Bool, left: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(ratios) { r in
                 Button(action: { ratioKey = r.key; onRatio(r.key); showRatios = false }) {
@@ -222,7 +251,7 @@ struct CameraScreen: View {
         .frame(width: 150)
         .background(Color.black.opacity(0.85), in: RoundedRectangle(cornerRadius: 10))
         .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.25), lineWidth: 1))
-        .position(x: 16 + 75, y: (landscape ? 16 : 60) + 44 + CGFloat(ratios.count) * 19)
+        .position(x: left + 16 + 75, y: (landscape ? 16 : 60) + 44 + CGFloat(ratios.count) * 19)
     }
 }
 
