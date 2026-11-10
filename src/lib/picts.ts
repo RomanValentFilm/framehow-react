@@ -629,7 +629,7 @@ export async function openPicts(): Promise<void> {
     // account's pictures; say so, and offer the way in.
     trace('PICTS: not signed in — saying so');
     const { showImportantNote } = await import('./modals');
-    void showImportantNote('LIBRARY', 'Sign in to see all your pictures in one place.', {
+    void showImportantNote('LIBRARY', 'Sign in to see all your pictures.', {
       action: { label: 'Sign in', run: () => document.getElementById('menuAccount')?.click() },
       okLabel: 'Not now',
     });

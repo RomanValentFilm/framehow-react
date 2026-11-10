@@ -35,3 +35,5 @@ Project list with the one-row/unsent note, storage line + "Confirm your email �
 - 3 + 11 landscape corners (logo "F", Menu corner) → NOT a fault: fine on Roman's real iPhone and iPad (simulator corner mask). GROUP / LIBRARY not cut today.
 - 10 turning to landscape does not open 3×2 by itself → NOT a fault: pressing 3×2 is right
 - 12 Dynamic Island over the outer 3×2 card in landscape → LEFT AS IT IS (Roman: side room would make the app narrower; the user scrolls). Known fix if Apple objects: room on the island's side only.
+- 7 LIBRARY silent when signed out → FAULT, fixed (v5.0.202): a notice with Sign in / Not now. The other buttons stay as they are when signed out (Roman).
+- NEW, found in the replay: the update never came on a device with nobody signed in (waited for "settings still to send") → fixed v5.0.203, test 63 part 3.

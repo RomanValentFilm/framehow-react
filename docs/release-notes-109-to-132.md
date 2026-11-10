@@ -203,3 +203,8 @@ v5.0.200–201 · #752–753 (10 Nov)
 - AFTER AN UPDATE THE PERSON FEELS NO DIFFERENCE: the same project, the page at its exact scroll position, the same view (3×2, overview, strips), every button lit as before (strips, NEEDS/NOTES, the group and its red name), the same version on every card
 - The update sends unsent work first instead of only waiting for it
 - Test 63 plays two updates (plain, and from a busy bar) and compares the bar, the versions on show and the scroll before and after
+
+v5.0.202–203 · #754–755 (10 Nov)
+- LIBRARY, nobody signed in: the button says "Sign in to see all your pictures in one place." with Sign in / Not now (it did nothing at all)
+- The update also comes when nobody is signed in or the project was never saved (it waited for ever for work with nowhere to go — seen live in the simulator); the app saves to the device right before switching
+- Test 63 has a third part: not signed in, unsaved project, update, the work is there afterwards

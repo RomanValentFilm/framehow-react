@@ -12,6 +12,28 @@
 
 import { test, expect } from '@playwright/test';
 import { Device, freshAccount, say } from './harness';
+import * as zlib from 'zlib';
+
+/** A BIG first picture (10 Nov, Roman's iPhone): a phone photo takes long to
+ *  read, the small ones after it finish first — and the first one, arriving
+ *  last, used to open a FOURTH version and leave v1 empty. A noise PNG is slow
+ *  to read; the tiny ones are instant. */
+function slowPng(width: number, height: number): string {
+  const crcTable = new Int32Array(256);
+  for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; crcTable[n] = c; }
+  const crc = (buf: Buffer): number => { let c = -1; for (const b of buf) c = crcTable[(c ^ b) & 0xff] ^ (c >>> 8); return (c ^ -1) >>> 0; };
+  const chunk = (type: string, data: Buffer): Buffer => {
+    const len = Buffer.alloc(4); len.writeUInt32BE(data.length);
+    const td = Buffer.concat([Buffer.from(type, 'latin1'), data]);
+    const c = Buffer.alloc(4); c.writeUInt32BE(crc(td));
+    return Buffer.concat([len, td, c]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0); ihdr.writeUInt32BE(height, 4); ihdr[8] = 8; ihdr[9] = 6;
+  const raw = Buffer.alloc((width * 4 + 1) * height);
+  for (let y = 0; y < height; y++) { raw[y * (width * 4 + 1)] = 0; for (let i = 1; i <= width * 4; i++) raw[y * (width * 4 + 1) + i] = (Math.random() * 256) | 0; }
+  return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(raw, { level: 0 })), chunk('IEND', Buffer.alloc(0))]).toString('base64');
+}
 
 test.describe.configure({ timeout: 180_000 });
 
@@ -32,9 +54,9 @@ test('empty strip: three pictures loaded at once fill v1, v2, v3 — none stays 
   await ipad.openProject(pid!);
   await ipad.settle();
 
-  say('desktop: three pictures at once onto the untouched VERSN strip of shot 1');
-  await desktop.uploadPictures(0, 'ver', [PICTURE, PICTURE, PICTURE]);
-  await desktop.page.waitForTimeout(2000);
+  say('desktop: three pictures at once onto the untouched VERSN strip of shot 1 — the FIRST a big, slow one');
+  await desktop.uploadPictures(0, 'ver', [slowPng(1500, 1100), PICTURE, PICTURE]);
+  await desktop.page.waitForTimeout(5000);
   await desktop.push();
   await desktop.settle();
 

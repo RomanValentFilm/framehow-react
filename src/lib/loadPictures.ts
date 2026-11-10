@@ -53,24 +53,35 @@ export function loadPicturesIntoVersions(files: ArrayLike<File>): void {
     ? remembered
     : document.querySelector(`#${scrollId} .frame-card[data-vfid="${fid}"]`) as HTMLElement | null) ?? remembered;
   snapshotFrame(fid, strip);
-  let loaded = 0;
   const total = files.length;
-  for (let i = 0; i < total; i++) {
-    // Shrunk to 2400 and re-encoded, metadata gone (A12) — see readPictureForSaving.
+  // ALL OF THEM READ FIRST, THEN PLACED IN THEIR OWN ORDER (Roman's iPhone,
+  // 10 Nov: three photos into a fresh strip gave an EMPTY v1 and v2 v3 v4).
+  //
+  // Each picture was placed the moment ITS reading finished. The first one is
+  // meant for the blank version on show, the others each open a new one — but
+  // a phone photo has to be shrunk first, and the readings finish in any
+  // order. When the second finished before the first it opened v2 and became
+  // the version on show; the first then found a filled card on show and opened
+  // yet another. On the bench the pictures are tiny and always finish in
+  // order, which is why test 60 was green while the phone was wrong.
+  const readings = Array.from({ length: total }, (_, i) =>
     readPictureForSaving(files[i]).catch((e: unknown) => {
       trace(`picture: could not read "${files[i].name}" — ${e instanceof Error ? e.message : String(e)}`);
       showToast('Could not read that picture.');
       return null;
-    }).then((dataURL) => {
-      if (!dataURL) return;
-      if (i === 0) {
-        // First file: use autoNewStripVersionIfNeeded (respects current tab state)
+    }));
+  void Promise.all(readings).then((all) => {
+    const pictures = all.filter((d): d is string => !!d);
+    if (pictures.length === 0) return;
+    pictures.forEach((dataURL, at) => {
+      if (at === 0) {
+        // The first: the version on show if it is blank, else a new one.
         const target = autoNewStripVersionIfNeeded(fid, strip);
         target.type = 'upload';
         target.bgImage = dataURL;
         target.r2Key = undefined; // Clear so sync uploads the new image
       } else {
-        // Additional files: create new version tabs (new versions have no r2Key by default)
+        // The rest: one new version each, in the order they were chosen.
         const allVers = getStripVersions(fid, strip);
         const n = allVers.length + 1;
         const prefix = stripTabPrefix(strip);
@@ -78,31 +89,29 @@ export function loadPicturesIntoVersions(files: ArrayLike<File>): void {
         allVers.push(newVer);
         setStripActiveTab(fid, strip, allVers.length - 1);
       }
-      loaded++;
-      if (loaded === total) {
-        // All files loaded — re-render once
-        if (fromCompare) {
-          setStripCrossCompare(fid, strip, getStripActiveTab(fid, strip));
-          renderMainFrame(div, fid);
-          const vd = document.querySelector(`#${scrollId} .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
-          if (vd) renderVersionFrame(vd, fid, strip);
-        } else {
-          renderVersionFrame(div, fid, strip);
-        }
-        if (state().currentViewMode === 'grid3x2') {
-          const cw = document.querySelector(`#overviewScroll .grid3x2-card-wrap[data-g3fid="${fid}"]`) as HTMLElement | null;
-          if (cw) renderGrid3x2Card(cw, fid);
-        } else if (state().currentViewMode === 'overview' || state().currentViewMode === 'grid4') {
-          const ovRow = document.querySelector(`#overviewScroll .overview-row[data-ofid="${fid}"]`) as HTMLElement | null;
-          if (ovRow) { state().currentViewMode === 'grid4' ? renderGrid4Row(ovRow, fid) : renderOverviewRow(ovRow, fid); }
-        }
-        useStore.setState({ overviewAction: false });
-        // Refresh fullscreen overlay if open
-        if (document.querySelector('.fs-overlay')) window.dispatchEvent(new Event('fs-refresh'));
-        void flushSyncNow(); // VER-3/VER-4: upload to version → file(s) loaded
-      }
     });
-  }
+    trace(`LOAD: ${pictures.length} picture(s) placed on ${strip}, in the order chosen`);
+    // One redraw, when all are in.
+    if (fromCompare) {
+      setStripCrossCompare(fid, strip, getStripActiveTab(fid, strip));
+      renderMainFrame(div, fid);
+      const vd = document.querySelector(`#${scrollId} .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
+      if (vd) renderVersionFrame(vd, fid, strip);
+    } else {
+      renderVersionFrame(div, fid, strip);
+    }
+    if (state().currentViewMode === 'grid3x2') {
+      const cw = document.querySelector(`#overviewScroll .grid3x2-card-wrap[data-g3fid="${fid}"]`) as HTMLElement | null;
+      if (cw) renderGrid3x2Card(cw, fid);
+    } else if (state().currentViewMode === 'overview' || state().currentViewMode === 'grid4') {
+      const ovRow = document.querySelector(`#overviewScroll .overview-row[data-ofid="${fid}"]`) as HTMLElement | null;
+      if (ovRow) { state().currentViewMode === 'grid4' ? renderGrid4Row(ovRow, fid) : renderOverviewRow(ovRow, fid); }
+    }
+    useStore.setState({ overviewAction: false });
+    // Refresh fullscreen overlay if open
+    if (document.querySelector('.fs-overlay')) window.dispatchEvent(new Event('fs-refresh'));
+    void flushSyncNow(); // VER-3/VER-4: upload to version → file(s) loaded
+  });
 }
 
 let _sheet: HTMLElement | null = null;
