@@ -27,8 +27,9 @@ function islandSides(): { l: number; r: number } {
   const l = parseFloat(cs.getPropertyValue('--il')) || 0, r = parseFloat(cs.getPropertyValue('--ir')) || 0;
   if (l + r === 0) return { l: 0, r: 0 };
   // ...and on the side WITHOUT the island, room for the screen's round corners
-  // (Roman, 10 Nov: a wide photo ran into them) — the same 16 as in globals.css.
-  return { l: Math.max(l, 16), r: Math.max(r, 16) };
+  // (Roman, 10 Nov: a wide photo ran into them) — as in globals.css.
+  const both = Math.max(l, r);   // the SAME room on both sides (Roman): the picture sits in the middle
+  return { l: both, r: both };
 }
 function roomW(): number { const i = islandSides(); return window.innerWidth - i.l - i.r; }
 function midX(): number { const i = islandSides(); return i.l + (window.innerWidth - i.l - i.r) / 2; }

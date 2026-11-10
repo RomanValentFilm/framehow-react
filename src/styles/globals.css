@@ -1851,7 +1851,7 @@ html.island .crop-overlay{padding-left:var(--il,0px);padding-right:var(--ir,0px)
 html.island .scribble-toolbar{left:calc(1.5vw + var(--il,0px));}
 /* MAX VIEW: the picture, its label and its buttons keep clear too (the picture's
    size is worked out from the same room, maxView.ts). */
-html.island #maxView{padding-left:max(16px,var(--il,0px));padding-right:max(16px,var(--ir,0px));box-sizing:border-box;}   /* its black still runs to the screen's edge */
+html.island #maxView{padding-left:max(var(--il,0px),var(--ir,0px));padding-right:max(var(--il,0px),var(--ir,0px));box-sizing:border-box;}   /* its black still runs to the screen's edge */
 html.island #maxView .max-close{right:calc(12px + var(--ir,0px));}
 html.island #maxView .max-share-row{right:calc(64px + var(--ir,0px));}
 html.island #maxView .max-flash{right:calc(64px + var(--ir,0px));}
