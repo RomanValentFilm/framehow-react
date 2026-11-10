@@ -3469,7 +3469,34 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
     // this screen, no. Skipping that pull left the two devices disagreeing for
     // good. So: anything refused, stale or foreign → no memory of the push,
     // and the pull is applied the ordinary way.
-    const refusedAnything = (res.rejected_frames?.length ?? 0) + (res.stale_frames?.length ?? 0)
+    // ...AND A PUSH THE SERVER QUIETLY KEPT ITS OWN ROW FOR (run 617, BIG DAY
+    // part 3): a version write the server judged older is simply not done —
+    // not always listed as stale. The reply then holds the server's row, not
+    // mine, and the pull after it would be skipped as "mine coming back" while
+    // this screen shows something else. So every sent row must come back as
+    // sent, on the fields that are shown; one that does not → apply in full.
+    const replyVersions = new Map((res.versions ?? []).map((v) => [v.id, v]));
+    const replyFrames = new Map((res.frames ?? []).map((f) => [f.id, f]));
+    const replyImages = new Map((res.images ?? []).map((i) => [i.version_id, i]));
+    const n = (x: unknown) => (x === undefined || x === '' ? null : x);
+    const notAsSent: string[] = [];
+    for (const v of versions) {
+      const r = replyVersions.get(v.id);
+      if (!r || n(r.label) !== n(v.label) || n(r.type) !== n(v.type) || !!r.hidden !== !!v.hidden
+        || (Number(r.starred) || 0) !== (Number(v.starred) || 0) || n(r.note) !== n(v.note) || n(r.tags) !== n(v.tags)
+        || (typeof v.sort_order === 'number' && r.sort_order !== v.sort_order)) notAsSent.push(`version ${v.id.slice(0, 6)}`);
+    }
+    for (const f of frames) {
+      const r = replyFrames.get(f.id);
+      if (!r || n(r.label) !== n(f.label) || r.sort_order !== f.sort_order || !!r.hidden !== !!f.hidden
+        || n(r.text_content) !== n(f.text_content) || n(r.note) !== n(f.note)) notAsSent.push(`frame ${f.id.slice(0, 6)}`);
+    }
+    for (const i of images) {
+      const r = replyImages.get(i.version_id);
+      if (!r || r.r2_key !== i.r2_key) notAsSent.push(`picture of ${i.version_id.slice(0, 6)}`);
+    }
+    if (notAsSent.length > 0) trace(`  the server holds something else than sent for ${notAsSent.length} row(s) (${notAsSent.slice(0, 4).join(', ')}) — the next fetch is applied in full`);
+    const refusedAnything = notAsSent.length > 0 || (res.rejected_frames?.length ?? 0) + (res.stale_frames?.length ?? 0)
       + (res.stale_versions?.length ?? 0) + (res.foreign_frames?.length ?? 0) + (res.foreign_versions?.length ?? 0) > 0;
     _lastSent = refusedAnything ? null : {
       frames: new Set(frames.map((f) => f.id)),

@@ -824,6 +824,30 @@ export function setStripPrevFrameState(fid: number, strip: StripType, snap: Fram
   reg(strip).slice().prevFrameState[fid] = snap;
 }
 
+/**
+ * STARS DECIDE THE GROUP, THE ARROWS THE ORDER INSIDE IT (Roman, 10 November).
+ *
+ * The order of versions is the ratings (#500, inStarOrder): tagged first, then
+ * the visible ones by stars, then the hidden. Every fetch lays them out so.
+ * The ◀ ▶ arrows moved a version anywhere — an unstarred one in front of a
+ * starred one stayed there on this device and sat behind it on the other, with
+ * the names swapped (run 619). So an arrow moves a version only past a
+ * neighbour of the same group: same tag state, same hidden state, same stars.
+ * Past any other the arrow is grey. To put a version first, give it stars.
+ */
+export function canMoveVersion(list: readonly Version[] | undefined, index: number, dir: 'left' | 'right' | string): boolean {
+  if (!list) return false;
+  const me = list[index];
+  const other = list[dir === 'left' ? index - 1 : index + 1];
+  if (!me || !other) return false;
+  return !!me.setupTagged === !!other.setupTagged && !!me.hidden === !!other.hidden
+    && versionStars(me) === versionStars(other);
+}
+/** ` disabled` for an arrow that cannot move the version on show, else nothing. */
+export function moveArrowOff(list: readonly Version[] | undefined, index: number, dir: 'left' | 'right'): string {
+  return canMoveVersion(list, index, dir) ? '' : ' disabled';
+}
+
 /** Relabel versions for any strip type */
 /**
  * MOVE THE VERSION ON SHOW ONE PLACE LEFT OR RIGHT (#531). The overview's
@@ -834,6 +858,7 @@ export function setStripPrevFrameState(fid: number, strip: StripType, snap: Fram
 export function moveStripVersion(fid: number, strip: StripType, dir: 'left' | 'right'): boolean {
   const tabs = getStripVersions(fid, strip);
   const curAi = getStripActiveTab(fid, strip);
+  if (!canMoveVersion(tabs, curAi, dir)) return false;   // stars decide the group (10 Nov)
   if (dir === 'left' && curAi > 0) {
     [tabs[curAi - 1], tabs[curAi]] = [tabs[curAi], tabs[curAi - 1]];
     followVersion(fid, strip, curAi - 1);

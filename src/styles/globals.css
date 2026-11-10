@@ -401,6 +401,8 @@
   .reorder-group .reorder-label{font-size:10px;color:#737373;font-family:var(--mono);}
   .reorder-group.active .reorder-label{color:#d52632;font-weight:500;border:1px solid #d52632;border-radius:3px;padding:0 6px;}
   .reorder-group.active .vtab-add{color:#d52632!important;}
+  /* An arrow that cannot move the version: stars decide the group (10 Nov). */
+  .reorder-group .vtab-add:disabled{opacity:.25!important;pointer-events:none;}
   @media (hover:hover){.reorder-group.active .vtab-add:hover{color:#e04858!important;}}
   .version-tabs.locked{pointer-events:none;}
   .version-tabs.locked-dim{opacity:.35;pointer-events:none;}

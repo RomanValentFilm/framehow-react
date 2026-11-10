@@ -9,6 +9,7 @@ import {
   unhideVersion,
   relabelStripVersions,
   moveStripVersion,
+  moveArrowOff,
   ovCollapseExpanded,
   updateFrameBadge,
   getStripVersions,
@@ -198,11 +199,11 @@ export function renderOverviewRow(row: HTMLElement, fid: number): void {
       mainReorder ? 'ov-reorder' : (isVReorder && isActive ? 'ov-moving' : isActive ? 'ov-active' : '') + (isExpanded ? ' ov-expanded' : '');
     const reorderHTML =
       tabs.length > 1 && isActive
-        ? `<div class="reorder-group${isVReorder ? ' active' : ''}"><button class="vtab-add" data-ovmove="left" data-fid="${fid}" title="Move left">◀</button>${
+        ? `<div class="reorder-group${isVReorder ? ' active' : ''}"><button class="vtab-add" data-ovmove="left" data-fid="${fid}"${moveArrowOff(tabs, vi, 'left')} title="Move left">◀</button>${
             isVReorder
               ? `<span class="reorder-label" data-ovreorderdone="${fid}">DONE</span>`
               : `<span class="reorder-label" data-ovreorderstart="${fid}">move</span>`
-          }<button class="vtab-add" data-ovmove="right" data-fid="${fid}" title="Move right">▶</button></div>`
+          }<button class="vtab-add" data-ovmove="right" data-fid="${fid}"${moveArrowOff(tabs, vi, 'right')} title="Move right">▶</button></div>`
         : '';
     if (ver.hidden) {
       vcard.innerHTML = `<div class="frame-card${cardClass ? ' ' + cardClass : ''}" data-ovfid="${fid}" data-ovi="${vi}">
@@ -587,11 +588,11 @@ export function renderGrid4Row(row: HTMLElement, fid: number): void {
       mainReorder ? 'ov-reorder' : (isVReorder && isActive ? 'ov-moving' : isActive ? 'ov-active' : '');
     const reorderHTML =
       tabs.length > 1 && isActive
-        ? `<div class="reorder-group${isVReorder ? ' active' : ''}"><button class="vtab-add" data-ovmove="left" data-fid="${fid}" title="Move left">◀</button>${
+        ? `<div class="reorder-group${isVReorder ? ' active' : ''}"><button class="vtab-add" data-ovmove="left" data-fid="${fid}"${moveArrowOff(tabs, vi, 'left')} title="Move left">◀</button>${
             isVReorder
               ? `<span class="reorder-label" data-ovreorderdone="${fid}">DONE</span>`
               : `<span class="reorder-label" data-ovreorderstart="${fid}">move</span>`
-          }<button class="vtab-add" data-ovmove="right" data-fid="${fid}" title="Move right">▶</button></div>`
+          }<button class="vtab-add" data-ovmove="right" data-fid="${fid}"${moveArrowOff(tabs, vi, 'right')} title="Move right">▶</button></div>`
         : '';
     colWrap.innerHTML = `<div class="frame-card${cardClass ? ' ' + cardClass : ''}" data-ovfid="${fid}" data-ovi="${vi}">
       <div class="frame-num ver-frame-num"><span class="frame-label-tag ver-label-combo" data-g4verlabel="${fid}">${state().projectType === 'fitting' ? '' : (f.label || '#') + ' '}${getFrameStripLabel(f, companionStrip)}</span><span class="g4-ver-tab">${ver.label || tabPrefix + (vi + 1)}</span>${reorderHTML}</div>

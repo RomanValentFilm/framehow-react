@@ -24,7 +24,7 @@ import {
   getStripCrossCompare,
   setStripCrossCompare,
   getStripPrevFrameState,
-  relabelStripVersions,
+  relabelStripVersions, canMoveVersion, moveArrowOff,
   addNewStripVersion,
   autoNewStripVersionIfNeeded,
   stripTabPrefix,
@@ -467,11 +467,11 @@ export function renderMainFrame(div: HTMLElement, fid: number): void {
       tabs.length > 1
         ? `<div class="reorder-group${isCReorder ? ' active' : ''}${
             s.reorderFid !== null ? ' locked' : ''
-          }"><button class="vtab-add" data-cvmove="left" data-cfid="${fid}" title="Move left">◀</button>${
+          }"><button class="vtab-add" data-cvmove="left" data-cfid="${fid}"${moveArrowOff(tabs, ai, 'left')} title="Move left">◀</button>${
             isCReorder
               ? `<span class="reorder-label" data-cvreorderdone="${fid}">DONE</span>`
               : `<span class="reorder-label" data-cvreorderstart="${fid}">move</span>`
-          }<button class="vtab-add" data-cvmove="right" data-cfid="${fid}" title="Move right">▶</button></div>`
+          }<button class="vtab-add" data-cvmove="right" data-cfid="${fid}"${moveArrowOff(tabs, ai, 'right')} title="Move right">▶</button></div>`
         : '';
     const colorDots = drawToolbarHTML(fid, 'data-cfid', fid);
     const cCanvasBorder = isCReorder
@@ -588,6 +588,7 @@ export function renderMainFrame(div: HTMLElement, fid: number): void {
         const dir = (b as HTMLElement).dataset.cvmove!;
         const t = getStripVersions(fid, ccS);
         const ci = s.crossCompare[fid];
+        if (!canMoveVersion(t, ci, dir)) return;   // stars decide the group (10 Nov)
         if (dir === 'left' && ci > 0) {
           [t[ci - 1], t[ci]] = [t[ci], t[ci - 1]];
           s.crossCompare[fid] = ci - 1;
@@ -965,11 +966,11 @@ export function renderVersionFrame(div: HTMLElement, fid: number, strip: StripTy
     tabs.length > 1
       ? `<div class="reorder-group${isVReorder ? ' active' : ''}${
           s.reorderFid !== null ? ' locked' : ''
-        }"><button class="vtab-add" data-vmove="left" data-fid="${fid}" title="Move left">◀</button>${
+        }"><button class="vtab-add" data-vmove="left" data-fid="${fid}"${moveArrowOff(tabs, ai, 'left')} title="Move left">◀</button>${
           isVReorder
             ? `<span class="reorder-label" data-vreorderdone="${fid}">DONE</span>`
             : `<span class="reorder-label" data-vreorderstart="${fid}">move</span>`
-        }<button class="vtab-add" data-vmove="right" data-fid="${fid}" title="Move right">▶</button></div>`
+        }<button class="vtab-add" data-vmove="right" data-fid="${fid}"${moveArrowOff(tabs, ai, 'right')} title="Move right">▶</button></div>`
       : '';
   const colorDots = drawToolbarHTML(fid, 'data-fid', fid);
   const canvasBorder = isVReorder
@@ -1091,6 +1092,7 @@ export function renderVersionFrame(div: HTMLElement, fid: number, strip: StripTy
       const dir = (b as HTMLElement).dataset.vmove!;
       const tabs2 = getStripVersions(fid, strip);
       const ai2 = getStripActiveTab(fid, strip);
+      if (!canMoveVersion(tabs2, ai2, dir)) return;   // stars decide the group (10 Nov)
       if (dir === 'left' && ai2 > 0) {
         [tabs2[ai2 - 1], tabs2[ai2]] = [tabs2[ai2], tabs2[ai2 - 1]];
         setStripActiveTab(fid, strip, ai2 - 1);

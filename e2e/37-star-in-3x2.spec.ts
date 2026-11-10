@@ -43,11 +43,19 @@ test('star in 3x2: the card keeps showing the version you starred, and the arrow
   const activeTab = await desktop.page.locator('.grid3x2-card-wrap .vtab.active').first().innerText();
   expect(activeTab.trim(), 'and the lit tab on the card is v1').toBe('v1');
 
-  say('▶ moves it one place right — the card follows');
-  await desktop.moveVersion(0, 'ver', 0, 'right');
+  // STARS DECIDE THE GROUP, THE ARROWS THE ORDER INSIDE IT (Roman, 10 Nov):
+  // the starred one cannot be moved behind an unstarred one; an unstarred one
+  // moves among the unstarred, and the card follows the arrow.
+  say('▶ on the starred version is refused — it stays first');
+  const refused = await desktop.moveVersion(0, 'ver', 0, 'right').then(() => false, () => true);
+  expect(refused, 'a starred version cannot be moved behind an unstarred one').toBe(true);
+  expect(await desktop.strokes(0, 'ver', 0), 'the drawn, starred version is still first').toBe(1);
+
+  say('▶ moves an unstarred one a place right — the card follows');
+  await desktop.moveVersion(0, 'ver', 1, 'right');
   await desktop.page.waitForTimeout(300);
-  expect(await desktop.strokes(0, 'ver', 1), 'the drawn version is second now').toBe(1);
-  expect(await desktop.cardShowing(0), 'the card follows the arrow').toBe('ver 2');
+  expect(await desktop.cardShowing(0), 'the card follows the arrow').toBe('ver 3');
+  expect(await desktop.strokes(0, 'ver', 0), 'the starred one has not moved').toBe(1);
 
   say('HIDE on the 3x2 card — the card lands on the first visible version');
   await desktop.page.evaluate(async () => {
@@ -65,7 +73,8 @@ test('star in 3x2: the card keeps showing the version you starred, and the arrow
   await desktop.page.waitForTimeout(400);
   const labels = await desktop.versionLabels(0, 'ver');
   say(`   versions now: ${labels.join(' · ')}`);
-  expect(labels, 'the drawn one is hidden, at the back').toEqual(['v1', 'v2', 'h1']);
+  expect(labels, 'the one on show is hidden, at the back').toEqual(['v1', 'v2', 'h1']);
+  expect(await desktop.strokes(0, 'ver', 0), 'the starred one is still first').toBe(1);
   expect(await desktop.cardShowing(0), 'the card points at the first visible version').toBe('ver 1');
 
   await desktop.close();

@@ -295,19 +295,33 @@ test('big day, part 3: pictures, drawings, versions and stars, held on both devi
     expect.soft(v3.some((v) => v.stars > 0), 'a starred version on both').toBe(true);
     expect.soft(v3.some((v) => v.strokes > 0), 'a drawn version on both').toBe(true);
 
-    // ── THE ORDER OF VERSIONS TRAVELS (#531) ─────────────────────────────
-    // Roman, 18 September, desktop: reordered versions in M+2 and "they
-    // somewhat jumped back". The server had no order for versions; the pull
-    // lined them up by creation. The starred, drawn version goes FIRST here,
-    // and must be first on the iPad and after a reload.
-    say('── desktop moves shot 3\'s starred version to the front ──');
-    await desktop.moveVersion(2, 'ver', 1, 'left');
+    // ── STARS DECIDE THE GROUP, THE ARROWS THE ORDER INSIDE IT (10 Nov) ──
+    // The order of versions is the ratings (#500): the starred one is first
+    // by itself, on both. The ◀ ▶ arrows move a version only past a neighbour
+    // with the same stars (run 619: an unstarred one moved in front of the
+    // starred one stayed there on the desktop and sat behind it on the iPad).
+    // Inside a group the order travels (#531) and survives a reload.
+    expect.soft(v3[0].stars, 'the starred version is FIRST on both, by its stars').toBeGreaterThan(0);
+    say('── desktop: ◀ on the unstarred version next to the starred one is refused ──');
+    const refused = await desktop.moveVersion(2, 'ver', 1, 'left').then(() => false, () => true);
+    expect.soft(refused, 'an unstarred version cannot be moved in front of a starred one').toBe(true);
+    say('── desktop: a third version (unstarred, two strokes); ◀ moves it in front of the other unstarred one ──');
+    await desktop.pressNewVersion(2, 'ver');
+    await desktop.draw(2, 'ver', 2);
+    await desktop.draw(2, 'ver', 2);
+    await desktop.settle();
+    const before3 = shotsOf(await Device.waitUntilWholeAgrees(desktop, ipad, 'CARDS: THE THIRD VERSION DID NOT REACH THE IPAD.'))[2].versions.ver;
+    expect.soft(before3[2].strokes, 'the third version can be told from the second by its strokes').not.toBe(before3[1].strokes);
+    await desktop.moveVersion(2, 'ver', 2, 'left');
     labels = await desktop.versionLabels(2, 'ver');
     say(`   shot 3 VER on the desktop now: ${labels.join(' · ')}`);
     await desktop.settle();
     agreed = shotsOf(await Device.waitUntilWholeAgrees(desktop, ipad, 'CARDS: THE VERSION ORDER DID NOT REACH THE IPAD.'));
-    expect.soft(agreed[2].versions.ver[0].stars, 'the starred version is FIRST on both (order travels)').toBeGreaterThan(0);
-    expect.soft(agreed[2].versions.ver[0].strokes, 'and it is the drawn one').toBeGreaterThan(0);
+    say(`   shot 3 VER on both: ${agreed[2].versions.ver.map((v) => `${v.label}${v.stars ? '★' : ''}${v.strokes ? `(${v.strokes} strokes)` : ''}`).join(' · ')}`);
+    expect.soft(agreed[2].versions.ver.length, 'three VER versions on both').toBe(3);
+    expect.soft(agreed[2].versions.ver[0].stars, 'the starred version is still first').toBeGreaterThan(0);
+    expect.soft(agreed[2].versions.ver[1].strokes, 'the moved one is second on both — the order travels').toBe(before3[2].strokes);
+    expect.soft(agreed[2].versions.ver[2].strokes, 'the one it passed is third on both').toBe(before3[1].strokes);
 
     // ── the other strips: ANGLE (floor) and SKETCH (refs) on shot 4 ──────
     say('── desktop draws on shot 4 ANGLE and SKETCH, uploads a picture to SKETCH ──');
@@ -377,10 +391,10 @@ test('big day, part 3: pictures, drawings, versions and stars, held on both devi
     await ipad.settle();
     agreed = shotsOf(await Device.waitUntilWholeAgrees(desktop, ipad, 'CARDS: THE HIDDEN VERSION DID NOT REACH THE DESKTOP.'));
     expect.soft(agreed[2].versions.ver.filter((v) => v.hidden).length, 'one hidden version on both').toBe(1);
-    expect.soft(agreed[2].versions.ver.length, 'hiding keeps the version').toBe(2);
+    expect.soft(agreed[2].versions.ver.length, 'hiding keeps the version').toBe(3);
     // Hiding moves the version to the END — that is an order too (#531).
-    expect.soft(agreed[2].versions.ver[1].hidden, 'the hidden version sits last on both').toBe(true);
-    expect.soft(agreed[2].versions.ver[1].stars, 'and it is still the starred one').toBeGreaterThan(0);
+    expect.soft(agreed[2].versions.ver[2].hidden, 'the hidden version sits last on both').toBe(true);
+    expect.soft(agreed[2].versions.ver[2].stars, 'and it is still the starred one').toBeGreaterThan(0);
 
     // ── iPad writes on shot 1's main card; desktop must hold the text ────
     say('── iPad writes on shot 1 main card ──');
