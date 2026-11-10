@@ -175,3 +175,6 @@ v5.0.192 · #744 (10 Nov) — SAVE POINT before the 3-star rating for all projec
 
 v5.0.193 · #745 (10 Nov)
 - THREE STARS IN EVERY PROJECT: the rating fitting had. A row in horizontal projects (first star on the left), a column in portrait and fitting; bottom-left corner. Tap a level to set it, tap it again to clear; most stars first. An old single star counts as one. The MAX view takes the level pressed too.
+
+v5.0.194 · #746 (10 Nov)
+- The star row in horizontal projects is 10 % smaller, proportionally (cards and MAX view)

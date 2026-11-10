@@ -697,12 +697,16 @@ export function stripTagHTML(fid: number, vi: number, strip: StripType): string 
   const col = SETUP_COLORS[setup.colorIndex] || SETUP_COLORS[0];
   const textCol = needsDarkText(col.hex) ? '#000' : '#fff';
 
+  // THE BUTTON CARRIES THE SETUP'S OWN NAME, BOTH WAYS (Roman, 10 November).
+  // It said "TAG" until pressed — a word that pointed nowhere. Now: not tagged
+  // = "+NAME" in the pill's old grey look; tagged = "NAME" filled, as
+  // before. A long name is cut with "…" (about eight letters) in both.
+  const name = String(setup.name ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
+  const attrs = `data-striptag-fid="${fid}" data-striptag-vi="${vi}" data-striptag-strip="${strip}" title="${name}"`;
   if (isTagged) {
-    // Filled pill — shows SETUP name in colour
-    return `<button class="strip-tag strip-tag-filled" data-striptag-fid="${fid}" data-striptag-vi="${vi}" data-striptag-strip="${strip}" style="background:${col.hex};color:${textCol}">${setup.name}</button>`;
+    return `<button class="strip-tag strip-tag-filled" ${attrs} style="background:${col.hex};color:${textCol}"><span class="strip-tag-name">${name}</span></button>`;
   }
-  // Empty pill — shows "TAG" text
-  return `<button class="strip-tag strip-tag-empty" data-striptag-fid="${fid}" data-striptag-vi="${vi}" data-striptag-strip="${strip}">TAG</button>`;
+  return `<button class="strip-tag strip-tag-empty" ${attrs}>+<span class="strip-tag-name">${name}</span></button>`;
 }
 
 /**
