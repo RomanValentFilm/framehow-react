@@ -232,3 +232,8 @@ v5.0.209–211 · #761–763 (10 Nov)
 - NO CONNECTION box says only "Framehow was not reloaded." (Roman's words)
 - The update card goes if the line drops while it is up (uncounted) and returns with the line; a device with the log on waits 30 s where others wait minutes
 - After an update only "Framehow is updated." shows, not the "swipe over the image" hint on top of it
+
+v5.0.212 · #764 (10 Nov)
+- "Framehow is updated." centred; RULE: all new text and its buttons are centred, and every user-facing sentence is agreed with Roman before the deploy line (CLAUDE.md 11, 12)
+- After an update a card returns to the VERSION it showed on a phone too: the version is written into both records the app keeps (the card's and the one the fetch after the start reads)
+- The "swipe over the image" hint is gone (the arrows say it)
