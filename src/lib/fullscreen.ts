@@ -4,7 +4,7 @@
 import { COLORS, state, useStore, bumpRenderTick } from '../store/state';
 import { openLoadPicturesSheet } from './loadPictures';
 import type { StripType } from '../store/state';
-import { drawToolbarHTML, starHTML, toggleStar, getStripVersions, stripTabPrefix, stripScrollId, ensureStripVersions, getStripActiveTab, setStripActiveTab, addNewStripVersion, relabelStripVersions, revealActiveVersionTab, followVersion, liveVersionFor } from './helpers';
+import { drawToolbarHTML, starHTML, toggleStar, setVersionStars, getStripVersions, stripTabPrefix, stripScrollId, ensureStripVersions, getStripActiveTab, setStripActiveTab, addNewStripVersion, relabelStripVersions, revealActiveVersionTab, followVersion, liveVersionFor } from './helpers';
 import { restoreCanvas, restoreMainCanvas, setupDrawing, setupMainDrawing, snapshotFrame } from './drawing';
 import { resetToolbarState } from './view';
 import { stampChangedContent } from './changeStamps';
@@ -609,7 +609,11 @@ export function openFullscreen(
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
         e.preventDefault();
-        toggleStar(fid, vi, strip);
+        // The level pressed (three stars in every project, 10 Nov); the old
+        // single toggle only if the press missed every star.
+        const lvl = (e.target as HTMLElement).closest('[data-starlevel]') as HTMLElement | null;
+        if (lvl) setVersionStars(fid, vi, strip, +lvl.dataset.starlevel!);
+        else toggleStar(fid, vi, strip);
         // After reorder, find where current version moved
         const allVers = getStripVersions(fid, strip);
         vi = getStripActiveTab(fid, strip);

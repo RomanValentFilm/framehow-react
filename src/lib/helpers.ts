@@ -178,17 +178,17 @@ export function starHTML(fid: number, vi: number, strip: StripType = 'ver'): str
   if (!ver) return '';
   const attrs = `data-starfid="${fid}" data-starvi="${vi}" data-starstrip="${strip}"`;
 
-  // FITTING: a column of three stars, 1 at the bottom, 3 at the top.
-  if (state().projectType === 'fitting') {
-    const rating = versionStars(ver);
-    const levels = [3, 2, 1]
-      .map((n) => `<span class="star-lvl" data-starlevel="${n}">${rating >= n ? STAR_FILLED : STAR_EMPTY}</span>`)
-      .join('');
-    return `<div class="star-btn star-col" ${attrs}>${levels}</div>`;
-  }
-
-  // Every other project type keeps the single star exactly as it was.
-  return `<button class="star-btn" ${attrs}>${ver.starred ? STAR_FILLED : STAR_EMPTY}</button>`;
+  // THREE STARS IN EVERY PROJECT (Roman, 10 November) — the rating fitting had.
+  // Upright projects (portrait, fitting): a column, 1 at the bottom, 3 at the
+  // top. Horizontal projects: a row, the first star on the left, growing to
+  // the right. Same corner (bottom left), same star size as the single star.
+  // A version starred with the old single star counts as one star.
+  const rating = versionStars(ver);
+  const upright = state().projectType === 'fitting' || state().projectType === 'portrait';
+  const levels = (upright ? [3, 2, 1] : [1, 2, 3])
+    .map((n) => `<span class="star-lvl" data-starlevel="${n}">${rating >= n ? STAR_FILLED : STAR_EMPTY}</span>`)
+    .join('');
+  return `<div class="star-btn ${upright ? 'star-col' : 'star-row'}" ${attrs}>${levels}</div>`;
 }
 
 export function drawToolbarHTML(fid: number, attrName: string, attrVal: string | number): string {

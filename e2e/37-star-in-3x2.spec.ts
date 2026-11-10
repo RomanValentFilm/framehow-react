@@ -79,3 +79,64 @@ test('star in 3x2: the card keeps showing the version you starred, and the arrow
 
   await desktop.close();
 });
+
+// THREE STARS IN EVERY PROJECT (Roman, 10 November). The rating fitting had is
+// everywhere: a row in a horizontal project (first star on the left), a column
+// in an upright one. Most stars first; pressing the level a version is on
+// clears it.
+//
+//     npm run t -- -g "three stars"
+test('three stars in a horizontal project: a row of three, the level pressed is the rating, most stars first', async ({ browser }) => {
+  const { token } = await freshAccount();
+  const desktop = await Device.open(browser, 'desktop', token);
+  await desktop.newProject('THREE STARS', 1);
+  await desktop.settle();
+  await desktop.pressNewVersion(0, 'ver');
+  await desktop.pressNewVersion(0, 'ver');
+  expect(await desktop.draw(0, 'ver', 1), 'one stroke on v2').toBe(1);
+  await desktop.draw(0, 'ver', 2);
+  await desktop.draw(0, 'ver', 2);
+  expect(await desktop.draw(0, 'ver', 2), 'three strokes on v3 — it is the one on show').toBe(3);
+
+  const pressLevel = (vi: number, level: number) => desktop.page.evaluate(([v, l]) => {
+    const el = document.querySelector(`.star-btn[data-starvi="${v}"][data-starstrip="ver"] [data-starlevel="${l}"]`) as HTMLElement | null;
+    if (!el) throw new Error(`no star level ${l} on version ${v + 1}`);
+    el.click();
+  }, [vi, level]);
+  const ratings = async () => (JSON.parse(await desktop.whole()) as { shots: Array<{ versions: Record<string, Array<{ stars: number; strokes: number }>> }> })
+    .shots[0].versions.ver.map((v) => `${v.stars}★/${v.strokes}`);
+
+  say('the star icon is a ROW of three, the first on the left');
+  const shape = await desktop.page.evaluate(() => {
+    const b = document.querySelector('.star-btn[data-starstrip="ver"]') as HTMLElement;
+    const lv = Array.from(b.querySelectorAll('[data-starlevel]')) as HTMLElement[];
+    return { row: b.classList.contains('star-row'), levels: lv.map((e) => e.dataset.starlevel), xs: lv.map((e) => Math.round(e.getBoundingClientRect().left)) };
+  });
+  expect(shape.row, 'a row in a horizontal project').toBe(true);
+  expect(shape.levels).toEqual(['1', '2', '3']);
+  expect(shape.xs[0] < shape.xs[1] && shape.xs[1] < shape.xs[2], 'left to right').toBe(true);
+
+  say('v3 (three strokes) gets 3 stars — it goes first, and the card follows it');
+  await pressLevel(2, 3);
+  await desktop.page.waitForTimeout(300);
+  expect(await ratings()).toEqual(['3★/3', '0★/0', '0★/1']);
+
+  say('◀ moves the one with one stroke in front of the other unrated one (same group) — then it gets 2 stars');
+  await desktop.moveVersion(0, 'ver', 2, 'left');
+  await desktop.page.waitForTimeout(300);
+  expect(await ratings()).toEqual(['3★/3', '0★/1', '0★/0']);
+  await pressLevel(1, 2);
+  await desktop.page.waitForTimeout(300);
+  expect(await ratings()).toEqual(['3★/3', '2★/1', '0★/0']);
+
+  say('pressing the level it is on clears it — it stays in front of the other unrated one');
+  await pressLevel(1, 2);
+  await desktop.page.waitForTimeout(300);
+  expect(await ratings()).toEqual(['3★/3', '0★/1', '0★/0']);
+
+  say('the arrows stay inside a star group: the 3★ cannot go behind an unrated one');
+  const refused = await desktop.moveVersion(0, 'ver', 0, 'right').then(() => false, () => true);
+  expect(refused).toBe(true);
+  await desktop.settle();
+  await desktop.close();
+});

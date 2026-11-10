@@ -163,3 +163,12 @@ v5.0.189 · #741
 v5.0.190 · #742
 - The typeface (DM Sans, DM Mono) comes with the app — no Google Fonts call, works offline
 - Server today: migration 0032 (rate windows), 0033 (news consent), 0034 (accounts from before the confirmation rule count as confirmed); `npm run server` for worker deploys
+
+v5.0.191 · #743 (9 Nov, evening)
+- The "my own push coming back" shortcut is never used after a push where the server kept its own copy of anything; a setting counts as mine only with my change time
+- A shot kept as "mine" through a fetch still drops versions deleted on the other device (an untag's copy stayed for ever)
+
+v5.0.192 · #744 (10 Nov) — SAVE POINT before the 3-star rating for all projects
+- STARS DECIDE THE GROUP, THE ARROWS THE ORDER INSIDE IT: ◀ ▶ move a version only past a neighbour with the same stars / hidden / tag state; otherwise the arrow is grey (strip, compare card, 3×2 and overview)
+- The own-push shortcut only when the server holds exactly what was sent
+- Tests: BIG DAY part 3 (refused move, order inside a group travels), star in 3x2

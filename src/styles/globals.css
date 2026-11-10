@@ -472,6 +472,13 @@
   .star-btn.star-col .star-lvl svg{width:16px;height:16px;}
   .fs-overlay .star-btn.star-col .star-lvl{width:30px;height:20px;}
   .fs-overlay .star-btn.star-col .star-lvl svg{width:20px;height:20px;}
+  /* HORIZONTAL PROJECTS (10 Nov): the same three stars in a row, first on the left. */
+  .star-btn.star-row{width:auto;flex-direction:row;gap:2px;padding:0 3px;}
+  .star-btn.star-row .star-lvl{display:flex;align-items:center;justify-content:center;width:18px;height:24px;}
+  .star-btn.star-row .star-lvl svg{width:16px;height:16px;}
+  .fs-overlay .star-btn.star-row{width:auto;}
+  .fs-overlay .star-btn.star-row .star-lvl{width:24px;height:30px;}
+  .fs-overlay .star-btn.star-row .star-lvl svg{width:20px;height:20px;}
   /* Fullscreen button — desktop/tablet only */
   .fs-btn{position:absolute;top:4px;right:4px;width:26px;height:26px;border:none;background:rgba(0,0,0,0.6);border-radius:4px;cursor:pointer;z-index:6;padding:0;display:flex;align-items:center;justify-content:center;-webkit-tap-highlight-color:transparent;opacity:0.5;transition:opacity .15s;}
   .fs-btn:hover{opacity:1;}
