@@ -1818,17 +1818,17 @@ html.picts-hold, html.picts-hold body{overscroll-behavior:none;}
    side only. --il / --ir and the class come from src/lib/island.ts. The strip
    beside the island is black. Everything that sits against the screen's edge
    is listed here ONCE; a box centred in the screen needs nothing. */
-/* THE STRIPE (Roman): dark grey, exactly as wide as the island reaches in, on the
+/* THE STRIPE (Roman): nearly black, exactly as wide as the island reaches in, on the
    island's side — so it is plain to see why the app starts further in. It lies
    on top of everything, so nothing can show under the island, whatever opens. */
-html.island::before,html.island::after{content:'';position:fixed;top:0;bottom:0;background:#222;z-index:2147483000;pointer-events:none;}
-html.island::before{left:0;width:var(--il,0px);}
-html.island::after{right:0;width:var(--ir,0px);}
+html.island-l::before,html.island-r::after{content:'';position:fixed;top:0;bottom:0;background:#0a0a0a;z-index:2147483000;pointer-events:none;box-sizing:border-box;}
+/* A thin line on the app's side, the grey of the bars' own lines (Roman). */
+html.island-l::before{left:0;width:var(--il,0px);border-right:1px solid var(--border);}
+html.island-r::after{right:0;width:var(--ir,0px);border-left:1px solid var(--border);}
 html.island body{padding-left:var(--il,0px);padding-right:var(--ir,0px);box-sizing:border-box;}
-html.island .toolbar,
-html.island .view-bar,
-html.island .detail-bar,
-html.island body.setup-lock .setup-bar,
+/* (The three bars and the SETUPS row are not in this list: on an iPhone they lie
+   IN the page, not fixed to the screen, so the page's own side room moves them.
+   Listed here too, the top bar was pushed in twice — the simulator, 10 Nov.) */
 html.island #pictsLibrary,
 html.island .fs-overlay,
 html.island .camera-overlay,

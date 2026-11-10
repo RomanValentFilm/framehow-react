@@ -47,7 +47,13 @@ let last = '';
 function apply(): void {
   const root = document.documentElement;
   const side = islandSide();
-  const inset = side ? sideInset() : 0;
+  // TO THE ISLAND'S OWN EDGE, NOT THE SYSTEM'S (Roman, 10 Nov: "you pushed too
+  // far, the island ends much earlier"). The system's safe distance leaves a
+  // margin beyond the island — about ten points on every iPhone that has one
+  // (62 reported, the island ends at 51; 59 reported, it ends at 48). The app
+  // ends right at the island.
+  const safe = side ? sideInset() : 0;
+  const inset = Math.max(0, safe - 10);
   const il = side === 'left' ? inset : 0;
   const ir = side === 'right' ? inset : 0;
   const now = `${il}/${ir}`;
@@ -56,6 +62,8 @@ function apply(): void {
   root.style.setProperty('--il', `${il}px`);
   root.style.setProperty('--ir', `${ir}px`);
   root.classList.toggle('island', il + ir > 0);
+  root.classList.toggle('island-l', il > 0);
+  root.classList.toggle('island-r', ir > 0);
   trace(`island: ${il + ir > 0 ? `on the ${side}, the app starts ${inset} px in on that side` : 'none in the way'}`);
   // The page is narrower or wider than a moment ago: let the app lay itself out.
   window.dispatchEvent(new Event('resize'));
