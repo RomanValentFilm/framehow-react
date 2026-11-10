@@ -73,6 +73,7 @@ import {
   noteTheProjectIsAlive,
 } from './currentProject';
 import { makeGoneRegister, whatWentWrong } from './projectGone';
+import { busyNow, whenQuiet } from './quietMoment';
 import { trace } from './syncTrace';
 import { isProvisionalName } from './provisionalName';
 import { keepBoxesAboveTheKeyboard } from './keyboardRoom';
@@ -2241,6 +2242,8 @@ let toasterDismissCount = 0;
 /** A new unsaved project starts with a clean slate: reminded again, twice at most (#529). */
 export function resetSaveToaster(): void { toasterDismissCount = 0; }
 let toasterShowing = false;
+/** Held back until the hand is free (10 Nov) — one wait at a time. */
+let toasterWaiting = false;
 let toasterRescheduleId: number | null = null;
 
 const TOASTER_RESHOW_AFTER_LATER_MS = 15 * 60 * 1000;
@@ -2263,6 +2266,19 @@ export function showSaveToaster(): void {
   if (toasterDismissCount >= 2) return;
   if (isLoggedIn() && getCurrentProject().projectId !== null) return;
 
+  // NOT ON TOP OF WHAT THE HAND IS DOING (Roman, 10 Nov). The clock fired the
+  // moment WRITE was pressed and the reminder covered the write box — the
+  // write was lost. It waits for a quiet moment instead, and it DOES come:
+  // waiting is not a dismissal and nothing is counted.
+  if (busyNow()) {
+    if (!toasterWaiting) {
+      toasterWaiting = true;
+      trace(`save reminder: waiting for a quiet moment (${busyNow()})`);
+      whenQuiet(() => { toasterWaiting = false; showSaveToaster(); });
+    }
+    return;
+  }
+
   const msg = isOnIOS()
     ? "To edit this project on your desktop, you'll need to save it first."
     : "To edit this project on your iPad or iPhone, you'll need to save it first.";
@@ -2274,7 +2290,23 @@ export function showSaveToaster(): void {
 
   const saveBtn = el<HTMLButtonElement>('saveToasterSave');
   const laterBtn = el<HTMLButtonElement>('saveToasterLater');
+  // ...AND IT STEPS ASIDE if a box opens or a drawing starts while it shows —
+  // it comes back when that is done. Not a dismissal either.
+  const watch = window.setInterval(() => {
+    if (!toasterShowing) { window.clearInterval(watch); return; }
+    const why = busyNow();
+    if (!why) return;
+    window.clearInterval(watch);
+    saveBtn.onclick = null;
+    laterBtn.onclick = null;
+    hide('saveToaster');
+    toasterShowing = false;
+    toasterWaiting = true;
+    trace(`save reminder: stepping aside (${why}) — back at the next quiet moment`);
+    whenQuiet(() => { toasterWaiting = false; showSaveToaster(); });
+  }, 500);
   function dismiss(savedNow: boolean): void {
+    window.clearInterval(watch);
     saveBtn.onclick = null;
     laterBtn.onclick = null;
     hide('saveToaster');

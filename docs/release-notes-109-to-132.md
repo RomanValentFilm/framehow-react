@@ -185,3 +185,7 @@ v5.0.195 · #747 (10 Nov)
 v5.0.196 · #748 (10 Nov)
 - ACCOUNT CREATED box right after sign-up: a mail was sent to the address typed; the link unlocks 500 MB, 150 MB until then
 - Server (runs 627–628): welcome mail says "on your iPhone, iPad or in a browser on your computer (www.framehow.com)"; mails use the reader's own colours (Gmail showed grey on white), an empty line only between paragraphs, links as blue underlined text, the confirm paragraph of the welcome mail in bold
+
+v5.0.197 · #749 (10 Nov)
+- Text in the notice boxes (one OK button, red headline) is centred
+- Server (run 630): "Framehow" at the end of the mails in bold

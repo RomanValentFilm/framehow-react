@@ -1232,13 +1232,17 @@ export function initFramehow(): void {
           if (!w) return;
           w.addEventListener('statechange', () => {
             if (w.state === 'installed' && navigator.serviceWorker.controller) {
-              window.location.reload();
+              // Not in the middle of the hand's work (10 Nov): at a quiet moment.
+              void import('./appUpdate').then((m) => m.reloadWhenQuiet('a new offline copy is installed'));
             }
           });
         });
       });
     }
   }
+
+  // The newest version by itself, once a day, at a quiet moment (10 Nov).
+  void import('./appUpdate').then((m) => m.startUpdateCheck());
 
   // MAX SCREEN (23 Oct): the corner button on plain photos too.
   void import('./maxView').then(({ watchForPlainPictures }) => watchForPlainPictures());
