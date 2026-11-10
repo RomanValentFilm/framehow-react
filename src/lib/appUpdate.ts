@@ -155,7 +155,7 @@ async function switchNow(): Promise<void> {
     if (newer) forgetToday(newer);
     try { sessionStorage.removeItem(PLACE_KEY); } catch { /* fine */ }
     void import('./modals').then((m) => m.showImportantNote('NO CONNECTION',
-      'The update needs a connection. Nothing was changed — you will be asked again later.'));
+      'Framehow was not reloaded.'));
     return;
   }
   // EVERYTHING ON THE DEVICE FIRST (rule one: never lose work) — the app's own

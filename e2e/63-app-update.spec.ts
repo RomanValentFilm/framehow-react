@@ -226,7 +226,7 @@ test('new version, nobody signed in, the line drops: RELOAD restarts nothing and
   const noLine = desktop.page.locator('#importantNote');
   await expect(noLine, 'IT SAYS WHY').toBeVisible({ timeout: 15_000 });
   await expect(noLine).toContainText('NO CONNECTION');
-  await expect(noLine).toContainText('The update needs a connection. Nothing was changed — you will be asked again later.');
+  await expect(noLine).toContainText('Framehow was not reloaded.');
   await expect(desktop.page.locator('#updatingNote'), 'the UPDATING box is gone again').toHaveCount(0);
   expect(await desktop.page.evaluate(() => (window as never as { __same_page?: number }).__same_page), 'THE APP WAS NOT RESTARTED WITHOUT A LINE').toBe(born);
   expect(await desktop.textOnCard(1, 'main', 0)).toContain('NOT SIGNED IN');

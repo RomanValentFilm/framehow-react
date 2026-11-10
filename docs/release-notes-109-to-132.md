@@ -221,3 +221,9 @@ v5.0.206 · #758 (10 Nov)
 
 v5.0.207 · #759 (10 Nov)
 - THE UPDATE ASKS: after five minutes of use a small card "A new version of Framehow is available — update?" TOMORROW · NOW (centred). Nothing restarts by itself any more. TOMORROW: not asked again that day. NOW: saved, sent, UPDATING FRAMEHOW, back on the same screen. One question at a time: the save reminder first.
+
+v5.0.208 · #760 (10 Nov) — THE UPDATE ONLY INFORMS (replaces 198–207's automatic switch and background download)
+- Nothing at the start, nothing downloaded, nothing restarted by itself. After five minutes of use, once a day, one small question to the server.
+- A newer version: a small card in the middle, at a quiet moment, never with the save reminder, only with a line: "A new version of Framehow is available. / Reload only if you are on a stable internet connection." NOT NOW · RELOAD — neither lit. At most twice per version, on two days; shown counts (the device put away: gone, once more on a later day).
+- RELOAD: saved, the line checked (none: nothing restarts, a NO CONNECTION box, and that showing does not count), UPDATING FRAMEHOW, a normal start with its loading bar, back on the same shot / view / buttons / versions; "Framehow is updated." in the middle.
+- The app knows afterwards whether it was updated. The start no longer reloads itself after a new offline copy.

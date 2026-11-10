@@ -32,7 +32,7 @@ D7 video + Fitting page text, F1 new token.
 ## G. Small bugs and comforts carried over from TOMORROW.md (one list, Roman 9 Nov)
 - [x] G1 (9 Nov, test 60 green) Multi-load into an EMPTY version strip — already fine, guarded by test 60
 - [ ] G2 Sign-in box: "keep me signed in" (sessions are 30 days sliding today — decide if needed at all)
-- [x] G3 (10 Nov, v5.0.198–199, test 63) The newest version by itself: asked the first time each day the app comes to the front, fetched whole first, switched at a quiet moment with an UPDATING box; nobody signs in again
+- [x] G3 (10 Nov, v5.0.208, test 63) A NEW VERSION ONLY INFORMS (Roman: no automatic switch, no background download): after 5 min of use a card NOT NOW / RELOAD, twice per version at most; RELOAD checks the line; a fresh start loads the newest as always. STILL TO PROVE ON REAL DEVICES: a project opens with NO connection after a fresh start, pictures included (iPad + iPhone, and the App Store shell — C2)
 - [ ] G4 Slow project opens (Roman, 5 Nov): one timing line at open, then look
 - [ ] G5 NEEDS clickable on frame-set cards in STORY FLOWS / SHOOTING ORDERS (½ day)
 - [x] G6-F2 (10 Nov, v5.0.198–199, test 62) the save reminder waits while a box / DRAW / the camera / SETUPS / an order edit is open, comes ~3 s after, never lost
