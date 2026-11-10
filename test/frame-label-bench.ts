@@ -37,6 +37,14 @@ is('after 4a, with 5 behind it',            nextFrameLabel(['4a', '5'], 0, 'land
 is('1 2 3 with a hidden 4 at the end, NEW on 3', nextFrameLabel(['1', '2', '3', '4'], 2, 'landscape'), '3#1');
 is('9x16: after 1, with 2 behind it',       nextFrameLabel(['1', '2'], 0, 'portrait'), '1#1');
 
+console.log('\nA NAME NOBODY HAS YET (10 Nov) — the new shot only, nothing existing is renamed');
+is('after 2, with 2#1 2#2 behind it',       nextFrameLabel(['1', '2', '2#1', '2#2', '3'], 1, 'landscape'), '2#3');
+is('after 2#1, with 2#2 behind it',         nextFrameLabel(['1', '2', '2#1', '2#2', '3'], 2, 'landscape'), '2#3');
+is('after 2, with only 2#2 behind it — 2#1 is free', nextFrameLabel(['1', '2', '2#2', '3'], 1, 'landscape'), '2#1');
+is('after INTRO, with INTRO#1 behind it',   nextFrameLabel(['INTRO', 'INTRO#1', '5'], 0, 'landscape'), 'INTRO#2');
+is('two shots already both called 7 — NEW on the first', nextFrameLabel(['7', '7', '8'], 0, 'landscape'), '7#1');
+is('…and again, 7#1 now taken',             nextFrameLabel(['7', '7#1', '7', '8'], 0, 'landscape'), '7#2');
+
 console.log('\nFITTING keeps its own rule');
 is('fitting, NEW anywhere',                 nextFrameLabel(['Name', 'Name'], 1, 'fitting'), 'Name');
 is('fitting, NEW in the middle',            nextFrameLabel(['Name', 'Name'], 0, 'fitting'), 'Name');

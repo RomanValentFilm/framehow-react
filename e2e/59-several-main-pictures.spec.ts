@@ -80,6 +80,8 @@ test('several main pictures: LOAD on a shot with three files — the first on it
   const labels3 = (await desktop.read()).frames.map((f) => f.label);
   say(`   shots now: ${labels3.join(' | ')}`);
   expect(labels3.slice(0, 2), 'shots 1 and 2 are where they were').toEqual(['1', '2']);
+  // ...and the two new shots have names nobody had (2#1 and 2#2 were taken): 2#3, 2#4.
+  expect(labels3, 'NEW NAMES FOR THE NEW SHOTS, no existing shot renamed').toEqual(['1', '2', '2#3', '2#4', '2#1', '2#2', '3', '4', '5']);
   expect((await desktop.versionLabels(1, 'ver')).length, 'SHOT 2 GOT NO NEW VERSION').toBe(versionsBefore);
 
   await desktop.close();

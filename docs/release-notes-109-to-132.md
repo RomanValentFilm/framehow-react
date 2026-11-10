@@ -212,3 +212,6 @@ v5.0.202–203 · #754–755 (10 Nov)
 v5.0.204 · #756 (10 Nov)
 - SEVERAL PICTURES INTO A VERSION STRIP land in the order chosen and none is left empty: all are read first, then placed (on the iPhone a later, quicker picture overtook the first, which then opened one more version — v1 empty, v2 v3 v4 filled). Test 60 now loads a big, slow first picture.
 - LIBRARY notice reads "Sign in to see all your pictures."
+
+v5.0.205 · #757 (10 Nov)
+- Several pictures loaded onto a SHOT that already has a picture all become new shots after it; the shot is not touched (the first used to become a version of it). One picture alone still becomes a version. Test 59 has the case.

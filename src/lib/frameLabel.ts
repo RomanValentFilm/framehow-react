@@ -56,5 +56,13 @@ export function nextFrameLabel(
     }
     return String(highest + 1);
   }
-  return hashLabel(prev);
+  // A NAME NOBODY HAS YET (Roman, 10 Nov). After "2", with "2#1" and "2#2"
+  // already behind it, the new shot was called "2#1" again — two shots with
+  // one name. The #n counts on until the name is free: "2#3". Only the NEW
+  // shot's name is chosen here; no existing shot is ever renamed — a
+  // storyboard may well hold two shots of the same name on purpose.
+  const taken = new Set(allLabels.map((l) => (l || '').trim()));
+  let name = hashLabel(prev);
+  for (let guard = 0; taken.has(name.trim()) && guard < 1000; guard++) name = hashLabel(name);
+  return name;
 }

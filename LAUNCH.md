@@ -37,6 +37,9 @@ D7 video + Fitting page text, F1 new token.
 - [ ] G5 NEEDS clickable on frame-set cards in STORY FLOWS / SHOOTING ORDERS (½ day)
 - [x] G6-F2 (10 Nov, v5.0.198–199, test 62) the save reminder waits while a box / DRAW / the camera / SETUPS / an order edit is open, comes ~3 s after, never lost
 - [x] A19 (10 Nov, v5.0.196–197 + server 627–630) ACCOUNT CREATED box after sign-up; welcome mail: iPhone, iPad or a browser on your computer, reader's own colours, paragraphs, blue links, confirm paragraph and Framehow bold; notice boxes centred
+- [x] G1b (10 Nov, v5.0.204, test 60 with a slow first picture) G1 WAS REAL on the phone: several pictures into a version strip left v1 empty (the readings finished out of order) → all read first, placed in the order chosen
+- [x] A15b (10 Nov, v5.0.205, test 59) several pictures onto a SHOT that has one → all new shots, the shot untouched
+- [x] G6-7 (10 Nov, v5.0.202–204) LIBRARY signed out says "Sign in to see all your pictures." with Sign in / Not now
 - [ ] G6 Simulator findings: F1 UUID names from the Photos picker → number instead; F2 "save it first" notice repeats; F4 landscape-left Dynamic Island covers the page's left edge (no left safe-area)
 - [ ] G7 Two timing reds from run 581: BIG DAY part 7 fitting PDF download; write-then-pull race (BIG DAY part 3, run 579)
 - [ ] G8 Face ID / Touch ID sign-in in the iPhone app (after launch)
