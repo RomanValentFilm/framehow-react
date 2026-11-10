@@ -1798,6 +1798,7 @@ body.picts-open #maxView{z-index:20000;}
 #pictsLibrary .picts-tile.marked .picts-tick::after{display:block;}
 #pictsLibrary .picts-bar{display:none;position:absolute;left:0;right:0;bottom:0;z-index:3;align-items:center;justify-content:space-between;padding:6px 16px calc(6px + env(safe-area-inset-bottom) * 0.6);background:var(--viewbar-fill);border-top:1px solid var(--border);}
 #pictsLibrary.selecting .picts-bar{display:flex;}
+#pictsLibrary .picts-bar{padding-right:10px;}   /* DELETE exactly under SELECT, everywhere (Roman, 10 Nov) */
 #pictsLibrary .picts-count{font-family:var(--mono);font-size:13px;font-weight:700;letter-spacing:.04em;color:#808080;}
 #pictsLibrary .picts-flash{position:absolute;left:50%;bottom:calc(64px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:4;font-family:var(--font);font-size:12px;font-weight:500;color:#fff;background:rgba(0,0,0,.7);border-radius:6px;padding:6px 12px;opacity:0;transition:opacity .2s;pointer-events:none;}
 #pictsLibrary .picts-flash.on{opacity:1;}
@@ -1837,8 +1838,9 @@ html.island .sort-edit-inner{max-width:none;padding-left:max(16px,var(--il,0px))
 html.island .sort-edit-header{margin-left:calc(-1 * max(16px,var(--il,0px)));margin-right:calc(-1 * max(16px,var(--ir,0px)));padding-left:max(16px,var(--il,0px));padding-right:max(16px,var(--ir,0px));}
 /* LIBRARY: SELECT sits in the top right corner — beside the island when it is there. */
 html.island #pictsLibrary .picts-select{right:calc(10px + var(--ir,0px));}
-html.island #pictsLibrary .picts-scroll,
-html.island #pictsLibrary .picts-bar{padding-left:var(--il,0px);padding-right:var(--ir,0px);box-sizing:border-box;}
+html.island #pictsLibrary .picts-scroll{padding-left:var(--il,0px);padding-right:var(--ir,0px);box-sizing:border-box;}
+/* The bottom bar keeps its own room at both ends; DELETE stands exactly under SELECT (10 from the right). */
+html.island #pictsLibrary .picts-bar{padding-left:calc(16px + var(--il,0px));padding-right:calc(10px + var(--ir,0px));box-sizing:border-box;}
 html.island .setup-bar{padding-left:calc(10px + var(--il,0px));padding-right:calc(10px + var(--ir,0px));}
 html.island .group-sidebar-panel{padding-left:calc(16px + var(--il,0px));width:calc(280px + var(--il,0px));}
 html.island .load-menu{margin-right:var(--ir,0px);}
