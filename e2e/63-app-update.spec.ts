@@ -165,3 +165,32 @@ test('new version: a bad line changes nothing; a good one is fetched whole, wait
   expect(Math.abs(afterBar.top - before.top), 'the page sits where it sat — the same shot at the same height').toBeLessThanOrEqual(6);
   await desktop.close();
 });
+
+// NOBODY SIGNED IN (the simulator, 10 Nov): the update waited for ever for
+// "the project settings still to send" on a device with nowhere to send them.
+// Such a project lives on the device — the update saves it there and switches;
+// afterwards the project and the work of a second ago are on the screen.
+test('new version, nobody signed in: the update still comes, and the unsaved project is there afterwards', async ({ browser }) => {
+  const desktop = await Device.open(browser, 'desktop', '');
+  await desktop.page.evaluate(() => (window as never as { __fh_test: { newUnsavedProject(n: number): Promise<void> } }).__fh_test.newUnsavedProject(3));
+  for (const sel of ['#projectListClose', '#accountCancel']) {
+    const b = desktop.page.locator(sel);
+    if (await b.isVisible().catch(() => false)) await b.click();
+  }
+  await desktop.openWriteBox(1, 'main', 0);
+  await desktop.finishWriteBox('NOT SIGNED IN');
+  await desktop.page.route('**/app/index.html?v=*', (r) => r.fulfill({ status: 200, contentType: 'text/html', body: NEW_PAGE }));
+  await desktop.page.route('**/app/assets/index-NEWBUILD.css', (r) => r.fulfill({ status: 200, contentType: 'text/css', body: 'body{}' }));
+  await desktop.page.route('**/app/assets/index-NEWBUILD.js', (r) => r.fulfill({ status: 200, contentType: 'text/javascript', body: '/* new */' }));
+  const born = await desktop.page.evaluate(() => (window as never as { __same_page?: number }).__same_page ??= Date.now());
+  say('a newer build is out — nobody is signed in, the project has never been saved');
+  await desktop.page.evaluate(() => (window as never as { __fh_test: { askForUpdate(b: string): Promise<void> } }).__fh_test.askForUpdate('index-OLDBUILD.js'));
+  await desktop.page.waitForFunction((b) => {
+    const w = window as never as { __same_page?: number; __fh_booted?: boolean; __fh_test?: unknown };
+    return w.__same_page !== b && Boolean(w.__fh_booted) && Boolean(w.__fh_test);
+  }, born, { timeout: 60_000 });
+  say('the app is back: the same three shots and the text, from the device');
+  await expect.poll(async () => (JSON.parse(await desktop.whole()) as { shots: unknown[] }).shots.length, { timeout: 20_000 }).toBe(3);
+  expect(await desktop.textOnCard(1, 'main', 0), 'THE UNSAVED WORK IS THERE AFTER THE UPDATE').toContain('NOT SIGNED IN');
+  await desktop.close();
+});

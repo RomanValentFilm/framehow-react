@@ -23,7 +23,8 @@ import { whenQuiet } from './quietMoment';
 import { framesNeedingPush, projectSettingsUnsent } from './accountFlow';
 import { captureFrameAnchor, scrollAnchorToRel, setViewMode } from './view';
 import { getStripActiveTab, setStripActiveTab, getStripVersions } from './helpers';
-import { flushSyncNow } from './currentProject';
+import { flushSyncNow, getCurrentProject, saveLocalNow } from './currentProject';
+import { isLoggedIn } from './session';
 import { enterGroup, updateGroupButtonState } from './groups';
 
 const DAY_KEY = 'fh_update_checked_day';
@@ -94,9 +95,18 @@ export function reloadWhenQuiet(why: string): void {
       + '<div style="color:#d52632;font-weight:700;font-size:15px;line-height:1.5;margin-bottom:12px;">UPDATING FRAMEHOW</div>'
       + '<div style="font-size:13px;line-height:1.5;">Loading the newest version — one moment.</div></div>';
     document.body.appendChild(overlay);
-    window.setTimeout(() => window.location.reload(), 400);
+    // EVERYTHING ON THE DEVICE FIRST — the app's own local save, now, so the
+    // page that comes back finds this second's work (rule one: never lose work).
+    const go = () => window.location.reload();
+    void Promise.race([saveLocalNow().catch(() => undefined), new Promise((r) => window.setTimeout(r, 3000))])
+      .then(() => window.setTimeout(go, 300));
   }, () => {
     if (!navigator.onLine) return false;
+    // NOBODY SIGNED IN, OR A PROJECT THAT HAS NEVER BEEN SAVED (the simulator,
+    // 10 Nov: it waited for ever — "the project settings still to send" — on a
+    // device with nowhere to send them). Such work lives on the device and
+    // comes back from the device; there is nothing to wait for.
+    if (!isLoggedIn() || getCurrentProject().projectId === null) return true;
     const frames = framesNeedingPush().size;
     const settings = projectSettingsUnsent();
     if (frames === 0 && !settings) return true;
