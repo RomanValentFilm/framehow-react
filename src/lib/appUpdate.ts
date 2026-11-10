@@ -188,6 +188,10 @@ function learnWhetherUpdated(): void {
   if (now !== from) {
     trace(`new version: UPDATED — was ${from}, now ${now}`);
     try { localStorage.removeItem(ASKED_KEY); } catch { /* fine */ }
+    // ...and ONLY that line: the "swipe over the image" hint every start shows
+    // came up on top of it on Roman's phone (10 Nov) — two dark boxes with
+    // white words, and the wrong one read. Not after an update.
+    useStore.setState({ swipeHintShown: true });
     sayInTheMiddle('Framehow is updated.');
   } else {
     // The old build came back (the line went between the question and the
