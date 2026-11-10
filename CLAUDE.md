@@ -30,6 +30,8 @@ Every one of these was agreed in a working session. Breaking one costs an hour.
    Roman reads the number in the app log (tap the logo three times) — he checks it, so get it right.
 9. "zzz" = Roman is done with what he was asked to do; continue.
 10. NEVER LOSE WORK: every deploy commits and pushes to GitHub, copies to framehow-react-versions.
+11. ALL NEW TEXT IS CENTRED (Roman, 10 Nov): every box, card, notice or line added to the app has its text — and its buttons — centred. No left-aligned text in anything new.
+12. TEXTS ARE AGREED FIRST (10 Nov, a box went out with words Roman never saw): every sentence the user will read is shown to Roman and agreed before the deploy line — headline, body, buttons.
 11. ROMAN IS IN PRAGUE (CET). Run `date` before any time-of-day word.
 12. iPad scrolling and bar rules are hard-won (#481 and friends): iPhone-only fixes stay iPhone-only.
 13. Do ONLY what was asked; if something next to it is worth doing, say so and wait.

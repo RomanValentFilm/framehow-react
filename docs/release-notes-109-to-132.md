@@ -227,3 +227,8 @@ v5.0.208 · #760 (10 Nov) — THE UPDATE ONLY INFORMS (replaces 198–207's auto
 - A newer version: a small card in the middle, at a quiet moment, never with the save reminder, only with a line: "A new version of Framehow is available. / Reload only if you are on a stable internet connection." NOT NOW · RELOAD — neither lit. At most twice per version, on two days; shown counts (the device put away: gone, once more on a later day).
 - RELOAD: saved, the line checked (none: nothing restarts, a NO CONNECTION box, and that showing does not count), UPDATING FRAMEHOW, a normal start with its loading bar, back on the same shot / view / buttons / versions; "Framehow is updated." in the middle.
 - The app knows afterwards whether it was updated. The start no longer reloads itself after a new offline copy.
+
+v5.0.209–211 · #761–763 (10 Nov)
+- NO CONNECTION box says only "Framehow was not reloaded." (Roman's words)
+- The update card goes if the line drops while it is up (uncounted) and returns with the line; a device with the log on waits 30 s where others wait minutes
+- After an update only "Framehow is updated." shows, not the "swipe over the image" hint on top of it

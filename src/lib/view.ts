@@ -848,25 +848,10 @@ export function autoPhoneMainView(): void {
 }
 
 export function showSwipeHint(): void {
-  if (!isTouch) return;
-  if (state().swipeHintShown) return;
-  const hint = document.getElementById('swipeHint');
-  if (!hint) return;
-  useStore.setState({ swipeHintShown: true });
-  hint.classList.add('show');
-  const dismiss = (e?: Event) => {
-    if (e) { e.stopPropagation(); e.preventDefault(); }
-    hint.style.transition = 'none';
-    hint.classList.remove('show');
-    // Restore CSS transition after instant hide
-    requestAnimationFrame(() => { hint.style.transition = ''; });
-  };
-  hint.addEventListener('click', dismiss, { once: true });
-  hint.addEventListener('touchstart', dismiss, { once: true });
-  hint.addEventListener('touchmove', dismiss, { once: true });
-  setTimeout(() => {
-    hint.classList.remove('show');
-  }, 3000);
+  // GONE (Roman, 10 Nov): "we have arrows". The dark "swipe over the image" hint came up after
+  // every fresh start in the SHOT view, three seconds each time — and on top of other words.
+  // The arrows on the card say the same thing, all the time. Kept as a function so its callers
+  // need no change; it shows nothing.
 }
 
 // Ordered list of cross-swipeable companion strips

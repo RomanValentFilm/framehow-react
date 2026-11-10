@@ -36,7 +36,7 @@ import { busyNow } from './quietMoment';
 import { getActiveMs } from './activity';
 import { framesNeedingPush, projectSettingsUnsent, isToasterShowing } from './accountFlow';
 import { captureFrameAnchor, scrollAnchorToRel, setViewMode } from './view';
-import { getStripActiveTab, setStripActiveTab, getStripVersions } from './helpers';
+import { getStripActiveTab, setStripActiveTab, getStripVersions, setStripCrossCompare } from './helpers';
 import { flushSyncNow, getCurrentProject, saveLocalNow } from './currentProject';
 import { isLoggedIn } from './session';
 import { enterGroup, updateGroupButtonState } from './groups';
@@ -209,7 +209,7 @@ function sayInTheMiddle(text: string): void {
   el.textContent = text;
   el.style.cssText = 'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:350000;'
     + 'background:#1a1a1a;border:1px solid #555;border-radius:10px;padding:14px 22px;color:#fff;'
-    + 'font-family:-apple-system,BlinkMacSystemFont,sans-serif;font-size:14px;font-weight:600;'
+    + 'font-family:-apple-system,BlinkMacSystemFont,sans-serif;font-size:14px;font-weight:600;text-align:center;'
     + 'box-shadow:0 12px 32px rgba(0,0,0,.5);pointer-events:none;transition:opacity .4s ease;';
   const put = () => {
     document.body.appendChild(el);
@@ -416,22 +416,41 @@ function backToThePlace(): void {
         }
         // THE VERSION EACH CARD WAS SHOWING — after the view is set (setting a
         // view lets go of the swiped-to version), then drawn once more with it.
-        if (Array.isArray(was.shown) && was.shown.length > 0) {
+        // Put each card back on its version; says whether anything had to change.
+        const showVersions = (): boolean => {
+          if (!Array.isArray(was.shown) || was.shown.length === 0) return false;
           const now = useStore.getState();
+          let changed = false;
           for (const [at, ver, floor, refs, cc, ccStrip] of was.shown) {
-            const f = frames[at];
+            const f = now.frames[at];
             if (!f) continue;
             ([['ver', ver], ['floor', floor], ['refs', refs]] as const).forEach(([k, idx]) => {
-              if (idx > 0 && idx < (getStripVersions(f.id, k)?.length ?? 0)) setStripActiveTab(f.id, k, idx);
+              if (idx > 0 && idx < (getStripVersions(f.id, k)?.length ?? 0) && getStripActiveTab(f.id, k) !== idx) { setStripActiveTab(f.id, k, idx); changed = true; }
             });
-            if (cc >= 0 && cc < (getStripVersions(f.id, ccStrip as never)?.length ?? 0)) {
+            if (cc >= 0 && cc < (getStripVersions(f.id, ccStrip as never)?.length ?? 0)
+              && (now.crossCompare[f.id] !== cc || (now.crossCompareStrip[f.id] || 'ver') !== ccStrip)) {
+              // IN BOTH PLACES THE APP KEEPS IT (Roman's phone, 10 Nov: back on the
+              // shot, not on the version). The card reads one record of "which
+              // version is on show"; the fetch from the server that follows
+              // every start reads ANOTHER, and puts every card back on what
+              // that one says. They are normally one and the same object, but
+              // setting the view (just above) parts them. Written only to the
+              // card's, the fetch a second later saw "nothing on show" — the
+              // log said so: "noted -1, on screen -1" — and undid it. Written
+              // to both, the fetch itself keeps the card where it is (#341).
               now.crossCompare[f.id] = cc;
+              setStripCrossCompare(f.id, 'ver', cc);
               (now.crossCompareStrip as Record<number, string>)[f.id] = ccStrip;
+              changed = true;
             }
           }
-          if (was.view && views.includes(was.view)) setViewMode(was.view as never, true);
-          (window as unknown as { __fh_renderAll?: () => void }).__fh_renderAll?.();
-        }
+          if (changed) {
+            if (was.view && views.includes(was.view) && was.view === useStore.getState().currentViewMode) setViewMode(was.view as never, true);
+            (window as unknown as { __fh_renderAll?: () => void }).__fh_renderAll?.();
+          }
+          return changed;
+        };
+        showVersions();
         window.setTimeout(() => {
           // THE SAME SHOT AT THE SAME HEIGHT (Roman, 10 Nov) — not centred.
           const put = () => {
