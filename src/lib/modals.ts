@@ -20,12 +20,18 @@ export function showNewProjectModal(onChoice: (choice: NewProjectChoice) => void
   overlay.className = 'new-project-overlay';
   overlay.style.cssText =
     'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,0.7);' +
-    'display:flex;align-items:center;justify-content:center;padding:16px;';
+    // THE BOX SCROLLS, NOT THE PAGE BEHIND IT (Roman, 10 Nov). On a phone held
+    // sideways the box is taller than the screen: it was cut top and bottom,
+    // and a finger moved the page underneath. The overlay scrolls itself now
+    // and keeps the scroll to itself; the box is centred while it fits
+    // (margin:auto) and starts at the top when it does not.
+    'display:flex;align-items:flex-start;justify-content:center;padding:16px;' +
+    'overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;';
 
   const box = document.createElement('div');
   box.className = 'new-project-modal';
   box.style.cssText =
-    'background:#1e1e1e;border:1px solid #444;border-radius:14px;' +
+    'background:#1e1e1e;border:1px solid #444;border-radius:14px;margin:auto;' +
     'padding:20px 24px;max-width:300px;width:100%;color:#fff;' +
     'font-family:-apple-system,BlinkMacSystemFont,sans-serif;';
 

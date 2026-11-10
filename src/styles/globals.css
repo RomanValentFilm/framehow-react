@@ -1849,10 +1849,22 @@ html.island .crop-overlay{padding-left:var(--il,0px);padding-right:var(--ir,0px)
 html.island .scribble-toolbar{left:calc(1.5vw + var(--il,0px));}
 /* MAX VIEW: the picture, its label and its buttons keep clear too (the picture's
    size is worked out from the same room, maxView.ts). */
-html.island #maxView{left:var(--il,0px);right:var(--ir,0px);}
+html.island #maxView{padding-left:var(--il,0px);padding-right:var(--ir,0px);box-sizing:border-box;}   /* its black still runs to the screen's edge */
 html.island #maxView .max-close{right:calc(12px + var(--ir,0px));}
 html.island #maxView .max-share-row{right:calc(64px + var(--ir,0px));}
 html.island #maxView .max-flash{right:calc(64px + var(--ir,0px));}
 html.island #maxView .max-label{left:calc(14px + var(--il,0px));}
 html.island #maxView .max-prev{left:max(8px,var(--il,0px));}
 html.island #maxView .max-next{right:max(8px,var(--ir,0px));}
+
+/* ── AN iPHONE SIDEWAYS: THE BARS' BUTTONS KEEP OFF THE SCREEN'S ROUND CORNERS
+   (Roman, 10 Nov) ─ the logo and Menu in the top row, GROUP / SETUPS / LIBRARY,
+   M+2 / M+3, the SETUPS row: a little more room at both ends, whatever is
+   showing and wherever the page is scrolled. The top row sits in the corners'
+   curve and gets the most. */
+@media (hover:none) and (pointer:coarse) and (max-height:430px) and (orientation:landscape){
+  .toolbar{padding-left:20px;padding-right:20px;}
+  .view-bar,.detail-bar{padding-left:12px;padding-right:12px;}
+  .setup-bar{padding-left:12px;padding-right:12px;}
+  html.island .setup-bar{padding-left:max(12px,var(--il,0px));padding-right:max(12px,var(--ir,0px));}
+}
