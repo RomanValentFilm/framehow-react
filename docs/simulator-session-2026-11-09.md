@@ -37,3 +37,6 @@ Project list with the one-row/unsent note, storage line + "Confirm your email �
 - 12 Dynamic Island over the outer 3×2 card in landscape → LEFT AS IT IS (Roman: side room would make the app narrower; the user scrolls). Known fix if Apple objects: room on the island's side only.
 - 7 LIBRARY silent when signed out → FAULT, fixed (v5.0.202): a notice with Sign in / Not now. The other buttons stay as they are when signed out (Roman).
 - NEW, found in the replay: the update never came on a device with nobody signed in (waited for "settings still to send") → fixed v5.0.203, test 63 part 3.
+- 5 several pictures into an empty strip (G1) → FAULT on the real iPhone, fixed v5.0.204 (read all first, place in order); Roman confirmed.
+- Update on Roman's real phone (10 Nov, 18:58, v5.0.212 → 213): card, RELOAD, "UPDATED", back on shot 2 view main, and the fetch after the start notes the versions on show ("noted 15, on screen 15", "noted 3, on screen 3") — the card stays on its version. Confirmed "perfect".
+- STILL TO CHECK on the phone: 8 create-account box + keyboard · 9 NEEDS last column upright · 13 "+ New Group" slow · 14 New Group sideways, keyboard over the shot list. And: a fresh start with NO connection (project + pictures from the device).

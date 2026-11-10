@@ -37,7 +37,7 @@ function onScreen(el: Element): boolean {
  * THE LIST (Roman, 10 Nov: "anything else to wait for?"):
  *   a drawing in progress, or DRAW mode open (card, big view, scribble);
  *   the keyboard: any text field being typed in (WRITE, a name, a note, a need);
- *   the camera, the app's own or the phone's;
+ *   the camera, the app's own or the phone's; a photo taken and still arriving;
  *   SETUPS open; a shooting order being edited (SORT BY); a shot or a version
  *   being moved (◀ ▶ / reorder);
  *   any box, sheet, menu or overlay on top of the page — WRITE, account, export,
@@ -50,6 +50,16 @@ export function busyNow(): string | null {
   if (s.scribbleMode) return 'scribble';
   if (s.fsOverlayActive) return 'the big view';
   if (cameraBusy()) return 'the camera';
+  // A PHOTO STILL ARRIVING (Roman, 10 Nov). At the shutter the card shows the
+  // camera's live frame at once; the real photo replaces it a second or two
+  // later. In between, nothing may come up on top — and above all nothing may
+  // restart the app: the real photo would never land. Until it has, it is busy.
+  if (s.frames.some((f) => f.awaitingPhoto)) return 'a photo is still arriving';
+  for (const byFrame of Object.values(s.stripVersions ?? {})) {
+    for (const versions of Object.values(byFrame ?? {})) {
+      if ((versions ?? []).some((v) => v.awaitingPhoto)) return 'a photo is still arriving';
+    }
+  }
   if (s.setupMode || s.setupEditing) return 'SETUPS';
   if (s.sortEditingId) return 'a shooting order being edited';
   if (s.reorderFid != null || s.verReorderFid != null) return 'moving a shot or a version';
