@@ -1253,10 +1253,11 @@ export function initFramehow(): void {
           const w = reg.installing;
           if (!w) return;
           w.addEventListener('statechange', () => {
-            if (w.state === 'installed' && navigator.serviceWorker.controller) {
-              // Asked, not done to the person (10 Nov): TOMORROW or NOW.
-              void import('./appUpdate').then((m) => m.offerUpdate('a new offline copy is installed'));
-            }
+            // A NEW OFFLINE COPY IS INSTALLED — AND NOTHING IS DONE ABOUT IT
+            // (10 Nov). This reloaded the page on the spot, at the start of the
+            // person's work. The copy is there for the next start; whether and
+            // when to reload is the person's (appUpdate.ts).
+            if (w.state === 'installed' && navigator.serviceWorker.controller) trace('offline cache: a new copy is installed — used from the next start');
           });
         });
       });

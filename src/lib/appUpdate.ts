@@ -1,28 +1,34 @@
-// THE NEWEST VERSION — ASKED, NOT DONE TO YOU (Roman, 10 November).
+// A NEW VERSION: THE PERSON IS TOLD, AND DECIDES (Roman, 10 November).
 //
-// The app looked for a new version only when it STARTED. A phone app is not
-// started, it is brought back to the front — so the simulator sat on a
-// five-day-old version, and so would every phone. The first answer was to
-// switch by itself at a quiet moment; on a real phone that restarted the app
-// in the person's face, right as they began. So now:
+// The app looked for a new version only when it STARTED, and a phone app is
+// brought back to the front far more often than it is started — the simulator
+// sat on a five-day-old version. Three designs were built and thrown away on
+// the same day (switch by itself at a quiet moment; download in the background
+// and ask; ...) — each restarted, or fetched, behind the person's back. What
+// stands, in Roman's words: "I hate updates myself — only inform, and let the
+// user decide." So:
 //
-//   - the first time the app comes to the front each day (the person's own
-//     clock) it asks the server which build is out, once the project is up;
-//   - a newer build is fetched WHOLE in the background — a bad line, or none,
-//     changes nothing and it is tried again next time;
-//   - after FIVE MINUTES OF USE a small card asks:
-//         "A new version of Framehow is available — update?"  TOMORROW · NOW
-//     It waits its turn like the save reminder (quietMoment.ts) and never
-//     shows together with it;
-//   - NOW: the work is saved (and sent, where there is somewhere to send it),
-//     a box says UPDATING FRAMEHOW, the app restarts and comes back to the
-//     same project, shot, view, lit buttons and versions;
-//   - TOMORROW: not asked again today. A fresh start of the app in between is
-//     on the new build anyway.
+//   - NOTHING AT THE START. After FIVE MINUTES OF USE that day, the app asks
+//     the server one small question: which build is out? Nothing is downloaded.
+//   - If it is newer than the one running, a small card, in the middle, at a
+//     quiet moment (quietMoment.ts), never together with the save reminder:
+//         "A new version of Framehow is available.
+//          Reload only if you are on a stable internet connection."
+//                        NOT NOW  ·  RELOAD
+//   - AT MOST TWICE PER VERSION: once, and once more on a later day. Then
+//     silence until a newer version still exists.
+//   - RELOAD: the work is saved to the device (and sent, where there is
+//     somewhere to send it); the line is CHECKED — no line, nothing restarts,
+//     and it says so; a box says UPDATING FRAMEHOW; the app restarts like any
+//     opening (the project from the device, then the usual loading bar) and
+//     comes back to the same shot, view, lit buttons and versions. In the
+//     middle of the screen, for a moment: "Framehow is updated."
+//   - NOT NOW, or no answer: a fresh start of the app is on the newest version
+//     anyway — that is the main way, as it always was.
 //
 // "Which build is out" is the name of the app's main file in a fresh copy of
-// the page — every build renames it. No extra file to publish, and it works
-// the same in a browser, as a home-screen app and in the iPhone app's shell.
+// the page — every build renames it. The same in a browser, as a home-screen
+// app and inside the App Store shell (which opens the app from the server).
 
 import { useStore } from '../store/state';
 import { trace, isDebugDevice } from './syncTrace';
@@ -58,7 +64,9 @@ function runningBuild(): string | null {
 }
 
 let planned = false;
-const LATER_KEY = 'fh_update_later_day';
+/** { build, days[] } — the days the card was answered NOT NOW for that build. */
+const ASKED_KEY = 'fh_update_asked';
+const FROM_KEY = 'fh_update_from';
 const CARD_ID = 'updateCard';
 /** Use before the card may show: five minutes; a debug device, twenty seconds. */
 const useBeforeAsking = () => (isDebugDevice() ? 20_000 : 5 * 60_000);
@@ -94,6 +102,32 @@ function rememberThePlace(): void {
 }
 
 /** NOW was pressed: say so, save, send what can be sent, switch. */
+/**
+ * IS THE NEW VERSION REALLY WITHIN REACH, THIS SECOND? (Roman, 10 Nov: "the app
+ * downloads the update and then the phone goes offline — the project cannot be
+ * reloaded. A big no go.")
+ *
+ * A restart needs the line: the page, and then the project's pictures. So NOW
+ * asks the server for the page once more, five seconds at most, and goes on
+ * only if the answer is the newer build. No line, a weak one, or a server that
+ * does not answer: nothing is restarted, nothing is changed, and it says so.
+ */
+async function withinReach(): Promise<boolean> {
+  if (!navigator.onLine) return false;
+  try {
+    const stop = new AbortController();
+    const t = window.setTimeout(() => stop.abort(), 5000);
+    const res = await fetch(`${import.meta.env.BASE_URL}index.html?v=${Date.now()}`, { cache: 'no-store', signal: stop.signal });
+    window.clearTimeout(t);
+    if (!res.ok) return false;
+    const out = (await res.text()).match(/assets\/(index-[\w-]+\.js)/)?.[1];
+    return !!out && out !== runningBuild();
+  } catch { return false; }
+}
+
+/** After a NOW that could not go on: not asked again for a while. */
+let heldUntil = 0;
+
 async function switchNow(): Promise<void> {
   if (planned) return;
   planned = true;
@@ -111,6 +145,19 @@ async function switchNow(): Promise<void> {
     + '<div style="font-size:13px;line-height:1.5;">Loading the newest version — one moment.</div></div>';
   document.body.appendChild(overlay);
   const within = <T,>(p: Promise<T>, ms: number) => Promise.race([p.catch(() => undefined), new Promise((r) => window.setTimeout(r, ms))]);
+  if (!(await withinReach())) {
+    trace('new version: NOW, but the new version is not within reach (no line?) — nothing restarted');
+    overlay.remove();
+    planned = false;
+    heldUntil = Date.now() + 10 * 60_000;
+    // The person WANTED the update — so this showing is not one of the two:
+    // the card comes back (ten minutes on, with a line), as the box promises.
+    if (newer) forgetToday(newer);
+    try { sessionStorage.removeItem(PLACE_KEY); } catch { /* fine */ }
+    void import('./modals').then((m) => m.showImportantNote('NO CONNECTION',
+      'The update needs a connection. Nothing was changed — you will be asked again later.'));
+    return;
+  }
   // EVERYTHING ON THE DEVICE FIRST (rule one: never lose work) — the app's own
   // local save, now, so the page that comes back finds this second's work.
   await within(saveLocalNow(), 3000);
@@ -123,118 +170,193 @@ async function switchNow(): Promise<void> {
     await within(flushSyncNow(), 8000);
     await within(saveLocalNow(), 3000);
   }
+  // THE APP MUST KNOW AFTERWARDS WHETHER IT WAS UPDATED (Roman, 10 Nov): which
+  // build was running is written down; the page that comes back compares.
+  try { sessionStorage.setItem(FROM_KEY, runningBuild() ?? ''); } catch { /* it cannot tell, then */ }
   trace('new version: reloading now');
   window.setTimeout(() => window.location.reload(), 300);
 }
 
-let ready = false;
-let watching = false;
+/** The first thing after a restart: was it updated, or did the old one come back? */
+function learnWhetherUpdated(): void {
+  let from = '';
+  try { from = sessionStorage.getItem(FROM_KEY) ?? ''; sessionStorage.removeItem(FROM_KEY); } catch { return; }
+  const now = runningBuild();
+  if (!from || !now) return;
+  if (now !== from) {
+    trace(`new version: UPDATED — was ${from}, now ${now}`);
+    try { localStorage.removeItem(ASKED_KEY); } catch { /* fine */ }
+    sayInTheMiddle('Framehow is updated.');
+  } else {
+    // The old build came back (the line went between the question and the
+    // restart, and the device's own copy answered). Not updated — so it is
+    // looked for again the next time the app comes to the front.
+    trace(`new version: NOT updated — ${now} came back; asking again next time`);
+    try { localStorage.removeItem(DAY_KEY); } catch { /* fine */ }
+  }
+}
+
+/** A short line in the MIDDLE of the screen, gone by itself (Roman: "in the middle, not bottom"). */
+function sayInTheMiddle(text: string): void {
+  const el = document.createElement('div');
+  el.id = 'updatedLine';
+  el.textContent = text;
+  el.style.cssText = 'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:350000;'
+    + 'background:#1a1a1a;border:1px solid #555;border-radius:10px;padding:14px 22px;color:#fff;'
+    + 'font-family:-apple-system,BlinkMacSystemFont,sans-serif;font-size:14px;font-weight:600;'
+    + 'box-shadow:0 12px 32px rgba(0,0,0,.5);pointer-events:none;transition:opacity .4s ease;';
+  const put = () => {
+    document.body.appendChild(el);
+    window.setTimeout(() => { el.style.opacity = '0'; }, 2600);
+    window.setTimeout(() => el.remove(), 3100);
+  };
+  // After the app is up, so it is read over the project and not over a blank page.
+  const t0 = Date.now();
+  const id = window.setInterval(() => {
+    if ((window as unknown as { __fh_booted?: boolean }).__fh_booted || Date.now() - t0 > 20_000) { window.clearInterval(id); window.setTimeout(put, 800); }
+  }, 300);
+}
+
+let newer: string | null = null;   // the build that is out, when it is not this one
 let cardUp = false;
+/** The card stepped aside for a box today, unanswered: it may come back today. */
+let comesBackToday: string | null = null;
 let benchSaysUsedEnough = false;
-function laterToday(): boolean {
-  try { return localStorage.getItem(LATER_KEY) === today(); } catch { return false; }
+
+/** May the card show for this build today? At most twice per build, on two days. */
+function mayAsk(build: string): boolean {
+  // A debug device is told every time (so it can be watched) — the bench is not: it proves the count.
+  let bench = false;
+  try { bench = localStorage.getItem('fh_test') === '1'; } catch { /* not the bench */ }
+  if (isDebugDevice() && !bench) return true;
+  try {
+    const a = JSON.parse(localStorage.getItem(ASKED_KEY) ?? 'null') as { build?: string; days?: string[] } | null;
+    if (!a || a.build !== build) return true;            // a build never asked about
+    const days = a.days ?? [];
+    return days.length < 2 && !days.includes(today());
+  } catch { return true; }
+}
+function noteNotNow(build: string): void {
+  try {
+    const a = JSON.parse(localStorage.getItem(ASKED_KEY) ?? 'null') as { build?: string; days?: string[] } | null;
+    const days = a && a.build === build ? (a.days ?? []) : [];
+    if (!days.includes(today())) days.push(today());
+    localStorage.setItem(ASKED_KEY, JSON.stringify({ build, days }));
+  } catch { /* asked once more than meant, no harm */ }
+}
+
+/** RELOAD was wanted and could not be done (no line): that showing does not count. */
+function forgetToday(build: string): void {
+  try {
+    const a = JSON.parse(localStorage.getItem(ASKED_KEY) ?? 'null') as { build?: string; days?: string[] } | null;
+    if (!a || a.build !== build) return;
+    localStorage.setItem(ASKED_KEY, JSON.stringify({ build, days: (a.days ?? []).filter((d) => d !== today()) }));
+  } catch { /* fine */ }
 }
 
 /** The card. Small, in the middle like the save reminder, blocking nothing. */
-function showCard(): void {
+function showCard(build: string): void {
   if (cardUp || planned) return;
   cardUp = true;
   const card = document.createElement('div');
   card.id = CARD_ID;
   card.className = 'save-toaster hidden';
   card.setAttribute('role', 'status');
-  card.innerHTML = '<div class="save-toaster-card"><div class="save-toaster-msg" style="text-align:center">A new version of Framehow is available — update?</div>'
-    + '<div class="save-toaster-btns" style="justify-content:center"><button class="btn" type="button" id="updateCardLater">TOMORROW</button>'
-    + '<button class="btn btn-accent" type="button" id="updateCardNow">NOW</button></div></div>';
+  card.innerHTML = '<div class="save-toaster-card"><div class="save-toaster-msg" style="text-align:center">A new version of Framehow is available.<br>'
+    + 'Reload only if you are on a stable internet connection.</div>'
+    // NEITHER BUTTON IS LIT (Roman): this tells, it does not push.
+    + '<div class="save-toaster-btns" style="justify-content:center"><button class="btn" type="button" id="updateCardLater">NOT NOW</button>'
+    + '<button class="btn" type="button" id="updateCardNow">RELOAD</button></div></div>';
   document.body.appendChild(card);
   requestAnimationFrame(() => card.classList.remove('hidden'));
-  trace('new version: asking — TOMORROW or NOW');
-  const gone = () => { window.clearInterval(aside); card.remove(); cardUp = false; };
-  // It steps aside for a box, the keyboard, DRAW, the camera — and comes back.
+  trace('new version: telling the person — NOT NOW or RELOAD');
+  // SHOWN IS TOLD (Roman: "if someone closes the iPad, the question disappears
+  // and comes back next day?" — yes). The day counts from the moment the card
+  // is on the screen, answered or not: left unanswered and the device put
+  // away, it is gone, and comes once more on a later day.
+  noteNotNow(build);
+  const gone = () => { window.clearInterval(aside); document.removeEventListener('visibilitychange', away); card.remove(); cardUp = false; };
+  // It steps aside for a box, the keyboard, DRAW, the camera — and comes back
+  // the same day when that is done (it was not answered, only in the way).
   const aside = window.setInterval(() => {
     if (!busyNow()) return;
-    trace(`new version: the question steps aside (${busyNow()})`);
+    trace(`new version: the card steps aside (${busyNow()})`);
+    comesBackToday = build;
     gone();
   }, 500);
+  // The app put away (the iPad closed, another app): the card goes with it.
+  const away = () => { if (document.visibilityState !== 'visible') { trace('new version: the app was put away — the card is gone until a later day'); comesBackToday = null; heldUntil = Date.now() + 2 * 60_000; gone(); } };
+  document.addEventListener('visibilitychange', away);
   (card.querySelector('#updateCardLater') as HTMLElement).onclick = () => {
-    try { localStorage.setItem(LATER_KEY, today()); } catch { /* asked again sooner, no harm */ }
-    trace('new version: TOMORROW — not asked again today');
+    comesBackToday = null;
+    heldUntil = Date.now() + 2 * 60_000;   // a debug device is told every time — but not at once again
+    trace('new version: NOT NOW');
     gone();
   };
   (card.querySelector('#updateCardNow') as HTMLElement).onclick = () => { gone(); void switchNow(); };
 }
 
-/** A newer build is on the device: ask, when the time is right. */
-export function offerUpdate(why: string): void {
-  if (planned) return;
-  if (!ready) trace(`new version: ${why} — asking after ${Math.round(useBeforeAsking() / 1000)} s of use`);
-  ready = true;
-  if (watching) return;
-  watching = true;
-  let quietLooks = 0;
-  window.setInterval(() => {
-    if (!ready || planned || cardUp || laterToday()) { quietLooks = 0; return; }
-    if (document.visibilityState !== 'visible') { quietLooks = 0; return; }
-    if (!benchSaysUsedEnough && getActiveMs() < useBeforeAsking()) return;
-    // One question at a time: the save reminder first — it protects work.
-    if (busyNow() || isToasterShowing()) { quietLooks = 0; return; }
-    if (++quietLooks < 2) return;
-    quietLooks = 0;
-    showCard();
-  }, 2000);
-}
-
 /** THE BENCH (test 63): the five minutes of use have passed. */
-export function benchUsedEnough(): void { benchSaysUsedEnough = true; }
+export function benchUsedEnough(): void { benchSaysUsedEnough = true; heldUntil = 0; }
 
 let asking = false;
-async function askOncePerDay(): Promise<void> {
+/** One small question to the server: which build is out? Nothing is downloaded. */
+async function askTheServer(): Promise<void> {
   if (asking || planned) return;
-  if (document.visibilityState !== 'visible' || !navigator.onLine) return;
-  // THE PROJECT FIRST (Roman, 10 Nov): the first opening of the day has to be
-  // smooth — the app comes up and the project is on the screen before anything
-  // is asked about versions. Not up yet: the next coming-to-front asks.
-  if (!(window as unknown as { __fh_booted?: boolean }).__fh_booted) return;
   const mine = runningBuild();
   if (!mine) return;
-  let said: string | null = null;
-  try { said = localStorage.getItem(DAY_KEY); } catch { /* asked again, no harm */ }
-  // A debug device (three taps on the version) asks every time it comes to the
-  // front — so the thing can be watched without waiting for midnight.
-  if (said === today() && !isDebugDevice()) return;
-  // ...and its TOMORROW lasts only until it next comes to the front.
-  if (isDebugDevice()) { try { localStorage.removeItem(LATER_KEY); } catch { /* fine */ } }
   asking = true;
   try {
     const res = await fetch(`${import.meta.env.BASE_URL}index.html?v=${Date.now()}`, { cache: 'no-store' });
     if (!res.ok) return;
-    const page = await res.text();
-    const out = page.match(/assets\/(index-[\w-]+\.js)/)?.[1];
+    const out = (await res.text()).match(/assets\/(index-[\w-]+\.js)/)?.[1];
     if (!out) return;
-    if (out === mine) {
-      try { localStorage.setItem(DAY_KEY, today()); } catch { /* asked again tomorrow anyway */ }
-      trace('new version: asked today — this is the newest');
+    try { localStorage.setItem(DAY_KEY, today()); } catch { /* asked again sooner, no harm */ }
+    if (out === mine) { newer = null; trace('new version: asked — this is the newest'); return; }
+    newer = out;
+    trace(`new version: ${out} is out, this is ${mine}${mayAsk(out) ? '' : ' — the person has been told twice, not again for this one'}`);
+  } catch (e) { trace(`new version: no answer (${e instanceof Error ? e.message : '?'}) — asked again later`); }
+  finally { asking = false; }
+}
+
+/**
+ * THE ONE CLOCK. Every few seconds: is it time to ask the server (five minutes
+ * of use, once a day)? Is there a newer build and may the card show (a quiet
+ * moment, a line, not twice already, the save reminder not up)?
+ */
+function watch(): void {
+  let quietLooks = 0;
+  window.setInterval(() => {
+    if (planned || cardUp) { quietLooks = 0; return; }
+    if (document.visibilityState !== 'visible' || !navigator.onLine) { quietLooks = 0; return; }
+    if (!(window as unknown as { __fh_booted?: boolean }).__fh_booted) return;
+    // NOT AT THE START (Roman): five minutes of use first — the question too.
+    if (!benchSaysUsedEnough && getActiveMs() < useBeforeAsking()) return;
+    let said: string | null = null;
+    try { said = localStorage.getItem(DAY_KEY); } catch { /* asked again, no harm */ }
+    if (!newer && !asking && (said !== today() || isDebugDevice()) && Date.now() - lastAsked > 60_000) {
+      lastAsked = Date.now();
+      void askTheServer();
       return;
     }
-    // ALL OF IT ON THE DEVICE FIRST (Roman, 10 Nov: "what if the connection is
-    // bad, or it does not load fully?"). The new page's own files are fetched
-    // whole, in the background, while the person works on. Only when every one
-    // has arrived is the switch planned — it is then quick, and cannot leave a
-    // half-loaded app. Any file missing: nothing happens, the day is not
-    // marked, and it is tried again the next time the app comes to the front.
-    const files = Array.from(new Set(Array.from(page.matchAll(/(?:src|href)="([^"]*assets\/[^"]+\.(?:js|mjs|css))"/g)).map((m) => m[1])));
-    trace(`new version: ${out} is out, this is ${mine} — fetching ${files.length} file(s) first`);
-    for (const f of files) {
-      const r = await fetch(new URL(f, window.location.href).toString(), { cache: 'reload' });
-      if (!r.ok) throw new Error(`${f}: ${r.status}`);
-      await r.arrayBuffer();
-    }
-    // The offline copy (where there is one) takes the whole new build too.
-    try { void (await navigator.serviceWorker?.getRegistration())?.update(); } catch { /* none here */ }
-    try { localStorage.setItem(DAY_KEY, today()); } catch { /* asked again tomorrow anyway */ }
-    offerUpdate(`${out} is on the device`);
-  } catch (e) { trace(`new version: not fetched (${e instanceof Error ? e.message : 'no answer'}) — tried again next time`); }
-  finally { asking = false; }
+    if (!newer || !(mayAsk(newer) || comesBackToday === newer) || Date.now() < heldUntil) { quietLooks = 0; return; }
+    // One thing at a time: the save reminder first — it protects work.
+    if (busyNow() || isToasterShowing()) { quietLooks = 0; return; }
+    if (++quietLooks < 2) return;
+    quietLooks = 0;
+    showCard(newer);
+  }, 2000);
+}
+let lastAsked = 0;
+
+/** THE BENCH (test 63): say which build is "running", the five minutes have passed — ask now. */
+export async function askNowAsIfRunning(build: string): Promise<void> {
+  _benchBuild = build;
+  benchSaysUsedEnough = true;
+  heldUntil = 0;
+  newer = null;
+  lastAsked = Date.now();
+  await askTheServer();
 }
 
 /** Back on the shot the page was on before the reload. */
@@ -327,16 +449,8 @@ function backToThePlace(): void {
   }, 300);
 }
 
-/** THE BENCH (test 63): say which build is "running" and ask now. */
-export function askNowAsIfRunning(build: string): Promise<void> {
-  _benchBuild = build;
-  try { localStorage.removeItem(DAY_KEY); } catch { /* fine */ }
-  return askOncePerDay();
-}
-
 export function startUpdateCheck(): void {
+  learnWhetherUpdated();
   backToThePlace();
-  document.addEventListener('visibilitychange', () => { void askOncePerDay(); });
-  window.addEventListener('focus', () => { void askOncePerDay(); });
-  window.addEventListener('pageshow', () => { void askOncePerDay(); });
+  watch();
 }

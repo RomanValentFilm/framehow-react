@@ -218,3 +218,6 @@ v5.0.205 · #757 (10 Nov)
 
 v5.0.206 · #758 (10 Nov)
 - A new shot gets a name nobody has yet (after 2, with 2#1 and 2#2 there: 2#3); existing shots are never renamed, doubles made on purpose stay. NEW and loaded pictures alike. Bench + test 59.
+
+v5.0.207 · #759 (10 Nov)
+- THE UPDATE ASKS: after five minutes of use a small card "A new version of Framehow is available — update?" TOMORROW · NOW (centred). Nothing restarts by itself any more. TOMORROW: not asked again that day. NOW: saved, sent, UPDATING FRAMEHOW, back on the same screen. One question at a time: the save reminder first.
