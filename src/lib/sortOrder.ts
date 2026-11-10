@@ -1437,6 +1437,21 @@ export function toggleSortDropdown(): void {
 
   renderDropdown(dropdown);
 
+  // ...AND ON THE SCREEN (Roman, 10 Nov). It opened from the button's left edge
+  // rightwards; on an iPhone held upright SORT BY sits right of the middle and
+  // the menu ran off the screen. Measured once it has its content: on a narrow
+  // screen it opens in the MIDDLE; anywhere else it is only pulled back in if
+  // it would stick out.
+  {
+    const w = dropdown.offsetWidth;
+    const room = window.innerWidth;
+    if (w > 0) {
+      const from = parseFloat(dropdown.style.left) || 0;
+      const left = room <= 430 ? Math.max(8, (room - w) / 2) : Math.max(8, Math.min(from, room - w - 8));
+      dropdown.style.left = `${Math.round(left)}px`;
+    }
+  }
+
   // Close on outside click
   setTimeout(() => {
     const handler = (e: MouseEvent) => {

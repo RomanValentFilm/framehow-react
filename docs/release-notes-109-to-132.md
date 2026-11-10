@@ -242,3 +242,11 @@ v5.0.213–215 · #765–767 (10 Nov, evening)
 - The update card and the save reminder also wait while a photo taken is still arriving (the live frame on the card until the real photo lands)
 - The update card has the same timing on every device — the test shortcuts for devices with the log on are gone
 - Shell (not deployed, for build 2): the camera keeps clear of the Dynamic Island sideways
+
+v5.0.216–224 · #768–776 (10 Nov, evening) — THE DYNAMIC ISLAND, iPhone sideways only
+- The app keeps its full width and its own backgrounds; the three bars run edge to edge (they lie above the island). Only what would sit under the island starts beside it, on the island's side, with a 1 pt gap: the cards (3×2, strips, NEEDS/NOTES), the frame-set page of SHOOTING ORDER / STORY FLOW, LIBRARY (SELECT and DELETE too), GROUP, SETUPS, the Menu, the big DRAW view, MAX view. Turned the other way round, it follows. (A first design pushed the whole app in beside a stripe — dropped.)
+- The app ends at the island's own edge, not the system's safe distance (10 pt further)
+- More room at the ends of the bars sideways (top row 20, the others 12) for the round corners; MAX view keeps 16 pt on the side without the island
+- NEW PROJECT box scrolls itself sideways; the page behind stays still
+- SETUPS name field: no contact autofill over the keyboard. LIBRARY: DELETE the same distance from the right as SELECT
+- Shell, for build 2 (unbuilt): the camera keeps clear of the island sideways

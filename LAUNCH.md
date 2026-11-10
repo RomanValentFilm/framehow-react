@@ -1,5 +1,5 @@
 # LAUNCH — THE ONE LIST (9 Nov 2026). Nothing else counts; TOMORROW.md is history + notes.
-TODAY (10 Nov, evening): dev is v5.0.215 · #767. THE FULL RUN IS STILL TO DO — nothing live before it is green. Then: A20 (Dynamic Island in the app), the four phone checks (create-account box + keyboard, NEEDS last column, New Group speed, New Group sideways), C1 live, C2 build 2.
+TODAY (10 Nov, night): dev is v5.0.224 · #776. THE FULL RUN IS STILL TO DO — nothing live before it is green. Then: the four phone checks (create-account box + keyboard, NEEDS last column, New Group speed, New Group sideways), C1 live, C2 build 2 (camera + island, the glass bar over the keyboard, offline start in the shell).
 Cross out with [x] and the date. Blocks are groups; the RUNNING ORDER is:
 1 done 9 Nov → 2 C1 live, C2, C2b →
 3 A15, G1–G4, A2, A3, B3c, B3e-2 → 4 D1–D9 (Roman), C3 shell to live → 5 D11 SUBMIT → 6 A7 Fitting → 7 A8, A10, B3f, G-items.
@@ -63,7 +63,7 @@ D7 video + Fitting page text, F1 new token.
 - [ ] C1 Full run → live with the 4 steps (push v4.4:main + direct wrangler upload)
 - [ ] C2a IN BUILD 2 (written 10 Nov, UNBUILT, untested): the camera keeps clear of the Dynamic Island sideways — picture, frame line, shutter, Cancel, RATIO, EV, 1x start where the island ends; follows the phone turned the other way (ios/App/App/FramehowCamera/CameraScreen.swift). Check on the iPhone both ways round, and upright unchanged.
 - [ ] C2c IN THE SHELL: a fresh start with NO connection opens the project with its pictures (proven for the home-screen app, not yet for the shell)
-- [ ] A20 DYNAMIC ISLAND IN THE APP (Roman, 10 Nov, after first leaving it): on an iPhone sideways the app starts where the island ends, on the island's side only — bars, 3×2, GROUP, SETUPS, LIBRARY, boxes; switches sides with the phone; upright and iPad unchanged. One rule for the page, not panel by panel. 2–3 h + simulator + phone.
+- [x] A20 (10 Nov, v5.0.216–224, Roman on his iPhone: "feels like we are good now") DYNAMIC ISLAND IN THE APP — full width kept, only content and opened menus start beside the island. Original note: (Roman, 10 Nov, after first leaving it): on an iPhone sideways the app starts where the island ends, on the island's side only — bars, 3×2, GROUP, SETUPS, LIBRARY, boxes; switches sides with the phone; upright and iPad unchanged. One rule for the page, not panel by panel. 2–3 h + simulator + phone.
 - [ ] C2 TestFlight build 2 with the camera on Roman's iPhone (CFBundleVersion 2, Archive → Distribute) — shell still on dev while we test
 - [ ] C2b iPad: build 2 on Roman's iPad — rotation, layout, Pencil drawing, keyboard, camera (lenses differ); PDFs in the iPad simulator
 - [ ] C3 BEFORE SUBMISSION: shell `server.url` dev → framehow.com/app, one more build — reviewers and store users must see live, never dev
