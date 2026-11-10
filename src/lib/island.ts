@@ -53,7 +53,9 @@ function apply(): void {
   // (62 reported, the island ends at 51; 59 reported, it ends at 48). The app
   // ends right at the island.
   const safe = side ? sideInset() : 0;
-  const inset = Math.max(0, safe - 10);
+  // ...and ONE POINT MORE (Roman): a hair of the background shows between the
+  // island and the first card, so the eye reads the island as the reason.
+  const inset = safe > 0 ? Math.max(0, safe - 10) + 1 : 0;
   const il = side === 'left' ? inset : 0;
   const ir = side === 'right' ? inset : 0;
   const now = `${il}/${ir}`;
@@ -61,6 +63,10 @@ function apply(): void {
   last = now;
   root.style.setProperty('--il', `${il}px`);
   root.style.setProperty('--ir', `${ir}px`);
+  // The point given to the island's side is taken back on the other one, where
+  // there is room to take it (the 3×2 view's own margin) — the cards keep their width.
+  root.style.setProperty('--cl', ir > 0 ? '1px' : '0px');
+  root.style.setProperty('--cr', il > 0 ? '1px' : '0px');
   root.classList.toggle('island', il + ir > 0);
   root.classList.toggle('island-l', il > 0);
   root.classList.toggle('island-r', ir > 0);

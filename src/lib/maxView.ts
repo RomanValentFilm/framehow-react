@@ -19,6 +19,16 @@ import { drawMainStrokes, drawVersionStrokes } from './drawing';
 import { trace } from './syncTrace';
 import { getCurrentProject } from './currentProject';
 
+// THE DYNAMIC ISLAND (10 Nov): on an iPhone sideways the picture has the screen
+// minus the island's side (island.ts puts the two numbers on <html>); the room
+// and its middle are measured from there, not from the whole window.
+function islandSides(): { l: number; r: number } {
+  const cs = getComputedStyle(document.documentElement);
+  return { l: parseFloat(cs.getPropertyValue('--il')) || 0, r: parseFloat(cs.getPropertyValue('--ir')) || 0 };
+}
+function roomW(): number { const i = islandSides(); return window.innerWidth - i.l - i.r; }
+function midX(): number { const i = islandSides(); return i.l + (window.innerWidth - i.l - i.r) / 2; }
+
 type Item = { src: string | null | undefined; strokes: Stroke[] | undefined; main: boolean; w: number; h: number; label: string;
   strip?: 'ver' | 'floor' | 'refs'; vi?: number };
 
@@ -200,7 +210,7 @@ let _root: HTMLElement | null = null;
 
 function paintItem(cvs: HTMLCanvasElement, it: Item): void {
   const dpr = Math.min(3, window.devicePixelRatio || 1);
-  const fitK = Math.min(window.innerWidth / it.w, window.innerHeight / it.h);
+  const fitK = Math.min(roomW() / it.w, window.innerHeight / it.h);
   const k = fitK * dpr * 1.5;                           // room to zoom in sharply
   cvs.width = Math.round(it.w * k); cvs.height = Math.round(it.h * k);
   cvs.style.width = `${it.w * fitK}px`; cvs.style.height = `${it.h * fitK}px`;
@@ -346,7 +356,7 @@ export function openMaxView(items: Item[], index: number, onClose?: (it: Item, m
     lastTouch = Date.now();
     if (e.touches.length === 2) {
       const m = mid(e.touches);
-      pinch = { d: dist(e.touches), s: scale, cx: m.x - window.innerWidth / 2, cy: m.y - window.innerHeight / 2, tx, ty };
+      pinch = { d: dist(e.touches), s: scale, cx: m.x - midX(), cy: m.y - window.innerHeight / 2, tx, ty };
       drag = null;
     } else if (e.touches.length === 1) {
       drag = { x: e.touches[0].clientX, y: e.touches[0].clientY, tx, ty, t: Date.now() };
@@ -386,7 +396,7 @@ export function openMaxView(items: Item[], index: number, onClose?: (it: Item, m
   root.addEventListener('wheel', (e) => {
     e.preventDefault();
     const ns = Math.max(1, Math.min(6, scale * (e.deltaY < 0 ? 1.1 : 0.9)));
-    const cx = e.clientX - window.innerWidth / 2, cy = e.clientY - window.innerHeight / 2;
+    const cx = e.clientX - midX(), cy = e.clientY - window.innerHeight / 2;
     tx = cx - (cx - tx) * (ns / scale); ty = cy - (cy - ty) * (ns / scale); scale = ns;
     if (scale === 1) { tx = 0; ty = 0; }
     apply();

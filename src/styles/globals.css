@@ -1828,7 +1828,7 @@ html.picts-hold, html.picts-hold body{overscroll-behavior:none;}
    screen's edge: the room is put INSIDE the thing that has the colour. */
 html.island .columns{padding-left:max(0px,calc(var(--il,0px) - 10px));padding-right:max(0px,calc(var(--ir,0px) - 10px));box-sizing:border-box;}
 html.island .columns.view-grid3x2{padding-left:0;padding-right:0;}
-html.island .grid3x2-container{padding-left:max(3vw,var(--il,0px));padding-right:max(3vw,var(--ir,0px));}
+html.island .grid3x2-container{padding-left:max(calc(3vw - var(--cl,0px)),var(--il,0px));padding-right:max(calc(3vw - var(--cr,0px)),var(--ir,0px));}
 html.island .columns.view-overview,html.island .columns.view-grid4{padding-left:max(0px,calc(var(--il,0px) - 12px));padding-right:max(0px,calc(var(--ir,0px) - 12px));}
 /* SORT BY: the shooting order's own page lies outside the columns. */
 /* The grey behind the frame-set cards (SHOOTING ORDER and STORY FLOW alike) runs
@@ -1847,3 +1847,12 @@ html.island .fs-overlay > .fs-close{right:calc(12px + var(--ir,0px));}
 html.island .camera-overlay,
 html.island .crop-overlay{padding-left:var(--il,0px);padding-right:var(--ir,0px);box-sizing:border-box;}
 html.island .scribble-toolbar{left:calc(1.5vw + var(--il,0px));}
+/* MAX VIEW: the picture, its label and its buttons keep clear too (the picture's
+   size is worked out from the same room, maxView.ts). */
+html.island #maxView{left:var(--il,0px);right:var(--ir,0px);}
+html.island #maxView .max-close{right:calc(12px + var(--ir,0px));}
+html.island #maxView .max-share-row{right:calc(64px + var(--ir,0px));}
+html.island #maxView .max-flash{right:calc(64px + var(--ir,0px));}
+html.island #maxView .max-label{left:calc(14px + var(--il,0px));}
+html.island #maxView .max-prev{left:max(8px,var(--il,0px));}
+html.island #maxView .max-next{right:max(8px,var(--ir,0px));}
