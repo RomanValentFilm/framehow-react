@@ -1822,7 +1822,18 @@ html.picts-hold, html.picts-hold body{overscroll-behavior:none;}
    from the bars on that side (GROUP, SETUPS, the Menu). Their backgrounds
    still run to the screen's edge; their content begins where the island ends.
    --il / --ir (the island's side only) come from src/lib/island.ts. */
-html.island .columns{padding-left:var(--il,0px);padding-right:var(--ir,0px);box-sizing:border-box;}
+/* JUST ON THE VERGE OF THE ISLAND (Roman): the cards already keep a little room
+   of their own from the edge, so only the REST is added — the card's edge, not
+   its margin, meets the island's. And each view's own background runs to the
+   screen's edge: the room is put INSIDE the thing that has the colour. */
+html.island .columns{padding-left:max(0px,calc(var(--il,0px) - 10px));padding-right:max(0px,calc(var(--ir,0px) - 10px));box-sizing:border-box;}
+html.island .columns.view-grid3x2{padding-left:0;padding-right:0;}
+html.island .grid3x2-container{padding-left:max(3vw,var(--il,0px));padding-right:max(3vw,var(--ir,0px));}
+html.island .columns.view-overview,html.island .columns.view-grid4{padding-left:max(0px,calc(var(--il,0px) - 12px));padding-right:max(0px,calc(var(--ir,0px) - 12px));}
+/* SORT BY: the shooting order's own page lies outside the columns. */
+html.island .sort-edit-view{padding-left:max(0px,calc(var(--il,0px) - 16px));padding-right:max(0px,calc(var(--ir,0px) - 16px));box-sizing:border-box;}
+/* LIBRARY: SELECT sits in the top right corner — beside the island when it is there. */
+html.island #pictsLibrary .picts-select{right:calc(10px + var(--ir,0px));}
 html.island #pictsLibrary .picts-scroll,
 html.island #pictsLibrary .picts-bar{padding-left:var(--il,0px);padding-right:var(--ir,0px);box-sizing:border-box;}
 html.island .setup-bar{padding-left:calc(10px + var(--il,0px));padding-right:calc(10px + var(--ir,0px));}
