@@ -66,6 +66,22 @@ test('several main pictures: LOAD on a shot with three files — the first on it
   say(`   shots now: ${labels2.join(' | ')}`);
   expect(labels2).toEqual(['1', '2', '2#1', '2#2', '3', '4', '5']);
 
+  // A SHOT THAT ALREADY HAS A PICTURE (Roman, 10 Nov): several pictures loaded
+  // onto it ALL become new shots after it — the shot is not touched. The first
+  // used to become a VERSION of it (five pictures: one version, four shots).
+  say('LOAD on shot 2 — it has a picture — with two files: two NEW shots, and no new version on shot 2');
+  const versionsBefore = (await desktop.versionLabels(1, 'ver')).length;
+  const mark = await desktop.mark();
+  const [chooser3] = await Promise.all([desktop.page.waitForEvent('filechooser', { timeout: 10_000 }),
+    desktop.page.evaluate(() => (window as never as { __fh_test: { pressUpload(i: number, st: string): void } }).__fh_test.pressUpload(1, 'main'))]);
+  await chooser3.setFiles([1, 2].map((i) => ({ name: `onto-a-full-shot-${i}.png`, mimeType: 'image/png', buffer: Buffer.from(PICTURE, 'base64') })));
+  await desktop.waitForLogAfter(mark, 'all become new shots after it', 30_000);
+  await expect.poll(async () => (await desktop.read()).frames.length, { timeout: 30_000, message: 'two more shots' }).toBe(9);
+  const labels3 = (await desktop.read()).frames.map((f) => f.label);
+  say(`   shots now: ${labels3.join(' | ')}`);
+  expect(labels3.slice(0, 2), 'shots 1 and 2 are where they were').toEqual(['1', '2']);
+  expect((await desktop.versionLabels(1, 'ver')).length, 'SHOT 2 GOT NO NEW VERSION').toBe(versionsBefore);
+
   await desktop.close();
   await ipad.close();
 });

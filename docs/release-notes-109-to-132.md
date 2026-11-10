@@ -208,3 +208,7 @@ v5.0.202–203 · #754–755 (10 Nov)
 - LIBRARY, nobody signed in: the button says "Sign in to see all your pictures in one place." with Sign in / Not now (it did nothing at all)
 - The update also comes when nobody is signed in or the project was never saved (it waited for ever for work with nowhere to go — seen live in the simulator); the app saves to the device right before switching
 - Test 63 has a third part: not signed in, unsaved project, update, the work is there afterwards
+
+v5.0.204 · #756 (10 Nov)
+- SEVERAL PICTURES INTO A VERSION STRIP land in the order chosen and none is left empty: all are read first, then placed (on the iPhone a later, quicker picture overtook the first, which then opened one more version — v1 empty, v2 v3 v4 filled). Test 60 now loads a big, slow first picture.
+- LIBRARY notice reads "Sign in to see all your pictures."

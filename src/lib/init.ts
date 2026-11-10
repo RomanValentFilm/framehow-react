@@ -1097,6 +1097,28 @@ export function initFramehow(): void {
     const { fid, toVersion } = s.mainImgTarget;
     const f = s.frames.find((fr) => fr.id === fid);
     if (!f) { trace('LOAD: the shot is no longer in the project — picture dropped'); showToast('That shot is no longer in the project.'); return; }
+    // SEVERAL PICTURES ONTO A SHOT THAT ALREADY HAS ONE (Roman, 10 Nov): every
+    // one of them becomes a NEW SHOT after it; the shot itself is not touched.
+    // The first used to follow the one-picture rule and become a VERSION of the
+    // shot — five pictures gave one new version and four new shots. One picture
+    // alone still becomes a version, as it always has.
+    if (toVersion && more.length > 0) {
+      trace(`LOAD: ${picked.length} pictures on a shot that has one — all become new shots after it`);
+      void (async () => {
+        const { readPictureForSaving } = await import('./camMode');
+        const pictures: string[] = [];
+        for (const f2 of picked) {
+          try { pictures.push(await readPictureForSaving(f2)); } catch (err) {
+            trace(`picture: could not read "${f2.name}" — ${err instanceof Error ? err.message : String(err)}`);
+            showToast(`Could not read "${f2.name}".`);
+          }
+        }
+        if (pictures.length) insertPictureShotsAfter(fid, pictures);
+      })();
+      (e.target as HTMLInputElement).value = '';
+      useStore.setState({ mainImgTarget: null });
+      return;
+    }
     // The card may have been redrawn while the picker was open (#533): find
     // it again by its shot id rather than trusting the element remembered.
     const remembered = s.mainImgTarget.div;
