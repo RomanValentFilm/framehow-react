@@ -172,3 +172,6 @@ v5.0.192 · #744 (10 Nov) — SAVE POINT before the 3-star rating for all projec
 - STARS DECIDE THE GROUP, THE ARROWS THE ORDER INSIDE IT: ◀ ▶ move a version only past a neighbour with the same stars / hidden / tag state; otherwise the arrow is grey (strip, compare card, 3×2 and overview)
 - The own-push shortcut only when the server holds exactly what was sent
 - Tests: BIG DAY part 3 (refused move, order inside a group travels), star in 3x2
+
+v5.0.193 · #745 (10 Nov)
+- THREE STARS IN EVERY PROJECT: the rating fitting had. A row in horizontal projects (first star on the left), a column in portrait and fitting; bottom-left corner. Tap a level to set it, tap it again to clear; most stars first. An old single star counts as one. The MAX view takes the level pressed too.
