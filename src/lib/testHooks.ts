@@ -1503,7 +1503,7 @@ export function installTestDoor(): void {
       (window as never as { __fh_renderAll?: () => void }).__fh_renderAll?.();
     },
     fireSaveReminder() { showSaveToaster(); },
-    async askForUpdate(build) { const m = await import('./appUpdate'); await m.askNowAsIfRunning(build); },
+    async askForUpdate(build) { const m = await import('./appUpdate'); m.benchUsedEnough(); await m.askNowAsIfRunning(build); },
     openWriteBox(index, strip, versionIndex) {
       const f = useStore.getState().frames[index];
       if (!f) throw new Error(`no frame at ${index}`);

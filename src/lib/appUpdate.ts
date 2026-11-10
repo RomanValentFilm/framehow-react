@@ -1,17 +1,24 @@
-// THE NEWEST VERSION, BY ITSELF, ONCE A DAY (Roman, 10 November).
+// THE NEWEST VERSION — ASKED, NOT DONE TO YOU (Roman, 10 November).
 //
 // The app looked for a new version only when it STARTED. A phone app is not
 // started, it is brought back to the front — so the simulator sat on a
-// five-day-old version, and so would every phone. Now:
+// five-day-old version, and so would every phone. The first answer was to
+// switch by itself at a quiet moment; on a real phone that restarted the app
+// in the person's face, right as they began. So now:
 //
 //   - the first time the app comes to the front each day (the person's own
-//     clock, so after midnight) it asks the server which build is out;
-//   - if that is not the build running, it reloads — but only at a quiet
-//     moment (quietMoment.ts: no box open, nobody typing or drawing, the
-//     camera off) and with nothing waiting to be sent;
-//   - the reload is silent: the session lives in the device's storage, so
-//     nobody signs in again; the same project opens from the device, and the
-//     page goes back to the shot it was on.
+//     clock) it asks the server which build is out, once the project is up;
+//   - a newer build is fetched WHOLE in the background — a bad line, or none,
+//     changes nothing and it is tried again next time;
+//   - after FIVE MINUTES OF USE a small card asks:
+//         "A new version of Framehow is available — update?"  TOMORROW · NOW
+//     It waits its turn like the save reminder (quietMoment.ts) and never
+//     shows together with it;
+//   - NOW: the work is saved (and sent, where there is somewhere to send it),
+//     a box says UPDATING FRAMEHOW, the app restarts and comes back to the
+//     same project, shot, view, lit buttons and versions;
+//   - TOMORROW: not asked again today. A fresh start of the app in between is
+//     on the new build anyway.
 //
 // "Which build is out" is the name of the app's main file in a fresh copy of
 // the page — every build renames it. No extra file to publish, and it works
@@ -19,8 +26,9 @@
 
 import { useStore } from '../store/state';
 import { trace, isDebugDevice } from './syncTrace';
-import { whenQuiet } from './quietMoment';
-import { framesNeedingPush, projectSettingsUnsent } from './accountFlow';
+import { busyNow } from './quietMoment';
+import { getActiveMs } from './activity';
+import { framesNeedingPush, projectSettingsUnsent, isToasterShowing } from './accountFlow';
 import { captureFrameAnchor, scrollAnchorToRel, setViewMode } from './view';
 import { getStripActiveTab, setStripActiveTab, getStripVersions } from './helpers';
 import { flushSyncNow, getCurrentProject, saveLocalNow } from './currentProject';
@@ -50,76 +58,134 @@ function runningBuild(): string | null {
 }
 
 let planned = false;
-let askedToSendAt = 0;
-/** Reload at the first quiet moment with nothing left to send. Once. */
-export function reloadWhenQuiet(why: string): void {
+const LATER_KEY = 'fh_update_later_day';
+const CARD_ID = 'updateCard';
+/** Use before the card may show: five minutes; a debug device, twenty seconds. */
+const useBeforeAsking = () => (isDebugDevice() ? 20_000 : 5 * 60_000);
+
+/** Where the person is — written down for the page that comes back. */
+function rememberThePlace(): void {
+  try {
+    const a = captureFrameAnchor();
+    const i = a ? useStore.getState().frames.findIndex((f) => String(f.id) === String(a.fid)) : -1;
+    // ...and the VIEW (Roman, 10 Nov: "3x2 view would be best"): whoever was
+    // in 3×2, the overview or a single strip comes back in it.
+    const st = useStore.getState();
+    // WHICH VERSION EACH CARD WAS SHOWING (Roman, 10 Nov), by the shot's place
+    // in the project: the strip's own tab, and the one the main card / 3×2
+    // card had swiped to. Only where it is not the first — a short note.
+    const shown: Array<[number, number, number, number, number, string]> = [];
+    st.frames.forEach((f, at) => {
+      const t = (['ver', 'floor', 'refs'] as const).map((k) => getStripActiveTab(f.id, k));
+      const cc = st.crossCompare[f.id] ?? -1;
+      if (t.some((x) => x > 0) || cc >= 0) shown.push([at, t[0], t[1], t[2], cc, String(st.crossCompareStrip[f.id] || 'ver')]);
+    });
+    if (i >= 0) sessionStorage.setItem(PLACE_KEY, JSON.stringify({
+      i, rel: a ? a.rel : null,
+      // HOW FAR EVERYTHING WAS SCROLLED, as plain numbers (run 638): the same
+      // view comes back with the same bars and the same cards, so the same
+      // numbers put the page exactly where it was — the card-and-offset way
+      // came out 20 px off, measured on one column's card and put back on another's.
+      sc: [Math.round(window.scrollY), ...SCROLLERS.map((q) => Math.round((document.querySelector(q) as HTMLElement | null)?.scrollTop ?? 0))],
+      view: st.currentViewMode, strips: st.activeStrips, needs: st.needsStripVisible, notes: st.notesStripVisible,
+      group: st.activeGroupId, shown,
+    }));
+  } catch { /* it opens at the top, then */ }
+}
+
+/** NOW was pressed: say so, save, send what can be sent, switch. */
+async function switchNow(): Promise<void> {
   if (planned) return;
   planned = true;
-  trace(`new version: ${why} — reloading at the next quiet moment`);
-  whenQuiet(() => {
-    try {
-      const a = captureFrameAnchor();
-      const i = a ? useStore.getState().frames.findIndex((f) => String(f.id) === String(a.fid)) : -1;
-      // ...and the VIEW (Roman, 10 Nov: "3x2 view would be best"): whoever was
-      // in 3×2, the overview or a single strip comes back in it.
-      const st = useStore.getState();
-      // WHICH VERSION EACH CARD WAS SHOWING (Roman, 10 Nov), by the shot's place
-      // in the project: the strip's own tab, and the one the main card / 3×2
-      // card had swiped to. Only where it is not the first — a short note.
-      const shown: Array<[number, number, number, number, number, string]> = [];
-      st.frames.forEach((f, at) => {
-        const t = (['ver', 'floor', 'refs'] as const).map((k) => getStripActiveTab(f.id, k));
-        const cc = st.crossCompare[f.id] ?? -1;
-        if (t.some((x) => x > 0) || cc >= 0) shown.push([at, t[0], t[1], t[2], cc, String(st.crossCompareStrip[f.id] || 'ver')]);
-      });
-      if (i >= 0) sessionStorage.setItem(PLACE_KEY, JSON.stringify({
-        i, rel: a ? a.rel : null,
-        // HOW FAR EVERYTHING WAS SCROLLED, as plain numbers (run 638): the same
-        // view comes back with the same bars and the same cards, so the same
-        // numbers put the page exactly where it was — the card-and-offset way
-        // came out 20 px off, measured on one column's card and put back on another's.
-        sc: [Math.round(window.scrollY), ...SCROLLERS.map((q) => Math.round((document.querySelector(q) as HTMLElement | null)?.scrollTop ?? 0))],
-        view: st.currentViewMode, strips: st.activeStrips, needs: st.needsStripVisible, notes: st.notesStripVisible,
-        group: st.activeGroupId, shown,
-      }));
-    } catch { /* it opens at the top, then */ }
-    trace('new version: reloading now');
-    // SAY SO (Roman, 10 Nov): until the new page arrives the old one stays on
-    // the screen — on a slow line that is a frozen app with no word. A box,
-    // no button: there is nothing to press. It goes when the new page comes.
-    const overlay = document.createElement('div');
-    overlay.id = 'updatingNote';
-    overlay.style.cssText = 'position:fixed;inset:0;z-index:999999;background:rgba(0,0,0,0.75);display:flex;'
-      + 'align-items:center;justify-content:center;padding:20px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;';
-    overlay.innerHTML = '<div style="background:#1a1a1a;border-radius:12px;padding:24px;max-width:380px;width:100%;color:#fff;text-align:center;">'
-      + '<div style="color:#d52632;font-weight:700;font-size:15px;line-height:1.5;margin-bottom:12px;">UPDATING FRAMEHOW</div>'
-      + '<div style="font-size:13px;line-height:1.5;">Loading the newest version — one moment.</div></div>';
-    document.body.appendChild(overlay);
-    // EVERYTHING ON THE DEVICE FIRST — the app's own local save, now, so the
-    // page that comes back finds this second's work (rule one: never lose work).
-    const go = () => window.location.reload();
-    void Promise.race([saveLocalNow().catch(() => undefined), new Promise((r) => window.setTimeout(r, 3000))])
-      .then(() => window.setTimeout(go, 300));
-  }, () => {
-    if (!navigator.onLine) return false;
-    // NOBODY SIGNED IN, OR A PROJECT THAT HAS NEVER BEEN SAVED (the simulator,
-    // 10 Nov: it waited for ever — "the project settings still to send" — on a
-    // device with nowhere to send them). Such work lives on the device and
-    // comes back from the device; there is nothing to wait for.
-    if (!isLoggedIn() || getCurrentProject().projectId === null) return true;
-    const frames = framesNeedingPush().size;
-    const settings = projectSettingsUnsent();
-    if (frames === 0 && !settings) return true;
-    // SOMETHING IS STILL TO BE SENT — so send it (run 635: a change that no
-    // button had asked to send waited for ever, and the update with it).
-    if (Date.now() - askedToSendAt > 10_000) {
-      askedToSendAt = Date.now();
-      trace(`new version: ${frames} shot(s)${settings ? ' and the project settings' : ''} still to send — sending first`);
-      void flushSyncNow();
-    }
-    return false;
-  });
+  rememberThePlace();
+  trace('new version: NOW — saving, then switching');
+  // SAY SO: until the new page arrives the old one stays on the screen — on a
+  // slow line that is a frozen app with no word. A box, no button: there is
+  // nothing to press. It goes when the new page comes.
+  const overlay = document.createElement('div');
+  overlay.id = 'updatingNote';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:999999;background:rgba(0,0,0,0.75);display:flex;'
+    + 'align-items:center;justify-content:center;padding:20px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;';
+  overlay.innerHTML = '<div style="background:#1a1a1a;border-radius:12px;padding:24px;max-width:380px;width:100%;color:#fff;text-align:center;">'
+    + '<div style="color:#d52632;font-weight:700;font-size:15px;line-height:1.5;margin-bottom:12px;">UPDATING FRAMEHOW</div>'
+    + '<div style="font-size:13px;line-height:1.5;">Loading the newest version — one moment.</div></div>';
+  document.body.appendChild(overlay);
+  const within = <T,>(p: Promise<T>, ms: number) => Promise.race([p.catch(() => undefined), new Promise((r) => window.setTimeout(r, ms))]);
+  // EVERYTHING ON THE DEVICE FIRST (rule one: never lose work) — the app's own
+  // local save, now, so the page that comes back finds this second's work.
+  await within(saveLocalNow(), 3000);
+  // ...and to the server, where there is one to send to: signed in, a project
+  // that has been saved, a line. Eight seconds at most — what does not go now
+  // is on the device and goes after the restart, as any unsent work does.
+  if (navigator.onLine && isLoggedIn() && getCurrentProject().projectId !== null
+    && (framesNeedingPush().size > 0 || projectSettingsUnsent())) {
+    trace('new version: something still to send — sending first');
+    await within(flushSyncNow(), 8000);
+    await within(saveLocalNow(), 3000);
+  }
+  trace('new version: reloading now');
+  window.setTimeout(() => window.location.reload(), 300);
 }
+
+let ready = false;
+let watching = false;
+let cardUp = false;
+let benchSaysUsedEnough = false;
+function laterToday(): boolean {
+  try { return localStorage.getItem(LATER_KEY) === today(); } catch { return false; }
+}
+
+/** The card. Small, in the middle like the save reminder, blocking nothing. */
+function showCard(): void {
+  if (cardUp || planned) return;
+  cardUp = true;
+  const card = document.createElement('div');
+  card.id = CARD_ID;
+  card.className = 'save-toaster hidden';
+  card.setAttribute('role', 'status');
+  card.innerHTML = '<div class="save-toaster-card"><div class="save-toaster-msg" style="text-align:center">A new version of Framehow is available — update?</div>'
+    + '<div class="save-toaster-btns" style="justify-content:center"><button class="btn" type="button" id="updateCardLater">TOMORROW</button>'
+    + '<button class="btn btn-accent" type="button" id="updateCardNow">NOW</button></div></div>';
+  document.body.appendChild(card);
+  requestAnimationFrame(() => card.classList.remove('hidden'));
+  trace('new version: asking — TOMORROW or NOW');
+  const gone = () => { window.clearInterval(aside); card.remove(); cardUp = false; };
+  // It steps aside for a box, the keyboard, DRAW, the camera — and comes back.
+  const aside = window.setInterval(() => {
+    if (!busyNow()) return;
+    trace(`new version: the question steps aside (${busyNow()})`);
+    gone();
+  }, 500);
+  (card.querySelector('#updateCardLater') as HTMLElement).onclick = () => {
+    try { localStorage.setItem(LATER_KEY, today()); } catch { /* asked again sooner, no harm */ }
+    trace('new version: TOMORROW — not asked again today');
+    gone();
+  };
+  (card.querySelector('#updateCardNow') as HTMLElement).onclick = () => { gone(); void switchNow(); };
+}
+
+/** A newer build is on the device: ask, when the time is right. */
+export function offerUpdate(why: string): void {
+  if (planned) return;
+  if (!ready) trace(`new version: ${why} — asking after ${Math.round(useBeforeAsking() / 1000)} s of use`);
+  ready = true;
+  if (watching) return;
+  watching = true;
+  let quietLooks = 0;
+  window.setInterval(() => {
+    if (!ready || planned || cardUp || laterToday()) { quietLooks = 0; return; }
+    if (document.visibilityState !== 'visible') { quietLooks = 0; return; }
+    if (!benchSaysUsedEnough && getActiveMs() < useBeforeAsking()) return;
+    // One question at a time: the save reminder first — it protects work.
+    if (busyNow() || isToasterShowing()) { quietLooks = 0; return; }
+    if (++quietLooks < 2) return;
+    quietLooks = 0;
+    showCard();
+  }, 2000);
+}
+
+/** THE BENCH (test 63): the five minutes of use have passed. */
+export function benchUsedEnough(): void { benchSaysUsedEnough = true; }
 
 let asking = false;
 async function askOncePerDay(): Promise<void> {
@@ -136,6 +202,8 @@ async function askOncePerDay(): Promise<void> {
   // A debug device (three taps on the version) asks every time it comes to the
   // front — so the thing can be watched without waiting for midnight.
   if (said === today() && !isDebugDevice()) return;
+  // ...and its TOMORROW lasts only until it next comes to the front.
+  if (isDebugDevice()) { try { localStorage.removeItem(LATER_KEY); } catch { /* fine */ } }
   asking = true;
   try {
     const res = await fetch(`${import.meta.env.BASE_URL}index.html?v=${Date.now()}`, { cache: 'no-store' });
@@ -164,7 +232,7 @@ async function askOncePerDay(): Promise<void> {
     // The offline copy (where there is one) takes the whole new build too.
     try { void (await navigator.serviceWorker?.getRegistration())?.update(); } catch { /* none here */ }
     try { localStorage.setItem(DAY_KEY, today()); } catch { /* asked again tomorrow anyway */ }
-    reloadWhenQuiet(`${out} is on the device`);
+    offerUpdate(`${out} is on the device`);
   } catch (e) { trace(`new version: not fetched (${e instanceof Error ? e.message : 'no answer'}) — tried again next time`); }
   finally { asking = false; }
 }

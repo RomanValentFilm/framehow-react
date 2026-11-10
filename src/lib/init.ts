@@ -1254,8 +1254,8 @@ export function initFramehow(): void {
           if (!w) return;
           w.addEventListener('statechange', () => {
             if (w.state === 'installed' && navigator.serviceWorker.controller) {
-              // Not in the middle of the hand's work (10 Nov): at a quiet moment.
-              void import('./appUpdate').then((m) => m.reloadWhenQuiet('a new offline copy is installed'));
+              // Asked, not done to the person (10 Nov): TOMORROW or NOW.
+              void import('./appUpdate').then((m) => m.offerUpdate('a new offline copy is installed'));
             }
           });
         });

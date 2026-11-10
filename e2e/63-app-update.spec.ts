@@ -1,20 +1,21 @@
-// THE NEWEST VERSION, BY ITSELF — AND SMOOTH (Roman, 10 November).
+// THE NEWEST VERSION — ASKED, NOT DONE TO YOU (Roman, 10 November).
 //
 // The first time each day the app comes to the front it asks whether a newer
-// build is out. "This has to be super smooth": the project is on the screen
-// first; the new build is fetched WHOLE in the background; the switch waits
-// for a quiet moment (no box open, nothing to send); a box says UPDATING
-// FRAMEHOW; and afterwards the person is still signed in, on the same project,
-// with the work they did a second ago. A bad line, or none: nothing happens,
-// the app goes on as it is, and it is tried again next time.
+// build is out. The project is on the screen first; the new build is fetched
+// WHOLE in the background (a bad line, or none: nothing happens, tried again
+// next time). After five minutes of use a small card asks "A new version of
+// Framehow is available — update?" — TOMORROW · NOW. It waits its turn (no box
+// open, nobody typing or drawing). TOMORROW: not asked again today. NOW: the
+// work is saved, a box says UPDATING FRAMEHOW, and afterwards the person is
+// still signed in, on the same project, shot, view, with every button lit as
+// it was and the work of a second ago.
 //
-// The bench has no built files, so the test says which build is "running" and
-// answers the app's questions itself (the page naming a newer build, and that
-// build's files).
+// The bench has no built files, so the test says which build is "running",
+// answers the app's questions itself, and says the five minutes have passed.
 //
 //     npm run t -- -g "new version"
 //
-// About a minute.
+// About a minute and a half.
 
 import { test, expect } from '@playwright/test';
 import { Device, freshAccount, say } from './harness';
@@ -24,7 +25,7 @@ test.describe.configure({ timeout: 240_000 });
 const NEW_PAGE = '<!doctype html><html><head><link rel="stylesheet" href="/app/assets/index-NEWBUILD.css">'
   + '<script type="module" src="/app/assets/index-NEWBUILD.js"></script></head><body></body></html>';
 
-test('new version: a bad line changes nothing; a good one is fetched whole, waits for a quiet moment, and the person is back where they were', async ({ browser }) => {
+test('new version: a bad line changes nothing; a good one is fetched whole and ASKED — TOMORROW waits a day, NOW brings the person back where they were', async ({ browser }) => {
   const { token } = await freshAccount();
   const desktop = await Device.open(browser, 'desktop', token);
   const pid = await desktop.newProject('UPDATE ME', 6);
@@ -69,17 +70,36 @@ test('new version: a bad line changes nothing; a good one is fetched whole, wait
   mark = await desktop.mark();
   await ask();
   await desktop.waitForLogAfter(mark, 'is on the device', 20_000);
+  const card = desktop.page.locator('#updateCard');
   await desktop.page.waitForTimeout(6000);
-  await expect(note, 'NO SWITCH WHILE A BOX IS OPEN').toHaveCount(0);
+  await expect(card, 'THE QUESTION DOES NOT COME WHILE A BOX IS OPEN').toHaveCount(0);
+  await expect(note, 'and nothing switches by itself').toHaveCount(0);
   expect(await stamp(), 'the page was not reloaded under the write box').toBe(pageBorn);
 
-  say('the text is typed and saved; then, at the quiet moment: UPDATING FRAMEHOW, and the app comes back by itself');
+  say('the text is typed and saved; the person goes to 3×2 — NOW the question comes: TOMORROW or NOW');
   // From here the real page answers again — that is the "new version" arriving.
   await desktop.page.unroute('**/app/index.html?v=*');
   await desktop.finishWriteBox('BEFORE THE UPDATE');
   // ...and the person goes to the 3×2 view: that is where they must come back (Roman, 10 Nov).
   await desktop.setView('grid3x2');
-  await expect(note, 'the box that says what is happening').toBeVisible({ timeout: 40_000 });
+  await expect(card, 'THE QUESTION NEVER CAME').toBeVisible({ timeout: 20_000 });
+  await expect(card).toContainText('A new version of Framehow is available — update?');
+  await expect(desktop.page.locator('#updateCardLater')).toHaveText('TOMORROW');
+  await expect(desktop.page.locator('#updateCardNow')).toHaveText('NOW');
+  expect(await stamp(), 'NOTHING HAPPENS UNTIL THE PERSON ANSWERS').toBe(pageBorn);
+
+  say('TOMORROW — the card goes and is not shown again today; the app is untouched');
+  await desktop.page.locator('#updateCardLater').click();
+  await expect(card).toHaveCount(0);
+  await desktop.page.waitForTimeout(7000);
+  await expect(card, 'ASKED AGAIN THE SAME DAY').toHaveCount(0);
+  expect(await stamp()).toBe(pageBorn);
+
+  say('the next day (the note of "tomorrow" is a day old): it asks again — NOW');
+  await desktop.page.evaluate(() => localStorage.setItem('fh_update_later_day', '1999-1-1'));
+  await expect(card, 'NOT ASKED AGAIN THE NEXT DAY').toBeVisible({ timeout: 20_000 });
+  await desktop.page.locator('#updateCardNow').click();
+  await expect(note, 'the box that says what is happening').toBeVisible({ timeout: 20_000 });
   await expect(note).toContainText('UPDATING FRAMEHOW');
   await expect(note).toContainText('Loading the newest version — one moment.');
   await desktop.page.waitForFunction((born) => {
@@ -148,6 +168,8 @@ test('new version: a bad line changes nothing; a good one is fetched whole, wait
   const born2 = await stamp();
   await desktop.page.route('**/app/index.html?v=*', (r) => r.fulfill({ status: 200, contentType: 'text/html', body: NEW_PAGE }));
   await ask();
+  await expect(desktop.page.locator('#updateCard'), 'the question, the second time').toBeVisible({ timeout: 30_000 });
+  await desktop.page.locator('#updateCardNow').click();
   await desktop.page.waitForFunction((born) => {
     const w = window as never as { __same_page?: number; __fh_booted?: boolean; __fh_test?: unknown };
     return w.__same_page !== born && Boolean(w.__fh_booted) && Boolean(w.__fh_test);
@@ -170,7 +192,7 @@ test('new version: a bad line changes nothing; a good one is fetched whole, wait
 // "the project settings still to send" on a device with nowhere to send them.
 // Such a project lives on the device — the update saves it there and switches;
 // afterwards the project and the work of a second ago are on the screen.
-test('new version, nobody signed in: the update still comes, and the unsaved project is there afterwards', async ({ browser }) => {
+test('new version, nobody signed in: the question still comes, and after NOW the unsaved project is there', async ({ browser }) => {
   const desktop = await Device.open(browser, 'desktop', '');
   await desktop.page.evaluate(() => (window as never as { __fh_test: { newUnsavedProject(n: number): Promise<void> } }).__fh_test.newUnsavedProject(3));
   for (const sel of ['#projectListClose', '#accountCancel']) {
@@ -185,6 +207,8 @@ test('new version, nobody signed in: the update still comes, and the unsaved pro
   const born = await desktop.page.evaluate(() => (window as never as { __same_page?: number }).__same_page ??= Date.now());
   say('a newer build is out — nobody is signed in, the project has never been saved');
   await desktop.page.evaluate(() => (window as never as { __fh_test: { askForUpdate(b: string): Promise<void> } }).__fh_test.askForUpdate('index-OLDBUILD.js'));
+  await expect(desktop.page.locator('#updateCard'), 'the question comes for somebody not signed in too').toBeVisible({ timeout: 30_000 });
+  await desktop.page.locator('#updateCardNow').click();
   await desktop.page.waitForFunction((b) => {
     const w = window as never as { __same_page?: number; __fh_booted?: boolean; __fh_test?: unknown };
     return w.__same_page !== b && Boolean(w.__fh_booted) && Boolean(w.__fh_test);

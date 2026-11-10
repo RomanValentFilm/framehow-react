@@ -2270,11 +2270,11 @@ export function showSaveToaster(): void {
   // moment WRITE was pressed and the reminder covered the write box — the
   // write was lost. It waits for a quiet moment instead, and it DOES come:
   // waiting is not a dismissal and nothing is counted.
-  if (busyNow()) {
+  if (busyNow() || document.getElementById('updateCard')) {
     if (!toasterWaiting) {
       toasterWaiting = true;
-      trace(`save reminder: waiting for a quiet moment (${busyNow()})`);
-      whenQuiet(() => { toasterWaiting = false; showSaveToaster(); });
+      trace(`save reminder: waiting for a quiet moment (${busyNow() ?? 'the update question is up'})`);
+      whenQuiet(() => { toasterWaiting = false; showSaveToaster(); }, () => !document.getElementById('updateCard'));
     }
     return;
   }

@@ -215,3 +215,6 @@ v5.0.204 · #756 (10 Nov)
 
 v5.0.205 · #757 (10 Nov)
 - Several pictures loaded onto a SHOT that already has a picture all become new shots after it; the shot is not touched (the first used to become a version of it). One picture alone still becomes a version. Test 59 has the case.
+
+v5.0.206 · #758 (10 Nov)
+- A new shot gets a name nobody has yet (after 2, with 2#1 and 2#2 there: 2#3); existing shots are never renamed, doubles made on purpose stay. NEW and loaded pictures alike. Bench + test 59.
