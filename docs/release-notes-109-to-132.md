@@ -198,3 +198,8 @@ v5.0.199 · #751 (10 Nov)
 - The update asks only once the app is up with the project on screen; the new build is fetched WHOLE in the background first (a bad line changes nothing, tried again next time); then, at a quiet moment, the box "UPDATING FRAMEHOW — Loading the newest version — one moment." and the switch
 - ONE LIST of what both the update and the save reminder wait for: drawing / DRAW mode / big view / scribble, typing, the camera, SETUPS open, a shooting order being edited, a shot or version being moved, any box, sheet, menu or overlay; the update also waits for nothing left to send. The log says why it waits.
 - Tests 62 (save reminder waits its turn, never lost) and 63 (new version: no line, bad line, good line behind a WRITE box; still signed in, same project, same shot)
+
+v5.0.200–201 · #752–753 (10 Nov)
+- AFTER AN UPDATE THE PERSON FEELS NO DIFFERENCE: the same project, the page at its exact scroll position, the same view (3×2, overview, strips), every button lit as before (strips, NEEDS/NOTES, the group and its red name), the same version on every card
+- The update sends unsent work first instead of only waiting for it
+- Test 63 plays two updates (plain, and from a busy bar) and compares the bar, the versions on show and the scroll before and after

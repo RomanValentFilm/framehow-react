@@ -723,7 +723,8 @@ export function openTextModal(
  * read but has no decision to make about — a confirm dialog with OK/Cancel
  * would wrongly imply a choice.
  */
-export function showImportantNote(headline: string, body: string, opts?: { centred?: boolean }): Promise<void> {
+export function showImportantNote(headline: string, body: string,
+  opts?: { centred?: boolean; action?: { label: string; run: () => void }; okLabel?: string }): Promise<void> {
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
     overlay.id = 'importantNote';            // so the simulator can read what it says (12 Oct)
@@ -747,8 +748,20 @@ export function showImportantNote(headline: string, body: string, opts?: { centr
     p.style.cssText = 'color:#fff;font-size:13px;line-height:1.5;margin-bottom:20px;';
     box.appendChild(p);
 
+    // A WAY ON, where there is one (10 Nov): the red button does the thing the
+    // notice talks about; the grey one under it only closes.
+    if (opts?.action) {
+      const go = document.createElement('button');
+      go.id = 'importantNoteAction';
+      go.textContent = opts.action.label;
+      go.style.cssText =
+        'display:block;width:100%;padding:12px;background:#d52632;border:1px solid #d52632;' +
+        'border-radius:8px;color:#fff;font-size:14px;font-weight:600;cursor:pointer;margin-bottom:10px;';
+      go.onclick = () => { overlay.remove(); resolve(); opts.action!.run(); };
+      box.appendChild(go);
+    }
     const ok = document.createElement('button');
-    ok.textContent = 'OK, got it.';
+    ok.textContent = opts?.okLabel ?? 'OK, got it.';
     ok.style.cssText =
       'display:block;width:100%;padding:12px;background:#2a2a2a;border:1px solid #555;' +
       'border-radius:8px;color:#fff;font-size:14px;cursor:pointer;';

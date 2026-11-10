@@ -27,3 +27,11 @@ Project list with the one-row/unsent note, storage line + "Confirm your email �
 - NEEDS: column opens on every shot, DAY 1 ticks red.
 - Create-account box: both tick boxes, "Send me news and updates about Framehow." exactly, buttons visible.
 - DRAW: big view, a stroke lands and is kept on the card after closing and rotating.
+
+## Replay with Roman, 10 Nov (v5.0.201 in the simulator) — his verdicts
+- 1 old version → FAULT, fixed: daily update check, fetched whole, switched at a quiet moment, same screen after (v5.0.198–201, test 63)
+- 2 "save it first" on opening → NOT a fault: it is the save reminder (1 min, then 15 min, twice) and leads to an account; kept
+- 4 reminder on top of WRITE → FAULT, fixed: it waits while a box / DRAW / camera / SETUPS is open and comes ~3 s after (test 62)
+- 3 + 11 landscape corners (logo "F", Menu corner) → NOT a fault: fine on Roman's real iPhone and iPad (simulator corner mask). GROUP / LIBRARY not cut today.
+- 10 turning to landscape does not open 3×2 by itself → NOT a fault: pressing 3×2 is right
+- 12 Dynamic Island over the outer 3×2 card in landscape → LEFT AS IT IS (Roman: side room would make the app narrower; the user scrolls). Known fix if Apple objects: room on the island's side only.

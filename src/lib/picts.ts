@@ -623,7 +623,18 @@ export async function sendPendingDeletions(): Promise<void> {
 
 export async function openPicts(): Promise<void> {
   const token = getToken();
-  if (!token) { trace('PICTS: not signed in'); return; }
+  if (!token) {
+    // THE BUTTON SAYS WHY (Roman, 10 Nov): signed out, LIBRARY did nothing at
+    // all — a dead button to anyone without the log. The library is an
+    // account's pictures; say so, and offer the way in.
+    trace('PICTS: not signed in — saying so');
+    const { showImportantNote } = await import('./modals');
+    void showImportantNote('LIBRARY', 'Sign in to see all your pictures in one place.', {
+      action: { label: 'Sign in', run: () => document.getElementById('menuAccount')?.click() },
+      okLabel: 'Not now',
+    });
+    return;
+  }
   closePicts();
   const root = document.createElement('div');
   root.id = 'pictsLibrary';
