@@ -125,6 +125,8 @@ async function withinReach(): Promise<boolean> {
   } catch { return false; }
 }
 
+/** How long to stay quiet. A debug device (the log on) waits 30 s, so it can be watched. */
+const waitFor = (ms: number) => (isDebugDevice() ? 30_000 : ms);
 /** After a NOW that could not go on: not asked again for a while. */
 let heldUntil = 0;
 
@@ -149,7 +151,7 @@ async function switchNow(): Promise<void> {
     trace('new version: NOW, but the new version is not within reach (no line?) — nothing restarted');
     overlay.remove();
     planned = false;
-    heldUntil = Date.now() + 10 * 60_000;
+    heldUntil = Date.now() + waitFor(10 * 60_000);
     // The person WANTED the update — so this showing is not one of the two:
     // the card comes back (ten minutes on, with a line), as the box promises.
     if (newer) forgetToday(newer);
@@ -275,7 +277,7 @@ function showCard(build: string): void {
   // is on the screen, answered or not: left unanswered and the device put
   // away, it is gone, and comes once more on a later day.
   noteNotNow(build);
-  const gone = () => { window.clearInterval(aside); document.removeEventListener('visibilitychange', away); card.remove(); cardUp = false; };
+  const gone = () => { window.clearInterval(aside); document.removeEventListener('visibilitychange', away); window.removeEventListener('offline', lineGone); card.remove(); cardUp = false; };
   // It steps aside for a box, the keyboard, DRAW, the camera — and comes back
   // the same day when that is done (it was not answered, only in the way).
   const aside = window.setInterval(() => {
@@ -285,11 +287,15 @@ function showCard(build: string): void {
     gone();
   }, 500);
   // The app put away (the iPad closed, another app): the card goes with it.
-  const away = () => { if (document.visibilityState !== 'visible') { trace('new version: the app was put away — the card is gone until a later day'); comesBackToday = null; heldUntil = Date.now() + 2 * 60_000; gone(); } };
+  const away = () => { if (document.visibilityState !== 'visible') { trace('new version: the app was put away — the card is gone until a later day'); comesBackToday = null; heldUntil = Date.now() + waitFor(2 * 60_000); gone(); } };
   document.addEventListener('visibilitychange', away);
+  // NO LINE, NO QUESTION (Roman): the card is never shown offline — and if the
+  // line goes while it is up, it goes too, uncounted, and returns with the line.
+  const lineGone = () => { trace('new version: the line went — the card goes too'); comesBackToday = build; forgetToday(build); gone(); };
+  window.addEventListener('offline', lineGone, { once: true });
   (card.querySelector('#updateCardLater') as HTMLElement).onclick = () => {
     comesBackToday = null;
-    heldUntil = Date.now() + 2 * 60_000;   // a debug device is told every time — but not at once again
+    heldUntil = Date.now() + waitFor(2 * 60_000);   // a debug device is told every time — but not at once again
     trace('new version: NOT NOW');
     gone();
   };
