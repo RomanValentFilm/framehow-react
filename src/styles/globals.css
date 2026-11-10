@@ -1831,7 +1831,10 @@ html.island .columns.view-grid3x2{padding-left:0;padding-right:0;}
 html.island .grid3x2-container{padding-left:max(3vw,var(--il,0px));padding-right:max(3vw,var(--ir,0px));}
 html.island .columns.view-overview,html.island .columns.view-grid4{padding-left:max(0px,calc(var(--il,0px) - 12px));padding-right:max(0px,calc(var(--ir,0px) - 12px));}
 /* SORT BY: the shooting order's own page lies outside the columns. */
-html.island .sort-edit-view{padding-left:max(0px,calc(var(--il,0px) - 16px));padding-right:max(0px,calc(var(--ir,0px) - 16px));box-sizing:border-box;}
+/* The grey behind the frame-set cards (SHOOTING ORDER and STORY FLOW alike) runs
+   to the screen's edge; the room is inside it, and its header line bleeds with it. */
+html.island .sort-edit-inner{max-width:none;padding-left:max(16px,var(--il,0px));padding-right:max(16px,var(--ir,0px));}
+html.island .sort-edit-header{margin-left:calc(-1 * max(16px,var(--il,0px)));margin-right:calc(-1 * max(16px,var(--ir,0px)));padding-left:max(16px,var(--il,0px));padding-right:max(16px,var(--ir,0px));}
 /* LIBRARY: SELECT sits in the top right corner — beside the island when it is there. */
 html.island #pictsLibrary .picts-select{right:calc(10px + var(--ir,0px));}
 html.island #pictsLibrary .picts-scroll,

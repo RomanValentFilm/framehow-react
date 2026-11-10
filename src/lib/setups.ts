@@ -177,7 +177,12 @@ function _showInlineCreateForm(bar: HTMLElement): void {
   const row = document.createElement('div');
   row.className = 'setup-create-row';
   row.innerHTML = `
-    <input class="setup-name-input" id="setupInlineNameInput" type="text" maxlength="12" placeholder="NAME" autocomplete="one-time-code" />
+    <!-- NO "AUTOFILL CONTACT" OVER THE KEYBOARD (Roman, 10 Nov). The phone took this
+         for a PERSON'S name — the field was called "…NameInput" and said NAME — and put
+         two bars over the keyboard: his own name, and "AutoFill Contact". The field is
+         a setup's label: called so now, told off completion, and its grey NAME carries
+         an invisible break so the phone does not read the word. -->
+    <input class="setup-name-input" id="setupInlineLabelField" type="text" maxlength="12" placeholder="N&#8203;AME" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" enterkeyhint="done" data-form-type="other" />
     <div class="setup-color-picker">${colorsHTML}</div>
     <button class="setup-create-btn" id="setupInlineCreateBtn">CREATE</button>
     <button class="setup-cancel-btn" id="setupInlineCancelBtn">CANCEL</button>
@@ -198,7 +203,7 @@ function _showInlineCreateForm(bar: HTMLElement): void {
 
   // Wire CREATE
   row.querySelector('#setupInlineCreateBtn')!.addEventListener('click', () => {
-    const input = document.getElementById('setupInlineNameInput') as HTMLInputElement;
+    const input = document.getElementById('setupInlineLabelField') as HTMLInputElement;
     const name = input.value.trim().toUpperCase();
     if (!name) { showToast('Enter a name'); return; }
     if (name.length > 12) { showToast('Max 12 characters'); return; }
@@ -218,7 +223,7 @@ function _showInlineCreateForm(bar: HTMLElement): void {
   });
 
   // Auto-focus
-  (document.getElementById('setupInlineNameInput') as HTMLInputElement)?.focus();
+  (document.getElementById('setupInlineLabelField') as HTMLInputElement)?.focus();
 }
 
 /** Show inline edit form for the active setup as a second row below the pills. */
@@ -244,7 +249,7 @@ function _showInlineEditForm(bar: HTMLElement): void {
   const row = document.createElement('div');
   row.className = 'setup-create-row';
   row.innerHTML = `
-    <input class="setup-name-input" id="setupInlineEditNameInput" type="text" maxlength="12" value="${su.name}" autocomplete="one-time-code" />
+    <input class="setup-name-input" id="setupInlineEditLabelField" type="text" maxlength="12" value="${su.name}" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" enterkeyhint="done" data-form-type="other" />
     <div class="setup-color-picker">${colorsHTML}</div>
     <button class="setup-create-btn" id="setupInlineEditSaveBtn">SAVE</button>
     <button class="setup-delete-btn" id="setupInlineEditDeleteBtn">DELETE</button>
@@ -266,7 +271,7 @@ function _showInlineEditForm(bar: HTMLElement): void {
 
   // Wire SAVE
   row.querySelector('#setupInlineEditSaveBtn')!.addEventListener('click', () => {
-    const input = document.getElementById('setupInlineEditNameInput') as HTMLInputElement;
+    const input = document.getElementById('setupInlineEditLabelField') as HTMLInputElement;
     const name = input.value.trim().toUpperCase();
     if (!name) { showToast('Enter a name'); return; }
     if (name.length > 12) { showToast('Max 12 characters'); return; }
@@ -292,7 +297,7 @@ function _showInlineEditForm(bar: HTMLElement): void {
   });
 
   // Auto-focus
-  (document.getElementById('setupInlineEditNameInput') as HTMLInputElement)?.focus();
+  (document.getElementById('setupInlineEditLabelField') as HTMLInputElement)?.focus();
 }
 
 /** Render an edit form for a specific setup: rename, recolour, delete. */
@@ -317,7 +322,7 @@ function renderSetupEditForm(bar: HTMLElement, setupId: string): void {
 
   bar.innerHTML = `
     <div class="setup-bar-inner setup-edit-form">
-      <input class="setup-name-input" id="setupEditNameInput" type="text" maxlength="12" value="${su.name}" autocomplete="one-time-code" />
+      <input class="setup-name-input" id="setupEditLabelField" type="text" maxlength="12" value="${su.name}" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" enterkeyhint="done" data-form-type="other" />
       <div class="setup-color-picker">${colorsHTML}</div>
       <button class="setup-create-btn" id="setupEditSaveBtn">SAVE</button>
       <button class="setup-delete-btn" id="setupEditDeleteBtn">DELETE</button>
@@ -338,7 +343,7 @@ function renderSetupEditForm(bar: HTMLElement, setupId: string): void {
 
   // Wire SAVE
   bar.querySelector('#setupEditSaveBtn')!.addEventListener('click', () => {
-    const input = document.getElementById('setupEditNameInput') as HTMLInputElement;
+    const input = document.getElementById('setupEditLabelField') as HTMLInputElement;
     const name = input.value.trim().toUpperCase();
     if (!name) { showToast('Enter a name'); return; }
     if (name.length > 12) { showToast('Max 12 characters'); return; }
@@ -360,7 +365,7 @@ function renderSetupEditForm(bar: HTMLElement, setupId: string): void {
   });
 
   // Auto-focus
-  (document.getElementById('setupEditNameInput') as HTMLInputElement)?.focus();
+  (document.getElementById('setupEditLabelField') as HTMLInputElement)?.focus();
 }
 
 /** Render the setup creation form: name input + colour circles + CREATE. */
@@ -385,7 +390,7 @@ function renderSetupCreateForm(bar: HTMLElement): void {
 
   bar.innerHTML = `
     <div class="setup-bar-inner setup-create-form">
-      <input class="setup-name-input" id="setupNameInput" type="text" maxlength="12" placeholder="NAME" autocomplete="one-time-code" />
+      <input class="setup-name-input" id="setupLabelField" type="text" maxlength="12" placeholder="N&#8203;AME" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" enterkeyhint="done" data-form-type="other" />
       <div class="setup-color-picker">${colorsHTML}</div>
       <button class="setup-create-btn" id="setupCreateBtn">CREATE</button>
       <button class="setup-cancel-btn" id="setupCancelBtn">CANCEL</button>
@@ -412,7 +417,7 @@ function renderSetupCreateForm(bar: HTMLElement): void {
 
   // Wire CREATE → goes straight into EDIT mode for the new setup
   bar.querySelector('#setupCreateBtn')!.addEventListener('click', () => {
-    const input = document.getElementById('setupNameInput') as HTMLInputElement;
+    const input = document.getElementById('setupLabelField') as HTMLInputElement;
     const name = input.value.trim().toUpperCase();
     if (!name) { showToast('Enter a name'); return; }
     if (name.length > 12) { showToast('Max 12 characters'); return; }
@@ -439,7 +444,7 @@ function renderSetupCreateForm(bar: HTMLElement): void {
   });
 
   // Auto-focus
-  (document.getElementById('setupNameInput') as HTMLInputElement)?.focus();
+  (document.getElementById('setupLabelField') as HTMLInputElement)?.focus();
 }
 
 // ─── Delete setup ─────────────────────────────────────────────────────
