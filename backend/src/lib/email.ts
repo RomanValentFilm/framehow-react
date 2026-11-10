@@ -57,7 +57,8 @@ function htmlMail(blocks: Array<string | string[]>, button?: { href: string; lab
     const lines = own.map(line).join("<br>");
     // The block with the link in bold, where asked (the welcome mail, 10 Nov):
     // two links in that mail, and this is the one that matters.
-    const bold = button?.boldBlock && own.includes("{{BUTTON}}") ? "font-weight:bold;" : "";
+    // ...and the signature, "Framehow", in every mail.
+    const bold = (button?.boldBlock && own.includes("{{BUTTON}}")) || (i === blocks.length - 1 && b === "Framehow") ? "font-weight:bold;" : "";
     return `<p style="${bold}margin:0 0 ${i === blocks.length - 1 ? "0" : "1.5em"}">${lines}</p>`;
   }).join("");
   return `<!DOCTYPE html><html><body><div style="font-family:-apple-system,system-ui,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.5">${body}</div></body></html>`;

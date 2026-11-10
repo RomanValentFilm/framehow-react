@@ -181,3 +181,7 @@ v5.0.194 · #746 (10 Nov)
 
 v5.0.195 · #747 (10 Nov)
 - The setup button on a version reads "+NAME" (the setup's own name, the old grey look) instead of "TAG"; tagged it is the name filled in the setup's colour, as before; long names are cut with "…"
+
+v5.0.196 · #748 (10 Nov)
+- ACCOUNT CREATED box right after sign-up: a mail was sent to the address typed; the link unlocks 500 MB, 150 MB until then
+- Server (runs 627–628): welcome mail says "on your iPhone, iPad or in a browser on your computer (www.framehow.com)"; mails use the reader's own colours (Gmail showed grey on white), an empty line only between paragraphs, links as blue underlined text, the confirm paragraph of the welcome mail in bold

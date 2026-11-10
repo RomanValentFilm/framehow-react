@@ -735,7 +735,7 @@ export function showImportantNote(headline: string, body: string, opts?: { centr
     const box = document.createElement('div');
     box.style.cssText =
       'background:#1a1a1a;border-radius:12px;padding:24px;max-width:380px;width:100%;' +
-      `color:#fff;text-align:${opts?.centred ? 'center' : 'left'};`;
+      'color:#fff;text-align:center;';   // centred in every notice box (Roman, 10 Nov)
 
     const h = document.createElement('div');
     h.textContent = headline;
