@@ -21,9 +21,14 @@ import { useStore } from '../store/state';
 import { trace, isDebugDevice } from './syncTrace';
 import { whenQuiet } from './quietMoment';
 import { framesNeedingPush, projectSettingsUnsent } from './accountFlow';
-import { captureFrameAnchor, scrollAnchorTo, setViewMode } from './view';
+import { captureFrameAnchor, scrollAnchorToRel, setViewMode } from './view';
+import { getStripActiveTab, setStripActiveTab, getStripVersions } from './helpers';
+import { flushSyncNow } from './currentProject';
+import { enterGroup, updateGroupButtonState } from './groups';
 
 const DAY_KEY = 'fh_update_checked_day';
+/** Everything in the app that scrolls on its own, besides the window. */
+const SCROLLERS = ['.columns', '#mainScroll', '#versionsScroll', '#floorScroll', '#refsScroll', '#needsScroll', '#notesScroll', '#overviewScroll'];
 const PLACE_KEY = 'fh_after_update';
 
 function today(): string {
@@ -44,6 +49,7 @@ function runningBuild(): string | null {
 }
 
 let planned = false;
+let askedToSendAt = 0;
 /** Reload at the first quiet moment with nothing left to send. Once. */
 export function reloadWhenQuiet(why: string): void {
   if (planned) return;
@@ -56,9 +62,24 @@ export function reloadWhenQuiet(why: string): void {
       // ...and the VIEW (Roman, 10 Nov: "3x2 view would be best"): whoever was
       // in 3×2, the overview or a single strip comes back in it.
       const st = useStore.getState();
+      // WHICH VERSION EACH CARD WAS SHOWING (Roman, 10 Nov), by the shot's place
+      // in the project: the strip's own tab, and the one the main card / 3×2
+      // card had swiped to. Only where it is not the first — a short note.
+      const shown: Array<[number, number, number, number, number, string]> = [];
+      st.frames.forEach((f, at) => {
+        const t = (['ver', 'floor', 'refs'] as const).map((k) => getStripActiveTab(f.id, k));
+        const cc = st.crossCompare[f.id] ?? -1;
+        if (t.some((x) => x > 0) || cc >= 0) shown.push([at, t[0], t[1], t[2], cc, String(st.crossCompareStrip[f.id] || 'ver')]);
+      });
       if (i >= 0) sessionStorage.setItem(PLACE_KEY, JSON.stringify({
-        i, view: st.currentViewMode, strips: st.activeStrips, needs: st.needsStripVisible, notes: st.notesStripVisible,
-        group: st.activeGroupId,
+        i, rel: a ? a.rel : null,
+        // HOW FAR EVERYTHING WAS SCROLLED, as plain numbers (run 638): the same
+        // view comes back with the same bars and the same cards, so the same
+        // numbers put the page exactly where it was — the card-and-offset way
+        // came out 20 px off, measured on one column's card and put back on another's.
+        sc: [Math.round(window.scrollY), ...SCROLLERS.map((q) => Math.round((document.querySelector(q) as HTMLElement | null)?.scrollTop ?? 0))],
+        view: st.currentViewMode, strips: st.activeStrips, needs: st.needsStripVisible, notes: st.notesStripVisible,
+        group: st.activeGroupId, shown,
       }));
     } catch { /* it opens at the top, then */ }
     trace('new version: reloading now');
@@ -74,7 +95,20 @@ export function reloadWhenQuiet(why: string): void {
       + '<div style="font-size:13px;line-height:1.5;">Loading the newest version — one moment.</div></div>';
     document.body.appendChild(overlay);
     window.setTimeout(() => window.location.reload(), 400);
-  }, () => navigator.onLine && framesNeedingPush().size === 0 && !projectSettingsUnsent());
+  }, () => {
+    if (!navigator.onLine) return false;
+    const frames = framesNeedingPush().size;
+    const settings = projectSettingsUnsent();
+    if (frames === 0 && !settings) return true;
+    // SOMETHING IS STILL TO BE SENT — so send it (run 635: a change that no
+    // button had asked to send waited for ever, and the update with it).
+    if (Date.now() - askedToSendAt > 10_000) {
+      askedToSendAt = Date.now();
+      trace(`new version: ${frames} shot(s)${settings ? ' and the project settings' : ''} still to send — sending first`);
+      void flushSyncNow();
+    }
+    return false;
+  });
 }
 
 let asking = false;
@@ -131,7 +165,8 @@ function backToThePlace(): void {
   // look at the phone in the moment of the update does not feel any
   // difference". The view, the strips that were lit, NEEDS or NOTES open.
   let i = -1;
-  let was: { view?: string; strips?: string[]; needs?: boolean; notes?: boolean; group?: number | null } = {};
+  let was: { view?: string; strips?: string[]; needs?: boolean; notes?: boolean; group?: number | null;
+    rel?: number | null; sc?: number[]; shown?: Array<[number, number, number, number, number, string]> } = {};
   try {
     const raw = sessionStorage.getItem(PLACE_KEY);
     sessionStorage.removeItem(PLACE_KEY);
@@ -147,21 +182,67 @@ function backToThePlace(): void {
     if (frames.length > i) {
       window.clearInterval(id);
       window.setTimeout(() => {
+        // EVERY BUTTON LIT AS IT WAS (Roman, 10 Nov: "do not miss any buttons
+        // lit"). So nothing is painted here by hand: each piece goes through
+        // the app's OWN door, the one that lights its button —
+        //   the view and the strips: setViewMode (lights 3×2 / M+2 / M+3 and
+        //     every strip button from what is on);
+        //   NEEDS and NOTES: their own buttons, pressed, if they were on;
+        //   the group: enterGroup (the red name beside GROUP, the red button).
         const views = ['main', 'ver', 'both', 'overview', 'grid4', 'grid3x2'];
         if (was.view && views.includes(was.view)) {
-          const patch: Record<string, unknown> = {};
-          if (Array.isArray(was.strips) && was.strips.length > 0) patch.activeStrips = was.strips;
-          if (typeof was.needs === 'boolean') patch.needsStripVisible = was.needs;
-          if (typeof was.notes === 'boolean') patch.notesStripVisible = was.notes;
-          // The GROUP that was being looked at, if it is still there.
-          if (typeof was.group === 'number' && useStore.getState().groups.some((g) => g.id === was.group)) patch.activeGroupId = was.group;
-          useStore.setState(patch as never);
+          if (Array.isArray(was.strips) && was.strips.length > 0) useStore.setState({ activeStrips: was.strips } as never);
           setViewMode(was.view as never);
+          const press = (id: string, want: boolean | undefined, on: boolean) => {
+            if (typeof want === 'boolean' && want !== on) document.getElementById(id)?.click();
+          };
+          press('needsStripBtn', was.needs, useStore.getState().needsStripVisible);
+          press('notesStripBtn', was.notes, useStore.getState().notesStripVisible);
+        }
+        if (typeof was.group === 'number' && useStore.getState().groups.some((g) => g.id === was.group)
+          && useStore.getState().activeGroupId !== was.group) {
+          enterGroup(was.group);
+          updateGroupButtonState();
+        }
+        // THE VERSION EACH CARD WAS SHOWING — after the view is set (setting a
+        // view lets go of the swiped-to version), then drawn once more with it.
+        if (Array.isArray(was.shown) && was.shown.length > 0) {
+          const now = useStore.getState();
+          for (const [at, ver, floor, refs, cc, ccStrip] of was.shown) {
+            const f = frames[at];
+            if (!f) continue;
+            ([['ver', ver], ['floor', floor], ['refs', refs]] as const).forEach(([k, idx]) => {
+              if (idx > 0 && idx < (getStripVersions(f.id, k)?.length ?? 0)) setStripActiveTab(f.id, k, idx);
+            });
+            if (cc >= 0 && cc < (getStripVersions(f.id, ccStrip as never)?.length ?? 0)) {
+              now.crossCompare[f.id] = cc;
+              (now.crossCompareStrip as Record<number, string>)[f.id] = ccStrip;
+            }
+          }
+          if (was.view && views.includes(was.view)) setViewMode(was.view as never, true);
           (window as unknown as { __fh_renderAll?: () => void }).__fh_renderAll?.();
         }
         window.setTimeout(() => {
-          scrollAnchorTo(frames[i].id);
+          // THE SAME SHOT AT THE SAME HEIGHT (Roman, 10 Nov) — not centred.
+          const put = () => {
+            if (Array.isArray(was.sc) && was.sc.length === SCROLLERS.length + 1) {
+              SCROLLERS.forEach((q, k) => { const e = document.querySelector(q) as HTMLElement | null; if (e) e.scrollTop = was.sc![k + 1]; });
+              window.scrollTo(0, was.sc[0]);
+              return;
+            }
+            scrollAnchorToRel(frames[i].id, typeof was.rel === 'number' ? was.rel : null);
+          };
+          put();
           trace(`new version: running — back on shot ${i + 1}, view ${useStore.getState().currentViewMode}`);
+          // ...AND AGAIN ONCE THE CARDS HAVE THEIR HEIGHTS (run 636: 20 px off).
+          // Pictures and the equal-height pass land after the first placing and
+          // move every card; the page is put on its shot again when they have —
+          // unless the person has already moved it themselves.
+          let touched = false;
+          const mine = () => { touched = true; };
+          window.addEventListener('wheel', mine, { once: true, passive: true });
+          window.addEventListener('touchstart', mine, { once: true, passive: true });
+          [900, 2000].forEach((ms) => window.setTimeout(() => { if (!touched) put(); }, ms));
         }, 300);
       }, 600);
     } else if (Date.now() - t0 > 15_000) window.clearInterval(id);

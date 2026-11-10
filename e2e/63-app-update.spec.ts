@@ -105,5 +105,63 @@ test('new version: a bad line changes nothing; a good one is fetched whole, wait
   await desktop.waitForLog('new version: running — back on shot', 20_000);
   expect(await desktop.page.locator('.grid3x2-card-wrap').count(), 'BACK IN THE 3×2 VIEW').toBeGreaterThan(0);
   await desktop.waitForLog('view grid3x2', 5_000);
+  const lit = () => desktop.page.evaluate(() => ({
+    bar: Array.from(document.querySelectorAll('.view-btn.active')).map((b) => (b as HTMLElement).dataset.view || (b as HTMLElement).dataset.strip || b.id).sort().join(' '),
+    group: document.getElementById('groupActiveLabel')?.textContent ?? '',
+    groupRed: !!document.querySelector('.view-btn[data-view="group"].group-active'),
+    // the version each strip card shows, and where the first shot card sits
+    tabs: Array.from(document.querySelectorAll('.frame-card[data-vfid] .vtab.active')).map((t) => (t.textContent ?? '').trim()).join(' '),
+    top: Math.round((document.querySelector('.frame-card[data-mfid]') as HTMLElement | null)?.getBoundingClientRect().top ?? -1),
+    // for reading a difference: where each bar ends, how far the page is scrolled, the body's classes
+    bars: ['mainToolbar', 'detailBar'].map((id) => { const e = document.getElementById(id); return `${id} ${e && getComputedStyle(e).display !== 'none' ? Math.round(e.getBoundingClientRect().bottom) : 'off'}`; })
+      .concat([`viewBar ${Math.round((document.querySelector('.view-bar') as HTMLElement | null)?.getBoundingClientRect().bottom ?? -1)}`]).join(' · '),
+    scroll: `window ${Math.round(window.scrollY)} · ` + Array.from(document.querySelectorAll('#mainScroll, #versionsScroll, .columns, #overviewScroll')).map((e) => `${(e as HTMLElement).id || 'columns'} ${Math.round((e as HTMLElement).scrollTop)}`).join(' · '),
+    body: document.body.className,
+  }));
+  const in3x2 = await lit();
+  say(`   lit in the bar: ${in3x2.bar}`);
+  expect(in3x2.bar, 'THE 3×2 BUTTON IS LIT, and no strip button with it').toBe('3x2');
+
+  // ── EVERY BUTTON LIT AS IT WAS (Roman, 10 Nov) ───────────────────────
+  // A second update, from a busier bar: a group chosen, SHOT + two strips
+  // lit, NEEDS open. The bar is read before and after — it must be the same.
+  say('a second update, from a busy bar: a group chosen, SHOT + two strips lit, NEEDS open');
+  const gid = await desktop.makeGroup('NIGHT', [1, 2, 4]);
+  await desktop.enterGroup(gid);
+  await desktop.page.evaluate(() => {
+    const press = (sel: string) => (document.querySelector(sel) as HTMLElement | null)?.click();
+    press('.view-btn[data-view="needs"]');            // out of 3×2: SHOT + NEEDS
+    press('.view-btn.strip-toggle[data-strip="ver"]');
+    press('.view-btn.strip-toggle[data-strip="floor"]');
+  });
+  // ...and shot 2's strip card is on its SECOND version, with a stroke on it.
+  await desktop.pressNewVersion(1, 'ver');
+  expect(await desktop.draw(1, 'ver', 1)).toBeGreaterThan(0);
+  await desktop.settle();
+  const before = await lit();
+  say(`   versions on show: "${before.tabs}", first card at ${before.top}px`);
+  say(`   bars: ${before.bars} | scroll: ${before.scroll} | body: ${before.body}`);
+  expect(before.tabs, 'a card is showing its second version before the update').toContain('v2');
+  say(`   before: bar "${before.bar}", group "${before.group}"`);
+  expect(before.bar, 'NEEDS and the strips are lit before the update').toContain('needs');
+  expect(before.group).toBe('NIGHT');
+  const born2 = await stamp();
+  await desktop.page.route('**/app/index.html?v=*', (r) => r.fulfill({ status: 200, contentType: 'text/html', body: NEW_PAGE }));
+  await ask();
+  await desktop.page.waitForFunction((born) => {
+    const w = window as never as { __same_page?: number; __fh_booted?: boolean; __fh_test?: unknown };
+    return w.__same_page !== born && Boolean(w.__fh_booted) && Boolean(w.__fh_test);
+  }, born2, { timeout: 60_000 });
+  await desktop.waitForLog('new version: running — back on shot', 20_000);
+  await desktop.page.waitForTimeout(4000);
+  const afterBar = await lit();
+  say(`   after:  bar "${afterBar.bar}", group "${afterBar.group}"`);
+  expect(afterBar.bar, 'EVERY BUTTON LIT AS BEFORE THE UPDATE').toBe(before.bar);
+  expect(afterBar.group, 'the group name beside GROUP').toBe('NIGHT');
+  expect(afterBar.groupRed, 'the GROUP button is red').toBe(before.groupRed);
+  say(`   versions on show: "${afterBar.tabs}", first card at ${afterBar.top}px`);
+  say(`   bars: ${afterBar.bars} | scroll: ${afterBar.scroll} | body: ${afterBar.body}`);
+  expect(afterBar.tabs, 'EVERY CARD SHOWS THE VERSION IT SHOWED').toBe(before.tabs);
+  expect(Math.abs(afterBar.top - before.top), 'the page sits where it sat — the same shot at the same height').toBeLessThanOrEqual(6);
   await desktop.close();
 });
