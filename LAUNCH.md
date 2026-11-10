@@ -1,5 +1,5 @@
 # LAUNCH — THE ONE LIST (9 Nov 2026). Nothing else counts; TOMORROW.md is history + notes.
-TOMORROW (10 Nov) FIRST: read run 613 (full run) → replay each fault of docs/simulator-session-2026-11-09.md live in the simulator while Roman watches, one by one; Roman decides fault / not a fault / design question → then go live.
+TODAY (10 Nov): dev is v5.0.195 · #747 (save point before the stars: v5.0.192). Roman works on; the FULL RUN goes at the END OF THE DAY (nothing live before it is green). Still open from the plan: replay each fault of docs/simulator-session-2026-11-09.md live in the simulator while Roman watches, one by one → then go live.
 Cross out with [x] and the date. Blocks are groups; the RUNNING ORDER is:
 1 done 9 Nov → 2 C1 live, C2, C2b →
 3 A15, G1–G4, A2, A3, B3c, B3e-2 → 4 D1–D9 (Roman), C3 shell to live → 5 D11 SUBMIT → 6 A7 Fitting → 7 A8, A10, B3f, G-items.
@@ -25,6 +25,9 @@ D7 video + Fitting page text, F1 new token.
 - [x] A14 (9 Nov, v5.0.190) Fonts bundled with the app — Google Fonts gone from the Privacy text; OCR CDN loads (PDF import) still to note in the Privacy text
 - [x] A15 (9 Nov, v5.0.184, test 59) LOAD several pictures at once onto the SHOT strip: first on the shot, the rest new shots after it
 - [ ] A10 "Tell phone users about the desktop" note (where/when)
+- [x] A16 (10 Nov, v5.0.192) STARS DECIDE THE GROUP, THE ARROWS THE ORDER INSIDE IT: ◀ ▶ only past a neighbour with the same stars / hidden / tag state (found by run 617: two rules contradicted, devices disagreed)
+- [x] A17 (10 Nov, v5.0.193–194) 3-star rating in every project: a row in horizontal projects (10 % smaller), a column in portrait and fitting
+- [x] A18 (10 Nov, v5.0.195) The version's setup button reads "+NAME" (old grey look) instead of "TAG"; tagged = NAME filled, as before. Stars do NOT spread to the copies (agreed)
 
 ## G. Small bugs and comforts carried over from TOMORROW.md (one list, Roman 9 Nov)
 - [x] G1 (9 Nov, test 60 green) Multi-load into an EMPTY version strip — already fine, guarded by test 60
@@ -36,7 +39,8 @@ D7 video + Fitting page text, F1 new token.
 - [ ] G7 Two timing reds from run 581: BIG DAY part 7 fitting PDF download; write-then-pull race (BIG DAY part 3, run 579)
 - [ ] G8 Face ID / Touch ID sign-in in the iPhone app (after launch)
 - [x] G10 (9 Nov, v5.0.189, test 61) Project list: one row per project; unsent work on the device is a note on the row, copy rows only when the project is not in the cloud list
-- [ ] G9 Later ideas (not launch): professions in analytics · break colours synced · guest link (view + rate) · board merge/compare, PDF import adjust, copy frame data
+- [ ] G9 Later ideas (not launch): professions in analytics · break colours synced · board merge/compare, PDF import adjust, copy frame data
+- [ ] G11 AFTER LAUNCH (Roman, 9 Nov): GUEST LINK — a guest can VIEW and RATE a project, no editing. Needs: members/links table, routes that accept a guest for reading + rating, invite/revoke. A guest who EDITS is a later, bigger step (pictures into the owner's folder and quota, rights, names in the log).
 
 ## B. Audit (report first, no code) — running in the background from 9 Nov
 - [x] B1 (report 9 Nov: docs/audit-launch-2026-11-09.md) Security & storage audit (Roman's prompt): offline photos, quota, access control, abuse, recovery/GDPR — graded report in docs/

@@ -178,3 +178,6 @@ v5.0.193 · #745 (10 Nov)
 
 v5.0.194 · #746 (10 Nov)
 - The star row in horizontal projects is 10 % smaller, proportionally (cards and MAX view)
+
+v5.0.195 · #747 (10 Nov)
+- The setup button on a version reads "+NAME" (the setup's own name, the old grey look) instead of "TAG"; tagged it is the name filled in the setup's colour, as before; long names are cut with "…"

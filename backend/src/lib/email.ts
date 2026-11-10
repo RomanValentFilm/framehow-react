@@ -38,16 +38,29 @@ function escapeHtml(x: string): string {
   return x.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 /** Paragraphs in, HTML out; `{{BUTTON}}` in a paragraph becomes the link button. */
-function htmlMail(paragraphs: string[], button?: { href: string; label: string }): string {
-  const body = paragraphs.map((p) => {
-    if (p === "{{BUTTON}}" && button) {
-      return `<p style="margin:22px 0"><a href="${escapeHtml(button.href)}" style="display:inline-block;background:#d52632;color:#fff;text-decoration:none;font-weight:600;padding:12px 22px;border-radius:8px;font-size:15px">${escapeHtml(button.label)}</a></p>`
-        + `<p style="margin:0 0 18px;font-size:12px;color:#888">If the button does not work, open this link:<br><a href="${escapeHtml(button.href)}" style="color:#4fc3f7;word-break:break-all">${escapeHtml(button.href)}</a></p>`;
-    }
-    return `<p style="margin:0 0 16px">${escapeHtml(p)}</p>`;
+/**
+ * A MAIL THAT LOOKS LIKE A MAIL (Roman, 10 November).
+ *
+ * No colours of our own: the dark page we set was dropped by Gmail, which kept
+ * only our light-grey text — grey on white. The reader's own mail colours are
+ * used, light or dark. A BLOCK is one or more lines that sit directly under
+ * each other; between blocks there is one empty line, and nowhere else. A long
+ * line wraps and goes on right below. The link is blue and underlined, the way
+ * people know a link in a text; it is the line written as "{{BUTTON}}".
+ */
+function htmlMail(blocks: Array<string | string[]>, button?: { href: string; label: string; boldBlock?: boolean }): string {
+  const line = (l: string) => (l === "{{BUTTON}}" && button
+    ? `<a href="${escapeHtml(button.href)}" style="color:#1a73e8;text-decoration:underline">${escapeHtml(button.label)}</a>`
+    : escapeHtml(l));
+  const body = blocks.map((b, i) => {
+    const own = Array.isArray(b) ? b : [b];
+    const lines = own.map(line).join("<br>");
+    // The block with the link in bold, where asked (the welcome mail, 10 Nov):
+    // two links in that mail, and this is the one that matters.
+    const bold = button?.boldBlock && own.includes("{{BUTTON}}") ? "font-weight:bold;" : "";
+    return `<p style="${bold}margin:0 0 ${i === blocks.length - 1 ? "0" : "1.5em"}">${lines}</p>`;
   }).join("");
-  return `<!DOCTYPE html><html><body style="margin:0;padding:24px;background:#111;color:#e8e8e8;font-family:-apple-system,system-ui,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.5">`
-    + `<div style="max-width:520px;margin:0 auto">${body}</div></body></html>`;
+  return `<!DOCTYPE html><html><body><div style="font-family:-apple-system,system-ui,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.5">${body}</div></body></html>`;
 }
 
 /**
@@ -123,21 +136,23 @@ export async function sendWelcomeEmail(env: Env, to: string, name: string, verif
     to,
     subject: "Welcome to Framehow",
     text: `Hi ${name},\n\n`
-      + `Your Framehow account is ready — please confirm your email address by opening this link:\n`
-      + `${link}\n\n`
+      + `Your Framehow account is ready — you can start straight away, on your iPhone, iPad or in a browser on your computer (www.framehow.com).\n\n`
+      + `Please confirm your email address by opening this link:\n`
+      + `${link}\n`
       + `Until then your account has 150 MB of storage; the link unlocks the full 500 MB.\n\n`
-      + `Your work is kept on your device when you are offline, and syncs between your devices as soon as you are connected.\n\n`
+      + `Your work is kept on your device when you are offline, and syncs between your devices when you are online.\n\n`
       + `Feel free to send us a note if you have ideas about improvements.\n\n`
       + `Framehow\n`,
     html: htmlMail([
       `Hi ${name},`,
-      `Your Framehow account is ready — please confirm your email address:`,
-      `{{BUTTON}}`,
-      `Until then your account has 150 MB of storage; confirming unlocks the full 500 MB.`,
-      `Your work is kept on your device when you are offline, and syncs between your devices as soon as you are connected.`,
+      `Your Framehow account is ready — you can start straight away, on your iPhone, iPad or in a browser on your computer (www.framehow.com).`,
+      [`Please confirm your email address:`,
+        `{{BUTTON}}`,
+        `Until then your account has 150 MB of storage; confirming unlocks the full 500 MB.`],
+      `Your work is kept on your device when you are offline, and syncs between your devices when you are online.`,
       `Feel free to send us a note if you have ideas about improvements.`,
       `Framehow`,
-    ], { href: link, label: "Confirm email" }),
+    ], { href: link, label: "Confirm email", boldBlock: true }),
   });
 }
 
@@ -154,9 +169,9 @@ export async function sendVerifyEmail(env: Env, to: string, name: string, verify
       + `Framehow\n`,
     html: htmlMail([
       `Hi ${name},`,
-      `Confirm your email address for your Framehow account:`,
-      `{{BUTTON}}`,
-      `It unlocks the full 500 MB of storage for your account.`,
+      [`Confirm your email address for your Framehow account:`,
+        `{{BUTTON}}`,
+        `It unlocks the full 500 MB of storage for your account.`],
       `Framehow`,
     ], { href: link, label: "Confirm email" }),
   });
@@ -176,9 +191,9 @@ export async function sendPasswordResetEmail(
       + `Framehow\n`,
     html: htmlMail([
       `Hi ${name},`,
-      `Choose a new password for your Framehow account:`,
-      `{{BUTTON}}`,
-      `This link works for one hour.`,
+      [`Choose a new password for your Framehow account:`,
+        `{{BUTTON}}`,
+        `This link works for one hour.`],
       `Framehow`,
     ], { href: link, label: "Choose a new password" }),
   });

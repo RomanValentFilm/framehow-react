@@ -331,6 +331,11 @@ export function openAccountModal(initialMode: AccountMode = 'signup'): Promise<A
           setSession(res.session.token, res.user);
           fhTrack('signup', { profession: profession || 'none' });
           finish({ user: res.user, token: res.session.token });
+          // SAY THAT A MAIL IS ON ITS WAY (Roman, 10 Nov). The account was made
+          // and nothing said a mail had gone out — the person learned of it in
+          // the inbox, or never. With the address typed, so a typo is seen now.
+          void import('./modals').then((m) => m.showImportantNote('ACCOUNT CREATED',
+            `We sent a mail to ${email}. Open the link in it to confirm your email address — it unlocks the full 500 MB of storage. Until then your account has 150 MB.`));
         } else {
           if (email.length === 0 || password.length === 0) {
             errorEl.textContent = 'Email and password are required.'; return;
