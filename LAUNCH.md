@@ -32,9 +32,11 @@ D7 video + Fitting page text, F1 new token.
 ## G. Small bugs and comforts carried over from TOMORROW.md (one list, Roman 9 Nov)
 - [x] G1 (9 Nov, test 60 green) Multi-load into an EMPTY version strip — already fine, guarded by test 60
 - [ ] G2 Sign-in box: "keep me signed in" (sessions are 30 days sliding today — decide if needed at all)
-- [ ] G3 Reload-on-new-version: check the behaviour, decide the rule
+- [x] G3 (10 Nov, v5.0.198–199, test 63) The newest version by itself: asked the first time each day the app comes to the front, fetched whole first, switched at a quiet moment with an UPDATING box; nobody signs in again
 - [ ] G4 Slow project opens (Roman, 5 Nov): one timing line at open, then look
 - [ ] G5 NEEDS clickable on frame-set cards in STORY FLOWS / SHOOTING ORDERS (½ day)
+- [x] G6-F2 (10 Nov, v5.0.198–199, test 62) the save reminder waits while a box / DRAW / the camera / SETUPS / an order edit is open, comes ~3 s after, never lost
+- [x] A19 (10 Nov, v5.0.196–197 + server 627–630) ACCOUNT CREATED box after sign-up; welcome mail: iPhone, iPad or a browser on your computer, reader's own colours, paragraphs, blue links, confirm paragraph and Framehow bold; notice boxes centred
 - [ ] G6 Simulator findings: F1 UUID names from the Photos picker → number instead; F2 "save it first" notice repeats; F4 landscape-left Dynamic Island covers the page's left edge (no left safe-area)
 - [ ] G7 Two timing reds from run 581: BIG DAY part 7 fitting PDF download; write-then-pull race (BIG DAY part 3, run 579)
 - [ ] G8 Face ID / Touch ID sign-in in the iPhone app (after launch)

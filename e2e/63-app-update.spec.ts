@@ -77,6 +77,8 @@ test('new version: a bad line changes nothing; a good one is fetched whole, wait
   // From here the real page answers again — that is the "new version" arriving.
   await desktop.page.unroute('**/app/index.html?v=*');
   await desktop.finishWriteBox('BEFORE THE UPDATE');
+  // ...and the person goes to the 3×2 view: that is where they must come back (Roman, 10 Nov).
+  await desktop.setView('grid3x2');
   await expect(note, 'the box that says what is happening').toBeVisible({ timeout: 40_000 });
   await expect(note).toContainText('UPDATING FRAMEHOW');
   await expect(note).toContainText('Loading the newest version — one moment.');
@@ -86,7 +88,7 @@ test('new version: a bad line changes nothing; a good one is fetched whole, wait
   }, pageBorn, { timeout: 40_000 });
   await expect(desktop.page.locator('#updatingNote'), 'the box is gone with the old page').toHaveCount(0);
 
-  say('still signed in, the same project, the work of a second ago, and back on the shot');
+  say('still signed in, the same project, the work of a second ago, back on the shot and in the 3×2 view');
   await desktop.settle();
   const after = await desktop.page.evaluate(() => {
     const w = window as never as { __fh_test: { textOnCard(i: number, s: string, v: number): string } };
@@ -101,5 +103,7 @@ test('new version: a bad line changes nothing; a good one is fetched whole, wait
   expect(after.text, 'the text written just before the update is there').toContain('BEFORE THE UPDATE');
   expect(JSON.parse(await desktop.whole()).shots.length, 'the same project, all six shots').toBe(6);
   await desktop.waitForLog('new version: running — back on shot', 20_000);
+  expect(await desktop.page.locator('.grid3x2-card-wrap').count(), 'BACK IN THE 3×2 VIEW').toBeGreaterThan(0);
+  await desktop.waitForLog('view grid3x2', 5_000);
   await desktop.close();
 });

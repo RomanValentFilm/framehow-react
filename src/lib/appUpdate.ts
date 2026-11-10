@@ -21,7 +21,7 @@ import { useStore } from '../store/state';
 import { trace, isDebugDevice } from './syncTrace';
 import { whenQuiet } from './quietMoment';
 import { framesNeedingPush, projectSettingsUnsent } from './accountFlow';
-import { captureFrameAnchor, scrollAnchorTo } from './view';
+import { captureFrameAnchor, scrollAnchorTo, setViewMode } from './view';
 
 const DAY_KEY = 'fh_update_checked_day';
 const PLACE_KEY = 'fh_after_update';
@@ -53,7 +53,13 @@ export function reloadWhenQuiet(why: string): void {
     try {
       const a = captureFrameAnchor();
       const i = a ? useStore.getState().frames.findIndex((f) => String(f.id) === String(a.fid)) : -1;
-      if (i >= 0) sessionStorage.setItem(PLACE_KEY, String(i));
+      // ...and the VIEW (Roman, 10 Nov: "3x2 view would be best"): whoever was
+      // in 3×2, the overview or a single strip comes back in it.
+      const st = useStore.getState();
+      if (i >= 0) sessionStorage.setItem(PLACE_KEY, JSON.stringify({
+        i, view: st.currentViewMode, strips: st.activeStrips, needs: st.needsStripVisible, notes: st.notesStripVisible,
+        group: st.activeGroupId,
+      }));
     } catch { /* it opens at the top, then */ }
     trace('new version: reloading now');
     // SAY SO (Roman, 10 Nov): until the new page arrives the old one stays on
@@ -121,15 +127,43 @@ async function askOncePerDay(): Promise<void> {
 
 /** Back on the shot the page was on before the reload. */
 function backToThePlace(): void {
+  // THE SAME VIEW, NOT THE OPENING ONE (Roman, 10 Nov): "the user who does not
+  // look at the phone in the moment of the update does not feel any
+  // difference". The view, the strips that were lit, NEEDS or NOTES open.
   let i = -1;
-  try { i = Number(sessionStorage.getItem(PLACE_KEY) ?? -1); sessionStorage.removeItem(PLACE_KEY); } catch { return; }
+  let was: { view?: string; strips?: string[]; needs?: boolean; notes?: boolean; group?: number | null } = {};
+  try {
+    const raw = sessionStorage.getItem(PLACE_KEY);
+    sessionStorage.removeItem(PLACE_KEY);
+    if (!raw) return;
+    const p = JSON.parse(raw) as typeof was & { i?: number };
+    i = typeof p.i === 'number' ? p.i : -1;
+    was = p;
+  } catch { return; }
   if (!(i >= 0)) return;
   const t0 = Date.now();
   const id = window.setInterval(() => {
     const frames = useStore.getState().frames;
     if (frames.length > i) {
       window.clearInterval(id);
-      window.setTimeout(() => { scrollAnchorTo(frames[i].id); trace(`new version: running — back on shot ${i + 1}`); }, 600);
+      window.setTimeout(() => {
+        const views = ['main', 'ver', 'both', 'overview', 'grid4', 'grid3x2'];
+        if (was.view && views.includes(was.view)) {
+          const patch: Record<string, unknown> = {};
+          if (Array.isArray(was.strips) && was.strips.length > 0) patch.activeStrips = was.strips;
+          if (typeof was.needs === 'boolean') patch.needsStripVisible = was.needs;
+          if (typeof was.notes === 'boolean') patch.notesStripVisible = was.notes;
+          // The GROUP that was being looked at, if it is still there.
+          if (typeof was.group === 'number' && useStore.getState().groups.some((g) => g.id === was.group)) patch.activeGroupId = was.group;
+          useStore.setState(patch as never);
+          setViewMode(was.view as never);
+          (window as unknown as { __fh_renderAll?: () => void }).__fh_renderAll?.();
+        }
+        window.setTimeout(() => {
+          scrollAnchorTo(frames[i].id);
+          trace(`new version: running — back on shot ${i + 1}, view ${useStore.getState().currentViewMode}`);
+        }, 300);
+      }, 600);
     } else if (Date.now() - t0 > 15_000) window.clearInterval(id);
   }, 300);
 }

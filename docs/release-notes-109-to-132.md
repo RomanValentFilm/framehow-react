@@ -193,3 +193,8 @@ v5.0.197 · #749 (10 Nov)
 v5.0.198 · #750 (10 Nov)
 - THE NEWEST VERSION BY ITSELF: the first time each day the app comes to the front it asks whether a newer build is out and reloads at a quiet moment (no box open, nobody typing or drawing, camera off, nothing to send); nobody signs in again, the page returns to its shot. A debug device asks every time.
 - THE SAVE REMINDER WAITS ITS TURN: not on top of a box, the keyboard, a drawing or the camera — it comes about 3 s after; showing, it steps aside for a box and comes back. Never counted as "Later".
+
+v5.0.199 · #751 (10 Nov)
+- The update asks only once the app is up with the project on screen; the new build is fetched WHOLE in the background first (a bad line changes nothing, tried again next time); then, at a quiet moment, the box "UPDATING FRAMEHOW — Loading the newest version — one moment." and the switch
+- ONE LIST of what both the update and the save reminder wait for: drawing / DRAW mode / big view / scribble, typing, the camera, SETUPS open, a shooting order being edited, a shot or version being moved, any box, sheet, menu or overlay; the update also waits for nothing left to send. The log says why it waits.
+- Tests 62 (save reminder waits its turn, never lost) and 63 (new version: no line, bad line, good line behind a WRITE box; still signed in, same project, same shot)
