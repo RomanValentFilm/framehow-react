@@ -917,9 +917,21 @@ export function applyCapturedImage(dataURL: string, target: any): void {
       // the move to 0% exactly at the landing — at that instant only the card's own
       // picture is there. Drawn by the graphics chip (a transform), and driven by the
       // Web Animations API, because a CSS transition's fade did not run on the phone.
-      void sr;
-      const startW = vw * 0.95, startH = vh * 0.95;
-      const start0 = { left: (vw - startW) / 2, top: (vh - startH) / 2, width: startW, height: startH };
+      //
+      // IT STARTS WHERE THE FRAME STOOD ON THE CAMERA SCREEN (Roman, 11 Nov). On 6 Nov
+      // the camera's picture filled the screen, so "95 % of the screen" was nearly the
+      // frozen shot itself. Since the island (11 Nov) the picture begins beside the
+      // island and ends at the frame — smaller than the screen and off to one side —
+      // and between the frozen shot and the move it JUMPED UP to 95 % of the screen,
+      // stretched to the screen's shape: "suddenly the picture was full screen". The
+      // camera says where its frame lay (points = CSS px here); the copy starts on
+      // exactly that rectangle, in that size and shape. Only when the camera sent
+      // nothing usable does it fall back to the 95 %.
+      const usable = sr.width > 40 && sr.height > 40 && sr.left > -2 && sr.top > -2
+        && sr.left + sr.width < vw + 2 && sr.top + sr.height < vh + 2;
+      const startW = usable ? sr.width : vw * 0.95, startH = usable ? sr.height : vh * 0.95;
+      const start0 = usable ? { left: sr.left, top: sr.top, width: startW, height: startH }
+        : { left: (vw - startW) / 2, top: (vh - startH) / 2, width: startW, height: startH };
       thumb.style.cssText = `position:fixed;z-index:100000;pointer-events:none;object-fit:cover;` +
         `left:${tr.left}px;top:${tr.top}px;width:${tr.width}px;height:${tr.height}px;border-radius:0;opacity:1;` +
         `transform-origin:0 0;transform:translate(${start0.left - tr.left}px,${start0.top - tr.top}px) scale(${startW / tr.width},${startH / tr.height});will-change:transform,opacity;`;
@@ -944,7 +956,7 @@ export function applyCapturedImage(dataURL: string, target: any): void {
           { duration: 500, easing: 'ease-in', fill: 'forwards' },
         );
         anim.onfinish = () => {
-          trace(`camera: shrink moved for ${Date.now() - t0} ms, from ${Math.round(startW)}×${Math.round(startH)} (95% of the screen) to ${Math.round(to.width)}×${Math.round(to.height)} at ${Math.round(to.left)},${Math.round(to.top)}`);
+          trace(`camera: shrink moved for ${Date.now() - t0} ms, from ${Math.round(startW)}×${Math.round(startH)} at ${Math.round(start0.left)},${Math.round(start0.top)} (${usable ? 'the frame on the camera screen' : '95% of the screen'}) to ${Math.round(to.width)}×${Math.round(to.height)} at ${Math.round(to.left)},${Math.round(to.top)}`);
           thumb.remove();
         };
         setTimeout(() => thumb.remove(), 900);

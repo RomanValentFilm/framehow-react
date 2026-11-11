@@ -335,3 +335,8 @@ v5.0.225 · #777 (10 Nov, night)
 ## v5.0.249 · #801 (11 Nov, run 691)
 - SORT BY REDRAW: a card that did not change stays the very same node (not cloned), marked wired; wireEditViewEvents passes over it. The card or break being edited is still made anew (drag set-up). Reuse only within the same order.
 - Break colour button: a rectangle saying COLOR (was a round dot).
+
+## v5.0.250 · #802 (11 Nov, run 692)
+- DONE on a break acts at the touch (pointerdown) and keeps the typed name — it needed two taps when the name field had the cursor. renameBreak says nothing when the name is the same.
+- EXPORT: the shooting-order list shows only the orders of the chosen group (ALL: the project's); it follows the group picker.
+- iPad redraw of a 26-shot order: ~180 ms (1000 this morning). Camera screen (island + round corners) committed, still unbuilt.

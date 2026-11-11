@@ -131,12 +131,19 @@ struct CameraScreen: View {
             //
             // What one TAPS keeps clear of the island too: the shutter, Cancel and the note
             // sit on the right and move in beside the island when it is on that side.
-            let island = landscape ? Self.islandInsets() : (left: CGFloat(0), right: CGFloat(0))
-            let cutL = Self.pictureEndsAtTheIsland ? island.left : 0
-            let cutR = Self.pictureEndsAtTheIsland ? island.right : 0
-            let free = CGRect(x: cutL, y: 0, width: geo.size.width - cutL - cutR, height: geo.size.height)
+            // UPRIGHT TOO (Roman, 11 Nov, first look on the phone: "the island is still
+            // visible in vertical"): there the island is at the top, and the picture begins
+            // under it.
+            let all = Self.islandInsets()
+            let island = Self.pictureEndsAtTheIsland ? all : (left: CGFloat(0), right: CGFloat(0), top: CGFloat(0))
+            let free = CGRect(x: island.left, y: island.top,
+                              width: geo.size.width - island.left - island.right,
+                              height: geo.size.height - island.top)
             let fg = FrameGeometry(ratio: current.value, landscape: landscape, free: free,
                                    screen: geo.size, corner: Self.screenCornerRadius())
+            // THE PICTURE AS IT IS SEEN: the camera's picture where it is on the screen and
+            // not black. The corner buttons are placed from ITS edges (see `cornerGap`).
+            let pic = fg.chip.intersection(free).intersection(CGRect(origin: .zero, size: geo.size))
             let _ = { cam.frameRatio = current.value; cam.maxSide = maxSide; cam.frameOnScreen = fg.frame }()
             let touch = DragGesture(minimumDistance: 0)
                 .onChanged { g in
@@ -186,8 +193,8 @@ struct CameraScreen: View {
                         .allowsHitTesting(false)
                 }
                 if cam.flash { Color.black.allowsHitTesting(false) }
-                controls(landscape: landscape, left: island.left, right: island.right)
-                if showRatios { ratioMenu(landscape: landscape, left: island.left) }
+                controls(landscape: landscape, right: island.right, pic: pic)
+                if showRatios { ratioMenu(pic: pic) }
             }
             .frame(width: geo.size.width, height: geo.size.height)
             .clipped()
@@ -221,40 +228,45 @@ struct CameraScreen: View {
         return 0
     }
 
-    /// How far the Dynamic Island reaches in from the left and from the right, sideways.
-    /// The system reports the same inset on both short sides; only the side the island is
-    /// really on is kept. `landscapeRight` = the device's top (the island) is on the LEFT.
-    private static func islandInsets() -> (left: CGFloat, right: CGFloat) {
+    /// How far the Dynamic Island (or the notch) reaches into the screen: from the left or
+    /// the right when the phone is sideways, from the top when it is upright.
+    /// Sideways the system reports the same inset on both short sides; only the side the
+    /// island is really on is kept. `landscapeRight` = the device's top (the island) is on
+    /// the LEFT. Upright only a real island or notch counts (40 pt and more) — a plain
+    /// status bar, and an iPad's, is not something the picture has to make room for.
+    private static func islandInsets() -> (left: CGFloat, right: CGFloat, top: CGFloat) {
         guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first,
-              let window = scene.windows.first(where: { $0.isKeyWindow }) ?? scene.windows.first else { return (0, 0) }
+              let window = scene.windows.first(where: { $0.isKeyWindow }) ?? scene.windows.first else { return (0, 0, 0) }
         let i = window.safeAreaInsets
         switch scene.interfaceOrientation {
-        case .landscapeRight: return (i.left, 0)
-        case .landscapeLeft: return (0, i.right)
-        default: return (0, 0)
+        case .landscapeRight: return (i.left, 0, 0)
+        case .landscapeLeft: return (0, i.right, 0)
+        case .portrait: return (0, 0, i.top >= 40 ? i.top : 0)
+        default: return (0, 0, 0)
         }
     }
 
     @ViewBuilder
-    private func controls(landscape: Bool, left: CGFloat, right: CGFloat) -> some View {
+    private func controls(landscape: Bool, right: CGFloat, pic: CGRect) -> some View {
         let pill = Color.black.opacity(0.45)
         let shutter = Button(action: { if cam.busy == 0 { cam.takePhoto() } }) {
             Circle().fill(.white).frame(width: 66, height: 66)
                 .overlay(Circle().stroke(.gray, lineWidth: 3).padding(4))
         }
-        let ratioButton = Button("RATIO") { showRatios.toggle() }
-            .buttonStyle(.bordered).tint(.white).background(pill, in: Capsule())
+        // ONE LOOK FOR ALL THREE (Roman, 11 Nov): the EV's — the smaller one. RATIO and 1x
+        // were the system's bordered button, a size larger and another face.
+        let ratioButton = Button(action: { showRatios.toggle() }) { Self.pillLabel("RATIO") }
+            .tint(.white).background(pill, in: Capsule())
         let ev = Button(action: { cam.exposureBias = 0 }) {
-            Text("EV \(cam.exposureBias, specifier: "%+.1f")").monospacedDigit().font(.footnote)
-                .padding(.horizontal, 10).padding(.vertical, 6)
+            Self.pillLabel("EV \(String(format: "%+.1f", cam.exposureBias))")
         }
         .tint(.white).background(pill, in: Capsule())
-        let lens = Button(cam.lensName.isEmpty ? "1x" : cam.lensName) { cam.setLens(wide: !cam.wide) }
-            .buttonStyle(.bordered).tint(.white).background(pill, in: Capsule())
+        let lens = Button(action: { cam.setLens(wide: !cam.wide) }) { Self.pillLabel(cam.lensName.isEmpty ? "1x" : cam.lensName) }
+            .tint(.white).background(pill, in: Capsule())
         // CANCEL left of the shutter (Roman, 6 Nov: the top right is the EV's place) — the
         // way out without a photo, where the thumb already is.
         let cancel = Button("Cancel") { onCancel() }
-            .font(.system(size: 12)).tint(.white).opacity(0.85)
+            .font(.footnote).tint(.white).opacity(0.85)
             .padding(8)   // a plain word, no pill (Roman, 6 Nov); touch area stays finger-sized
         let info = Text(cam.busy > 0 ? "processing…" : (cam.status == "ready" ? "" : cam.status))
             .font(.caption2).padding(6).background(pill, in: RoundedRectangle(cornerRadius: 8))
@@ -263,14 +275,17 @@ struct CameraScreen: View {
         GeometryReader { g in
             let W = g.size.width, H = g.size.height
             ZStack {
-                // The corner buttons stay in their corners: the island sits at mid-height on
-                // its side and is nowhere near them. Sideways they are moved in a little, out
-                // of the round corner of the glass.
-                let edge: CGFloat = landscape ? 22 : 16
+                // RATIO, EV AND 1x: EACH THE SAME DISTANCE FROM ITS TWO EDGES OF THE PICTURE
+                // (Roman, 11 Nov, three looks on the phone: "the distance to the left and to
+                // the bottom should be the same … that's how they are centred in the corner").
+                // The edges are those of the picture AS SEEN — where the white frame line or
+                // the black begins — not those of the screen: measured from the screen, a
+                // button sat 17 from the side and 8 from the line above it.
+                let d = Self.cornerGap
                 VStack { HStack { ratioButton; Spacer(); ev }; Spacer() }
-                    .padding(.leading, edge).padding(.trailing, edge).padding(.top, landscape ? 16 : 60)
+                    .padding(.leading, pic.minX + d).padding(.trailing, W - pic.maxX + d).padding(.top, pic.minY + d)
                 VStack { Spacer(); HStack { lens; Spacer() } }
-                    .padding(.leading, edge).padding(.trailing, edge).padding(.bottom, landscape ? 16 : 24)   // portrait: a row below Cancel
+                    .padding(.leading, pic.minX + d).padding(.trailing, W - pic.maxX + d).padding(.bottom, H - pic.maxY + d)
                 if landscape {
                     // shutter right-middle (Camera app), Cancel under it, info bottom right
                     shutter.position(x: W - right - 24 - 33, y: H / 2)
@@ -286,24 +301,43 @@ struct CameraScreen: View {
         }
     }
 
+    /// The label every pill button wears: the EV's size and face.
+    private static func pillLabel(_ text: String) -> some View {
+        Text(text).monospacedDigit().font(.footnote)
+            .padding(.horizontal, 10).padding(.vertical, 6)
+    }
+
+    /// How far a corner button sits from each of its two edges of the picture.
+    private static let cornerGap: CGFloat = 12
+
     /// The RATIO list, as the web's menu: one tap chooses and closes.
+    /// IT OPENS RIGHT UNDER THE BUTTON AND ENDS ABOVE THE BOTTOM OF THE SCREEN (Roman,
+    /// 11 Nov: sideways it opened lower down and was cut off). Its rows are as tall as
+    /// usual when there is room, and closer together when the screen is short.
     @ViewBuilder
-    private func ratioMenu(landscape: Bool, left: CGFloat) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ForEach(ratios) { r in
-                Button(action: { ratioKey = r.key; onRatio(r.key); showRatios = false }) {
-                    Text(r.label)
-                        .font(.system(size: 15, weight: r.key == ratioKey ? .bold : .regular, design: .monospaced))
-                        .foregroundStyle(r.key == ratioKey ? Color(red: 0.84, green: 0.15, blue: 0.20) : .white)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.vertical, 9).padding(.horizontal, 14)
+    private func ratioMenu(pic: CGRect) -> some View {
+        GeometryReader { g in
+            let menuTop = pic.minY + Self.cornerGap + 28 + 4      // the button is about 28 high
+            let room = g.size.height - menuTop - 10
+            let rowH = max(22, min(38, room / CGFloat(max(1, ratios.count))))
+            let h = rowH * CGFloat(ratios.count)
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(ratios) { r in
+                    Button(action: { ratioKey = r.key; onRatio(r.key); showRatios = false }) {
+                        Text(r.label)
+                            .font(.system(size: rowH < 30 ? 13 : 15, weight: r.key == ratioKey ? .bold : .regular, design: .monospaced))
+                            .foregroundStyle(r.key == ratioKey ? Color(red: 0.84, green: 0.15, blue: 0.20) : .white)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 14)
+                            .frame(height: rowH)
+                    }
                 }
             }
+            .frame(width: 150)
+            .background(Color.black.opacity(0.85), in: RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.25), lineWidth: 1))
+            .position(x: pic.minX + Self.cornerGap + 75, y: menuTop + h / 2)
         }
-        .frame(width: 150)
-        .background(Color.black.opacity(0.85), in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.25), lineWidth: 1))
-        .position(x: left + 16 + 75, y: (landscape ? 16 : 60) + 44 + CGFloat(ratios.count) * 19)
     }
 }
 
