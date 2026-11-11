@@ -223,6 +223,12 @@ export interface TestDoor {
   storageFullNotice(): void;
   /** Close the LIBRARY if it is open (11 Nov). */
   closeLibrary(): void;
+  /** Close the device's two databases the way iOS does behind the app (11 Nov). */
+  closeDeviceStores(): Promise<void>;
+  /** The shot names in the save on this device, read fresh (11 Nov). */
+  deviceSaveLabels(): Promise<string[]>;
+  /** Can the preview store still be written and read? (11 Nov) */
+  previewStoreWorks(): Promise<boolean>;
   /** Open the project list (the OPEN button) — resolves when it closes (#533). */
   openProjectList(): Promise<void>;
   /** Open the account settings box (22 Sept). */
@@ -1272,6 +1278,22 @@ export function installTestDoor(): void {
     storage() { return storageState(); },
     storageFullNotice() { void showStorageFullNotice(); },
     closeLibrary() { closePicts(); },
+    async closeDeviceStores() {
+      const [{ closeDbAsIosDoes }, { closePictsDbAsIosDoes }] = await Promise.all([import('./persistence'), import('./pictsStore')]);
+      await closeDbAsIosDoes(); await closePictsDbAsIosDoes();
+    },
+    async deviceSaveLabels() {
+      const { loadSnapshot } = await import('./persistence');
+      const snap = await loadSnapshot();
+      return (snap?.frames ?? []).map((f) => String((f as { label?: string }).label ?? ''));
+    },
+    async previewStoreWorks() {
+      const { putPreview, getPreview, deletePreviews } = await import('./pictsStore');
+      await putPreview({ id: '__probe', r2Key: '__probe', bytes: new Uint8Array([1, 2, 3]).buffer } as never);
+      const back = await getPreview('__probe');
+      await deletePreviews(['__probe']);
+      return !!back;
+    },
     openProjectList() { return openProjectList(); },
     openAccountSettings() { return openAccountSettings(); },
     openForgotBox() { void openForgotModal(''); },

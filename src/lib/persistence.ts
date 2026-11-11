@@ -130,21 +130,49 @@ function openDb(): Promise<IDBDatabase> {
         db.createObjectStore(PENDING_STORE);
       }
     };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
+    req.onsuccess = () => {
+      // iOS closes the database behind the app's back (the native camera on
+      // top, the app in the background). A closed one is forgotten, so the
+      // next save opens a fresh one (11 Nov: "The database connection is
+      // closing", then COULD NOT SAVE ON THIS DEVICE after a photo).
+      req.result.onclose = () => { dbPromise = null; };
+      req.result.onversionchange = () => { req.result.close(); dbPromise = null; };
+      resolve(req.result);
+    };
+    req.onerror = () => { dbPromise = null; reject(req.error); };
   });
   return dbPromise;
 }
 
+/** FOR THE SIMULATOR: close the database the way iOS does behind the app's
+ *  back, leaving the app holding a dead one (11 Nov). */
+export async function closeDbAsIosDoes(): Promise<void> { (await openDb()).close(); }
+
+/** The database was closed under us — worth one more try on a fresh one. */
+export function closedUnderUs(e: unknown): boolean {
+  const name = (e as { name?: string } | null)?.name ?? '';
+  const msg = String((e as { message?: string } | null)?.message ?? e ?? '');
+  return name === 'InvalidStateError' || /clos|connection.*lost|server lost/i.test(msg);
+}
+
 async function withStore<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<T>, storeName = STORE_NAME): Promise<T> {
-  const db = await openDb();
-  return new Promise<T>((resolve, reject) => {
-    const tx = db.transaction(storeName, mode);
-    const store = tx.objectStore(storeName);
-    const req = fn(store);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
+  const once = async (): Promise<T> => {
+    const db = await openDb();
+    return new Promise<T>((resolve, reject) => {
+      const tx = db.transaction(storeName, mode);
+      const store = tx.objectStore(storeName);
+      const req = fn(store);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+      tx.onabort = () => reject(tx.error ?? new Error('the save was closed before it finished'));
+    });
+  };
+  try { return await once(); }
+  catch (e) {
+    if (!closedUnderUs(e)) throw e;
+    dbPromise = null;
+    return once();
+  }
 }
 
 export async function saveSnapshot(snap: CurrentProjectSnapshot): Promise<void> {

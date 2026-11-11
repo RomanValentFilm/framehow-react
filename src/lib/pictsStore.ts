@@ -49,20 +49,34 @@ function db(): Promise<IDBDatabase> {
       const s = req.result.createObjectStore(STORE, { keyPath: 'id' });
       s.createIndex('r2Key', 'r2Key', { unique: false });
     };
-    req.onsuccess = () => ok(req.result);
+    req.onsuccess = () => {
+      // iOS closes the database behind the app's back (camera on top, app in
+      // the background): forget a closed one, the next call opens a fresh one.
+      req.result.onclose = () => { _db = null; };
+      ok(req.result);
+    };
     req.onerror = () => { _db = null; bad(req.error); };
   });
   return _db;
 }
 
+/** FOR THE SIMULATOR: close it the way iOS does behind the app's back. */
+export async function closePictsDbAsIosDoes(): Promise<void> { (await db()).close(); }
+
 function tx<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<T> | void): Promise<T | undefined> {
-  return db().then((d) => new Promise<T | undefined>((ok, bad) => {
+  const once = () => db().then((d) => new Promise<T | undefined>((ok, bad) => {
     const t = d.transaction(STORE, mode);
     const r = fn(t.objectStore(STORE));
     t.oncomplete = () => ok(r ? (r as IDBRequest<T>).result : undefined);
     t.onerror = () => bad(t.error);
-    t.onabort = () => bad(t.error);
+    t.onabort = () => bad(t.error ?? new Error('closed before it finished'));
   }));
+  return once().catch((e) => {
+    const name = (e as { name?: string } | null)?.name ?? '';
+    if (name !== 'InvalidStateError' && !/clos|lost/i.test(String((e as Error)?.message ?? e))) throw e;
+    _db = null;            // closed under us: once more on a fresh one
+    return once();
+  });
 }
 
 let _failSaid = false;
