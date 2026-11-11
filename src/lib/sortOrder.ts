@@ -2841,9 +2841,13 @@ function wireEditViewEvents(el: HTMLElement, orderId: string): void {
       if (isNaN(fid)) return;
       const tabId = b.dataset.sortNeedsTab;
       void import('./overview').then(async (ov) => {
-        if (isNotes) { ov.openNotesModal(fid, () => afterBoxClosed(el, orderId, fid, false)); return; }
+        // The box grows out of the box that was pressed, and shrinks back into
+        // it — looked up afresh each time, the card may have been redrawn.
+        const pressed = () => el.querySelector(`.sort-card[data-sort-fid="${fid}"] `
+          + (isNotes ? '[data-sort-open-notes]' : `[data-sort-open-needs][data-sort-needs-tab="${tabId}"]`)) as HTMLElement | null;
+        if (isNotes) { ov.openNotesModal(fid, () => afterBoxClosed(el, orderId, fid, false), pressed); return; }
         if (tabId) (await import('./needs')).ensureFrameNeeds(fid).activeTabId = tabId;
-        ov.openNeedsModal(fid, () => afterBoxClosed(el, orderId, fid, true));
+        ov.openNeedsModal(fid, () => afterBoxClosed(el, orderId, fid, true), pressed);
       });
     });
   });

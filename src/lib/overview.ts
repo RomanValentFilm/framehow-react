@@ -1815,11 +1815,24 @@ export function wireGrid3x2PinchZoom(): void {
 /** Open NEEDS card for a frame as a modal overlay (75% screen height).
  *  Exported for the test door (#391) — the two places that open it are both
  *  taps on a card, and a test has to be able to reach the same function. */
-export function openNeedsModal(fid: number, onClosed?: () => void): void { _openNeedsModal(fid, onClosed); }
+export function openNeedsModal(fid: number, onClosed?: () => void, from?: () => HTMLElement | null): void { _openNeedsModal(fid, onClosed, from); }
 /** The NOTES box, for a frame-set card in SORT BY (11 Nov). */
-export function openNotesModal(fid: number, onClosed?: () => void): void { _openNotesModal(fid, onClosed); }
+export function openNotesModal(fid: number, onClosed?: () => void, from?: () => HTMLElement | null): void { _openNotesModal(fid, onClosed, from); }
 
-function _openNeedsModal(fid: number, onClosed?: () => void): void {
+/** WHERE THE BOX GROWS OUT OF, AND SHRINKS BACK INTO (Roman, 11 Nov: opened
+ *  from a frame-set card it "appears from the left upper corner"). In 3x2 that
+ *  is the shot's picture. Opened from elsewhere, the caller says what was
+ *  pressed. Something that is not on screen (the hidden 3x2 card, measured as
+ *  a point at 0,0 — the corner he saw) is no place at all: then no animation. */
+function _growFrom(fid: number, from?: () => HTMLElement | null): HTMLElement | null {
+  const el = from ? from()
+    : document.querySelector(`.grid3x2-card-wrap[data-g3fid="${fid}"] .canvas-wrap`) as HTMLElement | null;
+  if (!el) return null;
+  const r = el.getBoundingClientRect();
+  return r.width > 0 && r.height > 0 ? el : null;
+}
+
+function _openNeedsModal(fid: number, onClosed?: () => void, from?: () => HTMLElement | null): void {
   if (document.querySelector('.g3-needs-overlay')) return; // already open
 
   // Capture zoom level before resetting — used to enlarge the modal
@@ -1829,7 +1842,7 @@ function _openNeedsModal(fid: number, onClosed?: () => void): void {
   ensureFrameNeeds(fid);
 
   // Find source card for animation
-  const sourceCard = document.querySelector(`.grid3x2-card-wrap[data-g3fid="${fid}"] .canvas-wrap`) as HTMLElement | null;
+  const sourceCard = _growFrom(fid, from);
 
   // Block scroll/touch behind modal
   document.body.style.overflow = 'hidden';
@@ -1905,7 +1918,7 @@ function _openNeedsModal(fid: number, onClosed?: () => void): void {
     const typing = document.activeElement as HTMLElement | null;
     if (typing && container.contains(typing)) typing.blur();
 
-    const target = document.querySelector(`.grid3x2-card-wrap[data-g3fid="${fid}"] .canvas-wrap`) as HTMLElement | null;
+    const target = _growFrom(fid, from);
     const doRemove = () => {
       overlay.remove();
       document.body.style.overflow = '';
@@ -1969,7 +1982,7 @@ function _sizeGridModal(container: HTMLElement, refFrameCard: HTMLElement | null
   if (wasZoomed) (container.style as any).zoom = String(z);
 }
 
-function _openNotesModal(fid: number, onClosed?: () => void): void {
+function _openNotesModal(fid: number, onClosed?: () => void, from?: () => HTMLElement | null): void {
   if (document.querySelector('.g3-notes-overlay')) return; // already open
 
   const wasZoomed = _zoomScale > 1.1;
@@ -1978,7 +1991,7 @@ function _openNotesModal(fid: number, onClosed?: () => void): void {
   ensureFrameNote(fid);
 
   // Find source card for animation
-  const sourceCard = document.querySelector(`.grid3x2-card-wrap[data-g3fid="${fid}"] .canvas-wrap`) as HTMLElement | null;
+  const sourceCard = _growFrom(fid, from);
 
   document.body.style.overflow = 'hidden';
 
@@ -2066,7 +2079,7 @@ function _openNotesModal(fid: number, onClosed?: () => void): void {
     const flush = (window as any).__fh_flushSyncNow;
     if (flush) flush();
 
-    const target = document.querySelector(`.grid3x2-card-wrap[data-g3fid="${fid}"] .canvas-wrap`) as HTMLElement | null;
+    const target = _growFrom(fid, from);
     const doRemove = () => {
       overlay.remove();
       document.body.style.overflow = '';
