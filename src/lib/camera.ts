@@ -52,8 +52,7 @@ function canvasAspectRatio(fid: number): number {
 }
 
 /** Effective guide aspect ratio — resolves the saved preset against the frame canvas. */
-function effectiveAspectRatio(fid: number): number {
-  const key = state().camAspectRatio || 'canvas';
+function effectiveAspectRatio(fid: number, key: string = state().camAspectRatio || 'canvas'): number {
   if (state().projectType === 'fitting') {
     // A fitting knows only its three; anything else means ONE PERSON (the default).
     const f = FITTING_RATIOS.find((r) => r.key === key) || FITTING_RATIOS[0];
@@ -114,8 +113,16 @@ async function takeNativePhoto(fid: number): Promise<boolean> {
     // is drawn in peace. Saving and fetching go on while the camera is merely open,
     // and again the moment the picture is in its card.
     holdSyncFor(600);
-    if (e.ratioKey && e.ratioKey !== ratioKey) { useStore.setState({ camAspectRatio: e.ratioKey }); void flushSyncNow(); }
-    target.aspectRatio = effectiveAspectRatio(fid);
+    // A NEW RATIO IS WRITTEN DOWN AFTER THE LANDING, NOT IN IT (Roman, 11 Nov: "when
+    // I change the ratio, the first one is still frozen and then it goes. All the
+    // others are smooth"). The ratio is a setting of the whole project: writing it
+    // down wakes everything that listens to the project and starts a save — right
+    // in the half second the picture needs for itself. This landing only needs the
+    // number, which it takes from the camera's answer; the setting follows a
+    // moment later.
+    const newRatio: string | null = e.ratioKey && e.ratioKey !== ratioKey ? e.ratioKey : null;
+    if (newRatio) setTimeout(() => { useStore.setState({ camAspectRatio: newRatio as never }); void flushSyncNow(); }, 700);
+    target.aspectRatio = effectiveAspectRatio(fid, newRatio ?? undefined);
     // where the frame lay on the camera screen (points = CSS px here): the shrink
     // into the card starts from exactly that rectangle (actions.ts)
     if (e.frame && e.frame.w > 0) target.startRect = { left: e.frame.x, top: e.frame.y, width: e.frame.w, height: e.frame.h };
