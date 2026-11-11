@@ -13,6 +13,8 @@
 // overlay is put back as it was. One mechanism, for every box there is and
 // every box to come: it finds the overlay from the focused field itself.
 
+import { trace } from './syncTrace';
+
 const KEYBOARD_MIN_PX = 120;   // less than this is a toolbar, not a keyboard
 
 /** THE FRAMEHOW APP SAYS HOW TALL THE KEYBOARD IS (4 Nov). In the app shell
@@ -179,6 +181,41 @@ function typingLine(ta: HTMLTextAreaElement): { top: number; bottom: number } {
   return { top, bottom: top + lineH };
 }
 
+let _settle: number | null = null;
+
+/** A tall text area on the page, keyboard up: when its typing line is outside
+ *  the free area, the line is brought to the middle of it. One move per typing
+ *  place — the same field, cursor and keyboard are never moved twice, so the
+ *  move cannot chase its own scroll and a hand scroll is left alone. The
+ *  browser does the moving: a throw-away mark on the typing line is scrolled
+ *  into view, so whichever column holds the field is the one that scrolls. */
+function placeTypingLine(): void {
+  const vv = freeArea();
+  const ta = document.activeElement as HTMLTextAreaElement | null;
+  if (!vv || !ta || ta.tagName !== 'TEXTAREA' || overlayOf(ta)) return;
+  if (vv.height < 100 || window.innerHeight - vv.height < KEYBOARD_MIN_PX) return;
+  const r = ta.getBoundingClientRect();
+  const low = vv.top + vv.height;
+  const line = typingLine(ta);
+  const top = r.top + line.top, bottom = r.top + line.bottom;
+  if (!(bottom > low - 12 || top < vv.top + 12)) return;
+  const place = `${ta.dataset.notesText ?? ''}|${ta.selectionStart}|${Math.round(vv.height)}`;
+  if (ta === _movedFor && place === _movedPlace) return;
+  _movedFor = ta; _movedPlace = place;
+  trace(`notes: typing line at ${Math.round(top)} outside the free screen ${Math.round(vv.top)}–${Math.round(low)} (window ${window.innerHeight}) — brought to the middle`);
+  const lineH = line.bottom - line.top;
+  const mark = document.createElement('div');
+  mark.style.cssText = 'position:absolute;width:1px;visibility:hidden;pointer-events:none;';
+  mark.style.left = `${ta.offsetLeft}px`;
+  mark.style.top = `${ta.offsetTop + line.top}px`;
+  mark.style.height = `${lineH}px`;
+  const underKeys = Math.max(0, window.innerHeight - low);
+  mark.style.scrollMarginBottom = `${underKeys + Math.max(0, (vv.height - lineH) / 2)}px`;
+  ta.parentElement?.appendChild(mark);
+  mark.scrollIntoView({ block: 'end', behavior: 'auto' });
+  mark.remove();
+}
+
 let _movedFor: HTMLTextAreaElement | null = null;
 let _movedPlace = '';
 
@@ -231,29 +268,14 @@ function fit(): void {
     // does the moving — a throw-away mark on the typing line is scrolled into
     // view, so whichever column holds the field is the one that scrolls.
     if (active.tagName === 'TEXTAREA' && r.height > vv.height * 0.6) {
-      const ta = active as HTMLTextAreaElement;
-      const line = typingLine(ta);
-      const top = r.top + line.top, bottom = r.top + line.bottom;
-      // ONE MOVE PER TYPING PLACE (11 Nov, Roman: "it starts to flicker
-      // massively"). The move itself makes the screen report a scroll, which
-      // asked again, which moved again — against Safari's own nudge, for ever.
-      // So a place is moved for once: the same field, the same cursor, the
-      // same keyboard. Typing on, or the keyboard changing, is a new place.
-      const place = `${ta.dataset.notesText ?? ''}|${ta.selectionStart}|${Math.round(vv.height)}`;
-      if ((bottom > low - 12 || top < vv.top + 12) && !(ta === _movedFor && place === _movedPlace)) {
-        _movedFor = ta; _movedPlace = place;
-        const lineH = line.bottom - line.top;
-        const mark = document.createElement('div');
-        mark.style.cssText = 'position:absolute;width:1px;visibility:hidden;pointer-events:none;';
-        mark.style.left = `${ta.offsetLeft}px`;
-        mark.style.top = `${ta.offsetTop + line.top}px`;
-        mark.style.height = `${lineH}px`;
-        const underKeys = Math.max(0, window.innerHeight - low);
-        mark.style.scrollMarginBottom = `${underKeys + Math.max(0, (vv.height - lineH) / 2)}px`;
-        ta.parentElement?.appendChild(mark);
-        mark.scrollIntoView({ block: 'end', behavior: 'auto' });
-        mark.remove();
-      }
+      // ONLY ONCE THE SCREEN HAS COME TO REST (11 Nov, Roman: first it
+      // flickered, then the note went too far up). While the keyboard rises
+      // Safari is still sliding the screen itself; a move made in the middle of
+      // that is added to Safari's own, and the line overshoots. So the move
+      // waits until nothing has resized or scrolled for a moment, then looks
+      // afresh and moves once.
+      if (_settle !== null) clearTimeout(_settle);
+      _settle = window.setTimeout(() => { _settle = null; placeTypingLine(); }, 250);
       return;
     }
     if (r.bottom > low - 8 || r.top < vv.top + 8) {

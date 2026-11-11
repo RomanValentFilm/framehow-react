@@ -262,3 +262,6 @@ v5.0.225 · #777 (10 Nov, night)
 
 ## v5.0.227 · #779 (11 Nov, run 668)
 - NOTES on the iPhone: when the typing line is behind the keyboard it is brought to the middle of the free screen; a visible line is never moved (G15).
+
+## v5.0.228 · #780 (11 Nov, run 669)
+- NOTES on the iPhone: one move per typing place (the flicker of #779).

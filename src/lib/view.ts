@@ -216,7 +216,12 @@ export function syncCardHeights(): void {
             ph = Math.floor(avail * (isPhone ? 1.28 : 1.12));  // Safari iPhone +28%, iPad +12%
           }
         }
-        wrap.style.setProperty('--ph', ph + 'px');
+        // iPHONE SIDEWAYS: THE SAME PICTURE HEIGHT AS 3x2 (Roman, 11 Nov). 3x2
+        // gives an upright picture half the screen height; "what is left" here
+        // came out about 17 % lower, and the star column ran into the arrows.
+        // Upright holding and the iPad keep the hand-tuned sums above.
+        const sideways = isPhone && window.innerWidth > window.innerHeight;
+        wrap.style.setProperty('--ph', sideways ? '50vh' : ph + 'px');
         wrap.style.maxWidth = '';
         wrap.style.maxHeight = '';
       } else if (s.portraitMode) {
