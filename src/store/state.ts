@@ -69,7 +69,7 @@ export interface Setup {
 
 /** 12-colour palette for setups. */
 /** App version — bump before every deploy. */
-export const APP_VERSION = 'v5.0.244';
+export const APP_VERSION = 'v5.0.245';
 
 /** Free-text fields printed in the header of every exported page. */
 export interface ExportMeta {
@@ -522,6 +522,14 @@ export interface SortBreak {
    * project, and everywhere else. Roman: "each group needs its own breaks."
    */
   groupId?: number | null;
+  /**
+   * THE BREAK'S COLOUR (Roman, 11 Nov) — one of BREAK_COLORS in sortOrder.ts,
+   * as its hex. Missing means the grey every break has always been, so nothing
+   * already written changes. It is part of the break, so it travels wherever
+   * the break travels: inside its shooting order, or as its own story-flow
+   * break — the project's or a group's. Each break has its own.
+   */
+  color?: string;
 }
 
 /** Bracket tree node – serialisable subset (no DOM refs). */

@@ -2168,7 +2168,7 @@ function renderSortEditView(el: HTMLElement, orderId: string): void {
     const breaks = breaksForView(orderId, order);
     const breaksHere = breaks.filter((b) => b.position === orderIdx);
     for (const brk of breaksHere) {
-      html += renderBreakCard(brk, activeBreakId);
+      html += renderBreakCard(brk, activeBreakId, (el as any).__paletteBreakId ?? null);
     }
 
     html += renderFrameSetCard(f, orderIdx, activeReorderFid, waitingToBeSeen.has(f.id));
@@ -2180,7 +2180,7 @@ function renderSortEditView(el: HTMLElement, orderId: string): void {
     const breaks = breaksForView(orderId, order);
     const trailingBreaks = breaks.filter((b) => b.position >= orderIdx);
     for (const brk of trailingBreaks) {
-      html += renderBreakCard(brk, activeBreakId);
+      html += renderBreakCard(brk, activeBreakId, (el as any).__paletteBreakId ?? null);
     }
   }
 
@@ -2380,14 +2380,45 @@ function renderFrameSetCard(f: Frame, idx: number, activeReorderFid: number | nu
     </div>`;
 }
 
-function renderBreakCard(brk: SortBreak, activeBreakId: string | null): string {
+/** THE COLOURS A BREAK CAN HAVE (Roman, 11 Nov), in the order of the palette.
+ *  The grey every break starts with is the last one, and is stored as "no
+ *  colour". `light` says which way the text goes: dark on a light colour,
+ *  white on a dark one — as on the swatches he sent. */
+export const BREAK_COLORS: ReadonlyArray<{ hex: string; light: boolean }> = [
+  { hex: '#D7E3EE', light: true },
+  { hex: '#B9CBE0', light: true },
+  { hex: '#D1E6DC', light: true },
+  { hex: '#F8E8C7', light: true },
+  { hex: '#FBD9A8', light: true },
+  { hex: '#C9D8B4', light: true },
+  { hex: '#A8C89B', light: true },
+  { hex: '#D8B39C', light: true },
+  { hex: '#C87963', light: false },
+  { hex: '#B883A4', light: false },
+  { hex: '#6D5F8C', light: false },
+];
+const BREAK_GREY = '#808080';
+const breakColor = (brk: SortBreak) => BREAK_COLORS.find((c) => c.hex === brk.color) ?? null;
+/** How a break is painted, for the exports: its fill, and whether the name on
+ *  it is dark (a light colour) or white. Grey when it has no colour. */
+export function breakPaint(brk: { color?: string }): { fill: string; light: boolean } {
+  const c = BREAK_COLORS.find((x) => x.hex === brk.color);
+  return c ? { fill: c.hex, light: c.light } : { fill: BREAK_GREY, light: false };
+}
+
+function renderBreakCard(brk: SortBreak, activeBreakId: string | null, paletteFor: string | null = null): string {
   const isActive = activeBreakId === brk.id;
+  const col = breakColor(brk);
+  const palette = isActive && paletteFor === brk.id;
+  const swatch = (hex: string, value: string) =>
+    `<button class="sort-break-swatch${(col?.hex ?? '') === value ? ' is-on' : ''}" data-break-color-set="${brk.id}" data-color="${value}" style="background:${hex}"></button>`;
   return `
-    <div class="sort-break-card${isActive ? ' sort-break-active' : ''}" data-break-id="${brk.id}">
+    <div class="sort-break-card${isActive ? ' sort-break-active' : ''}${col?.light ? ' sort-break-light' : ''}${palette ? ' sort-break-palette-open' : ''}" data-break-id="${brk.id}"${col ? ` style="background:${col.hex};border-color:rgba(0,0,0,.25)"` : ''}>
       <input class="sort-break-text" value="${brk.text}" data-break-rename="${brk.id}" placeholder="BREAK NAME" readonly />
       <div class="sort-break-arrows${isActive ? ' sort-col-active' : ''}">
         ${isActive
-          ? `<span class="sort-arrow sort-break-arrow" data-break-move="up" data-break-id="${brk.id}">&#9650;</span>
+          ? `<button class="sort-break-color-btn" data-break-color-open="${brk.id}" style="background:${col?.hex ?? BREAK_GREY}"></button>
+             <span class="sort-arrow sort-break-arrow" data-break-move="up" data-break-id="${brk.id}">&#9650;</span>
              <span class="sort-done-btn sort-break-done" data-break-deactivate="${brk.id}">DONE</span>
              <span class="sort-arrow sort-break-arrow" data-break-move="down" data-break-id="${brk.id}">&#9660;</span>
              <span class="sort-break-delete-btn" data-break-delete="${brk.id}">DEL</span>`
@@ -2396,6 +2427,7 @@ function renderBreakCard(brk: SortBreak, activeBreakId: string | null): string {
              </button>`
         }
       </div>
+      ${palette ? `<div class="sort-break-palette">${BREAK_COLORS.map((c) => swatch(c.hex, c.hex)).join('')}${swatch(BREAK_GREY, '')}</div>` : ''}
     </div>`;
 }
 
@@ -2930,6 +2962,26 @@ function wireEditViewEvents(el: HTMLElement, orderId: string): void {
     });
   });
 
+  // THE BREAK'S COLOUR (Roman, 11 Nov). The small round button left of the
+  // arrows opens the palette, a row under the name; a colour closes it again.
+  el.querySelectorAll('[data-break-color-open]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = (btn as HTMLElement).dataset.breakColorOpen!;
+      (el as any).__paletteBreakId = (el as any).__paletteBreakId === id ? null : id;
+      renderSortEditView(el, orderId);
+    });
+  });
+  el.querySelectorAll('[data-break-color-set]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const b = btn as HTMLElement;
+      setBreakColor(orderId, b.dataset.breakColorSet!, b.dataset.color || null);
+      (el as any).__paletteBreakId = null;
+      renderSortEditView(el, orderId);
+    });
+  });
+
   // Break done button — sync when user finishes reordering break
   el.querySelectorAll('[data-break-deactivate]').forEach((btn) => {
     btn.addEventListener('click', (e) => {
@@ -3136,6 +3188,29 @@ function addBreak(orderId: string, editView: HTMLElement): void {
  * simulator can rename a break through the app's own path — a story flow's
  * break (the project's or a group's) or a shooting order's.
  */
+/** Give a break a colour, or (null) the grey it started with. Written exactly
+ *  as a new name is: into the story-flow break, or into the break inside its
+ *  shooting order — so it is saved and sent the same way. */
+export function setBreakColor(orderId: string, breakId: string, hex: string | null): void {
+  const s = state();
+  const known = BREAK_COLORS.some((c) => c.hex === hex) ? hex! : null;
+  const dress = (b: SortBreak): SortBreak => {
+    if (b.id !== breakId) return b;
+    const { color: _was, ...rest } = b;
+    return known ? { ...rest, color: known } : rest;
+  };
+  if (isStoryFlow(orderId)) {
+    useStore.setState({ storyFlowBreaks: (s.storyFlowBreaks || []).map(dress) });
+  } else {
+    useStore.setState({
+      sortOrders: s.sortOrders.map((o) => (o.id === orderId ? { ...o, breaks: o.breaks.map(dress) } : o)),
+    });
+  }
+  trace(`break ${breakId.slice(0, 12)} colour ${known ?? 'grey'}`);
+  bumpRenderTick();
+  void flushSyncNow();
+}
+
 export function renameBreak(orderId: string, breakId: string, text: string): void {
   const s = state();
   if (isStoryFlow(orderId)) {
@@ -3428,7 +3503,12 @@ function setupDragAndDrop(el: HTMLElement, orderId: string): void {
               // as SORT NOW, for the same three promises.
               const dragged = orderFromSheet(o.frameOrder, newFrameOrder, newFrameOrder);
               const before = o.frameOrder.filter((id) => dragged.includes(id));
-              const who = before.find((id, i) => dragged.indexOf(id) !== i);
+              // THE SHOT THAT WAS IN THE HAND, not the first one whose place changed
+              // (11 Nov: Roman dragged 3#1 one place up and the line said "dragged
+              // 2" — the neighbour it had passed).
+              const inHand = activeFrame ? parseInt(activeFrame.dataset.sortFid ?? '', 10) : NaN;
+              const who = before.includes(inHand) && before.indexOf(inHand) !== dragged.indexOf(inHand)
+                ? inHand : before.find((id, i) => dragged.indexOf(id) !== i);
               if (who !== undefined) {
                 trace(`by hand: dragged ${shotName(who)}`
                   + ` from place ${before.indexOf(who) + 1} to ${dragged.indexOf(who) + 1}`);

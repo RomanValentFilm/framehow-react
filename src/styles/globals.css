@@ -1442,6 +1442,16 @@
   .sort-break-text{font-size:14px;font-weight:600;color:#fff;border:none;background:transparent;padding:2px 4px;outline:none;font-family:inherit;flex:0 1 60%;min-width:0;pointer-events:none;}
   .sort-break-active .sort-break-text{pointer-events:auto;box-shadow:inset 0 0 0 1px rgba(255,255,255,.35);border-radius:3px;background:rgba(255,255,255,.1);}
   .sort-break-arrows{display:flex;align-items:center;justify-content:center;}
+  /* THE BREAK'S COLOUR (11 Nov). Dark text and arrows on a light colour. */
+  .sort-break-light .sort-break-text{color:#1c1c1c;}
+  .sort-break-light .sort-break-text::placeholder{color:rgba(0,0,0,.45);}
+  .sort-break-light .sort-arrows-combined,.sort-break-light .sort-break-arrow{color:#444;}
+  .sort-break-light.sort-break-active .sort-break-text{box-shadow:inset 0 0 0 1px rgba(0,0,0,.3);background:rgba(0,0,0,.06);}
+  .sort-break-color-btn{width:20px;height:20px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.45);padding:0;cursor:pointer;flex:none;margin-right:4px;}
+  .sort-break-palette-open{flex-wrap:wrap;}
+  .sort-break-palette{flex:0 0 100%;display:flex;flex-wrap:wrap;justify-content:center;gap:6px;padding:6px 0 4px;}
+  .sort-break-swatch{width:24px;height:24px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.45);padding:0;cursor:pointer;flex:none;}
+  .sort-break-swatch.is-on{box-shadow:0 0 0 2px var(--accent);}
   .sort-break-arrows.sort-col-active{gap:6px;}
   .sort-break-combined{flex-direction:row;gap:2px;padding:6px 4px;}
   .sort-break-combined span{font-size:10px;}

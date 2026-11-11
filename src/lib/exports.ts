@@ -1,6 +1,7 @@
 // Export pipelines — PDF (jsPDF), PPTX (pptxgenjs), per-frame images (jszip).
 // Replaces CDN globals with NPM imports.
 
+import { breakPaint } from './sortOrder';
 import { trace } from './syncTrace';
 import jsPDF from 'jspdf';
 // @ts-ignore — pptxgenjs ships its own bundled types
@@ -481,6 +482,28 @@ function needsColumns(fid: number): [{ k: string; v: string }[], { k: string; v:
   const tabs = state().needDefinitions.tabs || [];
   const mid = Math.ceil(tabs.length / 2);
   return [needsPairsFor(fid, tabs.slice(0, mid)), needsPairsFor(fid, tabs.slice(mid))];
+}
+
+/**
+ * THE FRAME-SET CARD AS IT IS ON SCREEN SINCE 11 NOVEMBER (Roman: "definitely
+ * yes" — the SORT BY exports still drew the card of the day before).
+ *
+ * One block per NEEDS tab, each in its fixed place: left TALENTS over ART,
+ * right SHOOT over GEAR; a tab the project added goes after them, left and
+ * right in turn. A block with nothing in it is still there. Same lists, same
+ * order, as renderNeedsInfo in sortOrder.ts.
+ */
+function needsBlocks(fid: number): [{ k: string; v: string }[][], { k: string; v: string }[][]] {
+  const tabs = state().needDefinitions.tabs || [];
+  const byId = (id: string) => tabs.filter((t) => t.id === id);
+  const others = tabs.filter((t) => !['tab_talents', 'tab_art', 'tab_shoot', 'tab_gear'].includes(t.id));
+  const left = [...byId('tab_talents'), ...byId('tab_art'), ...others.filter((_, i) => i % 2 === 0)];
+  const right = [...byId('tab_shoot'), ...byId('tab_gear'), ...others.filter((_, i) => i % 2 === 1)];
+  return [left.map((t) => needsPairsFor(fid, [t])), right.map((t) => needsPairsFor(fid, [t]))];
+}
+/** The shot's written note, for the box above the blocks. */
+function cardNote(fid: number): string {
+  return (state().frameNotes[fid]?.noteText || '').trim();
 }
 
 /** Flat version for the layouts that print NEEDS as running text. */
@@ -1154,7 +1177,7 @@ export async function runExport(): Promise<void> {
     const gridW = contentW - PAD_L - PAD_R;
     const numW = gridW * 0.050;      // 44px
     const mainW = gridW * 0.25;      // 25%
-    const verW = gridW * 0.17;       // 17%
+    const verW = gridW * 0.20;       // 20% (11 Nov; was 17)
     const needsW = gridW - numW - mainW - verW - GAP * 3;
     const mainH = mainW / sbAspect;
     const verH = verW / sbAspect;
@@ -1165,9 +1188,10 @@ export async function runExport(): Promise<void> {
     drawHeader(page, 0);
 
     const breakAt = new Map<number, string>();
+    const paintAt = new Map<number, { fill: string; light: boolean }>();   // the break's colour (11 Nov)
     for (const b of sortBreaks) {
       const t = (b.text || '').trim();
-      if (t) breakAt.set(b.position, t);
+      if (t) { breakAt.set(b.position, t); paintAt.set(b.position, breakPaint(b)); }
     }
 
     for (let i = 0; i < frames.length; i++) {
@@ -1175,17 +1199,29 @@ export async function runExport(): Promise<void> {
 
       const capLines = f.textContent ? hardWrapLines(pdf, f.textContent, mainW).length : 0;
       const capH = capLines ? 1.2 + capLines * 3.2 : 0;
-      const [col1, col2] = needsColumns(f.id);
-      // Count real rendered lines per column, since a long value wraps
+      // THE RIGHT PART, AS ON SCREEN: the note in a box across the full width,
+      // then the blocks in two columns, every one on the lighter shade, an
+      // empty one a line high. Measured first, since a long value wraps.
       pdf.setFontSize(7);
-      const colLines = (pairs: { k: string; v: string }[]) =>
-        pairs.reduce((n, pr) => {
-          pdf.setFont(PDF_FONT, 'bold');
-          const kW = pdf.getTextWidth(`${pr.k} `);
-          pdf.setFont(PDF_FONT, 'normal');
-          return n + hardWrapLines(pdf, pr.v, Math.max(8, colW - kW)).length;
-        }, 0);
-      const textH = Math.max(colLines(col1), colLines(col2)) * 2.15;
+      const BOX_PX = 1.3, BOX_PY = 0.55, ROW = 2.15, BOX_GAP = GAP;
+      const pairLines = (pr: { k: string; v: string }, w: number): number => {
+        pdf.setFont(PDF_FONT, 'bold');
+        const kW = pdf.getTextWidth(`${pr.k} `);
+        pdf.setFont(PDF_FONT, 'normal');
+        const first = hardWrapLines(pdf, pr.v, Math.max(8, w - kW));
+        return 1 + (first.length > 1 ? hardWrapLines(pdf, first.slice(1).join(' '), w).length : 0);
+      };
+      const blockH = (pairs: { k: string; v: string }[]): number =>
+        Math.max(1, pairs.reduce((n, pr) => n + pairLines(pr, colW - BOX_PX * 2), 0)) * ROW + BOX_PY * 2;
+      const [leftBlocks, rightBlocks] = needsBlocks(f.id);
+      const colH = (blocks: { k: string; v: string }[][]): number =>
+        blocks.reduce((h, bl) => h + blockH(bl), 0) + Math.max(0, blocks.length - 1) * BOX_GAP;
+      const note = cardNote(f.id);
+      pdf.setFont(PDF_FONT, 'bold');
+      const noteLines = note ? hardWrapLines(pdf, note, needsW - BOX_PX * 2) : [];
+      pdf.setFont(PDF_FONT, 'normal');
+      const noteH = Math.max(1, noteLines.length) * ROW + BOX_PY * 2;
+      const textH = noteH + BOX_GAP + Math.max(colH(leftBlocks), colH(rightBlocks));
       const cardH = Math.max(mainH + capH, verH * 2 + GAP, textH) + PAD_T * 2;
 
       const title = breakAt.get(i);
@@ -1198,9 +1234,13 @@ export async function runExport(): Promise<void> {
       }
 
       if (title) {
-        // .sort-break-card — full-width grey bar, #808080 on a #666 border
-        pdf.setFillColor(128, 128, 128);
-        pdf.setDrawColor(102);
+        // .sort-break-card — full-width bar in the break's own colour (grey,
+        // #808080 on a #666 border, when it has none), the name white on a
+        // dark colour and dark on a light one — as on screen.
+        const paint = paintAt.get(i) ?? { fill: '#808080', light: false };
+        const rgb = [1, 3, 5].map((k) => parseInt(paint.fill.slice(k, k + 2), 16));
+        pdf.setFillColor(rgb[0], rgb[1], rgb[2]);
+        pdf.setDrawColor(paint.fill === '#808080' ? 102 : Math.round(rgb[0] * 0.75), paint.fill === '#808080' ? 102 : Math.round(rgb[1] * 0.75), paint.fill === '#808080' ? 102 : Math.round(rgb[2] * 0.75));
         pdf.setLineWidth(0.25);
         pdf.roundedRect(MARGIN, cursorY, contentW, BREAK_H, 1.2, 1.2, 'FD');
         // .sort-break-text — transparent, no border, white semibold.
@@ -1208,7 +1248,7 @@ export async function runExport(): Promise<void> {
         // break is selected for reordering — not its resting state.)
         pdf.setFont(PDF_FONT, 'bold');
         pdf.setFontSize(9);
-        pdf.setTextColor(255);
+        pdf.setTextColor(paint.light ? 28 : 255);
         const tTxt = hardWrapLines(pdf, title, contentW * 0.6)[0] || title;
         pdf.text(tTxt, MARGIN + 2.6, cursorY + BREAK_H / 2 + 1.2);
         pdf.setFont(PDF_FONT, 'normal');
@@ -1307,33 +1347,49 @@ export async function runExport(): Promise<void> {
       }
       x += verW + GAP;
 
-      // NEEDS — two columns, bold table name then its values
+      // The note, then the blocks — each on the lighter shade of the card
+      // (.sort-needs-notes / .sort-needs-block: white at 38 % over #d9d9d9).
       pdf.setFontSize(7);
-      [col1, col2].forEach((colPairs, c) => {
-        const cx = x + c * (colW + GAP);
-        let cy = innerY;
-        for (const pr of colPairs) {
-          pdf.setFont(PDF_FONT, 'bold');
-          pdf.setTextColor(20);
-          const kTxt = `${pr.k} `;
-          pdf.text(kTxt, cx, cy + 2.6);
-          const tx = cx + pdf.getTextWidth(kTxt);
-          pdf.setFont(PDF_FONT, 'normal');
-          pdf.setTextColor(60);
-          // First line sits beside the label; any continuation wraps to the
-          // column's full width underneath, and the NEXT entry starts below
-          // all of them rather than overlapping.
-          const firstW = Math.max(8, colW - (tx - cx));
-          const all = hardWrapLines(pdf, pr.v, firstW);
-          if (all.length) pdf.text(all[0], tx, cy + 2.6);
-          cy += 2.15;
-          if (all.length > 1) {
-            const rest = hardWrapLines(pdf, all.slice(1).join(' '), colW);
-            for (const line of rest) {
-              pdf.text(line, cx, cy + 2.6);
-              cy += 2.15;
+      const shade = (bx: number, by: number, bw: number, bh: number) => {
+        pdf.setFillColor(231, 231, 231);
+        pdf.roundedRect(bx, by, bw, bh, 0.8, 0.8, 'F');
+      };
+      shade(x, innerY, needsW, noteH);
+      pdf.setFont(PDF_FONT, 'bold');
+      pdf.setTextColor(17);
+      noteLines.forEach((line, li) => pdf.text(line, x + BOX_PX, innerY + BOX_PY + 1.6 + li * ROW));
+      const blocksY = innerY + noteH + BOX_GAP;
+      [leftBlocks, rightBlocks].forEach((blocks, c) => {
+        const bx = x + c * (colW + GAP);
+        let by = blocksY;
+        for (const pairs of blocks) {
+          const bh = blockH(pairs);
+          shade(bx, by, colW, bh);
+          const cx = bx + BOX_PX;
+          const innerW = colW - BOX_PX * 2;
+          let cy = by + BOX_PY - 1.0;
+          for (const pr of pairs) {
+            pdf.setFont(PDF_FONT, 'bold');
+            pdf.setTextColor(20);
+            const kTxt = `${pr.k} `;
+            pdf.text(kTxt, cx, cy + 2.6);
+            const tx = cx + pdf.getTextWidth(kTxt);
+            pdf.setFont(PDF_FONT, 'normal');
+            pdf.setTextColor(60);
+            // First line sits beside the label; any continuation wraps to the
+            // block's full width underneath, and the NEXT entry starts below
+            // all of them rather than overlapping.
+            const all = hardWrapLines(pdf, pr.v, Math.max(8, innerW - (tx - cx)));
+            if (all.length) pdf.text(all[0], tx, cy + 2.6);
+            cy += ROW;
+            if (all.length > 1) {
+              for (const line of hardWrapLines(pdf, all.slice(1).join(' '), innerW)) {
+                pdf.text(line, cx, cy + 2.6);
+                cy += ROW;
+              }
             }
           }
+          by += bh + BOX_GAP;
         }
       });
       pdf.setTextColor(30);
@@ -1778,7 +1834,7 @@ export async function runPptxExport(): Promise<void> {
     const GAP = W * 0.0068;
     const numW = W * 0.05;
     const mainW = W * 0.25;
-    const verW = W * 0.17;
+    const verW = W * 0.20;                // 20 % (11 Nov; was 17)
     const needsW = W - numW - mainW - verW - GAP * 3 - PAD * 2;
     const colW = (needsW - GAP) / 2;
     const mainH = mainW / aspect;
@@ -1811,16 +1867,27 @@ export async function runPptxExport(): Promise<void> {
     const fontTxt = `${F_TXT}px "DM Sans", sans-serif`;
     const fontTxtB = `600 ${F_TXT}px "DM Sans", sans-serif`;
 
-    const [c1, c2] = needsColumns(f.id);
-    const colLines = (pairs: { k: string; v: string }[]) =>
-      pairs.reduce((n, pr) => {
-        probe.font = fontTxtB;
-        const kW = probe.measureText(`${pr.k} `).width;
-        return n + Math.max(1, wrap(pr.v, Math.max(20, colW - kW), fontTxt).length);
-      }, 0);
+    // The right part as on screen: the note box across the full width, then
+    // the blocks in two columns, each on the lighter shade, empty ones a line
+    // high (see needsBlocks).
+    const BOX_PX = px(0.04), BOX_PY = px(0.018), BOX_GAP = GAP;
+    const pairLines = (pr: { k: string; v: string }, w: number): number => {
+      probe.font = fontTxtB;
+      const kW = probe.measureText(`${pr.k} `).width;
+      const first = wrap(pr.v, Math.max(20, w - kW), fontTxt);
+      return 1 + (first.length > 1 ? wrap(first.slice(1).join(' '), w, fontTxt).length : 0);
+    };
+    const blockH = (pairs: { k: string; v: string }[]): number =>
+      Math.max(1, pairs.reduce((n, pr) => n + pairLines(pr, colW - BOX_PX * 2), 0)) * LINE + BOX_PY * 2;
+    const [leftBlocks, rightBlocks] = needsBlocks(f.id);
+    const colH = (blocks: { k: string; v: string }[][]): number =>
+      blocks.reduce((h, bl) => h + blockH(bl), 0) + Math.max(0, blocks.length - 1) * BOX_GAP;
+    const note = cardNote(f.id);
+    const noteLines = note ? wrap(note, needsW - BOX_PX * 2, fontTxtB) : [];
+    const noteH = Math.max(1, noteLines.length) * LINE + BOX_PY * 2;
     const capLines = f.textContent ? wrap(f.textContent, mainW, `${F_SMALL}px "DM Sans", sans-serif`) : [];
     const capH = capLines.length ? capLines.length * F_SMALL * 1.4 + px(0.02) : 0;
-    const textH = Math.max(colLines(c1), colLines(c2)) * LINE;
+    const textH = noteH + BOX_GAP + Math.max(colH(leftBlocks), colH(rightBlocks));
     const H = Math.round(Math.max(mainH + capH, verH * 2 + GAP, textH) + PAD * 2);
 
     const c = document.createElement('canvas');
@@ -1918,26 +1985,53 @@ export async function runPptxExport(): Promise<void> {
     }
     x += verW + GAP;
 
-    // NEEDS, two columns, wrapped values pushing the next entry down
+    // The note, then the blocks, each on the lighter shade of the card.
     ctx.textAlign = 'left';
-    [c1, c2].forEach((pairs, ci) => {
-      const cx = x + ci * (colW + GAP);
-      let ry = iy;
-      for (const pr of pairs) {
-        ctx.font = fontTxtB;
-        ctx.fillStyle = '#141414';
-        const kTxt = `${pr.k} `;
-        ctx.fillText(kTxt, cx, ry);
-        const kW = ctx.measureText(kTxt).width;
-        ctx.font = fontTxt;
-        ctx.fillStyle = '#3c3c3c';
-        const lines = wrap(pr.v, Math.max(20, colW - kW), fontTxt);
-        if (lines.length) ctx.fillText(lines[0], cx + kW, ry);
-        ry += LINE;
-        for (const extra of wrap(lines.slice(1).join(' '), colW, fontTxt)) {
-          ctx.fillText(extra, cx, ry);
+    const shade = (bx: number, by: number, bw: number, bh: number) => {
+      const rr2 = px(0.02);
+      ctx.beginPath();
+      ctx.moveTo(bx + rr2, by);
+      ctx.arcTo(bx + bw, by, bx + bw, by + bh, rr2);
+      ctx.arcTo(bx + bw, by + bh, bx, by + bh, rr2);
+      ctx.arcTo(bx, by + bh, bx, by, rr2);
+      ctx.arcTo(bx, by, bx + bw, by, rr2);
+      ctx.closePath();
+      ctx.fillStyle = '#e7e7e7';
+      ctx.fill();
+    };
+    shade(x, iy, needsW, noteH);
+    ctx.font = `700 ${F_TXT}px "DM Sans", sans-serif`;
+    ctx.fillStyle = '#111111';
+    noteLines.forEach((line, li) => ctx.fillText(line, x + BOX_PX, iy + BOX_PY + li * LINE));
+    const blocksY = iy + noteH + BOX_GAP;
+    [leftBlocks, rightBlocks].forEach((blocks, ci) => {
+      const bx = x + ci * (colW + GAP);
+      let by = blocksY;
+      for (const pairs of blocks) {
+        const bh = blockH(pairs);
+        shade(bx, by, colW, bh);
+        const cx = bx + BOX_PX;
+        const innerW = colW - BOX_PX * 2;
+        let ry = by + BOX_PY;
+        for (const pr of pairs) {
+          ctx.font = fontTxtB;
+          ctx.fillStyle = '#141414';
+          const kTxt = `${pr.k} `;
+          ctx.fillText(kTxt, cx, ry);
+          const kW = ctx.measureText(kTxt).width;
+          ctx.font = fontTxt;
+          ctx.fillStyle = '#3c3c3c';
+          const lines = wrap(pr.v, Math.max(20, innerW - kW), fontTxt);
+          if (lines.length) ctx.fillText(lines[0], cx + kW, ry);
           ry += LINE;
+          if (lines.length > 1) {
+            for (const extra of wrap(lines.slice(1).join(' '), innerW, fontTxt)) {
+              ctx.fillText(extra, cx, ry);
+              ry += LINE;
+            }
+          }
         }
+        by += bh + BOX_GAP;
       }
     });
 
@@ -2084,9 +2178,10 @@ export async function runPptxExport(): Promise<void> {
     const BREAK_H = 0.26;
 
     const breakAt = new Map<number, string>();
+    const paintAt = new Map<number, { fill: string; light: boolean }>();   // the break's colour (11 Nov)
     for (const b of sortBreaks) {
       const t = (b.text || '').trim();
-      if (t) breakAt.set(b.position, t);
+      if (t) { breakAt.set(b.position, t); paintAt.set(b.position, breakPaint(b)); }
     }
 
     const HEADER_BOTTOM = 0.68;   // meta rows end at ~0.6in
@@ -2109,11 +2204,12 @@ export async function runPptxExport(): Promise<void> {
       if (title) {
         slide.addShape('roundRect', {
           x: MARGIN, y: cy, w: contentW, h: BREAK_H,
-          fill: { color: '808080' }, line: { color: '666666', width: 0.5 }, rectRadius: 0.03,
+          fill: { color: (paintAt.get(i)?.fill ?? '#808080').slice(1) },
+          line: { color: paintAt.get(i) && paintAt.get(i)!.fill !== '#808080' ? '8A8A8A' : '666666', width: 0.5 }, rectRadius: 0.03,
         });
         slide.addText(title, {
           x: MARGIN + 0.1, y: cy, w: contentW * 0.6, h: BREAK_H,
-          fontSize: 9, bold: true, color: 'FFFFFF', fontFace: 'Arial', valign: 'middle', margin: 0,
+          fontSize: 9, bold: true, color: paintAt.get(i)?.light ? '1C1C1C' : 'FFFFFF', fontFace: 'Arial', valign: 'middle', margin: 0,
         });
         cy += BREAK_H + CARD_GAP;
       }

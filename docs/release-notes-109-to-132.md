@@ -312,3 +312,6 @@ v5.0.225 · #777 (10 Nov, night)
 
 ## v5.0.243 · #795 (11 Nov, run 684)
 - FRAME-SET CARDS: after NEEDS from a card — the order changed: page to the top (icon overview shows the green shot); nothing moved: same place; NOTES: always the same place. The order is counted BEFORE the box closes, under the project-loading bar with "Re-sorting…" (a quarter second at least). Test e2e/64 extended (three landing cases).
+
+## v5.0.244 · #796 (11 Nov, run 685)
+- SHOOTING ORDER RULE CHANGED (Roman): a shot that was in a real box and fits no box any more MOVES to the leftovers — at its number among them — and is green. A new shot with no needs still stays where it was made (red); a leftover that stays a leftover is not marked. bracket.ts decideResort + placeInLeftovers; bench sections 6 (rewritten), 6b, 6c. Order tests 26, 27, 64 green in run 685.

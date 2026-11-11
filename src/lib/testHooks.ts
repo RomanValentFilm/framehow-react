@@ -833,9 +833,9 @@ export function installTestDoor(): void {
         orders: s.sortOrders.map((o) => ({
           name: o.name, group: groupName(o.groupId),
           shots: o.frameOrder.map(nameOf),
-          breaks: o.breaks.map((b) => ({ text: b.text, position: b.position })),
+          breaks: o.breaks.map((b) => ({ text: b.text, position: b.position, ...(b.color ? { color: b.color } : {}) })),
         })),
-        storyBreaks: (s.storyFlowBreaks ?? []).map((b) => ({ text: b.text, position: b.position, group: groupName(b.groupId) })),
+        storyBreaks: (s.storyFlowBreaks ?? []).map((b) => ({ text: b.text, position: b.position, group: groupName(b.groupId), ...(b.color ? { color: b.color } : {}) })),
       };
     },
 
