@@ -362,3 +362,30 @@ v5.0.225 · #777 (10 Nov, night)
 
 ## v5.0.256 · #808 (11 Nov, run 702; 701 red: the test marked too late)
 - STORAGE notices: every button pressed by a test; button named OPEN PROJECTS' LIST; the mail is mentioned only where confirming gives more room (one rule). A previous photo waits while the next one lands.
+
+## v5.0.257 · #809 (11 Nov, run 703)
+- CAMERA: the real photo is unpacked before it replaces the live frame, so the swap does not hold the page.
+
+## v5.0.258 · #810 (11 Nov, run 704)
+- SAVES AGAIN AFTER iOS CLOSES THE DEVICE STORAGE: the app held on to a closed database for good ("The database connection is closing", then COULD NOT SAVE ON THIS DEVICE). A closed one is forgotten and opened anew; one more try. Test 66 closes it on purpose.
+- A new camera ratio is written down after the landing, not in it.
+
+## v5.0.259 · #811 (11 Nov, run 705)
+- Preview work (LIBRARY) waits two seconds after a photo's live frame. The log says where the page stood still during a landing; every line within 4 s of a landing carries its ms.
+
+## v5.0.260 · #812 (11 Nov, run 706)
+- THE LOG SURVIVES A RESTART OF THE PAGE (app shell only): the line "THE PAGE STARTED ANEW HERE", the lines from before below it.
+- CAMERA (Swift, Xcode build): at the shutter the camera screen only becomes invisible; it is taken down when the photo is done. Before, the page stood still ~1.2 s after every shot and the first shot after a turn showed no move. Roman's log in a 5-shot project: move 310–330 ms, no standstill, turn included.
+
+## v5.0.261 · #813 (11 Nov, run 707)
+- COULD NOT SAVE ON THIS DEVICE only after three failed saves in a row (two failed 3 s apart while iOS restarted its storage; the third worked).
+
+## v5.0.262 · #814 (11 Nov) — LIVE on framehow.com/app
+- FULL RUN 708: 154 passed, 0 failed, 6 parked (fixme), 1.1 h. Run 709: FH_LIVE push e28bdc6 → 8211dd2. Live before: v5.0.152 · #704 (6 Nov).
+- WHAT WENT LIVE SINCE 6 NOV, for the user:
+  - 9 Nov: confirm your email (150 MB until then, 500 MB after), mails with a button, rate limits, library delete asks twice, one row per project in the list, pictures loaded during a save go up at once.
+  - 10 Nov: the update card only informs (NOT NOW / RELOAD), after an update back in the same place; new shots get a name nobody has; several pictures into a strip land in the chosen order; iPhone sideways beside the Dynamic Island; MAX view to the edge.
+  - 11 Nov: NOTES on the iPhone stay put when the keyboard comes; frame-set cards in SORT BY redesigned (note box, NEEDS blocks in fixed places, whole description; a tap opens NOTES / NEEDS; Re-sorting bar); a shot that fits no box any more goes to the leftovers; BREAK COLOURS (11 + grey), synced, in PDF and Keynote; group exports with their own breaks and orders; SORT BY redraw about five times faster on the iPad; STORAGE FULL notice with OPEN LIBRARY / OPEN PROJECTS' LIST; nothing synced while projects are edited in the list.
+  - Also live, missed in the first writing of this note (checked against all 111 commits since e28bdc6): 3-star rating in every project (10 Nov); LOAD on a shot takes several pictures — the first on it, the rest new shots after it (9 Nov); every loaded picture 2400 px at most, re-encoded, metadata gone (9 Nov); logout warns about unsent work and keeps only the unsent copies, account deletion wipes the device, a deleted account comes back when signed in within 7 days (9 Nov); the typeface comes with the app, no Google Fonts call (9 Nov); the version's setup button reads +NAME (10 Nov); LIBRARY says why when nobody is signed in (10 Nov).
+  - Native camera (app shell only, loads dev): island and round corners respected, RATIO / EV / 1x one look, no freeze, picture travels from its frame into the card in 0.3 s.
+- OPEN: G21 — a very heavy project (WF 7: 26 shots, hundreds of pictures) makes iOS stop the page / its storage process (Xcode console: WebContent "Crash" on opening it, Network Process crash during the device save). Fix agreed in words with Roman: pictures apart from the project record, in memory only what is on screen, the device keeps the one open project (as today), unsent photos stay until uploaded. Not built.
