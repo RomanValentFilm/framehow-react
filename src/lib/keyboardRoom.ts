@@ -184,7 +184,7 @@ function typingLine(ta: HTMLTextAreaElement): { top: number; bottom: number } {
 let _settle: number | null = null;
 
 /** A tall text area on the page, keyboard up: when its typing line is outside
- *  the free area, the line is brought to the middle of it. One move per typing
+ *  the free area, the line is brought to its spot. One move per typing
  *  place — the same field, cursor and keyboard are never moved twice, so the
  *  move cannot chase its own scroll and a hand scroll is left alone. */
 function placeTypingLine(): void {
@@ -196,10 +196,17 @@ function placeTypingLine(): void {
   const low = vv.top + vv.height;
   const line = typingLine(ta);
   const top = r.top + line.top, bottom = r.top + line.bottom;
-  if (!(bottom > low - 12 || top < vv.top + 12)) return;
+  // ALWAYS THE SAME SPOT: 25 % FROM THE TOP OF THE SCREEN (Roman, 11 Nov —
+  // "the moment I touch the area to type in and the keyboard appears"). Once
+  // per visit to the field, whether the line was in view or not, so the eye
+  // knows where to look. After that the line is left alone while it is in
+  // view, and goes back to the spot only when typing runs it out of view.
+  const firstTime = _placedFor !== ta;
+  const outside = bottom > low - 12 || top < vv.top + 12;
+  if (!firstTime && !outside) return;
   const place = `${ta.dataset.notesText ?? ''}|${ta.selectionStart}|${Math.round(vv.height)}`;
-  if (ta === _movedFor && place === _movedPlace) return;
-  _movedFor = ta; _movedPlace = place;
+  if (!firstTime && ta === _movedFor && place === _movedPlace) return;
+  _placedFor = ta; _movedFor = ta; _movedPlace = place;
   // THE SCREEN ITSELF IS MOVED, NOT THE COLUMN (11 Nov, Roman's log: "typing
   // line at 116, free screen 258–508" — and nothing happened). Safari had slid
   // the SCREEN down over the page, away from the line; the line sat near the
@@ -207,13 +214,16 @@ function placeTypingLine(): void {
   // page to scroll did nothing. Sliding the window by the missing distance
   // moves the screen back over the line.
   const lineH = line.bottom - line.top;
-  const by = Math.round((top - vv.top) - Math.max(0, (vv.height - lineH) / 2));
-  trace(`notes: typing line at ${Math.round(top)} outside the free screen ${Math.round(vv.top)}–${Math.round(low)} (window ${window.innerHeight}, page at ${Math.round(window.scrollY)}) — sliding the screen by ${by}`);
+  const spot = Math.min(window.innerHeight * 0.25, Math.max(12, vv.height - lineH - 12));
+  const by = Math.round((top - vv.top) - spot);
+  if (Math.abs(by) < 4) return;
+  trace(`notes: typing line at ${Math.round(top)}, free screen ${Math.round(vv.top)}–${Math.round(low)} (window ${window.innerHeight}, page at ${Math.round(window.scrollY)}) — ${firstTime ? 'keyboard up' : 'ran out of view'}, to 25 % from the top: sliding the screen by ${by}`);
   window.scrollBy(0, by);
 }
 
 let _movedFor: HTMLTextAreaElement | null = null;
 let _movedPlace = '';
+let _placedFor: HTMLTextAreaElement | null = null;
 
 function fit(): void {
   const vv = freeArea();
@@ -230,7 +240,7 @@ function fit(): void {
   // a sync redraw rebuilt the card under the field, Safari never said so, and
   // the page stayed held. Now the pin is let go the moment no field is being
   // typed into, whoever took the field away.
-  if (!typing) { unpinPage(); _movedFor = null; _movedPlace = ''; }
+  if (!typing) { unpinPage(); _movedFor = null; _movedPlace = ''; _placedFor = null; }
   if (vv.height < 100) {
     // THE HARDWARE-KEYBOARD SIGNATURE (15 Oct, Roman's logs): the zero reading
     // comes right at focus, before the first key. Safari then scrolls the PAGE

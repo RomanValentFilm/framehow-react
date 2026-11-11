@@ -269,3 +269,6 @@ v5.0.225 · #777 (10 Nov, night)
 ## v5.0.229 · #781 (11 Nov, run 670)
 - iPhone sideways, upright projects: strip views give the picture the same height as 3x2 (half the screen); star column 15 % smaller in strips too (G16, done — Roman: happy with the card height).
 - NOTES: the move waits until the screen has come to rest; log line "notes: typing line at …".
+
+## v5.0.230 · #782 (11 Nov, run 671)
+- NOTES: the screen itself is slid back over the typing line (window scroll), not the column.
