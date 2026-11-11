@@ -158,72 +158,39 @@ function boxOf(overlay: HTMLElement, field: Element): HTMLElement | null {
   return node && node !== overlay ? node : null;
 }
 
-/** Where the line being typed sits inside a text area, from the area's top
- *  edge (what is scrolled away inside the area already taken off). Measured
- *  with a throw-away copy of the text up to the cursor. */
-function typingLine(ta: HTMLTextAreaElement): { top: number; bottom: number } {
-  const cs = getComputedStyle(ta);
-  const m = document.createElement('div');
-  m.style.cssText = 'position:fixed;left:-9999px;top:0;visibility:hidden;white-space:pre-wrap;overflow-wrap:break-word;box-sizing:border-box;';
-  m.style.width = `${ta.clientWidth}px`;
-  m.style.font = cs.font;
-  m.style.lineHeight = cs.lineHeight;
-  m.style.letterSpacing = cs.letterSpacing;
-  m.style.padding = cs.padding;
-  m.textContent = ta.value.slice(0, ta.selectionStart ?? ta.value.length);
-  const mark = document.createElement('span');
-  mark.textContent = '​';
-  m.appendChild(mark);
-  document.body.appendChild(m);
-  const lineH = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.4 || 20;
-  const top = mark.offsetTop + (parseFloat(cs.borderTopWidth) || 0) - ta.scrollTop;
-  m.remove();
-  return { top, bottom: top + lineH };
+// A TALL NOTE IS MADE SHORT WHILE IT IS TYPED IN (11 Nov, Roman's logs).
+//
+// NOTES on the iPhone: the note field is as tall as the card. When the keyboard
+// comes, Safari slides the screen to show the MIDDLE of the focused field — so
+// the first line, where the typing is, went off the top. Four attempts at
+// moving the page or the screen back all fought Safari's own slide (flicker,
+// overshoot, nothing at all). The cause is the field's height, so that is
+// what changes: while it is typed in on a phone, the field ends above the
+// keyboard. A field that is wholly in view gives Safari nothing to slide.
+// On leaving the field it is as tall as before. Nothing is scrolled by us.
+let _short: HTMLTextAreaElement | null = null;
+let _shortWas = '';
+function isPhoneTouch(): boolean {
+  return navigator.maxTouchPoints > 0 && Math.min(window.innerWidth, window.innerHeight) <= 430;
 }
-
-let _settle: number | null = null;
-
-/** A tall text area on the page, keyboard up: when its typing line is outside
- *  the free area, the line is brought to its spot. One move per typing
- *  place — the same field, cursor and keyboard are never moved twice, so the
- *  move cannot chase its own scroll and a hand scroll is left alone. */
-function placeTypingLine(): void {
-  const vv = freeArea();
-  const ta = document.activeElement as HTMLTextAreaElement | null;
-  if (!vv || !ta || ta.tagName !== 'TEXTAREA' || overlayOf(ta)) return;
-  if (vv.height < 100 || window.innerHeight - vv.height < KEYBOARD_MIN_PX) return;
-  const r = ta.getBoundingClientRect();
-  const low = vv.top + vv.height;
-  const line = typingLine(ta);
-  const top = r.top + line.top, bottom = r.top + line.bottom;
-  // ALWAYS THE SAME SPOT: 25 % FROM THE TOP OF THE SCREEN (Roman, 11 Nov —
-  // "the moment I touch the area to type in and the keyboard appears"). Once
-  // per visit to the field, whether the line was in view or not, so the eye
-  // knows where to look. After that the line is left alone while it is in
-  // view, and goes back to the spot only when typing runs it out of view.
-  const firstTime = _placedFor !== ta;
-  const outside = bottom > low - 12 || top < vv.top + 12;
-  if (!firstTime && !outside) return;
-  const place = `${ta.dataset.notesText ?? ''}|${ta.selectionStart}|${Math.round(vv.height)}`;
-  if (!firstTime && ta === _movedFor && place === _movedPlace) return;
-  _placedFor = ta; _movedFor = ta; _movedPlace = place;
-  // THE SCREEN ITSELF IS MOVED, NOT THE COLUMN (11 Nov, Roman's log: "typing
-  // line at 116, free screen 258–508" — and nothing happened). Safari had slid
-  // the SCREEN down over the page, away from the line; the line sat near the
-  // top of the page, where the page has nothing left to scroll, so asking the
-  // page to scroll did nothing. Sliding the window by the missing distance
-  // moves the screen back over the line.
-  const lineH = line.bottom - line.top;
-  const spot = Math.min(window.innerHeight * 0.25, Math.max(12, vv.height - lineH - 12));
-  const by = Math.round((top - vv.top) - spot);
-  if (Math.abs(by) < 4) return;
-  trace(`notes: typing line at ${Math.round(top)}, free screen ${Math.round(vv.top)}–${Math.round(low)} (window ${window.innerHeight}, page at ${Math.round(window.scrollY)}) — ${firstTime ? 'keyboard up' : 'ran out of view'}, to 25 % from the top: sliding the screen by ${by}`);
-  window.scrollBy(0, by);
+/** End the field `room` pixels below its own top (never under 80). */
+function makeShort(ta: HTMLTextAreaElement, freeBottom: number, why: string): void {
+  const top = ta.getBoundingClientRect().top;
+  const h = Math.round(freeBottom - top - 12);
+  // The field starts too low for that: a small field, which the rule for
+  // small fields (below, in fit) then brings into view as a whole.
+  const max = h >= 80 ? h : 110;
+  if (_short !== ta) { letTall(); _short = ta; _shortWas = ta.style.maxHeight; }
+  const want = `${max}px`;
+  if (ta.style.maxHeight === want) return;
+  ta.style.maxHeight = want;
+  trace(`notes: field made ${max} px tall while typing (${why}; field top ${Math.round(top)}, free screen ends ${Math.round(freeBottom)})`);
 }
-
-let _movedFor: HTMLTextAreaElement | null = null;
-let _movedPlace = '';
-let _placedFor: HTMLTextAreaElement | null = null;
+function letTall(): void {
+  if (!_short) return;
+  _short.style.maxHeight = _shortWas;
+  _short = null; _shortWas = '';
+}
 
 function fit(): void {
   const vv = freeArea();
@@ -240,7 +207,8 @@ function fit(): void {
   // a sync redraw rebuilt the card under the field, Safari never said so, and
   // the page stayed held. Now the pin is let go the moment no field is being
   // typed into, whoever took the field away.
-  if (!typing) { unpinPage(); _movedFor = null; _movedPlace = ''; _placedFor = null; }
+  if (!typing) unpinPage();
+  if (_short && active !== _short) letTall();
   if (vv.height < 100) {
     // THE HARDWARE-KEYBOARD SIGNATURE (15 Oct, Roman's logs): the zero reading
     // comes right at focus, before the first key. Safari then scrolls the PAGE
@@ -264,24 +232,12 @@ function fit(): void {
     // never moved (#363); the same brings back a field lost to a turn (F9).
     const r = (active as HTMLElement).getBoundingClientRect();
     const low = vv.top + vv.height;
-    // A FIELD TALLER THAN THE FREE AREA (11 Nov, Roman: NOTES on the iPhone —
-    // "they move too much up, you can't see where you type"). Centring showed
-    // the middle of the field; the line being typed was above the top edge.
-    // Such a field is moved by its TYPING LINE instead: only when that line
-    // is outside the free area, and only as far as needed.
-    // When it is outside, it is brought to the MIDDLE of the free area (Roman,
-    // same day: a note low on the screen stayed behind the keys). The browser
-    // does the moving — a throw-away mark on the typing line is scrolled into
-    // view, so whichever column holds the field is the one that scrolls.
-    if (active.tagName === 'TEXTAREA' && r.height > vv.height * 0.6) {
-      // ONLY ONCE THE SCREEN HAS COME TO REST (11 Nov, Roman: first it
-      // flickered, then the note went too far up). While the keyboard rises
-      // Safari is still sliding the screen itself; a move made in the middle of
-      // that is added to Safari's own, and the line overshoots. So the move
-      // waits until nothing has resized or scrolled for a moment, then looks
-      // afresh and moves once.
-      if (_settle !== null) clearTimeout(_settle);
-      _settle = window.setTimeout(() => { _settle = null; placeTypingLine(); }, 250);
+    // A note being typed on a phone ends above the keys (see makeShort) —
+    // now with the keyboard's real height. Measured again after it.
+    if (active.tagName === 'TEXTAREA' && isPhoneTouch() && (active === _short || r.height > vv.height * 0.6)) {
+      makeShort(active as HTMLTextAreaElement, low, 'keyboard up');
+      const r2 = (active as HTMLElement).getBoundingClientRect();
+      if (r2.bottom > low - 8 || r2.top < vv.top + 8) (active as HTMLElement).scrollIntoView({ block: 'center', behavior: 'auto' });
       return;
     }
     if (r.bottom > low - 8 || r.top < vv.top + 8) {
@@ -341,11 +297,33 @@ export function keepBoxesAboveTheKeyboard(): void {
   window.addEventListener('keyboardDidShow', (e: any) => setShellKeyboardHeight(e?.keyboardHeight ?? null));
   window.addEventListener('keyboardWillHide', () => setShellKeyboardHeight(null));
   window.addEventListener('keyboardDidHide', () => setShellKeyboardHeight(null));
-  document.addEventListener('focusin', () => setTimeout(fit, 50));
-  // A text area's typing line moves down as it is written (11 Nov): looked at
-  // on every key; nothing moves while the line is in view.
-  document.addEventListener('input', (e) => { if ((e.target as Element | null)?.tagName === 'TEXTAREA') fit(); });
-  document.addEventListener('focusout', () => { unpinPage(); setTimeout(fit, 50); });
+  document.addEventListener('focusin', (e) => {
+    // BEFORE the keyboard is up, so Safari finds a short field when it decides
+    // what to slide: the keyboard is taken as the lower 57 % of the screen
+    // until its real height is known (fit, a moment later).
+    const t = e.target as HTMLElement | null;
+    if (t && t.tagName === 'TEXTAREA' && isPhoneTouch() && !overlayOf(t)
+        && t.getBoundingClientRect().height > window.innerHeight * 0.25) {
+      // FIRST THE CARD GOES UP, THEN THE KEYBOARD COMES (Roman, 11 Nov: "a card
+      // on the lower part of the screen — the keyboard hides that note. The
+      // moment you type in, move the card up … and then don't let the keyboard
+      // do anything"). The typing line is put 25 % from the top of the screen
+      // right at the touch, while the page still scrolls like any page; the
+      // first card, with no page above it, stays where it is. Then the field
+      // is made short from there, so it ends above the keys.
+      const lineAt = window.innerHeight * 0.25;
+      const top = t.getBoundingClientRect().top + 8;
+      const by = Math.round(top - lineAt);
+      if (Math.abs(by) > 4) {
+        const was = window.scrollY;
+        window.scrollBy(0, by);
+        trace(`notes: field touched, typing line at ${Math.round(top)} — page moved by ${Math.round(window.scrollY - was)} of ${by} to bring it 25 % from the top`);
+      }
+      makeShort(t as HTMLTextAreaElement, window.innerHeight * 0.43, 'field touched');
+    }
+    setTimeout(fit, 50);
+  });
+  document.addEventListener('focusout', () => { unpinPage(); letTall(); setTimeout(fit, 50); });
   // The first touch after the field went away: a pinned page with nobody
   // typing is let go before the finger moves (see fit).
   const freeIfIdle = () => { if (_pinned && !isTyping(document.activeElement)) unpinPage(); };

@@ -272,3 +272,6 @@ v5.0.225 · #777 (10 Nov, night)
 
 ## v5.0.230 · #782 (11 Nov, run 671)
 - NOTES: the screen itself is slid back over the typing line (window scroll), not the column.
+
+## v5.0.231 · #783 (11 Nov, run 672)
+- NOTES: typing line to 25 % from the top by sliding the screen — did not work on the phone (the slide was undone), replaced in the next build.
