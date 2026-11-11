@@ -799,6 +799,7 @@ async function noticeUnsent(pid: string | null, name: string | null,
   if (Date.now() - _unsentSince < OFFLINE_NOTICE_DELAY_MS) return;
 
   await markPendingWarned(key);
+  trace('  told the user: the device seems to be working offline (saves have not got through for 45 s)');
   const { showImportantNote } = await import('./modals');
   void showImportantNote(
     'IMPORTANT NOTE',
@@ -1146,18 +1147,28 @@ async function runAutosave(): Promise<void> {
       await clearSnapshot();
       return;
     }
+    const saveFrom = Date.now();
     await saveSnapshot(snap);
+    if (Date.now() - saveFrom > 150) trace(`  save on this device took ${Date.now() - saveFrom} ms`);
+    _deviceSaveFailed = 0;
   } catch (e) {
     console.warn('[currentProject] autosave failed', e);
+    trace(`  SAVE ON THIS DEVICE FAILED (${++_deviceSaveFailed}) — ${(e as Error)?.name ?? ''} ${String((e as Error)?.message ?? e)}`);
     // A local save failing is the one way work can disappear without anyone
     // noticing — almost always because the device has no room left. Say so.
-    void reportStorageFailure(e);
+    // ONE MORE TRY FIRST when it is not a matter of room (11 Nov): iOS closes
+    // the database behind the app (camera on top, app in the background) and
+    // the very next save works. Only a second failure in a row is told.
+    const noRoom = e instanceof DOMException && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED');
+    if (noRoom || _deviceSaveFailed >= 2) void reportStorageFailure(e);
+    else scheduleAutosave();
   } finally {
     _autosaveInFlight = false;
   }
 }
 
 let _storageWarned = false;
+let _deviceSaveFailed = 0;
 
 /** Tell the user once that saving on this device has stopped working. */
 async function reportStorageFailure(e: unknown): Promise<void> {

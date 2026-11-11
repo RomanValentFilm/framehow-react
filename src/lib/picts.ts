@@ -41,7 +41,7 @@
 
 import { api, API_BASE_URL } from './api';
 import { getToken } from './session';
-import { logStripHeight, trace } from './syncTrace';
+import { logStripHeight, trace, msSinceLanding } from './syncTrace';
 import { openMaxView } from './maxView';
 import { useStore, state } from '../store/state';
 import { getCurrentProject } from './currentProject';
@@ -389,6 +389,9 @@ export function watchNewPictures(): void {
   })), 10_000);
   setInterval(() => {
     if (_busy) return;
+    // NOT IN THE TWO SECONDS A PHOTO NEEDS FOR ITSELF (11 Nov, Roman: "ok, except the
+    // first photo" — the first preview after a start took 1523 ms, the others 13–86).
+    if (msSinceLanding() < 2000) return;
     const sig = unsentSignature();
     if (sig === _lastSig) return;
     _lastSig = sig;

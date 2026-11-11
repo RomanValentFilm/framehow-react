@@ -6,7 +6,7 @@ import { state, useStore, CAM_RATIOS, FITTING_RATIOS, PORTRAIT_RATIOS } from '..
 import type { CamRatioKey } from '../store/state';
 import { showToast, showCamBlockedMsg } from './modals';
 import { fhTrack } from './tracking';
-import { trace } from './syncTrace';
+import { trace, markLanding } from './syncTrace';
 import { resetToolbarState, captureFrameAnchor, handleOrientationFlip, cancelOrientAnchors } from './view';
 import { getPictureReady } from './drawing';
 import { flushSyncNow, holdSyncFor, photoIsLanding } from './currentProject';
@@ -106,6 +106,7 @@ async function takeNativePhoto(fid: number): Promise<boolean> {
   const landPreview = (e: any) => {
     if (!e?.jpegBase64 || landing) return;
     previewAt = Date.now();
+    markLanding(); watchForStandstill();
     // FROM THE SHUTTER UNTIL THE PICTURE HAS LANDED, NOTHING ELSE HAPPENS (Roman,
     // 11 Nov: "after you took a shot until it lands … no fetching … When the camera
     // is open, things can still happen in the background"). The flash and the move
@@ -275,6 +276,21 @@ export async function openCamera(
   } else {
     (document.getElementById('camFallbackInput') as HTMLInputElement).click();
   }
+}
+
+/** WHERE THE PAGE STOOD STILL (11 Nov, Roman: "the first photo was frozen"). For
+ *  2.5 s from the live frame, every gap between two drawn frames longer than
+ *  70 ms is written down with its moment — so the log says what the eye saw. */
+function watchForStandstill(): void {
+  const start = performance.now(); let last = start; const gaps: string[] = [];
+  const tick = () => {
+    const n = performance.now();
+    if (n - last > 70) gaps.push(`${Math.round(n - last)} ms at +${Math.round(last - start)}`);
+    last = n;
+    if (n - start < 2500) { requestAnimationFrame(tick); return; }
+    trace(gaps.length ? `camera: the page stood still — ${gaps.join(' · ')}` : 'camera: the page never stood still in the 2.5 s after the live frame');
+  };
+  requestAnimationFrame(tick);
 }
 
 /** CAM SET UP from the Menu (23 Oct, Roman): the camera exactly as always,

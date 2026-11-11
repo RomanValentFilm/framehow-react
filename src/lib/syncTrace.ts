@@ -20,7 +20,7 @@ import { APP_VERSION } from '../store/state';
  *  It is bumped BY HAND, which is why it sat at #309 through #310, #311, #312
  *  and #313 — telling the screen a version of events that was four changes out
  *  of date. Worth remembering the next time it is trusted in a log. */
-export const SYNC_BUILD_TAG = '#810';
+export const SYNC_BUILD_TAG = '#811';
 
 let box: HTMLElement | null = null;
 
@@ -206,8 +206,17 @@ function appendLine(el: HTMLElement, text: string): void {
  * had to happen a second time with the log open — and on an iPad the strip
  * covers the buttons you need to make it happen.
  */
+/** A PHOTO IS LANDING: for the four seconds after the camera's live frame,
+ *  every line says how many ms after it — the log's clock only has seconds, and
+ *  what holds the page in that moment is a matter of tenths (11 Nov). */
+let _landedAt = 0;
+export function markLanding(): void { _landedAt = Date.now(); }
+/** ms since the last photo's live frame came (a very big number when none has). */
+export function msSinceLanding(): number { return _landedAt ? Date.now() - _landedAt : Number.MAX_SAFE_INTEGER; }
+
 export function trace(msg: string): void {
-  const text = `${new Date().toLocaleTimeString()}  ${msg}`;
+  const since = _landedAt ? Date.now() - _landedAt : -1;
+  const text = `${new Date().toLocaleTimeString()}  ${msg}${since >= 0 && since < 4000 ? `  [+${since}]` : ''}`;
   _recorded.unshift(text);                       // newest first
   if (_recorded.length > KEEP) _recorded.length = KEEP;
 
