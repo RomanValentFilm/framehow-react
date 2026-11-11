@@ -255,3 +255,7 @@ v5.0.225 · #777 (10 Nov, night)
 - SORT BY menu opens in the middle on an iPhone held upright (it ran off the screen)
 - MAX view sideways: the same room on both sides, the picture in the middle
 - FULL RUN 665 on this version: 150 green, 1 red (a random day, seed 793634 — a sort-order decision left waiting). Not live.
+
+## v5.0.226 · #778 (11 Nov, run 667)
+- NOTES on the iPhone: a notes field taller than the free screen is moved by its typing line, not centred (G15). Notes field told off autofill like the setup label.
+- 3x2 on the iPhone, upright projects: star column 15 % smaller, clear of the arrows (G16).

@@ -179,18 +179,6 @@ function typingLine(ta: HTMLTextAreaElement): { top: number; bottom: number } {
   return { top, bottom: top + lineH };
 }
 
-/** What scrolls a field on the page: the nearest column that can scroll, or
- *  the window. */
-function scrollerOf(el: HTMLElement): { scrollBy(x: number, y: number): void } {
-  let node = el.parentElement;
-  while (node && node !== document.body) {
-    const oy = getComputedStyle(node).overflowY;
-    if ((oy === 'auto' || oy === 'scroll') && node.scrollHeight > node.clientHeight + 1) return node;
-    node = node.parentElement;
-  }
-  return window;
-}
-
 function fit(): void {
   const vv = freeArea();
   if (!vv) return;
@@ -235,13 +223,27 @@ function fit(): void {
     // the middle of the field; the line being typed was above the top edge.
     // Such a field is moved by its TYPING LINE instead: only when that line
     // is outside the free area, and only as far as needed.
-    if (active.tagName === 'TEXTAREA' && r.height > vv.height - 16) {
-      const line = typingLine(active as HTMLTextAreaElement);
+    // When it is outside, it is brought to the MIDDLE of the free area (Roman,
+    // same day: a note low on the screen stayed behind the keys). The browser
+    // does the moving — a throw-away mark on the typing line is scrolled into
+    // view, so whichever column holds the field is the one that scrolls.
+    if (active.tagName === 'TEXTAREA' && r.height > vv.height * 0.6) {
+      const ta = active as HTMLTextAreaElement;
+      const line = typingLine(ta);
       const top = r.top + line.top, bottom = r.top + line.bottom;
-      let by = 0;
-      if (bottom > low - 12) by = bottom - (low - 12);
-      else if (top < vv.top + 12) by = top - (vv.top + 12);
-      if (Math.abs(by) > 1) scrollerOf(active as HTMLElement).scrollBy(0, by);
+      if (bottom > low - 12 || top < vv.top + 12) {
+        const lineH = line.bottom - line.top;
+        const mark = document.createElement('div');
+        mark.style.cssText = 'position:absolute;width:1px;visibility:hidden;pointer-events:none;';
+        mark.style.left = `${ta.offsetLeft}px`;
+        mark.style.top = `${ta.offsetTop + line.top}px`;
+        mark.style.height = `${lineH}px`;
+        const underKeys = Math.max(0, window.innerHeight - low);
+        mark.style.scrollMarginBottom = `${underKeys + Math.max(0, (vv.height - lineH) / 2)}px`;
+        ta.parentElement?.appendChild(mark);
+        mark.scrollIntoView({ block: 'end', behavior: 'auto' });
+        mark.remove();
+      }
       return;
     }
     if (r.bottom > low - 8 || r.top < vv.top + 8) {
