@@ -2368,7 +2368,7 @@ function renderNeedsInfo(fid: number): string {
   // The box is always there, one empty line high without a note (Roman, 11 Nov),
   // like the four blocks under it.
   const notesHtml = `<div class="sort-needs-notes">${note
-    ? `<span class="sort-needs-cat-name">Notes</span>${escH(note).replace(/\n/g, '<br>')}`
+    ? escH(note).replace(/\n/g, '<br>')   // no "NOTES" in front of it (Roman, 11 Nov)
     : ''}</div>`;
   const frameNeeds = s.frameNeeds[fid] ?? { toggles: {}, counters: {} } as any;
 

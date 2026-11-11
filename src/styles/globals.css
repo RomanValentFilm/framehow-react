@@ -1385,7 +1385,7 @@
   .sort-dragging{-webkit-user-select:none;user-select:none;}
   .sort-card-dragging{visibility:hidden;transition:none;}
   .sort-card-drag-clone{visibility:visible;border:2px solid var(--accent);border-radius:4px;background:#fff;box-shadow:0 8px 24px rgba(0,0,0,.25);}
-  .sort-card-grid{display:grid;grid-template-columns:44px 25% 17% 1fr 30px;gap:6px;align-items:start;}
+  .sort-card-grid{display:grid;grid-template-columns:44px 25% 20% 1fr 30px;gap:6px;align-items:start;}
   /* Col 1: number + pill (pill pinned to bottom) */
   .sort-card-col-num{display:flex;flex-direction:column;align-items:center;overflow:hidden;align-self:stretch;justify-content:flex-start;}
   .sort-card-num{font-size:13px;font-weight:500;color:#333;line-height:1;}

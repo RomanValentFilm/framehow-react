@@ -297,3 +297,6 @@ v5.0.225 · #777 (10 Nov, night)
 
 ## v5.0.238 · #790 (11 Nov, run 678)
 - FRAME-SET CARDS: notes on the same shade as the blocks; description flows.
+
+## v5.0.239 · #791 (11 Nov, run 679)
+- FRAME-SET CARDS: only the breaks typed with Enter are kept (description and note); the notes box is always there, one line when empty.
