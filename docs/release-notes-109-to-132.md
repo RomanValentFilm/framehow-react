@@ -294,3 +294,6 @@ v5.0.225 · #777 (10 Nov, night)
 
 ## v5.0.237 · #789 (11 Nov, run 677)
 - FRAME-SET CARDS: an empty block keeps its box (one line), the description is shown in full, the gaps between the boxes are even (6 px both ways).
+
+## v5.0.238 · #790 (11 Nov, run 678)
+- FRAME-SET CARDS: notes on the same shade as the blocks; description flows.

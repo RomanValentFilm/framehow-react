@@ -2365,9 +2365,11 @@ function renderNeedsInfo(fid: number): string {
   // across both columns, bold, all of it — the card grows with a long note.
   // Nothing when the shot has no note text.
   const note = (s.frameNotes[fid]?.noteText || '').trim();
-  const notesHtml = note
-    ? `<div class="sort-needs-notes"><span class="sort-needs-cat-name">Notes</span>${escH(note).replace(/\n/g, '<br>')}</div>`
-    : '';
+  // The box is always there, one empty line high without a note (Roman, 11 Nov),
+  // like the four blocks under it.
+  const notesHtml = `<div class="sort-needs-notes">${note
+    ? `<span class="sort-needs-cat-name">Notes</span>${escH(note).replace(/\n/g, '<br>')}`
+    : ''}</div>`;
   const frameNeeds = s.frameNeeds[fid] ?? { toggles: {}, counters: {} } as any;
 
   const defs = s.needDefinitions;
