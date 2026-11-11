@@ -288,3 +288,6 @@ v5.0.225 · #777 (10 Nov, night)
 ## v5.0.235 · #787 (11 Nov, run 676)
 - NEEDS: a card swiped sideways stays where it is when an item is ticked or the page is redrawn (Roman: works nicely).
 - Phone checks from 9 Nov: 8 create-account box OK (Roman), 9 NEEDS last column = this fix. Still open: 13 "+ New Group" speed, 14 New Group sideways.
+
+## v5.0.236 · #788 (11 Nov, run 676)
+- FRAME-SET CARDS (G12, G13): the line under the picture is always the description (was: the WRITE text when there was one). The shot note on top across both columns, bold, all of it. Blocks in fixed places: left TALENTS over ART, right SHOOT over GEAR, each on a lighter shade (Roman: "I really love it").

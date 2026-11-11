@@ -2368,8 +2368,7 @@ function renderNeedsInfo(fid: number): string {
   const notesHtml = note
     ? `<div class="sort-needs-notes"><span class="sort-needs-cat-name">Notes</span>${escH(note).replace(/\n/g, '<br>')}</div>`
     : '';
-  const frameNeeds = s.frameNeeds[fid];
-  if (!frameNeeds) return notesHtml;
+  const frameNeeds = s.frameNeeds[fid] ?? { toggles: {}, counters: {} } as any;
 
   const defs = s.needDefinitions;
   const tabs = defs.tabs || [];
@@ -2418,15 +2417,16 @@ function renderNeedsInfo(fid: number): string {
           }
         }
       }
-      // One block per tab, on its own shade, so the blocks read apart.
-      if (lines) out += `<div class="sort-needs-block">${lines}</div>`;
+      // One block per tab, on its own shade, so the blocks read apart. A tab
+      // with nothing in it KEEPS ITS BOX, one empty line high (Roman, 11 Nov):
+      // the four boxes stand in the same four places on every card.
+      out += `<div class="sort-needs-block">${lines}</div>`;
     }
     return out;
   };
 
   const col1Html = renderColumn(col1Tabs);
   const col2Html = renderColumn(col2Tabs);
-  if (!col1Html && !col2Html) return notesHtml;
 
   // Both columns always there, so a block never changes sides when the other
   // side is empty.

@@ -1395,7 +1395,8 @@
   .sort-card-col-main{display:flex;flex-direction:column;gap:4px;}
   .sort-card-main-img{background:#e8e8e8;border-radius:0;overflow:hidden;display:flex;align-items:center;justify-content:center;outline:2px solid #000;}
   .sort-card-main-img img{width:100%;height:auto;display:block;}
-  .sort-card-desc{font-size:9px;color:#000;line-height:1.3;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;}
+  /* ALL of the description (Roman, 11 Nov) — it was cut after two lines. */
+  .sort-card-desc{font-size:9px;color:#000;line-height:1.3;overflow-wrap:anywhere;white-space:pre-wrap;}
   /* Col 3: VERSN + SKETCH stacked */
   .sort-card-col-strips{display:flex;flex-direction:column;gap:4px;}
   .sort-card-strip-img{background:#e8e8e8;border-radius:0;overflow:hidden;display:flex;align-items:center;justify-content:center;}
@@ -1403,13 +1404,13 @@
   .sort-card-empty{font-size:9px;color:#999;}
   /* Col 4: needs — 2 sub-columns with category:value lines */
   .sort-card-col-needs{align-self:stretch;padding-left:4px;}
-  .sort-needs-cols{display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;}
+  .sort-needs-cols{display:grid;grid-template-columns:1fr 1fr;gap:6px;}
   .sort-needs-line{font-size:10px;color:#555;font-weight:400;line-height:1.6;}
   /* One block per tab on its own slightly lighter shade (Roman, 11 Nov). */
-  .sort-needs-col{display:flex;flex-direction:column;gap:3px;min-width:0;}
-  .sort-needs-block{background:rgba(255,255,255,.38);border-radius:3px;padding:1px 5px;}
+  .sort-needs-col{display:flex;flex-direction:column;gap:6px;min-width:0;}
+  .sort-needs-block{background:rgba(255,255,255,.38);border-radius:3px;padding:1px 5px;min-height:18px;box-sizing:border-box;}
   /* The shot's note: across both columns, bold, all of it. */
-  .sort-needs-notes{font-size:10px;color:#111;font-weight:700;line-height:1.5;margin-bottom:4px;overflow-wrap:anywhere;}
+  .sort-needs-notes{font-size:10px;color:#111;font-weight:700;line-height:1.5;margin-bottom:6px;overflow-wrap:anywhere;}
   .sort-needs-cat-name{font-weight:600;color:#222;text-transform:uppercase;font-size:9px;letter-spacing:.3px;}
   .sort-needs-cat-name::after{content:': ';}
   /* Col 5: arrows (centered vertically + horizontally) */
