@@ -340,3 +340,7 @@ v5.0.225 · #777 (10 Nov, night)
 - DONE on a break acts at the touch (pointerdown) and keeps the typed name — it needed two taps when the name field had the cursor. renameBreak says nothing when the name is the same.
 - EXPORT: the shooting-order list shows only the orders of the chosen group (ALL: the project's); it follows the group picker.
 - iPad redraw of a 26-shot order: ~180 ms (1000 this morning). Camera screen (island + round corners) committed, still unbuilt.
+
+## v5.0.251 · #803 (11 Nov, run 693)
+- CAMERA LANDING: the copy that shrinks into the card starts on the rectangle where the frame stood on the camera screen (was 95 % of the screen — a jump since the picture begins beside the island).
+- CAMERA SCREEN (Swift, Xcode run, not TestFlight yet): picture begins where the island ends, sideways and upright; frame out of the glass corners; RATIO / EV / 1x one look, 12 pt from their two edges of the visible picture; RATIO list fits under its button.

@@ -20,7 +20,7 @@ import { APP_VERSION } from '../store/state';
  *  It is bumped BY HAND, which is why it sat at #309 through #310, #311, #312
  *  and #313 — telling the screen a version of events that was four changes out
  *  of date. Worth remembering the next time it is trusted in a log. */
-export const SYNC_BUILD_TAG = '#803';
+export const SYNC_BUILD_TAG = '#804';
 
 let box: HTMLElement | null = null;
 
@@ -150,10 +150,34 @@ function ensureBox(): HTMLElement | null {
     const lines = Array.from(box!.querySelectorAll('[data-line]'))
       .map((el) => el.textContent)
       .join('\n');
-    void navigator.clipboard?.writeText(lines).then(
-      () => { copy.textContent = 'COPIED'; setTimeout(() => (copy.textContent = 'COPY LOG'), 1200); },
-      () => { copy.textContent = 'FAILED'; },
-    );
+    const said = (word: string) => { copy.textContent = word; setTimeout(() => (copy.textContent = 'COPY LOG'), 1500); };
+    // The old way, for a browser that keeps the clipboard to itself: a hidden
+    // text field, selected and copied.
+    const byHand = (): boolean => {
+      const ta = document.createElement('textarea');
+      ta.value = lines;
+      ta.setAttribute('readonly', '');
+      ta.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0;';
+      document.body.appendChild(ta);
+      ta.select();
+      ta.setSelectionRange(0, lines.length);
+      let ok = false;
+      try { ok = document.execCommand('copy'); } catch { ok = false; }
+      ta.remove();
+      return ok;
+    };
+    // IN THE APP THE WHOLE LOG GOES THROUGH THE SHARE SHEET (Roman, 11 Nov: in the
+    // TestFlight app "the log does not want to copy … just the last sentence"). The
+    // shell does not give a page the clipboard the way Safari does. The share sheet
+    // is the system's own: Copy, AirDrop to the Mac, Notes, Mail — all of the log.
+    const inTheApp = !!(window as any).Capacitor?.isNativePlatform?.();
+    if (inTheApp && typeof navigator.share === 'function') {
+      void navigator.share({ text: lines }).then(() => said('SENT'), () => said(byHand() ? 'COPIED' : 'FAILED'));
+      return;
+    }
+    const write = navigator.clipboard?.writeText(lines);
+    if (!write) { said(byHand() ? 'COPIED' : 'FAILED'); return; }
+    void write.then(() => said('COPIED'), () => said(byHand() ? 'COPIED' : 'FAILED'));
   };
   box.appendChild(copy);
 
