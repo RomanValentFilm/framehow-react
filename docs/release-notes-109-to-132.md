@@ -281,3 +281,6 @@ v5.0.225 · #777 (10 Nov, night)
 
 ## v5.0.233 · #785 (11 Nov, run 674)
 - NOTES on the iPhone (G15): at the tap the card goes to the first position under the bar and the field is given a fixed height once; the keyboard moves nothing (Roman: worked).
+
+## v5.0.234 · #786 (11 Nov, run 675)
+- NOTES: no grey under the short typing field — the card keeps the field look while typing (Roman: works now). G15 done; "AutoFill Contact" bar stays in Safari, to be checked in shell build 2.

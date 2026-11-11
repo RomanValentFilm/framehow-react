@@ -138,8 +138,27 @@ export function buildNeedsCard(fid: number): HTMLElement {
   return div;
 }
 
-/** Render / re-render needs card content. */
+/** Render / re-render needs card content.
+ *
+ *  THE CARD STAYS WHERE IT WAS SWIPED TO (Roman, 11 Nov). On a phone the
+ *  tables are wider than the card and are swiped sideways. Ticking an item
+ *  redraws the card, and the fresh card started at the left edge again — the
+ *  item just ticked jumped out of view. What was scrolled is noted before the
+ *  redraw and put back after it. */
 export function renderNeedsCard(div: HTMLElement, fid: number): void {
+  const spots = ['.needs-tables', '.needs-body'].map((sel) => {
+    const el = div.querySelector(sel) as HTMLElement | null;
+    return { sel, left: el?.scrollLeft ?? 0, top: el?.scrollTop ?? 0 };
+  });
+  drawNeedsCard(div, fid);
+  for (const sp of spots) {
+    if (!sp.left && !sp.top) continue;
+    const el = div.querySelector(sp.sel) as HTMLElement | null;
+    if (el) { el.scrollLeft = sp.left; el.scrollTop = sp.top; }
+  }
+}
+
+function drawNeedsCard(div: HTMLElement, fid: number): void {
   const s = state();
   const f = s.frames.find((fr) => fr.id === fid);
   if (!f) return;

@@ -294,7 +294,18 @@ function renderAllNow(): void {
     return el.contains(active);
   };
   if (needsScroll && !beingTypedIn(needsScroll)) {
+    // A NEEDS card swiped sideways stays swiped through a full redraw too
+    // (Roman, 11 Nov — see renderNeedsCard).
+    const swiped = new Map<string, number>();
+    needsScroll.querySelectorAll('.needs-card[data-needs-fid]').forEach((c) => {
+      const left = (c.querySelector('.needs-tables') as HTMLElement | null)?.scrollLeft ?? 0;
+      if (left) swiped.set((c as HTMLElement).dataset.needsFid!, left);
+    });
     needsScroll.replaceChildren(s.needsStripVisible ? needsFrag : document.createDocumentFragment());
+    swiped.forEach((left, fid) => {
+      const t = needsScroll.querySelector(`.needs-card[data-needs-fid="${fid}"] .needs-tables`) as HTMLElement | null;
+      if (t) t.scrollLeft = left;
+    });
   }
   const notesScrollEl = document.getElementById('notesScroll');
   if (notesScrollEl && !beingTypedIn(notesScrollEl)) {
