@@ -327,3 +327,7 @@ v5.0.225 · #777 (10 Nov, night)
 ## v5.0.247 · #799 (11 Nov, run 689)
 - SORT BY REDRAW: the pictures are no longer written into the order HTML (a short name per picture; the picture is handed to new cards after the comparison) — a redraw cost about a second on an iPad. Log: "order redrawn: N kept · X ms".
 - A tap on a needs / notes box while a break or another card is being edited only ends that editing.
+
+## v5.0.248 · #800 (11 Nov, run 690)
+- EXPORTS: a group exported with STORY FLOW takes the group's own breaks (it was given the project's).
+- SORT BY: a sync does not redraw the order while a break or a card is being edited (Roman's rule); iPad redraw measured at ~330 ms after #799 (was ~1000).

@@ -2043,11 +2043,23 @@ function handOutPictures(root: HTMLElement): void {
 
 /**
  * Put `html` into `el`, but keep every card and break whose built HTML has
- * not changed since it was last built — the node itself, with the thumbnail
- * the raster step painted into it. Reused nodes are CLONED so that no click
- * handler is bound twice when the events are wired again afterwards.
+ * not changed since it was last built — THE NODE ITSELF, with the thumbnail
+ * the raster step painted into it and with its buttons still wired.
+ *
+ * NOT A COPY ANY MORE (Roman, 11 Nov: "of course I want it as fast as
+ * possible"). A kept card used to be cloned, so that wiring the events again
+ * would not bind every button twice — and a clone carries its three pictures
+ * along, to be read in once more: most of the 330 ms a redraw still took on
+ * his iPad. Now the kept card stays the same card. It is marked as wired, and
+ * the wiring (wireEditViewEvents) passes over what is inside it.
+ *
+ * Two things are still made anew every time, on purpose:
+ *   · the card or break BEING EDITED — its drag is set up afresh on every
+ *     redraw against the cards around it, and must not be set up twice;
+ *   · everything, when the view shows another order: a kept card's buttons
+ *     act on the order they were wired for.
  */
-function reuseUnchangedItems(el: HTMLElement, html: string): void {
+function reuseUnchangedItems(el: HTMLElement, html: string, orderId: string): void {
   const began = performance.now();
   const fresh = document.createElement('div');
   fresh.innerHTML = html;
@@ -2064,18 +2076,31 @@ function reuseUnchangedItems(el: HTMLElement, html: string): void {
     const k = keyOf(n);
     const built = n.outerHTML;
     const old = k ? held.get(k) : undefined;
-    if (old && (old as any).__built === built) {
-      const clone = old.cloneNode(true) as HTMLElement;
+    const sameAsBefore = !!old && (old as any).__built === built && (old as any).__for === orderId;
+    const beingEdited = n.classList.contains('sort-card-active') || n.classList.contains('sort-break-active');
+    if (sameAsBefore && !beingEdited) {
+      n.replaceWith(old!);                       // the card itself, still wired
+      reused++;
+    } else if (sameAsBefore) {
+      const clone = old!.cloneNode(true) as HTMLElement;   // edited: fresh buttons, same thumbnail
       (clone as any).__built = built;
+      (clone as any).__for = orderId;
       n.replaceWith(clone);
       reused++;
     } else {
       (n as any).__built = built;
+      (n as any).__for = orderId;
     }
   }
   el.replaceChildren(...Array.from(fresh.childNodes));
   handOutPictures(el);
   if (reused) trace(`  order redrawn: ${reused} card(s) kept as they were · ${Math.round(performance.now() - began)} ms`);
+}
+
+/** Has this card or break already had its buttons wired (it was kept through
+ *  a redraw)? Then nothing inside it is wired a second time. */
+function alreadyWired(n: Element): boolean {
+  return !!(n.closest('.sort-card, .sort-break-card') as any)?.__wired;
 }
 
 /** Whatever scrolls around this element — a column, or nothing (the window). */
@@ -2269,7 +2294,7 @@ function renderSortEditView(el: HTMLElement, orderId: string): void {
   // again — placeholder first, picture a moment later: the millimetre jump.
   // A card or break whose built HTML is the same as last time is reused as it
   // stands, thumbnail included; only changed ones are made new.
-  reuseUnchangedItems(el, html);
+  reuseUnchangedItems(el, html, orderId);
   putBack();
   requestAnimationFrame(putBack);
 
@@ -2467,7 +2492,7 @@ function renderBreakCard(brk: SortBreak, activeBreakId: string | null, paletteFo
       <input class="sort-break-text" value="${brk.text}" data-break-rename="${brk.id}" placeholder="BREAK NAME" readonly />
       <div class="sort-break-arrows${isActive ? ' sort-col-active' : ''}">
         ${isActive
-          ? `<button class="sort-break-color-btn" data-break-color-open="${brk.id}" style="background:${col?.hex ?? BREAK_GREY}"></button>
+          ? `<button class="sort-break-color-btn" data-break-color-open="${brk.id}">COLOR</button>
              <span class="sort-arrow sort-break-arrow" data-break-move="up" data-break-id="${brk.id}">&#9650;</span>
              <span class="sort-done-btn sort-break-done" data-break-deactivate="${brk.id}">DONE</span>
              <span class="sort-arrow sort-break-arrow" data-break-move="down" data-break-id="${brk.id}">&#9660;</span>
@@ -2647,6 +2672,10 @@ async function fillRasterizedImages(el: HTMLElement): Promise<void> {
 // ─── Edit view event wiring ───────────────────────────────────────────
 
 function wireEditViewEvents(el: HTMLElement, orderId: string): void {
+  // A card kept through the redraw is the same card with the same buttons
+  // (see reuseUnchangedItems): only what is NEW is wired here.
+  const notYetWired = (selector: string): Element[] =>
+    Array.from(el.querySelectorAll(selector)).filter((n) => !alreadyWired(n));
   // ─── Inline name editing (always available, independent of bracket) ───
   const nameLabel = el.querySelector('.sort-edit-name-static') as HTMLElement | null;
   const nameInput = el.querySelector('.sort-edit-name') as HTMLInputElement | null;
@@ -2925,7 +2954,7 @@ function wireEditViewEvents(el: HTMLElement, orderId: string): void {
   // block's tab — the same two boxes 3x2 opens. A click, so a finger that
   // scrolls the page opens nothing. Not on a card that is being moved (arrows
   // and DONE showing): a slip of the finger must not pull you out of moving.
-  el.querySelectorAll('[data-sort-open-notes], [data-sort-open-needs]').forEach((box) => {
+  notYetWired('[data-sort-open-notes], [data-sort-open-needs]').forEach((box) => {
     box.addEventListener('click', (e) => {
       const b = box as HTMLElement;
       if (b.closest('.sort-card-active')) return;
@@ -2954,7 +2983,7 @@ function wireEditViewEvents(el: HTMLElement, orderId: string): void {
   });
 
   // Combined button — activate frame card for reordering (clears any active break)
-  el.querySelectorAll('[data-sort-activate]').forEach((btn) => {
+  notYetWired('[data-sort-activate]').forEach((btn) => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const fid = parseInt((btn as HTMLElement).dataset.sortActivate!, 10);
@@ -2965,7 +2994,7 @@ function wireEditViewEvents(el: HTMLElement, orderId: string): void {
   });
 
   // Arrow clicks — move frame up/down (only shown when active)
-  el.querySelectorAll('.sort-arrow[data-sort-move]').forEach((arrow) => {
+  notYetWired('.sort-arrow[data-sort-move]').forEach((arrow) => {
     arrow.addEventListener('click', (e) => {
       e.stopPropagation();
       const dir = (arrow as HTMLElement).dataset.sortMove!;
@@ -2977,7 +3006,7 @@ function wireEditViewEvents(el: HTMLElement, orderId: string): void {
 
   // Done button on active frame card — sync when user finishes reordering
   // DONE has highest priority: always persist bracket + snapshot so reload restores this state.
-  el.querySelectorAll('[data-sort-deactivate]').forEach((btn) => {
+  notYetWired('[data-sort-deactivate]').forEach((btn) => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       // DONE on a green card means "I have seen where this landed" — the mark
@@ -3007,7 +3036,7 @@ function wireEditViewEvents(el: HTMLElement, orderId: string): void {
   });
 
   // Break activate (combined arrows button)
-  el.querySelectorAll('[data-break-activate]').forEach((btn) => {
+  notYetWired('[data-break-activate]').forEach((btn) => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const brkId = (btn as HTMLElement).dataset.breakActivate!;
@@ -3038,14 +3067,12 @@ function wireEditViewEvents(el: HTMLElement, orderId: string): void {
       card.classList.remove('sort-break-palette-open');
       card.dataset.breakColor = c?.hex ?? '';
       card.querySelector('.sort-break-palette')?.remove();
-      const dot = card.querySelector('.sort-break-color-btn') as HTMLElement | null;
-      if (dot) dot.style.background = c?.hex ?? BREAK_GREY;
     }
     (el as any).__paletteBreakId = null;
     setBreakColor(orderId, sw.dataset.breakColorSet!, c?.hex ?? null);
   };
-  el.querySelectorAll('[data-break-color-set]').forEach((sw) => sw.addEventListener('click', takeColour));
-  el.querySelectorAll('[data-break-color-open]').forEach((btn) => {
+  notYetWired('[data-break-color-set]').forEach((sw) => sw.addEventListener('click', takeColour));
+  notYetWired('[data-break-color-open]').forEach((btn) => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const id = (btn as HTMLElement).dataset.breakColorOpen!;
@@ -3066,7 +3093,7 @@ function wireEditViewEvents(el: HTMLElement, orderId: string): void {
   });
 
   // Break done button — sync when user finishes reordering break
-  el.querySelectorAll('[data-break-deactivate]').forEach((btn) => {
+  notYetWired('[data-break-deactivate]').forEach((btn) => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       (el as any).__activeBreakId = null;
@@ -3076,7 +3103,7 @@ function wireEditViewEvents(el: HTMLElement, orderId: string): void {
   });
 
   // Break delete button
-  el.querySelectorAll('[data-break-delete]').forEach((btn) => {
+  notYetWired('[data-break-delete]').forEach((btn) => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const brkId = (btn as HTMLElement).dataset.breakDelete!;
@@ -3090,7 +3117,7 @@ function wireEditViewEvents(el: HTMLElement, orderId: string): void {
   // Different handling per device:
   const isPhone = Math.min(window.innerWidth, window.innerHeight) <= 430;
   const hasTouchScreen = navigator.maxTouchPoints > 0;
-  el.querySelectorAll('.sort-break-active .sort-break-text').forEach((input) => {
+  notYetWired('.sort-break-active .sort-break-text').forEach((input) => {
     const inp = input as HTMLInputElement;
     if (isPhone) {
       // iPhone: remove readonly on tap, let iOS handle focus + keyboard scroll naturally
@@ -3155,7 +3182,7 @@ function wireEditViewEvents(el: HTMLElement, orderId: string): void {
       inp.addEventListener('mousedown', () => { inp.removeAttribute('readonly'); });
     }
   });
-  el.querySelectorAll('.sort-break-text').forEach((input) => {
+  notYetWired('.sort-break-text').forEach((input) => {
     (input as HTMLInputElement).addEventListener('change', () => {
       const brkId = (input as HTMLElement).dataset.breakRename!;
       renameBreak(orderId, brkId, (input as HTMLInputElement).value);
@@ -3163,7 +3190,7 @@ function wireEditViewEvents(el: HTMLElement, orderId: string): void {
   });
 
   // Break move arrows
-  el.querySelectorAll('.sort-arrow[data-break-move]').forEach((arrow) => {
+  notYetWired('.sort-arrow[data-break-move]').forEach((arrow) => {
     arrow.addEventListener('click', (e) => {
       e.stopPropagation();
       const dir = (arrow as HTMLElement).dataset.breakMove!;
@@ -3174,6 +3201,8 @@ function wireEditViewEvents(el: HTMLElement, orderId: string): void {
   });
 
   // Drag & drop
+  el.querySelectorAll('.sort-card, .sort-break-card').forEach((c) => { (c as any).__wired = true; });
+
   setupDragAndDrop(el, orderId);
 }
 
