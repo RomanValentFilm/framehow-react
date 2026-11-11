@@ -474,6 +474,13 @@
   .star-btn.star-col .star-lvl svg{width:16px;height:16px;}
   .fs-overlay .star-btn.star-col .star-lvl{width:30px;height:20px;}
   .fs-overlay .star-btn.star-col .star-lvl svg{width:20px;height:20px;}
+  /* iPHONE, 3x2, UPRIGHT PROJECTS (Roman, 11 Nov): sideways the star column
+     reached into the arrows. Still a column, 15 % smaller. */
+  @media (hover:none) and (pointer:coarse) and (max-width:430px), (hover:none) and (pointer:coarse) and (max-height:430px){
+    .grid3x2-container .star-btn.star-col{width:20.4px;gap:1.7px;padding:2.5px 0;}
+    .grid3x2-container .star-btn.star-col .star-lvl{width:20.4px;height:13.6px;}
+    .grid3x2-container .star-btn.star-col .star-lvl svg{width:13.6px;height:13.6px;}
+  }
   /* HORIZONTAL PROJECTS (10 Nov): the same three stars in a row, first on the left. */
   .star-btn.star-row{width:auto;height:22px;flex-direction:row;gap:2px;padding:0 3px;}
   .star-btn.star-row .star-lvl{display:flex;align-items:center;justify-content:center;width:16px;height:22px;}

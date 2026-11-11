@@ -250,3 +250,8 @@ v5.0.216–224 · #768–776 (10 Nov, evening) — THE DYNAMIC ISLAND, iPhone si
 - NEW PROJECT box scrolls itself sideways; the page behind stays still
 - SETUPS name field: no contact autofill over the keyboard. LIBRARY: DELETE the same distance from the right as SELECT
 - Shell, for build 2 (unbuilt): the camera keeps clear of the island sideways
+
+v5.0.225 · #777 (10 Nov, night)
+- SORT BY menu opens in the middle on an iPhone held upright (it ran off the screen)
+- MAX view sideways: the same room on both sides, the picture in the middle
+- FULL RUN 665 on this version: 150 green, 1 red (a random day, seed 793634 — a sort-order decision left waiting). Not live.

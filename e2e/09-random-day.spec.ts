@@ -229,8 +229,16 @@ test('a random day', async ({ browser }) => {
       { ...before, frames: floor, pictures: aFrameWent ? 0 : before.pictures },
       now,
       `${name} after ${action}`);
-    await mustNotHaveSaid(who);
-    await mustNotHaveSaid(other);
+    // A DECISION IN THE MIDDLE OF THE DAY CAN BE RIGHT TOO (run 665, seed 793634).
+    // The end of the day already allows "decision(s) waiting" when both devices
+    // changed the same shooting order while apart (#509) — but this check, after
+    // every step, did not: the tablet came back online at step 24, INSIDE the
+    // day, the server rightly held the question (both had added breaks to
+    // "ORDER 1 tablet" offline), and the step was called a fault. The same
+    // allowance, the moment the clash exists.
+    const clashNow = [...touchedApart.desktop].some((id) => touchedApart.tablet.has(id));
+    await mustNotHaveSaid(who, clashNow ? ['decision(s) waiting'] : []);
+    await mustNotHaveSaid(other, clashNow ? ['decision(s) waiting'] : []);
   }
 
   // Everyone comes back at the end of the day.

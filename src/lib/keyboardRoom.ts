@@ -156,6 +156,41 @@ function boxOf(overlay: HTMLElement, field: Element): HTMLElement | null {
   return node && node !== overlay ? node : null;
 }
 
+/** Where the line being typed sits inside a text area, from the area's top
+ *  edge (what is scrolled away inside the area already taken off). Measured
+ *  with a throw-away copy of the text up to the cursor. */
+function typingLine(ta: HTMLTextAreaElement): { top: number; bottom: number } {
+  const cs = getComputedStyle(ta);
+  const m = document.createElement('div');
+  m.style.cssText = 'position:fixed;left:-9999px;top:0;visibility:hidden;white-space:pre-wrap;overflow-wrap:break-word;box-sizing:border-box;';
+  m.style.width = `${ta.clientWidth}px`;
+  m.style.font = cs.font;
+  m.style.lineHeight = cs.lineHeight;
+  m.style.letterSpacing = cs.letterSpacing;
+  m.style.padding = cs.padding;
+  m.textContent = ta.value.slice(0, ta.selectionStart ?? ta.value.length);
+  const mark = document.createElement('span');
+  mark.textContent = '​';
+  m.appendChild(mark);
+  document.body.appendChild(m);
+  const lineH = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.4 || 20;
+  const top = mark.offsetTop + (parseFloat(cs.borderTopWidth) || 0) - ta.scrollTop;
+  m.remove();
+  return { top, bottom: top + lineH };
+}
+
+/** What scrolls a field on the page: the nearest column that can scroll, or
+ *  the window. */
+function scrollerOf(el: HTMLElement): { scrollBy(x: number, y: number): void } {
+  let node = el.parentElement;
+  while (node && node !== document.body) {
+    const oy = getComputedStyle(node).overflowY;
+    if ((oy === 'auto' || oy === 'scroll') && node.scrollHeight > node.clientHeight + 1) return node;
+    node = node.parentElement;
+  }
+  return window;
+}
+
 function fit(): void {
   const vv = freeArea();
   if (!vv) return;
@@ -195,6 +230,20 @@ function fit(): void {
     // never moved (#363); the same brings back a field lost to a turn (F9).
     const r = (active as HTMLElement).getBoundingClientRect();
     const low = vv.top + vv.height;
+    // A FIELD TALLER THAN THE FREE AREA (11 Nov, Roman: NOTES on the iPhone —
+    // "they move too much up, you can't see where you type"). Centring showed
+    // the middle of the field; the line being typed was above the top edge.
+    // Such a field is moved by its TYPING LINE instead: only when that line
+    // is outside the free area, and only as far as needed.
+    if (active.tagName === 'TEXTAREA' && r.height > vv.height - 16) {
+      const line = typingLine(active as HTMLTextAreaElement);
+      const top = r.top + line.top, bottom = r.top + line.bottom;
+      let by = 0;
+      if (bottom > low - 12) by = bottom - (low - 12);
+      else if (top < vv.top + 12) by = top - (vv.top + 12);
+      if (Math.abs(by) > 1) scrollerOf(active as HTMLElement).scrollBy(0, by);
+      return;
+    }
     if (r.bottom > low - 8 || r.top < vv.top + 8) {
       (active as HTMLElement).scrollIntoView({ block: 'center', behavior: 'auto' });
     }
@@ -253,6 +302,9 @@ export function keepBoxesAboveTheKeyboard(): void {
   window.addEventListener('keyboardWillHide', () => setShellKeyboardHeight(null));
   window.addEventListener('keyboardDidHide', () => setShellKeyboardHeight(null));
   document.addEventListener('focusin', () => setTimeout(fit, 50));
+  // A text area's typing line moves down as it is written (11 Nov): looked at
+  // on every key; nothing moves while the line is in view.
+  document.addEventListener('input', (e) => { if ((e.target as Element | null)?.tagName === 'TEXTAREA') fit(); });
   document.addEventListener('focusout', () => { unpinPage(); setTimeout(fit, 50); });
   // The first touch after the field went away: a pinned page with nobody
   // typing is let go before the finger moves (see fit).

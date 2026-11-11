@@ -1,5 +1,5 @@
 # LAUNCH — THE ONE LIST (9 Nov 2026). Nothing else counts; TOMORROW.md is history + notes.
-TODAY (10 Nov, night): dev is v5.0.224 · #776. THE FULL RUN IS STILL TO DO — nothing live before it is green. Then: the four phone checks (create-account box + keyboard, NEEDS last column, New Group speed, New Group sideways), C1 live, C2 build 2 (camera + island, the glass bar over the keyboard, offline start in the shell).
+TOMORROW (11 Nov): FULL RUN 665 (10 Nov night, v5.0.225 · #777) COUNTS AS GREEN — 150 green, the 1 red ("a random day", seed 793634) was the TEST's fault (a rightful sort-order decision inside the day; the per-step check had no allowance), fixed and replayed green in run 666. No app code changed since run 665. → C1 GO LIVE is Roman's call. Then: G12 + G13 (frame-set cards), the four phone checks, C2 build 2.
 Cross out with [x] and the date. Blocks are groups; the RUNNING ORDER is:
 1 done 9 Nov → 2 C1 live, C2, C2b →
 3 A15, G1–G4, A2, A3, B3c, B3e-2 → 4 D1–D9 (Roman), C3 shell to live → 5 D11 SUBMIT → 6 A7 Fitting → 7 A8, A10, B3f, G-items.
@@ -34,6 +34,11 @@ D7 video + Fitting page text, F1 new token.
 - [ ] G2 Sign-in box: "keep me signed in" (sessions are 30 days sliding today — decide if needed at all)
 - [x] G3 (10 Nov, v5.0.208, test 63) A NEW VERSION ONLY INFORMS (Roman: no automatic switch, no background download): after 5 min of use a card NOT NOW / RELOAD, twice per version at most; RELOAD checks the line; a fresh start loads the newest as always. PROVEN on Roman's iPhone 10 Nov 19:11 and 19:17 (home-screen app, airplane mode, fresh start: WF 7, 25 shots, all pictures there; back online it carried on by itself). STILL TO PROVE: the same inside the App Store shell (C2)
 - [ ] G4 Slow project opens (Roman, 5 Nov): one timing line at open, then look
+- [ ] G12 (Roman, 10 Nov) FRAME-SET CARDS (SHOOTING ORDER and STORY FLOW): once a shot has text written with WRITE, the card shows THAT under the shot instead of the descriptive text — the description belongs there. FAULT.
+- [ ] G13 (Roman, 10 Nov) FRAME-SET CARDS: the shot's NOTES are missing on the right side (only NEEDS show). Put them in the second column under the last block (props / build), in another colour (red or blue) so they stand out. Look at the card's layout first, suggest placement + colour to Roman BEFORE building.
+- [ ] G14 (Roman, 10 Nov) COLOUR FOR BREAKS in both SORT BY views (SHOOTING ORDER and STORY FLOW): a break can be given a colour. Agree first: which colours, how it is chosen, and that the colour travels to the other device (G9 had "break colours synced" as a later idea — this brings it forward).
+- [ ] G15 (Roman, 11 Nov) NOTES IN VERTICAL PROJECTS, iPHONE: while typing, the keyboard pushes the notes too far up — you cannot see where you type. Also the autofill bar shows above the keyboard: check whether iOS takes the field for a name field (same cure as the setup name fields: autocomplete off, neutral field name). Fix both together.
+- [ ] G16 (Roman, 11 Nov) FITTING, iPHONE LANDSCAPE: the star rating overlaps the arrows. Ideas from Roman: stars a little smaller, or fewer buttons shown so the canvas is longer. Look first, suggest to Roman BEFORE building.
 - [ ] G5 NEEDS clickable on frame-set cards in STORY FLOWS / SHOOTING ORDERS (½ day)
 - [x] G6-F2 (10 Nov, v5.0.198–199, test 62) the save reminder waits while a box / DRAW / the camera / SETUPS / an order edit is open, comes ~3 s after, never lost
 - [x] A19 (10 Nov, v5.0.196–197 + server 627–630) ACCOUNT CREATED box after sign-up; welcome mail: iPhone, iPad or a browser on your computer, reader's own colours, paragraphs, blue links, confirm paragraph and Framehow bold; notice boxes centred

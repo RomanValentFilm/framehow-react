@@ -93,7 +93,7 @@ export function renderNotesCard(div: HTMLElement, fid: number): void {
 
   // Content body — note or table
   const bodyHTML = isNote
-    ? `<textarea class="notes-textarea" data-notes-text="${fid}" placeholder="Note for this frame..." spellcheck="false" autocomplete="one-time-code">${escapeHtml(fn.noteText)}</textarea>`
+    ? `<textarea class="notes-textarea" data-notes-text="${fid}" placeholder="Note for this frame..." spellcheck="false" autocomplete="off" autocorrect="off" data-form-type="other">${escapeHtml(fn.noteText)}</textarea>`
     : renderNotesTable(fid, fn.tableData);
 
   div.innerHTML = `
