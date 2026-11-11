@@ -2268,6 +2268,34 @@ function renderSortEditView(el: HTMLElement, orderId: string): void {
   syncSortHeaderTop();
 }
 
+/** A NEEDS or NOTES box opened from a frame-set card has been closed (Roman,
+ *  11 Nov). The card shows the new text at once. After NEEDS, a shooting order
+ *  is asked again where its shots belong — straight away, by the same path as
+ *  on opening the order: moved shots go green, the line on top says so. Then
+ *  the page goes after the shot that was edited and shows it. STORY FLOW is
+ *  never re-sorted. Rules that are being built in this view are left alone. */
+function afterBoxClosed(el: HTMLElement, orderId: string, fid: number, needsChanged: boolean): void {
+  if (state().sortEditingId !== orderId) return;      // the view was left meanwhile
+  const building = (el as any).__bracketActive || (el as any).__sheetTouched;
+  let moved = 0;
+  if (needsChanged && !building && !isStoryFlow(orderId)) {
+    moved = resortToNeedsOnOpen(orderId);
+    // Like opening the order: its rules are read afresh from what was just kept.
+    (el as any).__bracketState = undefined;
+    (el as any).__sortedSnapshot = undefined;
+  }
+  renderSortEditView(el, orderId);
+  showResortedNote(moved);
+  const card = el.querySelector(`.sort-card[data-sort-fid="${fid}"]`) as HTMLElement | null;
+  if (!card) return;
+  const r = card.getBoundingClientRect();
+  const head = (el.querySelector('.sort-edit-header') as HTMLElement | null)?.getBoundingClientRect().bottom ?? 0;
+  if (r.top < head + 4 || r.bottom > window.innerHeight - 4) {
+    card.scrollIntoView({ block: 'center', behavior: 'auto' });
+    trace(`sort by: shot ${fid} edited from its card — page moved to show it${moved ? ` (${moved} shot(s) moved)` : ''}`);
+  }
+}
+
 function renderFrameSetCard(f: Frame, idx: number, activeReorderFid: number | null,
                             waiting = false): string {
   const s = state();
@@ -2367,7 +2395,7 @@ function renderNeedsInfo(fid: number): string {
   const note = (s.frameNotes[fid]?.noteText || '').trim();
   // The box is always there, one empty line high without a note (Roman, 11 Nov),
   // like the four blocks under it.
-  const notesHtml = `<div class="sort-needs-notes">${note
+  const notesHtml = `<div class="sort-needs-notes" data-sort-open-notes="${fid}">${note
     ? escH(note).replace(/\n/g, '<br>')   // no "NOTES" in front of it (Roman, 11 Nov)
     : ''}</div>`;
   const frameNeeds = s.frameNeeds[fid] ?? { toggles: {}, counters: {} } as any;
@@ -2422,7 +2450,7 @@ function renderNeedsInfo(fid: number): string {
       // One block per tab, on its own shade, so the blocks read apart. A tab
       // with nothing in it KEEPS ITS BOX, one empty line high (Roman, 11 Nov):
       // the four boxes stand in the same four places on every card.
-      out += `<div class="sort-needs-block">${lines}</div>`;
+      out += `<div class="sort-needs-block" data-sort-open-needs="${fid}" data-sort-needs-tab="${tab.id}">${lines}</div>`;
     }
     return out;
   };
@@ -2797,6 +2825,28 @@ function wireEditViewEvents(el: HTMLElement, orderId: string): void {
       }
     });
   }
+
+  // THE BOXES OPEN WHAT THEY SHOW (Roman, 11 Nov). A tap on the note opens the
+  // shot's NOTES box, a tap on a needs block opens its NEEDS box on that
+  // block's tab — the same two boxes 3x2 opens. A click, so a finger that
+  // scrolls the page opens nothing. Not on a card that is being moved (arrows
+  // and DONE showing): a slip of the finger must not pull you out of moving.
+  el.querySelectorAll('[data-sort-open-notes], [data-sort-open-needs]').forEach((box) => {
+    box.addEventListener('click', (e) => {
+      const b = box as HTMLElement;
+      if (b.closest('.sort-card-active')) return;
+      e.stopPropagation();
+      const isNotes = b.dataset.sortOpenNotes !== undefined;
+      const fid = parseInt((isNotes ? b.dataset.sortOpenNotes : b.dataset.sortOpenNeeds)!, 10);
+      if (isNaN(fid)) return;
+      const tabId = b.dataset.sortNeedsTab;
+      void import('./overview').then(async (ov) => {
+        if (isNotes) { ov.openNotesModal(fid, () => afterBoxClosed(el, orderId, fid, false)); return; }
+        if (tabId) (await import('./needs')).ensureFrameNeeds(fid).activeTabId = tabId;
+        ov.openNeedsModal(fid, () => afterBoxClosed(el, orderId, fid, true));
+      });
+    });
+  });
 
   // Combined button — activate frame card for reordering (clears any active break)
   el.querySelectorAll('[data-sort-activate]').forEach((btn) => {

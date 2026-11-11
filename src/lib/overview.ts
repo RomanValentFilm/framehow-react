@@ -1815,9 +1815,11 @@ export function wireGrid3x2PinchZoom(): void {
 /** Open NEEDS card for a frame as a modal overlay (75% screen height).
  *  Exported for the test door (#391) — the two places that open it are both
  *  taps on a card, and a test has to be able to reach the same function. */
-export function openNeedsModal(fid: number): void { _openNeedsModal(fid); }
+export function openNeedsModal(fid: number, onClosed?: () => void): void { _openNeedsModal(fid, onClosed); }
+/** The NOTES box, for a frame-set card in SORT BY (11 Nov). */
+export function openNotesModal(fid: number, onClosed?: () => void): void { _openNotesModal(fid, onClosed); }
 
-function _openNeedsModal(fid: number): void {
+function _openNeedsModal(fid: number, onClosed?: () => void): void {
   if (document.querySelector('.g3-needs-overlay')) return; // already open
 
   // Capture zoom level before resetting — used to enlarge the modal
@@ -1909,6 +1911,7 @@ function _openNeedsModal(fid: number): void {
       document.body.style.overflow = '';
       const cw = document.querySelector(`#overviewScroll .grid3x2-card-wrap[data-g3fid="${fid}"]`) as HTMLElement | null;
       if (cw) renderGrid3x2Card(cw, fid);
+      onClosed?.();   // whoever opened it from elsewhere (a frame-set card) redraws itself
     };
     if (target) {
       const targetRect = target.getBoundingClientRect();
@@ -1955,12 +1958,18 @@ function _sizeGridModal(container: HTMLElement, refFrameCard: HTMLElement | null
       container.style.height = Math.min(rc.height * 2.2, maxH) + 'px';
     }
   }
+  // NO 3x2 CARD TO MEASURE (opened from a frame-set card in SORT BY, 11 Nov):
+  // a size of its own, so the box is not just as big as what is in it.
+  if (!container.style.width) {
+    container.style.width = Math.min(620, maxW) + 'px';
+    container.style.height = Math.min(Math.round(window.innerHeight * 0.75), maxH) + 'px';
+  }
   container.style.maxWidth = maxW + 'px';
   container.style.maxHeight = maxH + 'px';
   if (wasZoomed) (container.style as any).zoom = String(z);
 }
 
-function _openNotesModal(fid: number): void {
+function _openNotesModal(fid: number, onClosed?: () => void): void {
   if (document.querySelector('.g3-notes-overlay')) return; // already open
 
   const wasZoomed = _zoomScale > 1.1;
@@ -2063,6 +2072,7 @@ function _openNotesModal(fid: number): void {
       document.body.style.overflow = '';
       const cw = document.querySelector(`#overviewScroll .grid3x2-card-wrap[data-g3fid="${fid}"]`) as HTMLElement | null;
       if (cw) renderGrid3x2Card(cw, fid);
+      onClosed?.();   // whoever opened it from elsewhere (a frame-set card) redraws itself
     };
     if (target) {
       const targetRect = target.getBoundingClientRect();

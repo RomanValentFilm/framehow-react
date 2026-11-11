@@ -1413,6 +1413,12 @@
   .sort-needs-block{background:rgba(255,255,255,.38);border-radius:3px;padding:1px 5px;min-height:18px;box-sizing:border-box;}
   /* The shot's note: across both columns, bold, all of it. */
   .sort-needs-notes{font-size:10px;color:#111;font-weight:700;line-height:1.5;margin-bottom:6px;overflow-wrap:anywhere;background:rgba(255,255,255,.38);border-radius:3px;padding:1px 5px;min-height:18px;box-sizing:border-box;}
+  /* A touch darker under the mouse: these boxes open NOTES / NEEDS (11 Nov).
+     No hand pointer (Roman). Not on a card that is being moved. */
+  @media (hover:hover){
+    .sort-card:not(.sort-card-active) .sort-needs-block:hover,
+    .sort-card:not(.sort-card-active) .sort-needs-notes:hover{background:rgba(255,255,255,.22);}
+  }
   .sort-needs-cat-name{font-weight:600;color:#222;text-transform:uppercase;font-size:9px;letter-spacing:.3px;}
   .sort-needs-cat-name::after{content:': ';}
   /* Col 5: arrows (centered vertically + horizontally) */

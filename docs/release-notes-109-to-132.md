@@ -300,3 +300,6 @@ v5.0.225 · #777 (10 Nov, night)
 
 ## v5.0.239 · #791 (11 Nov, run 679)
 - FRAME-SET CARDS: only the breaks typed with Enter are kept (description and note); the notes box is always there, one line when empty.
+
+## v5.0.240 · #792 (11 Nov, run 680)
+- FRAME-SET CARDS: version and sketch pictures 20 % wide (was 17 %); the note without the word NOTES in front.
