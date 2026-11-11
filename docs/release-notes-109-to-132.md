@@ -344,3 +344,6 @@ v5.0.225 · #777 (10 Nov, night)
 ## v5.0.251 · #803 (11 Nov, run 693)
 - CAMERA LANDING: the copy that shrinks into the card starts on the rectangle where the frame stood on the camera screen (was 95 % of the screen — a jump since the picture begins beside the island).
 - CAMERA SCREEN (Swift, Xcode run, not TestFlight yet): picture begins where the island ends, sideways and upright; frame out of the glass corners; RATIO / EV / 1x one look, 12 pt from their two edges of the visible picture; RATIO list fits under its button.
+
+## v5.0.252 · #804 (11 Nov, run 694)
+- COPY LOG in the app shell goes through the share sheet (whole log); a hidden-field copy as the fallback. Works on the phone (Roman pasted a full log).

@@ -932,15 +932,30 @@ export function applyCapturedImage(dataURL: string, target: any): void {
       const startW = usable ? sr.width : vw * 0.95, startH = usable ? sr.height : vh * 0.95;
       const start0 = usable ? { left: sr.left, top: sr.top, width: startW, height: startH }
         : { left: (vw - startW) / 2, top: (vh - startH) / 2, width: startW, height: startH };
+      // THE PICTURE KEEPS ITS OWN SHAPE ALL THE WAY (Roman, 11 Nov, his log: 2.0 into a
+      // 2:1 card was right; 2.39 and 4:3 "showed the full screen and then zoomed out").
+      // The copy was a box in the CARD's shape, filled with the picture and then
+      // stretched to the start — fine while both had the same shape, and a picture
+      // pulled out of shape by up to half when the ratio was another one. Now the box
+      // has the PICTURE's shape: it starts as the frame stood on the camera, and it ends
+      // sitting whole inside the card (where it has faded to nothing anyway).
+      const shape = usable ? sr.width / sr.height : 0;
+      const inside = (c: { left: number; top: number; width: number; height: number }) => {
+        if (!shape) return { left: c.left, top: c.top, width: c.width, height: c.height };
+        const w = c.width / c.height > shape ? c.height * shape : c.width;
+        const h = w / shape;
+        return { left: c.left + (c.width - w) / 2, top: c.top + (c.height - h) / 2, width: w, height: h };
+      };
+      const first = inside(tr);
       thumb.style.cssText = `position:fixed;z-index:100000;pointer-events:none;object-fit:cover;` +
-        `left:${tr.left}px;top:${tr.top}px;width:${tr.width}px;height:${tr.height}px;border-radius:0;opacity:1;` +
-        `transform-origin:0 0;transform:translate(${start0.left - tr.left}px,${start0.top - tr.top}px) scale(${startW / tr.width},${startH / tr.height});will-change:transform,opacity;`;
+        `left:${first.left}px;top:${first.top}px;width:${first.width}px;height:${first.height}px;border-radius:0;opacity:1;` +
+        `transform-origin:0 0;transform:translate(${start0.left - first.left}px,${start0.top - first.top}px) scale(${startW / first.width},${startH / first.height});will-change:transform,opacity;`;
       document.body.appendChild(thumb);
       void thumb.offsetWidth;
       (window as any).__fh_startShrink = () => {
         (window as any).__fh_startShrink = undefined;
         const now = targetEl!.getBoundingClientRect();
-        const to = (now.width > 0 && now.height > 0) ? now : tr;
+        const to = inside((now.width > 0 && now.height > 0) ? now : tr);
         thumb.style.left = `${to.left}px`; thumb.style.top = `${to.top}px`;
         thumb.style.width = `${to.width}px`; thumb.style.height = `${to.height}px`;
         const from = `translate(${start0.left - to.left}px,${start0.top - to.top}px) scale(${startW / to.width},${startH / to.height})`;
@@ -953,7 +968,7 @@ export function applyCapturedImage(dataURL: string, target: any): void {
             { opacity: 1, offset: 0.5, easing: 'linear' },
             { transform: 'translate(0px,0px) scale(1,1)', opacity: 0, offset: 1 },
           ],
-          { duration: 500, easing: 'ease-in', fill: 'forwards' },
+          { duration: 300, easing: 'ease-in', fill: 'forwards' },
         );
         anim.onfinish = () => {
           trace(`camera: shrink moved for ${Date.now() - t0} ms, from ${Math.round(startW)}×${Math.round(startH)} at ${Math.round(start0.left)},${Math.round(start0.top)} (${usable ? 'the frame on the camera screen' : '95% of the screen'}) to ${Math.round(to.width)}×${Math.round(to.height)} at ${Math.round(to.left)},${Math.round(to.top)}`);
