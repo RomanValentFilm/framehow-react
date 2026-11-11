@@ -26,7 +26,12 @@
 //    6  THE LEFTOVERS ARE THE BOX AT THE VERY BOTTOM OF THE SHEET — the shots
 //       every box in the FIRST COLUMN turned down. Not "shots with no needs": a
 //       shot can have LOCATION 1 and no day, and the first column sorts by day,
-//       so it falls through all of them. Nothing placed it — grey, never moved.
+//       so it falls through all of them.
+//    6b A SHOT THAT WAS IN A REAL BOX AND IS TURNED DOWN BY EVERY BOX NOW MOVES
+//       TO THE LEFTOVERS (11 Nov) — at its number, behind the leftover it
+//       follows in the storyboard — and is green. A shot that was in NO box
+//       before (a new shot with no needs) stays where it was made, red; a
+//       leftover that is still a leftover goes nowhere.           [6,6b,6c]
 //       A REMAINING INSIDE A BRANCH is a different thing: "DAY 1, no location"
 //       is a real place, moved into and marked green. KEEP ORDER at the bottom
 //       is the leftovers too, by the user's own choice.        [6,13b,20,21]
@@ -125,6 +130,12 @@ const twoBoxes = (day1: number[], day2: number[]): BracketNodeData => ({
 });
 
 const EVERY_DAY: Record<number, string> = { 1: D1, 2: D1, 3: D1, 4: D2, 5: D2, 6: D2 };
+
+/** One box only: day 1. Everything else is the leftovers. */
+const oneBoxOf = (day1: number[]): BracketNodeData => ({
+  inputIds: [...ALL], categoryId: DAY, categoryName: 'SHOOT DAY',
+  itemId: D1, itemName: 'DAY 1', matchedIds: [...day1],
+});
 const order = (): SortOrder => useStore.getState().sortOrders[0];
 
 /** Change one shot's day. */
@@ -260,13 +271,90 @@ console.log('\n6. a shot no box matches belongs with the leftovers');
   };
   setUp(EVERY_DAY, [1, 2, 3, 4, 5, 6], oneBox, [1, 2, 3, 4, 5, 6]);
   moveToDay(1, D2);
-  // It left day 1, but no box covers day 2 — so it has not been PUT anywhere.
-  // It belongs with the leftovers, which is a legitimate place, so it is grey
-  // and nothing moves. Roman: "in the last box remaining 38... they are green"
-  // — 38 shots he had never touched, all marked because they stopped matching.
-  check('it is NOT marked', openTheOrder(), 0);
-  check('and nothing is moved', order().frameOrder, [1, 2, 3, 4, 5, 6]);
+  // CHANGED 11 NOVEMBER. This used to say "it is not marked and nothing moves":
+  // the shot stayed standing among the day 1 shots, red. Roman, with exactly
+  // this in front of him: "it cannot stay in day 3, because it's 2 — run each
+  // shot that has changed by the bracket rules from A to Z."
+  //
+  // It was in a real box and every box turns it down now, so it goes to the
+  // leftovers — at its number: no leftover is in front of it in the storyboard,
+  // so it leads them — and it is marked, like any shot the needs moved.
+  check('it IS marked', openTheOrder(), 1);
+  check('and it leads the leftovers', order().frameOrder, [2, 3, 1, 4, 5, 6]);
+  // The sheet has learned it: a second opening announces nothing.
+  check('once', openTheOrder(), 0);
+  check('and it stays there', order().frameOrder, [2, 3, 1, 4, 5, 6]);
 }
+
+console.log('\n6b. …and takes its place among them, behind the shot it follows');
+{
+  const oneBox: BracketNodeData = {
+    inputIds: [...ALL], categoryId: DAY, categoryName: 'SHOOT DAY',
+    itemId: D1, itemName: 'DAY 1', matchedIds: [1, 2, 5],
+  };
+  // Day 1: shots 1, 2, 5. The leftovers, on day 2: 3, 4, 6.
+  setUp({ 1: D1, 2: D1, 5: D1, 3: D2, 4: D2, 6: D2 }, [1, 2, 5, 3, 4, 6], oneBox, [1, 2, 5, 3, 4, 6]);
+  moveToDay(5, D2);
+  check('shot 5 leaves day 1', openTheOrder(), 1);
+  check('and stands behind 4, the leftover it follows in the storyboard',
+    order().frameOrder, [1, 2, 3, 4, 5, 6]);
+
+  // The same with the tail written out as a REMAINING box.
+  const withRemaining: BracketNodeData = {
+    inputIds: [...ALL], categoryId: DAY, categoryName: 'SHOOT DAY',
+    itemId: D1, itemName: 'DAY 1', matchedIds: [1, 2, 3],
+    down: { inputIds: [4, 5, 6], categoryId: '__remaining__', categoryName: 'REMAINING',
+            itemId: '__remaining__', itemName: 'REMAINING', matchedIds: [4, 5, 6] },
+  };
+  setUp(EVERY_DAY, [1, 2, 3, 4, 5, 6], withRemaining, [1, 2, 3, 4, 5, 6]);
+  moveToDay(2, D2);
+  check('out of day 1 into a written REMAINING box: it moves', openTheOrder(), 1);
+  check('to the front of it, having no leftover in front of it', order().frameOrder, [1, 3, 2, 4, 5, 6]);
+
+  // And with KEEP ORDER at the bottom.
+  const withKeep: BracketNodeData = {
+    inputIds: [...ALL], categoryId: DAY, categoryName: 'SHOOT DAY',
+    itemId: D1, itemName: 'DAY 1', matchedIds: [1, 2],
+    down: { inputIds: [3, 4, 5, 6], categoryId: '__keep__', categoryName: 'KEEP ORDER',
+            itemId: '__keep__', itemName: 'KEEP ORDER', matchedIds: [3, 4, 5, 6] },
+  };
+  setUp({ 1: D1, 2: D1, 3: D2, 4: D2, 5: D2, 6: D2 }, [1, 2, 3, 4, 5, 6], withKeep, [1, 2, 3, 4, 5, 6]);
+  moveToDay(1, D2);
+  check('out of day 1 into KEEP ORDER: it moves', openTheOrder(), 1);
+  check('to the front of KEEP ORDER', order().frameOrder, [2, 1, 3, 4, 5, 6]);
+
+  // Two at once keep their own order.
+  setUp(EVERY_DAY, [1, 2, 3, 4, 5, 6], oneBoxOf([1, 2, 3]), [1, 2, 3, 4, 5, 6]);
+  moveToDay(1, D2);
+  moveToDay(3, D2);
+  check('two shots leave together', openTheOrder(), 2);
+  check('and stand in storyboard order in front of the leftovers', order().frameOrder, [2, 1, 3, 4, 5, 6]);
+
+  // No leftovers at all yet: it goes to the end, where they would stand.
+  setUp({ 1: D1, 2: D1, 3: D1, 4: D1, 5: D1, 6: D1 }, [1, 2, 3, 4, 5, 6], oneBoxOf([1, 2, 3, 4, 5, 6]), [1, 2, 3, 4, 5, 6]);
+  moveToDay(2, D2);
+  check('the first leftover there is', openTheOrder(), 1);
+  check('goes to the end of the order', order().frameOrder, [1, 3, 4, 5, 6, 2]);
+}
+
+console.log('\n6c. what does NOT move into the leftovers');
+{
+  // A shot that was a leftover and still is: its needs changed, no box wants
+  // it either way, it has not gone anywhere. Not moved, not marked.
+  setUp(EVERY_DAY, [1, 2, 3, 4, 5, 6], oneBoxOf([1, 2, 3]), [1, 2, 3, 4, 5, 6]);
+  moveToDay(5, 'ti_day3');
+  check('a leftover whose needs changed, and is still a leftover, is not marked', openTheOrder(), 0);
+  check('and nothing moves', order().frameOrder, [1, 2, 3, 4, 5, 6]);
+
+  // A leftover somebody dragged up among the day 1 shots stays where it was
+  // put (rule 5) — and a shot joining the leftovers does not line up behind it.
+  setUp(EVERY_DAY, [1, 4, 2, 3, 5, 6], oneBoxOf([1, 2, 3]), [1, 2, 3, 4, 5, 6]);
+  moveToDay(3, D2);
+  check('a shot leaves day 1 while a leftover stands dragged among day 1', openTheOrder(), 1);
+  check('the dragged one stays, the newcomer joins the leftovers at the bottom',
+    order().frameOrder, [1, 4, 2, 3, 5, 6]);
+}
+
 
 console.log('\n7. the list can never grow, shrink, or hold a shot twice');
 {

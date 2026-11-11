@@ -606,6 +606,57 @@ export function placeChangedFrames(
 }
 
 /**
+ * A SHOT THAT LEFT ITS BOX FOR THE LEFTOVERS TAKES ITS PLACE AMONG THEM
+ * (Roman, 11 Nov).
+ *
+ * The leftovers are the shots at the bottom that no box took. A shot joins
+ * them the way a shot joins any box — AT ITS NUMBER: behind the leftover shot
+ * it follows in the storyboard. With no leftover in front of it in the
+ * storyboard it leads them. With no leftovers at all it goes to the end of the
+ * order, which is where they stand.
+ *
+ * Leftover shots that somebody dragged elsewhere (`misplaced`), and a new shot
+ * still standing where it was made among the boxes, are not part of the run
+ * and are not used to find the place.
+ */
+export function placeInLeftovers(
+  standsAs: number[],
+  joining: ReadonlySet<number>,
+  boxOf: Map<number, string>,
+  misplaced: ReadonlySet<number>,
+  storyboard: number[],
+): number[] {
+  const out = standsAs.filter((id) => !joining.has(id));
+  const story = new Map(storyboard.map((id, i) => [id, i] as const));
+  const at = (id: number): number => story.get(id) ?? Number.MAX_SAFE_INTEGER;
+
+  // The run: leftover shots standing at the bottom, behind the last shot that
+  // sits in a real box. A leftover standing higher up is one that was made or
+  // dragged there, and does not say where the leftovers are.
+  let lastBoxed = -1;
+  out.forEach((id, i) => { if (!isLeftovers(boxOf.get(id)) && !misplaced.has(id)) lastBoxed = i; });
+  const inRun = (id: number, i: number): boolean =>
+    i > lastBoxed && isLeftovers(boxOf.get(id)) && !misplaced.has(id);
+
+  // In storyboard order, so two shots joining together keep their own order.
+  for (const fid of [...joining].sort((a, b) => at(a) - at(b))) {
+    let follows = -1;       // the place of the leftover it follows in the storyboard
+    let best = -1;
+    let first = -1;         // the first shot of the run
+    out.forEach((id, i) => {
+      if (!inRun(id, i) && !joining.has(id)) return;
+      if (joining.has(id) && i <= lastBoxed) return;
+      if (first === -1) first = i;
+      if (at(id) < at(fid) && at(id) > best) { best = at(id); follows = i; }
+    });
+    if (follows !== -1) out.splice(follows + 1, 0, fid);
+    else if (first !== -1) out.splice(first, 0, fid);
+    else out.push(fid);
+  }
+  return out;
+}
+
+/**
  * WHICH SHOTS SIT OUTSIDE THE BOX THEY BELONG TO (#427) — the red icons.
  *
  * The old rule was "its position number is not the one the boxes gave it", and
@@ -946,11 +997,33 @@ export function decideResort(
     state().frames.find((f) => f.id === fid)?.label || String(fid);
 
   const moved = new Set<number>();
+  const intoLeftovers = new Set<number>();   // moved, and it is the leftovers they go to
   const changes: string[] = [];
   for (const fid of new Set([...was.keys(), ...now.keys()])) {
     if (was.get(fid) === now.get(fid)) continue;
     changes.push(`${labelOf(fid)}: ${boxName(was.get(fid))} → ${boxName(now.get(fid))}`);
-    if (isLeftovers(now.get(fid))) continue;       // in no box, or only in REMAINING: grey
+    if (isLeftovers(now.get(fid))) {
+      // OUT OF A BOX, INTO THE LEFTOVERS: IT MOVES THERE (Roman, 11 Nov).
+      //
+      // Until today nothing that landed in the leftovers was ever moved. His
+      // shot 3 was a DAY 1 shot, was given DAY 2 — which that order has no box
+      // for — and stayed standing among the DAY 1 shots, red. "It cannot stay
+      // in day 3, because it's 2 … run each shot that has changed by the
+      // bracket rules from A to Z, so we know where to put it."
+      //
+      // So a shot that WAS in a real box and is turned down by every box now
+      // goes to the leftovers, at its number, and is marked like any other
+      // shot the needs moved.
+      //
+      // What stays as it was, both for the reasons written above:
+      //   · a shot that was in no box before (a NEW shot with no needs, #439)
+      //     stays where it was made — and shows red for standing there;
+      //   · a shot that was in the leftovers and still is has not gone
+      //     anywhere, however the sheet happens to write that down (#432).
+      const before = was.get(fid);
+      if (before !== undefined && !isLeftovers(before)) { moved.add(fid); intoLeftovers.add(fid); }
+      continue;
+    }
     moved.add(fid);
   }
   const tell = changes.join(' · ');
@@ -981,8 +1054,15 @@ export function decideResort(
   // placement must step around them, or it puts a shot next to a misplaced one
   // and the shot it just placed comes out red (#453).
   const misplaced = shotsOutsideTheirBox(order.frameOrder, now, boxOrderOfSheet(root));
-  const { list: frameOrder, outOfStep } =
-    placeChangedFrames(order.frameOrder, fresh, moved, now, misplaced);
+  // The shots that go into a real box are placed by the sheet's own answer.
+  // The ones bound for the leftovers are placed after them, by the storyboard
+  // (see placeInLeftovers): the sheet's answer has no word on where a leftover
+  // stands.
+  const intoBoxes = new Set([...moved].filter((fid) => !intoLeftovers.has(fid)));
+  const boxed = placeChangedFrames(order.frameOrder, fresh, intoBoxes, now, misplaced);
+  const frameOrder = intoLeftovers.size === 0 ? boxed.list
+    : placeInLeftovers(boxed.list, intoLeftovers, now, misplaced, visibleIds);
+  const outOfStep = new Set<number>([...boxed.outOfStep, ...intoLeftovers]);
 
   // Never fewer than we started with. If this ever trips, the order is left
   // untouched rather than shortened.

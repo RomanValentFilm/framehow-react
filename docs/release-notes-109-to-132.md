@@ -309,3 +309,6 @@ v5.0.225 · #777 (10 Nov, night)
 
 ## v5.0.242 · #794 (11 Nov, run 683)
 - FRAME-SET CARDS: the NEEDS / NOTES box grows out of the box that was pressed (was: from the top left corner).
+
+## v5.0.243 · #795 (11 Nov, run 684)
+- FRAME-SET CARDS: after NEEDS from a card — the order changed: page to the top (icon overview shows the green shot); nothing moved: same place; NOTES: always the same place. The order is counted BEFORE the box closes, under the project-loading bar with "Re-sorting…" (a quarter second at least). Test e2e/64 extended (three landing cases).
