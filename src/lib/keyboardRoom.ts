@@ -173,18 +173,13 @@ let _shortWas = '';
 function isPhoneTouch(): boolean {
   return navigator.maxTouchPoints > 0 && Math.min(window.innerWidth, window.innerHeight) <= 430;
 }
-/** End the field `room` pixels below its own top (never under 80). */
-function makeShort(ta: HTMLTextAreaElement, freeBottom: number, why: string): void {
-  const top = ta.getBoundingClientRect().top;
-  const h = Math.round(freeBottom - top - 12);
-  // The field starts too low for that: a small field, which the rule for
-  // small fields (below, in fit) then brings into view as a whole.
-  const max = h >= 80 ? h : 110;
+/** Make the field `h` pixels tall for as long as it is typed in. Done ONCE,
+ *  at the touch — never again while the keyboard is up (Roman's log, run 673:
+ *  re-measuring it on every move of the screen made it grow and shrink, and
+ *  Safari slid the screen after each change: "back and forth"). */
+function makeShort(ta: HTMLTextAreaElement, h: number): void {
   if (_short !== ta) { letTall(); _short = ta; _shortWas = ta.style.maxHeight; }
-  const want = `${max}px`;
-  if (ta.style.maxHeight === want) return;
-  ta.style.maxHeight = want;
-  trace(`notes: field made ${max} px tall while typing (${why}; field top ${Math.round(top)}, free screen ends ${Math.round(freeBottom)})`);
+  ta.style.maxHeight = `${h}px`;
 }
 function letTall(): void {
   if (!_short) return;
@@ -232,14 +227,6 @@ function fit(): void {
     // never moved (#363); the same brings back a field lost to a turn (F9).
     const r = (active as HTMLElement).getBoundingClientRect();
     const low = vv.top + vv.height;
-    // A note being typed on a phone ends above the keys (see makeShort) —
-    // now with the keyboard's real height. Measured again after it.
-    if (active.tagName === 'TEXTAREA' && isPhoneTouch() && (active === _short || r.height > vv.height * 0.6)) {
-      makeShort(active as HTMLTextAreaElement, low, 'keyboard up');
-      const r2 = (active as HTMLElement).getBoundingClientRect();
-      if (r2.bottom > low - 8 || r2.top < vv.top + 8) (active as HTMLElement).scrollIntoView({ block: 'center', behavior: 'auto' });
-      return;
-    }
     if (r.bottom > low - 8 || r.top < vv.top + 8) {
       (active as HTMLElement).scrollIntoView({ block: 'center', behavior: 'auto' });
     }
@@ -304,22 +291,39 @@ export function keepBoxesAboveTheKeyboard(): void {
     const t = e.target as HTMLElement | null;
     if (t && t.tagName === 'TEXTAREA' && isPhoneTouch() && !overlayOf(t)
         && t.getBoundingClientRect().height > window.innerHeight * 0.25) {
-      // FIRST THE CARD GOES UP, THEN THE KEYBOARD COMES (Roman, 11 Nov: "a card
-      // on the lower part of the screen — the keyboard hides that note. The
-      // moment you type in, move the card up … and then don't let the keyboard
-      // do anything"). The typing line is put 25 % from the top of the screen
-      // right at the touch, while the page still scrolls like any page; the
-      // first card, with no page above it, stays where it is. Then the field
-      // is made short from there, so it ends above the keys.
-      const lineAt = window.innerHeight * 0.25;
-      const top = t.getBoundingClientRect().top + 8;
-      const by = Math.round(top - lineAt);
-      if (Math.abs(by) > 4) {
-        const was = window.scrollY;
-        window.scrollBy(0, by);
-        trace(`notes: field touched, typing line at ${Math.round(top)} — page moved by ${Math.round(window.scrollY - was)} of ${by} to bring it 25 % from the top`);
+      // SIMPLE (Roman, 11 Nov): "The moment the user taps into the note it goes
+      // to the first position below the bar and stays there. If the keyboard
+      // comes, nothing happens. That's it."
+      //
+      // At the touch, while the page still scrolls like any page, the note's
+      // card is put right under the bar(s) — where the first card of a page
+      // sits. For the keyboard to move nothing: Safari slides the screen until
+      // the field being typed in is in the MIDDLE of the space the keyboard
+      // leaves (his logs: twice, to the pixel). So the field is given, once,
+      // the height that puts its middle there already. Left alone after that;
+      // as tall as before when the field is left.
+      const H = window.innerHeight;
+      const card = (t.closest('.notes-card') as HTMLElement | null) ?? t;
+      const barsEnd = (): number => {
+        let end = 0;
+        document.querySelectorAll('.view-bar, .detail-bar, .setup-bar').forEach((b) => {
+          const r = (b as HTMLElement).getBoundingClientRect();
+          if (r.height > 0 && r.top < H * 0.3) end = Math.max(end, r.bottom);
+        });
+        return end;
+      };
+      const was = window.scrollY;
+      // Twice: the first move may take the top bar off the screen, and the
+      // bars then stand higher than they did.
+      for (let i = 0; i < 2; i++) {
+        const by = Math.round(card.getBoundingClientRect().top - (barsEnd() + 6));
+        if (Math.abs(by) > 2) window.scrollBy(0, by);
       }
-      makeShort(t as HTMLTextAreaElement, window.innerHeight * 0.43, 'field touched');
+      const top = t.getBoundingClientRect().top;
+      const freeMiddle = H * 0.43 / 2;
+      const h = Math.round(Math.min(160, Math.max(70, 2 * (freeMiddle - top))));
+      makeShort(t as HTMLTextAreaElement, h);
+      trace(`notes: field touched — card put under the bar (page moved by ${Math.round(window.scrollY - was)}), field at ${Math.round(top)}, made ${h} px tall`);
     }
     setTimeout(fit, 50);
   });

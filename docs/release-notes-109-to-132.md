@@ -275,3 +275,6 @@ v5.0.225 · #777 (10 Nov, night)
 
 ## v5.0.231 · #783 (11 Nov, run 672)
 - NOTES: typing line to 25 % from the top by sliding the screen — did not work on the phone (the slide was undone), replaced in the next build.
+
+## v5.0.232 · #784 (11 Nov, run 673)
+- NOTES: card moved up at the touch and field made short — the move at the touch worked; re-measuring the field while the keyboard was up made it go back and forth (fixed in the next build).
