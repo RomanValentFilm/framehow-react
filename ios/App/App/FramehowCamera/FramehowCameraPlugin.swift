@@ -56,7 +56,12 @@ public class FramehowCameraPlugin: CAPPlugin, CAPBridgedPlugin {
             var keyInForce = ratioKey
             cam.onShutter = { [weak self] in
                 self?.timeUp = false; self?.webReady = false
-                DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(390)) { [weak self] in
+                // NO FREEZE (Roman, 11 Nov: "A feels better" — like the web camera, where the
+                // shot leaves at once and it "feels super fast"). It was 390 ms: 90 of flash and
+                // 300 with the shot standing still. Now only the flash; the screen goes the
+                // moment the flash is over and the web has its copy in place, and the picture
+                // travels from where it stood.
+                DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(100)) { [weak self] in
                     self?.timeUp = true; self?.goIfBothReady()
                 }
             }

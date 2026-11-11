@@ -183,7 +183,13 @@ struct CameraScreen: View {
                         .frame(width: fg.chip.width, height: fg.chip.height)
                         .position(x: fg.chip.midX, y: fg.chip.midY)
                 }
-                FrameLine(frame: fg.frame)
+                // FROM THE SHUTTER ON, ONLY THE PHOTO ON BLACK (Roman, 11 Nov, his recording):
+                // the frozen shot stood among the dimmed rest of the live picture and all the
+                // buttons, and a moment later on the bare app. Now everything outside the
+                // frame is black from the flash on, the frame line and the buttons are gone —
+                // and the web's copy starts on the same black (actions.ts), which then fades.
+                let shot = cam.flash || cam.frozen != nil
+                FrameLine(frame: fg.frame, solid: shot)
                 Color.clear.contentShape(Rectangle()).gesture(touch).simultaneousGesture(pinch)
                 if let m = focusMark {
                     Rectangle().stroke(.yellow, lineWidth: 1.5).frame(width: 70, height: 70).position(m)
@@ -193,8 +199,10 @@ struct CameraScreen: View {
                         .allowsHitTesting(false)
                 }
                 if cam.flash { Color.black.allowsHitTesting(false) }
-                controls(landscape: landscape, right: island.right, pic: pic)
-                if showRatios { ratioMenu(pic: pic) }
+                if !shot {
+                    controls(landscape: landscape, right: island.right, pic: pic)
+                    if showRatios { ratioMenu(pic: pic) }
+                }
             }
             .frame(width: geo.size.width, height: geo.size.height)
             .clipped()
@@ -343,16 +351,21 @@ struct CameraScreen: View {
 
 struct FrameLine: View {
     let frame: CGRect
+    /// After the shutter: black all round the frame, and no line.
+    var solid = false
     var body: some View {
         GeometryReader { g in
             let W = g.size.width, H = g.size.height
             let x = frame.minX, y = frame.minY, w = frame.width, h = frame.height
+            let dim = Color.black.opacity(solid ? 1 : 0.45)
             ZStack {
-                Color.black.opacity(0.45).frame(width: W, height: max(0, y)).position(x: W / 2, y: y / 2)
-                Color.black.opacity(0.45).frame(width: W, height: max(0, H - y - h)).position(x: W / 2, y: y + h + (H - y - h) / 2)
-                Color.black.opacity(0.45).frame(width: max(0, x), height: h).position(x: x / 2, y: frame.midY)
-                Color.black.opacity(0.45).frame(width: max(0, W - x - w), height: h).position(x: x + w + (W - x - w) / 2, y: frame.midY)
-                Rectangle().stroke(.white, lineWidth: 1.5).frame(width: w, height: h).position(x: frame.midX, y: frame.midY)
+                dim.frame(width: W, height: max(0, y)).position(x: W / 2, y: y / 2)
+                dim.frame(width: W, height: max(0, H - y - h)).position(x: W / 2, y: y + h + (H - y - h) / 2)
+                dim.frame(width: max(0, x), height: h).position(x: x / 2, y: frame.midY)
+                dim.frame(width: max(0, W - x - w), height: h).position(x: x + w + (W - x - w) / 2, y: frame.midY)
+                if !solid {
+                    Rectangle().stroke(.white, lineWidth: 1.5).frame(width: w, height: h).position(x: frame.midX, y: frame.midY)
+                }
             }
         }
         .allowsHitTesting(false)

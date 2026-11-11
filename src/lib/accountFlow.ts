@@ -71,6 +71,7 @@ import {
   projectIsBackFromTheDead,
   noteTheProjectIsGone,
   noteTheProjectIsAlive,
+  syncIsHeld,
 } from './currentProject';
 import { makeGoneRegister, whatWentWrong } from './projectGone';
 import { busyNow, whenQuiet } from './quietMoment';
@@ -6656,6 +6657,8 @@ async function tryPullFromCloud(force = false): Promise<void> {
   // answer, and then skipped the one pull that would have applied it. Every
   // early exit is traced here, so a pull can never again vanish unseen.
   if (pullInFlight) { quietly('  not fetching: another fetch is still running'); return; }
+  // NOR WHILE A PHOTO IS LANDING (11 Nov — see holdSyncFor): the next heartbeat brings it.
+  if (syncIsHeld()) { quietly('  not fetching: a photo is landing'); return; }
   // NOT WHILE THE CAMERA IS OPEN (25 Oct): a pull redraws every card, which
   // stalls the viewfinder for a quarter of a second each time. It waits; the
   // next heartbeat after the camera closes brings everything.

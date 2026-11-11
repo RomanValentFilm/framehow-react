@@ -347,3 +347,6 @@ v5.0.225 · #777 (10 Nov, night)
 
 ## v5.0.252 · #804 (11 Nov, run 694)
 - COPY LOG in the app shell goes through the share sheet (whole log); a hidden-field copy as the fallback. Works on the phone (Roman pasted a full log).
+
+## v5.0.253 · #805 (11 Nov, run 695)
+- CAMERA LANDING: the travelling copy keeps the picture's own shape (was the card's shape, stretched); move 0.3 s.

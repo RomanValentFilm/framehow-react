@@ -950,6 +950,14 @@ export function applyCapturedImage(dataURL: string, target: any): void {
       thumb.style.cssText = `position:fixed;z-index:100000;pointer-events:none;object-fit:cover;` +
         `left:${first.left}px;top:${first.top}px;width:${first.width}px;height:${first.height}px;border-radius:0;opacity:1;` +
         `transform-origin:0 0;transform:translate(${start0.left - first.left}px,${start0.top - first.top}px) scale(${startW / first.width},${startH / first.height});will-change:transform,opacity;`;
+      // BLACK BEHIND IT, AS ON THE CAMERA (Roman, 11 Nov, his recording): when the
+      // camera screen went, the picture stood on the bare app — its bars and cards
+      // around it, "see-through … super weird". The screen behind the picture is
+      // black now, as it was on the camera, and that black fades out over the whole
+      // move, from its first instant; the picture itself fades from halfway.
+      const shade = document.createElement('div');
+      shade.style.cssText = 'position:fixed;inset:0;z-index:99999;pointer-events:none;background:#000;opacity:1;will-change:opacity;';
+      document.body.appendChild(shade);
       document.body.appendChild(thumb);
       void thumb.offsetWidth;
       (window as any).__fh_startShrink = () => {
@@ -961,6 +969,7 @@ export function applyCapturedImage(dataURL: string, target: any): void {
         const from = `translate(${start0.left - to.left}px,${start0.top - to.top}px) scale(${startW / to.width},${startH / to.height})`;
         thumb.style.transform = from;
         void thumb.offsetWidth;
+        const MOVE_MS = 300;     // Roman, 11 Nov (was 500)
         const t0 = Date.now();
         const anim = thumb.animate(
           [
@@ -968,13 +977,14 @@ export function applyCapturedImage(dataURL: string, target: any): void {
             { opacity: 1, offset: 0.5, easing: 'linear' },
             { transform: 'translate(0px,0px) scale(1,1)', opacity: 0, offset: 1 },
           ],
-          { duration: 300, easing: 'ease-in', fill: 'forwards' },
+          { duration: MOVE_MS, easing: 'ease-in', fill: 'forwards' },
         );
+        shade.animate([{ opacity: 1 }, { opacity: 0 }], { duration: MOVE_MS, easing: 'linear', fill: 'forwards' });
         anim.onfinish = () => {
           trace(`camera: shrink moved for ${Date.now() - t0} ms, from ${Math.round(startW)}×${Math.round(startH)} at ${Math.round(start0.left)},${Math.round(start0.top)} (${usable ? 'the frame on the camera screen' : '95% of the screen'}) to ${Math.round(to.width)}×${Math.round(to.height)} at ${Math.round(to.left)},${Math.round(to.top)}`);
-          thumb.remove();
+          thumb.remove(); shade.remove();
         };
-        setTimeout(() => thumb.remove(), 900);
+        setTimeout(() => { thumb.remove(); shade.remove(); }, MOVE_MS + 600);
       };
       setTimeout(() => (window as any).__fh_startShrink?.(), 1500);   // never stuck, whatever the camera says
       return;

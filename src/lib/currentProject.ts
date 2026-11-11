@@ -536,7 +536,28 @@ function traceOnce(msg: string): void {
  * minute in the simulator. The fetch has not begun applying anything at the
  * point it asks, so the push it asks for is safe and must not be turned away.
  */
+/**
+ * NOTHING IS SAVED OR FETCHED WHILE A PHOTO IS LANDING (Roman, 11 Nov, his screen
+ * recording). The picture's move into the card is set to 0.3 s. On the phone it
+ * stood still for a full second and then simply vanished: in that very second
+ * the app started three or four saves, one after the other, and the page had
+ * no time to draw a single step of the move. The saves are not lost and not
+ * skipped — the one that was asked for is made the moment the hold is over,
+ * and the real photo, which arrives a second after the shutter, asks again.
+ */
+let _heldUntil = 0;
+let _heldAsk: number | null = null;
+export function holdSyncFor(ms: number): void { _heldUntil = Math.max(_heldUntil, Date.now() + ms); }
+export function syncIsHeld(): boolean { return Date.now() < _heldUntil; }
+
 export async function flushSyncNow(askedByTheFetch = false): Promise<void> {
+  if (Date.now() < _heldUntil) {
+    if (_heldAsk === null) {
+      trace('  push held: a photo is landing');
+      _heldAsk = window.setTimeout(() => { _heldAsk = null; void flushSyncNow(); }, _heldUntil - Date.now() + 30);
+    }
+    return;
+  }
   // Cancel any pending debounce
   if (_syncDebounceTimer !== null) {
     clearTimeout(_syncDebounceTimer);

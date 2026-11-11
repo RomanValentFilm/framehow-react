@@ -8,7 +8,7 @@ import { showToast, showCamBlockedMsg } from './modals';
 import { fhTrack } from './tracking';
 import { trace } from './syncTrace';
 import { resetToolbarState, captureFrameAnchor, handleOrientationFlip, cancelOrientAnchors } from './view';
-import { flushSyncNow } from './currentProject';
+import { flushSyncNow, holdSyncFor } from './currentProject';
 import { getCamMode, getFramelineLater, wireCamModeButton, shrinkForSaving, fillCrop, loadPhoneShot } from './camMode';
 import type { PhoneShot } from './camMode';
 import { buildToneLUT, applyLUT, satFor } from './camLook';
@@ -106,6 +106,9 @@ async function takeNativePhoto(fid: number): Promise<boolean> {
   const landPreview = (e: any) => {
     if (!e?.jpegBase64 || landing) return;
     previewAt = Date.now();
+    // The flash (0.1 s) and the move (0.3 s) belong to the picture alone — and a little
+    // after, so the card under it is drawn in peace. No freeze any more (11 Nov, "A").
+    holdSyncFor(800);
     if (e.ratioKey && e.ratioKey !== ratioKey) { useStore.setState({ camAspectRatio: e.ratioKey }); void flushSyncNow(); }
     target.aspectRatio = effectiveAspectRatio(fid);
     // where the frame lay on the camera screen (points = CSS px here): the shrink
