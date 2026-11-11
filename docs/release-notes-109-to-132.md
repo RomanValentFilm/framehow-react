@@ -259,3 +259,6 @@ v5.0.225 · #777 (10 Nov, night)
 ## v5.0.226 · #778 (11 Nov, run 667)
 - NOTES on the iPhone: a notes field taller than the free screen is moved by its typing line, not centred (G15). Notes field told off autofill like the setup label.
 - 3x2 on the iPhone, upright projects: star column 15 % smaller, clear of the arrows (G16).
+
+## v5.0.227 · #779 (11 Nov, run 668)
+- NOTES on the iPhone: when the typing line is behind the keyboard it is brought to the middle of the free screen; a visible line is never moved (G15).

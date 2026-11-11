@@ -179,6 +179,9 @@ function typingLine(ta: HTMLTextAreaElement): { top: number; bottom: number } {
   return { top, bottom: top + lineH };
 }
 
+let _movedFor: HTMLTextAreaElement | null = null;
+let _movedPlace = '';
+
 function fit(): void {
   const vv = freeArea();
   if (!vv) return;
@@ -194,7 +197,7 @@ function fit(): void {
   // a sync redraw rebuilt the card under the field, Safari never said so, and
   // the page stayed held. Now the pin is let go the moment no field is being
   // typed into, whoever took the field away.
-  if (!typing) unpinPage();
+  if (!typing) { unpinPage(); _movedFor = null; _movedPlace = ''; }
   if (vv.height < 100) {
     // THE HARDWARE-KEYBOARD SIGNATURE (15 Oct, Roman's logs): the zero reading
     // comes right at focus, before the first key. Safari then scrolls the PAGE
@@ -231,7 +234,14 @@ function fit(): void {
       const ta = active as HTMLTextAreaElement;
       const line = typingLine(ta);
       const top = r.top + line.top, bottom = r.top + line.bottom;
-      if (bottom > low - 12 || top < vv.top + 12) {
+      // ONE MOVE PER TYPING PLACE (11 Nov, Roman: "it starts to flicker
+      // massively"). The move itself makes the screen report a scroll, which
+      // asked again, which moved again — against Safari's own nudge, for ever.
+      // So a place is moved for once: the same field, the same cursor, the
+      // same keyboard. Typing on, or the keyboard changing, is a new place.
+      const place = `${ta.dataset.notesText ?? ''}|${ta.selectionStart}|${Math.round(vv.height)}`;
+      if ((bottom > low - 12 || top < vv.top + 12) && !(ta === _movedFor && place === _movedPlace)) {
+        _movedFor = ta; _movedPlace = place;
         const lineH = line.bottom - line.top;
         const mark = document.createElement('div');
         mark.style.cssText = 'position:absolute;width:1px;visibility:hidden;pointer-events:none;';
