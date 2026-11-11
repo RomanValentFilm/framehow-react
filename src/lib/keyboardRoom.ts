@@ -180,10 +180,14 @@ function isPhoneTouch(): boolean {
 function makeShort(ta: HTMLTextAreaElement, h: number): void {
   if (_short !== ta) { letTall(); _short = ta; _shortWas = ta.style.maxHeight; }
   ta.style.maxHeight = `${h}px`;
+  ta.style.height = `${h}px`;
+  ta.parentElement?.classList.add('fh-typing');   // the card keeps the field's look below it
 }
 function letTall(): void {
   if (!_short) return;
   _short.style.maxHeight = _shortWas;
+  _short.style.height = '';
+  _short.parentElement?.classList.remove('fh-typing');
   _short = null; _shortWas = '';
 }
 
@@ -321,7 +325,7 @@ export function keepBoxesAboveTheKeyboard(): void {
       }
       const top = t.getBoundingClientRect().top;
       const freeMiddle = H * 0.43 / 2;
-      const h = Math.round(Math.min(160, Math.max(70, 2 * (freeMiddle - top))));
+      const h = Math.round(Math.min(160, Math.max(80, 2 * (freeMiddle - top))));
       makeShort(t as HTMLTextAreaElement, h);
       trace(`notes: field touched — card put under the bar (page moved by ${Math.round(window.scrollY - was)}), field at ${Math.round(top)}, made ${h} px tall`);
     }

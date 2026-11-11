@@ -1238,6 +1238,12 @@
     background:#222;border:none;border-radius:var(--radius-sm);
     padding:8px;outline:none;box-sizing:border-box;
   }
+  /* WHILE A NOTE IS TYPED ON A PHONE the field is short (keyboardRoom.ts); the
+     rest of the card keeps the field's look, so no grey shows under it
+     (Roman, 11 Nov). */
+  .notes-body.fh-typing{display:flex;flex-direction:column;}
+  .notes-body.fh-typing .notes-textarea{flex:none;border-bottom-left-radius:0;border-bottom-right-radius:0;}
+  .notes-body.fh-typing::after{content:'';flex:1;min-height:0;background:#222;border-radius:0 0 var(--radius-sm) var(--radius-sm);}
   .notes-textarea::placeholder{color:#555;}
   .notes-textarea:focus{border-color:transparent;}
   /* Table inside notes card */
