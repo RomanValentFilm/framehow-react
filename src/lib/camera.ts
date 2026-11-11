@@ -8,7 +8,7 @@ import { showToast, showCamBlockedMsg } from './modals';
 import { fhTrack } from './tracking';
 import { trace } from './syncTrace';
 import { resetToolbarState, captureFrameAnchor, handleOrientationFlip, cancelOrientAnchors } from './view';
-import { flushSyncNow, holdSyncFor } from './currentProject';
+import { flushSyncNow, holdSyncFor, photoIsLanding } from './currentProject';
 import { getCamMode, getFramelineLater, wireCamModeButton, shrinkForSaving, fillCrop, loadPhoneShot } from './camMode';
 import type { PhoneShot } from './camMode';
 import { buildToneLUT, applyLUT, satFor } from './camLook';
@@ -155,6 +155,13 @@ async function takeNativePhoto(fid: number): Promise<boolean> {
   const kb = Math.round(res.jpegBase64.length * 3 / 4 / 1024);
   const url = `data:image/jpeg;base64,${res.jpegBase64}`;
   if (landing && onFinalPhoto) {
+    // SHOT AFTER SHOT (Roman, 11 Nov: "the DOP will shoot one picture, whoop, it
+    // lands, opens the camera again, doop, another one"). The real photo of a shot
+    // arrives about 1.3 s after its shutter — and may arrive just while the NEXT
+    // shot is travelling into its card. Swapping it in and saving it then would
+    // take that landing's half second away. So it waits until that picture has
+    // landed, a few tenths of a second at most, and goes in right after.
+    while (photoIsLanding()) await new Promise((r) => setTimeout(r, 80));
     onFinalPhoto(landing, url);
     trace(`camera: real photo ${res.width}×${res.height} · ${kb} KB · HDR layer ${res.hdrKept ? 'in' : 'not in'} the file · ratio ${res.ratioKey} · shutter→photo ${res.msCapture ?? '?'} ms · crop+resize ${res.msProcess ?? '?'} ms · replaced the live frame ${Math.round((Date.now() - previewAt) / 100) / 10} s after it`);
     return true;

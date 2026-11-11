@@ -96,9 +96,22 @@ test('confirm email: 150 MB until the link is opened, the box points to the inbo
   await expect(note.getByRole('button', { name: 'Resend mail' }), 'and has the button for it').toBeVisible();
   expect(words, 'and how much it unlocks').toContain(`${FULL} MB`);
   expect(words, 'not the old DELETE NOW advice').not.toContain('DELETE NOW');
+  expect(await note.locator('button').allInnerTexts(), 'two buttons, in this order').toEqual(['Resend mail', 'OK, got it.']);
   // OK only closes it (11 Nov): the way on is the mail, not the project list.
   await desktop.page.getByRole('button', { name: 'GOT IT' }).click();
   await expect(note).toBeHidden({ timeout: 10_000 });
+  await expect(desktop.page.locator('#projectListModal'), 'the project list does not open by itself any more').toBeHidden();
+
+  // THE BUTTON ON THE NOTICE REALLY SENDS THE MAIL (11 Nov — pressed here, since
+  // nobody can fill an unconfirmed account by hand to try it).
+  say('the notice again: its Resend mail button sends the mail');
+  const markMail = await desktop.mark();
+  await desktop.page.evaluate(() => (window as never as { __fh_test: { storageFullNotice(): void } }).__fh_test.storageFullNotice());
+  await expect(note).toBeVisible({ timeout: 10_000 });
+  await note.getByRole('button', { name: 'Resend mail' }).click();
+  await expect(note).toBeHidden({ timeout: 10_000 });
+  await desktop.waitForLogAfter(markMail, 'confirmation mail sent again', 20_000);
+  await expect(desktop.page.getByText('Confirmation mail sent — check your inbox.'), 'and says so').toBeVisible({ timeout: 10_000 });
 
   say('Resend mail: a fresh link; the first one is dead from now on');
   const again = await (await fetch(`${API}/auth/resend-verification`, {
@@ -115,6 +128,10 @@ test('confirm email: 150 MB until the link is opened, the box points to the inbo
   await stale.page.locator('#confirmNo').click();
   await stale.close();
 
+  // Marked BEFORE the link is opened (run 701): the desktop can learn of the
+  // confirmation by its own heartbeat within a second or two — sooner than this
+  // test got round to marking, and then it waited for news that had already come.
+  const markLearn = await desktop.mark();
   say('the fresh link, opened on the iPad: confirmed');
   const ipad = await Device.open(browser, 'ipad', token, true, { openWith: `&verify=${again.dev_token}` });
   await ipad.waitForLog('email confirmed from the link', 30_000);
@@ -122,7 +139,6 @@ test('confirm email: 150 MB until the link is opened, the box points to the inbo
   expect(me.user.email_verified, 'the server has it').toBe(true);
 
   say('the desktop learns it from the next figure, says so, and the waiting picture goes up');
-  const markLearn = await desktop.mark();
   await desktop.push().catch(() => undefined);
   await desktop.waitForLogAfter(markLearn, 'email confirmed —', 60_000);
   await desktop.waitForLogAfter(markLearn, 'room again', 60_000);

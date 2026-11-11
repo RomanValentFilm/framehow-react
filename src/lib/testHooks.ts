@@ -32,7 +32,8 @@ import { deleteFrameForGood, handleMainAction, handleAction, renameFrame, hideFr
 import { createSetup, handleSetupFrameClick, handleStripTagClick } from './setups';
 import { renameNeedTab, renameNeedTable, renameNeedItem, ensureFrameNeeds } from './needs';
 import { saveNow, showSaveToaster, carryOnAsNewProject, openCloudProjectById, beginNewProject, untouchedStrip, makeRestorePoint, listRestorePoints, restoreToPoint, deleteCloudProject, recoverCloudProject, saveRestorePoint, deleteRestorePoint, deleteCloudProjectNow, openProjectList, openAccountSettings, openForgotModal, openAccountModal } from './accountFlow';
-import { storageState } from './storageMeter';
+import { storageState, showStorageFullNotice } from './storageMeter';
+import { closePicts } from './picts';
 import { flushSyncNow, markFrameDirty, getDirtyFrameIds, pullNow } from './currentProject';
 import { openNeedsModal } from './overview';
 import { stampChangedContent } from './changeStamps';
@@ -218,6 +219,10 @@ export interface TestDoor {
   deleteProjectNow(projectId: string): Promise<void>;
   /** The storage meter as the app holds it (#533). */
   storage(): { figure: { used: number; limit: number } | null; full: boolean; noticedStep: number };
+  /** Show the STORAGE FULL notice again, so every button on it can be pressed (11 Nov). */
+  storageFullNotice(): void;
+  /** Close the LIBRARY if it is open (11 Nov). */
+  closeLibrary(): void;
   /** Open the project list (the OPEN button) — resolves when it closes (#533). */
   openProjectList(): Promise<void>;
   /** Open the account settings box (22 Sept). */
@@ -1265,6 +1270,8 @@ export function installTestDoor(): void {
       await deleteCloudProjectNow({ id: projectId, name: '', deleted_at: null } as never);
     },
     storage() { return storageState(); },
+    storageFullNotice() { void showStorageFullNotice(); },
+    closeLibrary() { closePicts(); },
     openProjectList() { return openProjectList(); },
     openAccountSettings() { return openAccountSettings(); },
     openForgotBox() { void openForgotModal(''); },

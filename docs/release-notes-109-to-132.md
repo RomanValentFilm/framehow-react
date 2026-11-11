@@ -353,3 +353,9 @@ v5.0.225 · #777 (10 Nov, night)
 
 ## v5.0.254 · #806 (11 Nov, run 696)
 - CAMERA, OPTION A (Roman): no freeze — the screen goes right after the flash (100 ms, was 390) and the picture travels from where it stood; from the shutter on only the photo on black (no dim surround, buttons, frame line); in the app a black backdrop fades over the whole move, the picture from halfway. Saves and fetches are held for 0.8 s while a photo lands (holdSyncFor) — the move stood still for a second before. Swift part needs the Xcode run.
+
+## v5.0.255 · #807 (11 Nov, run 700; 697–699 red: the hold on a merely open list, then a stale build, then the mail text on an account it could not help)
+- STORAGE FULL: new texts, the number said, buttons OPEN LIBRARY / OPEN PROJECTS (opens in Edit Projects) / Not now; unconfirmed email: Resend mail — only when confirming really gives more room.
+- QUIET WHILE PROJECTS ARE EDITED in the list: nothing sent, fetched or redrawn from Edit Projects until Done / close; then one catch-up.
+- CAMERA: nothing saved or fetched from the shutter until the picture has landed (0.6 s); while the camera is merely open the app works on.
+- LATER (Roman, tired of it tonight): one storage limit, 500 MB for all — drop the 150 MB tier. CAMERA SERIES (his idea): camera stays open, shots collect in a small window, tap it → they land as versions, one save.

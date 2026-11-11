@@ -152,12 +152,36 @@ test('storage: the figure, the 80/90/95 % notices, full, DELETE NOW, and the wai
   expect(full, 'the number is said').toMatch(/Your account's \d+(\.\d+)? MB of storage is full\./);
   expect(full, 'the LIBRARY is named as a way out').toContain('Delete pictures in the LIBRARY, or delete projects you no longer need.');
   expect(full, 'no "beta" any more').not.toContain('beta');
-  await desktop.page.getByRole('button', { name: 'OPEN PROJECTS' }).click();
+  await desktop.page.getByRole('button', { name: "OPEN PROJECTS' LIST" }).click();
   await expect(desktop.page.locator('#projectListModal')).toBeVisible({ timeout: 10_000 });
   await expect(desktop.page.locator('#projectListEdit'), 'the list opens in Edit Projects').toHaveText('Done', { timeout: 10_000 });
   await desktop.page.locator('#projectListClose').click();   // leaves Edit mode
   await desktop.page.locator('#projectListClose').click();   // closes
   await expect(desktop.page.locator('#projectListModal')).toBeHidden({ timeout: 10_000 });
+  // EVERY BUTTON ON THE NOTICE DOES WHAT IT SAYS (11 Nov — Roman cannot fill an
+  // account by hand to try them, so the test presses each one).
+  const again = () => desktop.page.evaluate(() => (window as never as { __fh_test: { storageFullNotice(): void } }).__fh_test.storageFullNotice());
+  const note = desktop.page.locator('#importantNote');
+  say('the notice again: OPEN LIBRARY opens the library');
+  await again();
+  await expect(note).toBeVisible({ timeout: 10_000 });
+  expect(await note.locator('button').allInnerTexts(), 'three buttons, in this order').toEqual(['OPEN LIBRARY', "OPEN PROJECTS' LIST", 'Not now']);
+  const reds = await note.locator('button').evaluateAll((bs) => bs.filter((b) => getComputedStyle(b).backgroundColor === 'rgb(213, 38, 50)').length);
+  expect(reds, 'no button on it is red').toBe(0);
+  expect(await note.evaluate((n) => getComputedStyle(n.firstElementChild as Element).textAlign), 'its text is centred').toBe('center');
+  await note.getByRole('button', { name: 'OPEN LIBRARY' }).click();
+  await expect(note).toBeHidden({ timeout: 10_000 });
+  await expect(desktop.page.locator('#pictsLibrary'), 'THE LIBRARY DID NOT OPEN').toBeVisible({ timeout: 15_000 });
+  await expect(desktop.page.locator('#projectListModal'), 'and the project list stayed shut').toBeHidden();
+  await desktop.page.evaluate(() => (window as never as { __fh_test: { closeLibrary(): void } }).__fh_test.closeLibrary());
+  await expect(desktop.page.locator('#pictsLibrary')).toHaveCount(0, { timeout: 10_000 });
+  say('the notice again: Not now only closes it');
+  await again();
+  await expect(note).toBeVisible({ timeout: 10_000 });
+  await note.getByRole('button', { name: 'Not now' }).click();
+  await expect(note).toBeHidden({ timeout: 10_000 });
+  await expect(desktop.page.locator('#projectListModal'), 'nothing opens').toBeHidden();
+  await expect(desktop.page.locator('#pictsLibrary'), 'nothing opens').toHaveCount(0);
   // Left alone, it must not keep asking: the retry holds while full.
   const markHold = await desktop.mark();
   await desktop.page.waitForTimeout(12_000);

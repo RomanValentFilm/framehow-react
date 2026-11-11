@@ -551,6 +551,8 @@ let _heldAsk: number | null = null;
 /** Hold saves and fetches for this long from now (a new call replaces the old time). */
 export function holdSyncFor(ms: number): void { _heldUntil = Date.now() + ms; }
 export function syncIsHeld(): boolean { return syncHeldBecause() !== null; }
+/** Is a photo on its way into its card right now (shutter → landed)? */
+export function photoIsLanding(): boolean { return Date.now() < _heldUntil; }
 /** The hold is over now: whatever was asked for meanwhile is done at once. */
 export function releaseSync(): void {
   _heldUntil = 0;

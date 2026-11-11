@@ -45,8 +45,16 @@ export function storageAwaitsConfirmation(f: StorageFigure | null = _figure): bo
   return !!f && f.verified === false;
 }
 /** "Confirm your email for 500 MB" — the second line under the figure. */
+/** Does confirming the email give this account more room? Only then is the mail
+ *  mentioned anywhere — the line in the list, the step notices, the full notice
+ *  (11 Nov, run 699: an account whose full allowance is no bigger was told to
+ *  confirm "to get" the very amount it already had). */
+export function confirmingGivesMore(f: StorageFigure | null = _figure): boolean {
+  return !!f && f.verified === false && (f.full_limit ?? 0) > f.limit;
+}
+
 export function confirmHintText(f: StorageFigure | null = _figure): string {
-  if (!f || f.verified !== false) return '';
+  if (!f || !confirmingGivesMore(f)) return '';
   return `Confirm your email for ${mbText(f.full_limit ?? f.limit)} MB`;
 }
 
@@ -96,7 +104,7 @@ export function noteStorage(f: StorageFigure | undefined | null): void {
   if (step <= _noticedStep) return;
   _noticedStep = step;
   const text = `Storage ${pct} % full — ${mbText(f.used)} of ${mbText(f.limit)} MB`
-    + (f.verified === false ? `. Confirm your email (link in your inbox) to unlock ${mbText(f.full_limit ?? f.limit)} MB.` : '');
+    + (confirmingGivesMore(f) ? `. Confirm your email (link in your inbox) to unlock ${mbText(f.full_limit ?? f.limit)} MB.` : '');
   trace(`storage: ${text}`);
   void import('./modals').then(({ showToast }) => showToast(text));
 }
@@ -114,39 +122,40 @@ export function storageFullFromServer(f: (StorageFigure & { pending?: number }) 
   if (_fullSaid) return;
   _fullSaid = true;
   trace(`storage FULL — ${_figure ? `${mbText(_figure.used)} of ${mbText(_figure.limit)} MB` : 'no figure'}; pushes wait until a project is deleted`);
-  void (async () => {
-    const { showImportantNote } = await import('./modals');
-    // THE TEXTS AND THE BUTTONS AS ROMAN AGREED THEM (11 Nov, his own account full
-    // for the first time: "the text is too complicated"; no "beta" any more; the
-    // number said; the LIBRARY as a way out). The buttons take you there, so the
-    // text needs no path. All centred, none red.
-    // Only when confirming really gives more room: an account whose full allowance
-    // is no bigger than what it has (run 699) is not helped by a mail.
-    if (_figure?.verified === false && (_figure.full_limit ?? 0) > _figure.limit) {
-      // THE WAY OUT IS THE MAIL, NOT A DELETE (9 Nov): the smaller allowance is
-      // full; the link in the inbox gives the whole one at once.
-      await showImportantNote(
-        'STORAGE FULL',
-        `Your ${mbText(_figure.limit)} MB of storage is full.\n\n` +
-        `Confirm your email to get ${mbText(_figure.full_limit ?? _figure.limit)} MB. The link is in your inbox.`,
-        { ways: [{ label: 'Resend mail', run: () => { void import('./accountFlow').then((m) => m.resendVerificationMail()); } }] },
-      );
-      return;
-    }
+  void showStorageFullNotice();
+}
+
+/** THE STORAGE FULL NOTICE — the texts and the buttons as Roman agreed them (11 Nov,
+ *  his own account full for the first time: "the text is too complicated"; no
+ *  "beta" any more; the number said; the LIBRARY as a way out). The buttons take
+ *  you there, so the text needs no path. All centred, none red. Its own function
+ *  so the tests can show it again and press every button. */
+export async function showStorageFullNotice(): Promise<void> {
+  const { showImportantNote } = await import('./modals');
+  if (_figure && confirmingGivesMore(_figure)) {
+    // THE WAY OUT IS THE MAIL, NOT A DELETE (9 Nov): the smaller allowance is
+    // full; the link in the inbox gives the whole one at once.
     await showImportantNote(
       'STORAGE FULL',
-      `Your account's ${_figure ? mbText(_figure.limit) : '500'} MB of storage is full.\n\n` +
-      'Your work stays safe on this device, but nothing new uploads until you free space.\n\n' +
-      'Delete pictures in the LIBRARY, or delete projects you no longer need.',
-      {
-        ways: [
-          { label: 'OPEN LIBRARY', run: () => { void import('./picts').then((m) => m.openPicts()); } },
-          { label: 'OPEN PROJECTS', run: () => { void import('./accountFlow').then((m) => m.openProjectList(true)); } },
-        ],
-        okLabel: 'Not now',
-      },
+      `Your ${mbText(_figure.limit)} MB of storage is full.\n\n` +
+      `Confirm your email to get ${mbText(_figure.full_limit ?? _figure.limit)} MB. The link is in your inbox.`,
+      { ways: [{ label: 'Resend mail', run: () => { void import('./accountFlow').then((m) => m.resendVerificationMail()); } }] },
     );
-  })();
+    return;
+  }
+  await showImportantNote(
+    'STORAGE FULL',
+    `Your account's ${_figure ? mbText(_figure.limit) : '500'} MB of storage is full.\n\n` +
+    'Your work stays safe on this device, but nothing new uploads until you free space.\n\n' +
+    'Delete pictures in the LIBRARY, or delete projects you no longer need.',
+    {
+      ways: [
+        { label: 'OPEN LIBRARY', run: () => { void import('./picts').then((m) => m.openPicts()); } },
+        { label: "OPEN PROJECTS' LIST", run: () => { void import('./accountFlow').then((m) => m.openProjectList(true)); } },
+      ],
+      okLabel: 'Not now',
+    },
+  );
 }
 
 /** For tests and the log: the state in one line. */
