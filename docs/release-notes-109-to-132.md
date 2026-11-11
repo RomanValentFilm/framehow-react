@@ -323,3 +323,7 @@ v5.0.225 · #777 (10 Nov, night)
 
 ## v5.0.246 · #798 (11 Nov, run 688)
 - BREAK COLOURS: the palette opens and the colour is painted on the break card in place — no redraw of the whole order (it took about a second per tap on the iPad for 26 shots).
+
+## v5.0.247 · #799 (11 Nov, run 689)
+- SORT BY REDRAW: the pictures are no longer written into the order HTML (a short name per picture; the picture is handed to new cards after the comparison) — a redraw cost about a second on an iPad. Log: "order redrawn: N kept · X ms".
+- A tap on a needs / notes box while a break or another card is being edited only ends that editing.

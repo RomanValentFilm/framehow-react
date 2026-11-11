@@ -1974,6 +1974,16 @@ export function refreshOpenSortView(): void {
   // position as zero and jumps to the edge of the screen. Roman: the break,
   // grabbed on the grey part, "jumps to the side". The next redraw shows it.
   if (el.classList.contains('sort-dragging')) { trace('  not redrawing the order — something is being dragged'); return; }
+  // NOR WHILE A BREAK OR A CARD IS BEING EDITED (Roman, 11 Nov: "while the
+  // break is editable, don't reload the whole shooting order … wait until the
+  // edits are done"). A sync landing in the middle redrew every card under
+  // the hand. Each of the person's own taps — arrows, colour, DONE, a tap
+  // outside — still draws what it changed, and DONE or the tap outside draws
+  // the whole order, with whatever arrived meanwhile.
+  if ((el as any).__activeBreakId != null || (el as any).__activeReorderFid != null) {
+    trace('  not redrawing the order — a break or a card is being edited');
+    return;
+  }
   renderSortEditView(el, orderId);
 }
 

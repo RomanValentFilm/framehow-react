@@ -400,6 +400,14 @@ function withGroupSuffix(projectName: string, radioName: string): string {
   return groupName ? `${projectName} / ${groupName}` : projectName;
 }
 
+/** The group chosen in the export picker, or null for ALL. */
+function exportGroupId(radioName: string): number | null {
+  const val = (document.querySelector(`input[name="${radioName}"]:checked`) as HTMLInputElement)?.value;
+  if (!val || val === 'all') return null;
+  const gid = parseInt(val, 10);
+  return state().groups.some((g) => g.id === gid) ? gid : null;
+}
+
 /** True when a specific group (not ALL) is selected in the export picker */
 function isGroupSelected(radioName: string): boolean {
   const val = (document.querySelector(`input[name="${radioName}"]:checked`) as HTMLInputElement)?.value;
@@ -421,16 +429,21 @@ function getExportFrames(radioName: string): Frame[] {
  * Re-sequence frames for the Sort By layout and return the matching breaks.
  * '__storyflow__' keeps the natural frame order and uses storyFlowBreaks.
  */
-function getSortedExportFrames(orderId: string, pool: Frame[]): { frames: Frame[]; breaks: SortBreak[] } {
+function getSortedExportFrames(orderId: string, pool: Frame[], groupId: number | null = null): { frames: Frame[]; breaks: SortBreak[] } {
   const s = state();
   if (orderId === '__storyflow__') {
     // ONLY THE PROJECT'S OWN BREAKS (#493). Each story flow — the project's and
     // each group's — keeps its own now, all in the one list, told apart by the
     // group written on them. Exporting the project's flow with every group's
     // breaks in it would scatter lunch through the wrong pages.
+    // …AND A GROUP'S EXPORT TAKES THE GROUP'S OWN (Roman, 11 Nov: "the break
+    // colours are not taken over to PDF and Keynote export of groups"). It
+    // was not the colours: a group exported with STORY FLOW was given the
+    // PROJECT's breaks, at the project's positions — never its own. So the
+    // break he had coloured in the group was not in the file at all.
     return {
       frames: pool,
-      breaks: (s.storyFlowBreaks || []).filter((b) => (b.groupId ?? null) === null),
+      breaks: (s.storyFlowBreaks || []).filter((b) => (b.groupId ?? null) === groupId),
     };
   }
   const order = s.sortOrders.find((o) => o.id === orderId);
@@ -756,7 +769,7 @@ export async function runExport(): Promise<void> {
   // Sort By re-sequences the frames and carries section breaks
   let sortBreaks: SortBreak[] = [];
   if (layout === 'sortby') {
-    const seq = getSortedExportFrames(sortOrderId, exportFrames);
+    const seq = getSortedExportFrames(sortOrderId, exportFrames, exportGroupId('exportGroup'));
     exportFrames = seq.frames;
     sortBreaks = seq.breaks;
   }
@@ -1749,7 +1762,7 @@ export async function runPptxExport(): Promise<void> {
   if (!pptxIncludeHidden && !isGroupSelected('pptxGroup')) exportFrames = exportFrames.filter((f: Frame) => !f.hidden);
   let sortBreaks: SortBreak[] = [];
   if (layout === 'sortby') {
-    const seq = getSortedExportFrames(sortOrderId, exportFrames);
+    const seq = getSortedExportFrames(sortOrderId, exportFrames, exportGroupId('pptxGroup'));
     exportFrames = seq.frames;
     sortBreaks = seq.breaks;
   }
