@@ -265,3 +265,7 @@ v5.0.225 · #777 (10 Nov, night)
 
 ## v5.0.228 · #780 (11 Nov, run 669)
 - NOTES on the iPhone: one move per typing place (the flicker of #779).
+
+## v5.0.229 · #781 (11 Nov, run 670)
+- iPhone sideways, upright projects: strip views give the picture the same height as 3x2 (half the screen); star column 15 % smaller in strips too (G16, done — Roman: happy with the card height).
+- NOTES: the move waits until the screen has come to rest; log line "notes: typing line at …".

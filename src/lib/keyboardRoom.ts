@@ -186,9 +186,7 @@ let _settle: number | null = null;
 /** A tall text area on the page, keyboard up: when its typing line is outside
  *  the free area, the line is brought to the middle of it. One move per typing
  *  place — the same field, cursor and keyboard are never moved twice, so the
- *  move cannot chase its own scroll and a hand scroll is left alone. The
- *  browser does the moving: a throw-away mark on the typing line is scrolled
- *  into view, so whichever column holds the field is the one that scrolls. */
+ *  move cannot chase its own scroll and a hand scroll is left alone. */
 function placeTypingLine(): void {
   const vv = freeArea();
   const ta = document.activeElement as HTMLTextAreaElement | null;
@@ -202,18 +200,16 @@ function placeTypingLine(): void {
   const place = `${ta.dataset.notesText ?? ''}|${ta.selectionStart}|${Math.round(vv.height)}`;
   if (ta === _movedFor && place === _movedPlace) return;
   _movedFor = ta; _movedPlace = place;
-  trace(`notes: typing line at ${Math.round(top)} outside the free screen ${Math.round(vv.top)}–${Math.round(low)} (window ${window.innerHeight}) — brought to the middle`);
+  // THE SCREEN ITSELF IS MOVED, NOT THE COLUMN (11 Nov, Roman's log: "typing
+  // line at 116, free screen 258–508" — and nothing happened). Safari had slid
+  // the SCREEN down over the page, away from the line; the line sat near the
+  // top of the page, where the page has nothing left to scroll, so asking the
+  // page to scroll did nothing. Sliding the window by the missing distance
+  // moves the screen back over the line.
   const lineH = line.bottom - line.top;
-  const mark = document.createElement('div');
-  mark.style.cssText = 'position:absolute;width:1px;visibility:hidden;pointer-events:none;';
-  mark.style.left = `${ta.offsetLeft}px`;
-  mark.style.top = `${ta.offsetTop + line.top}px`;
-  mark.style.height = `${lineH}px`;
-  const underKeys = Math.max(0, window.innerHeight - low);
-  mark.style.scrollMarginBottom = `${underKeys + Math.max(0, (vv.height - lineH) / 2)}px`;
-  ta.parentElement?.appendChild(mark);
-  mark.scrollIntoView({ block: 'end', behavior: 'auto' });
-  mark.remove();
+  const by = Math.round((top - vv.top) - Math.max(0, (vv.height - lineH) / 2));
+  trace(`notes: typing line at ${Math.round(top)} outside the free screen ${Math.round(vv.top)}–${Math.round(low)} (window ${window.innerHeight}, page at ${Math.round(window.scrollY)}) — sliding the screen by ${by}`);
+  window.scrollBy(0, by);
 }
 
 let _movedFor: HTMLTextAreaElement | null = null;
