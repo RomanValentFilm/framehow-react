@@ -537,8 +537,9 @@ function traceOnce(msg: string): void {
  * point it asks, so the push it asks for is safe and must not be turned away.
  */
 /**
- * NOTHING IS SAVED OR FETCHED WHILE A PHOTO IS LANDING (Roman, 11 Nov, his screen
- * recording). The picture's move into the card is set to 0.3 s. On the phone it
+ * NOTHING IS SAVED OR FETCHED FROM THE SHUTTER UNTIL THE PICTURE HAS LANDED (Roman,
+ * 11 Nov) — see camera.ts, takeNativePhoto. Not while the camera is merely
+ * open: then the app works on as usual. His screen recording showed why: The picture's move into the card is set to 0.3 s. On the phone it
  * stood still for a full second and then simply vanished: in that very second
  * the app started three or four saves, one after the other, and the page had
  * no time to draw a single step of the move. The saves are not lost and not
@@ -547,14 +548,63 @@ function traceOnce(msg: string): void {
  */
 let _heldUntil = 0;
 let _heldAsk: number | null = null;
-export function holdSyncFor(ms: number): void { _heldUntil = Math.max(_heldUntil, Date.now() + ms); }
-export function syncIsHeld(): boolean { return Date.now() < _heldUntil; }
+/** Hold saves and fetches for this long from now (a new call replaces the old time). */
+export function holdSyncFor(ms: number): void { _heldUntil = Date.now() + ms; }
+export function syncIsHeld(): boolean { return syncHeldBecause() !== null; }
+/** The hold is over now: whatever was asked for meanwhile is done at once. */
+export function releaseSync(): void {
+  _heldUntil = 0;
+  if (_heldAsk !== null) { clearTimeout(_heldAsk); _heldAsk = null; void flushSyncNow(); }
+}
+
+/**
+ * …AND WHILE PROJECTS ARE BEING EDITED IN THE LIST (Roman, 11 Nov, his account full for the
+ * first time: "when you start deleting projects, the app starts to jump and
+ * reload … it should stay in the opened projects modal and let the user work,
+ * until he pressed DONE"). Every DELETE NOW frees space, and the moment space
+ * was free the app sent what had been waiting and fetched again — redrawing
+ * every shot behind the list, after each project. Now nothing is sent or
+ * fetched from Edit Projects until Done or closing the list (the two "are
+ * you sure" questions in between included); then everything goes at once.
+ * Should the list ever vanish without saying so, the hold ends by itself
+ * twenty seconds later.
+ */
+let _listOpen = false;
+let _listUnseenSince = 0;
+export function setProjectListOpen(open: boolean): void {
+  const was = _listOpen;
+  _listOpen = open;
+  _listUnseenSince = 0;
+  if (was && !open) { trace('  editing projects is done — catching up'); void flushSyncNow(); }
+}
+/** Why nothing may be saved or fetched just now — or null. */
+export function syncHeldBecause(): string | null {
+  if (Date.now() < _heldUntil) return 'a photo is landing';
+  if (_listOpen) {
+    const m = document.getElementById('projectListModal');
+    const seen = !!m && !m.classList.contains('hidden');
+    if (seen) _listUnseenSince = 0;
+    else {
+      if (!_listUnseenSince) _listUnseenSince = Date.now();
+      if (Date.now() - _listUnseenSince > 20000) { _listOpen = false; _listUnseenSince = 0; }
+    }
+    if (_listOpen) return 'projects are being edited in the list';
+  }
+  return null;
+}
 
 export async function flushSyncNow(askedByTheFetch = false): Promise<void> {
-  if (Date.now() < _heldUntil) {
+  const held = syncHeldBecause();
+  if (held) {
     if (_heldAsk === null) {
-      trace('  push held: a photo is landing');
-      _heldAsk = window.setTimeout(() => { _heldAsk = null; void flushSyncNow(); }, _heldUntil - Date.now() + 30);
+      trace(`  push held: ${held}`);
+      // Asked again when the hold should be over — and again, while it lasts.
+      const again = (): void => {
+        if (syncHeldBecause()) { _heldAsk = window.setTimeout(again, 700); return; }
+        _heldAsk = null;
+        void flushSyncNow();
+      };
+      _heldAsk = window.setTimeout(again, 700);
     }
     return;
   }

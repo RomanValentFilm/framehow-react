@@ -106,9 +106,13 @@ async function takeNativePhoto(fid: number): Promise<boolean> {
   const landPreview = (e: any) => {
     if (!e?.jpegBase64 || landing) return;
     previewAt = Date.now();
-    // The flash (0.1 s) and the move (0.3 s) belong to the picture alone — and a little
-    // after, so the card under it is drawn in peace. No freeze any more (11 Nov, "A").
-    holdSyncFor(800);
+    // FROM THE SHUTTER UNTIL THE PICTURE HAS LANDED, NOTHING ELSE HAPPENS (Roman,
+    // 11 Nov: "after you took a shot until it lands … no fetching … When the camera
+    // is open, things can still happen in the background"). The flash and the move
+    // take about 0.4 s from here; a little is added so the card under the picture
+    // is drawn in peace. Saving and fetching go on while the camera is merely open,
+    // and again the moment the picture is in its card.
+    holdSyncFor(600);
     if (e.ratioKey && e.ratioKey !== ratioKey) { useStore.setState({ camAspectRatio: e.ratioKey }); void flushSyncNow(); }
     target.aspectRatio = effectiveAspectRatio(fid);
     // where the frame lay on the camera screen (points = CSS px here): the shrink

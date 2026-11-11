@@ -92,12 +92,13 @@ test('confirm email: 150 MB until the link is opened, the box points to the inbo
   await expect(note).toBeVisible({ timeout: 10_000 });
   const words = (await note.textContent()) ?? '';
   say(`   the box: "${words.replace(/\s+/g, ' ').trim().slice(0, 160)}…"`);
-  expect(words, 'the box names the way out: the mail').toContain("confirm your account's email");
+  expect(words, 'the box names the way out: the mail').toContain('Confirm your email to get');
+  await expect(note.getByRole('button', { name: 'Resend mail' }), 'and has the button for it').toBeVisible();
   expect(words, 'and how much it unlocks').toContain(`${FULL} MB`);
   expect(words, 'not the old DELETE NOW advice').not.toContain('DELETE NOW');
+  // OK only closes it (11 Nov): the way on is the mail, not the project list.
   await desktop.page.getByRole('button', { name: 'GOT IT' }).click();
-  await expect(desktop.page.locator('#projectListModal')).toBeVisible({ timeout: 10_000 });
-  await desktop.page.locator('#projectListClose').click();
+  await expect(note).toBeHidden({ timeout: 10_000 });
 
   say('Resend mail: a fresh link; the first one is dead from now on');
   const again = await (await fetch(`${API}/auth/resend-verification`, {

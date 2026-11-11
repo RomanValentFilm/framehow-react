@@ -730,7 +730,9 @@ export function openTextModal(
  * would wrongly imply a choice.
  */
 export function showImportantNote(headline: string, body: string,
-  opts?: { centred?: boolean; action?: { label: string; run: () => void }; okLabel?: string }): Promise<void> {
+  opts?: { centred?: boolean; action?: { label: string; run: () => void }; okLabel?: string;
+           /** Plain grey buttons above the closing one, each a way on (11 Nov). None is red. */
+           ways?: Array<{ label: string; run: () => void }> }): Promise<void> {
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
     overlay.id = 'importantNote';            // so the simulator can read what it says (12 Oct)
@@ -751,7 +753,7 @@ export function showImportantNote(headline: string, body: string,
 
     const p = document.createElement('div');
     p.textContent = body;
-    p.style.cssText = 'color:#fff;font-size:13px;line-height:1.5;margin-bottom:20px;';
+    p.style.cssText = 'color:#fff;font-size:13px;line-height:1.5;margin-bottom:20px;white-space:pre-line;';
     box.appendChild(p);
 
     // A WAY ON, where there is one (10 Nov): the red button does the thing the
@@ -765,6 +767,15 @@ export function showImportantNote(headline: string, body: string,
         'border-radius:8px;color:#fff;font-size:14px;font-weight:600;cursor:pointer;margin-bottom:10px;';
       go.onclick = () => { overlay.remove(); resolve(); opts.action!.run(); };
       box.appendChild(go);
+    }
+    for (const way of opts?.ways ?? []) {
+      const b = document.createElement('button');
+      b.textContent = way.label;
+      b.style.cssText =
+        'display:block;width:100%;padding:12px;background:#2a2a2a;border:1px solid #555;' +
+        'border-radius:8px;color:#fff;font-size:14px;cursor:pointer;margin-bottom:10px;';
+      b.onclick = () => { overlay.remove(); resolve(); way.run(); };
+      box.appendChild(b);
     }
     const ok = document.createElement('button');
     ok.textContent = opts?.okLabel ?? 'OK, got it.';

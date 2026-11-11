@@ -146,9 +146,18 @@ test('storage: the figure, the 80/90/95 % notices, full, DELETE NOW, and the wai
   expect(st.full, 'the app knows it is full').toBe(true);
   // The STORAGE FULL note is on screen, and behind it the project list opened by itself.
   await expect(desktop.page.getByText('STORAGE FULL', { exact: true })).toBeVisible({ timeout: 10_000 });
-  await desktop.page.getByRole('button', { name: 'GOT IT' }).click();
+  // The box says the number and both ways out, and its buttons take you there
+  // (11 Nov): OPEN PROJECTS opens the list straight in Edit Projects.
+  const full = (await desktop.page.locator('#importantNote').innerText()).replace(/\s+/g, ' ');
+  expect(full, 'the number is said').toMatch(/Your account's \d+(\.\d+)? MB of storage is full\./);
+  expect(full, 'the LIBRARY is named as a way out').toContain('Delete pictures in the LIBRARY, or delete projects you no longer need.');
+  expect(full, 'no "beta" any more').not.toContain('beta');
+  await desktop.page.getByRole('button', { name: 'OPEN PROJECTS' }).click();
   await expect(desktop.page.locator('#projectListModal')).toBeVisible({ timeout: 10_000 });
-  await desktop.page.locator('#projectListClose').click();
+  await expect(desktop.page.locator('#projectListEdit'), 'the list opens in Edit Projects').toHaveText('Done', { timeout: 10_000 });
+  await desktop.page.locator('#projectListClose').click();   // leaves Edit mode
+  await desktop.page.locator('#projectListClose').click();   // closes
+  await expect(desktop.page.locator('#projectListModal')).toBeHidden({ timeout: 10_000 });
   // Left alone, it must not keep asking: the retry holds while full.
   const markHold = await desktop.mark();
   await desktop.page.waitForTimeout(12_000);

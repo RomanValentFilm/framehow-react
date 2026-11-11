@@ -71,7 +71,8 @@ import {
   projectIsBackFromTheDead,
   noteTheProjectIsGone,
   noteTheProjectIsAlive,
-  syncIsHeld,
+  syncHeldBecause,
+  setProjectListOpen,
 } from './currentProject';
 import { makeGoneRegister, whatWentWrong } from './projectGone';
 import { busyNow, whenQuiet } from './quietMoment';
@@ -829,7 +830,7 @@ async function askAboutTheDeletedProject(projectId: string): Promise<void> {
   await openProjectList();
 }
 
-export async function openProjectList(): Promise<void> {
+export async function openProjectList(startInEdit = false): Promise<void> {
   if (!isLoggedIn()) {
     await openLoginThenContinue();
     if (!isLoggedIn()) return;
@@ -891,6 +892,11 @@ export async function openProjectList(): Promise<void> {
 
     function setEditModeUI(on: boolean): void {
       editBtn.textContent = on ? 'Done' : 'Edit Projects';
+      // WHILE PROJECTS ARE BEING EDITED — deleted, above all — nothing is sent,
+      // fetched or redrawn behind the list (Roman, 11 Nov); Done, or closing the
+      // list, lets the app catch up once. Only in Edit: a list that is merely
+      // open must not hold the app's saving back (run 697 showed it would).
+      setProjectListOpen(on);
       if (on) {
         editBtn.classList.add('btn-danger');
       } else {
@@ -909,6 +915,7 @@ export async function openProjectList(): Promise<void> {
       setEditModeUI(false);
       window.removeEventListener('fh:storage', onStorage);
       hide('projectListModal');
+      setProjectListOpen(false);
       resolve();
     }
     closeBtn.onclick = () => {
@@ -1145,6 +1152,8 @@ export async function openProjectList(): Promise<void> {
         projects = res.projects;
         noteStorage(res.storage);
         void saveProjectListCache(projects);   // so the list is not empty offline
+        // Opened from STORAGE FULL: straight into Edit Projects, DELETE NOW showing.
+        if (startInEdit) { editMode = true; setEditModeUI(true); }
         renderList();
       } catch (e) {
         // No connection: still show whatever is held on this device.
@@ -2208,7 +2217,7 @@ async function confirmEmailFromLink(token: string): Promise<void> {
 /** When "Resend mail" last went, so the link can say so for a minute. */
 let _resendSentAt = 0;
 
-async function resendVerificationMail(): Promise<boolean> {
+export async function resendVerificationMail(): Promise<boolean> {
   if (!isLoggedIn()) { showToast('Please sign in first.'); return false; }
   try {
     const app = `${window.location.origin}${import.meta.env.BASE_URL}`.replace(/\/+$/, '');
@@ -6658,7 +6667,7 @@ async function tryPullFromCloud(force = false): Promise<void> {
   // early exit is traced here, so a pull can never again vanish unseen.
   if (pullInFlight) { quietly('  not fetching: another fetch is still running'); return; }
   // NOR WHILE A PHOTO IS LANDING (11 Nov — see holdSyncFor): the next heartbeat brings it.
-  if (syncIsHeld()) { quietly('  not fetching: a photo is landing'); return; }
+  { const why = syncHeldBecause(); if (why) { quietly(`  not fetching: ${why}`); return; } }
   // NOT WHILE THE CAMERA IS OPEN (25 Oct): a pull redraws every card, which
   // stalls the viewfinder for a quarter of a second each time. It waits; the
   // next heartbeat after the camera closes brings everything.

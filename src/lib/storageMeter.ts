@@ -116,25 +116,36 @@ export function storageFullFromServer(f: (StorageFigure & { pending?: number }) 
   trace(`storage FULL — ${_figure ? `${mbText(_figure.used)} of ${mbText(_figure.limit)} MB` : 'no figure'}; pushes wait until a project is deleted`);
   void (async () => {
     const { showImportantNote } = await import('./modals');
-    if (_figure?.verified === false) {
-      // THE WAY OUT IS THE MAIL, NOT A DELETE (9 Nov): the 150 MB allowance is
-      // full; the link in the inbox gives the whole 500 at once.
+    // THE TEXTS AND THE BUTTONS AS ROMAN AGREED THEM (11 Nov, his own account full
+    // for the first time: "the text is too complicated"; no "beta" any more; the
+    // number said; the LIBRARY as a way out). The buttons take you there, so the
+    // text needs no path. All centred, none red.
+    // Only when confirming really gives more room: an account whose full allowance
+    // is no bigger than what it has (run 699) is not helped by a mail.
+    if (_figure?.verified === false && (_figure.full_limit ?? 0) > _figure.limit) {
+      // THE WAY OUT IS THE MAIL, NOT A DELETE (9 Nov): the smaller allowance is
+      // full; the link in the inbox gives the whole one at once.
       await showImportantNote(
         'STORAGE FULL',
-        `Your current ${mbText(_figure.limit)} MB storage is full — to get ${mbText(_figure.full_limit ?? _figure.limit)} MB, confirm your account's email — the link is in your inbox. ` +
-        'If you cannot find the email, open MENU > OPEN PROJECT and press "Resend mail" under the storage line.',
+        `Your ${mbText(_figure.limit)} MB of storage is full.\n\n` +
+        `Confirm your email to get ${mbText(_figure.full_limit ?? _figure.limit)} MB. The link is in your inbox.`,
+        { ways: [{ label: 'Resend mail', run: () => { void import('./accountFlow').then((m) => m.resendVerificationMail()); } }] },
       );
-    } else {
-      await showImportantNote(
-        'STORAGE FULL',
-        'The beta version of Framehow has limited storage, and this account is full. ' +
-        'Your work stays safe on this device, but it cannot upload until space is freed. ' +
-        'Open the project list, press Edit Projects and use DELETE NOW on a project you no longer need — ' +
-        'or Delete it first and then DELETE NOW on the greyed row.',
-      );
+      return;
     }
-    const { openProjectList } = await import('./accountFlow');
-    void openProjectList();
+    await showImportantNote(
+      'STORAGE FULL',
+      `Your account's ${_figure ? mbText(_figure.limit) : '500'} MB of storage is full.\n\n` +
+      'Your work stays safe on this device, but nothing new uploads until you free space.\n\n' +
+      'Delete pictures in the LIBRARY, or delete projects you no longer need.',
+      {
+        ways: [
+          { label: 'OPEN LIBRARY', run: () => { void import('./picts').then((m) => m.openPicts()); } },
+          { label: 'OPEN PROJECTS', run: () => { void import('./accountFlow').then((m) => m.openProjectList(true)); } },
+        ],
+        okLabel: 'Not now',
+      },
+    );
   })();
 }
 

@@ -350,3 +350,6 @@ v5.0.225 · #777 (10 Nov, night)
 
 ## v5.0.253 · #805 (11 Nov, run 695)
 - CAMERA LANDING: the travelling copy keeps the picture's own shape (was the card's shape, stretched); move 0.3 s.
+
+## v5.0.254 · #806 (11 Nov, run 696)
+- CAMERA, OPTION A (Roman): no freeze — the screen goes right after the flash (100 ms, was 390) and the picture travels from where it stood; from the shutter on only the photo on black (no dim surround, buttons, frame line); in the app a black backdrop fades over the whole move, the picture from halfway. Saves and fetches are held for 0.8 s while a photo lands (holdSyncFor) — the move stood still for a second before. Swift part needs the Xcode run.
