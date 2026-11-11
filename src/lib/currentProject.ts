@@ -1158,9 +1158,11 @@ async function runAutosave(): Promise<void> {
     // noticing — almost always because the device has no room left. Say so.
     // ONE MORE TRY FIRST when it is not a matter of room (11 Nov): iOS closes
     // the database behind the app (camera on top, app in the background) and
-    // the very next save works. Only a second failure in a row is told.
+    // the very next save works. Only a THIRD failure in a row is told (Roman's
+    // phone, 19:40: two failed 3 s apart while iOS restarted its storage, the
+    // next one worked — and the box had already said "not saved").
     const noRoom = e instanceof DOMException && (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED');
-    if (noRoom || _deviceSaveFailed >= 2) void reportStorageFailure(e);
+    if (noRoom || _deviceSaveFailed >= 3) void reportStorageFailure(e);
     else scheduleAutosave();
   } finally {
     _autosaveInFlight = false;
