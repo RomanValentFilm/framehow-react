@@ -2000,12 +2000,45 @@ function unlockBodyAfterBreakRename(): void {
 }
 
 /**
+ * THE PICTURES ARE NOT WRITTEN INTO THE HTML (Roman, 11 Nov, his iPad: every
+ * tap in a shooting order "takes time — it's not immediate"; on the Mac it
+ * was fast).
+ *
+ * A card's HTML carried its three pictures as text — each one hundreds of
+ * thousands of characters. To find out that 36 of 37 cards had NOT changed,
+ * every redraw wrote all of that out, had the browser read it all back in,
+ * and read it out once more per card to compare: megabytes, about a second on
+ * an iPad, after every tap and every sync. The HTML now carries a short NAME
+ * for each picture; the picture itself is handed to the few cards that are
+ * actually new, after the comparison.
+ *
+ * The name changes when the picture does (its length and two samples of it),
+ * so a card with a new picture still counts as changed.
+ */
+const _pictures = new Map<string, string>();
+function pictureRef(kind: string, fid: number, src: string): string {
+  const name = `${kind}${fid}:${src.length}:${src.slice(-28)}${src.slice(96, 112)}`.replace(/"/g, '');
+  _pictures.set(name, src);
+  return `data-fh-pic="${name}"`;
+}
+function handOutPictures(root: HTMLElement): void {
+  root.querySelectorAll('img[data-fh-pic]').forEach((img) => {
+    const im = img as HTMLImageElement;
+    if (im.getAttribute('src')) return;             // a kept card already has it
+    const src = _pictures.get(im.dataset.fhPic!);
+    if (src) im.src = src;
+  });
+  _pictures.clear();
+}
+
+/**
  * Put `html` into `el`, but keep every card and break whose built HTML has
  * not changed since it was last built — the node itself, with the thumbnail
  * the raster step painted into it. Reused nodes are CLONED so that no click
  * handler is bound twice when the events are wired again afterwards.
  */
 function reuseUnchangedItems(el: HTMLElement, html: string): void {
+  const began = performance.now();
   const fresh = document.createElement('div');
   fresh.innerHTML = html;
   const keyOf = (n: Element): string | null =>
@@ -2031,7 +2064,8 @@ function reuseUnchangedItems(el: HTMLElement, html: string): void {
     }
   }
   el.replaceChildren(...Array.from(fresh.childNodes));
-  if (reused) trace(`  order redrawn: ${reused} card(s) kept as they were`);
+  handOutPictures(el);
+  if (reused) trace(`  order redrawn: ${reused} card(s) kept as they were · ${Math.round(performance.now() - began)} ms`);
 }
 
 /** Whatever scrolls around this element — a column, or nothing (the window). */
@@ -2353,16 +2387,16 @@ function renderFrameSetCard(f: Frame, idx: number, activeReorderFid: number | nu
         </div>
         <div class="sort-card-col-main">
           <div class="sort-card-main-img" ${mainHasStrokes ? `data-raster-main="${f.id}"` : ''}>
-            ${f.src ? `<img src="${f.src}" />` : mainHasStrokes ? `<div class="sort-card-empty sort-main-placeholder">MAIN</div>` : `<div class="sort-card-empty">MAIN</div>`}
+            ${f.src ? `<img ${pictureRef('m', f.id, f.src)} />` : mainHasStrokes ? `<div class="sort-card-empty sort-main-placeholder">MAIN</div>` : `<div class="sort-card-empty">MAIN</div>`}
           </div>
           <div class="sort-card-desc">${descText}</div>
         </div>
         <div class="sort-card-col-strips">
           <div class="sort-card-strip-img" ${verHasStrokes ? `data-raster-ver="${f.id}"` : ''}>
-            ${verImg ? `<img src="${verImg}" />` : verHasStrokes ? `<div class="sort-card-empty sort-ver-placeholder">VERSN</div>` : `<div class="sort-card-empty">VERSN</div>`}
+            ${verImg ? `<img ${pictureRef('v', f.id, verImg)} />` : verHasStrokes ? `<div class="sort-card-empty sort-ver-placeholder">VERSN</div>` : `<div class="sort-card-empty">VERSN</div>`}
           </div>
           <div class="sort-card-strip-img" ${sketchHasStrokes ? `data-sketch-fid="${f.id}"` : ''}>
-            ${sketchImg ? `<img src="${sketchImg}" />` : sketchHasStrokes ? `<div class="sort-card-empty sort-sketch-placeholder">SKETCH</div>` : `<div class="sort-card-empty">SKETCH</div>`}
+            ${sketchImg ? `<img ${pictureRef('s', f.id, sketchImg)} />` : sketchHasStrokes ? `<div class="sort-card-empty sort-sketch-placeholder">SKETCH</div>` : `<div class="sort-card-empty">SKETCH</div>`}
           </div>
         </div>
         <div class="sort-card-col-needs">${needsHtml}</div>
@@ -2885,6 +2919,11 @@ function wireEditViewEvents(el: HTMLElement, orderId: string): void {
     box.addEventListener('click', (e) => {
       const b = box as HTMLElement;
       if (b.closest('.sort-card-active')) return;
+      // WHILE A BREAK (OR ANOTHER CARD) IS BEING EDITED, A TAP OUT HERE ONLY
+      // ENDS THAT (Roman, 11 Nov): "a click outside the editable break has to
+      // go out from its editing mode" — and must not open NEEDS on the way.
+      // Nothing is stopped here, so the tap reaches the rule that ends it.
+      if ((el as any).__activeBreakId != null || (el as any).__activeReorderFid != null) return;
       e.stopPropagation();
       const isNotes = b.dataset.sortOpenNotes !== undefined;
       const fid = parseInt((isNotes ? b.dataset.sortOpenNotes : b.dataset.sortOpenNeeds)!, 10);

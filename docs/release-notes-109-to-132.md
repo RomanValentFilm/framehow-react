@@ -320,3 +320,6 @@ v5.0.225 · #777 (10 Nov, night)
 - BREAK COLOURS (G14): eleven colours + the grey (last, the start colour); round button left of the arrows while the break is edited, palette row inside the break; name white on dark / dark on light; `color` on the break, travels with it (shooting order, story flow, groups); PDF + Keynote paint it. Test e2e/65 (run 686 red was the test: a space in the compared text).
 - SORT BY EXPORTS (G18): PDF + Keynote card as on screen — note box, four blocks in fixed places on the lighter shade, version/sketch 20 %.
 - Log line "by hand: dragged …" names the shot that was in the hand.
+
+## v5.0.246 · #798 (11 Nov, run 688)
+- BREAK COLOURS: the palette opens and the colour is painted on the break card in place — no redraw of the whole order (it took about a second per tap on the iPad for 26 shots).
