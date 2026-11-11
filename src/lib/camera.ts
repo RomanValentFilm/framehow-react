@@ -8,6 +8,7 @@ import { showToast, showCamBlockedMsg } from './modals';
 import { fhTrack } from './tracking';
 import { trace } from './syncTrace';
 import { resetToolbarState, captureFrameAnchor, handleOrientationFlip, cancelOrientAnchors } from './view';
+import { getPictureReady } from './drawing';
 import { flushSyncNow, holdSyncFor, photoIsLanding } from './currentProject';
 import { getCamMode, getFramelineLater, wireCamModeButton, shrinkForSaving, fillCrop, loadPhoneShot } from './camMode';
 import type { PhoneShot } from './camMode';
@@ -162,6 +163,11 @@ async function takeNativePhoto(fid: number): Promise<boolean> {
     // take that landing's half second away. So it waits until that picture has
     // landed, a few tenths of a second at most, and goes in right after.
     while (photoIsLanding()) await new Promise((r) => setTimeout(r, 80));
+    // …and it is unpacked BEFORE it is put on the card (see getPictureReady), so the
+    // swap from the live frame to the real photo does not hold the page.
+    const unpackFrom = Date.now();
+    await getPictureReady(url);
+    trace(`camera: real photo unpacked in ${Date.now() - unpackFrom} ms, before the swap`);
     onFinalPhoto(landing, url);
     trace(`camera: real photo ${res.width}×${res.height} · ${kb} KB · HDR layer ${res.hdrKept ? 'in' : 'not in'} the file · ratio ${res.ratioKey} · shutter→photo ${res.msCapture ?? '?'} ms · crop+resize ${res.msProcess ?? '?'} ms · replaced the live frame ${Math.round((Date.now() - previewAt) / 100) / 10} s after it`);
     return true;

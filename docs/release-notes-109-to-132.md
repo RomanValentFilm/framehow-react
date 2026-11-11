@@ -359,3 +359,6 @@ v5.0.225 · #777 (10 Nov, night)
 - QUIET WHILE PROJECTS ARE EDITED in the list: nothing sent, fetched or redrawn from Edit Projects until Done / close; then one catch-up.
 - CAMERA: nothing saved or fetched from the shutter until the picture has landed (0.6 s); while the camera is merely open the app works on.
 - LATER (Roman, tired of it tonight): one storage limit, 500 MB for all — drop the 150 MB tier. CAMERA SERIES (his idea): camera stays open, shots collect in a small window, tap it → they land as versions, one save.
+
+## v5.0.256 · #808 (11 Nov, run 702; 701 red: the test marked too late)
+- STORAGE notices: every button pressed by a test; button named OPEN PROJECTS' LIST; the mail is mentioned only where confirming gives more room (one rule). A previous photo waits while the next one lands.

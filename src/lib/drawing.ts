@@ -160,6 +160,20 @@ function decodedImage(src: string): HTMLImageElement {
   return img;
 }
 
+/**
+ * GET A PICTURE READY BEFORE IT IS SHOWN (Roman, 11 Nov: the moment the camera's
+ * live frame is swapped for the real photo, "that is the frozen moment — can we
+ * avoid that?"). A 2400 px photo takes the phone a few tenths of a second to
+ * unpack, and it did that at the instant of drawing, with the whole page
+ * waiting. Here it is unpacked beforehand and off to the side; the card then
+ * draws a picture that is already ready. Never throws: a picture that will not
+ * unpack is simply drawn the old way.
+ */
+export async function getPictureReady(src: string): Promise<void> {
+  const img = decodedImage(src);
+  try { await img.decode(); } catch { /* drawn the old way */ }
+}
+
 /** True once the picture can actually be painted. */
 function ready(img: HTMLImageElement): boolean {
   return img.complete && img.naturalWidth > 0;
