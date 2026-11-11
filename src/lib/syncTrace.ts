@@ -20,7 +20,7 @@ import { APP_VERSION } from '../store/state';
  *  It is bumped BY HAND, which is why it sat at #309 through #310, #311, #312
  *  and #313 — telling the screen a version of events that was four changes out
  *  of date. Worth remembering the next time it is trusted in a log. */
-export const SYNC_BUILD_TAG = '#811';
+export const SYNC_BUILD_TAG = '#812';
 
 let box: HTMLElement | null = null;
 
@@ -214,11 +214,38 @@ export function markLanding(): void { _landedAt = Date.now(); }
 /** ms since the last photo's live frame came (a very big number when none has). */
 export function msSinceLanding(): number { return _landedAt ? Date.now() - _landedAt : Number.MAX_SAFE_INTEGER; }
 
+// THE LOG SURVIVES A RESTART OF THE PAGE (11 Nov, Roman's phone: after a photo the
+// app came back in 3x2 and the log began at that moment — the page had started
+// anew in the middle of the shot, and everything that led to it was gone). The
+// newest lines are kept on the device; after a restart they stand below a line
+// that says so. Camera lines are written at once, the rest twice a second.
+const KEPT_KEY = 'fh_log_before';
+let _keepTimer: number | null = null;
+function writeKept(): void {
+  _keepTimer = null;
+  try { localStorage.setItem(KEPT_KEY, JSON.stringify(_recorded.slice(0, 150))); } catch { /* no room: the log is not worth it */ }
+}
+function keepAcrossRestart(now: boolean): void {
+  if (!_inShell) return;
+  if (now) { if (_keepTimer !== null) { clearTimeout(_keepTimer); } writeKept(); return; }
+  if (_keepTimer === null) _keepTimer = window.setTimeout(writeKept, 500);
+}
+// Only in the app from the store: there the page can be restarted behind the
+// user's back. In a browser a reload is the user's own, and the tests read the log.
+const _inShell = (() => { try { return !!(window as any).Capacitor?.isNativePlatform?.(); } catch { return false; } })();
+try {
+  const before = _inShell ? JSON.parse(localStorage.getItem(KEPT_KEY) || '[]') as string[] : [];
+  if (Array.isArray(before) && before.length) {
+    _recorded.push(`${new Date().toLocaleTimeString()}  ===== THE PAGE STARTED ANEW HERE — the lines below are from before =====`, ...before.filter((l) => typeof l === 'string').slice(0, 150));
+  }
+} catch { /* nothing kept */ }
+
 export function trace(msg: string): void {
   const since = _landedAt ? Date.now() - _landedAt : -1;
   const text = `${new Date().toLocaleTimeString()}  ${msg}${since >= 0 && since < 4000 ? `  [+${since}]` : ''}`;
   _recorded.unshift(text);                       // newest first
   if (_recorded.length > KEEP) _recorded.length = KEEP;
+  keepAcrossRestart(/camera|turn/.test(msg));
 
   // If the strip has to be built now, it draws the whole recorded history —
   // which already includes the line above. Drawing it again put every first line

@@ -120,9 +120,22 @@ public class FramehowCameraPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func goIfBothReady() {
-        guard timeUp, webReady, host != nil else { return }
-        dismissScreen()
+        guard timeUp, webReady, let vc = host else { return }
+        // HIDDEN NOW, TAKEN DOWN WHEN THE PHOTO IS DONE (Roman, 11 Nov: "no animation on
+        // the first photo"; his log: after every shot the page stood still ~1.2 s, from
+        // the instant the screen went until the real photo was ready). Taking the camera
+        // screen down while the chip is still making the photo holds the app until the
+        // chip is free — the page beneath cannot draw, and when the hold began a few ms
+        // before the move, the move was never seen. So the screen only becomes invisible
+        // here; it is taken down in onPhoto, when the chip has finished.
+        vc.view.isHidden = true
         if let c = webReadyCall { webReadyCall = nil; c.resolve(); bridge?.releaseCall(c) }
+        // never left there unseen: if no photo comes (a failed capture), it goes after 4 s
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self, weak vc] in
+            guard let self, let vc, self.host === vc, vc.view.isHidden else { return }
+            self.dismissScreen()
+            self.model?.stop(); self.model = nil
+        }
     }
 
     private func dismissScreen() {
