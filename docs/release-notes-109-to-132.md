@@ -315,3 +315,8 @@ v5.0.225 · #777 (10 Nov, night)
 
 ## v5.0.244 · #796 (11 Nov, run 685)
 - SHOOTING ORDER RULE CHANGED (Roman): a shot that was in a real box and fits no box any more MOVES to the leftovers — at its number among them — and is green. A new shot with no needs still stays where it was made (red); a leftover that stays a leftover is not marked. bracket.ts decideResort + placeInLeftovers; bench sections 6 (rewritten), 6b, 6c. Order tests 26, 27, 64 green in run 685.
+
+## v5.0.245 · #797 (11 Nov, run 687)
+- BREAK COLOURS (G14): eleven colours + the grey (last, the start colour); round button left of the arrows while the break is edited, palette row inside the break; name white on dark / dark on light; `color` on the break, travels with it (shooting order, story flow, groups); PDF + Keynote paint it. Test e2e/65 (run 686 red was the test: a space in the compared text).
+- SORT BY EXPORTS (G18): PDF + Keynote card as on screen — note box, four blocks in fixed places on the lighter shade, version/sketch 20 %.
+- Log line "by hand: dragged …" names the shot that was in the hand.

@@ -2406,14 +2406,20 @@ export function breakPaint(brk: { color?: string }): { fill: string; light: bool
   return c ? { fill: c.hex, light: c.light } : { fill: BREAK_GREY, light: false };
 }
 
+/** The palette row: the eleven colours and, last, the grey. `on` is the colour
+ *  the break has now ('' for grey). */
+function breakPaletteHTML(breakId: string, on: string): string {
+  const swatch = (hex: string, value: string) =>
+    `<button class="sort-break-swatch${on === value ? ' is-on' : ''}" data-break-color-set="${breakId}" data-color="${value}" style="background:${hex}"></button>`;
+  return `<div class="sort-break-palette">${BREAK_COLORS.map((c) => swatch(c.hex, c.hex)).join('')}${swatch(BREAK_GREY, '')}</div>`;
+}
+
 function renderBreakCard(brk: SortBreak, activeBreakId: string | null, paletteFor: string | null = null): string {
   const isActive = activeBreakId === brk.id;
   const col = breakColor(brk);
   const palette = isActive && paletteFor === brk.id;
-  const swatch = (hex: string, value: string) =>
-    `<button class="sort-break-swatch${(col?.hex ?? '') === value ? ' is-on' : ''}" data-break-color-set="${brk.id}" data-color="${value}" style="background:${hex}"></button>`;
   return `
-    <div class="sort-break-card${isActive ? ' sort-break-active' : ''}${col?.light ? ' sort-break-light' : ''}${palette ? ' sort-break-palette-open' : ''}" data-break-id="${brk.id}"${col ? ` style="background:${col.hex};border-color:rgba(0,0,0,.25)"` : ''}>
+    <div class="sort-break-card${isActive ? ' sort-break-active' : ''}${col?.light ? ' sort-break-light' : ''}${palette ? ' sort-break-palette-open' : ''}" data-break-id="${brk.id}" data-break-color="${col?.hex ?? ''}"${col ? ` style="background:${col.hex};border-color:rgba(0,0,0,.25)"` : ''}>
       <input class="sort-break-text" value="${brk.text}" data-break-rename="${brk.id}" placeholder="BREAK NAME" readonly />
       <div class="sort-break-arrows${isActive ? ' sort-col-active' : ''}">
         ${isActive
@@ -2427,7 +2433,7 @@ function renderBreakCard(brk: SortBreak, activeBreakId: string | null, paletteFo
              </button>`
         }
       </div>
-      ${palette ? `<div class="sort-break-palette">${BREAK_COLORS.map((c) => swatch(c.hex, c.hex)).join('')}${swatch(BREAK_GREY, '')}</div>` : ''}
+      ${palette ? breakPaletteHTML(brk.id, col?.hex ?? '') : ''}
     </div>`;
 }
 
@@ -2964,21 +2970,49 @@ function wireEditViewEvents(el: HTMLElement, orderId: string): void {
 
   // THE BREAK'S COLOUR (Roman, 11 Nov). The small round button left of the
   // arrows opens the palette, a row under the name; a colour closes it again.
+  //
+  // DONE ON THE CARD ITSELF, WITHOUT DRAWING THE ORDER AGAIN (same day, his
+  // iPad: "you click, it takes time — it's not immediate"). Each tap redrew
+  // all the cards of the order, about a second for 26 shots, to change one
+  // colour. The card is repainted in place; the colour is kept and sent as
+  // before, and the next full redraw finds the card already as it should be.
+  const takeColour = (e: Event) => {
+    e.stopPropagation();
+    const sw = e.currentTarget as HTMLElement;
+    const card = sw.closest('.sort-break-card') as HTMLElement | null;
+    const hex = sw.dataset.color || '';
+    const c = BREAK_COLORS.find((x) => x.hex === hex) ?? null;
+    if (card) {
+      card.style.background = c ? c.hex : '';
+      card.style.borderColor = c ? 'rgba(0,0,0,.25)' : '';
+      card.classList.toggle('sort-break-light', !!c?.light);
+      card.classList.remove('sort-break-palette-open');
+      card.dataset.breakColor = c?.hex ?? '';
+      card.querySelector('.sort-break-palette')?.remove();
+      const dot = card.querySelector('.sort-break-color-btn') as HTMLElement | null;
+      if (dot) dot.style.background = c?.hex ?? BREAK_GREY;
+    }
+    (el as any).__paletteBreakId = null;
+    setBreakColor(orderId, sw.dataset.breakColorSet!, c?.hex ?? null);
+  };
+  el.querySelectorAll('[data-break-color-set]').forEach((sw) => sw.addEventListener('click', takeColour));
   el.querySelectorAll('[data-break-color-open]').forEach((btn) => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const id = (btn as HTMLElement).dataset.breakColorOpen!;
-      (el as any).__paletteBreakId = (el as any).__paletteBreakId === id ? null : id;
-      renderSortEditView(el, orderId);
-    });
-  });
-  el.querySelectorAll('[data-break-color-set]').forEach((btn) => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const b = btn as HTMLElement;
-      setBreakColor(orderId, b.dataset.breakColorSet!, b.dataset.color || null);
-      (el as any).__paletteBreakId = null;
-      renderSortEditView(el, orderId);
+      const card = (btn as HTMLElement).closest('.sort-break-card') as HTMLElement | null;
+      if (!card) return;
+      const open = card.querySelector('.sort-break-palette');
+      if (open) {
+        open.remove();
+        card.classList.remove('sort-break-palette-open');
+        (el as any).__paletteBreakId = null;
+        return;
+      }
+      card.insertAdjacentHTML('beforeend', breakPaletteHTML(id, card.dataset.breakColor ?? ''));
+      card.classList.add('sort-break-palette-open');
+      (el as any).__paletteBreakId = id;
+      card.querySelectorAll('[data-break-color-set]').forEach((sw) => sw.addEventListener('click', takeColour));
     });
   });
 
