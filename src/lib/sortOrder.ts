@@ -2289,9 +2289,11 @@ function renderFrameSetCard(f: Frame, idx: number, activeReorderFid: number | nu
   const sketchHasStrokes = versionHasContent(sketchVer) && (!sketchImg || (sketchVer?.strokes || []).length > 0);
   const mainHasStrokes = (f.strokes || []).length > 0;
 
-  // Get frame text content (from strokes text type)
-  const textStroke = (f.strokes || []).find((st: any) => st.type === 'text');
-  const descText = textStroke ? (textStroke as any).text || '' : (f.textContent || '');
+  // THE DESCRIPTION, ALWAYS (Roman, 10 Nov — G12). This line used to show the
+  // text WRITTEN ON the picture (WRITE) whenever there was one, and the
+  // description only otherwise. The written text is already in the picture;
+  // the line under it is for the shot's description.
+  const descText = (f.textContent || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
   // Parse label — number part vs extra text
   const labelParts = f.label.match(/^(\d+[A-Za-z]?\.?)\s*(.*)/);
@@ -2359,21 +2361,34 @@ function renderBreakCard(brk: SortBreak, activeBreakId: string | null): string {
 
 function renderNeedsInfo(fid: number): string {
   const s = state();
+  // THE SHOT'S NOTE, ABOVE THE NEEDS (Roman, 10 + 11 Nov — G13): one block
+  // across both columns, bold, all of it — the card grows with a long note.
+  // Nothing when the shot has no note text.
+  const note = (s.frameNotes[fid]?.noteText || '').trim();
+  const notesHtml = note
+    ? `<div class="sort-needs-notes"><span class="sort-needs-cat-name">Notes</span>${escH(note).replace(/\n/g, '<br>')}</div>`
+    : '';
   const frameNeeds = s.frameNeeds[fid];
-  if (!frameNeeds) return '';
+  if (!frameNeeds) return notesHtml;
 
   const defs = s.needDefinitions;
   const tabs = defs.tabs || [];
-  if (tabs.length === 0) return '';
+  if (tabs.length === 0) return notesHtml;
 
-  // Split tabs into two sub-columns
-  const midpoint = Math.ceil(tabs.length / 2);
-  const col1Tabs = tabs.slice(0, midpoint);
-  const col2Tabs = tabs.slice(midpoint);
+  // WHERE EACH BLOCK SITS (Roman, 11 Nov): left TALENTS over ART, right SHOOT
+  // over GEAR — always, on every card, so the eye finds TALENTS in the same
+  // place down the whole list. (Until now: the first half of the tabs left, the
+  // second half right.) A tab the project added itself goes after them, left
+  // and right in turn.
+  const byId = (id: string) => tabs.filter((t) => t.id === id);
+  const others = tabs.filter((t) => !['tab_talents', 'tab_art', 'tab_shoot', 'tab_gear'].includes(t.id));
+  const col1Tabs = [...byId('tab_talents'), ...byId('tab_art'), ...others.filter((_, i) => i % 2 === 0)];
+  const col2Tabs = [...byId('tab_shoot'), ...byId('tab_gear'), ...others.filter((_, i) => i % 2 === 1)];
 
   const renderColumn = (columnTabs: typeof tabs): string => {
-    let lines = '';
+    let out = '';
     for (const tab of columnTabs) {
+      let lines = '';
       for (const table of tab.tables) {
         if (table.type === 'counter') {
           // Counter type — show total and breakdown
@@ -2403,19 +2418,21 @@ function renderNeedsInfo(fid: number): string {
           }
         }
       }
+      // One block per tab, on its own shade, so the blocks read apart.
+      if (lines) out += `<div class="sort-needs-block">${lines}</div>`;
     }
-    return lines;
+    return out;
   };
 
   const col1Html = renderColumn(col1Tabs);
   const col2Html = renderColumn(col2Tabs);
-  if (!col1Html && !col2Html) return '';
+  if (!col1Html && !col2Html) return notesHtml;
 
-  let html = `<div class="sort-needs-cols">`;
+  // Both columns always there, so a block never changes sides when the other
+  // side is empty.
+  let html = notesHtml + `<div class="sort-needs-cols">`;
   html += `<div class="sort-needs-col">${col1Html}</div>`;
-  if (col2Html) {
-    html += `<div class="sort-needs-col">${col2Html}</div>`;
-  }
+  html += `<div class="sort-needs-col">${col2Html}</div>`;
   html += `</div>`;
   return html;
 }

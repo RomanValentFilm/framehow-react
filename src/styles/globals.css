@@ -1405,6 +1405,11 @@
   .sort-card-col-needs{align-self:stretch;padding-left:4px;}
   .sort-needs-cols{display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;}
   .sort-needs-line{font-size:10px;color:#555;font-weight:400;line-height:1.6;}
+  /* One block per tab on its own slightly lighter shade (Roman, 11 Nov). */
+  .sort-needs-col{display:flex;flex-direction:column;gap:3px;min-width:0;}
+  .sort-needs-block{background:rgba(255,255,255,.38);border-radius:3px;padding:1px 5px;}
+  /* The shot's note: across both columns, bold, all of it. */
+  .sort-needs-notes{font-size:10px;color:#111;font-weight:700;line-height:1.5;margin-bottom:4px;overflow-wrap:anywhere;}
   .sort-needs-cat-name{font-weight:600;color:#222;text-transform:uppercase;font-size:9px;letter-spacing:.3px;}
   .sort-needs-cat-name::after{content:': ';}
   /* Col 5: arrows (centered vertically + horizontally) */
