@@ -53,14 +53,34 @@ struct FrameGeometry {
     let chip: CGRect
     let frame: CGRect
 
-    init(ratio: CGFloat, landscape: Bool, free: CGRect) {
+    /// `screen` and `corner`: the size of the whole screen and the radius of its round
+    /// corners. THE FRAME NEVER REACHES INTO A ROUND CORNER (Roman, 11 Nov): a frame as
+    /// wide as the screen had its four corners cut off by the glass, and the frame is the
+    /// photo. It is made just small enough for all four corners to show.
+    init(ratio: CGFloat, landscape: Bool, free: CGRect, screen: CGSize = .zero, corner: CGFloat = 0) {
         let r = landscape ? ratio : 1 / ratio
-        let w = min(free.width, free.height * r), h = w / r
         let c = CGPoint(x: free.midX, y: free.midY)
-        frame = CGRect(x: c.x - w / 2, y: c.y - h / 2, width: w, height: h)
+        func rect(_ w: CGFloat) -> CGRect { CGRect(x: c.x - w / 2, y: c.y - (w / r) / 2, width: w, height: w / r) }
+        var w = min(free.width, free.height * r)
+        if corner > 0, screen.width > 0 {
+            while w > 80, FrameGeometry.cutByCorner(rect(w), screen: screen, corner: corner) { w -= 2 }
+        }
+        let h = w / r
+        frame = rect(w)
         let cw = landscape ? w : h * 3 / 4
         let ch = landscape ? w * 3 / 4 : h
         chip = CGRect(x: c.x - cw / 2, y: c.y - ch / 2, width: cw, height: ch)
+    }
+
+    /// Is a corner of this frame inside the part of the screen a round corner cuts away?
+    /// The frame's nearest corner sits `dx` in and `dy` down from the screen's own corner;
+    /// it shows when it lies inside the quarter circle of the glass.
+    static func cutByCorner(_ f: CGRect, screen: CGSize, corner: CGFloat) -> Bool {
+        let dx = max(0, min(f.minX, screen.width - f.maxX))
+        let dy = max(0, min(f.minY, screen.height - f.maxY))
+        if dx >= corner || dy >= corner { return false }
+        let a = corner - dx, b = corner - dy
+        return a * a + b * b > corner * corner
     }
 }
 
@@ -99,15 +119,24 @@ struct CameraScreen: View {
         GeometryReader { geo in
             let landscape = geo.size.width > geo.size.height
             let _ = turns
-            // THE DYNAMIC ISLAND (Roman, 10 Nov). Sideways, the island sits on one short
-            // side of the screen — and the shutter sat half under it. The camera now
-            // starts where the island ends: on the island's side the picture, the frame
-            // line and every button keep clear of it; the strip beside the island stays
-            // black. The other side keeps its full width. Upright nothing changes, and an
-            // iPad has no island (its side insets are zero).
+            // THE DYNAMIC ISLAND (Roman, 10 + 11 Nov). Sideways the island sits on one short
+            // side of the screen. THE PICTURE BEGINS WHERE THE ISLAND ENDS — on that side
+            // only; the other side goes to the very edge. So nothing of the shot is ever
+            // hidden under the island (Framehow is for framing), and the strip beside the
+            // island stays black. It is the same whichever way the phone is turned.
+            //
+            // He compared three ways on the phone: Apple's Camera (black on BOTH sides),
+            // the picture at full length under the island, and this one — the web FH CAM
+            // already does it. `pictureEndsAtTheIsland` off = full length under the island.
+            //
+            // What one TAPS keeps clear of the island too: the shutter, Cancel and the note
+            // sit on the right and move in beside the island when it is on that side.
             let island = landscape ? Self.islandInsets() : (left: CGFloat(0), right: CGFloat(0))
-            let free = CGRect(x: island.left, y: 0, width: geo.size.width - island.left - island.right, height: geo.size.height)
-            let fg = FrameGeometry(ratio: current.value, landscape: landscape, free: free)
+            let cutL = Self.pictureEndsAtTheIsland ? island.left : 0
+            let cutR = Self.pictureEndsAtTheIsland ? island.right : 0
+            let free = CGRect(x: cutL, y: 0, width: geo.size.width - cutL - cutR, height: geo.size.height)
+            let fg = FrameGeometry(ratio: current.value, landscape: landscape, free: free,
+                                   screen: geo.size, corner: Self.screenCornerRadius())
             let _ = { cam.frameRatio = current.value; cam.maxSide = maxSide; cam.frameOnScreen = fg.frame }()
             let touch = DragGesture(minimumDistance: 0)
                 .onChanged { g in
@@ -173,6 +202,25 @@ struct CameraScreen: View {
         }
     }
 
+    /// true = the picture ends where the island begins (one black strip beside the island);
+    /// false = the picture keeps the whole screen and the island lies over it.
+    private static let pictureEndsAtTheIsland = true
+
+    /// The radius of the screen's round corners. There is no public number for it, so it is
+    /// read off the safe area: an iPhone with the island (top inset 51 and more) has about
+    /// 55 pt, one with the notch about 47, an iPad about 18, a phone with a home button none.
+    /// A little is added so the frame line itself is not shaved either.
+    private static func screenCornerRadius() -> CGFloat {
+        guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first,
+              let window = scene.windows.first(where: { $0.isKeyWindow }) ?? scene.windows.first else { return 0 }
+        if UIDevice.current.userInterfaceIdiom == .pad { return 18 + 3 }
+        let i = window.safeAreaInsets
+        let deepest = max(i.top, i.left, i.right)
+        if deepest >= 51 { return 55 + 3 }
+        if deepest >= 40 { return 47 + 3 }
+        return 0
+    }
+
     /// How far the Dynamic Island reaches in from the left and from the right, sideways.
     /// The system reports the same inset on both short sides; only the side the island is
     /// really on is kept. `landscapeRight` = the device's top (the island) is on the LEFT.
@@ -215,10 +263,14 @@ struct CameraScreen: View {
         GeometryReader { g in
             let W = g.size.width, H = g.size.height
             ZStack {
+                // The corner buttons stay in their corners: the island sits at mid-height on
+                // its side and is nowhere near them. Sideways they are moved in a little, out
+                // of the round corner of the glass.
+                let edge: CGFloat = landscape ? 22 : 16
                 VStack { HStack { ratioButton; Spacer(); ev }; Spacer() }
-                    .padding(.leading, 16 + left).padding(.trailing, 16 + right).padding(.top, landscape ? 16 : 60)
+                    .padding(.leading, edge).padding(.trailing, edge).padding(.top, landscape ? 16 : 60)
                 VStack { Spacer(); HStack { lens; Spacer() } }
-                    .padding(.leading, 16 + left).padding(.trailing, 16 + right).padding(.bottom, landscape ? 16 : 24)   // portrait: a row below Cancel
+                    .padding(.leading, edge).padding(.trailing, edge).padding(.bottom, landscape ? 16 : 24)   // portrait: a row below Cancel
                 if landscape {
                     // shutter right-middle (Camera app), Cancel under it, info bottom right
                     shutter.position(x: W - right - 24 - 33, y: H / 2)

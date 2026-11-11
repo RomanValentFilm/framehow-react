@@ -611,21 +611,41 @@ export function unlockPageScroll(): void {
 }
 
 /** Sort-order picker — STORY FLOW plus every saved shooting order. */
-function buildSortOrderPicker(containerId: string, radioName: string): void {
+function buildSortOrderPicker(containerId: string, radioName: string, groupRadioName?: string): void {
   const container = document.getElementById(containerId);
   if (!container) return;
-  const s = state();
-  let html = `<label class="exp-strip-opt">
-    <input type="radio" name="${radioName}" value="__storyflow__" checked>
+  // ONLY THE ORDERS OF WHAT IS BEING EXPORTED (Roman, 11 Nov: "one of the
+  // groups shows me two shooting orders to export, but there is only one
+  // real"). The list was every shooting order of the whole project, whichever
+  // group was chosen above it — so a group offered the project's order too.
+  // ALL offers the project's own; a group offers its own. The list is built
+  // again whenever another group is chosen in the box.
+  const draw = () => {
+    const s = state();
+    const gid = groupRadioName ? exportGroupId(groupRadioName) : null;
+    const was = (container.querySelector(`input[name="${radioName}"]:checked`) as HTMLInputElement | null)?.value;
+    const mine = s.sortOrders.filter((o) => (o.groupId ?? null) === gid);
+    const keep = was && mine.some((o) => o.id === was) ? was : '__storyflow__';
+    let html = `<label class="exp-strip-opt">
+    <input type="radio" name="${radioName}" value="__storyflow__" ${keep === '__storyflow__' ? 'checked' : ''}>
     <span>STORY FLOW</span>
   </label>`;
-  for (const o of s.sortOrders) {
-    html += `<label class="exp-strip-opt">
-      <input type="radio" name="${radioName}" value="${o.id}">
+    for (const o of mine) {
+      html += `<label class="exp-strip-opt">
+      <input type="radio" name="${radioName}" value="${o.id}" ${keep === o.id ? 'checked' : ''}>
       <span>${escapeHtml(o.name)}</span>
     </label>`;
+    }
+    container.innerHTML = html;
+  };
+  draw();
+  if (groupRadioName && !(container as any).__followsGroup) {
+    (container as any).__followsGroup = true;
+    document.addEventListener('change', (e) => {
+      const t = e.target as HTMLInputElement | null;
+      if (t && t.name === groupRadioName) draw();
+    });
   }
-  container.innerHTML = html;
 }
 
 /** Current date and time, used as the default header date. */
@@ -693,7 +713,7 @@ export function openExportModal(): void {
   buildGroupPicker('exportGroupPicker', 'exportGroup');
   buildStripPicker('exportDoubleStripPicker', 'radio', 'exportDoubleStrip', true);
   buildStripPicker('exportOverviewStripPicker', 'checkbox');
-  buildSortOrderPicker('exportSortOrderPicker', 'exportSortOrder');
+  buildSortOrderPicker('exportSortOrderPicker', 'exportSortOrder', 'exportGroup');
   buildVersionPicker();
   const layout = (document.querySelector('input[name="exportLayout"]:checked') as HTMLInputElement).value;
   updateExportVisibility(layout, 'export');
@@ -737,7 +757,7 @@ export function openPptxModal(): void {
   buildGroupPicker('pptxGroupPicker', 'pptxGroup');
   buildStripPicker('pptxDoubleStripPicker', 'radio', 'pptxDoubleStrip', true);
   buildStripPicker('pptxOverviewStripPicker', 'checkbox');
-  buildSortOrderPicker('pptxSortOrderPicker', 'pptxSortOrder');
+  buildSortOrderPicker('pptxSortOrderPicker', 'pptxSortOrder', 'pptxGroup');
   buildPptxVersionPicker();
   const layout = (document.querySelector('input[name="pptxLayout"]:checked') as HTMLInputElement).value;
   updateExportVisibility(layout, 'pptx');

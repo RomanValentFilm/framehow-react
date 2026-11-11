@@ -331,3 +331,7 @@ v5.0.225 · #777 (10 Nov, night)
 ## v5.0.248 · #800 (11 Nov, run 690)
 - EXPORTS: a group exported with STORY FLOW takes the group's own breaks (it was given the project's).
 - SORT BY: a sync does not redraw the order while a break or a card is being edited (Roman's rule); iPad redraw measured at ~330 ms after #799 (was ~1000).
+
+## v5.0.249 · #801 (11 Nov, run 691)
+- SORT BY REDRAW: a card that did not change stays the very same node (not cloned), marked wired; wireEditViewEvents passes over it. The card or break being edited is still made anew (drag set-up). Reuse only within the same order.
+- Break colour button: a rectangle saying COLOR (was a round dot).

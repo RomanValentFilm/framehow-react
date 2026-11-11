@@ -3093,13 +3093,29 @@ function wireEditViewEvents(el: HTMLElement, orderId: string): void {
   });
 
   // Break done button — sync when user finishes reordering break
+  // DONE ACTS THE MOMENT THE FINGER TOUCHES IT (Roman, 11 Nov: "sometimes I just
+  // have to tap DONE on a break twice"). While the name is being typed, the
+  // tap first takes the cursor out of the field: the keyboard goes, the page
+  // is let go and moves — and DONE is no longer under the finger when the tap
+  // itself would land. The same thing the boxes had on 17 October. So DONE
+  // does its work on the way DOWN: it keeps the name as typed, then closes.
+  // The click stays for a keyboard's Enter and anything that sends no touch.
   notYetWired('[data-break-deactivate]').forEach((btn) => {
-    btn.addEventListener('click', (e) => {
+    let done = false;
+    const finish = (e: Event) => {
       e.stopPropagation();
+      if (done) return;
+      done = true;
+      const id = (btn as HTMLElement).dataset.breakDeactivate!;
+      const field = (btn as HTMLElement).closest('.sort-break-card')?.querySelector('.sort-break-text') as HTMLInputElement | null;
+      if (field) renameBreak(orderId, id, field.value);     // says nothing when the name is the same
+      if (field && document.activeElement === field) field.blur();
       (el as any).__activeBreakId = null;
       void flushSyncNow();
       renderSortEditView(el, orderId);
-    });
+    };
+    btn.addEventListener('pointerdown', (e) => { e.preventDefault(); finish(e); });
+    btn.addEventListener('click', finish);
   });
 
   // Break delete button
@@ -3325,6 +3341,11 @@ export function setBreakColor(orderId: string, breakId: string, hex: string | nu
 
 export function renameBreak(orderId: string, breakId: string, text: string): void {
   const s = state();
+  // The same name again is no change: nothing written, nothing sent (DONE and
+  // the field's own "changed" both come here for one edit).
+  const was = (isStoryFlow(orderId) ? (s.storyFlowBreaks || [])
+    : (s.sortOrders.find((o) => o.id === orderId)?.breaks ?? [])).find((b) => b.id === breakId);
+  if (!was || was.text === text) return;
   if (isStoryFlow(orderId)) {
     const breaks = (s.storyFlowBreaks || []).map((b) =>
       b.id === breakId ? { ...b, text } : b
