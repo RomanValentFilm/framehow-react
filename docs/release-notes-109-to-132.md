@@ -306,3 +306,6 @@ v5.0.225 · #777 (10 Nov, night)
 
 ## v5.0.241 · #793 (11 Nov, run 682)
 - FRAME-SET CARDS: the note box and the four needs boxes open the shot's NOTES / NEEDS box (NEEDS on that block's tab); a touch darker under the mouse; on closing a shooting order re-sorts at once (moved shots green) and the page shows the edited shot; STORY FLOW only redraws; a card in move mode opens nothing. New test e2e/64 (green in run 682; run 681 red was the test: thin space in "DAY 1").
+
+## v5.0.242 · #794 (11 Nov, run 683)
+- FRAME-SET CARDS: the NEEDS / NOTES box grows out of the box that was pressed (was: from the top left corner).

@@ -8,7 +8,9 @@
 //   · a tap on a needs block opens NEEDS on THAT block's tab
 //   · on closing, the shooting order is asked again AT ONCE: the shot joins its
 //     new box, it is green, and nothing else moved
-//   · the card shows the new need, and the page shows the shot that was edited
+//   · the card shows the new need; the page goes to the TOP, where the icon
+//     overview shows the green shot
+//   · a need that changes nothing in the order leaves the page where it was
 //   · a tap on the note opens NOTES; the card shows the new note; a note never
 //     moves anything
 //   · a card that is being moved (arrows + DONE) opens nothing
@@ -103,7 +105,7 @@ async function tapBox(page: Page, label: string, which: string): Promise<void> {
 /** Close an open NEEDS / NOTES box the way a person does: a tap beside it. */
 async function tapBeside(page: Page): Promise<void> {
   await page.mouse.click(4, 4);
-  await page.waitForTimeout(700);
+  await page.waitForTimeout(1100);   // the bar (a quarter second at least), then the box shrinks away
   // The "modified to match NEEDS" note, when it comes, is read and sent away.
   await page.evaluate(() => {
     const note = document.querySelector('.sort-resort-note-modal');
@@ -176,13 +178,12 @@ test('needs and notes changed from the frame-set card: the order follows at once
     .toEqual(['1', '2', '5', '3', '4', '6', '7', '8']);
   expect(seen.green, 'exactly that shot is green').toEqual(['5']);
   expect(await boxText(page, '5', 'tab_shoot'), 'its card shows the new need').toContain('DAY 1');
-  const inView = await page.evaluate(() => {
-    const txt = (e: Element | null) => (e?.textContent || '').trim();
-    const card = Array.from(document.querySelectorAll('.sort-card')).find((c) => txt(c.querySelector('.sort-card-num')) === '5');
-    const r = card!.getBoundingClientRect();
-    return r.top >= 0 && r.bottom <= window.innerHeight;
-  });
-  expect(inView, 'THE PAGE DOES NOT SHOW THE SHOT THAT WAS EDITED').toBe(true);
+  // THE ORDER CHANGED → the top of the page, where the icon overview shows the
+  // green shot among the others (Roman, 11 Nov).
+  expect(await page.evaluate(() => window.scrollY), 'THE PAGE DID NOT GO TO THE TOP after the order changed').toBe(0);
+  const greenIcons = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('.sort-bracket-pill-new')).map((p) => (p.textContent || '').trim()));
+  expect(greenIcons, 'the icon overview shows that shot green').toEqual(['5']);
 
   say('DONE on the green card, then a need on ANOTHER tab from the same box');
   await page.evaluate(() => {
@@ -206,8 +207,23 @@ test('needs and notes changed from the frame-set card: the order follows at once
   });
   await desktop.settle();
 
+  say('a need that plays no part in this order: nothing moves, the page stays on the shot');
+  await page.evaluate(() => window.scrollTo(0, 260));
+  await page.waitForTimeout(200);
+  const stoodAt = await page.evaluate(() => window.scrollY);
+  const orderBeforeUnit = (await look(page)).order;
+  await tapBox(page, '4', 'tab_shoot');
+  await page.locator('.g3-needs-modal [data-needs-toggle="ti_unit1"]').first().click();
+  await page.waitForTimeout(200);
+  await tapBeside(page);
+  expect((await look(page)).order, 'a need outside the rules moved shots').toEqual(orderBeforeUnit);
+  expect(Math.abs((await page.evaluate(() => window.scrollY)) - stoodAt),
+    'THE PAGE MOVED though nothing in the order changed').toBeLessThanOrEqual(2);
+  expect(await boxText(page, '4', 'tab_shoot'), 'the card shows the new need all the same').toContain('1st UNIT');
+
   say('tap the note box of shot 3, write a note with a break made on purpose');
   const orderBeforeNote = (await look(page)).order;
+  const noteStoodAt = await page.evaluate(() => window.scrollY);
   await tapBox(page, '3', 'notes');
   expect(await page.locator('.g3-notes-overlay').count(), 'the NOTES box is open').toBe(1);
   await page.evaluate(() => {
@@ -227,6 +243,8 @@ test('needs and notes changed from the frame-set card: the order follows at once
   seen = await look(page);
   expect(seen.order, 'A NOTE MOVED SHOTS').toEqual(orderBeforeNote);
   expect(seen.green, 'and marked nothing').toEqual([]);
+  expect(Math.abs((await page.evaluate(() => window.scrollY)) - noteStoodAt),
+    'THE PAGE MOVED after a note').toBeLessThanOrEqual(2);
 
   say('a card that is being moved opens nothing');
   await page.evaluate(() => {

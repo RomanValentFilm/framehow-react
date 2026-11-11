@@ -2269,30 +2269,42 @@ function renderSortEditView(el: HTMLElement, orderId: string): void {
 }
 
 /** A NEEDS or NOTES box opened from a frame-set card has been closed (Roman,
- *  11 Nov). The card shows the new text at once. After NEEDS, a shooting order
- *  is asked again where its shots belong — straight away, by the same path as
- *  on opening the order: moved shots go green, the line on top says so. Then
- *  the page goes after the shot that was edited and shows it. STORY FLOW is
- *  never re-sorted. Rules that are being built in this view are left alone. */
-function afterBoxClosed(el: HTMLElement, orderId: string, fid: number, needsChanged: boolean): void {
+ *  11 Nov). The card shows the new text at once.
+ *
+ *  After NEEDS, a shooting order is asked again where its shots belong —
+ *  straight away, by the same path as on opening the order: changed shots go
+ *  green, the line on top says so.
+ *
+ *  WHERE THE PAGE ENDS UP (his rule, same day):
+ *    · the order CHANGED → the top of the page, where the icon overview shows
+ *      the green shot among the others;
+ *    · nothing moved (the need plays no part in this order, or the shot was
+ *      already in the right place) → exactly where it was, on the same shot;
+ *    · NOTES → always exactly where it was. A note never moves anything.
+ *
+ *  STORY FLOW is never re-sorted. Rules that are being built in this view are
+ *  left alone (the cards cannot be touched then anyway). */
+function afterBoxClosed(el: HTMLElement, orderId: string, _fid: number, needsChanged: boolean): void {
   if (state().sortEditingId !== orderId) return;      // the view was left meanwhile
   const building = (el as any).__bracketActive || (el as any).__sheetTouched;
-  let moved = 0;
+  const listOf = () => (state().sortOrders.find((o) => o.id === orderId)?.frameOrder ?? []).join(',');
+  const was = listOf();
+  const at = window.scrollY;
+  let marked = 0;
   if (needsChanged && !building && !isStoryFlow(orderId)) {
-    moved = resortToNeedsOnOpen(orderId);
+    marked = resortToNeedsOnOpen(orderId);
     // Like opening the order: its rules are read afresh from what was just kept.
     (el as any).__bracketState = undefined;
     (el as any).__sortedSnapshot = undefined;
   }
+  const orderChanged = listOf() !== was;
   renderSortEditView(el, orderId);
-  showResortedNote(moved);
-  const card = el.querySelector(`.sort-card[data-sort-fid="${fid}"]`) as HTMLElement | null;
-  if (!card) return;
-  const r = card.getBoundingClientRect();
-  const head = (el.querySelector('.sort-edit-header') as HTMLElement | null)?.getBoundingClientRect().bottom ?? 0;
-  if (r.top < head + 4 || r.bottom > window.innerHeight - 4) {
-    card.scrollIntoView({ block: 'center', behavior: 'auto' });
-    trace(`sort by: shot ${fid} edited from its card — page moved to show it${moved ? ` (${moved} shot(s) moved)` : ''}`);
+  showResortedNote(marked);
+  if (orderChanged) {
+    window.scrollTo(0, 0);
+    trace(`sort by: needs changed from a card — the order changed (${marked} shot(s) green), page to the top`);
+  } else if (Math.abs(window.scrollY - at) > 1) {
+    window.scrollTo(window.scrollX, at);            // the redraw may not move the page
   }
 }
 
@@ -2847,7 +2859,9 @@ function wireEditViewEvents(el: HTMLElement, orderId: string): void {
           + (isNotes ? '[data-sort-open-notes]' : `[data-sort-open-needs][data-sort-needs-tab="${tabId}"]`)) as HTMLElement | null;
         if (isNotes) { ov.openNotesModal(fid, () => afterBoxClosed(el, orderId, fid, false), pressed); return; }
         if (tabId) (await import('./needs')).ensureFrameNeeds(fid).activeTabId = tabId;
-        ov.openNeedsModal(fid, () => afterBoxClosed(el, orderId, fid, true), pressed);
+        // In a shooting order the closing box says what it is waiting for.
+        ov.openNeedsModal(fid, () => afterBoxClosed(el, orderId, fid, true), pressed,
+          isStoryFlow(orderId) ? undefined : 'Re-sorting…');
       });
     });
   });

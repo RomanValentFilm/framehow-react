@@ -1815,7 +1815,8 @@ export function wireGrid3x2PinchZoom(): void {
 /** Open NEEDS card for a frame as a modal overlay (75% screen height).
  *  Exported for the test door (#391) — the two places that open it are both
  *  taps on a card, and a test has to be able to reach the same function. */
-export function openNeedsModal(fid: number, onClosed?: () => void, from?: () => HTMLElement | null): void { _openNeedsModal(fid, onClosed, from); }
+export function openNeedsModal(fid: number, onClosed?: () => void, from?: () => HTMLElement | null,
+                               busyText?: string): void { _openNeedsModal(fid, onClosed, from, busyText); }
 /** The NOTES box, for a frame-set card in SORT BY (11 Nov). */
 export function openNotesModal(fid: number, onClosed?: () => void, from?: () => HTMLElement | null): void { _openNotesModal(fid, onClosed, from); }
 
@@ -1829,10 +1830,11 @@ function _growFrom(fid: number, from?: () => HTMLElement | null): HTMLElement | 
     : document.querySelector(`.grid3x2-card-wrap[data-g3fid="${fid}"] .canvas-wrap`) as HTMLElement | null;
   if (!el) return null;
   const r = el.getBoundingClientRect();
-  return r.width > 0 && r.height > 0 ? el : null;
+  const onScreen = r.bottom > 0 && r.top < window.innerHeight && r.right > 0 && r.left < window.innerWidth;
+  return r.width > 0 && r.height > 0 && onScreen ? el : null;
 }
 
-function _openNeedsModal(fid: number, onClosed?: () => void, from?: () => HTMLElement | null): void {
+function _openNeedsModal(fid: number, onClosed?: () => void, from?: () => HTMLElement | null, busyText?: string): void {
   if (document.querySelector('.g3-needs-overlay')) return; // already open
 
   // Capture zoom level before resetting — used to enlarge the modal
@@ -1905,7 +1907,10 @@ function _openNeedsModal(fid: number, onClosed?: () => void, from?: () => HTMLEl
   }
 
   // Close helper with animation
-  const doClose = () => {
+  let closing = false;
+  const doClose = async () => {
+    if (closing) return;      // a second tap while it is closing
+    closing = true;
     // FINISH WHAT IS BEING TYPED BEFORE THE CARD GOES (#391).
     //
     // A rename in here is committed when its input loses focus. Closing threw
@@ -1918,13 +1923,41 @@ function _openNeedsModal(fid: number, onClosed?: () => void, from?: () => HTMLEl
     const typing = document.activeElement as HTMLElement | null;
     if (typing && container.contains(typing)) typing.blur();
 
+    // WHOEVER OPENED IT FROM ELSEWHERE REDRAWS ITSELF NOW, BEHIND THE BOX
+    // (Roman, 11 Nov: the frame-set cards showed for a moment as they had
+    // been, and only then were counted again — "the user can scroll already").
+    // The box is still on screen and still takes every touch; when it has
+    // shrunk away, what is behind it is already the finished page.
+    //
+    // AND IT SAYS SO (same day: "he's wondering why it's not closing"). The
+    // loading bar of a project being opened, over this box: a line of text and
+    // the red bar. Painted first — two frames — then the counting, which holds
+    // the page for as long as it takes; never shorter than a quarter of a
+    // second, so on a small project it does not just flash.
+    if (busyText && onClosed) {
+      const cover = document.createElement('div');
+      cover.className = 'g3-busy-cover';
+      cover.innerHTML = `<div class="progress-label"></div><div class="progress-bar-wrap"><div class="progress-bar" style="width:15%"></div></div>`;
+      (cover.firstElementChild as HTMLElement).textContent = busyText;
+      container.appendChild(cover);
+      const bar = cover.querySelector('.progress-bar') as HTMLElement;
+      await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+      bar.style.width = '70%';
+      const began = performance.now();
+      onClosed();
+      bar.style.width = '100%';
+      const left = 250 - (performance.now() - began);
+      if (left > 0) await new Promise((r) => setTimeout(r, left));
+    } else {
+      onClosed?.();
+    }
+
     const target = _growFrom(fid, from);
     const doRemove = () => {
       overlay.remove();
       document.body.style.overflow = '';
       const cw = document.querySelector(`#overviewScroll .grid3x2-card-wrap[data-g3fid="${fid}"]`) as HTMLElement | null;
       if (cw) renderGrid3x2Card(cw, fid);
-      onClosed?.();   // whoever opened it from elsewhere (a frame-set card) redraws itself
     };
     if (target) {
       const targetRect = target.getBoundingClientRect();
@@ -1947,7 +1980,7 @@ function _openNeedsModal(fid: number, onClosed?: () => void, from?: () => HTMLEl
     if (!(e.target as HTMLElement).closest('.g3-needs-modal')) {
       e.preventDefault();
       e.stopPropagation();
-      doClose();
+      void doClose();
     }
   });
 }
@@ -2079,13 +2112,14 @@ function _openNotesModal(fid: number, onClosed?: () => void, from?: () => HTMLEl
     const flush = (window as any).__fh_flushSyncNow;
     if (flush) flush();
 
+    onClosed?.();   // redrawn behind the box, before it goes (see the NEEDS box)
+
     const target = _growFrom(fid, from);
     const doRemove = () => {
       overlay.remove();
       document.body.style.overflow = '';
       const cw = document.querySelector(`#overviewScroll .grid3x2-card-wrap[data-g3fid="${fid}"]`) as HTMLElement | null;
       if (cw) renderGrid3x2Card(cw, fid);
-      onClosed?.();   // whoever opened it from elsewhere (a frame-set card) redraws itself
     };
     if (target) {
       const targetRect = target.getBoundingClientRect();
