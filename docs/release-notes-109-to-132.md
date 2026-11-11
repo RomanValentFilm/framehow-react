@@ -291,3 +291,6 @@ v5.0.225 · #777 (10 Nov, night)
 
 ## v5.0.236 · #788 (11 Nov, run 676)
 - FRAME-SET CARDS (G12, G13): the line under the picture is always the description (was: the WRITE text when there was one). The shot note on top across both columns, bold, all of it. Blocks in fixed places: left TALENTS over ART, right SHOOT over GEAR, each on a lighter shade (Roman: "I really love it").
+
+## v5.0.237 · #789 (11 Nov, run 677)
+- FRAME-SET CARDS: an empty block keeps its box (one line), the description is shown in full, the gaps between the boxes are even (6 px both ways).
