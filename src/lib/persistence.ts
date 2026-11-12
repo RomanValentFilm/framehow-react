@@ -175,36 +175,108 @@ async function withStore<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) =>
   }
 }
 
-/** WHICH project the device's save is of, kept beside it in a few bytes — so
- *  asking "whose is it?" does not read the whole project (12 Nov: a start read
- *  the open project twice, once only for its id). */
+/** WHICH project the device's save is of, and which pictures it names, kept
+ *  beside it in a few bytes — so asking "whose is it?" does not read the whole
+ *  project (12 Nov: a start read the open project twice, once only for its id). */
 const KEY_WHOSE = 'currentProjectWhose';
+type Whose = { projectId: string | null; pics?: string[] };
 
-export async function saveSnapshot(snap: CurrentProjectSnapshot): Promise<void> {
-  await withStore('readwrite', (s) => { s.put({ projectId: snap.projectId ?? null }, KEY_WHOSE); return s.put(snap, KEY); });
+// One save or clear at a time, in the order asked: a save is several steps now
+// (the pictures first, then the project that names them).
+let _saveLine: Promise<unknown> = Promise.resolve();
+function inTurn<T>(work: () => Promise<T>): Promise<T> {
+  const mine = _saveLine.then(work, work);
+  _saveLine = mine.catch(() => undefined);
+  return mine;
+}
+
+const say = (line: string): void => { void import('./syncTrace').then(({ trace }) => trace(line)); };
+
+/**
+ * THE PROJECT IS SAVED WITHOUT ITS PICTURES INSIDE IT (12 Nov, picStore.ts has
+ * the whole story). Each picture goes onto the device once, by itself; the
+ * save names it. The save is written only after every picture it names is
+ * there.
+ */
+export function saveSnapshot(snap: CurrentProjectSnapshot): Promise<void> {
+  return inTurn(async () => {
+    const { takePicturesOut } = await import('./picStore');
+    // IF THE PICTURES CANNOT BE FILED BY THEMSELVES, THE SAVE IS WRITTEN WHOLE,
+    // AS IT ALWAYS WAS — a save must never fail because of the tidier way.
+    const out = await takePicturesOut(snap).catch((e) => {
+      say(`  the pictures could not be put on the device by themselves (${String((e as Error)?.message ?? e)}) — this save is written whole`);
+      return { light: snap, names: [] as string[], written: 0 };
+    });
+    if (out.written > 0) say(`  ${out.written} picture(s) put on this device, each by itself (the save names ${out.names.length})`);
+    await withStore('readwrite', (s) => {
+      s.put({ projectId: snap.projectId ?? null, pics: out.names } satisfies Whose, KEY_WHOSE);
+      return s.put(out.light, KEY);
+    });
+    void tidyPictures();
+  });
+}
+
+/** FOR THE SIMULATOR: the save exactly as it lies on the device (its pictures named, not inside). */
+export async function rawSaveForTest(): Promise<unknown> {
+  return withStore('readonly', (s) => s.get(KEY));
 }
 
 /** The cloud id of the project saved on this device (null: none, or not in the cloud). */
 export async function savedProjectId(): Promise<string | null> {
   try {
-    const w = await withStore('readonly', (s) => s.get(KEY_WHOSE)) as { projectId: string | null } | undefined;
+    const w = await withStore('readonly', (s) => s.get(KEY_WHOSE)) as Whose | undefined;
     if (w) return w.projectId ?? null;
-    return (await loadSnapshot())?.projectId ?? null;   // a save from before this note existed
+    return ((await withStore('readonly', (s) => s.get(KEY))) as CurrentProjectSnapshot | undefined)?.projectId ?? null;   // a save from before this note existed
   } catch { return null; }
 }
 
 export async function loadSnapshot(): Promise<CurrentProjectSnapshot | null> {
   try {
-    const value = await withStore('readonly', (s) => s.get(KEY));
-    return (value as CurrentProjectSnapshot | undefined) ?? null;
+    const value = (await withStore('readonly', (s) => s.get(KEY))) as CurrentProjectSnapshot | undefined;
+    if (!value) return null;
+    const { putPicturesBack } = await import('./picStore');
+    // once more after a moment if the pictures cannot be read (iOS's storage
+    // process restarting) — a start with the project but without its pictures
+    // must not be the answer to a hiccup
+    const back = await putPicturesBack(value).catch(async () => {
+      await new Promise((r) => setTimeout(r, 600));
+      return putPicturesBack(value);
+    });
+    if (back.missing > 0) say(`THE SAVE ON THIS DEVICE NAMES ${back.missing} PICTURE(S) THAT ARE NOT ON THE DEVICE — those places are empty until the server sends them`);
+    return back.whole;
   } catch (e) {
     console.warn('[persistence] loadSnapshot failed', e);
     return null;
   }
 }
 
-export async function clearSnapshot(): Promise<void> {
-  await withStore('readwrite', (s) => { s.delete(KEY_WHOSE); return s.delete(KEY); });
+export function clearSnapshot(): Promise<void> {
+  return inTurn(async () => {
+    await withStore('readwrite', (s) => { s.delete(KEY_WHOSE); return s.delete(KEY); });
+  });
+}
+
+/**
+ * PICTURES NOTHING NAMES ANY MORE GO. Named = by the save of the open project,
+ * or by any copy kept on the device. If either list cannot be read for
+ * certain, nothing is removed. (And picStore removes a picture only at the
+ * second look that finds it unnamed.)
+ */
+async function tidyPictures(now = false): Promise<void> {
+  try {
+    if (!now && !(await picStore()).dueForALook()) return;
+    const named = new Set<string>();
+    const whose = (await withStore('readonly', (s) => s.get(KEY_WHOSE))) as Whose | undefined;
+    const hasSave = (await withStore<IDBValidKey | undefined>('readonly', (s) => s.getKey(KEY))) !== undefined;
+    if (hasSave && !whose?.pics) return;                 // a save from before the pictures were named: not certain
+    for (const n of whose?.pics ?? []) named.add(n);
+    const copies = await pendingPicNames();
+    if (!copies) return;                                 // the list of copies is not certain
+    for (const n of copies) named.add(n);
+    const { removeUnnamedPictures } = await import('./picStore');
+    const gone = await removeUnnamedPictures(named, now);
+    if (gone > 0) say(`  ${gone} picture(s) nothing names any more removed from this device`);
+  } catch { /* another time */ }
 }
 
 /**
@@ -372,6 +444,8 @@ export type PendingMeta = Omit<PendingRecord, 'snapshot'> & {
   frames: number;
   /** it carries change times — a copy without them is never sent on its own */
   stamped: boolean;
+  /** the pictures it names (picStore) — none for a copy from before 12 Nov, which holds its pictures itself */
+  pics?: string[];
 };
 
 /** THE LIST LIVES WITH THE COPIES, under a name of its own — it stays when a
@@ -388,13 +462,35 @@ const indexRecord = (index: PendingIndex): IndexRecord => ({
 });
 const readIndex = (v: unknown): PendingIndex => ({ ...((v as IndexRecord | undefined)?.index ?? {}) });
 
-function metaOf(rec: PendingRecord): PendingMeta {
+function metaOf(rec: PendingRecord, pics?: string[]): PendingMeta {
   const { snapshot, ...rest } = rec;
   return {
     ...rest,
     frames: snapshot?.frames?.length ?? 0,
     stamped: !!snapshot?.contentStamps && Object.keys(snapshot.contentStamps).length > 0,
+    pics: pics ?? _namesIn?.(snapshot) ?? [],
   };
+}
+// picStore's namesIn, once it has been loaded (it always has been by the time a
+// light copy exists: taking the pictures out is what makes a copy light)
+let _namesIn: ((light: unknown) => string[]) | null = null;
+async function picStore(): Promise<typeof import('./picStore')> {
+  const m = await import('./picStore');
+  _namesIn = m.namesIn;
+  return m;
+}
+
+/** The pictures the copies on this device name — null when that is not certain. */
+async function pendingPicNames(): Promise<Set<string> | null> {
+  await picStore();
+  const v = await withStore('readonly', (s) => s.get(PENDING_INDEX_KEY), PENDING_STORE);
+  const list = readIndex(v);
+  const keys = await withStore<IDBValidKey[]>('readonly', (s) => s.getAllKeys(), PENDING_STORE);
+  const names = (keys ?? []).map(String).filter((k) => k !== PENDING_INDEX_KEY);
+  if (!names.every((k) => list[k] && Array.isArray(list[k].pics))) return null;
+  const out = new Set<string>();
+  for (const k of names) for (const n of list[k].pics ?? []) out.add(n);
+  return out;
 }
 
 /** One step on the database with the copies, tried once more on a database iOS closed. */
@@ -426,6 +522,7 @@ export async function pendingIndexAndStore(): Promise<{ list: string[]; store: s
 
 /** A copy is written (or removed) and the list with it: both or neither. */
 async function writePending(key: string, rec: PendingRecord | null): Promise<void> {
+  await picStore();
   await onCopies<void>('readwrite', (copies) => {
     if (rec) copies.put(rec, key); else copies.delete(key);
     const read = copies.get(PENDING_INDEX_KEY);
@@ -439,7 +536,7 @@ async function writePending(key: string, rec: PendingRecord | null): Promise<voi
 }
 
 export async function markPendingParked(key: string): Promise<void> {
-  const rec = await getPending(key);
+  const rec = await getPendingRaw(key);
   if (!rec || rec.parkedAt) return;
   rec.parkedAt = Date.now();
   await writePending(key, rec);
@@ -456,9 +553,13 @@ export async function savePending(key: string, projectId: string | null, name: s
   // what is already known about a copy under this name — from the list, without
   // opening the copy (it is about to be written over anyway)
   const noted = readIndex(await withStore('readonly', (s) => s.get(PENDING_INDEX_KEY), PENDING_STORE).catch(() => undefined))[key];
-  const existing: { warned?: boolean; parkedAt?: number } | null = noted ?? await getPending(key);
+  const existing: { warned?: boolean; parkedAt?: number } | null = noted ?? await getPendingRaw(key);
+  // THE COPY NAMES ITS PICTURES, IT DOES NOT HOLD THEM (12 Nov): they go onto
+  // the device once, by themselves; three safety copies share one set.
+  const out = await (await picStore()).takePicturesOut(snapshot)
+    .catch(() => ({ light: snapshot, names: [] as string[], written: 0 }));   // not by themselves, then whole — never not at all
   const rec: PendingRecord = {
-    key, projectId, name, savedAt: Date.now(), snapshot,
+    key, projectId, name, savedAt: Date.now(), snapshot: out.light,
     warned: existing?.warned ?? false,
     ...(existing?.parkedAt ? { parkedAt: existing.parkedAt } : {}),
   };
@@ -468,7 +569,7 @@ export async function savePending(key: string, projectId: string | null, name: s
 
 /** Remember that the one-time notice has been shown, so it is not repeated. */
 export async function markPendingWarned(key: string): Promise<void> {
-  const rec = await getPending(key);
+  const rec = await getPendingRaw(key);
   if (!rec || rec.warned) return;
   rec.warned = true;
   await writePending(key, rec);
@@ -485,7 +586,7 @@ export const NEWEST_GRACE_MS = 72 * 60 * 60 * 1000;
  * is stamped and kept for a further 24 hours, then swept.
  */
 export async function markPendingUploaded(key: string): Promise<void> {
-  const rec = await getPending(key);
+  const rec = await getPendingRaw(key);
   if (!rec || rec.uploadedAt) return;
   // Move it to an archive key of its own. Carrying on working — online or not
   // — writes to the live key, so the copy as it stood when it was offline is
@@ -570,7 +671,7 @@ export async function listPending(): Promise<PendingMeta[]> {
     // THE LIST IS CHECKED AGAINST THE NAMES IN THE STORE — names only, nothing
     // is opened. Agreeing is the ordinary case and ends here.
     const have = new Set(keys);
-    const agrees = keys.every((k) => list[k]) && Object.keys(list).every((k) => have.has(k));
+    const agrees = keys.every((k) => list[k] && Array.isArray(list[k].pics)) && Object.keys(list).every((k) => have.has(k));
     if (agrees) return keys.map((k) => list[k]);
     return await mendPendingIndex();
   } catch (e) {
@@ -585,6 +686,7 @@ export async function listPending(): Promise<PendingMeta[]> {
  *  All in one step on the database, so a change made meanwhile is never
  *  written over. */
 async function mendPendingIndex(): Promise<PendingMeta[]> {
+  await picStore();
   return onCopies<PendingMeta[]>('readwrite', (copies, done) => {
     const first = copies.get(PENDING_INDEX_KEY);
     first.onsuccess = () => {
@@ -594,7 +696,7 @@ async function mendPendingIndex(): Promise<PendingMeta[]> {
         const keys = (readKeys.result ?? []).map(String).filter((k) => k !== PENDING_INDEX_KEY);
         const have = new Set(keys);
         for (const k of Object.keys(list)) if (!have.has(k)) delete list[k];
-        const missing = keys.filter((k) => !list[k]);
+        const missing = keys.filter((k) => !list[k] || !Array.isArray(list[k].pics));   // unknown, or noted before pictures were named
         const next = (): void => {
           const k = missing.shift();
           if (k === undefined) {
@@ -615,13 +717,28 @@ async function mendPendingIndex(): Promise<PendingMeta[]> {
   });
 }
 
-export async function getPending(key: string): Promise<PendingRecord | null> {
+/** A copy as it lies on the device: light (its pictures named, not inside) —
+ *  for the steps that only flip a mark on it and write it back. */
+async function getPendingRaw(key: string): Promise<PendingRecord | null> {
   try {
     const v = await withStore('readonly', (s) => s.get(key), PENDING_STORE);
     return (v as PendingRecord | undefined) ?? null;
   } catch {
     return null;
   }
+}
+
+/** A copy, whole: its pictures put back in. One whole project — read it only
+ *  when it is really going to be used. */
+export async function getPending(key: string): Promise<PendingRecord | null> {
+  const rec = await getPendingRaw(key);
+  if (!rec?.snapshot) return rec;
+  try {
+    const back = await (await picStore()).putPicturesBack(rec.snapshot);
+    if (back.missing > 0) say(`A COPY ON THIS DEVICE NAMES ${back.missing} PICTURE(S) THAT ARE NOT ON THE DEVICE — "${rec.name ?? key}"`);
+    rec.snapshot = back.whole;
+  } catch (e) { console.warn('[persistence] the pictures of a copy could not be read', e); return null; }
+  return rec;
 }
 
 // ---------------------------------------------------------------------------
@@ -652,7 +769,7 @@ export async function loadProjectListCache<T>(): Promise<T[]> {
  * exactly as a deleted project can. Only the sweep removes it for good.
  */
 export async function deletePending(key: string): Promise<void> {
-  const rec = await getPending(key);
+  const rec = await getPendingRaw(key);
   if (!rec) return;
   rec.deletedAt = Date.now();
   await writePending(key, rec);
@@ -698,7 +815,7 @@ export async function deleteEveryCopyOf(
 
 /** Undo a deletion made within the last 24 hours. */
 export async function recoverPending(key: string): Promise<void> {
-  const rec = await getPending(key);
+  const rec = await getPendingRaw(key);
   if (!rec?.deletedAt) return;
   delete rec.deletedAt;
   // Give it its window back. Its clock kept running while it sat deleted, so
@@ -769,13 +886,15 @@ export async function clearDeviceOnLogout(): Promise<void> {
   const { clearAllPreviews } = await import('./pictsStore');
   await clearAllPreviews(true).catch(() => undefined);
   const n = clearLocalStorageExcept(KEEP_ON_LOGOUT_PREFIXES);
-  const pending = await listPending();
+  const pending = await listPending();                            // (also brings the list of copies up to date, which the next line needs)
+  await tidyPictures(true);                                       // the open project's pictures go; the unsent copies keep theirs
   console.log(`[device] logout: project cache and previews cleared, ${n} local note(s) removed, ${pending.length} unsent cop${pending.length === 1 ? 'y' : 'ies'} kept`);
 }
 
 export async function wipeDeviceOnAccountDeletion(): Promise<void> {
   await withStore('readwrite', (s) => s.clear());
   await withStore('readwrite', (s) => s.clear(), PENDING_STORE);   // the copies, and their list with them
+  await (await picStore()).clearAllPictures().catch(() => undefined);
   const { clearAllPreviews } = await import('./pictsStore');
   await clearAllPreviews(false).catch(() => undefined);
   const n = clearLocalStorageExcept(['fh_device_id', 'fh_test']);

@@ -221,6 +221,8 @@ export interface TestDoor {
   storage(): { figure: { used: number; limit: number } | null; full: boolean; noticedStep: number };
   /** Show the STORAGE FULL notice again, so every button on it can be pressed (11 Nov). */
   storageFullNotice(): void;
+  /** The device's save: pictures inside it (must be 0), named by it, on the device; and what reading it gives against the live project (12 Nov). */
+  deviceSaveShape(): Promise<{ insideTheSave: number; namedByTheSave: number; onTheDevice: number; readBack: number; readBackLengths: number; live: number; liveLengths: number }>;
   /** The names in the list of device copies and the names in the store — they must agree (12 Nov). */
   copyListAndStore(): Promise<{ list: string[]; store: string[] }>;
   /** Close the LIBRARY if it is open (11 Nov). */
@@ -1283,6 +1285,7 @@ export function installTestDoor(): void {
     async closeDeviceStores() {
       const [{ closeDbAsIosDoes }, { closePictsDbAsIosDoes }] = await Promise.all([import('./persistence'), import('./pictsStore')]);
       await closeDbAsIosDoes(); await closePictsDbAsIosDoes();
+      await (await import('./picStore')).closePicsDbAsIosDoes();
     },
     async deviceSaveLabels() {
       const { loadSnapshot } = await import('./persistence');
@@ -1952,6 +1955,15 @@ export function installTestDoor(): void {
     startPullWithoutWaiting() { pullNow(); },
 
     waveSaveReminderAway() { markSaveOffered(); },
+    async deviceSaveShape() {
+      const [{ rawSaveForTest, loadSnapshot, snapshotFromStore }, { countPictures, picNames }] = await Promise.all([import('./persistence'), import('./picStore')]);
+      const cp = getCurrentProject();
+      const lying = countPictures(await rawSaveForTest());
+      const read = countPictures(await loadSnapshot());
+      const live = countPictures(snapshotFromStore(cp.projectId, cp.name));   // exactly what a save is made from
+      return { insideTheSave: lying.inside, namedByTheSave: lying.named, onTheDevice: (await picNames()).length,
+               readBack: read.inside, readBackLengths: read.lengths, live: live.inside, liveLengths: live.lengths };
+    },
     async copyListAndStore() {
       const { listPending, pendingIndexAndStore } = await import('./persistence');
       await listPending();                       // as the app does: mends the list if it must

@@ -253,6 +253,13 @@ Run `date` before writing "tonight", "tomorrow morning", "good night" or any
 other time-of-day word. 4 Nov: I wished him good night in the morning, from a
 guess. The sandbox clock is already CET; there is no excuse for guessing.
 
+## THE DEVICE SAVE NAMES ITS PICTURES SINCE v5.0.265 (12 Nov) — NO OLDER BUILD ON A DEVICE THAT RAN IT
+From v5.0.265 the project saved on the device (IndexedDB `framehow` › state › currentProject) and every copy in
+`pending` hold `fhpic:<name>` where a picture was; the pictures are in the database `framehow-pics`, one each
+(src/lib/picStore.ts). A build older than v5.0.265 would read those names as pictures. Never deploy an older
+build to an address where v5.0.265+ has run (dev since 12 Nov; live from the first live release that carries it).
+`npm run bench:save` must be green before any change to persistence.ts or picStore.ts goes out.
+
 ## THE DEPLOY COMMAND IS THE SCRIPT, NEVER HAND-WRITTEN (4 Nov, Roman)
 
 On 4 Nov I hand-wrote the deploy chain all afternoon and dropped the beep,
