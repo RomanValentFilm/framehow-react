@@ -257,7 +257,7 @@ guess. The sandbox clock is already CET; there is no excuse for guessing.
 From v5.0.265 the project saved on the device (IndexedDB `framehow` › state › currentProject) and every copy in
 `pending` hold `fhpic:<name>` where a picture was; the pictures are in the database `framehow-pics`, one each
 (src/lib/picStore.ts). A build older than v5.0.265 would read those names as pictures. Never deploy an older
-build to an address where v5.0.265+ has run (dev since 12 Nov; live from the first live release that carries it).
+build to an address where v5.0.265+ has run (dev since 12 Nov; LIVE SINCE v5.0.270, 12 Nov 21:43 — no live release below v5.0.265 ever again).
 `npm run bench:save` must be green before any change to persistence.ts or picStore.ts goes out.
 
 ## THE DEPLOY COMMAND IS THE SCRIPT, NEVER HAND-WRITTEN (4 Nov, Roman)
@@ -323,7 +323,7 @@ cd ~/Desktop/Framehow\ Files/framehow-react && git push origin v4.4:main
 - 6 Nov: the GitHub push to main did NOT publish (live stayed on v109 for 20+ min, cause unseen). A DIRECT UPLOAD worked that day: `npx wrangler pages deploy dist --project-name=framehow-react --branch=main --commit-dirty=true` → "Deployment complete" in 1 s. USE THAT as the live command after the push; keep the push so main matches.
 - (12 Oct) A DIRECT UPLOAD to `--branch main` FAILED on this project ("Failed to publish your Function. Got error: Unknown internal error") — tried three times on 12 Oct; dev direct uploads work. Do not use `wrangler pages deploy … --branch main`.
 - `main` is an ancestor of `v4.4`, so the push is a plain fast-forward. Only push a commit a FULL RUN has proven green.
-- Serves on **framehow.com/app** (custom domain). First launch: v5.0.000 · #552, 12 Oct 2026. Last live: v5.0.262 · #814, 11 Nov 2026 (8211dd2, FH_LIVE push after green full run 708; 154 passed). Before: v5.0.152 · #704, 6 Nov 2026 (e28bdc6, push + direct upload). Dev: v5.0.171 · #723 (native camera, 6 Nov evening).
+- Serves on **framehow.com/app** (custom domain). First launch: v5.0.000 · #552, 12 Oct 2026. Last live: v5.0.270 · #822, 12 Nov 2026 21:43 (d26b7e4; full run 720: 161 passed, 1 red = the harness's 300-line log, fixed; run 721 that test green, then FH_LIVE push). Before: v5.0.262 · #814, 11 Nov 2026 (8211dd2, FH_LIVE push after green full run 708; 154 passed). Before: v5.0.152 · #704, 6 Nov 2026 (e28bdc6, push + direct upload). Dev: v5.0.171 · #723 (native camera, 6 Nov evening).
 - Deploy to production ONLY when user explicitly says so
 
 ### Version numbering
