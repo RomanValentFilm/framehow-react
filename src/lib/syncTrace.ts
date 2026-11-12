@@ -20,7 +20,7 @@ import { APP_VERSION } from '../store/state';
  *  It is bumped BY HAND, which is why it sat at #309 through #310, #311, #312
  *  and #313 — telling the screen a version of events that was four changes out
  *  of date. Worth remembering the next time it is trusted in a log. */
-export const SYNC_BUILD_TAG = '#821';
+export const SYNC_BUILD_TAG = '#822';
 
 let box: HTMLElement | null = null;
 
@@ -29,7 +29,13 @@ let box: HTMLElement | null = null;
  *  app is being used (it covers the controls) and be turned on afterwards to
  *  read what just happened. Nothing has to be reproduced twice. */
 const _recorded: string[] = [];
-const KEEP = 300;
+/** How many lines are kept. In the simulator far more: its tests COUNT lines
+ *  ("one more 'arrangement arrived' than before"), and at 300 an old line
+ *  falling off the end hid the new one — full run 720, test 31, after a day
+ *  that added log lines. On a person's device 300 is plenty. */
+function keepLines(): number {
+  try { return localStorage.getItem('fh_test') === '1' || /fhtest=1/.test(location.search) ? 6000 : 300; } catch { return 300; }
+}
 
 // TWO separate things, because hiding the strip must not turn the offline cache
 // off with it (#275):
@@ -244,7 +250,7 @@ export function trace(msg: string): void {
   const since = _landedAt ? Date.now() - _landedAt : -1;
   const text = `${new Date().toLocaleTimeString()}  ${msg}${since >= 0 && since < 4000 ? `  [+${since}]` : ''}`;
   _recorded.unshift(text);                       // newest first
-  if (_recorded.length > KEEP) _recorded.length = KEEP;
+  if (_recorded.length > keepLines()) _recorded.length = keepLines();
   keepAcrossRestart(/camera|turn|^start:/.test(msg));
 
   // If the strip has to be built now, it draws the whole recorded history —
@@ -255,5 +261,5 @@ export function trace(msg: string): void {
   if (!el) return;
   if (wasThere) appendLine(el, text);
   const lines = el.querySelectorAll('[data-line]');
-  for (let i = KEEP; i < lines.length; i++) lines[i].remove();
+  for (let i = keepLines(); i < lines.length; i++) lines[i].remove();
 }

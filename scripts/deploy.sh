@@ -29,6 +29,10 @@ finish() {
   osascript -e "display notification \"$1 — say zzz\" with title \"Framehow\"" 2>/dev/null
   echo "--- $1 ($VERSION · $TAG, run $RUN) — say zzz — $SND ---"
 }
+# THE DEVICE-SAVE BENCH, EVERY TIME (12 Nov): 35 checks in five seconds that the
+# code which writes work onto the device loses nothing. No deploy without it.
+npm run -s bench:save > /tmp/fh-bench-save.log 2>&1 || { tail -20 /tmp/fh-bench-save.log; finish "Device-save bench RED, nothing deployed"; exit 1; }
+echo "device-save bench: all good"
 if [ -n "$FH_NOTEST" ]; then
   # The tests were just run green on this same code (29 Oct, Roman: "we just did the tests").
   echo "tests skipped (FH_NOTEST) — the last run proved this code"
