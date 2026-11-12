@@ -1538,10 +1538,9 @@ async function loadCloudProject(p: CloudProject): Promise<void> {
   // now: the project being left is sent, or filed on this device under its own
   // name (below), and stays in the project list.
   const leavingUnsent = cp.dirty && cp.projectId !== p.id;
-  // (if the opening fails before anything of the new project is on the screen,
-  // the project that is still there keeps the name it was filed under)
-  let leftLocalKey: string | null = null;
-  let newOneIsOnScreen = false;
+  // The project being left, whole, as it stood — it comes back on the screen if
+  // the opening fails (no line, the server down).
+  let left: HeldOpenProject | null = null;
 
   // Show loading progress overlay
   const progressEl = document.getElementById('progressOverlay');
@@ -1578,32 +1577,48 @@ async function loadCloudProject(p: CloudProject): Promise<void> {
       try { await fileOpenProjectAsUnsent(); } catch { /* filed by the push's own failure path, as before */ }
     }
 
-    // LET NOTHING OF THE OLD PROJECT CROSS (#424).
+    // THE OLD PROJECT LEAVES THE SCREEN THE MOMENT THE NEW ONE IS CHOSEN (Roman,
+    // 12 Nov: "why don't you wipe off the screen the old project in the same
+    // moment when the user decides to open the new one? There can't be two
+    // projects on the screen at the same time.").
     //
-    // Making a new project and starting from scratch both clear these; opening
-    // one never did. It was the only path that did not, and it is the path
-    // taken most.
+    // Until now the old project stayed "the open project" — and its shots, or
+    // the new one's over its name — for as long as the new one's pictures took
+    // to arrive: twenty seconds for a big one. Everything that says "take what
+    // is on the screen as the open project's work" did the wrong thing in that
+    // time; three of them were met on one day (a fetch laid over the new shots,
+    // a finished save claiming the screen, the new shots filed as the old
+    // project's work). And the old project's own choices stayed in force for
+    // the new one where its record did not say otherwise — the camera's ratio:
+    // landscape photos cut to an upright stripe in WF 7 after an upright project.
     //
-    // The flush above is not enough on its own. `flushSyncNow` gives up in
-    // silence when a pull or a push is already running — and one is running
-    // every few seconds — so tapping a project in the list at an ordinary
-    // moment leaves the outgoing project's unsent deletions sitting there.
-    // They then go up under the NEW project's id, telling the server to delete
-    // frames it never had. resetProjectSyncGuards says exactly this in its own
-    // comments (#327); the open path simply never called it.
+    // Now: the project being left has been sent or filed (above); it is held
+    // here, whole, in case the opening fails; and then the screen is empty and
+    // NO project is open until the new one has arrived. The device's save is
+    // not touched in between — the app closed half way comes back in the old
+    // project.
+    left = holdOpenProject();
+    // LET NOTHING OF THE OLD PROJECT CROSS (#424): its unsent deletions, its
+    // counts, its fingerprints, the tree the delta fetch folds into.
     resetProjectSyncGuards();
 
     if (progressBar) progressBar.style.width = '20%';
     // 2. Pause auto-sync to prevent cross-contamination during load
     setProjectSwitchInFlight(true);
-    // THE DEVICE-ONLY NAME OF THE PROJECT BEING LEFT IS NOT CARRIED INTO THE NEXT
-    // ONE (12 Nov, found by test 68). It stayed: the first save in the project
-    // opened here then marked the LEFT project's copy "already uploaded"
-    // (currentProject: markPendingUploaded(_localId)) — an unsaved project that
-    // had never been to the server, turned into a grey safety copy and swept
-    // after three days. And the left project could not be told from the open one.
-    leftLocalKey = localProjectId();
-    newLocalProjectIdentity();
+    {
+      const viewBefore = state().currentViewMode;      // the person stays in the view they were in
+      beginSystemAction();
+      try {
+        resetStoryboardState();
+        useStore.setState({ currentViewMode: viewBefore } as never);
+        // no project is open now; a new device-only name, so nothing done from
+        // here on is filed under the left project's (clearCurrentProject)
+        clearCurrentProject({ keepDeviceSave: true });
+      } finally {
+        endSystemAction();
+      }
+      (window as any).__fh_renderAll?.();
+    }
 
     // AN UNSENT COPY OF THIS PROJECT ON THIS DEVICE COMES FIRST (#522, launch
     // item 1). Work done on it with no signal, then left for another project,
@@ -1637,7 +1652,6 @@ async function loadCloudProject(p: CloudProject): Promise<void> {
     if (state().sortEditingId) closeSortMode();
     // System action: prevent setState calls from being treated as user changes
     beginSystemAction();
-    newOneIsOnScreen = true;
     try {
       await applyCloudTreeToStore(tree, undefined, (loaded, total) => {
         if (total === 0) return;
@@ -1674,7 +1688,17 @@ async function loadCloudProject(p: CloudProject): Promise<void> {
     }, 300);
   } catch (e) {
     if (progressEl) progressEl.classList.add('hidden');
-    if (leftLocalKey && !newOneIsOnScreen) adoptLocalProjectId(leftLocalKey);
+    // THE OPENING FAILED: the project that was left comes back, as it was.
+    if (left) {
+      try {
+        putOpenProjectBack(left);
+        (window as any).__fh_renderAll?.();
+        setViewMode(state().currentViewMode);
+        trace(`  the opening failed (${asMessage(e, 'no answer')}) — back to "${left.cp.name ?? 'the project that was open'}", as it was`);
+      } catch (e2) {
+        console.error('[open project] putting the left project back', e2);
+      }
+    }
     showToast(asMessage(e, 'Could not load project.'));
   } finally {
     // 5. Resume auto-sync

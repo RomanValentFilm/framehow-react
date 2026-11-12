@@ -388,6 +388,17 @@ test('an unsaved project that is left becomes a full "Untitled" project on the s
   const now = await desktop.read();
   expect(now.projectId, 'BIG is still the open project').toBe(bigId);
   expect(now.frames.length, 'BIG has its three shots, nothing else').toBe(3);
+
+  // ONE "Untitled" PROJECT, NOT TWO (Roman's phone, 19:21): while BIG was being
+  // opened, BIG's own shots were filed as the unsaved project's work, and a
+  // second "Untitled" was made for them.
+  await desktop.page.waitForTimeout(10_000);
+  await desktop.settle();
+  const untitled = (await Device.projectNames(token)).filter((n) => /^Untitled \d/.test(n));
+  say(`   Untitled projects on the server: ${untitled.join(', ')}`);
+  expect(untitled.length, 'EXACTLY ONE "Untitled" PROJECT — the one that was left').toBe(1);
+  const log = (await desktop.log()).join('\n');
+  expect(log, 'no shots of BIG were sent into another project').not.toContain('belong to ANOTHER project');
   await desktop.close();
 });
 
@@ -434,4 +445,74 @@ test('two unsaved projects and the app is closed: the new one comes back, the ol
   expect(after.frames.map((f) => f.label).join('|'), 'and still nothing of it in the open project').not.toContain('OLD TRY');
   expect(after.frames.map((f) => f.label)).toContain('NEW ONE');
   await desktop.close();
+});
+
+// THE OLD PROJECT LEAVES THE SCREEN THE MOMENT THE NEW ONE IS CHOSEN — AND COMES
+// BACK IF THE OPENING FAILS (Roman, 12 Nov: "why don't you wipe off the screen
+// the old project in the same moment when the user decides to open the new
+// one? There can't be two projects on the screen at the same time.")
+//
+// THE RULES IT HOLDS TO
+//   · while the new project is loading, NO project is open and no shot of the
+//     old one is on the screen
+//   · the opening fails (the server does not answer): the old project is back,
+//     whole, and is the open one — and it still saves
+test('opening: the old project leaves the screen at once; if the opening fails it comes back whole', async ({ browser }) => {
+  const { token } = await freshAccount();
+  const desktop = await Device.open(browser, 'desktop', token);
+  const tablet = await Device.open(browser, 'tablet', token, true);
+
+  const bigId = await desktop.newProject('BIG', 3);
+  await desktop.putPicture(0, png(1)); await desktop.putPicture(1, png(2));
+  await desktop.settle();
+  const homeId = await desktop.newProject('HOME', 2);
+  await desktop.putPicture(0, png(3));
+  await desktop.renameFrame(0, 'HOME ONE');
+  await desktop.settle();
+  await desktop.reload();
+  await desktop.settle();
+
+  say('BIG is opened, its pictures are slow: in the middle, nothing of HOME is on the screen and no project is open');
+  await desktop.page.route('**/images/**', async (route) => {
+    await new Promise((r) => setTimeout(r, 6_000));
+    await route.continue().catch(() => undefined);
+  });
+  void desktop.page.evaluate((pid) => { void (window as never as { __fh_test: { openProject(i: string): Promise<void> } }).__fh_test.openProject(pid as string).catch(() => undefined); }, bigId!);
+  await desktop.page.waitForTimeout(2_500);
+  const mid = await desktop.read();
+  say(`   in the middle: open project ${mid.projectId ?? 'none'}, shots: ${mid.frames.map((f) => f.label).join(', ') || 'none'}`);
+  expect(mid.projectId, 'NO PROJECT IS OPEN WHILE THE NEW ONE LOADS — not the old one').not.toBe(homeId);
+  expect(mid.frames.map((f) => f.label).join('|'), 'no shot of the old project on the screen').not.toContain('HOME ONE');
+  await expect.poll(async () => (await desktop.read()).projectId, { timeout: 60_000 }).toBe(bigId);
+  await desktop.page.unroute('**/images/**');
+  await desktop.settle();
+  expect((await desktop.read()).frames.length, 'BIG arrived with its three shots').toBe(3);
+
+  say('back to HOME (it opens whole), then BIG again — but this time the server does not answer');
+  await desktop.openProject(homeId!);
+  await desktop.settle();
+  expect((await desktop.read()).frames.map((f) => f.label)).toContain('HOME ONE');
+  await desktop.page.route(`**/projects/${bigId}/sync*`, (route) => route.abort());
+  await desktop.openProject(bigId!);            // returns when the opening has given up
+  await desktop.page.unroute(`**/projects/${bigId}/sync*`);
+  await desktop.page.waitForTimeout(1_000);
+  const back = await desktop.read();
+  say(`   after the failed opening: open project ${back.projectId?.slice(0, 6) ?? 'none'}, shots: ${back.frames.map((f) => f.label).join(', ')}`);
+  expect(back.projectId, 'THE OLD PROJECT IS THE OPEN ONE AGAIN').toBe(homeId);
+  expect(back.frames.length, 'with its two shots').toBe(2);
+  expect(back.frames.map((f) => f.label)).toContain('HOME ONE');
+  const shape = await desktop.page.evaluate(() =>
+    (window as never as { __fh_test: { deviceSaveShape(): Promise<{ live: number }> } }).__fh_test.deviceSaveShape());
+  expect(shape.live, 'and its picture').toBeGreaterThanOrEqual(1);
+
+  say('and it still works: a change in HOME reaches the tablet');
+  await desktop.renameFrame(1, 'HOME TWO');
+  await desktop.settle();
+  await tablet.openProject(homeId!);
+  await tablet.settle();
+  await Device.waitUntilWholeAgrees(desktop, tablet, 'HOME after the failed opening');
+  expect((await tablet.read()).frames.map((f) => f.label)).toContain('HOME TWO');
+
+  await desktop.close();
+  await tablet.close();
 });

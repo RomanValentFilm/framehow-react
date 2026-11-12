@@ -829,6 +829,18 @@ async function noticeUnsent(pid: string | null, name: string | null,
                             snapshot: ReturnType<typeof snapshotFromStore>,
                             key: string = pid ?? unsentKey(),
                             mayWarn = true): Promise<void> {
+  // NEVER WHILE A PROJECT IS BEING OPENED (12 Nov 19:21, Roman's phone). In that
+  // time the screen holds the NEW project's shots while "the open project" is
+  // still the old one — here an unsaved one, with no place on the server. Its
+  // ordinary "file my work on the device" ran in the middle and filed WF 7's 26
+  // shots as that unsaved project's work; the new rule then made an "Untitled
+  // 12 Nov 19:21" project for it and tried to send WF 7 into it (the server
+  // refused the shots, #49). The project being left is filed BEFORE the opening
+  // begins (fileOpenProjectAsUnsent); during it, nothing is.
+  if (_projectSwitchInFlight) {
+    traceOnce('  nothing is filed on the device while a project is being opened — what is on the screen is not the open project yet');
+    return;
+  }
   const firstTime = await savePending(key, pid, name, snapshot);
 
   // The work is filed either way. Whether to SAY anything is a separate
