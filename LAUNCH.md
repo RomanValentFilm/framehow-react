@@ -12,6 +12,8 @@ D7 video + Fitting page text, F1 new token.
 - THE BAR FOR "SOLID" (Claude's proposal, Roman has not said yes yet): in the iPhone app and on the iPad — (1) a 300-photo project opens, shoots, saves, survives a turn and a restart, no COULD NOT SAVE, no page restart · (2) a fresh start with no connection opens the project with its pictures · (3) full run green · (4) Roman uses it one real working day and nothing breaks.
 - TIME: about three working weeks of work to submission (aim: submitted by 3 December), the rest of the month is Apple's review — that part is not in our hands.
 
+## !! A FETCH DURING AN OPENING MIXED TWO PROJECTS (12 Nov 12:10, Roman's phone) — fixed in v5.0.267 (run 715), test 68. THE SAME FAULT IS IN LIVE v5.0.262: it goes live with the next live release; until then live users can hit it (photos in one project, then a big project opened within seconds). Roman restored WF 7 from a restore point; "9x16 proj" to be looked at by him (4 shots expected).
+
 ## THE PATH TO APPLE (Roman, 11 Nov late: "we need to be in the App Store" — nothing is announced before that; everything not on this path waits)
 1. G21 step 0: the start-up loop in the iPhone app · 2. G21 step 1: FILL 25 in the app and the web app · 3. G21 steps 2–3 as far as the numbers demand
 4. C2 build 2 on the iPhone, C2b on the iPad, C2c start with no connection · 5. C3 the app points at framehow.com/app · 6. D1/D10 Terms + Privacy, D3–D5 forms, D9 2FA · 7. D11 screenshots, texts, review account → SUBMIT

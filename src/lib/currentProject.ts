@@ -199,7 +199,17 @@ export function setPullInFlight(v: boolean): void {
 
 /** Pause all cloud sync (used during project switches to prevent cross-contamination). */
 let _projectSwitchInFlight = false;
+/** A PROJECT IS BEING OPENED: from the tap in the list until every picture is
+ *  in. For all of that time the screen already holds the NEW project while the
+ *  app still calls the OLD one "open" — so nothing may be fetched, sent or
+ *  saved under the old one's name meanwhile (12 Nov, see tryPullFromCloud). */
+export function isProjectSwitchInFlight(): boolean { return _projectSwitchInFlight; }
+let _projectSwitches = 0;
+/** How many times a project has been opened from the list — to notice, after
+ *  waiting for the server, that one was opened in the meantime. */
+export function projectSwitchCount(): number { return _projectSwitches; }
 export function setProjectSwitchInFlight(v: boolean): void {
+  if (v) _projectSwitches++;
   _projectSwitchInFlight = v;
 }
 

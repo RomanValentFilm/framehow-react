@@ -50,7 +50,7 @@ import {
   setProjectName,
   setPullInFlight,
   setPullIncomplete,
-  setProjectSwitchInFlight,
+  setProjectSwitchInFlight, isProjectSwitchInFlight, projectSwitchCount,
   flushSyncNow,
   cancelPendingPush,
   beginSystemAction,
@@ -5616,6 +5616,8 @@ export function signalActivity(): void {
 async function sendHeartbeat(): Promise<void> {
   const cp = getCurrentProject();
   if (!cp.projectId || !isLoggedIn()) return;
+  if (isProjectSwitchInFlight()) return;      // the "open project" is not what is on the screen just now (12 Nov)
+  const switchesAtStart = projectSwitchCount();
   try {
     const beat = await api.post<{
       ok: boolean;
@@ -5653,6 +5655,7 @@ async function sendHeartbeat(): Promise<void> {
     // The storage figure rides with the heartbeat (9 Nov): a held push wakes
     // when the email is confirmed elsewhere or space is freed — see noteStorage.
     if (beat?.storage) noteStorage(beat.storage);
+    if (isProjectSwitchInFlight() || projectSwitchCount() !== switchesAtStart || getCurrentProject().projectId !== cp.projectId) return;
     const remoteAt = beat?.project_updated_at ?? null;
     if (remoteAt !== null) {
       if (serverHasSomethingNew({ takenFromServerAt: takenFromServerAt ?? 0 } as DeviceMemory, remoteAt)) {
@@ -6704,6 +6707,16 @@ async function tryPullFromCloud(force = false): Promise<void> {
   // answer, and then skipped the one pull that would have applied it. Every
   // early exit is traced here, so a pull can never again vanish unseen.
   if (pullInFlight) { quietly('  not fetching: another fetch is still running'); return; }
+  // NOT WHILE A PROJECT IS BEING OPENED (12 Nov, Roman's phone: "it mixed up the
+  // two projects"). Opening puts the new project's shots on the screen first
+  // and loads its pictures — twenty seconds for a big one — and only then calls
+  // it the open project. A fetch in that time was still for the OLD project:
+  // its answer was laid over the NEW project's shots, the new shots were "kept
+  // as local work" inside the old project, and both went on mixed (9x16 proj
+  // and WF 7, 30 shots). He had shot photos in the old one seconds before, so
+  // the heartbeat had something to fetch; a tap while WF 7 was loading set it off.
+  if (isProjectSwitchInFlight()) { quietly('  not fetching: a project is being opened'); return; }
+  const switchesAtStart = projectSwitchCount();
   // NOR WHILE A PHOTO IS LANDING (11 Nov — see holdSyncFor): the next heartbeat brings it.
   { const why = syncHeldBecause(); if (why) { quietly(`  not fetching: ${why}`); return; } }
   // NOT WHILE THE CAMERA IS OPEN (25 Oct): a pull redraws every card, which
@@ -6807,6 +6820,12 @@ async function tryPullFromCloud(force = false): Promise<void> {
     // That is the same shape as the fault that put one project's frames into
     // another (#417). The answer belongs to a project nobody is looking at any
     // more: drop it. The heartbeat brings the right one along in a moment.
+    // …and an answer that comes back after a project was opened meanwhile (or
+    // while one is still being opened) is for a screen that is no longer there.
+    if (isProjectSwitchInFlight() || projectSwitchCount() !== switchesAtStart) {
+      trace(`  answer came back while another project was being opened (it was for ${cp.projectId.slice(0, 6)}) — dropped`);
+      return;
+    }
     const nowIn = getCurrentProject().projectId;
     if (nowIn !== cp.projectId) {
       trace(`  answer was for another project (${cp.projectId.slice(0, 6)}`
