@@ -7445,11 +7445,26 @@ export async function bootstrapAccountSystem(): Promise<void> {
   // another — is put in place with its memory, synced, and archived. The one
   // matching the project about to be restored below is left to the ordinary
   // retry, which handles the open project.
+  // WHAT THE DEVICE HOLDS, SAID BEFORE ANY OF IT IS READ (12 Nov, Roman's phone:
+  // the page started anew twelve times in nine seconds with a one-shot project
+  // open). Every copy kept on the device is a whole project with its pictures,
+  // and a start reads all of them. These lines are written to the device at
+  // once, so a start that falls over names the step it fell in.
+  try {
+    const { pendingKeys, storageEstimate } = await import('./persistence');
+    const keys = await pendingKeys();
+    const est = await storageEstimate();
+    const kind = (k: string) => (k.startsWith('archive:') ? 'safety copy of ' : 'unsent ') + k.replace(/^archive:/, '').replace(/:\d+$/, '').slice(0, 8);
+    trace(`start: ${keys.length} whole-project cop${keys.length === 1 ? 'y' : 'ies'} kept on this device${keys.length ? ` — ${keys.map(kind).join(' · ')}` : ''}${est ? ` · device storage used: ${Math.round(est.usage / 1048576)} MB` : ''}`);
+  } catch { /* the lines are a help, never a stop */ }
+  trace('start: step 1 — reading the copies to look for unsent work');
   await uploadUnsentCopies('start');
+  trace('start: step 2 — reading the open project from the device');
 
   // 2. Restore unsaved local project from IndexedDB if present.
   try {
     const snap = await loadSnapshot();
+    trace(`start: step 2 done — ${snap ? `${snap.frames.length} shot(s)` : 'nothing saved'}`);
     if (snap && snap.frames.length > 0) {
       dismissNewProjectModal();
       beginSystemAction();

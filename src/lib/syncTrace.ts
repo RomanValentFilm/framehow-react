@@ -20,7 +20,7 @@ import { APP_VERSION } from '../store/state';
  *  It is bumped BY HAND, which is why it sat at #309 through #310, #311, #312
  *  and #313 — telling the screen a version of events that was four changes out
  *  of date. Worth remembering the next time it is trusted in a log. */
-export const SYNC_BUILD_TAG = '#814';
+export const SYNC_BUILD_TAG = '#815';
 
 let box: HTMLElement | null = null;
 
@@ -245,7 +245,7 @@ export function trace(msg: string): void {
   const text = `${new Date().toLocaleTimeString()}  ${msg}${since >= 0 && since < 4000 ? `  [+${since}]` : ''}`;
   _recorded.unshift(text);                       // newest first
   if (_recorded.length > KEEP) _recorded.length = KEEP;
-  keepAcrossRestart(/camera|turn/.test(msg));
+  keepAcrossRestart(/camera|turn|^start:/.test(msg));
 
   // If the strip has to be built now, it draws the whole recorded history —
   // which already includes the line above. Drawing it again put every first line

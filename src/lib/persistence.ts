@@ -456,6 +456,13 @@ export async function clearPending(key: string): Promise<void> {
   }
 }
 
+/** Only the NAMES the copies are filed under — nothing of their contents is
+ *  read (12 Nov: a start read every whole copy, pictures and all, three times). */
+export async function pendingKeys(): Promise<string[]> {
+  try { return ((await withStore<IDBValidKey[]>('readonly', (s) => s.getAllKeys(), PENDING_STORE)) ?? []).map(String); }
+  catch { return []; }
+}
+
 export async function listPending(): Promise<PendingRecord[]> {
   try {
     const values = await withStore<any[]>('readonly', (s) => s.getAll(), PENDING_STORE);
