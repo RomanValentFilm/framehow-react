@@ -402,3 +402,9 @@ v5.0.225 · #777 (10 Nov, night)
 - Saves and copies from before this change (pictures inside) read as before and become light the next time they are written.
 - NEW: `npm run bench:save` (35 checks against a stand-in database: nothing lost, nothing written twice, old saves, a missing picture, removal only at the second look). Test 67 (the save holds no picture, reads back whole, to the byte count; after a reload; after iOS closed the databases). In the simulator the line for "a picture" is 64 bytes, so every test with a picture goes this way.
 - NO WAY BACK BELOW THIS VERSION ON A DEVICE THAT RAN IT: an older page reads the names (fhpic:…) as if they were pictures. Dev only until a full run has passed.
+
+## v5.0.266 · #818 (12 Nov, run 714)
+- WF 7 (251 pictures) in the iPhone app after v5.0.265: opened, switched away and back, camera with a turn, three photos, writing — no restart, no COULD NOT SAVE; filing 251 pictures 1.5 s once, later saves 0.2 s; device storage 655 MB (was 1941).
+- ONE REDRAW A SECOND WHILE A PROJECT'S PICTURES ARRIVE (was one per picture: 13–46 redraws of all cards in a row; taps swallowed at start, slow after deleting in the LIBRARY). The first one after 150 ms, so a single picture is on its card at once; one more at the end.
+- PICTURES ARE FETCHED EIGHT AT A TIME (was all at once: 251 in one burst).
+- A save that had to be written whole (pictures could not be filed by themselves) is done again the light way after 10, 30 and 90 s.

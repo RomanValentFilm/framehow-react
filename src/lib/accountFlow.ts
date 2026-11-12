@@ -4969,12 +4969,41 @@ async function applyCloudTreeToStore(
     throw new Error('unreachable');
   }
 
+  // ONE REDRAW A SECOND WHILE THE PICTURES ARRIVE, NOT ONE PER PICTURE (12 Nov,
+  // Roman: "while the storage message shows you cannot properly click
+  // elsewhere … the app behind it is figuring out what to do"; and slower after
+  // deleting in the LIBRARY). Every arriving picture redrew all the cards: his
+  // logs show 13 to 46 redraws of 26 shots in a row, 0.1–0.3 s each — the page
+  // did nothing else and taps were swallowed. The pictures still go into the
+  // project the moment they arrive; the cards are drawn at most once a second,
+  // and once more at the end.
+  // (A picture that comes alone is on its card at once: the first redraw waits
+  // only 150 ms; it is the ones after it that keep a second's distance.)
+  let redrawTimer: number | null = null;
+  let lastRedraw = 0;
+  const redrawSoon = (): void => {
+    if (redrawTimer !== null) return;
+    const wait = Math.max(150, 1000 - (Date.now() - lastRedraw));
+    redrawTimer = window.setTimeout(() => { redrawTimer = null; lastRedraw = Date.now(); (window as any).__fh_renderAll?.(); }, wait);
+  };
+  // EIGHT AT A TIME (12 Nov). All of a project's pictures used to be asked for
+  // at once — 251 for Roman's WF 7 — and arrived in one burst, each unpacked
+  // into memory at the same moment. Eight at a time is as fast over one line
+  // and never holds more than eight half-read pictures.
+  let running = 0;
+  const waiting: Array<() => void> = [];
+  const oneOfEight = async <T,>(job: () => Promise<T>): Promise<T> => {
+    if (running >= 8) await new Promise<void>((go) => waiting.push(go));
+    running++;
+    try { return await job(); } finally { running--; waiting.shift()?.(); }
+  };
+
   const failedTasks: string[] = [];  // descriptions of what failed
   const allFetches: Promise<void>[] = [];
 
   for (const task of mainImageTasks) {
     allFetches.push(
-      fetchWithRetry(task.r2Key)
+      oneOfEight(() => fetchWithRetry(task.r2Key))
         .then((dataUrl) => {
           const s = useStore.getState();
           const idx = s.frames.findIndex((f) => f.id === task.localId);
@@ -4982,7 +5011,7 @@ async function applyCloudTreeToStore(
           const updated = [...s.frames];
           updated[idx] = { ...updated[idx], src: dataUrl };
           useStore.setState((prev) => ({ frames: updated, renderTick: prev.renderTick + 1 }));
-          (window as any).__fh_renderAll?.();
+          redrawSoon();
           fetchedImageCount++;
           onImageProgress?.(fetchedImageCount, expectedImageCount);
         })
@@ -4994,7 +5023,7 @@ async function applyCloudTreeToStore(
               const updated = [...st.frames];
               updated[idx] = { ...updated[idx], src: '', r2Key: undefined, pictureDeleted: true };
               useStore.setState((prev) => ({ frames: updated, renderTick: prev.renderTick + 1 }));
-              (window as any).__fh_renderAll?.();
+              redrawSoon();
             }
             trace(`  picture deleted in the library (server has no file): shot ${st.frames[idx]?.label ?? task.localId} main — the card says so`);
             fetchedImageCount++;
@@ -5012,7 +5041,7 @@ async function applyCloudTreeToStore(
 
   for (const task of versionImageTasks) {
     allFetches.push(
-      fetchWithRetry(task.r2Key)
+      oneOfEight(() => fetchWithRetry(task.r2Key))
         .then((dataUrl) => {
           const s = useStore.getState();
           // Use the generic stripVersions map — works for any strip, present or future
@@ -5039,7 +5068,7 @@ async function applyCloudTreeToStore(
             },
             renderTick: prev.renderTick + 1,
           }));
-          (window as any).__fh_renderAll?.();
+          redrawSoon();
           fetchedImageCount++;
           onImageProgress?.(fetchedImageCount, expectedImageCount);
         })
@@ -5054,7 +5083,7 @@ async function applyCloudTreeToStore(
                 stripVersions: { ...prev.stripVersions, [task.strip]: { ...prev.stripVersions[task.strip], [task.localId]: updatedVers } },
                 renderTick: prev.renderTick + 1,
               }));
-              (window as any).__fh_renderAll?.();
+              redrawSoon();
             }
             trace(`  picture deleted in the library (server has no file): ${task.strip} v${task.versionIdx + 1} — the card says so`);
             fetchedImageCount++;
@@ -5072,6 +5101,8 @@ async function applyCloudTreeToStore(
 
   // Wait for all images to load before returning (caller can show a toast).
   await Promise.all(allFetches);
+  if (redrawTimer !== null) { window.clearTimeout(redrawTimer); redrawTimer = null; }
+  if (allFetches.length > 0) (window as any).__fh_renderAll?.();   // the last word: every picture is on its card
 
   // Always update count baselines — pushes preserve r2Keys for any
   // images we didn't download, so server data is never lost.

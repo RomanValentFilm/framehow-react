@@ -198,13 +198,22 @@ const say = (line: string): void => { void import('./syncTrace').then(({ trace }
  * save names it. The save is written only after every picture it names is
  * there.
  */
+let _lastSaveWasWhole = false;
+/** The last save had to be written whole, pictures inside (the pictures could
+ *  not be filed by themselves). The caller saves again a little later, so a
+ *  save does not stay whole just because nothing changed afterwards (Roman,
+ *  12 Nov: "and what then? does it stay whole?"). */
+export function lastSaveWasWhole(): boolean { return _lastSaveWasWhole; }
+
 export function saveSnapshot(snap: CurrentProjectSnapshot): Promise<void> {
   return inTurn(async () => {
     const { takePicturesOut } = await import('./picStore');
     // IF THE PICTURES CANNOT BE FILED BY THEMSELVES, THE SAVE IS WRITTEN WHOLE,
     // AS IT ALWAYS WAS — a save must never fail because of the tidier way.
+    _lastSaveWasWhole = false;
     const out = await takePicturesOut(snap).catch((e) => {
       say(`  the pictures could not be put on the device by themselves (${String((e as Error)?.message ?? e)}) — this save is written whole`);
+      _lastSaveWasWhole = true;
       return { light: snap, names: [] as string[], written: 0 };
     });
     if (out.written > 0) say(`  ${out.written} picture(s) put on this device, each by itself (the save names ${out.names.length})`);

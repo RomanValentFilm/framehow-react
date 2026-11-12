@@ -44,7 +44,7 @@
 
 import { useStore } from '../store/state';
 import { trace } from './syncTrace';
-import { clearSnapshot, saveSnapshot, snapshotFromStore, savePending, clearPending, listPending, markPendingWarned, markPendingUploaded, sweepUploaded, isArchived, storageEstimate } from './persistence';
+import { clearSnapshot, saveSnapshot, lastSaveWasWhole, snapshotFromStore, savePending, clearPending, listPending, markPendingWarned, markPendingUploaded, sweepUploaded, isArchived, storageEstimate } from './persistence';
 import { isLoggedIn } from './session';
 import { stampChangedSettings, exportSettingStamps, settingsNeedPush } from './projectSettings';
 import { stampChangedContent, exportChangeStamps } from './changeStamps';
@@ -1151,6 +1151,12 @@ async function runAutosave(): Promise<void> {
     await saveSnapshot(snap);
     if (Date.now() - saveFrom > 150) trace(`  save on this device took ${Date.now() - saveFrom} ms`);
     _deviceSaveFailed = 0;
+    // A SAVE THAT HAD TO BE WRITTEN WHOLE IS DONE AGAIN, the light way, without
+    // waiting for the next change: after 10 s, 30 s, 90 s — then the next change
+    // does it.
+    if (lastSaveWasWhole()) {
+      if (_wholeAgain < 3) window.setTimeout(() => scheduleAutosave(), [10_000, 30_000, 90_000][_wholeAgain++]);
+    } else _wholeAgain = 0;
   } catch (e) {
     console.warn('[currentProject] autosave failed', e);
     trace(`  SAVE ON THIS DEVICE FAILED (${++_deviceSaveFailed}) — ${(e as Error)?.name ?? ''} ${String((e as Error)?.message ?? e)}`);
@@ -1171,6 +1177,7 @@ async function runAutosave(): Promise<void> {
 
 let _storageWarned = false;
 let _deviceSaveFailed = 0;
+let _wholeAgain = 0;
 
 /** Tell the user once that saving on this device has stopped working. */
 async function reportStorageFailure(e: unknown): Promise<void> {
