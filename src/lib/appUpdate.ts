@@ -32,7 +32,7 @@
 
 import { useStore } from '../store/state';
 import { trace } from './syncTrace';
-import { busyNow } from './quietMoment';
+import { busyNow, busyToShow } from './quietMoment';
 import { getActiveMs } from './activity';
 import { framesNeedingPush, projectSettingsUnsent, isToasterShowing } from './accountFlow';
 import { captureFrameAnchor, scrollAnchorToRel, setViewMode } from './view';
@@ -348,7 +348,7 @@ function watch(): void {
     }
     if (!newer || !(mayAsk(newer) || comesBackToday === newer) || Date.now() < heldUntil) { quietLooks = 0; return; }
     // One thing at a time: the save reminder first — it protects work.
-    if (busyNow() || isToasterShowing()) { quietLooks = 0; return; }
+    if (busyToShow() || isToasterShowing()) { quietLooks = 0; return; }
     if (++quietLooks < 2) return;
     quietLooks = 0;
     showCard(newer);

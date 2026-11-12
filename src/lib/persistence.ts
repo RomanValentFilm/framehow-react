@@ -179,7 +179,7 @@ async function withStore<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) =>
  *  beside it in a few bytes — so asking "whose is it?" does not read the whole
  *  project (12 Nov: a start read the open project twice, once only for its id). */
 const KEY_WHOSE = 'currentProjectWhose';
-type Whose = { projectId: string | null; pics?: string[] };
+type Whose = { projectId: string | null; pics?: string[]; localId?: string };
 
 // One save or clear at a time, in the order asked: a save is several steps now
 // (the pictures first, then the project that names them).
@@ -218,7 +218,7 @@ export function saveSnapshot(snap: CurrentProjectSnapshot): Promise<void> {
     });
     if (out.written > 0) say(`  ${out.written} picture(s) put on this device, each by itself (the save names ${out.names.length})`);
     await withStore('readwrite', (s) => {
-      s.put({ projectId: snap.projectId ?? null, pics: out.names } satisfies Whose, KEY_WHOSE);
+      s.put({ projectId: snap.projectId ?? null, pics: out.names, localId: snap.localId } satisfies Whose, KEY_WHOSE);
       return s.put(out.light, KEY);
     });
     void tidyPictures();
@@ -237,6 +237,13 @@ export async function savedProjectId(): Promise<string | null> {
     if (w) return w.projectId ?? null;
     return ((await withStore('readonly', (s) => s.get(KEY))) as CurrentProjectSnapshot | undefined)?.projectId ?? null;   // a save from before this note existed
   } catch { return null; }
+}
+
+/** The device-only name the project saved on this device is filed under while
+ *  unsent — null when that is not known (a save from before 12 Nov). */
+export async function savedProjectLocalKey(): Promise<string | null> {
+  try { return ((await withStore('readonly', (s) => s.get(KEY_WHOSE))) as Whose | undefined)?.localId ?? null; }
+  catch { return null; }
 }
 
 export async function loadSnapshot(): Promise<CurrentProjectSnapshot | null> {
@@ -574,6 +581,27 @@ export async function savePending(key: string, projectId: string | null, name: s
   };
   await writePending(key, rec);
   return !rec.warned;   // true = the user has not been told about this one yet
+}
+
+/** A copy filed before its project had a cloud id learns the id it was given
+ *  (12 Nov): the project was created on the server, then another one was
+ *  opened before its work could be sent. With the id the copy goes up into
+ *  THAT project later, instead of being created a second time. */
+export async function givePendingItsProject(key: string, projectId: string, name: string | null): Promise<boolean> {
+  const rec = await getPendingRaw(key);
+  if (!rec || rec.uploadedAt || rec.deletedAt) return false;
+  // Filed again under the project's own id when it was left (the newer, whole
+  // one): then this earlier one under the device-only name is the same work
+  // twice, and goes.
+  if (key !== projectId) {
+    const under = await getPendingRaw(projectId);
+    if (under && !under.uploadedAt && !under.deletedAt) { await writePending(key, null); return true; }
+  }
+  rec.projectId = projectId;
+  if (name) rec.name = name;
+  if (rec.snapshot) { rec.snapshot.projectId = projectId; if (name) rec.snapshot.name = name; }
+  await writePending(key, rec);
+  return true;
 }
 
 /** Remember that the one-time notice has been shown, so it is not repeated. */

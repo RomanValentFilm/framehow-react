@@ -12,7 +12,7 @@
 
 import { useStore } from '../store/state';
 import { trace } from './syncTrace';
-import { handIsBusy } from './currentProject';
+import { handIsBusy, isProjectSwitchInFlight, isPushInFlight, msSinceProjectOpened } from './currentProject';
 import { cameraBusy } from './camera';
 
 /** Anything that sits on top of the page: every box, sheet, menu and overlay
@@ -45,6 +45,10 @@ function onScreen(el: Element): boolean {
  */
 export function busyNow(): string | null {
   const s = useStore.getState();
+  // NOT WHILE A PROJECT IS BEING OPENED (Roman, 12 Nov: the update card "came in
+  // the middle of loading … so this never happens to anyone"). A card that is
+  // already showing steps aside for it too.
+  if (isProjectSwitchInFlight()) return 'a project is being opened';
   if (s.drawingInProgress || handIsBusy()) return 'drawing';
   if (Object.values(s.drawActive ?? {}).some((v) => v != null)) return 'DRAW mode';
   if (s.scribbleMode) return 'scribble';
@@ -76,13 +80,28 @@ export function busyNow(): string | null {
   return null;
 }
 
+/**
+ * Why this is not the moment to SHOW something new (the update card, the save
+ * reminder) — stricter than busyNow, which also decides when a card that is
+ * already up steps aside: a save going up is no reason to take a card away,
+ * but it is a reason not to bring one (12 Nov). And a project that has just
+ * come on the screen is given ten seconds of peace.
+ */
+export function busyToShow(): string | null {
+  const why = busyNow();
+  if (why) return why;
+  if (isPushInFlight()) return 'a save is going up';
+  if (msSinceProjectOpened() < 10_000) return 'a project has just come on the screen';
+  return null;
+}
+
 /** Call `fn` once, at the first quiet moment (two quiet looks, 2 s apart).
  *  `also` may add its own reason to wait. Returns a function that cancels. */
 export function whenQuiet(fn: () => void, also?: () => boolean): () => void {
   let quietLooks = 0;
   let saidAt = 0;
   const id = window.setInterval(() => {
-    const why = document.visibilityState !== 'visible' ? 'the app is not in front' : busyNow() ?? (also && !also() ? 'something is still to be sent' : null);
+    const why = document.visibilityState !== 'visible' ? 'the app is not in front' : busyToShow() ?? (also && !also() ? 'something is still to be sent' : null);
     if (why) {
       quietLooks = 0;
       // Now and then, so a wait that never ends can be read in the log.

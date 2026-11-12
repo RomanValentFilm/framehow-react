@@ -51,6 +51,7 @@ import {
   setPullInFlight,
   setPullIncomplete,
   setProjectSwitchInFlight, isProjectSwitchInFlight, projectSwitchCount,
+  openProjectToken, isAnotherProjectNow, AnotherProjectNow, retryIsCreating, fileOpenProjectAsUnsent, newLocalProjectIdentity,
   flushSyncNow,
   cancelPendingPush,
   beginSystemAction,
@@ -75,9 +76,9 @@ import {
   setProjectListOpen,
 } from './currentProject';
 import { makeGoneRegister, whatWentWrong } from './projectGone';
-import { busyNow, whenQuiet } from './quietMoment';
+import { busyNow, busyToShow, whenQuiet } from './quietMoment';
 import { trace } from './syncTrace';
-import { isProvisionalName } from './provisionalName';
+import { isProvisionalName, provisionalName } from './provisionalName';
 import { keepBoxesAboveTheKeyboard } from './keyboardRoom';
 import { frameChangedAt, versionChangedAt, frameChangedAtForSending, versionChangedAtForSending, importChangeStamps, stampChangedContent, seedContentStamps, pictureFp, strokesFp, untouchedStrip } from './changeStamps';
 import { shouldSendOnlyChanges } from './pushMode';
@@ -85,7 +86,7 @@ import { tagText, readTagText } from './ids';
 import { serverHasSomethingNew, whoseFrameWins, type DeviceMemory } from './sessionRules';
 import { mergeDelta, lastMergeRefusal, answerIsSafeToApply, untouchedByDelta, deltaAlreadyHeld, type MergeableTree, type SentRows } from './deltaMerge';
 import { settingsForPush, adoptSettingsFromServer, applySettingsToStore, importSettingStamps, stampChangedSettings, seedSettings, forgetAnotherProjectsSettings, settingsNeedPush, reconcileRestoredSettings, captureMySettings, keepMyUnsentSettings, unsentSettingNames, settingsMemorySummary, seedSettingsAgeUnknown, type SettingItem } from './projectSettings';
-import { clearDeviceOnLogout, wipeDeviceOnAccountDeletion, applySnapshotToStore, loadSnapshot, savedProjectId, snapshotFromStore, listPending, isArchived, getPending, markPendingUploaded, markPendingParked, saveProjectListCache, loadProjectListCache, deletePending, deleteEveryCopyOf, recoverPending, isDeletedCopy, requestDurableStorage, clearPending } from './persistence';
+import { clearDeviceOnLogout, wipeDeviceOnAccountDeletion, applySnapshotToStore, loadSnapshot, savedProjectId, savedProjectLocalKey, snapshotFromStore, givePendingItsProject, listPending, isArchived, getPending, markPendingUploaded, markPendingParked, saveProjectListCache, loadProjectListCache, deletePending, deleteEveryCopyOf, recoverPending, isDeletedCopy, requestDurableStorage, clearPending } from './persistence';
 import type { PendingRecord, PendingMeta } from './persistence';
 import { showThreeWayConflict, showConfirm, showConfirmDefaultNo, showToast, showLabelEdit } from './modals';
 import { saveOpenTextEdits, saveOpenTableEdits, versionStars, inStarOrder } from './helpers';
@@ -1530,11 +1531,17 @@ export async function openCloudProjectById(id: string): Promise<void> {
 
 async function loadCloudProject(p: CloudProject): Promise<void> {
   const cp = getCurrentProject();
-  // Spec: "Only One Unsaved Project" — if there's local unsaved work, warn.
-  if (cp.dirty && cp.projectId !== p.id) {
-    const ok = await confirmReplaceUnsaved();
-    if (!ok) return;
-  }
+  // NO QUESTION ANY MORE (Roman, 12 Nov: "is that a wrong model that still
+  // appears somewhere? Shall we kill that one"). It used to ask "You have
+  // unsaved work that will be discarded. Continue loading this project?" — from
+  // the time when only one unsaved project could exist. Nothing is discarded
+  // now: the project being left is sent, or filed on this device under its own
+  // name (below), and stays in the project list.
+  const leavingUnsent = cp.dirty && cp.projectId !== p.id;
+  // (if the opening fails before anything of the new project is on the screen,
+  // the project that is still there keeps the name it was filed under)
+  let leftLocalKey: string | null = null;
+  let newOneIsOnScreen = false;
 
   // Show loading progress overlay
   const progressEl = document.getElementById('progressOverlay');
@@ -1547,6 +1554,29 @@ async function loadCloudProject(p: CloudProject): Promise<void> {
   try {
     // 1. Flush-save current project before switching (blocking)
     await flushSyncNow();
+    // A SAVE THAT IS STILL GOING UP FINISHES FIRST (12 Nov, Roman's phone 16:45).
+    // flushSyncNow returns at once when a push is already running — and the
+    // running one here was the creation of "Untitled 12 Nov 16:44" with its two
+    // photos. WF 7 was opened over it; when the creation finished it marked ITS
+    // project as the open one again, with WF 7's shots on the screen, and the
+    // next fetch mixed the two. The old project's save is given up to twenty
+    // seconds to finish before anything of the new one is touched.
+    for (let i = 0; i < 100 && isPushInFlight(); i++) {
+      if (i === 0) trace('  opening waits: the save of the project being left is still going up');
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    // TWENTY SECONDS IS POLITENESS, NOT SAFETY (Roman: "it can take longer than
+    // 20 seconds to save a project, no?"). If the save is still going, the
+    // project being left is filed on the device NOW, whole, under its own name
+    // — and the save, when it comes back, finds another project on the screen
+    // and stops (syncCurrentToServer, saveNow). What it did not get through
+    // goes up from the filed copy.
+    // …and a project left with work the server has not confirmed is filed too,
+    // whatever the reason (no line, a refused save, never saved at all): that
+    // is what makes "nothing is discarded" true by itself.
+    if (isPushInFlight() || (leavingUnsent && getCurrentProject().dirty)) {
+      try { await fileOpenProjectAsUnsent(); } catch { /* filed by the push's own failure path, as before */ }
+    }
 
     // LET NOTHING OF THE OLD PROJECT CROSS (#424).
     //
@@ -1566,6 +1596,14 @@ async function loadCloudProject(p: CloudProject): Promise<void> {
     if (progressBar) progressBar.style.width = '20%';
     // 2. Pause auto-sync to prevent cross-contamination during load
     setProjectSwitchInFlight(true);
+    // THE DEVICE-ONLY NAME OF THE PROJECT BEING LEFT IS NOT CARRIED INTO THE NEXT
+    // ONE (12 Nov, found by test 68). It stayed: the first save in the project
+    // opened here then marked the LEFT project's copy "already uploaded"
+    // (currentProject: markPendingUploaded(_localId)) — an unsaved project that
+    // had never been to the server, turned into a grey safety copy and swept
+    // after three days. And the left project could not be told from the open one.
+    leftLocalKey = localProjectId();
+    newLocalProjectIdentity();
 
     // AN UNSENT COPY OF THIS PROJECT ON THIS DEVICE COMES FIRST (#522, launch
     // item 1). Work done on it with no signal, then left for another project,
@@ -1599,6 +1637,7 @@ async function loadCloudProject(p: CloudProject): Promise<void> {
     if (state().sortEditingId) closeSortMode();
     // System action: prevent setState calls from being treated as user changes
     beginSystemAction();
+    newOneIsOnScreen = true;
     try {
       await applyCloudTreeToStore(tree, undefined, (loaded, total) => {
         if (total === 0) return;
@@ -1614,6 +1653,7 @@ async function loadCloudProject(p: CloudProject): Promise<void> {
     updateLastKnownTimestamp(tree.project.updated_at);
     takenFromServerAt = tree.project.updated_at;   // opening a project IS taking (#299)
     setCurrentProject({ projectId: p.id, name: p.name, lastSavedAt: tree.project.updated_at });
+    lookForUnsentCopiesSoon(2_500);   // what was left behind goes up now (an unsaved project becomes "Untitled …", 12 Nov)
     // WHAT JUST ARRIVED IS WHAT THE SERVER HOLDS (#510, run 222). The rebuild
     // clears the record of what matches the server and, unlike a pull, opening
     // never wrote it again — "saving: 0 frame(s) remembered as matching". So
@@ -1634,6 +1674,7 @@ async function loadCloudProject(p: CloudProject): Promise<void> {
     }, 300);
   } catch (e) {
     if (progressEl) progressEl.classList.add('hidden');
+    if (leftLocalKey && !newOneIsOnScreen) adoptLocalProjectId(leftLocalKey);
     showToast(asMessage(e, 'Could not load project.'));
   } finally {
     // 5. Resume auto-sync
@@ -1932,6 +1973,39 @@ async function uploadUnsentCopies(reason: 'start' | 'reconnect'): Promise<void> 
   const current = reason === 'start'
     ? await savedProjectId()
     : getCurrentProject().projectId;
+
+  // AN UNSAVED PROJECT THAT WAS LEFT BECOMES A FULL PROJECT, "Untitled" AND ITS
+  // DATE (Roman, 12 Nov: "an unsaved project should not become the short one.
+  // It should become the full long one, untitled project with a date. And the
+  // short ones are only copies of projects that have not been uploaded to the
+  // server."). A copy with no project on the server — the person began it,
+  // worked in it, and opened or began another before it was saved — is given
+  // its project here: created under its own name, or "Untitled" and the time
+  // of its last change. With that it goes up below like any unsent copy. Not
+  // the one that is the open project right now: that one is still being
+  // worked in and goes its own way (the save reminder, a minute of work).
+  // Which copy is the OPEN project's own, if it has one: only an open project
+  // that has no place on the server yet is filed under a device-only name.
+  // (undefined = not known — a save from before 12 Nov — then nothing is created.)
+  let openKey: string | null | undefined;
+  if (reason === 'start') openKey = current ? null : ((await savedProjectLocalKey()) ?? undefined);
+  else openKey = getCurrentProject().projectId ? null : localProjectId();
+  if (openKey !== undefined) {
+    const left = recs.filter((r) => !r.projectId && !r.parkedAt && !r.deletedAt && r.frames > 0 && r.stamped && r.key !== openKey);
+    for (const r of left) {
+      const name = r.name && r.name.trim() ? r.name : provisionalName(new Date(r.savedAt));
+      try {
+        const res = await api.post<{ project: { id: string } }>('/projects', { name }, getToken());
+        const told = await givePendingItsProject(r.key, res.project.id, name);
+        trace(`an unsaved project that was left is now "${name}" on the server (${res.project.id.slice(0, 8)})${told ? ' — its work goes up next' : ' — but its copy could not be told'}`);
+      } catch (e) {
+        trace(`an unsaved project that was left could not be created on the server yet (${asMessage(e, 'no answer')}) — it stays on this device`);
+      }
+    }
+    if (left.length > 0) {
+      try { recs = (await listPending()).filter((r) => !isArchived(r)); } catch { return; }
+    }
+  }
   // A cloud project always has a name. A copy filed without one was filed by
   // a push that failed after the project had left the screen (#524) — it is
   // another project's content under this one's id, and must never be sent.
@@ -2065,14 +2139,6 @@ async function uploadUnsentCopies(reason: 'start' | 'reconnect'): Promise<void> 
     standInForAnotherProject(false, reason !== 'start');
     _uploadingCopies = false;
   }
-}
-
-async function confirmReplaceUnsaved(): Promise<boolean> {
-  // Returns true if the caller should proceed with the load (and discard the
-  // local unsaved work). Returns false if the user wants to keep their work.
-  return await showConfirm(
-    'You have unsaved work that will be discarded. Continue loading this project?',
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -2286,10 +2352,10 @@ export function showSaveToaster(): void {
   // moment WRITE was pressed and the reminder covered the write box — the
   // write was lost. It waits for a quiet moment instead, and it DOES come:
   // waiting is not a dismissal and nothing is counted.
-  if (busyNow() || document.getElementById('updateCard')) {
+  if (busyToShow() || document.getElementById('updateCard')) {
     if (!toasterWaiting) {
       toasterWaiting = true;
-      trace(`save reminder: waiting for a quiet moment (${busyNow() ?? 'the update question is up'})`);
+      trace(`save reminder: waiting for a quiet moment (${busyToShow() ?? 'the update question is up'})`);
       whenQuiet(() => { toasterWaiting = false; showSaveToaster(); }, () => !document.getElementById('updateCard'));
     }
     return;
@@ -2394,6 +2460,15 @@ export async function saveNow(opts: { pressed?: boolean } = {}): Promise<void> {
     if (!result) return;
   }
 
+  // THE PROJECT THIS SAVE IS FOR. Everything below waits for the server more
+  // than once; if another project has become the open one in the meantime
+  // (opened from the list, or a new one begun), this save stops where it is and
+  // marks nothing — what it could not send stays filed on the device under its
+  // own name and goes up from there (12 Nov, see loadCloudProject).
+  const savedFor = openProjectToken();
+  const savedForKey = localProjectId();
+  const anotherIsOpenNow = (): boolean => isAnotherProjectNow(savedFor);
+
   // 3. Create project on server if we don't have an id yet.
   let projectId = cp.projectId;
   if (!projectId) {
@@ -2404,6 +2479,13 @@ export async function saveNow(opts: { pressed?: boolean } = {}): Promise<void> {
         getToken(),
       );
       projectId = res.project.id;
+      if (anotherIsOpenNow()) {
+        // created on the server, but its work could not follow: the copy filed
+        // on the device learns which project it belongs to, and goes up into it
+        const told = await givePendingItsProject(savedForKey, projectId, cp.name).catch(() => false);
+        trace(`  save stopped: another project was opened while "${cp.name}" was being created — nothing marked; its work is filed on this device${told ? ' and goes up into it' : ''}`);
+        return;
+      }
       markSaved(projectId);
       fhTrack('project_created', { name: cp.name });
     } catch (e) {
@@ -2428,7 +2510,7 @@ export async function saveNow(opts: { pressed?: boolean } = {}): Promise<void> {
   //    On iOS, opening the menu fires flushSyncNow() which can still be
   //    in flight when the user taps Save. If we sync concurrently the
   //    server rejects the second request as a conflict.
-  if (isPushInFlight()) {
+  if (isPushInFlight() && !retryIsCreating()) {
     showToast('WAIT…');
     const MAX_WAIT = 15_000;
     const start = Date.now();
@@ -2440,10 +2522,16 @@ export async function saveNow(opts: { pressed?: boolean } = {}): Promise<void> {
   // 5. Sync the current state to /sync.
   //    Set cloudSyncInFlight so the debounced push doesn't
   //    fire a concurrent sync while we're uploading images / POSTing.
+  if (anotherIsOpenNow()) {
+    const told = await givePendingItsProject(savedForKey, projectId, cp.name).catch(() => false);
+    trace(`  save stopped: another project was opened before "${cp.name}" could be sent — its work is filed on this device${told ? ' and goes up into it' : ''}`);
+    return;
+  }
   setCloudSyncInFlight(true);
   const began = pushBegan();
   try {
     await syncCurrentToServer(projectId);
+    if (anotherIsOpenNow()) { trace(`  save of "${cp.name}" finished after another project was opened — the open project is left as it is`); return; }
     markSaved(projectId);
     // Only what this save carried; anything changed meanwhile stays unsent
     // and goes with the next push (#496).
@@ -2470,6 +2558,11 @@ export async function saveNow(opts: { pressed?: boolean } = {}): Promise<void> {
     fhTrack('project_saved');
     showToast('SAVED.');
   } catch (e) {
+    if (e instanceof AnotherProjectNow) {
+      const told = await givePendingItsProject(savedForKey, projectId, cp.name).catch(() => false);
+      trace(`  save of "${cp.name}" stopped half way: another project was opened — its work is filed on this device${told ? ' and goes up into it' : ''}`);
+      return;
+    }
     showToast(asMessage(e, 'Could not save project.'));
   } finally {
     setCloudSyncInFlight(false);
@@ -2503,6 +2596,13 @@ export async function beginNewProject(): Promise<void> {
     await Promise.race([loadCurrentUser().catch(() => null), new Promise((r) => setTimeout(r, 1500))]);
   }
 
+  // THE PROJECT BEING LEFT IS FILED FIRST if the server has not confirmed all of
+  // it (never saved, no line): it stays in the project list, and an unsaved one
+  // becomes "Untitled …" on the server by itself (12 Nov).
+  if (getCurrentProject().dirty && state().frames.length > 0) {
+    try { await fileOpenProjectAsUnsent(); } catch { /* the copy filed at its last change stands */ }
+  }
+
   resetStoryboardState();
   resetProjectSyncGuards();
   useStore.setState({ portraitMode: false, projectType: 'landscape' });
@@ -2512,6 +2612,7 @@ export async function beginNewProject(): Promise<void> {
   // project doesn't carry an old base_updated_at that could trigger a 409.
   lastKnownUpdatedAt = null;
   takenFromServerAt = null;        // a different project — nothing taken yet (#299)
+  lookForUnsentCopiesSoon(2_500);  // what was left behind goes up now (an unsaved project becomes "Untitled …", 12 Nov)
 }
 
 async function startNewProject(): Promise<void> {
@@ -2840,6 +2941,19 @@ async function askAboutOpenSettingConflicts(projectId: string): Promise<void> {
 export { untouchedStrip };   // lives in changeStamps.ts now (#516), same rule
 
 async function syncCurrentToServer(projectId: string): Promise<void> {
+  // THIS PUSH IS FOR THE PROJECT ON THE SCREEN NOW (12 Nov). It waits for the
+  // server twice — the pictures, then the project — and reads the settings and
+  // writes ids back into the shots AFTER those waits. If another project is on
+  // the screen by then, the settings read would be the other project's (they
+  // went up under this one's name on Roman's phone) and the ids would be
+  // written into the other project's shots. So it asks each time it comes
+  // back, and stops.
+  const forProject = openProjectToken();
+  const stopIfAnotherProject = (where: string): void => {
+    if (!isAnotherProjectNow(forProject)) return;
+    trace(`  push of "${projectId.slice(0, 8)}" stopped ${where}: another project is on the screen — nothing of it is read or written here`);
+    throw new AnotherProjectNow();
+  };
   // Safety net: refuse to push zero frames — prevents wiping a project on the server
   if (state().frames.length === 0) {
     console.warn('[sync] Aborted: state has 0 frames — refusing to overwrite server data');
@@ -3377,6 +3491,7 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
       uploadedR2Keys.set(r.versionId, { r2Key: r.r2_key, task: r.task });
     }
   }
+  stopIfAnotherProject('after the pictures went up');
   trace(`  sending frames: ${frames.map((f) => f.id.slice(0, 6)).join(',') || '(none)'}`);
 
   // Say exactly what is going up, so "the sort order did not sync" can be told
@@ -3469,6 +3584,7 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
     },
     getToken(),
   );
+  stopIfAnotherProject('when the server answered');
   // Update lastKnownUpdatedAt so that the pull-on-focus mechanism doesn't
   // see our own push as a "newer remote version" and try to apply it.
   lastKnownUpdatedAt = now;
@@ -4949,6 +5065,13 @@ async function applyCloudTreeToStore(
   (window as any).__fh_renderAll?.();
 
   // Now fetch images from R2 in parallel and patch them into the store.
+  // …INTO THE PROJECT THEY WERE FETCHED FOR, AND NO OTHER (12 Nov). The pictures
+  // arrive over many seconds and are put on their shots by the shot's number on
+  // this device — and another project's shots have the same numbers. If
+  // another project has come on the screen meanwhile, a picture that arrives
+  // late is dropped here; that project fetches its own.
+  const picturesFor = openProjectToken();
+  const anotherProjectIsOnScreen = (): boolean => openProjectToken() !== picturesFor;
   const token = getToken();
   if (!token) return;
 
@@ -5005,6 +5128,7 @@ async function applyCloudTreeToStore(
     allFetches.push(
       oneOfEight(() => fetchWithRetry(task.r2Key))
         .then((dataUrl) => {
+          if (anotherProjectIsOnScreen()) return;
           const s = useStore.getState();
           const idx = s.frames.findIndex((f) => f.id === task.localId);
           if (idx === -1) return;
@@ -5016,6 +5140,7 @@ async function applyCloudTreeToStore(
           onImageProgress?.(fetchedImageCount, expectedImageCount);
         })
         .catch((e) => {
+          if (anotherProjectIsOnScreen()) return;
           if (e instanceof PictureGone) {
             const st = useStore.getState();
             const idx = st.frames.findIndex((f) => f.id === task.localId);
@@ -5043,6 +5168,7 @@ async function applyCloudTreeToStore(
     allFetches.push(
       oneOfEight(() => fetchWithRetry(task.r2Key))
         .then((dataUrl) => {
+          if (anotherProjectIsOnScreen()) return;
           const s = useStore.getState();
           // Use the generic stripVersions map — works for any strip, present or future
           const versMap = s.stripVersions[task.strip];
@@ -5073,6 +5199,7 @@ async function applyCloudTreeToStore(
           onImageProgress?.(fetchedImageCount, expectedImageCount);
         })
         .catch((e) => {
+          if (anotherProjectIsOnScreen()) return;
           if (e instanceof PictureGone) {
             const st = useStore.getState();
             const vers = st.stripVersions[task.strip]?.[task.localId];
@@ -5102,7 +5229,7 @@ async function applyCloudTreeToStore(
   // Wait for all images to load before returning (caller can show a toast).
   await Promise.all(allFetches);
   if (redrawTimer !== null) { window.clearTimeout(redrawTimer); redrawTimer = null; }
-  if (allFetches.length > 0) (window as any).__fh_renderAll?.();   // the last word: every picture is on its card
+  if (allFetches.length > 0 && !anotherProjectIsOnScreen()) (window as any).__fh_renderAll?.();   // the last word: every picture is on its card
 
   // Always update count baselines — pushes preserve r2Keys for any
   // images we didn't download, so server data is never lost.

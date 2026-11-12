@@ -208,8 +208,33 @@ let _projectSwitches = 0;
 /** How many times a project has been opened from the list — to notice, after
  *  waiting for the server, that one was opened in the meantime. */
 export function projectSwitchCount(): number { return _projectSwitches; }
+let _projectOpenedAt = 0;
+/** ms since a project was last put on the screen (opened, or its opening finished). */
+export function msSinceProjectOpened(): number { return Date.now() - _projectOpenedAt; }
+
+/**
+ * WHICH PROJECT A LONG JOB IS FOR (12 Nov, Roman: "we have to keep track of
+ * these commands that are still somewhere").
+ *
+ * A save, a fetch, an upload: each starts for the project on the screen, waits
+ * for the server, and comes back. In between the person may have opened
+ * another project, begun a new one, or be in the middle of opening one. The
+ * job takes this token when it starts and asks `isAnotherProjectNow(token)`
+ * every time it comes back from waiting; if the answer is yes it steps back and
+ * touches nothing — not the open project's name, not its shots, not its memory.
+ */
+export function openProjectToken(): string { return `${_projectSwitches}|${_localId}`; }
+export function isAnotherProjectNow(token: string): boolean {
+  return _projectSwitchInFlight || openProjectToken() !== token;
+}
+/** Thrown by a push that found another project on the screen when it came back. */
+export class AnotherProjectNow extends Error {
+  constructor() { super('another project was opened while this was in the air'); this.name = 'AnotherProjectNow'; }
+}
+
 export function setProjectSwitchInFlight(v: boolean): void {
   if (v) _projectSwitches++;
+  _projectOpenedAt = Date.now();
   _projectSwitchInFlight = v;
 }
 
@@ -683,11 +708,16 @@ export async function flushSyncNow(askedByTheFetch = false): Promise<void> {
     markSomethingToSend();
   }
   const pid = cp.projectId;
+  const forProject = openProjectToken();
   cloudSyncInFlight = true;
   const began = pushBegan();
   trace(`push start · online=${navigator.onLine}`);
   try {
     await _syncFn(pid);
+    if (isAnotherProjectNow(forProject)) {
+      trace(`  push of "${pid.slice(0, 8)}" came back after another project was opened — nothing of it is marked on the open one`);
+      return;
+    }
     trace('push OK');
 
     // The server answered. Only now is the work known to be in the cloud, so
@@ -726,7 +756,7 @@ export async function flushSyncNow(askedByTheFetch = false): Promise<void> {
     // settings memory reading "deleted" for everything the new one lacks. A
     // copy like that, sent later, would wipe the project's groups, orders and
     // setups. The copy filed before the switch stands; nothing is filed here.
-    if (cp.projectId !== pid) {
+    if (cp.projectId !== pid || isAnotherProjectNow(forProject) || e instanceof AnotherProjectNow) {
       trace(`  the project changed while this push was in the air — not filing a copy of "${pid.slice(0, 8)}" from what is on screen now`);
       _pendingSyncIds.add(pid);
       return;
@@ -958,6 +988,7 @@ async function retryPendingSyncs(why: 'timer' | 'now' = 'timer'): Promise<void> 
     }
     trace(`retry: creating "${cp.name}" on the server (${why})`);
     cloudSyncInFlight = true;
+    _retryIsCreating = true;
     try {
       await _createAndSyncFn!();
       _retryClock.succeeded();
@@ -966,7 +997,7 @@ async function retryPendingSyncs(why: 'timer' | 'now' = 'timer'): Promise<void> 
       _retryClock.failed();   /* still unreachable — the device copy stays put */
       trace(`retry: creating "${cp.name}" FAILED (${(e as { status?: number })?.status ?? 'no response'}) · trying again in ${Math.round(_retryClock.waitNow() / 1000)}s`);
     }
-    finally { cloudSyncInFlight = false; }
+    finally { cloudSyncInFlight = false; _retryIsCreating = false; }
     return;
   }
 
@@ -987,9 +1018,11 @@ async function retryPendingSyncs(why: 'timer' | 'now' = 'timer'): Promise<void> 
     // Success below is the server's answer, not the browser's opinion.
     cloudSyncInFlight = true;
     const began = pushBegan();
+    const forProject = openProjectToken();
     trace('retry push start');
     try {
       await _syncFn(currentPid);
+      if (isAnotherProjectNow(forProject)) { trace('  retry push came back after another project was opened — nothing marked'); return; }
       trace('retry push OK');
       forgetRetryFailures();
       noteTheProjectIsAlive(currentPid);
@@ -1002,6 +1035,7 @@ async function retryPendingSyncs(why: 'timer' | 'now' = 'timer'): Promise<void> 
       hideOfflineBanner();
       emit();
     } catch (e) {
+      if (e instanceof AnotherProjectNow || isAnotherProjectNow(forProject)) return;   // not this project's failure to count
       const st = (e as { status?: number })?.status;
       const stCode = (e as { code?: string })?.code;
       if (whatWentWrong(st, stCode) === 'gone') {
@@ -1018,6 +1052,28 @@ async function retryPendingSyncs(why: 'timer' | 'now' = 'timer'): Promise<void> 
       cloudSyncInFlight = false;
     }
   }
+}
+
+let _retryIsCreating = false;
+/** The retry is creating the open project right now — the "push in flight"
+ *  flag is its own, not another save to wait for (12 Nov: saveNow waited its
+ *  full fifteen seconds for itself every time an Untitled project went up). */
+export function retryIsCreating(): boolean { return _retryIsCreating; }
+
+/**
+ * THE PROJECT BEING LEFT IS FILED ON THE DEVICE, NOW (12 Nov). Called before
+ * another project is put on the screen while this one's save is still going
+ * up: whatever that save does not get through is on the device under this
+ * project's own name, and goes up from there as unsent work always does.
+ */
+export async function fileOpenProjectAsUnsent(): Promise<void> {
+  if (useStore.getState().frames.length === 0) return;
+  trace(`  the project being left is filed on this device first ("${cp.name ?? 'unnamed'}")`);
+  // with its memory up to this second: what changed and when (the autosave
+  // that would have noted it may be two seconds away)
+  stampChangedSettings(cp.projectId);
+  stampChangedContent(cp.projectId);
+  await noticeUnsent(cp.projectId, cp.name, withMemory(snapshotFromStore(cp.projectId, cp.name)), unsentKey(), false);
 }
 
 /** True when the push-sync is actively syncing to cloud. */
