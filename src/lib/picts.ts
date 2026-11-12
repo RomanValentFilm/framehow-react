@@ -45,7 +45,7 @@ import { logStripHeight, trace, msSinceLanding } from './syncTrace';
 import { openMaxView } from './maxView';
 import { useStore, state } from '../store/state';
 import { getCurrentProject } from './currentProject';
-import { isArchived, listPending } from './persistence';
+import { isArchived, listPending, getPending } from './persistence';
 import { allPreviews, clearPendingDeletions, deletePreviews, fingerprint, getPreview, notePendingDeletion, pendingDeletions, putPreview, type PreviewRec } from './pictsStore';
 import { showConfirmDefaultNo } from './modals';
 import { markFrameDirty } from './currentProject';
@@ -341,7 +341,10 @@ async function localPictures(): Promise<LocalPic[]> {
       // The 24-hour safety copy of work already uploaded: its pictures are on
       // the server — not new ones (27 Oct, iPhone: 4 "not uploaded yet" at the end).
       if (isArchived(rec)) continue;
-      const snap = rec.snapshot as unknown as { frames?: never; stripVersions?: never };
+      // the copy itself is read here, one at a time — the list holds only notes (12 Nov)
+      const whole = await getPending(rec.key);
+      if (!whole?.snapshot) continue;
+      const snap = whole.snapshot as unknown as { frames?: never; stripVersions?: never };
       picturesOf(snap.frames, snap.stripVersions, rec.name || 'Untitled', out);
     }
   } catch { /* no unsent work */ }

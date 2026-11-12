@@ -221,6 +221,8 @@ export interface TestDoor {
   storage(): { figure: { used: number; limit: number } | null; full: boolean; noticedStep: number };
   /** Show the STORAGE FULL notice again, so every button on it can be pressed (11 Nov). */
   storageFullNotice(): void;
+  /** The names in the list of device copies and the names in the store — they must agree (12 Nov). */
+  copyListAndStore(): Promise<{ list: string[]; store: string[] }>;
   /** Close the LIBRARY if it is open (11 Nov). */
   closeLibrary(): void;
   /** Close the device's two databases the way iOS does behind the app (11 Nov). */
@@ -1950,6 +1952,11 @@ export function installTestDoor(): void {
     startPullWithoutWaiting() { pullNow(); },
 
     waveSaveReminderAway() { markSaveOffered(); },
+    async copyListAndStore() {
+      const { listPending, pendingIndexAndStore } = await import('./persistence');
+      await listPending();                       // as the app does: mends the list if it must
+      return pendingIndexAndStore();
+    },
     async deviceCopies() {
       const { listPending, isArchived, isDeletedCopy } = await import('./persistence');
       const all = await listPending();

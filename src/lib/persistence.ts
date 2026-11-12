@@ -175,8 +175,22 @@ async function withStore<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) =>
   }
 }
 
+/** WHICH project the device's save is of, kept beside it in a few bytes — so
+ *  asking "whose is it?" does not read the whole project (12 Nov: a start read
+ *  the open project twice, once only for its id). */
+const KEY_WHOSE = 'currentProjectWhose';
+
 export async function saveSnapshot(snap: CurrentProjectSnapshot): Promise<void> {
-  await withStore('readwrite', (s) => s.put(snap, KEY));
+  await withStore('readwrite', (s) => { s.put({ projectId: snap.projectId ?? null }, KEY_WHOSE); return s.put(snap, KEY); });
+}
+
+/** The cloud id of the project saved on this device (null: none, or not in the cloud). */
+export async function savedProjectId(): Promise<string | null> {
+  try {
+    const w = await withStore('readonly', (s) => s.get(KEY_WHOSE)) as { projectId: string | null } | undefined;
+    if (w) return w.projectId ?? null;
+    return (await loadSnapshot())?.projectId ?? null;   // a save from before this note existed
+  } catch { return null; }
 }
 
 export async function loadSnapshot(): Promise<CurrentProjectSnapshot | null> {
@@ -190,7 +204,7 @@ export async function loadSnapshot(): Promise<CurrentProjectSnapshot | null> {
 }
 
 export async function clearSnapshot(): Promise<void> {
-  await withStore('readwrite', (s) => s.delete(KEY));
+  await withStore('readwrite', (s) => { s.delete(KEY_WHOSE); return s.delete(KEY); });
 }
 
 /**
@@ -346,11 +360,89 @@ export interface PendingRecord {
   snapshot: CurrentProjectSnapshot;
 }
 
+/** WHAT IS KNOWN ABOUT A COPY WITHOUT OPENING IT (12 Nov). A copy is a whole
+ *  project, pictures and all. Listing the copies used to read every one of
+ *  them in full — at each start three times, and again whenever the project
+ *  list opened; on Roman's phone that was nine copies, two of them a 26-shot
+ *  project with hundreds of photos (656 MB on the device), and the page fell
+ *  over. The list is now kept apart, a few words per copy; a copy itself is
+ *  read only when it is really needed, one at a time (getPending). */
+export type PendingMeta = Omit<PendingRecord, 'snapshot'> & {
+  /** how many shots the copy holds */
+  frames: number;
+  /** it carries change times — a copy without them is never sent on its own */
+  stamped: boolean;
+};
+
+/** THE LIST LIVES WITH THE COPIES, under a name of its own — it stays when a
+ *  logout empties the project cache and goes when the copies go. It is shaped
+ *  like an empty copy deleted long ago, so a page from before this change that
+ *  meets it sees nothing to show and sweeps it; the next listing here makes it
+ *  again. No copies, no list. */
+const PENDING_INDEX_KEY = '__index';
+type PendingIndex = Record<string, PendingMeta>;
+type IndexRecord = PendingRecord & { index: PendingIndex };
+const indexRecord = (index: PendingIndex): IndexRecord => ({
+  key: PENDING_INDEX_KEY, projectId: null, name: null, savedAt: 0, deletedAt: 1,
+  snapshot: { frames: [] } as unknown as CurrentProjectSnapshot, index,
+});
+const readIndex = (v: unknown): PendingIndex => ({ ...((v as IndexRecord | undefined)?.index ?? {}) });
+
+function metaOf(rec: PendingRecord): PendingMeta {
+  const { snapshot, ...rest } = rec;
+  return {
+    ...rest,
+    frames: snapshot?.frames?.length ?? 0,
+    stamped: !!snapshot?.contentStamps && Object.keys(snapshot.contentStamps).length > 0,
+  };
+}
+
+/** One step on the database with the copies, tried once more on a database iOS closed. */
+async function onCopies<T>(mode: IDBTransactionMode, work: (copies: IDBObjectStore, done: (v: T) => void) => void): Promise<T> {
+  const once = async (): Promise<T> => {
+    const db = await openDb();
+    return new Promise<T>((resolve, reject) => {
+      const tx = db.transaction(PENDING_STORE, mode);
+      let out!: T;
+      work(tx.objectStore(PENDING_STORE), (v) => { out = v; });
+      tx.oncomplete = () => resolve(out);
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error ?? new Error('the save was closed before it finished'));
+    });
+  };
+  try { return await once(); }
+  catch (e) {
+    if (!closedUnderUs(e)) throw e;
+    dbPromise = null;
+    return once();
+  }
+}
+
+/** FOR THE SIMULATOR: the names in the list of copies, and the names in the store. */
+export async function pendingIndexAndStore(): Promise<{ list: string[]; store: string[] }> {
+  const v = await withStore('readonly', (s) => s.get(PENDING_INDEX_KEY), PENDING_STORE);
+  return { list: Object.keys(readIndex(v)).sort(), store: (await pendingKeys()).sort() };
+}
+
+/** A copy is written (or removed) and the list with it: both or neither. */
+async function writePending(key: string, rec: PendingRecord | null): Promise<void> {
+  await onCopies<void>('readwrite', (copies) => {
+    if (rec) copies.put(rec, key); else copies.delete(key);
+    const read = copies.get(PENDING_INDEX_KEY);
+    read.onsuccess = () => {
+      const index = readIndex(read.result);
+      if (rec) index[key] = metaOf(rec); else delete index[key];
+      if (Object.keys(index).length) copies.put(indexRecord(index), PENDING_INDEX_KEY);
+      else copies.delete(PENDING_INDEX_KEY);
+    };
+  });
+}
+
 export async function markPendingParked(key: string): Promise<void> {
   const rec = await getPending(key);
   if (!rec || rec.parkedAt) return;
   rec.parkedAt = Date.now();
-  await withStore('readwrite', (s) => s.put(rec, key), PENDING_STORE);
+  await writePending(key, rec);
 }
 
 /** Key a project is filed under while its work is unsent. */
@@ -361,13 +453,16 @@ export async function savePending(key: string, projectId: string | null, name: s
   // window would otherwise wipe the copy this whole system exists to protect.
   if (!snapshot?.frames?.length) return false;
 
-  const existing = await getPending(key);
+  // what is already known about a copy under this name — from the list, without
+  // opening the copy (it is about to be written over anyway)
+  const noted = readIndex(await withStore('readonly', (s) => s.get(PENDING_INDEX_KEY), PENDING_STORE).catch(() => undefined))[key];
+  const existing: { warned?: boolean; parkedAt?: number } | null = noted ?? await getPending(key);
   const rec: PendingRecord = {
     key, projectId, name, savedAt: Date.now(), snapshot,
     warned: existing?.warned ?? false,
     ...(existing?.parkedAt ? { parkedAt: existing.parkedAt } : {}),
   };
-  await withStore('readwrite', (s) => s.put(rec, key), PENDING_STORE);
+  await writePending(key, rec);
   return !rec.warned;   // true = the user has not been told about this one yet
 }
 
@@ -376,7 +471,7 @@ export async function markPendingWarned(key: string): Promise<void> {
   const rec = await getPending(key);
   if (!rec || rec.warned) return;
   rec.warned = true;
-  await withStore('readwrite', (s) => s.put(rec, key), PENDING_STORE);
+  await writePending(key, rec);
 }
 
 /** How long a confirmed copy is kept on the device as a safety net. The most
@@ -396,7 +491,7 @@ export async function markPendingUploaded(key: string): Promise<void> {
   // — writes to the live key, so the copy as it stood when it was offline is
   // never overwritten, only swept once its 24 hours are up.
   const archived: PendingRecord = { ...rec, key: `archive:${key}:${Date.now()}`, uploadedAt: Date.now() };
-  await withStore('readwrite', (s) => s.put(archived, archived.key), PENDING_STORE);
+  await writePending(archived.key, archived);
   await clearPending(key);
 
   // A flaky connection can produce one archive per offline stretch, each a full
@@ -412,7 +507,7 @@ export async function markPendingUploaded(key: string): Promise<void> {
 export const MAX_ARCHIVES_PER_PROJECT = 3;
 
 /** True for a copy kept purely as a safety net — not work awaiting upload. */
-export function isArchived(rec: PendingRecord): boolean {
+export function isArchived(rec: { uploadedAt?: number; key: string }): boolean {
   return !!rec.uploadedAt || rec.key.startsWith('archive:');
 }
 
@@ -423,7 +518,7 @@ export async function sweepUploaded(): Promise<void> {
     const now = Date.now();
 
     // Newest copy per project first, so it can be given the longer window.
-    const byProject = new Map<string, PendingRecord[]>();
+    const byProject = new Map<string, PendingMeta[]>();
     for (const r of recs) {
       if (!r.uploadedAt || r.deletedAt) continue;
       const base = r.key.replace(/^archive:/, '').replace(/:\d+$/, '');
@@ -450,7 +545,7 @@ export async function sweepUploaded(): Promise<void> {
 /** Called only after the server has confirmed it has the changes. */
 export async function clearPending(key: string): Promise<void> {
   try {
-    await withStore('readwrite', (s) => s.delete(key), PENDING_STORE);
+    await writePending(key, null);
   } catch (e) {
     console.warn('[persistence] clearPending failed', e);
   }
@@ -459,18 +554,65 @@ export async function clearPending(key: string): Promise<void> {
 /** Only the NAMES the copies are filed under — nothing of their contents is
  *  read (12 Nov: a start read every whole copy, pictures and all, three times). */
 export async function pendingKeys(): Promise<string[]> {
-  try { return ((await withStore<IDBValidKey[]>('readonly', (s) => s.getAllKeys(), PENDING_STORE)) ?? []).map(String); }
-  catch { return []; }
+  try {
+    return ((await withStore<IDBValidKey[]>('readonly', (s) => s.getAllKeys(), PENDING_STORE)) ?? [])
+      .map(String).filter((k) => k !== PENDING_INDEX_KEY);
+  } catch { return []; }
 }
 
-export async function listPending(): Promise<PendingRecord[]> {
+export async function listPending(): Promise<PendingMeta[]> {
   try {
-    const values = await withStore<any[]>('readonly', (s) => s.getAll(), PENDING_STORE);
-    return (values as PendingRecord[]) ?? [];
+    const [v, keys] = await Promise.all([
+      withStore('readonly', (s) => s.get(PENDING_INDEX_KEY), PENDING_STORE),
+      pendingKeys(),
+    ]);
+    const list = readIndex(v);
+    // THE LIST IS CHECKED AGAINST THE NAMES IN THE STORE — names only, nothing
+    // is opened. Agreeing is the ordinary case and ends here.
+    const have = new Set(keys);
+    const agrees = keys.every((k) => list[k]) && Object.keys(list).every((k) => have.has(k));
+    if (agrees) return keys.map((k) => list[k]);
+    return await mendPendingIndex();
   } catch (e) {
     console.warn('[persistence] listPending failed', e);
     return [];
   }
+}
+
+/** The list and the store disagree: every copy the first time after this
+ *  change, or a copy written by an older page. A copy the list does not know
+ *  is opened ONCE, by itself, and noted; a note whose copy is gone is dropped.
+ *  All in one step on the database, so a change made meanwhile is never
+ *  written over. */
+async function mendPendingIndex(): Promise<PendingMeta[]> {
+  return onCopies<PendingMeta[]>('readwrite', (copies, done) => {
+    const first = copies.get(PENDING_INDEX_KEY);
+    first.onsuccess = () => {
+      const list = readIndex(first.result);
+      const readKeys = copies.getAllKeys();
+      readKeys.onsuccess = () => {
+        const keys = (readKeys.result ?? []).map(String).filter((k) => k !== PENDING_INDEX_KEY);
+        const have = new Set(keys);
+        for (const k of Object.keys(list)) if (!have.has(k)) delete list[k];
+        const missing = keys.filter((k) => !list[k]);
+        const next = (): void => {
+          const k = missing.shift();
+          if (k === undefined) {
+            if (keys.length) copies.put(indexRecord(list), PENDING_INDEX_KEY); else copies.delete(PENDING_INDEX_KEY);
+            done(keys.map((x) => list[x]).filter(Boolean));
+            return;
+          }
+          const one = copies.get(k);
+          one.onsuccess = () => {
+            const rec = one.result as PendingRecord | undefined;
+            if (rec) list[k] = metaOf({ ...rec, key: rec.key ?? k });
+            next();
+          };
+        };
+        next();
+      };
+    };
+  });
 }
 
 export async function getPending(key: string): Promise<PendingRecord | null> {
@@ -513,7 +655,7 @@ export async function deletePending(key: string): Promise<void> {
   const rec = await getPending(key);
   if (!rec) return;
   rec.deletedAt = Date.now();
-  await withStore('readwrite', (s) => s.put(rec, key), PENDING_STORE);
+  await writePending(key, rec);
 }
 
 /**
@@ -562,11 +704,11 @@ export async function recoverPending(key: string): Promise<void> {
   // Give it its window back. Its clock kept running while it sat deleted, so
   // a copy recovered late would otherwise be swept moments later.
   if (rec.uploadedAt) rec.uploadedAt = Date.now();
-  await withStore('readwrite', (s) => s.put(rec, key), PENDING_STORE);
+  await writePending(key, rec);
 }
 
 /** True for a copy the user deleted. Hidden unless the list is in Edit mode. */
-export function isDeletedCopy(rec: PendingRecord): boolean {
+export function isDeletedCopy(rec: { deletedAt?: number }): boolean {
   return !!rec.deletedAt;
 }
 
@@ -633,7 +775,7 @@ export async function clearDeviceOnLogout(): Promise<void> {
 
 export async function wipeDeviceOnAccountDeletion(): Promise<void> {
   await withStore('readwrite', (s) => s.clear());
-  await withStore('readwrite', (s) => s.clear(), PENDING_STORE);
+  await withStore('readwrite', (s) => s.clear(), PENDING_STORE);   // the copies, and their list with them
   const { clearAllPreviews } = await import('./pictsStore');
   await clearAllPreviews(false).catch(() => undefined);
   const n = clearLocalStorageExcept(['fh_device_id', 'fh_test']);

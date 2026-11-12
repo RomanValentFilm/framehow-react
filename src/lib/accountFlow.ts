@@ -85,8 +85,8 @@ import { tagText, readTagText } from './ids';
 import { serverHasSomethingNew, whoseFrameWins, type DeviceMemory } from './sessionRules';
 import { mergeDelta, lastMergeRefusal, answerIsSafeToApply, untouchedByDelta, deltaAlreadyHeld, type MergeableTree, type SentRows } from './deltaMerge';
 import { settingsForPush, adoptSettingsFromServer, applySettingsToStore, importSettingStamps, stampChangedSettings, seedSettings, forgetAnotherProjectsSettings, settingsNeedPush, reconcileRestoredSettings, captureMySettings, keepMyUnsentSettings, unsentSettingNames, settingsMemorySummary, seedSettingsAgeUnknown, type SettingItem } from './projectSettings';
-import { clearDeviceOnLogout, wipeDeviceOnAccountDeletion, applySnapshotToStore, loadSnapshot, snapshotFromStore, listPending, isArchived, getPending, markPendingUploaded, markPendingParked, saveProjectListCache, loadProjectListCache, deletePending, deleteEveryCopyOf, recoverPending, isDeletedCopy, requestDurableStorage, clearPending } from './persistence';
-import type { PendingRecord } from './persistence';
+import { clearDeviceOnLogout, wipeDeviceOnAccountDeletion, applySnapshotToStore, loadSnapshot, savedProjectId, snapshotFromStore, listPending, isArchived, getPending, markPendingUploaded, markPendingParked, saveProjectListCache, loadProjectListCache, deletePending, deleteEveryCopyOf, recoverPending, isDeletedCopy, requestDurableStorage, clearPending } from './persistence';
+import type { PendingRecord, PendingMeta } from './persistence';
 import { showThreeWayConflict, showConfirm, showConfirmDefaultNo, showToast, showLabelEdit } from './modals';
 import { saveOpenTextEdits, saveOpenTableEdits, versionStars, inStarOrder } from './helpers';
 import { closeSortMode, refreshOpenSortView, removeFrameFromSortOrders } from './sortOrder';
@@ -942,7 +942,7 @@ export async function openProjectList(startInEdit = false): Promise<void> {
 
     /** Open an offline copy that is already in the cloud. This replaces what
      *  you are working on, so it is a deliberate act and asks first. */
-    async function onPickArchived(rec: PendingRecord): Promise<void> {
+    async function onPickArchived(rec: PendingMeta): Promise<void> {
       if (editMode) return;
       const ok = await showConfirm(
         `Open the offline copy of "${rec.name || 'this project'}" from ` +
@@ -952,9 +952,10 @@ export async function openProjectList(startInEdit = false): Promise<void> {
       );
       if (!ok) return;
       cleanup();
-      if (!rec.snapshot?.frames?.length) { showToast('That copy is empty — nothing to open.'); return; }
+      const whole = await getPending(rec.key);   // the copy itself is read only now, and only this one (12 Nov)
+      if (!whole?.snapshot?.frames?.length) { showToast('That copy is empty — nothing to open.'); return; }
       if (state().sortEditingId) closeSortMode();
-      putCopyInPlace(rec, rec.projectId ?? null, rec.name);
+      putCopyInPlace(whole, rec.projectId ?? null, rec.name);
       // The user picked this version, so it wins and gets uploaded. Without
       // this the next pull replaced it with the cloud copy seconds later.
       claimStoreAsLocalWork();
@@ -963,15 +964,16 @@ export async function openProjectList(startInEdit = false): Promise<void> {
     }
 
     /** Open a project that exists only on this device. */
-    function onPickDevice(rec: PendingRecord): void {
+    async function onPickDevice(rec: PendingMeta): Promise<void> {
       if (editMode) return;
       cleanup();
-      if (!rec.snapshot?.frames?.length) { showToast('That copy is empty — nothing to open.'); return; }
+      const whole = await getPending(rec.key);   // the copy itself is read only now, and only this one (12 Nov)
+      if (!whole?.snapshot?.frames?.length) { showToast('That copy is empty — nothing to open.'); return; }
       if (state().sortEditingId) closeSortMode();
       // Keeps the identity this copy is already filed under. Otherwise the
       // project would be filed a second time under a fresh key, and the
       // clear-on-confirmation would remove the wrong one.
-      putCopyInPlace(rec, rec.projectId ?? null, rec.name);
+      putCopyInPlace(whole, rec.projectId ?? null, rec.name);
       claimStoreAsLocalWork();
       (window as any).__fh_renderAll?.();
       // Put it in the cloud now if we can. saveNow() creates the project and
@@ -1071,9 +1073,9 @@ export async function openProjectList(startInEdit = false): Promise<void> {
       renderList();
     }
 
-    let deviceOnly: PendingRecord[] = [];
-    let archived: PendingRecord[] = [];
-    let deletedCopies: PendingRecord[] = [];
+    let deviceOnly: PendingMeta[] = [];
+    let archived: PendingMeta[] = [];
+    let deletedCopies: PendingMeta[] = [];
     let offlineListing = false;
 
     /**
@@ -1095,7 +1097,7 @@ export async function openProjectList(startInEdit = false): Promise<void> {
     }
 
     /** Put a deleted copy back within its 24 hours. */
-    async function onRecoverLocal(rec: PendingRecord): Promise<void> {
+    async function onRecoverLocal(rec: PendingMeta): Promise<void> {
       await recoverPending(rec.key);
       deletedCopies = deletedCopies.filter((r) => r.key !== rec.key);
       if (isArchived(rec)) archived = [...archived, rec]; else deviceOnly = [...deviceOnly, rec];
@@ -1105,7 +1107,7 @@ export async function openProjectList(startInEdit = false): Promise<void> {
     /** DELETE NOW on a deleted device copy (#533, Roman 21 Sept): gone from
      *  this device at once instead of after its 24 hours. Nothing in the cloud
      *  is touched. */
-    async function onDeleteLocalNow(rec: PendingRecord): Promise<void> {
+    async function onDeleteLocalNow(rec: PendingMeta): Promise<void> {
       const ok = await showConfirmDefaultNo(
         `Remove the deleted copy of "${rec.name || 'this project'}" from ${formatClockTime(rec.savedAt)} now?\n\n` +
         'It goes from this device at once and cannot be recovered.',
@@ -1118,7 +1120,7 @@ export async function openProjectList(startInEdit = false): Promise<void> {
     }
 
     /** Remove an offline copy the user does not want to keep. */
-    async function onDeleteLocal(rec: PendingRecord): Promise<void> {
+    async function onDeleteLocal(rec: PendingMeta): Promise<void> {
       const ok = await showConfirm(
         `Delete the offline copy of "${rec.name || 'this project'}" from ` +
         `${formatClockTime(rec.savedAt)}?\n\n` +
@@ -1176,22 +1178,22 @@ function renderProjectList(
   onEdit: (p: CloudProject) => void,
   onDelete: (p: CloudProject) => void,
   onRecover: (p: CloudProject) => void,
-  deviceOnly: PendingRecord[] = [],
-  onPickDevice?: (rec: PendingRecord) => void,
-  archived: PendingRecord[] = [],
-  onPickArchived?: (rec: PendingRecord) => void,
+  deviceOnly: PendingMeta[] = [],
+  onPickDevice?: (rec: PendingMeta) => void,
+  archived: PendingMeta[] = [],
+  onPickArchived?: (rec: PendingMeta) => void,
   /** True when the cloud list could not be fetched and we are showing the
    *  last one we saw. Those rows can be read but not opened. */
   offlineListing = false,
-  onDeleteLocal?: (rec: PendingRecord) => void,
+  onDeleteLocal?: (rec: PendingMeta) => void,
   /** Copies deleted within the last 24 hours — shown greyed in Edit mode with
    *  a Recover option, exactly as a deleted project is. */
-  deletedCopies: PendingRecord[] = [],
-  onRecoverLocal?: (rec: PendingRecord) => void,
+  deletedCopies: PendingMeta[] = [],
+  onRecoverLocal?: (rec: PendingMeta) => void,
   /** DELETE NOW (#533): at once, no recovery — on live and on deleted rows. */
   onDeleteNow?: (p: CloudProject) => void,
   /** ...and on a deleted device copy: off this device at once. */
-  onDeleteLocalNow?: (rec: PendingRecord) => void,
+  onDeleteLocalNow?: (rec: PendingMeta) => void,
 ): void {
   const content = el('projectListContent');
   content.innerHTML = '';
@@ -1222,7 +1224,7 @@ function renderProjectList(
 
   const nameOf = (n: string | null | undefined): string => (n || 'Unnamed project');
 
-  const localRow = (rec: PendingRecord, archivedCopy: boolean): HTMLElement => {
+  const localRow = (rec: PendingMeta, archivedCopy: boolean): HTMLElement => {
     const row = document.createElement('button');
     row.type = 'button';
     // A COPY IS NOT A PROJECT (#524). Roman: rows that look the same as the
@@ -1263,7 +1265,7 @@ function renderProjectList(
   // and again down in the alphabetical list with its copies, in its proper
   // place under its own letter. The list below is the whole truth; the top is
   // only a shortcut to where you already are.
-  const fileCopy = (rec: PendingRecord, render: () => HTMLElement): void => {
+  const fileCopy = (rec: PendingMeta, render: () => HTMLElement): void => {
     const e: Entry = { name: nameOf(rec.name), at: rec.savedAt, render };
     if (openId && rec.projectId === openId) mineNow.push({ ...e });
     entries.push(e);
@@ -1925,10 +1927,10 @@ async function uploadUnsentCopies(reason: 'start' | 'reconnect'): Promise<void> 
     if (pullInFlight || isPushInFlight() || isLoadInFlight()) { lookForUnsentCopiesSoon(3_000); return; }
     if (handIsBusy() || state().sortEditingId) { lookForUnsentCopiesSoon(3_000); return; }
   }
-  let recs: PendingRecord[] = [];
+  let recs: PendingMeta[] = [];
   try { recs = (await listPending()).filter((r) => !isArchived(r)); } catch { return; }
   const current = reason === 'start'
-    ? ((await loadSnapshot().catch(() => null))?.projectId ?? null)
+    ? await savedProjectId()
     : getCurrentProject().projectId;
   // A cloud project always has a name. A copy filed without one was filed by
   // a push that failed after the project had left the screen (#524) — it is
@@ -1950,7 +1952,7 @@ async function uploadUnsentCopies(reason: 'start' | 'reconnect'): Promise<void> 
     }
   }
   const copies = recs.filter((r) => r.projectId && r.projectId !== current && r.name && !r.parkedAt
-    && r.snapshot?.frames?.length && r.snapshot.contentStamps && Object.keys(r.snapshot.contentStamps).length > 0);
+    && r.frames > 0 && r.stamped);
   if (copies.length === 0) return;
 
   // The open project's own unsent work goes first. If it cannot, nothing else
@@ -1993,7 +1995,11 @@ async function uploadUnsentCopies(reason: 'start' | 'reconnect'): Promise<void> 
       if (reason === 'start') { if (line) line.textContent = `Uploading unsent work: ${rec.name ?? 'a project'}…`; }
       else showUnsentNotice(`Uploading unsent work: ${rec.name ?? 'a project'}…`);
       if (state().sortEditingId) closeSortMode();
-      putCopyInPlace(rec, pid, rec.name);
+      // THE COPY ITSELF IS READ NOW — one whole project at a time, never all of
+      // them at once (12 Nov).
+      const whole = await getPending(rec.key);
+      if (!whole?.snapshot?.frames?.length) { trace(`  unsent copy of "${who}" is not readable on this device — left as it is`); continue; }
+      putCopyInPlace(whole, pid, rec.name);
       try {
         // Take the server's newer bits first (newer wins per item), then send.
         await tryPullFromCloud();
@@ -5356,14 +5362,15 @@ async function openRestoreModal(projectId: string): Promise<void> {
         );
         if (!ok) { overlay.style.display = 'flex'; return; }
         overlay.remove();
-        if (!rec.snapshot || !rec.snapshot.frames || rec.snapshot.frames.length === 0) {
+        const whole = await getPending(rec.key);   // read only now, only this one (12 Nov)
+        if (!whole?.snapshot || !whole.snapshot.frames || whole.snapshot.frames.length === 0) {
           showToast('That copy is empty — nothing to open.');
           resolve();
           return;
         }
         beginSystemAction();
         try {
-          applySnapshotToStore(rec.snapshot);
+          applySnapshotToStore(whole.snapshot);
           setCurrentProject({ projectId: rec.projectId, name: rec.name });
         } finally {
           endSystemAction();
@@ -7457,7 +7464,7 @@ export async function bootstrapAccountSystem(): Promise<void> {
     const kind = (k: string) => (k.startsWith('archive:') ? 'safety copy of ' : 'unsent ') + k.replace(/^archive:/, '').replace(/:\d+$/, '').slice(0, 8);
     trace(`start: ${keys.length} whole-project cop${keys.length === 1 ? 'y' : 'ies'} kept on this device${keys.length ? ` — ${keys.map(kind).join(' · ')}` : ''}${est ? ` · device storage used: ${Math.round(est.usage / 1048576)} MB` : ''}`);
   } catch { /* the lines are a help, never a stop */ }
-  trace('start: step 1 — reading the copies to look for unsent work');
+  trace('start: step 1 — the list of copies (a few words each, no copy is opened); unsent work of other projects goes up first');
   await uploadUnsentCopies('start');
   trace('start: step 2 — reading the open project from the device');
 

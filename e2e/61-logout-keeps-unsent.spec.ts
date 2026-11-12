@@ -96,6 +96,12 @@ test('logout keeps the unsent copy of offline work, and clears the project cache
   expect(after.previews, 'the previews are gone').toBe(0);
   expect(after.session, 'signed out').toBe(false);
 
+  // THE LIST OF COPIES AGREES WITH THE COPIES (12 Nov): the app reads the list,
+  // never the whole copies — so the list must name exactly what is there.
+  const agree = await desktop.page.evaluate(() =>
+    (window as never as { __fh_test: { copyListAndStore(): Promise<{ list: string[]; store: string[] }> } }).__fh_test.copyListAndStore());
+  expect(agree.list, 'THE LIST OF DEVICE COPIES NAMES EXACTLY THE COPIES ON THE DEVICE').toEqual(agree.store);
+
   await desktop.page.unroute('**/127.0.0.1:8787/projects/*/sync*');
   await desktop.page.unroute('**/127.0.0.1:8787/upload');
   await desktop.close();

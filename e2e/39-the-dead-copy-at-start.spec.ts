@@ -90,6 +90,12 @@ test('the dead copy at start: parked, listed, never retried — and the start is
   expect(id, 'BEACH CLUB has a cloud id').toBeTruthy();
   expect((await Device.projectNames(token)), 'the server lists it').toContain('BEACH CLUB');
 
+  // THE LIST OF COPIES AGREES WITH THE COPIES (12 Nov): the app reads the list,
+  // never the whole copies — so the list must name exactly what is there.
+  const agree = await desktop.page.evaluate(() =>
+    (window as never as { __fh_test: { copyListAndStore(): Promise<{ list: string[]; store: string[] }> } }).__fh_test.copyListAndStore());
+  expect(agree.list, 'THE LIST OF DEVICE COPIES NAMES EXACTLY THE COPIES ON THE DEVICE').toEqual(agree.store);
+
   await desktop.close();
   await ipad.close();
 });
