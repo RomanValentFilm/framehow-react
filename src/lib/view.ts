@@ -1496,6 +1496,21 @@ export function wireScrollHandlers(): void {
 
   (window as any)._fhSyncDetailTop = syncDetailTopIPad;
 
+  // THE VIEW BAR MOVED WITHOUT TELLING ANYONE (13 Nov, Roman's iPad: SHOT · ANGLE
+  // · SKETCH … pushed up under the 3×2VIEW row, a black band where it belonged).
+  // The view bar stands below the clock-and-battery strip, and how tall that
+  // strip is can change with no resize and no scroll — the camera screen comes
+  // and goes over the page, the page starts anew beneath it. The detail bar was
+  // measured once and stayed where the view bar had been. Now it is looked at
+  // every half second, and measured again only when the view bar has moved.
+  let viewBarWas = '';
+  window.setInterval(() => {
+    const now = `${getComputedStyle(viewBar).top}|${viewBar.offsetHeight}|${Math.round(viewBar.getBoundingClientRect().bottom)}`;
+    if (now === viewBarWas) return;
+    viewBarWas = now;
+    syncDetailTopIPad();
+  }, 500);
+
   // Apply initial state
   resetToolbarState();
   syncDetailTopIPad();

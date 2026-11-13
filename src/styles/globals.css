@@ -1774,8 +1774,9 @@ body.portrait-mode .cam-mode-menu{left:16px;top:calc(max(16px,var(--sat)) + 80px
 /* UP AND DOWN, to the shot before and after (story grid step 1, 13 Nov): the
    same arrows turned a quarter, in the middle of the top and bottom edge. */
 #maxView .max-up,#maxView .max-down{left:50%;transform:translateX(-50%) rotate(90deg);}
-#maxView .max-up{top:max(8px,var(--sat));margin-top:-10px;}
-#maxView .max-down{top:auto;bottom:max(8px,env(safe-area-inset-bottom));margin-bottom:-10px;}
+/* ON THE EDGE itself (Roman, 13 Nov: "they are apart from the edge with a gap"). */
+#maxView .max-up{top:0;margin-top:-10px;border-radius:0 6px 6px 0;}
+#maxView .max-down{top:auto;bottom:0;margin-bottom:-10px;border-radius:6px 0 0 6px;}
 #maxView .max-next{right:max(8px,env(safe-area-inset-right));}
 @media(hover:hover){#maxView .max-nav:hover{opacity:1;}}
 /* UPRIGHT PROJECTS (26 Oct, Roman): the share buttons stand under the close
@@ -1920,7 +1921,10 @@ html.island #maxView .max-next{right:max(8px,var(--ir,0px));}
 /* LAZY LOADING (13 Nov, Roman): "at the bottom a bar loading and counting the
    pictures … a touch thicker … Then everyone knows it's still loading." The
    app is that much shorter while it is there. Text centred. */
-#picturesBar{position:fixed;left:0;right:0;bottom:0;height:calc(28px + env(safe-area-inset-bottom));padding-bottom:env(safe-area-inset-bottom);box-sizing:border-box;background:#161616;border-top:1px solid rgba(255,255,255,.12);z-index:900;display:flex;align-items:center;justify-content:center;pointer-events:none;}
-#picturesBar .pictures-bar-fill{position:absolute;left:0;top:0;bottom:0;width:0;background:var(--accent,#d9262f);opacity:.85;transition:width .3s linear;}
-#picturesBar .pictures-bar-text{position:relative;font-family:var(--mono);font-size:12px;letter-spacing:.06em;color:#fff;text-align:center;text-shadow:0 0 3px rgba(0,0,0,.6);}
-body.pictures-bar-on{padding-bottom:calc(28px + env(safe-area-inset-bottom));}
+/* (13 Nov, later, Roman: "too thick … a thin bar and in it a thin red line
+   loading, in a slightly thicker black bar with white text" — 16 px of black,
+   the red line 3 px along its lower edge.) */
+#picturesBar{position:fixed;left:0;right:0;bottom:0;height:calc(16px + env(safe-area-inset-bottom));padding-bottom:env(safe-area-inset-bottom);box-sizing:border-box;background:#0c0c0c;z-index:900;display:flex;align-items:center;justify-content:center;pointer-events:none;}
+#picturesBar .pictures-bar-fill{position:absolute;left:0;bottom:env(safe-area-inset-bottom);height:3px;width:0;background:var(--accent,#d52632);transition:width .3s linear;}
+#picturesBar .pictures-bar-text{position:relative;top:-1px;font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;color:#fff;text-align:center;line-height:1;}
+body.pictures-bar-on{padding-bottom:calc(16px + env(safe-area-inset-bottom));}

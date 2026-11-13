@@ -6,7 +6,7 @@
 
 import { autoPhoneMainView, setViewMode, scrollAnchorTo } from './view';
 import { dismissNewProjectModal } from './modals';
-import { hasStandIn, setStandIn, dropStandIn, beginArriving, oneArrived, endArriving, picturesArriving } from './lazyPictures';
+import { hasStandIn, setStandIn, dropStandIn, beginArriving, oneArrived, endArriving, picturesArriving, arrivingFor } from './lazyPictures';
 import { api, API_BASE_URL, requestsBelongToAStep } from './api';
 import { fhTrack } from './tracking';
 import type { ApiError } from './api';
@@ -4223,7 +4223,7 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
  * still to come: its small preview from this device, else from the server,
  * six at a time. Shown only — see lazyPictures.ts.
  */
-async function standInsFirst(keys: string[], token: string, stop: () => boolean, redraw: () => void): Promise<void> {
+async function standInsFirst(keys: string[], token: string, stop: () => boolean, redraw: (key: string) => void): Promise<void> {
   try {
     const want = [...new Set(keys)].filter((k) => !hasStandIn(k));
     if (want.length === 0) return;
@@ -4235,9 +4235,8 @@ async function standInsFirst(keys: string[], token: string, stop: () => boolean,
     const missing: string[] = [];
     for (const k of want) {
       const b = onDevice.get(k);
-      if (b) { setStandIn(k, b); fromDevice++; } else missing.push(k);
+      if (b) { setStandIn(k, b); fromDevice++; redraw(k); } else missing.push(k);
     }
-    if (fromDevice > 0) redraw();
     let next = 0;
     const worker = async (): Promise<void> => {
       while (next < missing.length) {
@@ -4250,7 +4249,7 @@ async function standInsFirst(keys: string[], token: string, stop: () => boolean,
           if (stop()) return;
           setStandIn(k, bytes);
           fromServer++;
-          redraw();
+          redraw(k);
         } catch { /* its card waits for the picture itself */ }
       }
     };
@@ -5520,7 +5519,14 @@ async function bringThePictures(
     const here = countCurrentImages();
     beginArriving(picturesFor, here + expectedImageCount, here);
     if (expectedImageCount > 0) trace(`  in: ${state().frames.length} shot(s) on the screen — ${expectedImageCount} picture(s) follow in the background`);
-    void standInsFirst([...mainImageTasks, ...versionImageTasks].map((t) => t.r2Key), token, anotherProjectIsOnScreen, () => redrawSoon());
+    // (a preview only for a picture that is really still on its way: one this
+    // device holds from a moment ago arrives at once and needs none — Roman's
+    // iPad, 13 Nov: 268 previews fetched AFTER all 281 pictures were in, a
+    // redraw of every card for each, and the page stood still for 15 seconds)
+    const fidOfKey = new Map<string, number>();
+    for (const t of [...mainImageTasks, ...versionImageTasks]) fidOfKey.set(t.r2Key, t.localId);
+    void standInsFirst([...fidOfKey.keys()].filter((k) => !r2ImageCache.has(k)), token,
+      () => anotherProjectIsOnScreen() || !arrivingFor(picturesFor), (k) => redrawSoon(fidOfKey.get(k)));
   }
 
   // Helper: fetch with up to 3 retries (exponential backoff: 2s, 4s, 8s)
@@ -5567,10 +5573,63 @@ async function bringThePictures(
   // only 150 ms; it is the ones after it that keep a second's distance.)
   let redrawTimer: number | null = null;
   let lastRedraw = 0;
-  const redrawSoon = (): void => {
+  // IN THE BACKGROUND ONLY THE CARD THAT GOT A PICTURE IS DRAWN AGAIN (13 Nov,
+  // Roman's iPad: "I just opened WF 7 and then nothing worked"). One redraw of
+  // all 26 shots took 650 ms there, once a second, for as long as pictures
+  // came — the page had a third of its time left for the person. A card is
+  // 25 ms. Cards in a view this does not know (the list views) are drawn with
+  // everything else, at most every four seconds, and once more at the end.
+  const cardsToPaint = new Set<number>();
+  let paintTimer: number | null = null;
+  let lastFull = Date.now();
+  const paintCards = (): void => {
+    paintTimer = null;
+    if (anotherProjectIsOnScreen()) { cardsToPaint.clear(); return; }
+    if (state().drawingInProgress || handIsBusy()) { paintTimer = window.setTimeout(paintCards, 500); return; }   // not under a stroke
+    const w = window as unknown as {
+      __fh_renderGrid3x2Card?: (el: HTMLElement, fid: number) => void;
+      __fh_renderMainFrame?: (el: HTMLElement, fid: number) => void;
+      __fh_renderVersionFrame?: (el: HTMLElement, fid: number, strip: string) => void;
+      __fh_renderAll?: () => void;
+    };
+    let unknown = false;
+    for (const fid of cardsToPaint) {
+      let found = false;
+      document.querySelectorAll<HTMLElement>(`#overviewScroll .grid3x2-card-wrap[data-g3fid="${fid}"]`).forEach((el) => { found = true; w.__fh_renderGrid3x2Card?.(el, fid); });
+      document.querySelectorAll<HTMLElement>(`.frame-card[data-mfid="${fid}"]`).forEach((el) => { found = true; w.__fh_renderMainFrame?.(el, fid); });
+      document.querySelectorAll<HTMLElement>(`.frame-card[data-vfid="${fid}"]`).forEach((el) => { found = true; if (el.dataset.strip) w.__fh_renderVersionFrame?.(el, fid, el.dataset.strip); });
+      if (!found) unknown = true;
+    }
+    cardsToPaint.clear();
+    if (unknown && Date.now() - lastFull > 4_000) { lastFull = Date.now(); w.__fh_renderAll?.(); }
+  };
+  const redrawSoon = (fid?: number): void => {
+    if (background && fid !== undefined) {
+      cardsToPaint.add(fid);
+      if (paintTimer === null) paintTimer = window.setTimeout(paintCards, 250);
+      return;
+    }
     if (redrawTimer !== null) return;
     const wait = Math.max(150, 1000 - (Date.now() - lastRedraw));
     redrawTimer = window.setTimeout(() => { redrawTimer = null; lastRedraw = Date.now(); (window as any).__fh_renderAll?.(); }, wait);
+  };
+  // A PICTURE THE LIBRARY DELETED IS NOT THE PERSON'S WORK (13 Nov). The card
+  // is told so when its picture turns out to be gone — and in the background
+  // that happens after the project was noted as "matching the server", so the
+  // five shots it touched in WF 7 went up again at every opening, came back as
+  // "changed elsewhere", and the whole project was fetched a second time. A
+  // shot that matched the server before the card was told still matches after.
+  const toldWithoutMakingItWork = (fid: number, tell: () => void): void => {
+    if (!background) { tell(); return; }
+    const before = useStore.getState();
+    const i = before.frames.findIndex((f) => f.id === fid);
+    const sid = i >= 0 ? before.frames[i].serverFrameId : undefined;
+    const matched = !!sid && _lastPushedFingerprints.get(sid) === frameFingerprint(before.frames[i], i, before);
+    tell();
+    if (!matched) return;
+    const after = useStore.getState();
+    const j = after.frames.findIndex((f) => f.id === fid);
+    if (j >= 0) _lastPushedFingerprints.set(sid!, frameFingerprint(after.frames[j], j, after));
   };
   // EIGHT AT A TIME (12 Nov). All of a project's pictures used to be asked for
   // at once — 251 for Roman's WF 7 — and arrived in one burst, each unpacked
@@ -5600,7 +5659,7 @@ async function bringThePictures(
           updated[idx] = { ...updated[idx], src: dataUrl };
           asTheApp(() => useStore.setState((prev) => ({ frames: updated, renderTick: prev.renderTick + 1 })));
           dropStandIn(task.r2Key);
-          redrawSoon();
+          redrawSoon(task.localId);
           fetchedImageCount++;
           onImageProgress?.(fetchedImageCount, expectedImageCount);
         })
@@ -5613,8 +5672,8 @@ async function bringThePictures(
               const updated = [...st.frames];
               if (!background || st.frames[idx].r2Key === task.r2Key) {
                 updated[idx] = { ...updated[idx], src: '', r2Key: undefined, pictureDeleted: true };
-                asTheApp(() => useStore.setState((prev) => ({ frames: updated, renderTick: prev.renderTick + 1 })));
-                redrawSoon();
+                toldWithoutMakingItWork(task.localId, () => asTheApp(() => useStore.setState((prev) => ({ frames: updated, renderTick: prev.renderTick + 1 }))));
+                redrawSoon(task.localId);
               }
             }
             trace(`  picture deleted in the library (server has no file): shot ${st.frames[idx]?.label ?? task.localId} main — the card says so`);
@@ -5668,7 +5727,7 @@ async function bringThePictures(
             renderTick: prev.renderTick + 1,
           })));
           dropStandIn(task.r2Key);
-          redrawSoon();
+          redrawSoon(task.localId);
           fetchedImageCount++;
           onImageProgress?.(fetchedImageCount, expectedImageCount);
         })
@@ -5681,11 +5740,11 @@ async function bringThePictures(
             if (vers && vers[at]) {
               const updatedVers = [...vers];
               updatedVers[at] = { ...updatedVers[at], bgImage: null, r2Key: undefined, pictureDeleted: true };
-              asTheApp(() => useStore.setState((prev) => ({
+              toldWithoutMakingItWork(task.localId, () => asTheApp(() => useStore.setState((prev) => ({
                 stripVersions: { ...prev.stripVersions, [task.strip]: { ...prev.stripVersions[task.strip], [task.localId]: updatedVers } },
                 renderTick: prev.renderTick + 1,
-              })));
-              redrawSoon();
+              }))));
+              redrawSoon(task.localId);
             }
             trace(`  picture deleted in the library (server has no file): ${task.strip} v${task.versionIdx + 1} — the card says so`);
             fetchedImageCount++;

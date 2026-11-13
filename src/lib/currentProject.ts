@@ -758,7 +758,8 @@ export async function flushSyncNow(askedByTheFetch = false): Promise<void> {
     // No answer at all is the one honest sign of being off — the browser's own
     // opinion is often wrong. Start watching for the connection to come back
     // (#298), so the check happens the moment it does.
-    if (!err?.status) _watchForConnection?.();
+    // (a step that was STOPPED for the open project is not a lost connection — 13 Nov)
+    if (!err?.status && (err as { code?: string })?.code !== 'stopped') _watchForConnection?.();
     // THE STORE IS NOT THE PROJECT THAT WAS PUSHED (#524). Everything below
     // files "the unsent copy" from what the store holds NOW — and if another
     // project was put on screen while this push was in the air, that is the

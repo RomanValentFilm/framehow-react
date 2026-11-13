@@ -281,7 +281,7 @@ struct CameraScreen: View {
             .padding(8)   // a plain word, no pill (Roman, 6 Nov); touch area stays finger-sized
         let info = Text(cam.busy > 0 ? "processing…" : (cam.status == "ready" ? "" : cam.status))
             .font(.caption2).padding(6).background(pill, in: RoundedRectangle(cornerRadius: 8))
-            .opacity(cam.busy > 0 || cam.status != "ready" ? 1 : 0)
+            .opacity(cam.busy > 0 || (cam.status != "ready" && !cam.status.isEmpty) ? 1 : 0)
 
         GeometryReader { g in
             let W = g.size.width, H = g.size.height

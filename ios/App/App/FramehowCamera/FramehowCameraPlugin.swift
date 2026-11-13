@@ -51,8 +51,18 @@ public class FramehowCameraPlugin: CAPPlugin, CAPBridgedPlugin {
 
         DispatchQueue.main.async { [weak self] in
             guard let self, let top = self.bridge?.viewController else { call.reject("no view controller"); return }
+            // ONE CAMERA SCREEN AT A TIME (13 Nov, Roman's iPad: a screen that said
+            // "starting…" for good and whose RATIO did nothing). The screen of the shot
+            // before stays up, unseen, until its photo is done — CAM pressed again in
+            // that moment put a second screen into the same place. The old one goes first.
+            if let old = self.host {
+                self.host = nil
+                old.dismiss(animated: false)
+                if let c = self.webReadyCall { self.webReadyCall = nil; c.resolve(); self.bridge?.releaseCall(c) }
+            }
             let cam = CameraModel()
             self.model = cam
+            weak var screenOfThisShot: UIViewController?
             var keyInForce = ratioKey
             cam.onShutter = { [weak self] in
                 self?.timeUp = false; self?.webReady = false
@@ -75,9 +85,10 @@ public class FramehowCameraPlugin: CAPPlugin, CAPBridgedPlugin {
                 ])
             }
             cam.onPhoto = { [weak self] data, w, h, kept, msCapture, msProcess in
-                self?.dismissScreen()
+                // (only its own screen and its own camera — a newer one may be up already)
+                if let s = self, let mine = screenOfThisShot, s.host === mine { s.dismissScreen() }
                 cam.stop()
-                self?.model = nil
+                if let s = self, s.model === cam { s.model = nil }
                 call.resolve([
                     "jpegBase64": data.base64EncodedString(),
                     "width": w, "height": h, "hdrKept": kept, "ratioKey": keyInForce,
@@ -103,6 +114,7 @@ public class FramehowCameraPlugin: CAPPlugin, CAPBridgedPlugin {
             vc.modalPresentationCapturesStatusBarAppearance = true   // (so the camera screen may hide the clock and battery)
             vc.view.backgroundColor = .black
             self.host = vc
+            screenOfThisShot = vc
             top.present(vc, animated: false)
         }
     }
