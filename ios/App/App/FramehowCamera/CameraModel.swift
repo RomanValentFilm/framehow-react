@@ -31,10 +31,7 @@ final class CameraModel: NSObject, ObservableObject {
     var rotationCoordinator: AVCaptureDevice.RotationCoordinator?
     var devicePoint: ((CGPoint) -> CGPoint)?
 
-    @Published var status = ""   // (nothing is said while the camera starts — Roman, 13 Nov)
-    /// This device has the wide (0.5x) lens next to the main one. An iPad with one
-    /// back camera has not: its button says 1x and stays 1x (Roman, 13 Nov).
-    @Published var hasWide = false
+    @Published var status = "starting…"
     @Published var exposureBias: Float = 0 { didSet { applyExposure() } }
     @Published var lensName = ""
     /// The chosen frame, long side / short side (≥ 1); the photo is cropped to it.
@@ -65,12 +62,6 @@ final class CameraModel: NSObject, ObservableObject {
     nonisolated(unsafe) private var shutterAt = Date()
 
     func start() {
-        // Nothing is said while the camera starts. If it has NOT started after three
-        // seconds, something is wrong, and that is said (and tells us where to look).
-        Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(3))
-            if let s = self, s.status.isEmpty { s.status = "starting…" }
-        }
         AVCaptureDevice.requestAccess(for: .video) { ok in
             Task { @MainActor in
                 if ok { self.configure() } else { self.status = "no camera permission — Settings › Framehow › Camera" }
@@ -116,8 +107,7 @@ final class CameraModel: NSObject, ObservableObject {
                 cam.videoZoomFactor = oneX
                 cam.unlockForConfiguration()
             }
-            hasWide = cam.isVirtualDevice
-            lensName = "1x"
+            lensName = cam.isVirtualDevice ? "1x" : cam.localizedName
             // FOCUS BY ITSELF (Roman, 6 Nov: "does it focus when pointed at something?"):
             // continuous autofocus and exposure are the camera's default; a tap locks
             // them on a point, and when the scene changes the camera goes back to
@@ -176,14 +166,14 @@ final class CameraModel: NSObject, ObservableObject {
     private var oneX: CGFloat = 1
     /// What the user sees: 0.5 … 1 … 3, as the Camera app counts.
     @Published var zoomShown: CGFloat = 1
-    func setLens(wide w: Bool) { setZoom(w && hasWide ? 0.5 : 1) }
+    func setLens(wide w: Bool) { setZoom(w ? 0.5 : 1) }
 
     /// Zoom as the user counts it (0.5 = the wide lens, 1 = the main lens, up to 3 digital).
     /// THE LENS FOLLOWS THE ZOOM (Roman, 6 Nov: button AND two-finger spread): below 1x
     /// the wide lens, from 1x the main one — the only moments the camera may switch.
     func setZoom(_ shown: CGFloat) {
         guard let cam = device else { return }
-        let z = max(hasWide ? 0.5 : 1, min(3, shown))
+        let z = max(0.5, min(3, shown))
         do {
             try cam.lockForConfiguration()
             let factor: CGFloat

@@ -477,3 +477,6 @@ v5.0.225 · #777 (10 Nov, night)
 
 ## v5.0.275 · #827 (next)
 - MAX VIEW in the iPhone / iPad app: no clock and battery over the picture (the shell hides them while the viewer is open — a new door in the camera plugin, `statusBar`; needs an Xcode build).
+- CAMERA (Xcode build): RATIO and Cancel did not answer on the iPad after the clock-and-battery change of this afternoon. Most likely cause: `.statusBarHidden` on the SwiftUI screen ("AttributeGraph: cycle detected" at every opening). The bar is hidden by the screen's own controller now (CameraHost). NOT PROVEN until Roman has tried it.
+- "A little bar that shows 8 of 13 loading, and it comes always" (Roman, 13 Nov): the thirteen pictures of WF 7 that the library deleted were asked for again at every start. A picture found gone is remembered on the device (localStorage fh_gone_pictures); after that its card is told at once — no asking, no bar, no log line.
+- CAMERA: the three Swift files are BACK AS THEY WERE ON 11 NOV (commit 523c758), to find out whether RATIO and Cancel not answering on the iPad is from today or was always there. Today's camera changes (no "starting", 1x only, one screen at a time, no clock/battery, statusBar door for the MAX view) are kept aside in the session folder camera-today/ and go back in one at a time.

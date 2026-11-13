@@ -26,7 +26,6 @@ public class FramehowCameraPlugin: CAPPlugin, CAPBridgedPlugin {
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "take", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "close", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "statusBar", returnType: CAPPluginReturnPromise),
     ]
 
     private var host: UIViewController?
@@ -37,16 +36,6 @@ public class FramehowCameraPlugin: CAPPlugin, CAPBridgedPlugin {
     private var timeUp = false
     private var webReady = false
     private var webReadyCall: CAPPluginCall?
-
-    /// THE CLOCK AND BATTERY, HIDDEN OR SHOWN (Roman, 13 Nov: not over a picture in
-    /// the MAX view). `hidden: true` takes them away, `false` brings them back.
-    @objc func statusBar(_ call: CAPPluginCall) {
-        let hidden = call.getBool("hidden") ?? false
-        DispatchQueue.main.async { [weak self] in
-            (self?.bridge?.viewController as? CAPBridgeViewController)?.setStatusBarVisible(!hidden)
-            call.resolve()
-        }
-    }
 
     @objc func take(_ call: CAPPluginCall) {
         let list = (call.getArray("ratios") as? [[String: Any]] ?? []).compactMap { d -> RatioChoice? in
@@ -62,18 +51,8 @@ public class FramehowCameraPlugin: CAPPlugin, CAPBridgedPlugin {
 
         DispatchQueue.main.async { [weak self] in
             guard let self, let top = self.bridge?.viewController else { call.reject("no view controller"); return }
-            // ONE CAMERA SCREEN AT A TIME (13 Nov, Roman's iPad: a screen that said
-            // "starting…" for good and whose RATIO did nothing). The screen of the shot
-            // before stays up, unseen, until its photo is done — CAM pressed again in
-            // that moment put a second screen into the same place. The old one goes first.
-            if let old = self.host {
-                self.host = nil
-                old.dismiss(animated: false)
-                if let c = self.webReadyCall { self.webReadyCall = nil; c.resolve(); self.bridge?.releaseCall(c) }
-            }
             let cam = CameraModel()
             self.model = cam
-            weak var screenOfThisShot: UIViewController?
             var keyInForce = ratioKey
             cam.onShutter = { [weak self] in
                 self?.timeUp = false; self?.webReady = false
@@ -96,10 +75,9 @@ public class FramehowCameraPlugin: CAPPlugin, CAPBridgedPlugin {
                 ])
             }
             cam.onPhoto = { [weak self] data, w, h, kept, msCapture, msProcess in
-                // (only its own screen and its own camera — a newer one may be up already)
-                if let s = self, let mine = screenOfThisShot, s.host === mine { s.dismissScreen() }
+                self?.dismissScreen()
                 cam.stop()
-                if let s = self, s.model === cam { s.model = nil }
+                self?.model = nil
                 call.resolve([
                     "jpegBase64": data.base64EncodedString(),
                     "width": w, "height": h, "hdrKept": kept, "ratioKey": keyInForce,
@@ -111,6 +89,7 @@ public class FramehowCameraPlugin: CAPPlugin, CAPBridgedPlugin {
                 cam: cam, ratios: ratios, ratioKey: ratioKey, maxSide: maxSide,
                 onRatio: { key in keyInForce = key },
                 onCancel: { [weak self] in
+                    print("FH CAM: cancel reached the plugin — it has a screen to take down: \(self?.host != nil)")
                     self?.dismissScreen()
                     cam.stop()
                     self?.model = nil
@@ -122,10 +101,8 @@ public class FramehowCameraPlugin: CAPPlugin, CAPBridgedPlugin {
             // shutter): with .fullScreen iOS stops drawing the covered page and shows grey
             // for a frame when it comes back; .overFullScreen keeps the page alive beneath.
             vc.modalPresentationStyle = .overFullScreen
-            vc.modalPresentationCapturesStatusBarAppearance = true   // (so the camera screen may hide the clock and battery)
             vc.view.backgroundColor = .black
             self.host = vc
-            screenOfThisShot = vc
             top.present(vc, animated: false)
         }
     }

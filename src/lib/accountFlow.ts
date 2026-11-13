@@ -5452,6 +5452,22 @@ async function applyCloudTreeToStore(
   await bringThePictures(mainImageTasks, versionImageTasks, background, onImageProgress);
 }
 
+// PICTURES THE LIBRARY DELETED ARE REMEMBERED AS GONE (13 Nov, Roman: "comes a
+// little bar that shows 8 of 13 loading. And it comes always"). The server
+// still names them in the project; their files are gone. Every start asked for
+// the thirteen of WF 7 again, counted them on the bar, and was told "gone"
+// thirteen times. Asked once, a name is kept on this device; after that the
+// card is told at once, with no asking, no bar and no line in the log.
+const GONE_KEY = 'fh_gone_pictures';
+const _gonePictures: Set<string> = (() => {
+  try { return new Set<string>(JSON.parse(localStorage.getItem(GONE_KEY) ?? '[]') as string[]); } catch { return new Set<string>(); }
+})();
+function rememberGone(r2Key: string): void {
+  if (_gonePictures.has(r2Key)) return;
+  _gonePictures.add(r2Key);
+  try { localStorage.setItem(GONE_KEY, JSON.stringify([..._gonePictures].slice(-3000))); } catch { /* remembered for this session */ }
+}
+
 type MainPictureTask = { localId: number; r2Key: string };
 type VersionPictureTask = { strip: string; localId: number; versionIdx: number; r2Key: string };
 
@@ -5481,7 +5497,8 @@ export function bringMissingPictures(why: string): void {
     }
   }
   if (mains.length + vers.length === 0) return;
-  trace(`${mains.length + vers.length} picture(s) of the open project are not on this device yet (${why}) — fetching them in the background`);
+  const really = [...mains, ...vers].filter((t) => !_gonePictures.has(t.r2Key)).length;
+  if (really > 0) trace(`${really} picture(s) of the open project are not on this device yet (${why}) — fetching them in the background`);
   void bringThePictures(mains, vers, true);
 }
 
@@ -5504,6 +5521,9 @@ async function bringThePictures(
 
   const expectedImageCount = mainImageTasks.length + versionImageTasks.length;
   let fetchedImageCount = 0;
+  // (known to be gone before this began: not asked for, not counted, not said)
+  const knownGone = new Set([...mainImageTasks, ...versionImageTasks].map((t) => t.r2Key).filter((k) => _gonePictures.has(k)));
+  const comingCount = expectedImageCount - knownGone.size;
 
   // A picture that arrives after the person is in is put on its card as the
   // app's own doing, not as the person's work (it must not mark the project
@@ -5517,25 +5537,26 @@ async function bringThePictures(
   const bringPictures = async (): Promise<void> => {
   if (background) {
     const here = countCurrentImages();
-    beginArriving(picturesFor, here + expectedImageCount, here);
-    if (expectedImageCount > 0) trace(`  in: ${state().frames.length} shot(s) on the screen — ${expectedImageCount} picture(s) follow in the background`);
+    beginArriving(picturesFor, here + comingCount, here);
+    if (comingCount > 0) trace(`  in: ${state().frames.length} shot(s) on the screen — ${comingCount} picture(s) follow in the background`);
     // (a preview only for a picture that is really still on its way: one this
     // device holds from a moment ago arrives at once and needs none — Roman's
     // iPad, 13 Nov: 268 previews fetched AFTER all 281 pictures were in, a
     // redraw of every card for each, and the page stood still for 15 seconds)
     const fidOfKey = new Map<string, number>();
     for (const t of [...mainImageTasks, ...versionImageTasks]) fidOfKey.set(t.r2Key, t.localId);
-    void standInsFirst([...fidOfKey.keys()].filter((k) => !r2ImageCache.has(k)), token,
+    void standInsFirst([...fidOfKey.keys()].filter((k) => !r2ImageCache.has(k) && !knownGone.has(k)), token,
       () => anotherProjectIsOnScreen() || !arrivingFor(picturesFor), (k) => redrawSoon(fidOfKey.get(k)));
   }
 
   // Helper: fetch with up to 3 retries (exponential backoff: 2s, 4s, 8s)
   async function fetchWithRetry(r2Key: string, retries = 3): Promise<string> {
+    if (knownGone.has(r2Key)) throw new PictureGone(r2Key);   // asked before: the file is gone
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
         return await fetchImageFromR2(r2Key, token!);
       } catch (e) {
-        if (e instanceof PictureGone) throw e;   // no point asking again
+        if (e instanceof PictureGone) { rememberGone(r2Key); throw e; }   // no point asking again
         // IN THE BACKGROUND A PICTURE IS NEVER GIVEN UP (13 Nov): the bar stays
         // and says how many are here; with the line back, it goes on. Only
         // another project on the screen ends it.
@@ -5676,7 +5697,7 @@ async function bringThePictures(
                 redrawSoon(task.localId);
               }
             }
-            trace(`  picture deleted in the library (server has no file): shot ${st.frames[idx]?.label ?? task.localId} main — the card says so`);
+            if (!knownGone.has(task.r2Key)) trace(`  picture deleted in the library (server has no file): shot ${st.frames[idx]?.label ?? task.localId} main — the card says so`);
             fetchedImageCount++;
               onImageProgress?.(fetchedImageCount, expectedImageCount);
             return;
@@ -5687,7 +5708,7 @@ async function bringThePictures(
           fetchedImageCount++;
           onImageProgress?.(fetchedImageCount, expectedImageCount);
         })
-        .finally(() => { if (background) { oneArrived(picturesFor); dropStandIn(task.r2Key); } }),
+        .finally(() => { if (background) { if (!knownGone.has(task.r2Key)) oneArrived(picturesFor); dropStandIn(task.r2Key); } }),
     );
   }
 
@@ -5746,7 +5767,7 @@ async function bringThePictures(
               }))));
               redrawSoon(task.localId);
             }
-            trace(`  picture deleted in the library (server has no file): ${task.strip} v${task.versionIdx + 1} — the card says so`);
+            if (!knownGone.has(task.r2Key)) trace(`  picture deleted in the library (server has no file): ${task.strip} v${task.versionIdx + 1} — the card says so`);
             fetchedImageCount++;
               onImageProgress?.(fetchedImageCount, expectedImageCount);
             return;
@@ -5757,7 +5778,7 @@ async function bringThePictures(
           fetchedImageCount++;
           onImageProgress?.(fetchedImageCount, expectedImageCount);
         })
-        .finally(() => { if (background) { oneArrived(picturesFor); dropStandIn(task.r2Key); } }),
+        .finally(() => { if (background) { if (!knownGone.has(task.r2Key)) oneArrived(picturesFor); dropStandIn(task.r2Key); } }),
     );
   }
 
@@ -5778,7 +5799,7 @@ async function bringThePictures(
   }
   if (background) {
     endArriving(picturesFor);
-    if (expectedImageCount > 0) trace(`  every picture of the project is on this device (${expectedImageCount - failedTasks.length} of ${expectedImageCount}${failedTasks.length ? ` — ${failedTasks.length} did not come` : ''})`);
+    if (comingCount > 0) trace(`  every picture of the project is on this device (${comingCount - failedTasks.length} of ${comingCount}${failedTasks.length ? ` — ${failedTasks.length} did not come` : ''}${knownGone.size ? ` · ${knownGone.size} deleted in the library` : ''})`);
     // (what loadCloudProject did after its wait, when it still waited)
     if (isPullIncomplete()) showIncompleteLoadOverlay(); else hideIncompleteLoadOverlay();
   }
