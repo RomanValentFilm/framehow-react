@@ -2635,6 +2635,9 @@ const TOASTER_RESHOW_AFTER_LATER_MS = 15 * 60 * 1000;
 
 export function isToasterShowing(): boolean { return toasterShowing; }
 
+/** When the name reminder first met a project that is up but unnamed. */
+const _unnamedMetAt = new Map<string, number>();
+
 export function showSaveToaster(): void {
   // WHOSE WORK IS NOT IN THE CLOUD (#458).
   //
@@ -2657,6 +2660,21 @@ export function showSaveToaster(): void {
   // fifteen minutes.
   const upButUnnamed = isLoggedIn() && getCurrentProject().projectId !== null && isProvisionalName(getCurrentProject().name);
   if (isLoggedIn() && getCurrentProject().projectId !== null && !upButUnnamed) return;
+  // …BUT NOT THE MOMENT IT IS BORN (13 Nov 17:26, Roman: "I was asked
+  // immediately when creating a new project to name it"). A new project can go
+  // up as "Untitled" within a second (other unsent work is waiting behind it),
+  // and the question came with it. It is asked a minute after the project went
+  // up, as agreed — counted from the first time this reminder met it.
+  if (upButUnnamed) {
+    const pid = getCurrentProject().projectId!;
+    const met = _unnamedMetAt.get(pid) ?? Date.now();
+    _unnamedMetAt.set(pid, met);
+    const left = 60_000 - (Date.now() - met);
+    if (left > 0) {
+      window.setTimeout(() => { if (getCurrentProject().projectId === pid) showSaveToaster(); }, left + 500);
+      return;
+    }
+  }
 
   // NOT ON TOP OF WHAT THE HAND IS DOING (Roman, 10 Nov). The clock fired the
   // moment WRITE was pressed and the reminder covered the write box — the
@@ -5796,7 +5814,9 @@ async function bringThePictures(
   // Wait for all images to load before returning (caller can show a toast).
   await Promise.all(allFetches);
   if (redrawTimer !== null) { window.clearTimeout(redrawTimer); redrawTimer = null; }
-  if (allFetches.length > 0 && !anotherProjectIsOnScreen()) (window as any).__fh_renderAll?.();   // the last word: every picture is on its card
+  // the last word: every picture is on its card — when one really came (13 Nov:
+  // with nothing fetched this drew all 26 shots of WF 7 again for nothing, 650 ms)
+  if (reallyFetched > 0 && !anotherProjectIsOnScreen()) { (window as any).__fh_renderWhy = 'pictures: all in'; (window as any).__fh_renderAll?.(); }
 
   if (background && anotherProjectIsOnScreen()) { endArriving(picturesFor); return; }
   // Always update count baselines — pushes preserve r2Keys for any
@@ -7943,6 +7963,7 @@ async function tryPullFromCloud(force = false): Promise<void> {
           needsStripVisible: viewBefore.needsStripVisible,
           activeGroupId: groupStillThere ? viewBefore.activeGroupId : null,
         } as never);
+        (window as any).__fh_renderWhy = 'fetch: the view put back';
         (window as any).__fh_renderAll?.();
         // The shooting order you are in stays open, and is redrawn with the
         // frames as they now are (#357).

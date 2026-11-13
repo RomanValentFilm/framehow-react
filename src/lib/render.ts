@@ -64,7 +64,11 @@ export function renderAll(): void {
   // buttons and NEEDS". A number instead of a feeling: one line whenever a
   // whole redraw takes longer than 100 ms, with who asked for it.
   const began = performance.now();
-  const who = new Error().stack?.split('\n')[2]?.trim().replace(/^at /, '') ?? '?';
+  // (who asked: the caller's own word when it left one — after a wait the
+  // stack has forgotten, and the log said "(?)" for the redraws that mattered)
+  const said = (window as unknown as { __fh_renderWhy?: string }).__fh_renderWhy;
+  (window as unknown as { __fh_renderWhy?: string }).__fh_renderWhy = undefined;
+  const who = said ?? new Error().stack?.split('\n')[2]?.trim().replace(/^at /, '') ?? '?';
   try {
     renderAllNow();
   } finally {
