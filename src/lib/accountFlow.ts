@@ -5524,6 +5524,14 @@ async function bringThePictures(
   // (known to be gone before this began: not asked for, not counted, not said)
   const knownGone = new Set([...mainImageTasks, ...versionImageTasks].map((t) => t.r2Key).filter((k) => _gonePictures.has(k)));
   const comingCount = expectedImageCount - knownGone.size;
+  // (what is told to whoever shows progress: only pictures really fetched — the
+  // thirteen known to be gone flashed a "Loading image 13 of 13" bar at every start)
+  let reallyFetched = 0;
+  const progressFor = (r2Key: string): void => {
+    if (knownGone.has(r2Key)) return;
+    reallyFetched++;
+    onImageProgress?.(reallyFetched, comingCount);
+  };
 
   // A picture that arrives after the person is in is put on its card as the
   // app's own doing, not as the person's work (it must not mark the project
@@ -5625,7 +5633,10 @@ async function bringThePictures(
     if (unknown && Date.now() - lastFull > 4_000) { lastFull = Date.now(); w.__fh_renderAll?.(); }
   };
   const redrawSoon = (fid?: number): void => {
-    if (background && fid !== undefined) {
+    // (for EVERY fetch of pictures, not only an opening — 13 Nov 17:09, Roman's
+    // iPad: "the app was not responsive for a while": the fetch at the start
+    // drew all 26 shots again four times in three seconds, 650 ms each)
+    if (fid !== undefined) {
       cardsToPaint.add(fid);
       if (paintTimer === null) paintTimer = window.setTimeout(paintCards, 250);
       return;
@@ -5682,7 +5693,7 @@ async function bringThePictures(
           dropStandIn(task.r2Key);
           redrawSoon(task.localId);
           fetchedImageCount++;
-          onImageProgress?.(fetchedImageCount, expectedImageCount);
+          progressFor(task.r2Key);
         })
         .catch((e) => {
           if (anotherProjectIsOnScreen()) return;
@@ -5699,14 +5710,14 @@ async function bringThePictures(
             }
             if (!knownGone.has(task.r2Key)) trace(`  picture deleted in the library (server has no file): shot ${st.frames[idx]?.label ?? task.localId} main — the card says so`);
             fetchedImageCount++;
-              onImageProgress?.(fetchedImageCount, expectedImageCount);
+              progressFor(task.r2Key);
             return;
           }
           console.warn('[sync] failed to fetch main image after retries', task.r2Key, e);
           const frame = useStore.getState().frames.find((f) => f.id === task.localId);
           failedTasks.push(`Frame "${frame?.label || task.localId}" main image`);
           fetchedImageCount++;
-          onImageProgress?.(fetchedImageCount, expectedImageCount);
+          progressFor(task.r2Key);
         })
         .finally(() => { if (background) { if (!knownGone.has(task.r2Key)) oneArrived(picturesFor); dropStandIn(task.r2Key); } }),
     );
@@ -5750,7 +5761,7 @@ async function bringThePictures(
           dropStandIn(task.r2Key);
           redrawSoon(task.localId);
           fetchedImageCount++;
-          onImageProgress?.(fetchedImageCount, expectedImageCount);
+          progressFor(task.r2Key);
         })
         .catch((e) => {
           if (anotherProjectIsOnScreen()) return;
@@ -5769,14 +5780,14 @@ async function bringThePictures(
             }
             if (!knownGone.has(task.r2Key)) trace(`  picture deleted in the library (server has no file): ${task.strip} v${task.versionIdx + 1} — the card says so`);
             fetchedImageCount++;
-              onImageProgress?.(fetchedImageCount, expectedImageCount);
+              progressFor(task.r2Key);
             return;
           }
           console.warn('[sync] failed to fetch version image after retries', task.strip, task.r2Key, e);
           const frame = useStore.getState().frames.find((f) => f.id === task.localId);
           failedTasks.push(`Frame "${frame?.label || task.localId}" ${task.strip} v${task.versionIdx + 1}`);
           fetchedImageCount++;
-          onImageProgress?.(fetchedImageCount, expectedImageCount);
+          progressFor(task.r2Key);
         })
         .finally(() => { if (background) { if (!knownGone.has(task.r2Key)) oneArrived(picturesFor); dropStandIn(task.r2Key); } }),
     );

@@ -119,10 +119,6 @@ struct CameraScreen: View {
         GeometryReader { geo in
             let landscape = geo.size.width > geo.size.height
             let _ = turns
-            // (13 Nov, looking for why RATIO and Cancel do not answer on the iPad: every
-            // time the screen is drawn, and every tap that reaches a button, says so in
-            // the Xcode console. Lines begin with FH CAM. To be taken out again.)
-            let _ = print("FH CAM: screen drawn — status '\(cam.status)', size \(Int(geo.size.width))x\(Int(geo.size.height)), list open \(showRatios), busy \(cam.busy)")
             // THE DYNAMIC ISLAND (Roman, 10 + 11 Nov). Sideways the island sits on one short
             // side of the screen. THE PICTURE BEGINS WHERE THE ISLAND ENDS — on that side
             // only; the other side goes to the very edge. So nothing of the shot is ever
@@ -159,7 +155,6 @@ struct CameraScreen: View {
                     }
                 }
                 .onEnded { g in
-                    print("FH CAM: a touch on the PICTURE ended at \(Int(g.startLocation.x)),\(Int(g.startLocation.y)) (sliding \(sliding))")
                     if !sliding {
                         let p = g.startLocation
                         focusMark = p
@@ -213,6 +208,10 @@ struct CameraScreen: View {
             .clipped()
         }
         .ignoresSafeArea()
+        // (The clock and battery are hidden by the screen's own controller — CameraHost in
+        // the plugin — not here: `.statusBarHidden` on this view made the screen lay itself
+        // out in a circle, "AttributeGraph: cycle detected" at every opening, and RATIO and
+        // Cancel did not answer. Roman's iPad, 13 Nov.)
         .background(.black)
         .foregroundStyle(.white)
         .onAppear { cam.start() }
@@ -262,13 +261,13 @@ struct CameraScreen: View {
     @ViewBuilder
     private func controls(landscape: Bool, right: CGFloat, pic: CGRect) -> some View {
         let pill = Color.black.opacity(0.45)
-        let shutter = Button(action: { print("FH CAM: SHUTTER tapped"); if cam.busy == 0 { cam.takePhoto() } }) {
+        let shutter = Button(action: { if cam.busy == 0 { cam.takePhoto() } }) {
             Circle().fill(.white).frame(width: 66, height: 66)
                 .overlay(Circle().stroke(.gray, lineWidth: 3).padding(4))
         }
         // ONE LOOK FOR ALL THREE (Roman, 11 Nov): the EV's — the smaller one. RATIO and 1x
         // were the system's bordered button, a size larger and another face.
-        let ratioButton = Button(action: { print("FH CAM: RATIO tapped (list was open: \(showRatios))"); showRatios.toggle() }) { Self.pillLabel("RATIO") }
+        let ratioButton = Button(action: { showRatios.toggle() }) { Self.pillLabel("RATIO") }
             .tint(.white).background(pill, in: Capsule())
         let ev = Button(action: { cam.exposureBias = 0 }) {
             Self.pillLabel("EV \(String(format: "%+.1f", cam.exposureBias))")
@@ -278,12 +277,20 @@ struct CameraScreen: View {
             .tint(.white).background(pill, in: Capsule())
         // CANCEL left of the shutter (Roman, 6 Nov: the top right is the EV's place) — the
         // way out without a photo, where the thumb already is.
-        let cancel = Button("Cancel") { print("FH CAM: CANCEL tapped"); onCancel() }
-            .font(.footnote).tint(.white).opacity(0.85)
-            .padding(8)   // a plain word, no pill (Roman, 6 Nov); touch area stays finger-sized
+        // A FINGER-SIZED PLACE TO TAP (13 Nov, measured on Roman's iPad: three taps on
+        // "Cancel" landed on the picture beneath, 5 to 10 points under the word). The
+        // button was only as big as the word itself — 16 points high; the padding round
+        // it was not part of it. Now the word sits in a clear field of 96 × 48 that is
+        // all button. Still a plain word, no pill (Roman, 6 Nov).
+        let cancel = Button(action: { onCancel() }) {
+            Text("Cancel").font(.footnote).foregroundStyle(Color.white.opacity(0.85))
+                .frame(width: 96, height: 48)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
         let info = Text(cam.busy > 0 ? "processing…" : (cam.status == "ready" ? "" : cam.status))
             .font(.caption2).padding(6).background(pill, in: RoundedRectangle(cornerRadius: 8))
-            .opacity(cam.busy > 0 || cam.status != "ready" ? 1 : 0)
+            .opacity(cam.busy > 0 || (cam.status != "ready" && !cam.status.isEmpty) ? 1 : 0)
 
         GeometryReader { g in
             let W = g.size.width, H = g.size.height
@@ -295,8 +302,15 @@ struct CameraScreen: View {
                 // the black begins — not those of the screen: measured from the screen, a
                 // button sat 17 from the side and 8 from the line above it.
                 let d = Self.cornerGap
+                // ON AN iPAD THE TOP ROW STAYS OUT OF THE TOP EDGE (13 Nov, Roman's iPad: RATIO
+                // "is not good to press" where it stood, 12 points from the top-left corner —
+                // and easy the moment a 1:1 frame moved it towards the middle). The top edge
+                // of an iPad's screen belongs to the system: the corner holds the window's
+                // own controls, and a touch there is taken before the app sees it. So there
+                // the row begins at least 56 points down. On the iPhone nothing changes.
+                let topRow = Self.isPad ? max(pic.minY + d, 56) : pic.minY + d
                 VStack { HStack { ratioButton; Spacer(); ev }; Spacer() }
-                    .padding(.leading, pic.minX + d).padding(.trailing, W - pic.maxX + d).padding(.top, pic.minY + d)
+                    .padding(.leading, pic.minX + d).padding(.trailing, W - pic.maxX + d).padding(.top, topRow)
                 VStack { Spacer(); HStack { lens; Spacer() } }
                     .padding(.leading, pic.minX + d).padding(.trailing, W - pic.maxX + d).padding(.bottom, H - pic.maxY + d)
                 if landscape {
@@ -307,7 +321,7 @@ struct CameraScreen: View {
                 } else {
                     // shutter bottom-middle, Cancel to its left, info under
                     shutter.position(x: W / 2, y: H - 28 - 33 - 24)
-                    cancel.position(x: W / 2 - 72, y: H - 28 - 33 - 24)   // left of the shutter (Roman), a plain word — short enough to stay clear of 1x
+                    cancel.position(x: W / 2 - 90, y: H - 28 - 33 - 24)   // left of the shutter (Roman), a plain word — short enough to stay clear of 1x
                     info.position(x: W / 2, y: H - 28)
                 }
             }
@@ -322,6 +336,7 @@ struct CameraScreen: View {
 
     /// How far a corner button sits from each of its two edges of the picture.
     private static let cornerGap: CGFloat = 12
+    private static let isPad = UIDevice.current.userInterfaceIdiom == .pad
 
     /// The RATIO list, as the web's menu: one tap chooses and closes.
     /// IT OPENS RIGHT UNDER THE BUTTON AND ENDS ABOVE THE BOTTOM OF THE SCREEN (Roman,
@@ -330,7 +345,7 @@ struct CameraScreen: View {
     @ViewBuilder
     private func ratioMenu(pic: CGRect) -> some View {
         GeometryReader { g in
-            let menuTop = pic.minY + Self.cornerGap + 28 + 4      // the button is about 28 high
+            let menuTop = (Self.isPad ? max(pic.minY + Self.cornerGap, 56) : pic.minY + Self.cornerGap) + 28 + 4      // the button is about 28 high
             let room = g.size.height - menuTop - 10
             let rowH = max(22, min(38, room / CGFloat(max(1, ratios.count))))
             let h = rowH * CGFloat(ratios.count)
