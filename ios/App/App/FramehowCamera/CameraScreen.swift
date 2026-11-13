@@ -208,10 +208,9 @@ struct CameraScreen: View {
             .clipped()
         }
         .ignoresSafeArea()
-        // (The clock and battery are hidden by the screen's own controller — CameraHost in
-        // the plugin — not here: `.statusBarHidden` on this view made the screen lay itself
-        // out in a circle, "AttributeGraph: cycle detected" at every opening, and RATIO and
-        // Cancel did not answer. Roman's iPad, 13 Nov.)
+        // (The clock and battery are hidden by the app's own screen BEFORE this one comes —
+        // see the plugin. Hidden from here, in either of two ways, this screen laid itself
+        // out in a circle and stopped redrawing. Roman's iPad, 13 Nov.)
         .background(.black)
         .foregroundStyle(.white)
         .onAppear { cam.start() }
@@ -302,15 +301,11 @@ struct CameraScreen: View {
                 // the black begins — not those of the screen: measured from the screen, a
                 // button sat 17 from the side and 8 from the line above it.
                 let d = Self.cornerGap
-                // ON AN iPAD THE TOP ROW STAYS OUT OF THE TOP EDGE (13 Nov, Roman's iPad: RATIO
-                // "is not good to press" where it stood, 12 points from the top-left corner —
-                // and easy the moment a 1:1 frame moved it towards the middle). The top edge
-                // of an iPad's screen belongs to the system: the corner holds the window's
-                // own controls, and a touch there is taken before the app sees it. So there
-                // the row begins at least 56 points down. On the iPhone nothing changes.
-                let topRow = Self.isPad ? max(pic.minY + d, 56) : pic.minY + d
+                // (For an hour on 13 Nov the row stood 56 points down on the iPad — a wrong
+                // guess at why RATIO did not answer. It was the screen not redrawing; see the
+                // plugin. The row is back in the corner, as on the iPhone: Roman.)
                 VStack { HStack { ratioButton; Spacer(); ev }; Spacer() }
-                    .padding(.leading, pic.minX + d).padding(.trailing, W - pic.maxX + d).padding(.top, topRow)
+                    .padding(.leading, pic.minX + d).padding(.trailing, W - pic.maxX + d).padding(.top, pic.minY + d)
                 VStack { Spacer(); HStack { lens; Spacer() } }
                     .padding(.leading, pic.minX + d).padding(.trailing, W - pic.maxX + d).padding(.bottom, H - pic.maxY + d)
                 if landscape {
@@ -336,7 +331,6 @@ struct CameraScreen: View {
 
     /// How far a corner button sits from each of its two edges of the picture.
     private static let cornerGap: CGFloat = 12
-    private static let isPad = UIDevice.current.userInterfaceIdiom == .pad
 
     /// The RATIO list, as the web's menu: one tap chooses and closes.
     /// IT OPENS RIGHT UNDER THE BUTTON AND ENDS ABOVE THE BOTTOM OF THE SCREEN (Roman,
@@ -345,7 +339,7 @@ struct CameraScreen: View {
     @ViewBuilder
     private func ratioMenu(pic: CGRect) -> some View {
         GeometryReader { g in
-            let menuTop = (Self.isPad ? max(pic.minY + Self.cornerGap, 56) : pic.minY + Self.cornerGap) + 28 + 4      // the button is about 28 high
+            let menuTop = pic.minY + Self.cornerGap + 28 + 4      // the button is about 28 high
             let room = g.size.height - menuTop - 10
             let rowH = max(22, min(38, room / CGFloat(max(1, ratios.count))))
             let h = rowH * CGFloat(ratios.count)

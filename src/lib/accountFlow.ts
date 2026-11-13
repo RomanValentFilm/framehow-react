@@ -43,6 +43,7 @@ import {
   adoptDirtyFrameIds,
   adoptPushedFingerprints,
   registerFingerprintBridge,
+  saveSoonForTheMark,
   registerHeardAtBridge,
   registerPullFn,
   registerConnectionWatch,
@@ -7027,20 +7028,41 @@ export function adoptFingerprintsFromStore(): void {
 }
 
 /** Hand the last-sent record to the local snapshot, and take it back on boot. */
+/** The name the "taken up to" mark rides under, beside the shots' times. */
+const TAKEN_AT = '__takenAt';
 export function exportPushedFingerprints(): Record<string, string> {
   const out: Record<string, string> = Object.fromEntries(_lastPushedFingerprints);
   // The server timestamps ride along under a reserved key, so a restart does
   // not lose them and fall back to whole-project conflict checking.
-  out['__serverTimes'] = JSON.stringify(Object.fromEntries(_serverFrameTimes));
+  // …AND WHAT THIS DEVICE HAS TAKEN FROM THE SERVER, UP TO WHEN (13 Nov).
+  //
+  // Roman's iPad: at every start the app fetched the whole of WF 7 again and
+  // rebuilt the screen three times — two seconds in which it did not answer.
+  // "pull: remote is newer (Tablet)": the Tablet was this very iPad. After a
+  // restart the app had forgotten that it already holds everything up to the
+  // server's last change, counted itself as having taken nothing (0), and so
+  // every project on the server was "newer".
+  //
+  // The mark is written INTO THE SAME SAVE as the project it describes, so the
+  // two cannot disagree: a save made before something was taken carries the
+  // older mark, and the start fetches as it always did. It only ever moves
+  // when something has been taken and is on the screen (#299) — never by
+  // sending. If it is missing or older than the server, nothing changes from
+  // before: the project is fetched.
+  out['__serverTimes'] = JSON.stringify({ ...Object.fromEntries(_serverFrameTimes), [TAKEN_AT]: takenFromServerAt ?? 0 });
   return out;
 }
 export function importPushedFingerprints(m: Record<string, string>): void {
   _lastPushedFingerprints.clear();
   _serverFrameTimes.clear();
+  // (the mark belongs to the save being put in place — an older save without
+  // one counts as "nothing taken", as every save did before 13 Nov)
+  let taken: number | null = null;
   for (const [k, v] of Object.entries(m)) {
     if (k === '__serverTimes') {
       try {
         for (const [id, t] of Object.entries(JSON.parse(v) as Record<string, number>)) {
+          if (id === TAKEN_AT) { if (typeof t === 'number' && t > 0) taken = t; continue; }
           _serverFrameTimes.set(id, t);
         }
       } catch { /* start without them; the next pull refills */ }
@@ -7052,8 +7074,10 @@ export function importPushedFingerprints(m: Record<string, string>): void {
   // two devices with the same project report the same numbers.
   const known = new Set(Object.keys(m).filter((k) => k !== '__serverTimes'));
   for (const id of [..._serverFrameTimes.keys()]) if (!known.has(id)) _serverFrameTimes.delete(id);
+  takenFromServerAt = taken;
   trace(`  restored ${_lastPushedFingerprints.size} frames known to be on the server` +
-        ` · ${_serverFrameTimes.size} with a timestamp`);
+        ` · ${_serverFrameTimes.size} with a timestamp` +
+        (taken ? ` · holds everything the server had up to ${new Date(taken).toLocaleTimeString()}` : ' · no mark of what was taken — the project is fetched'));
 }
 
 /** Any shot whose content differs from what the server was last given (#521).
@@ -7610,6 +7634,7 @@ async function tryPullFromCloud(force = false): Promise<void> {
         holdTree(cp.projectId, tree, true);
         takenFromServerAt = tree.project.updated_at;
         lastKnownUpdatedAt = tree.project.updated_at;
+        saveSoonForTheMark();
         return;
       }
       // MY OWN PUSH, COMING BACK (A1, 9 Nov). Pushing is not hearing (#320),
@@ -7625,6 +7650,7 @@ async function tryPullFromCloud(force = false): Promise<void> {
         holdTree(cp.projectId, tree, true);
         takenFromServerAt = tree.project.updated_at;
         lastKnownUpdatedAt = tree.project.updated_at;
+        saveSoonForTheMark();
         return;
       }
     }
@@ -7996,6 +8022,7 @@ async function tryPullFromCloud(force = false): Promise<void> {
 
       lastKnownUpdatedAt = remoteUpdatedAt;
       takenFromServerAt = remoteUpdatedAt;      // TAKEN — the only thing that counts (#299)
+      saveSoonForTheMark();
       markSaved(cp.projectId!);
 
       // The store now matches the server for every frame EXCEPT the ones the

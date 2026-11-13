@@ -223,7 +223,25 @@ export function initFramehow(): void {
     if (lvlEl) setVersionStars(fid, vi, starStrip, +lvlEl.dataset.starlevel!);
     else toggleStar(fid, vi, starStrip);
     const newIdx = getStripActiveTab(fid, starStrip);
-    renderAll();
+    // A STAR IS ON ITS CARD AT ONCE (13 Nov, Roman's iPad: "they take a while till
+    // they show … we want to have it instant"). A tap on a star drew every shot
+    // of the project again — 880 ms for the 26 of WF 7 — before the star was to
+    // be seen. A star only changes its own shot: that shot's cards are drawn,
+    // nothing else. In a view where the shot has no card of its own (the lists),
+    // everything is drawn as before.
+    {
+      let drawn = false;
+      if (!state().sortEditingId) {
+        document.querySelectorAll<HTMLElement>(`#overviewScroll .grid3x2-card-wrap[data-g3fid="${fid}"]`).forEach((el) => { drawn = true; renderGrid3x2Card(el, fid); });
+        document.querySelectorAll<HTMLElement>(`.frame-card[data-mfid="${fid}"]`).forEach((el) => { drawn = true; renderMainFrame(el, fid); });
+        document.querySelectorAll<HTMLElement>(`.frame-card[data-vfid="${fid}"]`).forEach((el) => {
+          if (!el.dataset.strip) return;
+          drawn = true;
+          (renderVersionFrame as unknown as (el: HTMLElement, fid: number, strip: string) => void)(el, fid, el.dataset.strip);
+        });
+      }
+      if (!drawn) renderAll();
+    }
     if (oldIdx !== newIdx) {
       const dir = newIdx < oldIdx ? '-20px' : '20px';
       setTimeout(() => {

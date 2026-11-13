@@ -19,12 +19,6 @@ import Capacitor
 import SwiftUI
 import UIKit
 
-/// The camera screen's controller: the same as the stock one, with no clock and battery
-/// over the camera (Roman, 13 Nov, iPad: RATIO and EV stood behind them).
-final class CameraHost<Content: View>: UIHostingController<Content> {
-    override var prefersStatusBarHidden: Bool { true }
-}
-
 @objc(FramehowCameraPlugin)
 public class FramehowCameraPlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "FramehowCameraPlugin"
@@ -123,12 +117,18 @@ public class FramehowCameraPlugin: CAPPlugin, CAPBridgedPlugin {
                     call.resolve(["cancelled": true])
                     self?.bridge?.releaseCall(call)
                 })
-            let vc = CameraHost(rootView: screen)
+            // THE CLOCK AND BATTERY GO BEFORE THE CAMERA COMES, NOT WHILE IT IS COMING (13 Nov,
+            // measured on Roman's iPad). Twice today the camera screen was told to hide them
+            // itself; both ways it laid itself out in a circle ("AttributeGraph: cycle
+            // detected") and then stopped redrawing: a tap on RATIO was taken, and the list
+            // only showed when the iPad was turned. Now the app's own screen hides them
+            // first, and the camera screen has nothing to do with it.
+            (top as? CAPBridgeViewController)?.setStatusBarVisible(false)
+            let vc = UIHostingController(rootView: screen)
             // OVER the web view, not instead of it (Roman, 6 Nov: a grey screen after the
             // shutter): with .fullScreen iOS stops drawing the covered page and shows grey
             // for a frame when it comes back; .overFullScreen keeps the page alive beneath.
             vc.modalPresentationStyle = .overFullScreen
-            vc.modalPresentationCapturesStatusBarAppearance = true   // (so the camera screen may hide the clock and battery)
             vc.view.backgroundColor = .black
             self.host = vc
             screenOfThisShot = vc
@@ -172,6 +172,7 @@ public class FramehowCameraPlugin: CAPPlugin, CAPBridgedPlugin {
         guard let vc = host else { return }
         host = nil
         vc.dismiss(animated: false)
+        (bridge?.viewController as? CAPBridgeViewController)?.setStatusBarVisible(true)   // the clock and battery are back
         if let c = webReadyCall { webReadyCall = nil; c.resolve(); bridge?.releaseCall(c) }
     }
 }

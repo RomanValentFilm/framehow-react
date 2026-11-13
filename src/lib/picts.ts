@@ -872,7 +872,12 @@ export async function openPicts(): Promise<void> {
       const lastGone = Math.max(...chosen.map((p) => ordered.findIndex((x) => x.key === p.key)));
       const next = ordered.slice(lastGone + 1).find((x) => !marked.has(x.key)) ?? ordered.slice(0, lastGone).reverse().find((x) => !marked.has(x.key)) ?? null;
       const nextTop = next ? tileOf(next.key)?.getBoundingClientRect().top ?? null : null;
-      const r = await deletePicturesForGood(chosen, token, online);
+      // OUT OF THE LIBRARY AT ONCE (13 Nov, Roman's iPad: "it shows the screen with
+      // the pictures for a while, and then it deletes them … in the meantime you
+      // can still click on other pictures"). The pictures left the library only
+      // after the project behind it had been drawn again (half a second) and the
+      // server had answered (two more). Now they go the moment the last question
+      // is answered; the cards, this device and the server follow below.
       // Out of the library: the tiles, the marks, the lists.
       for (const p of chosen) {
         tileOf(p.key)?.remove();
@@ -901,6 +906,8 @@ export async function openPicts(): Promise<void> {
         if (t) scroller.scrollTop += t.getBoundingClientRect().top - nextTop;
       }
       refresh();
+      await new Promise<void>((go) => requestAnimationFrame(() => setTimeout(go, 0)));   // (seen gone before anything heavy starts)
+      const r = await deletePicturesForGood(chosen, token, online);
       say(`${chosen.length === 1 ? 'Picture' : `${chosen.length} pictures`} deleted${r.offline ? ' — the server will hear when online' : ''}`);
     })();
   });

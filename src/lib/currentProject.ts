@@ -1123,6 +1123,10 @@ function scheduleAutosave(): void {
   if (autosaveTimer !== null) clearTimeout(autosaveTimer);
   autosaveTimer = window.setTimeout(runAutosave, AUTOSAVE_DEBOUNCE_MS);
 }
+/** The mark of what was taken from the server has moved and nothing on the
+ *  screen has (the device's own save came back as "nothing new"): the save on
+ *  this device is written again, so the mark is in it (13 Nov). */
+export function saveSoonForTheMark(): void { scheduleAutosave(); }
 
 /**
  * Save to this device NOW, without waiting out the two-second pause (#269).
