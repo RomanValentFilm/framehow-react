@@ -476,3 +476,4 @@ v5.0.225 · #777 (10 Nov, night)
 - iPad: the bar with SHOT · ANGLE · SKETCH · REFS · NEEDS · NOTES slid up under the 3×2VIEW row, a black band where it belonged (Roman, 13 Nov, after the page restarted under the camera). It was placed once from where the view bar stood; the view bar moves when the clock-and-battery strip changes height, with no resize or scroll. It is checked every half second now and placed again when the view bar has moved. (Third sighting of "the iPad detail bar is gone".)
 
 ## v5.0.275 · #827 (next)
+- MAX VIEW in the iPhone / iPad app: no clock and battery over the picture (the shell hides them while the viewer is open — a new door in the camera plugin, `statusBar`; needs an Xcode build).

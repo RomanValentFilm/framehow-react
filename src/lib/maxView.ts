@@ -261,6 +261,16 @@ function renderForShare(it: Item): Promise<HTMLCanvasElement> {
 const toBlob = (c: HTMLCanvasElement, type: string) =>
   new Promise<Blob>((res, rej) => c.toBlob((b) => (b ? res(b) : rej(new Error('no picture'))), type, 0.92));
 
+/** In the iPhone / iPad app: no clock and battery over the picture (Roman,
+ *  13 Nov). An app from before this (no such door in its shell) simply keeps them. */
+function clockAndBattery(shown: boolean): void {
+  try {
+    const w = window as unknown as { Capacitor?: { isNativePlatform?: () => boolean; Plugins?: { FramehowCamera?: { statusBar?: (o: { hidden: boolean }) => Promise<unknown> } } } };
+    if (!w.Capacitor?.isNativePlatform?.()) return;
+    void w.Capacitor.Plugins?.FramehowCamera?.statusBar?.({ hidden: !shown })?.catch?.(() => undefined);
+  } catch { /* the bar stays */ }
+}
+
 // --- the viewer -------------------------------------------------------------
 let _root: HTMLElement | null = null;
 
@@ -311,6 +321,7 @@ export function openMaxView(items: Item[], index: number, onClose?: (it: Item, m
   document.body.appendChild(root);
   _root = root;
   document.body.classList.add('max-view-open');
+  clockAndBattery(false);
   const stage = root.querySelector<HTMLElement>('.max-stage')!;
   const cvs = root.querySelector('canvas')!;
   const label = root.querySelector<HTMLElement>('.max-label')!;
@@ -528,5 +539,6 @@ export function closeMaxView(): void {
   r.remove();
   _root = null;
   document.body.classList.remove('max-view-open');
+  clockAndBattery(true);
   r.__fhClose?.();
 }

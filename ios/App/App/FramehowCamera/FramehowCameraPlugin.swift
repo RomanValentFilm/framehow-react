@@ -26,6 +26,7 @@ public class FramehowCameraPlugin: CAPPlugin, CAPBridgedPlugin {
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "take", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "close", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "statusBar", returnType: CAPPluginReturnPromise),
     ]
 
     private var host: UIViewController?
@@ -36,6 +37,16 @@ public class FramehowCameraPlugin: CAPPlugin, CAPBridgedPlugin {
     private var timeUp = false
     private var webReady = false
     private var webReadyCall: CAPPluginCall?
+
+    /// THE CLOCK AND BATTERY, HIDDEN OR SHOWN (Roman, 13 Nov: not over a picture in
+    /// the MAX view). `hidden: true` takes them away, `false` brings them back.
+    @objc func statusBar(_ call: CAPPluginCall) {
+        let hidden = call.getBool("hidden") ?? false
+        DispatchQueue.main.async { [weak self] in
+            (self?.bridge?.viewController as? CAPBridgeViewController)?.setStatusBarVisible(!hidden)
+            call.resolve()
+        }
+    }
 
     @objc func take(_ call: CAPPluginCall) {
         let list = (call.getArray("ratios") as? [[String: Any]] ?? []).compactMap { d -> RatioChoice? in
