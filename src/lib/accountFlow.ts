@@ -6,7 +6,8 @@
 
 import { autoPhoneMainView, setViewMode, scrollAnchorTo } from './view';
 import { dismissNewProjectModal } from './modals';
-import { api, API_BASE_URL } from './api';
+import { hasStandIn, setStandIn, dropStandIn, beginArriving, oneArrived, endArriving, picturesArriving } from './lazyPictures';
+import { api, API_BASE_URL, requestsBelongToAStep } from './api';
 import { fhTrack } from './tracking';
 import type { ApiError } from './api';
 import {
@@ -188,11 +189,16 @@ function isOnIOS(): boolean {
 // Project name modal
 // ---------------------------------------------------------------------------
 
-function openProjectNameModal(initial: string = ''): Promise<string | null> {
+function openProjectNameModal(initial: string = '', words?: { title: string; yes: string; no: string }): Promise<string | null> {
   const input = el<HTMLInputElement>('projectNameInput');
   const errorEl = el('projectNameError');
   input.value = initial;
   errorEl.textContent = '';
+  // (the same box asks two things: SAVE pressed, and leaving an unnamed project)
+  const titleEl = document.querySelector<HTMLElement>('#projectNameModal h2');
+  if (titleEl) titleEl.textContent = words?.title ?? 'Name this project';
+  el('projectNameContinue').textContent = words?.yes ?? 'Continue';
+  el('projectNameCancel').textContent = words?.no ?? 'Cancel';
   show('projectNameModal');
   focusFirstInput('projectNameModal');
 
@@ -220,6 +226,39 @@ function openProjectNameModal(initial: string = ''): Promise<string | null> {
       if (e.key === 'Escape') cancel.click();
     };
   });
+}
+
+/**
+ * LEAVING A PROJECT THAT HAS NO NAME: ASKED ONCE FOR ONE (Roman, 13 Nov:
+ * "people are used to being asked if they should save their work"). Asked when
+ * the person really leaves — another project picked from the list, or a new
+ * one begun — and only when the project has work in it and no name of its own
+ * (none, or the app's "Untitled 13 Nov 15:38").
+ *   SAVE     → it carries that name from here on, and goes up under it.
+ *   NOT NOW  → nothing changes: it is, or becomes, "Untitled …". Nothing lost.
+ * Either way the person goes on to where they were going.
+ */
+export async function nameItBeforeLeaving(): Promise<void> {
+  const cp = getCurrentProject();
+  const s = state();
+  if (s.frames.length === 0) return;
+  if (cp.name && !isProvisionalName(cp.name)) return;
+  const worked = !!cp.projectId || cp.dirty || isDirty()      // (isDirty: any change at all — a shot renamed counts, run 728)
+    || s.frames.some((f) => !!f.src || (f.strokes?.length ?? 0) > 0 || !!f.textContent);
+  if (!worked) return;
+  const name = await openProjectNameModal('', { title: 'Name this project', yes: 'SAVE', no: 'NOT NOW' });
+  if (!name) { trace('leaving an unnamed project: NOT NOW — it is, or becomes, "Untitled …"'); return; }
+  setProjectName(name);
+  trace(`leaving an unnamed project: named "${name}" — it goes up under that name`);
+  // A PROJECT THAT IS ALREADY UP THERE AS "Untitled …" IS RENAMED NOW, before
+  // it leaves the screen (run 729: the name was set here and never sent — a
+  // name alone did not count as something to send). One never yet on the
+  // server is created under this name when it is filed (uploadUnsentCopies).
+  if (getCurrentProject().projectId && isLoggedIn() && navigator.onLine) {
+    markSomethingToSend();
+    try { await flushSyncNow(); } catch { /* it is filed with its name by the opening that follows */ }
+    for (let i = 0; i < 50 && isPushInFlight(); i++) await new Promise((r) => setTimeout(r, 200));
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1025,7 +1064,10 @@ export async function openProjectList(startInEdit = false): Promise<void> {
     function onPick(p: CloudProject): void {
       if (editMode) return;
       cleanup();
-      void loadCloudProject(p);
+      void (async () => {
+        if (getCurrentProject().projectId !== p.id) await nameItBeforeLeaving();
+        await loadCloudProject(p);
+      })();
     }
 
     async function onEdit(p: CloudProject): Promise<void> {
@@ -1656,13 +1698,10 @@ async function loadCloudProject(p: CloudProject): Promise<void> {
     // System action: prevent setState calls from being treated as user changes
     beginSystemAction();
     try {
-      await applyCloudTreeToStore(tree, undefined, (loaded, total) => {
-        if (total === 0) return;
-        // Map image progress from 50% → 85%
-        const pct = 50 + Math.round((loaded / total) * 35);
-        if (progressBar) progressBar.style.width = pct + '%';
-        if (progressLabel) progressLabel.textContent = `Loading image ${loaded} of ${total}…`;
-      });
+      // LAZY LOADING (13 Nov): this returns when the shots are on the screen.
+      // The pictures follow in the background — previews first, then the
+      // sharp ones, counted by the bar along the bottom edge.
+      await applyCloudTreeToStore(tree, undefined, undefined, { picturesInBackground: true });
     } finally {
       endSystemAction();
     }
@@ -2020,6 +2059,9 @@ function whyNotQuietForUnseenWork(): string | null {
   const busy = busyToShow();
   if (busy) return busy;
   if (pullInFlight || isPushInFlight() || isLoadInFlight()) return 'a save or a fetch is in the air';
+  // (a copy stands in for the open project for a moment — pictures arriving
+  // for the open project in that moment would find "another project" and be dropped)
+  if (picturesArriving()) return 'pictures of the open project are still arriving';
   return null;
 }
 /** Said now and then, so a wait that does not end can be read in the log. */
@@ -2118,9 +2160,15 @@ async function sendOneCopyUnseen(rec: PendingMeta): Promise<void> {
   _uploadingCopies = true;
   const held = holdOpenProject();
   let back = false;
+  // (what the step has in the air is STOPPED when the open project comes back
+  // — a touch, the three seconds — so the open project's own save never waits
+  // behind it; the step is tried again, whole, at the next quiet moment)
+  const stop = new AbortController();
   const giveBack = (said: string): void => {
     if (back) return;
     back = true;
+    requestsBelongToAStep(null);
+    stop.abort();
     for (const ev of TOUCHES) window.removeEventListener(ev, onTouch, true);
     try { putOpenProjectBack(held); }
     catch (e) { trace(`could not put the open project back — ${asMessage(e, 'unknown fault')}`); console.error('[unsent copies] putting the open project back', e); }
@@ -2137,6 +2185,7 @@ async function sendOneCopyUnseen(rec: PendingMeta): Promise<void> {
   trace(`unsent work of "${who}" goes up now, unseen — the screen is held as it is; a touch stops it`);
 
   const began = Date.now();
+  requestsBelongToAStep(stop.signal);
   const work = (async (): Promise<'sent' | 'stopped'> => {
     putCopyInPlace(whole, pid, rec.name);
     // Take the server's newer bits first (newer wins per item), then send.
@@ -2158,7 +2207,7 @@ async function sendOneCopyUnseen(rec: PendingMeta): Promise<void> {
     giveBack(`  three seconds are up: the open project is back — "${who}" goes up at the next quiet moment`);
   } else if ('e' in outcome) {
     const e = outcome.e;
-    if (!(e instanceof AnotherProjectNow)) {
+    if (!back && !(e instanceof AnotherProjectNow)) {
       const err = e as { status?: number; code?: string };
       if (err?.status === 404 || whatWentWrong(err?.status, err?.code) === 'gone') {
         await markPendingParked(rec.key).catch(() => { /* the next look parks it */ });
@@ -2600,7 +2649,14 @@ export function showSaveToaster(): void {
   // in the cloud, and the app pushes the rest by itself.
   if (toasterShowing) return;
   if (toasterDismissCount >= 2) return;
-  if (isLoggedIn() && getCurrentProject().projectId !== null) return;
+  // …AND FOR A PROJECT THAT IS UP THERE BUT HAS NO NAME OF ITS OWN (Roman,
+  // 13 Nov: "keep that first reminder, even for signed-in people … even if it's
+  // uploaded already, the untitled project"). Since unnamed work goes up by
+  // itself as "Untitled …" after a minute, the reminder had nothing left to say
+  // to anyone signed in. It asks for the name now — once, not again after
+  // fifteen minutes.
+  const upButUnnamed = isLoggedIn() && getCurrentProject().projectId !== null && isProvisionalName(getCurrentProject().name);
+  if (isLoggedIn() && getCurrentProject().projectId !== null && !upButUnnamed) return;
 
   // NOT ON TOP OF WHAT THE HAND IS DOING (Roman, 10 Nov). The clock fired the
   // moment WRITE was pressed and the reminder covered the write box — the
@@ -2615,9 +2671,11 @@ export function showSaveToaster(): void {
     return;
   }
 
-  const msg = isOnIOS()
-    ? "To edit this project on your desktop, you'll need to save it first."
-    : "To edit this project on your iPad or iPhone, you'll need to save it first.";
+  const msg = upButUnnamed
+    ? 'This project has no name yet. Name it now?'
+    : isOnIOS()
+      ? "To edit this project on your desktop, you'll need to save it first."
+      : "To edit this project on your iPad or iPhone, you'll need to save it first.";
 
   setText('saveToasterMsg', msg);
   show('saveToaster');
@@ -2648,7 +2706,7 @@ export function showSaveToaster(): void {
     hide('saveToaster');
     toasterShowing = false;
     if (savedNow) return;
-    toasterDismissCount += 1;
+    toasterDismissCount += upButUnnamed ? 2 : 1;      // (a project that is up there is asked once)
     if (toasterDismissCount === 1) {
       if (toasterRescheduleId !== null) clearTimeout(toasterRescheduleId);
       toasterRescheduleId = window.setTimeout(() => {
@@ -2968,7 +3026,18 @@ const r2ImageCache = new Map<string, string>();
  *  "could not load all the content"). Not a failed load — a deleted picture. */
 class PictureGone extends Error { constructor(public key: string) { super(`picture gone: ${key}`); } }
 
-async function fetchImageFromR2(r2Key: string, token: string): Promise<string> {
+/** A picture being fetched is fetched once, whoever asks meanwhile (13 Nov:
+ *  the pictures of an opened project come in the background, and a fetch of
+ *  the same project in that time asks for the same ones). */
+const _picturesInTheAir = new Map<string, Promise<string>>();
+function fetchImageFromR2(r2Key: string, token: string): Promise<string> {
+  const going = _picturesInTheAir.get(r2Key);
+  if (going) return going;
+  const p = fetchImageFromR2Once(r2Key, token).finally(() => { _picturesInTheAir.delete(r2Key); });
+  _picturesInTheAir.set(r2Key, p);
+  return p;
+}
+async function fetchImageFromR2Once(r2Key: string, token: string): Promise<string> {
   const cached = r2ImageCache.get(r2Key);
   if (cached) return cached;
 
@@ -4149,6 +4218,47 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
  *   local version (image, strokes, versions) instead of taking the cloud version.
  *   This enables per-frame merge: dirty frames stay local, clean frames take cloud.
  */
+/**
+ * PREVIEWS STAND ON THE CARDS FIRST (lazy loading, 13 Nov). For every picture
+ * still to come: its small preview from this device, else from the server,
+ * six at a time. Shown only — see lazyPictures.ts.
+ */
+async function standInsFirst(keys: string[], token: string, stop: () => boolean, redraw: () => void): Promise<void> {
+  try {
+    const want = [...new Set(keys)].filter((k) => !hasStandIn(k));
+    if (want.length === 0) return;
+    const { allPreviews } = await import('./pictsStore');
+    const onDevice = new Map<string, ArrayBuffer>();
+    for (const r of await allPreviews()) if (r.r2Key) onDevice.set(r.r2Key, r.bytes);
+    if (stop()) return;
+    let fromDevice = 0, fromServer = 0;
+    const missing: string[] = [];
+    for (const k of want) {
+      const b = onDevice.get(k);
+      if (b) { setStandIn(k, b); fromDevice++; } else missing.push(k);
+    }
+    if (fromDevice > 0) redraw();
+    let next = 0;
+    const worker = async (): Promise<void> => {
+      while (next < missing.length) {
+        const k = missing[next++];
+        if (stop() || navigator.onLine === false) return;
+        try {
+          const res = await fetch(`${API_BASE_URL}/thumbs/${k}`, { headers: { Authorization: `Bearer ${token}` } });
+          if (!res.ok) continue;                       // an older picture without a preview: its card waits for the picture itself
+          const bytes = await res.arrayBuffer();
+          if (stop()) return;
+          setStandIn(k, bytes);
+          fromServer++;
+          redraw();
+        } catch { /* its card waits for the picture itself */ }
+      }
+    };
+    await Promise.all(Array.from({ length: 6 }, worker));
+    if (!stop()) trace(`  previews on the cards: ${fromDevice} from this device, ${fromServer} from the server, ${want.length - fromDevice - fromServer} without one`);
+  } catch { /* previews are a comfort; the pictures come anyway */ }
+}
+
 /** Server ids of shots that, after the last pull, hold a version the server
  *  has not got (#533). Read by the pull's bookkeeping right after applying. */
 const _framesWithKeptVersions = new Set<string>();
@@ -4157,7 +4267,11 @@ async function applyCloudTreeToStore(
   tree: CloudProjectTree,
   keepLocalFrameIds?: ReadonlySet<string>,
   onImageProgress?: (loaded: number, total: number) => void,
+  // LAZY LOADING (13 Nov): when a project is OPENED, the call returns once its
+  // shots are on the screen; the pictures follow in the background.
+  opts?: { picturesInBackground?: boolean },
 ): Promise<void> {
+  const background = opts?.picturesInBackground === true;
   // ANOTHER PROJECT'S MEMORY MUST NOT JUDGE THIS ONE (22 Sept, run 320).
   //
   // Roman's iPad, 21 Sept: opened a project, deleted it while open, opened
@@ -5335,6 +5449,49 @@ async function applyCloudTreeToStore(
 
   (window as any).__fh_renderAll?.();
 
+  // The pictures: see bringThePictures, below.
+  await bringThePictures(mainImageTasks, versionImageTasks, background, onImageProgress);
+}
+
+type MainPictureTask = { localId: number; r2Key: string };
+type VersionPictureTask = { strip: string; localId: number; versionIdx: number; r2Key: string };
+
+/**
+ * THE PICTURES OF THE OPEN PROJECT, FETCHED AND PUT ON THEIR CARDS.
+ * `background` (lazy loading, 13 Nov): returns at once; previews stand in, the
+ * bar counts, no picture is given up. Otherwise it returns when all are in.
+ */
+/**
+ * PICTURES THE OPEN PROJECT NAMES BUT DOES NOT HOLD (13 Nov). The app was
+ * closed while a project's pictures were still coming: it starts again in
+ * that project, from this device's save, with those cards still waiting. They
+ * are fetched now, in the background, like the rest were. (A fetch from the
+ * server does this too, but only when the server has something new.)
+ */
+export function bringMissingPictures(why: string): void {
+  if (!isLoggedIn() || !getCurrentProject().projectId || isProjectSwitchInFlight() || isStandingIn()) return;
+  if (picturesArriving()) return;                      // already coming
+  const s = state();
+  const mains: MainPictureTask[] = [];
+  const vers: VersionPictureTask[] = [];
+  for (const f of s.frames) if (f.r2Key && !f.src && !f.pictureDeleted) mains.push({ localId: f.id, r2Key: f.r2Key });
+  for (const strip of Object.keys(s.stripVersions)) {
+    const byFrame = s.stripVersions[strip] ?? {};
+    for (const fid of Object.keys(byFrame)) {
+      (byFrame[+fid] ?? []).forEach((v, i) => { if (v.r2Key && !v.bgImage && !v.pictureDeleted) vers.push({ strip, localId: +fid, versionIdx: i, r2Key: v.r2Key }); });
+    }
+  }
+  if (mains.length + vers.length === 0) return;
+  trace(`${mains.length + vers.length} picture(s) of the open project are not on this device yet (${why}) — fetching them in the background`);
+  void bringThePictures(mains, vers, true);
+}
+
+async function bringThePictures(
+  mainImageTasks: MainPictureTask[],
+  versionImageTasks: VersionPictureTask[],
+  background: boolean,
+  onImageProgress?: (loaded: number, total: number) => void,
+): Promise<void> {
   // Now fetch images from R2 in parallel and patch them into the store.
   // …INTO THE PROJECT THEY WERE FETCHED FOR, AND NO OTHER (12 Nov). The pictures
   // arrive over many seconds and are put on their shots by the shot's number on
@@ -5349,6 +5506,23 @@ async function applyCloudTreeToStore(
   const expectedImageCount = mainImageTasks.length + versionImageTasks.length;
   let fetchedImageCount = 0;
 
+  // A picture that arrives after the person is in is put on its card as the
+  // app's own doing, not as the person's work (it must not mark the project
+  // as changed) — and only if the card still wants THAT picture: a photo taken
+  // on the card meanwhile is not covered by the old one arriving late.
+  const asTheApp = (fn: () => void): void => {
+    if (!background || isSystemAction()) { fn(); return; }
+    beginSystemAction();
+    try { fn(); } finally { endSystemAction(); }
+  };
+  const bringPictures = async (): Promise<void> => {
+  if (background) {
+    const here = countCurrentImages();
+    beginArriving(picturesFor, here + expectedImageCount, here);
+    if (expectedImageCount > 0) trace(`  in: ${state().frames.length} shot(s) on the screen — ${expectedImageCount} picture(s) follow in the background`);
+    void standInsFirst([...mainImageTasks, ...versionImageTasks].map((t) => t.r2Key), token, anotherProjectIsOnScreen, () => redrawSoon());
+  }
+
   // Helper: fetch with up to 3 retries (exponential backoff: 2s, 4s, 8s)
   async function fetchWithRetry(r2Key: string, retries = 3): Promise<string> {
     for (let attempt = 0; attempt <= retries; attempt++) {
@@ -5356,6 +5530,24 @@ async function applyCloudTreeToStore(
         return await fetchImageFromR2(r2Key, token!);
       } catch (e) {
         if (e instanceof PictureGone) throw e;   // no point asking again
+        // IN THE BACKGROUND A PICTURE IS NEVER GIVEN UP (13 Nov): the bar stays
+        // and says how many are here; with the line back, it goes on. Only
+        // another project on the screen ends it.
+        if (background) {
+          if (anotherProjectIsOnScreen() || !getToken()) throw e;
+          attempt = Math.min(attempt, retries - 1);
+          if (navigator.onLine === false) {
+            await new Promise<void>((go) => {
+              const again = (): void => { window.removeEventListener('online', again); window.clearTimeout(t); go(); };
+              const t = window.setTimeout(again, 30_000);
+              window.addEventListener('online', again);
+            });
+          } else {
+            await new Promise((r) => setTimeout(r, 5_000));
+          }
+          if (anotherProjectIsOnScreen()) throw e;
+          continue;
+        }
         if (attempt === retries) throw e;
         await new Promise((r) => setTimeout(r, 2000 * Math.pow(2, attempt)));
       }
@@ -5403,9 +5595,11 @@ async function applyCloudTreeToStore(
           const s = useStore.getState();
           const idx = s.frames.findIndex((f) => f.id === task.localId);
           if (idx === -1) return;
+          if (background && s.frames[idx].r2Key !== task.r2Key) { fetchedImageCount++; return; }   // the card has another picture now
           const updated = [...s.frames];
           updated[idx] = { ...updated[idx], src: dataUrl };
-          useStore.setState((prev) => ({ frames: updated, renderTick: prev.renderTick + 1 }));
+          asTheApp(() => useStore.setState((prev) => ({ frames: updated, renderTick: prev.renderTick + 1 })));
+          dropStandIn(task.r2Key);
           redrawSoon();
           fetchedImageCount++;
           onImageProgress?.(fetchedImageCount, expectedImageCount);
@@ -5417,13 +5611,15 @@ async function applyCloudTreeToStore(
             const idx = st.frames.findIndex((f) => f.id === task.localId);
             if (idx !== -1) {
               const updated = [...st.frames];
-              updated[idx] = { ...updated[idx], src: '', r2Key: undefined, pictureDeleted: true };
-              useStore.setState((prev) => ({ frames: updated, renderTick: prev.renderTick + 1 }));
-              redrawSoon();
+              if (!background || st.frames[idx].r2Key === task.r2Key) {
+                updated[idx] = { ...updated[idx], src: '', r2Key: undefined, pictureDeleted: true };
+                asTheApp(() => useStore.setState((prev) => ({ frames: updated, renderTick: prev.renderTick + 1 })));
+                redrawSoon();
+              }
             }
             trace(`  picture deleted in the library (server has no file): shot ${st.frames[idx]?.label ?? task.localId} main — the card says so`);
             fetchedImageCount++;
-            onImageProgress?.(fetchedImageCount, expectedImageCount);
+              onImageProgress?.(fetchedImageCount, expectedImageCount);
             return;
           }
           console.warn('[sync] failed to fetch main image after retries', task.r2Key, e);
@@ -5431,7 +5627,8 @@ async function applyCloudTreeToStore(
           failedTasks.push(`Frame "${frame?.label || task.localId}" main image`);
           fetchedImageCount++;
           onImageProgress?.(fetchedImageCount, expectedImageCount);
-        }),
+        })
+        .finally(() => { if (background) { oneArrived(picturesFor); dropStandIn(task.r2Key); } }),
     );
   }
 
@@ -5445,9 +5642,14 @@ async function applyCloudTreeToStore(
           const versMap = s.stripVersions[task.strip];
           if (!versMap) return;
           const vers = versMap[task.localId];
-          if (!vers || !vers[task.versionIdx]) return;
+          // (in the background the person may have added, moved or removed
+          // versions meanwhile: the picture goes to the version that carries
+          // its name, wherever it stands now — or nowhere)
+          const at = background ? (vers ?? []).findIndex((v) => v.r2Key === task.r2Key) : task.versionIdx;
+          if (background && at < 0) { fetchedImageCount++; return; }
+          if (!vers || !vers[at]) return;
           const updatedVers = [...vers];
-          updatedVers[task.versionIdx] = { ...updatedVers[task.versionIdx], bgImage: dataUrl };
+          updatedVers[at] = { ...updatedVers[at], bgImage: dataUrl };
           // Legacy alias keys for the three built-in strips (they point to the same
           // objects at init, but setState merges shallowly so we update both)
           const legacyKey = task.strip === 'ver' ? 'versions'
@@ -5457,14 +5659,15 @@ async function applyCloudTreeToStore(
           const legacyUpdate = legacyKey
             ? { [legacyKey]: { ...(s[legacyKey] as Record<number, Version[]>), [task.localId]: updatedVers } }
             : {};
-          useStore.setState((prev) => ({
+          asTheApp(() => useStore.setState((prev) => ({
             ...legacyUpdate,
             stripVersions: {
               ...prev.stripVersions,
               [task.strip]: { ...prev.stripVersions[task.strip], [task.localId]: updatedVers },
             },
             renderTick: prev.renderTick + 1,
-          }));
+          })));
+          dropStandIn(task.r2Key);
           redrawSoon();
           fetchedImageCount++;
           onImageProgress?.(fetchedImageCount, expectedImageCount);
@@ -5474,18 +5677,19 @@ async function applyCloudTreeToStore(
           if (e instanceof PictureGone) {
             const st = useStore.getState();
             const vers = st.stripVersions[task.strip]?.[task.localId];
-            if (vers && vers[task.versionIdx]) {
+            const at = background ? (vers ?? []).findIndex((v) => v.r2Key === task.r2Key) : task.versionIdx;
+            if (vers && vers[at]) {
               const updatedVers = [...vers];
-              updatedVers[task.versionIdx] = { ...updatedVers[task.versionIdx], bgImage: null, r2Key: undefined, pictureDeleted: true };
-              useStore.setState((prev) => ({
+              updatedVers[at] = { ...updatedVers[at], bgImage: null, r2Key: undefined, pictureDeleted: true };
+              asTheApp(() => useStore.setState((prev) => ({
                 stripVersions: { ...prev.stripVersions, [task.strip]: { ...prev.stripVersions[task.strip], [task.localId]: updatedVers } },
                 renderTick: prev.renderTick + 1,
-              }));
+              })));
               redrawSoon();
             }
             trace(`  picture deleted in the library (server has no file): ${task.strip} v${task.versionIdx + 1} — the card says so`);
             fetchedImageCount++;
-            onImageProgress?.(fetchedImageCount, expectedImageCount);
+              onImageProgress?.(fetchedImageCount, expectedImageCount);
             return;
           }
           console.warn('[sync] failed to fetch version image after retries', task.strip, task.r2Key, e);
@@ -5493,7 +5697,8 @@ async function applyCloudTreeToStore(
           failedTasks.push(`Frame "${frame?.label || task.localId}" ${task.strip} v${task.versionIdx + 1}`);
           fetchedImageCount++;
           onImageProgress?.(fetchedImageCount, expectedImageCount);
-        }),
+        })
+        .finally(() => { if (background) { oneArrived(picturesFor); dropStandIn(task.r2Key); } }),
     );
   }
 
@@ -5502,6 +5707,7 @@ async function applyCloudTreeToStore(
   if (redrawTimer !== null) { window.clearTimeout(redrawTimer); redrawTimer = null; }
   if (allFetches.length > 0 && !anotherProjectIsOnScreen()) (window as any).__fh_renderAll?.();   // the last word: every picture is on its card
 
+  if (background && anotherProjectIsOnScreen()) { endArriving(picturesFor); return; }
   // Always update count baselines — pushes preserve r2Keys for any
   // images we didn't download, so server data is never lost.
   _lastKnownImageCount = countCurrentImages();
@@ -5511,6 +5717,20 @@ async function applyCloudTreeToStore(
   if (failedTasks.length > 0) {
     console.error('[sync] Failed image loads:', failedTasks);
   }
+  if (background) {
+    endArriving(picturesFor);
+    if (expectedImageCount > 0) trace(`  every picture of the project is on this device (${expectedImageCount - failedTasks.length} of ${expectedImageCount}${failedTasks.length ? ` — ${failedTasks.length} did not come` : ''})`);
+    // (what loadCloudProject did after its wait, when it still waited)
+    if (isPullIncomplete()) showIncompleteLoadOverlay(); else hideIncompleteLoadOverlay();
+  }
+  };
+  if (background) {
+    _lastKnownFrameCount = state().frames.length;
+    setPullIncomplete(false);
+    void bringPictures().catch((e) => { console.error('[open] pictures in the background', e); endArriving(picturesFor); });
+    return;
+  }
+  await bringPictures();
 }
 
 function parseStrokes(json: string | undefined): Stroke[] {
@@ -8016,6 +8236,9 @@ export async function bootstrapAccountSystem(): Promise<void> {
   // only after it closed — so a device opened on a link out of a mail looked,
   // to anything watching, as though it had never come up at all.
   (window as any).__fh_booted = true;
+  // (lazy loading: the app closed while pictures were still coming)
+  window.setTimeout(() => bringMissingPictures('at the start'), 3_000);
+  window.addEventListener('online', () => window.setTimeout(() => bringMissingPictures('the line is back'), 3_000));
 
   // 3a. Handle ?verify=token URLs (the link in the welcome mail, 9 Nov).
   const url = new URL(window.location.href);

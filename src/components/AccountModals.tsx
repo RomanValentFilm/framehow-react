@@ -19,7 +19,7 @@ export function AccountModals() {
       {/* Project name */}
       <div className="account-modal hidden" id="projectNameModal">
         <div className="account-card">
-          <h2>Name your project</h2>
+          <h2>Name this project</h2>
           <div className="account-row">
             <input type="text" id="projectNameInput" maxLength={200} autoComplete="one-time-code" />
           </div>

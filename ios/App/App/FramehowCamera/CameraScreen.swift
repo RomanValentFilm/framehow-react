@@ -208,6 +208,9 @@ struct CameraScreen: View {
             .clipped()
         }
         .ignoresSafeArea()
+        // No clock and battery over the camera (Roman, 13 Nov, iPad: RATIO and EV
+        // stood behind them). The camera has the whole screen.
+        .statusBarHidden(true)
         .background(.black)
         .foregroundStyle(.white)
         .onAppear { cam.start() }

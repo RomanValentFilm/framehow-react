@@ -93,7 +93,11 @@ type Strip = 'ver' | 'floor' | 'refs';
  * the card's own arrows would do it.
  */
 function openFromCanvas(cvs: HTMLCanvasElement | HTMLImageElement): void {
-  const card = cvs.closest<HTMLElement>('.frame-card, .grid3x2-card-wrap');
+  // IN 3×2 THE CARD IS THE WRAP, NOT THE FRAME INSIDE IT (13 Nov, Roman's iPad:
+  // no up and down there — and on closing, the card was drawn again INSIDE
+  // itself, a second row of buttons on top of the first). The wrap is what the
+  // 3×2 view counts, orders and redraws.
+  const card = cvs.closest<HTMLElement>('.grid3x2-card-wrap') ?? cvs.closest<HTMLElement>('.frame-card');
   const shot = card ? shotOf(card, false) : null;
   if (!shot) return;
   trace(`max screen: shot ${shot.shotNo}, ${shot.items.length} picture(s), opens on ${shot.items[shot.index].label || 'main'}`);

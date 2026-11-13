@@ -100,6 +100,7 @@ public class FramehowCameraPlugin: CAPPlugin, CAPBridgedPlugin {
             // shutter): with .fullScreen iOS stops drawing the covered page and shows grey
             // for a frame when it comes back; .overFullScreen keeps the page alive beneath.
             vc.modalPresentationStyle = .overFullScreen
+            vc.modalPresentationCapturesStatusBarAppearance = true   // (so the camera screen may hide the clock and battery)
             vc.view.backgroundColor = .black
             self.host = vc
             top.present(vc, animated: false)

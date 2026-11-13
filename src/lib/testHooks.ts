@@ -93,6 +93,12 @@ export interface TestDoor {
   /** Open a project the server already has — what the second device does, and
    *  what the project list does when you tap a name. */
   openProject(id: string): Promise<void>;
+  /** LAZY LOADING (13 Nov): open and return the moment the person is in — the
+   *  pictures still coming. */
+  openProjectAndBeIn(id: string): Promise<void>;
+  /** What is still to come for the open project, what the bar says (null = no
+   *  bar), and how many previews stand in. */
+  picturesStillToCome(): Promise<{ arriving: { done: number; total: number } | null; bar: string | null; standIns: number; mains: number[] }>;
   /** BUILD a project and stop there — no save, no server.
    *
    *  `newProject` saves as part of making one, so with no signal it waits for
@@ -684,7 +690,20 @@ export function installTestDoor(): void {
       return getCurrentProject().projectId;
     },
 
-    async openProject(id) { await openCloudProjectById(id); },
+    // (the tests written before lazy loading take "open" to mean "everything
+    // is there": this door waits for the pictures too; openProjectAndBeIn does not)
+    async openProject(id) {
+      await openCloudProjectById(id);
+      const { picturesArriving } = await import('./lazyPictures');
+      for (let i = 0; i < 1200 && picturesArriving(); i++) await new Promise((r) => setTimeout(r, 100));
+    },
+    async openProjectAndBeIn(id) { await openCloudProjectById(id); },
+    async picturesStillToCome() {
+      const m = await import('./lazyPictures');
+      const a = m.picturesArriving();
+      const bar = document.getElementById('picturesBar');
+      return { arriving: a, bar: bar ? (bar.textContent ?? '') : null, standIns: m.standInCount(), mains: useStore.getState().frames.map((f) => (f.src ? f.src.length : 0)) };
+    },
 
     async buildProjectWithoutSaving(name, count) {
       await beginNewProject();

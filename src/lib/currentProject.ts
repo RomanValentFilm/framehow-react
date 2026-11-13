@@ -42,6 +42,7 @@
 // 18. Image-count guard refuses to push zero-image state over good data.
 // ═══════════════════════════════════════════════════════════════════════════
 
+import { forgetArriving } from './lazyPictures';
 import { useStore } from '../store/state';
 import { trace } from './syncTrace';
 import { clearSnapshot, saveSnapshot, lastSaveWasWhole, snapshotFromStore, savePending, clearPending, listPending, markPendingWarned, markPendingUploaded, sweepUploaded, isArchived, storageEstimate } from './persistence';
@@ -140,6 +141,7 @@ export function markSaved(projectId: string): void {
  *   Roman's iPad: "the start ended on an empty screen".
  */
 export function clearCurrentProject(opts: { keepDeviceSave?: boolean } = {}): void {
+  forgetArriving();          // the pictures still coming for the project that leaves, their bar, their previews
   cp = { projectId: null, name: null, lastSavedAt: null, dirty: false };
   _dirty = false;
   _dirtyFrameIds.clear();

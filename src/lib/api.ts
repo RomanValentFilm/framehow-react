@@ -31,6 +31,14 @@ function toApiError(status: number, body: unknown, fallbackMessage = 'Something 
   };
 }
 
+// A STEP THAT CAN BE STOPPED (13 Nov, Roman: "at that very same moment the
+// background upload is interrupted … the open project never waits"). While
+// unsent work of another project takes its short step, every request made
+// carries this signal; a touch stops them on the spot instead of leaving them
+// in the air for the open project's own save to wait behind.
+let _stepSignal: AbortSignal | null = null;
+export function requestsBelongToAStep(signal: AbortSignal | null): void { _stepSignal = signal; }
+
 async function request<T>(path: string, init: RequestInit, token?: string | null): Promise<T> {
   const headers = new Headers(init.headers);
   if (init.body !== undefined && init.body !== null && typeof init.body === 'string' && !headers.has('Content-Type')) {
@@ -40,8 +48,12 @@ async function request<T>(path: string, init: RequestInit, token?: string | null
 
   let res: Response;
   try {
-    res = await fetch(`${API_BASE_URL}${path}`, { ...init, headers });
+    const stepSignal = _stepSignal;
+    res = await fetch(`${API_BASE_URL}${path}`, { ...init, headers, ...(stepSignal ? { signal: stepSignal } : {}) });
   } catch (e) {
+    if ((e as { name?: string } | null)?.name === 'AbortError') {
+      throw { status: 0, code: 'stopped', message: 'Stopped: the open project comes first.' } as ApiError;
+    }
     // Network-level failure — caller can show a generic offline message.
     throw {
       status: 0,

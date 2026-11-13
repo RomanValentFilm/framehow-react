@@ -51,7 +51,7 @@ import {
   flowRestoreProject,
   flowSaveProject,
   isToasterShowing,
-  showSaveToaster, resetSaveToaster, resetProjectSyncGuards, beginNewProject } from './accountFlow';
+  showSaveToaster, resetSaveToaster, resetProjectSyncGuards, beginNewProject, nameItBeforeLeaving } from './accountFlow';
 import { getActiveMs, onActivityTick, startActivityTracking } from './activity';
 import { startAutosave, getCurrentProject, clearCurrentProject, flushSyncNow, markSaveOffered, subscribe as subscribeProject } from './currentProject';
 import { subscribe as subscribeSession, isLoggedIn } from './session';
@@ -404,26 +404,17 @@ export function initFramehow(): void {
     // that way. beginNewProject waits for the push to come back first.
     const clearBeforeNew = async () => {
       if (!hadFrames) return;
+      await nameItBeforeLeaving();      // (an unnamed project is asked for a name once, 13 Nov)
       await beginNewProject();
       renderAll();
       updateFrameBadge();
     };
 
-    if (hadFrames && !cp.projectId) {
-      // Never saved — ask user asynchronously, then proceed
-      void (async () => {
-        const ok = await import('./modals').then(m => m.showConfirm('Save your current work before starting a new project?'));
-        if (ok) {
-          await flowSaveProject();
-        }
-        // Show modal — clear only if user picks something (not cancel)
-        showNewProjectModal((choice: NewProjectChoice) => {
-          if (choice === 'cancel') return;
-          void clearBeforeNew().then(() => openNewProjectModal_dispatch(choice));
-        });
-      })();
-      return;
-    }
+    // (It used to ask here "Save your current work before starting a new
+    // project?" and then for a name — two questions before the person had even
+    // chosen. Now ONE, at the moment of really leaving: "Name this project?",
+    // in clearBeforeNew above. 13 Nov.)
+    void cp;
 
     // Show modal — clear only if user picks something (not cancel)
     showNewProjectModal((choice: NewProjectChoice) => {

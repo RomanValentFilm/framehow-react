@@ -215,3 +215,44 @@ test('max screen: up and down go to the shot before and after, landing on the sh
   expect(log, 'the log says where it went').toMatch(/max screen: down to shot 2/);
   await d.close();
 });
+
+// IN THE 3×2 VIEW TOO (13 Nov, Roman's iPad: "not working, no arrows there" —
+// and after closing, a card with two and three rows of buttons).
+test('max screen in 3×2: up and down work, and closing leaves every card as one card', async ({ browser }) => {
+  const { token } = await freshAccount();
+  const d = await Device.open(browser, 'desktop', token);
+  await d.newProject('UP AND DOWN 3X2', 3);
+  await d.settle();
+  if (await d.page.locator('#projectListModal').isVisible()) {
+    await d.page.locator('#projectListClose').click();
+    await d.page.waitForTimeout(300);
+  }
+  await d.putPicture(0, RED_SQUARE);
+  await d.putPicture(1, RED_SQUARE);
+  await d.showStrip('ver');
+  expect(await d.draw(0, 'ver', 0)).toBe(1);
+  await d.setView('grid3x2');
+  await d.page.waitForTimeout(600);
+  const labels = (await d.read()).frames.map((f) => f.label);
+  const cardsInside = () => d.page.evaluate(() =>
+    Array.from(document.querySelectorAll('#overviewScroll .grid3x2-card-wrap')).map((w) => w.querySelectorAll('.frame-card').length));
+  expect(await cardsInside(), 'one card in each place, before').toEqual([1, 1, 1]);
+
+  say('3×2: open shot 1, down to shot 2, back up, right to a version, close');
+  await d.page.locator('#overviewScroll .grid3x2-card-wrap .max-btn:visible').first().click();
+  const label = d.page.locator('#maxView .max-label');
+  await expect(label).toHaveText(labels[0]);
+  await expect(d.page.locator('#maxView .max-down'), 'A WAY DOWN IN 3×2').toBeVisible();
+  await d.page.keyboard.press('ArrowDown');
+  await expect(label, 'down: shot 2').toHaveText(labels[1]);
+  await d.page.keyboard.press('ArrowUp');
+  await expect(label, 'up: shot 1 again').toHaveText(labels[0]);
+  await d.page.keyboard.press('ArrowRight');
+  await expect(label, 'a version of shot 1').toHaveText(/^v\d+$/);
+  await d.page.locator('#maxView .max-close').click();
+  await expect(d.page.locator('#maxView')).toHaveCount(0);
+  await d.page.waitForTimeout(400);
+  expect(await cardsInside(), 'ONE CARD IN EACH PLACE AFTER CLOSING — not a card inside a card').toEqual([1, 1, 1]);
+  await d.close();
+});
+

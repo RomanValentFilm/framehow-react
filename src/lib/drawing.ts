@@ -2,6 +2,7 @@
 // Stroke + text rendering, hit-testing, image-fit drawing, and the
 // pointer-event setup for live drawing on a canvas.
 
+import { standInFor } from './lazyPictures';
 import { COLORS, state, useStore } from '../store/state';
 import type { Frame, Stroke, Version, StripType, FrameSnapshot } from '../store/state';
 import { getStripVersions, getStripActiveTab, getStripCrossCompare, setStripPrevFrameState } from './helpers';
@@ -194,8 +195,12 @@ function fit(ctx: CanvasRenderingContext2D, cvs: HTMLCanvasElement, img: HTMLIma
  * nothing.
  */
 function paint(cvs: HTMLCanvasElement, src: string | null | undefined, strokes: Stroke[] | undefined,
-  drawStrokes: (ctx: CanvasRenderingContext2D, st: Stroke[]) => void): void {
+  drawStrokes: (ctx: CanvasRenderingContext2D, st: Stroke[]) => void, standIn = ''): void {
   attachMaxButton(cvs, !!src || (strokes?.length ?? 0) > 0);   // MAX SCREEN (23 Oct)
+  // LAZY LOADING (13 Nov): the picture itself has not arrived yet — its small
+  // preview is painted in its place. Shown only; the card has no picture yet
+  // as far as anything else is concerned (no MAX button, nothing to save).
+  if (!src && standIn) src = standIn;
   const ctx = cvs.getContext('2d')!;
   if (!src) {
     ctx.clearRect(0, 0, cvs.width, cvs.height);
@@ -222,11 +227,11 @@ function paint(cvs: HTMLCanvasElement, src: string | null | undefined, strokes: 
 }
 
 export function restoreMainCanvas(cvs: HTMLCanvasElement, f: Frame): void {
-  paint(cvs, f.src, f.strokes, drawMainStrokes);
+  paint(cvs, f.src, f.strokes, drawMainStrokes, f.src ? '' : standInFor(f.r2Key));
 }
 
 export function restoreCanvas(cvs: HTMLCanvasElement, ver: Version): void {
-  paint(cvs, ver.bgImage, ver.strokes, drawVersionStrokes);
+  paint(cvs, ver.bgImage, ver.strokes, drawVersionStrokes, ver.bgImage ? '' : standInFor(ver.r2Key));
 }
 
 export function drawFit(cvs: HTMLCanvasElement, src: string): void {

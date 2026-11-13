@@ -78,10 +78,13 @@ test('a fetch while a project is being opened: the two projects are not mixed', 
   await tablet.openProject(smallId!);
   await tablet.settle();
 
-  say('BIG\'s pictures are slow: the opening takes about eight seconds');
-  await desktop.page.route('**/images/**', async (route) => {
+  say('BIG is slow to come: the opening takes about eight seconds');
+  // (since lazy loading, 13 Nov, an opening no longer waits for the pictures:
+  // what is slow here is the project itself coming from the server)
+  await desktop.page.route(`**/projects/${bigId}/sync*`, async (route) => {
+    if (route.request().method() !== 'GET') { await route.fallback(); return; }
     await new Promise((r) => setTimeout(r, 8_000));
-    await route.continue();
+    await route.continue().catch(() => undefined);
   });
   void desktop.page.evaluate((pid) => { void (window as never as { __fh_test: { openProject(id: string): Promise<void> } }).__fh_test.openProject(pid as string); }, bigId!);
   await desktop.page.waitForTimeout(1_500);
@@ -97,7 +100,7 @@ test('a fetch while a project is being opened: the two projects are not mixed', 
 
   say('the opening finishes');
   await expect.poll(async () => (await desktop.read()).projectName, { timeout: 60_000 }).toBe('BIG');
-  await desktop.page.unroute('**/images/**');
+  await desktop.page.unroute(`**/projects/${bigId}/sync*`);
   await desktop.settle();
 
   const now = await desktop.read();
@@ -304,8 +307,11 @@ test('the app is closed while a project is loading: it comes back in the old pro
   const before = await desktop.read();
   expect(before.projectId, 'it has never been to the server').toBeNull();
 
-  say('BIG is opened — its pictures are slow — and the app is closed in the middle');
-  await desktop.page.route('**/images/**', async (route) => {
+  say('BIG is opened — it is slow to come — and the app is closed in the middle');
+  // (since lazy loading, 13 Nov, an opening no longer waits for the pictures:
+  // what is slow here is the project itself coming from the server)
+  await desktop.page.route(`**/projects/${bigId}/sync*`, async (route) => {
+    if (route.request().method() !== 'GET') { await route.fallback(); return; }
     await new Promise((r) => setTimeout(r, 20_000));
     await route.continue().catch(() => undefined);
   });
@@ -315,8 +321,8 @@ test('the app is closed while a project is loading: it comes back in the old pro
     if (await yes.count()) { await yes.click().catch(() => undefined); break; }
     await desktop.page.waitForTimeout(250);
   }
-  await desktop.page.waitForTimeout(4_000);      // BIG's shots are on the screen, its pictures still coming
-  await desktop.page.unroute('**/images/**');
+  await desktop.page.waitForTimeout(4_000);      // BIG is still on its way
+  await desktop.page.unroute(`**/projects/${bigId}/sync*`);
   await desktop.reload();                        // the app closed and opened again
   await desktop.settle();
 
@@ -467,8 +473,11 @@ test('opening: the old project leaves the screen at once; if the opening fails i
   await desktop.reload();
   await desktop.settle();
 
-  say('BIG is opened, its pictures are slow: in the middle, nothing of HOME is on the screen and no project is open');
-  await desktop.page.route('**/images/**', async (route) => {
+  say('BIG is opened, it is slow to come: in the middle, nothing of HOME is on the screen and no project is open');
+  // (since lazy loading, 13 Nov, an opening no longer waits for the pictures:
+  // what is slow here is the project itself coming from the server)
+  await desktop.page.route(`**/projects/${bigId}/sync*`, async (route) => {
+    if (route.request().method() !== 'GET') { await route.fallback(); return; }
     await new Promise((r) => setTimeout(r, 6_000));
     await route.continue().catch(() => undefined);
   });
@@ -479,7 +488,7 @@ test('opening: the old project leaves the screen at once; if the opening fails i
   expect(mid.projectId, 'NO PROJECT IS OPEN WHILE THE NEW ONE LOADS — not the old one').not.toBe(homeId);
   expect(mid.frames.map((f) => f.label).join('|'), 'no shot of the old project on the screen').not.toContain('HOME ONE');
   await expect.poll(async () => (await desktop.read()).projectId, { timeout: 60_000 }).toBe(bigId);
-  await desktop.page.unroute('**/images/**');
+  await desktop.page.unroute(`**/projects/${bigId}/sync*`);
   await desktop.settle();
   expect((await desktop.read()).frames.length, 'BIG arrived with its three shots').toBe(3);
 
