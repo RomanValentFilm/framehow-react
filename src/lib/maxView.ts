@@ -93,12 +93,44 @@ type Strip = 'ver' | 'floor' | 'refs';
  * the card's own arrows would do it.
  */
 function openFromCanvas(cvs: HTMLCanvasElement | HTMLImageElement): void {
-  const s = state();
   const card = cvs.closest<HTMLElement>('.frame-card, .grid3x2-card-wrap');
+  const shot = card ? shotOf(card, false) : null;
+  if (!shot) return;
+  trace(`max screen: shot ${shot.shotNo}, ${shot.items.length} picture(s), opens on ${shot.items[shot.index].label || 'main'}`);
+  openMaxView(shot.items, shot.index, shot.onClose, shot.fileBase, shot.other);
+}
+
+/** What the viewer shows for one card: its pictures, where to start, what to
+ *  do with the card when the viewer leaves it — and the way to the shot above
+ *  or below. `arriving` = come here from another shot (up / down). */
+type Shot = { items: Item[]; index: number; onClose: (it: Item, moved: boolean) => void; fileBase: string; shotNo: number;
+  other: (dir: 1 | -1) => Shot | null };
+
+// STORY GRID, STEP 1 (Roman, 12 Nov): "when we are in the max screen, we can
+// swipe left, right … if we would add arrows up and down, we could easily swap
+// to the next main shot below." UP AND DOWN GO TO THE SHOT BEFORE AND AFTER —
+// in the order the cards stand on the screen, so inside a group it is the next
+// shot OF THAT GROUP, and a hidden shot is passed over. "You land on the shot,
+// next shot. Not any version": coming from another shot the viewer opens on
+// the shot's MAIN picture (in a version column, which has no main picture, on
+// the version that column shows). Left and right stay what they were.
+function neighbourCard(card: HTMLElement, dir: 1 | -1): HTMLElement | null {
+  const kind = card.dataset.mfid !== undefined ? '.frame-card[data-mfid]'
+    : card.dataset.g3fid !== undefined ? '.grid3x2-card-wrap[data-g3fid]'
+    : card.dataset.vfid !== undefined ? '.frame-card[data-vfid]' : null;
+  if (!kind) return null;                                   // an overview row: no up and down
+  const column = card.closest<HTMLElement>('[id$="Scroll"]') ?? card.parentElement?.closest<HTMLElement>('.grid3x2, .columns') ?? document.body;
+  const all = Array.from(column.querySelectorAll<HTMLElement>(kind)).filter((c) => c.getClientRects().length > 0);
+  const at = all.indexOf(card);
+  return at === -1 ? null : all[at + dir] ?? null;
+}
+
+function shotOf(card: HTMLElement, arriving: boolean): Shot | null {
+  const s = state();
   const fidStr = card?.dataset.mfid ?? card?.dataset.vfid ?? card?.dataset.g3fid ?? card?.dataset.ovfid ?? card?.dataset.fid;
   const fid = fidStr ? Number(fidStr) : NaN;
   const f = s.frames.find((x) => x.id === fid);
-  if (!f || !card) return;
+  if (!f) return null;
   const w = f.cropW || 960, h = f.cropH || 540;
   const items: Item[] = [];
   let start = 0;
@@ -152,16 +184,31 @@ function openFromCanvas(cvs: HTMLCanvasElement | HTMLImageElement): void {
       (window as unknown as Record<string, (el: HTMLElement, fid: number, strip: Strip) => void>).__fh_renderVersionFrame?.(card, fid, strip);
     };
   }
-  if (!items.length) return;
-  trace(`max screen: shot ${s.frames.indexOf(f) + 1}, ${items.length} picture(s), opens on ${items[start].label || 'main'}`);
+  // the shot above / below: the nearest one that has something to show
+  const other = (dir: 1 | -1): Shot | null => {
+    for (let c = neighbourCard(card, dir); c; c = neighbourCard(c, dir)) {
+      const there = shotOf(c, true);
+      if (there && there.items.some((it) => !!it.src || (it.strokes?.length ?? 0) > 0)) return there;
+    }
+    return null;
+  };
+  if (!items.length) return null;
+  if (arriving && mainOrG3) start = 0;                       // the shot itself, not a version of it
   const shotNo = s.frames.indexOf(f) + 1;
   const fileBase = `${(getCurrentProject().name || 'Framehow').replace(/[\\/:*?"<>|]+/g, ' ').trim()} – shot ${shotNo}`;
-  openMaxView(items, start, (it, moved) => {
-    if (!moved || !leave) return;
-    trace(`max screen: left on ${it.label || 'main'} — the card follows`);
-    leave(it);
-  }, fileBase);
+  const came = start;
+  return {
+    items, index: start, fileBase, shotNo, other,
+    onClose: (it, moved) => {
+      // (the page goes to the shot the viewer was left on, when it is another one)
+      if (arriving) card.scrollIntoView({ block: 'center' });
+      if ((!moved && items.indexOf(it) === came) || !leave) return;
+      trace(`max screen: left on ${it.label || 'main'} — the card follows`);
+      leave(it);
+    },
+  };
 }
+
 
 // --- sharing (26 Oct, Roman) ------------------------------------------------
 // The picture as the viewer shows it — photo with its drawings and text —
@@ -241,16 +288,19 @@ function paintItem(cvs: HTMLCanvasElement, it: Item): void {
   } else draw();
 }
 
-export function openMaxView(items: Item[], index: number, onClose?: (it: Item, moved: boolean) => void, fileBase = 'Framehow'): void {
+export function openMaxView(items: Item[], index: number, onClose?: (it: Item, moved: boolean) => void, fileBase = 'Framehow',
+                            otherShot?: (dir: 1 | -1) => { items: Item[]; index: number; onClose: (it: Item, moved: boolean) => void; fileBase: string; shotNo: number; other: (dir: 1 | -1) => unknown } | null): void {
   closeMaxView();
   let i = Math.max(0, Math.min(index, items.length - 1));
-  const startI = i;
+  let startI = i;
   const root = document.createElement('div');
   root.id = 'maxView';
   root.innerHTML = `<div class="max-stage"><canvas></canvas></div>
     <button class="max-close" type="button" title="Close">${COLLAPSE}</button>
     <button class="max-nav max-prev" type="button" title="Previous">‹</button>
     <button class="max-nav max-next" type="button" title="Next">›</button>
+    <button class="max-nav max-up" type="button" title="Shot before">‹</button>
+    <button class="max-nav max-down" type="button" title="Next shot">›</button>
     <div class="max-share-row"></div>
     <div class="max-label"></div>
     <div class="max-flash"></div>`;
@@ -262,6 +312,8 @@ export function openMaxView(items: Item[], index: number, onClose?: (it: Item, m
   const label = root.querySelector<HTMLElement>('.max-label')!;
   const prevBtn = root.querySelector<HTMLButtonElement>('.max-prev')!;
   const nextBtn = root.querySelector<HTMLButtonElement>('.max-next')!;
+  const upBtn = root.querySelector<HTMLButtonElement>('.max-up')!;
+  const downBtn = root.querySelector<HTMLButtonElement>('.max-down')!;
 
   let scale = 1, tx = 0, ty = 0;
   // THE TAP THAT OPENED IT MUST NOT CLOSE IT (Roman, 24 Oct: "you have to tap
@@ -291,10 +343,27 @@ export function openMaxView(items: Item[], index: number, onClose?: (it: Item, m
     // is somewhere to go.
     prevBtn.style.display = i > 0 ? '' : 'none';
     nextBtn.style.display = i < items.length - 1 ? '' : 'none';
+    // UP AND DOWN: only where there is a shot to go to (and none in a viewer
+    // that was not opened from a card — it has no neighbours).
+    upBtn.style.display = otherShot?.(-1) ? '' : 'none';
+    downBtn.style.display = otherShot?.(1) ? '' : 'none';
     ready = null;
     if (prepareLater) prepareLater();
   };
   const go = (d: number) => { const n = i + d; if (n < 0 || n >= items.length) return; i = n; show(); };
+  /** To the shot before (-1) or after (1): the card of the shot being left
+   *  follows as if the viewer had been closed on it; the viewer stays open. */
+  const goShot = (d: 1 | -1) => {
+    const there = otherShot?.(d);
+    if (!there) return;
+    onClose?.(items[i], i !== startI);
+    trace(`max screen: ${d === 1 ? 'down' : 'up'} to shot ${there.shotNo} — opens on ${there.items[there.index].label || 'main'}`);
+    items = there.items; onClose = there.onClose; fileBase = there.fileBase;
+    otherShot = there.other as typeof otherShot;
+    i = Math.max(0, Math.min(there.index, items.length - 1));
+    startI = i;
+    show();
+  };
   show();
 
   // SHARE / DOWNLOAD / COPY (26 Oct). The JPEG for the picture on screen is
@@ -390,6 +459,8 @@ export function openMaxView(items: Item[], index: number, onClose?: (it: Item, m
     const quick = Date.now() - drag.t < 400;
     drag = null;
     if (scale === 1 && Math.abs(dx) > 50 && Math.abs(dy) < Math.abs(dx) * 0.7) { go(dx < 0 ? 1 : -1); return; }
+    // up and down: the finger moves up, the next shot comes — as a page scrolls
+    if (scale === 1 && Math.abs(dy) > 60 && Math.abs(dx) < Math.abs(dy) * 0.7) { goShot(dy < 0 ? 1 : -1); return; }
     if (Math.hypot(dx, dy) < 10 && quick) {
       const now = Date.now();
       if (now - lastTap < 320) { scale = 1; tx = 0; ty = 0; apply(); lastTap = 0; return; }   // double tap: fit
@@ -426,10 +497,16 @@ export function openMaxView(items: Item[], index: number, onClose?: (it: Item, m
     ['touchstart', 'touchend', 'mousedown', 'mouseup'].forEach((ev) => b.addEventListener(ev, (e) => { e.stopPropagation(); if (ev.startsWith('touch')) lastTouch = Date.now(); }, { passive: true }));
     b.addEventListener('click', (e) => { e.stopPropagation(); go(d); });
   });
+  ([[upBtn, -1], [downBtn, 1]] as [HTMLButtonElement, 1 | -1][]).forEach(([b, d]) => {
+    ['touchstart', 'touchend', 'mousedown', 'mouseup'].forEach((ev) => b.addEventListener(ev, (e) => { e.stopPropagation(); if (ev.startsWith('touch')) lastTouch = Date.now(); }, { passive: true }));
+    b.addEventListener('click', (e) => { e.stopPropagation(); goShot(d); });
+  });
   const onKey = (e: KeyboardEvent) => {
     if (e.key === 'Escape') closeMaxView();
     if (e.key === 'ArrowRight') go(1);
     if (e.key === 'ArrowLeft') go(-1);
+    if (e.key === 'ArrowDown') { e.preventDefault(); goShot(1); }
+    if (e.key === 'ArrowUp') { e.preventDefault(); goShot(-1); }
   };
   document.addEventListener('keydown', onKey);
   (root as HTMLElement & { __fhKey?: (e: KeyboardEvent) => void }).__fhKey = onKey;

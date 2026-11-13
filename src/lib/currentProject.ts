@@ -85,8 +85,16 @@ export function newLocalProjectIdentity(): void {
 }
 const listeners = new Set<() => void>();
 
+/** While the screen is held (see render.ts) nobody is told that "the open
+ *  project" changed — it has not, for the person; they are told once after. */
+let _listenersHeld = false;
+export function holdProjectListeners(on: boolean): void {
+  _listenersHeld = on;
+  if (!on) for (const l of listeners) { try { l(); } catch (e) { console.error('[currentProject] listener', e); } }
+}
+
 function emit(): void {
-  for (const l of listeners) {
+  if (!_listenersHeld) for (const l of listeners) {
     try { l(); } catch (e) { console.error('[currentProject] listener', e); }
   }
 }

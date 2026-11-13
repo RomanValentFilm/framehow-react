@@ -765,6 +765,10 @@ async function getPendingRaw(key: string): Promise<PendingRecord | null> {
   }
 }
 
+/** A copy as it lies on the device (its pictures named, not inside) — for
+ *  looking at what it holds without lifting its pictures into memory. */
+export function getPendingLight(key: string): Promise<PendingRecord | null> { return getPendingRaw(key); }
+
 /** A copy, whole: its pictures put back in. One whole project — read it only
  *  when it is really going to be used. */
 export async function getPending(key: string): Promise<PendingRecord | null> {

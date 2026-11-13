@@ -56,6 +56,10 @@ function windowedTabIndices(tabs: any[], _activeIdx: number, _isPortrait: boolea
 const _scrollBackTimers: number[] = [];
 
 export function renderAll(): void {
+  // THE SCREEN IS HELD AS IT IS (13 Nov): for a second another project stands
+  // in behind it while its unsent work goes up (accountFlow, uploadUnsentCopies).
+  // Nothing is drawn meanwhile — what is on the screen stays the open project.
+  if ((window as any).__fh_screenHeld) return;
   // SAY HOW LONG A REDRAW TAKES (#517). Roman: "a bit slower on the strip
   // buttons and NEEDS". A number instead of a feeling: one line whenever a
   // whole redraw takes longer than 100 ms, with who asked for it.

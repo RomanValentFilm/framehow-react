@@ -1027,7 +1027,7 @@ test('numbering: offline with a project open, then a new project made offline to
     // and never opens JOB A here — and the iPad, sitting on JOB A all along,
     // must still receive the work made on it with no signal.
     say('desktop: JOB B stays on screen — JOB A must go up on its own');
-    await desktop.waitForLog('unsent copy of "JOB A"', 60_000);
+    await desktop.waitForLog('unsent work of "JOB A" goes up now, unseen', 60_000);
     await desktop.waitForLog('is in the cloud', 90_000);
     expect((await desktop.read()).projectId, 'the desktop must be back on JOB B').toBe(jobB);
     expect((await desktop.read()).orders.map((o) => o.name),

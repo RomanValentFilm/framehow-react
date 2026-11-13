@@ -152,10 +152,8 @@ test('the save of the project being left finishes first, and never claims the on
   await desktop.settle();
 
   say('a new project, NOT saved, with a picture — and every upload is slow');
-  await desktop.page.route('**/upload', async (route) => {
-    await new Promise((r) => setTimeout(r, 9_000));
-    await route.continue();
-  });
+  // (slowed inside the app: a proxy in front of WebKit loses the picture — 13 Nov)
+  await desktop.page.evaluate(() => { (window as never as { __fh_slowUploadMs: number }).__fh_slowUploadMs = 9_000; });
   await desktop.page.evaluate(async () => {
     const t = (window as never as { __fh_test: { newUnsavedProject(n: number): Promise<void>; waveSaveReminderAway(): void } }).__fh_test;
     await t.newUnsavedProject(2);
@@ -169,7 +167,7 @@ test('the save of the project being left finishes first, and never claims the on
 
   say('BIG is opened while that save is still going up');
   await openOver(desktop, bigId!);
-  await desktop.page.unroute('**/upload');
+  await desktop.page.evaluate(() => { (window as never as { __fh_slowUploadMs: number }).__fh_slowUploadMs = 0; });
   await desktop.settle();
   await desktop.page.waitForTimeout(12_000);      // the old save has long finished by now
   await desktop.settle();
@@ -213,11 +211,8 @@ test('a save that outlasts the wait: the project left is filed, its save stops, 
   await desktop.settle();
 
   say('a new project, NOT saved, with a picture — and its upload takes thirty-five seconds');
-  let slow = true;
-  await desktop.page.route('**/upload', async (route) => {
-    if (slow) await new Promise((r) => setTimeout(r, 35_000));
-    await route.continue();
-  });
+  // (slowed inside the app: a proxy in front of WebKit loses the picture — 13 Nov)
+  await desktop.page.evaluate(() => { (window as never as { __fh_slowUploadMs: number }).__fh_slowUploadMs = 35_000; });
   await desktop.page.evaluate(async () => {
     await (window as never as { __fh_test: { newUnsavedProject(n: number): Promise<void> } }).__fh_test.newUnsavedProject(2);
   });
@@ -228,7 +223,7 @@ test('a save that outlasts the wait: the project left is filed, its save stops, 
 
   say('BIG is opened over it; the opening waits its twenty seconds, files the project, and goes on');
   await openOver(desktop, bigId!);
-  slow = false;                                  // (uploads from here on are ordinary)
+  await desktop.page.evaluate(() => { (window as never as { __fh_slowUploadMs: number }).__fh_slowUploadMs = 0; });   // (uploads from here on are ordinary)
   let log = (await desktop.log()).join('\n');
   expect(log, 'the project being left was filed on the device before BIG came on').toContain('is filed on this device first');
 

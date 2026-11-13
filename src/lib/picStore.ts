@@ -80,9 +80,84 @@ export async function closePicsDbAsIosDoes(): Promise<void> { (await db()).close
 export async function picNames(): Promise<string[]> {
   return step<string[]>('readonly', (s, done) => {
     const r = s.getAllKeys();
-    r.onsuccess = () => done((r.result ?? []).map(String));
+    r.onsuccess = () => done((r.result ?? []).map(String).filter((k) => k !== SENT_AHEAD_KEY));
   });
 }
+
+/** One picture, by its name — undefined when it is not on the device. */
+export async function getPicture(name: string): Promise<string | undefined> {
+  return step<string | undefined>('readonly', (s, done) => {
+    const r = s.get(name);
+    r.onsuccess = () => done(typeof r.result === 'string' ? r.result : undefined);
+  });
+}
+
+// PICTURES SENT AHEAD OF THEIR PROJECT (13 Nov, Roman: unsent work goes up "in
+// small portions when there is time for it", unseen). The pictures of a project
+// that was left go to the server one by one, in the background, before the
+// project's shots and versions do. What the server answered for each — the
+// file's name there — is noted here under the picture's own name, so the push
+// that follows takes it from this note instead of sending the picture again.
+//
+// The server removes a picture file no project names after 24 hours. So a note
+// is good for TWENTY hours; after that the picture is simply sent again.
+const SENT_AHEAD_KEY = '__sentAhead';
+const SENT_AHEAD_GOOD_MS = 20 * 60 * 60 * 1000;
+export interface SentAhead { r2_key: string; size_bytes: number; content_type: string; at: number }
+type SentAheadNotes = Record<string, SentAhead>;
+
+async function readSentAhead(): Promise<SentAheadNotes> {
+  return step<SentAheadNotes>('readonly', (s, done) => {
+    const r = s.get(SENT_AHEAD_KEY);
+    r.onsuccess = () => done(r.result && typeof r.result === 'object' ? { ...(r.result as SentAheadNotes) } : {});
+  });
+}
+
+/** The server's file for this picture, if it was sent ahead and the note is still good. */
+export async function sentAheadFor(name: string): Promise<SentAhead | null> {
+  try {
+    const n = (await readSentAhead())[name];
+    return n && Date.now() - n.at < SENT_AHEAD_GOOD_MS ? n : null;
+  } catch { return null; }
+}
+
+/** Which of these names are sent ahead with a good note. */
+export async function namesSentAhead(names: string[]): Promise<Set<string>> {
+  try {
+    const notes = await readSentAhead();
+    return new Set(names.filter((n) => notes[n] && Date.now() - notes[n].at < SENT_AHEAD_GOOD_MS));
+  } catch { return new Set(); }
+}
+
+/** Note a picture as sent (and drop notes that are no longer good), in one step. */
+export async function noteSentAhead(name: string, sent: Omit<SentAhead, 'at'>): Promise<void> {
+  await step<void>('readwrite', (s) => {
+    const r = s.get(SENT_AHEAD_KEY);
+    r.onsuccess = () => {
+      const notes: SentAheadNotes = r.result && typeof r.result === 'object' ? { ...(r.result as SentAheadNotes) } : {};
+      for (const k of Object.keys(notes)) if (Date.now() - notes[k].at >= SENT_AHEAD_GOOD_MS) delete notes[k];
+      notes[name] = { ...sent, at: Date.now() };
+      s.put(notes, SENT_AHEAD_KEY);
+    };
+  });
+}
+
+/** The project that names these pictures is on the server: their notes have done their work. */
+export async function forgetSentAhead(names: string[]): Promise<void> {
+  if (!names.length) return;
+  await step<void>('readwrite', (s) => {
+    const r = s.get(SENT_AHEAD_KEY);
+    r.onsuccess = () => {
+      if (!r.result || typeof r.result !== 'object') return;
+      const notes = { ...(r.result as SentAheadNotes) };
+      for (const n of names) delete notes[n];
+      s.put(notes, SENT_AHEAD_KEY);
+    };
+  }).catch(() => undefined);
+}
+
+/** The name a picture is filed under (made from its content; remembered). */
+export function nameOfPicture(src: string): Promise<string> { return nameOf(src); }
 
 // The name of a picture is made from its content once and remembered while the
 // picture is in use (the text of a picture is its own key here — nothing is copied).

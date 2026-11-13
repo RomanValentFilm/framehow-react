@@ -52,6 +52,7 @@ import {
   setPullIncomplete,
   setProjectSwitchInFlight, isProjectSwitchInFlight, projectSwitchCount,
   openProjectToken, isAnotherProjectNow, AnotherProjectNow, retryIsCreating, fileOpenProjectAsUnsent, newLocalProjectIdentity,
+  isStandingIn, holdProjectListeners,
   flushSyncNow,
   cancelPendingPush,
   beginSystemAction,
@@ -79,6 +80,8 @@ import { makeGoneRegister, whatWentWrong } from './projectGone';
 import { busyNow, busyToShow, whenQuiet } from './quietMoment';
 import { trace } from './syncTrace';
 import { isProvisionalName, provisionalName } from './provisionalName';
+import { PIC_REF, getPicture, nameOfPicture, sentAheadFor, namesSentAhead, noteSentAhead, forgetSentAhead } from './picStore';
+import { isStorageFull } from './storageMeter';
 import { keepBoxesAboveTheKeyboard } from './keyboardRoom';
 import { frameChangedAt, versionChangedAt, frameChangedAtForSending, versionChangedAtForSending, importChangeStamps, stampChangedContent, seedContentStamps, pictureFp, strokesFp, untouchedStrip } from './changeStamps';
 import { shouldSendOnlyChanges } from './pushMode';
@@ -86,7 +89,7 @@ import { tagText, readTagText } from './ids';
 import { serverHasSomethingNew, whoseFrameWins, type DeviceMemory } from './sessionRules';
 import { mergeDelta, lastMergeRefusal, answerIsSafeToApply, untouchedByDelta, deltaAlreadyHeld, type MergeableTree, type SentRows } from './deltaMerge';
 import { settingsForPush, adoptSettingsFromServer, applySettingsToStore, importSettingStamps, stampChangedSettings, seedSettings, forgetAnotherProjectsSettings, settingsNeedPush, reconcileRestoredSettings, captureMySettings, keepMyUnsentSettings, unsentSettingNames, settingsMemorySummary, seedSettingsAgeUnknown, type SettingItem } from './projectSettings';
-import { clearDeviceOnLogout, wipeDeviceOnAccountDeletion, applySnapshotToStore, loadSnapshot, savedProjectId, savedProjectLocalKey, snapshotFromStore, givePendingItsProject, listPending, isArchived, getPending, markPendingUploaded, markPendingParked, saveProjectListCache, loadProjectListCache, deletePending, deleteEveryCopyOf, recoverPending, isDeletedCopy, requestDurableStorage, clearPending } from './persistence';
+import { clearDeviceOnLogout, wipeDeviceOnAccountDeletion, applySnapshotToStore, loadSnapshot, savedProjectId, savedProjectLocalKey, snapshotFromStore, givePendingItsProject, listPending, getPendingLight, isArchived, getPending, markPendingUploaded, markPendingParked, saveProjectListCache, loadProjectListCache, deletePending, deleteEveryCopyOf, recoverPending, isDeletedCopy, requestDurableStorage, clearPending } from './persistence';
 import type { PendingRecord, PendingMeta } from './persistence';
 import { showThreeWayConflict, showConfirm, showConfirmDefaultNo, showToast, showLabelEdit } from './modals';
 import { saveOpenTextEdits, saveOpenTableEdits, versionStars, inStarOrder } from './helpers';
@@ -1976,11 +1979,223 @@ function hideUnsentNotice(): void {
  * put the open project back. At start nothing is open yet, so the startup line
  * says what is happening and the store is simply emptied afterwards.
  */
+// ---------------------------------------------------------------------------
+// UNSENT WORK OF ANOTHER PROJECT GOES UP UNSEEN (13 Nov — G22).
+//
+// Roman, 12 Nov, of the black full-screen "Uploading unsent work: …": "the user
+// does not need to know there is something happening in the background … what
+// if that takes long … it has to happen in small portions when there is time
+// for it". Agreed 13 Nov:
+//
+//   1. THE PICTURES FIRST, in the background, one by one, whenever there is a
+//      line. Nothing on the screen, nothing held. (The slow part.)
+//   2. THE REST — shots, versions, text, drawings, order — in one short step at
+//      a QUIET MOMENT: nothing open, no camera, no typing or drawing, no
+//      project loading, no save going up, the app in front, the screen not
+//      touched for a few seconds. For that step the copy stands in for the
+//      open project behind a screen that is HELD AS IT IS: nothing is drawn, no
+//      curtain, no words. THREE SECONDS at most.
+//   3. A TOUCH STOPS IT: at the first instant of a touch the open project is
+//      put back — a few ms — and the touch goes through as any touch. Nothing
+//      on the screen has moved, so nothing is lost; the step is tried again at
+//      the next quiet moment.
+//
+// The phone keeps every picture until the whole project is confirmed. A
+// picture sent more than twenty hours before its project is sent again (the
+// server removes files no project names after 24 h) — see picStore.
+// ---------------------------------------------------------------------------
+
+let _lastTouchAt = Date.now();
+const TOUCHES = ['pointerdown', 'touchstart', 'keydown', 'wheel'] as const;
+if (typeof window !== 'undefined') {
+  for (const ev of TOUCHES) window.addEventListener(ev, () => { _lastTouchAt = Date.now(); }, { capture: true, passive: true });
+}
+/** Nothing open, nothing moving, and the screen left alone for four seconds. */
+function quietForUnseenWork(): boolean {
+  return whyNotQuietForUnseenWork() === null;
+}
+function whyNotQuietForUnseenWork(): string | null {
+  if (document.visibilityState !== 'visible') return 'the app is not in front';
+  if (Date.now() - _lastTouchAt <= 4_000) return 'the screen was touched a moment ago';
+  const busy = busyToShow();
+  if (busy) return busy;
+  if (pullInFlight || isPushInFlight() || isLoadInFlight()) return 'a save or a fetch is in the air';
+  return null;
+}
+/** Said now and then, so a wait that does not end can be read in the log. */
+let _unseenWaitSaidAt = 0;
+function sayUnseenWorkWaits(n: number, why: string): void {
+  if (Date.now() - _unseenWaitSaidAt < 30_000) return;
+  _unseenWaitSaidAt = Date.now();
+  trace(`${n} unsent copy(ies) of other projects waiting — ${why}`);
+}
+
+/** Pictures the server has REFUSED when sent ahead (too large, not a picture).
+ *  They are not waited for: the copy goes up without them, and the save itself
+ *  says so to the person, as it always has (13 Nov — one refused picture held
+ *  its whole project on the device for ever, run 723). */
+const _refusedAhead = new Set<string>();
+
+/** The pictures a copy holds that the server has not got: name → the picture
+ *  itself when the copy carries it (a small or an old-style one), else null
+ *  (it lies in the device's picture store under that name). */
+async function picturesACopyMustSend(snap: unknown): Promise<Map<string, string | null>> {
+  const out = new Map<string, string | null>();
+  const take = async (pic: unknown, r2Key: unknown): Promise<void> => {
+    if (typeof pic !== 'string' || !pic || r2Key) return;
+    if (pic.startsWith(PIC_REF)) out.set(pic.slice(PIC_REF.length), null);
+    else if (pic.startsWith('data:')) out.set(await nameOfPicture(pic), pic);
+  };
+  const sn = snap as { frames?: Array<{ src?: unknown; r2Key?: unknown }>; stripVersions?: Record<string, Record<string, Array<{ bgImage?: unknown; r2Key?: unknown }>>> };
+  for (const f of sn.frames ?? []) await take(f.src, f.r2Key);
+  for (const strip of Object.values(sn.stripVersions ?? {})) {
+    for (const vers of Object.values(strip ?? {})) for (const v of vers ?? []) await take(v.bgImage, v.r2Key);
+  }
+  return out;
+}
+
+/** Are all of this copy's pictures up already? */
+async function copyPicturesAreUp(rec: PendingMeta): Promise<boolean> {
+  const light = await getPendingLight(rec.key);
+  if (!light?.snapshot) return false;
+  const need = await picturesACopyMustSend(light.snapshot);
+  if (need.size === 0) return true;
+  const waitedFor = [...need.keys()].filter((n) => !_refusedAhead.has(n));
+  if (waitedFor.length === 0) return true;
+  return (await namesSentAhead(waitedFor)).size === waitedFor.length;
+}
+
+let _sendingAhead = false;
+/** Step 1: the pictures of the copies, one by one, in the background. */
+async function sendCopyPicturesAhead(copies: PendingMeta[]): Promise<void> {
+  if (_sendingAhead) return;
+  _sendingAhead = true;
+  try {
+    for (const rec of copies) {
+      const light = await getPendingLight(rec.key);
+      if (!light?.snapshot) continue;
+      const need = await picturesACopyMustSend(light.snapshot);
+      const up = await namesSentAhead([...need.keys()]);
+      let sent = 0;
+      for (const [name, carried] of need) {
+        if (up.has(name) || _refusedAhead.has(name)) continue;
+        const token = getToken();
+        if (!token || !navigator.onLine || isStorageFull()) return;
+        const src = carried ?? await getPicture(name);
+        if (!src) { trace(`  a picture of "${rec.name ?? rec.key.slice(0, 8)}" is not on this device (${name.slice(0, 10)}) — it cannot be sent ahead`); continue; }
+        try {
+          const r = await uploadImageToR2(src, token);
+          await noteSentAhead(name, r);
+          sent++;
+        } catch (e) {
+          const st = (e as { status?: number })?.status ?? 0;
+          const full = st === 413 && (e as { code?: string })?.code === 'storage_full';
+          if (st >= 400 && st < 500 && st !== 401 && st !== 403 && st !== 408 && st !== 429 && !full) {
+            _refusedAhead.add(name);
+            trace(`  a picture of "${rec.name ?? rec.key.slice(0, 8)}" was refused by the server (${st}) — the project goes up without waiting for it`);
+            continue;
+          }
+          trace(`  sending pictures ahead stopped (${asMessage(e, 'no answer')}) — tried again later`);
+          return;
+        }
+        await new Promise((r) => setTimeout(r, 60));     // one at a time, the app comes first
+      }
+      if (sent > 0) trace(`  ${sent} picture(s) of "${rec.name ?? rec.key.slice(0, 8)}" sent ahead, in the background`);
+    }
+  } catch { /* another time */ } finally {
+    _sendingAhead = false;
+  }
+}
+
+/** Steps 2 and 3: the copy stands in for a moment behind a held screen. */
+async function sendOneCopyUnseen(rec: PendingMeta): Promise<void> {
+  const pid = rec.projectId!;
+  const who = rec.name ?? pid.slice(0, 8);
+  const whole = await getPending(rec.key);            // read before anything is held — this can take a moment
+  if (!whole?.snapshot?.frames?.length) { trace(`  unsent copy of "${who}" is not readable on this device — left as it is`); return; }
+  if (!quietForUnseenWork()) return;                   // somebody came back meanwhile
+
+  _uploadingCopies = true;
+  const held = holdOpenProject();
+  let back = false;
+  const giveBack = (said: string): void => {
+    if (back) return;
+    back = true;
+    for (const ev of TOUCHES) window.removeEventListener(ev, onTouch, true);
+    try { putOpenProjectBack(held); }
+    catch (e) { trace(`could not put the open project back — ${asMessage(e, 'unknown fault')}`); console.error('[unsent copies] putting the open project back', e); }
+    standInForAnotherProject(false);
+    (window as any).__fh_screenHeld = false;
+    holdProjectListeners(false);
+    trace(said);
+  };
+  const onTouch = (): void => giveBack(`  a touch: the open project is back at once — "${who}" goes up at the next quiet moment`);
+  for (const ev of TOUCHES) window.addEventListener(ev, onTouch, { capture: true, passive: true });
+  (window as any).__fh_screenHeld = true;
+  holdProjectListeners(true);
+  standInForAnotherProject(true);
+  trace(`unsent work of "${who}" goes up now, unseen — the screen is held as it is; a touch stops it`);
+
+  const began = Date.now();
+  const work = (async (): Promise<'sent' | 'stopped'> => {
+    putCopyInPlace(whole, pid, rec.name);
+    // Take the server's newer bits first (newer wins per item), then send.
+    await tryPullFromCloud();
+    if (back) return 'stopped';
+    markSomethingToSend();
+    setCloudSyncInFlight(true);
+    try { await syncCurrentToServer(pid); } finally { setCloudSyncInFlight(false); }
+    if (back) return 'stopped';
+    await markPendingUploaded(pid);
+    await markPendingUploaded(rec.key);
+    return 'sent';
+  })();
+  const outcome = await Promise.race([
+    work.then((r) => ({ r }), (e: unknown) => ({ e })),
+    new Promise<{ late: true }>((res) => setTimeout(() => res({ late: true }), 3_000)),
+  ]);
+  if ('late' in outcome) {
+    giveBack(`  three seconds are up: the open project is back — "${who}" goes up at the next quiet moment`);
+  } else if ('e' in outcome) {
+    const e = outcome.e;
+    if (!(e instanceof AnotherProjectNow)) {
+      const err = e as { status?: number; code?: string };
+      if (err?.status === 404 || whatWentWrong(err?.status, err?.code) === 'gone') {
+        await markPendingParked(rec.key).catch(() => { /* the next look parks it */ });
+        trace(`  unsent copy of "${who}" — the server does not have this project any more (${asMessage(e, 'not found')}); PARKED on this device, not tried again`);
+      } else {
+        trace(`  unsent copy of "${who}" could not be sent — kept on the device (${asMessage(e, 'no answer')})`);
+      }
+    }
+    giveBack(`  back to "${held.cp.name ?? 'the open project'}" — as it was`);
+  } else {
+    giveBack(outcome.r === 'sent'
+      ? `  unsent work of "${who}" is in the cloud (${Date.now() - began} ms, unseen) — back to "${held.cp.name ?? 'the open project'}", as it was`
+      : `  back to "${held.cp.name ?? 'the open project'}" — as it was`);
+  }
+  // What was left in the air finishes by itself and touches nothing (it asks
+  // which project is open before it reads or writes). Nothing else of this
+  // kind starts before it has.
+  // …AND WHAT THE PERSON DID MEANWHILE GOES UP THEN (run 725): a change made
+  // in the open project right after the touch found "a push is already
+  // running" — the one left in the air — and nothing asked again when it ended.
+  void work.catch(() => undefined).then(() => {
+    _uploadingCopies = false;
+    if (isDirty() && getCurrentProject().projectId) { trace('  the step left in the air has ended — the open project\'s own change goes up now'); void flushSyncNow(); }
+  });
+}
+
 async function uploadUnsentCopies(reason: 'start' | 'reconnect'): Promise<void> {
-  if (_uploadingCopies) return;
+  // (one is going up right now: looked at again when it has — not forgotten)
+  if (_uploadingCopies) { if (reason === 'reconnect') lookForUnsentCopiesSoon(3_500); return; }
   if (!isLoggedIn() || !navigator.onLine) return;
   if (reason === 'reconnect') {
-    if (Date.now() - _lastCopiesCheck < 3_000) return;
+    // NOT TWICE WITHIN THREE SECONDS — BUT NEVER DROPPED (13 Nov, run 724): a
+    // look that came too soon was simply let go, and with it the only timer
+    // that would have looked again; unsent work then waited until the next
+    // save. It is put off to the end of the three seconds instead.
+    const since = Date.now() - _lastCopiesCheck;
+    if (since < 3_000) { lookForUnsentCopiesSoon(3_100 - since); return; }
     _lastCopiesCheck = Date.now();
     // A push or fetch in the air is WAITED FOR, not stepped back from (#525).
     // Roman's FR 1 took 55 seconds to go up because every push of the open
@@ -2081,9 +2296,24 @@ async function uploadUnsentCopies(reason: 'start' | 'reconnect'): Promise<void> 
     }
   }
 
+  // WITH THE APP IN USE: unseen (see above). The pictures go ahead in the
+  // background; the first copy whose pictures are all up takes its short step
+  // at a quiet moment; then the next.
+  if (reason === 'reconnect') {
+    void sendCopyPicturesAhead(copies);
+    let next: PendingMeta | null = null;
+    for (const c of copies) { if (await copyPicturesAreUp(c)) { next = c; break; } }
+    if (!next) { sayUnseenWorkWaits(copies.length, 'their pictures are still going up, in the background'); lookForUnsentCopiesSoon(5_000); return; }
+    const why = whyNotQuietForUnseenWork();
+    if (why) { sayUnseenWorkWaits(copies.length, `for a quiet moment (${why})`); lookForUnsentCopiesSoon(2_000); return; }
+    await sendOneCopyUnseen(next);
+    lookForUnsentCopiesSoon(2_500);
+    return;
+  }
+
   _uploadingCopies = true;
   const line = document.getElementById('startupLoadingLine');
-  const held = reason === 'reconnect' ? holdOpenProject() : null;
+  const held = null as HeldOpenProject | null;          // (at start nothing is open yet)
   standInForAnotherProject(true);
   try {
     for (const rec of copies) {
@@ -2693,6 +2923,9 @@ async function uploadImageToR2(
   token: string,
 ): Promise<{ r2_key: string; size_bytes: number; content_type: string }> {
   const { blob, contentType } = await localImageToBlob(src);
+  // (the simulator only: a slow line, without a proxy that loses the picture)
+  const slowMs = Number((window as never as { __fh_slowUploadMs?: number }).__fh_slowUploadMs ?? 0);
+  if (slowMs > 0 && (window as never as { __fh_test?: unknown }).__fh_test) await new Promise((r) => setTimeout(r, slowMs));
   const res = await fetch(`${API_BASE_URL}/upload`, {
     method: 'POST',
     headers: {
@@ -3427,6 +3660,7 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
 
   // Map versionId → r2_key for writing back to the store after push
   const uploadedR2Keys = new Map<string, { r2Key: string; task: typeof imageUploads[0] }>();
+  const usedAhead: string[] = [];          // pictures taken from, or added to, the sent-ahead notes in this push
 
   if (imageUploads.length > 0) {
     // A REFUSED PICTURE IS SAID, NOT SWALLOWED (12 Oct, Roman). Until today a
@@ -3458,7 +3692,19 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
       imageUploads.map(async (task) => {
         if (full) return null;
         try {
+          // SENT AHEAD ALREADY? (13 Nov) The pictures of a project that was left
+          // go up one by one in the background before its shots do; this push
+          // — the copy standing in for a second — takes the server's file from
+          // the note instead of sending the picture again. And a picture it
+          // does have to send is noted, so a push that is stopped half way
+          // (a touch, the three seconds) has not sent it in vain.
+          const aheadName = isStandingIn() && task.src.startsWith('data:') ? await nameOfPicture(task.src).catch(() => null) : null;
+          if (aheadName) {
+            const ahead = await sentAheadFor(aheadName);
+            if (ahead) { usedAhead.push(aheadName); return { task, versionId: task.versionId, r2_key: ahead.r2_key, size_bytes: ahead.size_bytes, content_type: ahead.content_type }; }
+          }
           const r = await uploadImageToR2(task.src, token);
+          if (aheadName) { await noteSentAhead(aheadName, r).catch(() => undefined); usedAhead.push(aheadName); }
           return { task, versionId: task.versionId, ...r };
         } catch (e) {
           const err = e as ApiError & { storage?: { used: number; limit: number; pending?: number } };
@@ -3609,6 +3855,7 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
     getToken(),
   );
   stopIfAnotherProject('when the server answered');
+  if (usedAhead.length) void forgetSentAhead(usedAhead);   // the server names them now: the notes have done their work
   // Update lastKnownUpdatedAt so that the pull-on-focus mechanism doesn't
   // see our own push as a "newer remote version" and try to apply it.
   lastKnownUpdatedAt = now;

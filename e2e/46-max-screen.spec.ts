@@ -141,3 +141,77 @@ test('max screen: a main card showing a version opens on that version, not on ma
   expect(await card.locator('.nav-arrow-left').count(), 'no ‹ arrow: the card shows main again').toBe(0);
   await d.close();
 });
+
+// STORY GRID, STEP 1 (Roman, 12 November): "when we are in the max screen, we
+// can swipe left, right … if we would add arrows up and down, we could easily
+// swap to the next main shot below. … You land on the shot, next shot. Not any
+// version. And in a group, you land in a next shot in a group."
+//
+// THE RULES IT HOLDS TO
+//   · down = the next shot, up = the one before; the viewer stays open
+//   · you land on the shot's own (main) picture, even if you left the last one on a version
+//   · a shot with nothing to show is passed over
+//   · the up arrow is not there on the first shot, the down arrow not on the last
+//   · left and right still step through the versions of the shot you are on
+test('max screen: up and down go to the shot before and after, landing on the shot itself', async ({ browser }) => {
+  const { token } = await freshAccount();
+  const d = await Device.open(browser, 'desktop', token);
+  await d.newProject('UP AND DOWN', 4);
+  await d.settle();
+  if (await d.page.locator('#projectListModal').isVisible()) {
+    await d.page.locator('#projectListClose').click();
+    await d.page.waitForTimeout(300);
+  }
+  await d.showStrip('ver');
+
+  say('pictures on shots 1, 2 and 4 — shot 3 stays empty; shot 1 also gets a drawn version');
+  await d.putPicture(0, RED_SQUARE);
+  await d.putPicture(1, RED_SQUARE);
+  await d.putPicture(3, RED_SQUARE);
+  expect(await d.draw(0, 'ver', 0)).toBe(1);
+  await d.page.waitForTimeout(600);
+  const labels = (await d.read()).frames.map((f) => f.label);
+  say(`   the shots: ${labels.join(', ')}`);
+
+  say('open the viewer on shot 1 (its main card)');
+  await d.page.locator('#mainScroll .frame-card[data-mfid] .max-btn:visible').first().click();
+  const view = d.page.locator('#maxView');
+  await expect(view, 'the viewer is up').toBeVisible();
+  const label = d.page.locator('#maxView .max-label');
+  await expect(label, 'it shows shot 1').toHaveText(labels[0]);
+  await expect(d.page.locator('#maxView .max-up'), 'no way up from the first shot').toBeHidden();
+  await expect(d.page.locator('#maxView .max-down'), 'a way down').toBeVisible();
+
+  say('the right and left KEYS step through the versions of shot 1, as ever');
+  await d.page.keyboard.press('ArrowRight');
+  await expect(label, 'the right key: a version of shot 1').toHaveText(/^v\d+$/);
+  await d.page.keyboard.press('ArrowLeft');
+  await expect(label, 'the left key: back on shot 1 itself').toHaveText(labels[0]);
+
+  say('right: a version of shot 1. Then down — shot 2, its own picture, not a version');
+  await d.page.locator('#maxView .max-next').click();
+  await expect(label, 'a version of shot 1').toHaveText(/^v\d+$/);
+  await d.page.keyboard.press('ArrowDown');
+  await expect(label, 'DOWN LANDS ON SHOT 2 ITSELF').toHaveText(labels[1]);
+  await expect(view, 'the viewer stayed open').toBeVisible();
+  await expect(d.page.locator('#maxView .max-up'), 'a way up now').toBeVisible();
+
+  say('down again, by its arrow: shot 3 has nothing to show and is passed over');
+  // (the simulator keeps the log open along the bottom edge, over this arrow —
+  // a person has no log there; the press goes to the button itself)
+  await d.page.locator('#maxView .max-down').dispatchEvent('click');
+  await expect(label, 'shot 4').toHaveText(labels[3]);
+  await expect(d.page.locator('#maxView .max-down'), 'no way down from the last shot').toBeHidden();
+
+  say('up: back on shot 2');
+  await d.page.keyboard.press('ArrowUp');
+  await expect(label, 'shot 2 again').toHaveText(labels[1]);
+
+  say('close: the app is as it was, nothing changed in the project');
+  await d.page.locator('#maxView .max-close').click();
+  await expect(view).toHaveCount(0);
+  expect((await d.read()).frames.map((f) => f.label), 'the shots are the same').toEqual(labels);
+  const log = (await d.log()).join('\n');
+  expect(log, 'the log says where it went').toMatch(/max screen: down to shot 2/);
+  await d.close();
+});

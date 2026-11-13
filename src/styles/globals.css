@@ -1771,6 +1771,11 @@ body.portrait-mode .cam-mode-menu{left:16px;top:calc(max(16px,var(--sat)) + 80px
 /* THE SIDE ARROWS (26 Oct): in the middle of each side, like the cards' arrows. */
 #maxView .max-nav{position:fixed;top:50%;transform:translateY(-50%);width:44px;height:64px;border:none;background:rgba(0,0,0,.45);color:#fff;font-size:34px;line-height:1;border-radius:6px;cursor:pointer;z-index:2;display:flex;align-items:center;justify-content:center;opacity:.8;padding:0 0 4px;-webkit-tap-highlight-color:transparent;}
 #maxView .max-prev{left:max(8px,env(safe-area-inset-left));}
+/* UP AND DOWN, to the shot before and after (story grid step 1, 13 Nov): the
+   same arrows turned a quarter, in the middle of the top and bottom edge. */
+#maxView .max-up,#maxView .max-down{left:50%;transform:translateX(-50%) rotate(90deg);}
+#maxView .max-up{top:max(8px,var(--sat));margin-top:-10px;}
+#maxView .max-down{top:auto;bottom:max(8px,env(safe-area-inset-bottom));margin-bottom:-10px;}
 #maxView .max-next{right:max(8px,env(safe-area-inset-right));}
 @media(hover:hover){#maxView .max-nav:hover{opacity:1;}}
 /* UPRIGHT PROJECTS (26 Oct, Roman): the share buttons stand under the close

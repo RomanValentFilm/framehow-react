@@ -705,6 +705,8 @@ export function installTestDoor(): void {
       // the new one. The app never gets here on its own — only this door did.
       useStore.setState({ frames: [first, ...extra], nextId: first.id + extra.length + 1 } as never);
       setProjectName(name);
+      // Nobody works behind the project list: the person closed it.
+      document.getElementById('projectListModal')?.classList.add('hidden');
       (window as never as { __fh_renderAll?: () => void }).__fh_renderAll?.();
     },
 
@@ -1534,6 +1536,8 @@ export function installTestDoor(): void {
       useStore.setState({ frames: [first, ...extra], nextId: first.id + extra.length + 1 } as never);
       // The start's "new project" chooser has been answered — by this.
       (await import('./modals')).dismissNewProjectModal();
+      // …and nobody works behind the project list: the person closed it.
+      document.getElementById('projectListModal')?.classList.add('hidden');
       (window as never as { __fh_renderAll?: () => void }).__fh_renderAll?.();
     },
     fireSaveReminder() { showSaveToaster(); },
