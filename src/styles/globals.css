@@ -605,6 +605,7 @@
   .progress-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;color:#fff;text-align:center;line-height:1;}
   .toast{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) scale(.92);opacity:0;background:#fff;color:#111;font-size:12px;font-weight:500;padding:8px 18px;border-radius:20px;transition:transform .25s,opacity .25s;z-index:350000;pointer-events:none;white-space:nowrap;}
   .toast.show{transform:translate(-50%,-50%) scale(1);opacity:1;pointer-events:auto;}
+  .toast.show.toast-through{pointer-events:none;}   /* the storage notice only: it takes no tap, a tap goes through it (16 Nov) */
   .rotate-msg{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.85);z-index:400;opacity:0;pointer-events:none;transition:opacity .3s;}
   .rotate-msg.show{opacity:1;pointer-events:auto;}
   .rotate-msg span{color:#fff;font-family:var(--font);font-size:22px;font-weight:700;text-align:center;line-height:1.4;letter-spacing:0.5px;padding:24px;}

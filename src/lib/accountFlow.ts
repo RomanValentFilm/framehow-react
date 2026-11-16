@@ -6364,6 +6364,8 @@ export function signalActivity(): void {
 /** Guards against a second heartbeat opening the question again while the
  *  first one is still on screen. */
 
+/** The account's total as the last heartbeat gave it — the count is asked for when it moves. */
+let _totalAtLastBeat = -1;
 async function sendHeartbeat(): Promise<void> {
   const cp = getCurrentProject();
   if (!cp.projectId || !isLoggedIn()) return;
@@ -6405,7 +6407,22 @@ async function sendHeartbeat(): Promise<void> {
     // up to date still does not pull.
     // The storage figure rides with the heartbeat (9 Nov): a held push wakes
     // when the email is confirmed elsewhere or space is freed — see noteStorage.
-    if (beat?.storage) noteStorage(beat.storage);
+    if (beat?.storage) {
+      noteStorage(beat.storage, { fromHeartbeat: true });
+      // THE HEARTBEAT'S TOTAL IS A HINT, THE COUNT IS THE FIGURE (16 Nov, run 754).
+      // Its total is every file the account has in the store; the figure the
+      // app shows, and the limit is held against, is the count of the pictures
+      // on the cards plus their previews. They differ (Roman's account: 9 MB),
+      // so the total is never shown — but when it MOVES, something was added or
+      // taken away, and the count is asked for, once. That is how a device
+      // hears "over 80 %" after its previews went up, with no save to carry it.
+      if (beat.storage.used !== _totalAtLastBeat) {
+        _totalAtLastBeat = beat.storage.used;
+        void api.get<{ storage?: { used: number; limit: number; verified?: boolean; full_limit?: number } }>('/user/storage', getToken())
+          .then((r) => { if (r?.storage) noteStorage(r.storage); })
+          .catch(() => { /* the next change asks again */ });
+      }
+    }
     if (isProjectSwitchInFlight() || projectSwitchCount() !== switchesAtStart || getCurrentProject().projectId !== cp.projectId) return;
     const remoteAt = beat?.project_updated_at ?? null;
     if (remoteAt !== null) {

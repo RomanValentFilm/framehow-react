@@ -73,8 +73,24 @@ export function onStorageFreed(fn: () => void): void { _onFreed = fn; }
  * — once per step, and again only after usage dropped below 80 % and climbed
  * back. Below the limit, a "full" spell is over.
  */
-export function noteStorage(f: StorageFigure | undefined | null): void {
+export function noteStorage(f: StorageFigure | undefined | null, opts?: { fromHeartbeat?: boolean }): void {
   if (!f || typeof f.used !== 'number' || typeof f.limit !== 'number' || f.limit <= 0) return;
+  // THE HEARTBEAT'S FIGURE IS NOT THE ONE THAT IS SHOWN (16 Nov, Roman: "why is
+  // this storage full constantly showing? we show it too often"). His log: the
+  // pill every ten seconds — "80 % full — 401 MB", then the list's answer
+  // "392 MB · 78 %", then the heartbeat again "401 MB" … The server gives two
+  // figures: the list, a save and Delete now COUNT the pictures; the heartbeat
+  // reads a running total, which stood 9 MB higher. Each time one answer said
+  // 78 % and the next 80 %, the line at 80 was "crossed" again and the notice
+  // came again. The heartbeat is there for one thing — a device whose saves
+  // wait because the account is full hears that there is room again, or that
+  // the email was confirmed. That it still does. It no longer changes the
+  // figure on the screen and never raises a notice.
+  if (opts?.fromHeartbeat && _figure) {
+    if (_figure.verified === false && f.verified === true) { noteStorage({ ..._figure, limit: f.limit, verified: true, full_limit: f.full_limit }); return; }
+    if (_full && f.used + _pendingBytes < f.limit) { noteStorage({ used: f.used, limit: f.limit, verified: f.verified, full_limit: f.full_limit }); }
+    return;
+  }
   // CONFIRMED, SEEN FROM ANY DEVICE (9 Nov): the link was opened somewhere;
   // this device learns it from the next figure and says so once.
   if (_figure?.verified === false && f.verified === true) {
@@ -111,7 +127,7 @@ export function noteStorage(f: StorageFigure | undefined | null): void {
   // for it; but the figure comes with the project, so the pill stood in the
   // middle of the black screen, on the bar, in the very second of the wait. It
   // is said when the project is in.
-  const say = (): void => { void import('./modals').then(({ showToast }) => showToast(text)); };
+  const say = (): void => { void import('./modals').then(({ showStorageNotice }) => showStorageNotice(text)); };
   // …AND NOT OVER A BOX (Roman, 16 Nov, the pill across the project list: "it
   // has to come later. You cannot have two modals over each other"). While a
   // box is open — the project list, a notice, a question — it waits; and the

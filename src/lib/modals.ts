@@ -101,11 +101,51 @@ export function dismissNewProjectModal(): void {
 
 export function showToast(msg: string): void {
   const t = document.getElementById('toast')!;
+  t.classList.remove('toast-through');
   t.textContent = msg;
   t.classList.add('show');
   const dismiss = () => t.classList.remove('show');
   t.addEventListener('click', dismiss, { once: true });
   setTimeout(dismiss, 2800);
+}
+
+// THE STORAGE NOTICE NEVER COSTS A TAP (16 Nov, Roman: "this little pill of
+// storage should not harm other clicks" — and: "only the storage pill, not any
+// other"). Every other notice answers something the person just did and stays
+// exactly as it was (showToast, above). The storage notice comes BY ITSELF, at
+// any moment — his log, 14:14:00: a finger on Menu, the notice in the same
+// second, and no tap. Two ways it harmed, both closed, for this notice only:
+//   · the iPad makes its "click" a moment after the finger lifts, and drops it
+//     when something new appears on the screen in between. So this notice does
+//     not appear while a finger is on the screen, nor in the half second after
+//     it lifted — the tap is done first.
+//   · while it shows it takes no tap: a tap goes through it to what is
+//     underneath. It leaves by itself.
+let _fingerDown = false;
+let _fingerUpAt = 0;
+let _fingerWatched = false;
+/** From the start, so the first notice already knows where the finger is. */
+export function watchTheFingerForNotices(): void {
+  if (_fingerWatched || typeof document === 'undefined') return;
+  _fingerWatched = true;
+  const down = (): void => { _fingerDown = true; };
+  const up = (): void => { _fingerDown = false; _fingerUpAt = performance.now(); };
+  document.addEventListener('touchstart', down, { passive: true, capture: true });
+  document.addEventListener('touchend', up, { passive: true, capture: true });
+  document.addEventListener('touchcancel', up, { passive: true, capture: true });
+}
+export function showStorageNotice(msg: string): void {
+  watchTheFingerForNotices();
+  let waited = 0;
+  const show = (): void => {
+    if ((_fingerDown || performance.now() - _fingerUpAt < 500) && waited < 10_000) { waited += 150; window.setTimeout(show, 150); return; }
+    const t = document.getElementById('toast')!;
+    if (t.classList.contains('show')) { waited += 150; if (waited < 10_000) { window.setTimeout(show, 150); return; } }   // another notice is up: after it
+    t.textContent = msg;
+    t.classList.add('toast-through', 'show');
+    window.setTimeout(() => { if (t.textContent === msg) t.classList.remove('show', 'toast-through'); }, 2800);
+  };
+  show();
 }
 
 export function showCamBlockedMsg(): void {

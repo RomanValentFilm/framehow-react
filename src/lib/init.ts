@@ -324,6 +324,20 @@ export function initFramehow(): void {
   // or nothing, which then shows as a touch with no line after it.
   let _menuTouchedAt = 0;
   menuBtn.addEventListener('pointerdown', () => { _menuTouchedAt = performance.now(); void import('./syncTrace').then(({ trace }) => trace('menu: finger on the button')); }, { passive: true });
+  // THE MENU OPENS WHEN THE FINGER LIFTS — IT DOES NOT WAIT FOR THE iPAD'S "CLICK"
+  // (16 Nov, Roman's log 14:14:00: 'menu: finger on the button', then nothing —
+  // and in that same second the white storage notice came on the screen; two
+  // seconds later the next tap was taken in 63 ms). The iPad makes a click out
+  // of a touch only afterwards, and drops it when something new appears on the
+  // screen in between. The button no longer depends on that: finger up on the
+  // button = the tap.
+  menuBtn.addEventListener('touchend', (e) => {
+    const t = e.changedTouches[0];
+    const r = menuBtn.getBoundingClientRect();
+    if (!t || t.clientX < r.left - 10 || t.clientX > r.right + 10 || t.clientY < r.top - 10 || t.clientY > r.bottom + 10) return;   // the finger left the button
+    if (e.cancelable) e.preventDefault();          // (no second, made-up click after this one)
+    menuBtn.click();
+  }, { passive: false });
   menuBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     e.preventDefault();
@@ -1299,6 +1313,7 @@ export function initFramehow(): void {
   void import('./maxView').then(({ watchForPlainPictures }) => watchForPlainPictures());
   void import('./picts').then(({ wirePictsButton }) => wirePictsButton());
   void import('./modalScrollGuard').then(({ wireModalScrollGuard }) => wireModalScrollGuard());
+  void import('./modals').then((m) => m.watchTheFingerForNotices());
 
   // iOS :active CSS enabler
   document.addEventListener('touchstart', () => {}, { passive: true });
