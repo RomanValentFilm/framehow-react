@@ -21,7 +21,7 @@
 
 import type { D1Database, R2Bucket } from "@cloudflare/workers-types";
 import type { Env } from "../types";
-import { addBytes } from "./totals";
+import { addBytes, userBytes } from "./totals";
 
 const DEFAULT_LIMIT_MB = 350;
 
@@ -83,8 +83,23 @@ export async function sumUserImageBytes(
 export interface StorageFigure { used: number; limit: number; verified?: boolean; full_limit?: number }
 
 export async function storageFigure(db: D1Database, env: Env, userId: string, header?: string | null, verified = true): Promise<StorageFigure> {
+  // THE FIGURE IS WHAT THE ACCOUNT HAS ON THE SERVER. PERIOD. (Roman, 16 Nov:
+  // "the server has to show what is on server, period. How we delete it is a
+  // totally different thing.")
+  //
+  // This returned a COUNT — the pictures on the cards of live projects plus
+  // previews — and so left out a project deleted with plain Delete (still
+  // there for seven days, recoverable) and every file no card names any more.
+  // The upload door meanwhile held the account against the real total. So the
+  // app showed one number (392 MB), the door and the heartbeat knew another
+  // (401 MB), and a person could be told "78 %" and "full" in the same minute.
+  //
+  // One number now, everywhere: the account's total in the store — the same
+  // one the upload door checks (userBytes: uploads add, deletions subtract,
+  // the nightly sweep writes the exact figure from the bucket). Delete keeps
+  // counting until the files are really gone; Delete now takes them off at once.
   return {
-    used: await sumUserImageBytes(db, userId),
+    used: await userBytes(db, userId),
     limit: storageLimitBytes(env, header, verified),
     verified,
     full_limit: storageLimitBytes(env, header, true),
@@ -114,8 +129,8 @@ export async function keysNamedElsewhere(
                  OR
                  EXISTS (SELECT 1 FROM project_snapshots ps
                            JOIN projects p ON p.id = ps.project_id
-                          WHERE p.user_id = ? AND p.id != ? AND p.deleted_at IS NULL
-                            AND instr(ps.tree_json, ?) > 0)) AS named`,
+                          WHERE p.user_id = ? AND p.id != ?
+                            AND instr(ps.tree_json, ?) > 0)) AS named`,   // (any other project's restore point — a recoverable one's too, as the cleaner judges it; 16 Nov)
       ).bind(key, key, projectId, userId, projectId, key),
     );
     const results = await db.batch<{ k: string; named: number }>(stmts);
@@ -151,15 +166,59 @@ export async function deleteProjectForGood(
 
   const byKey = new Map<string, number>();
   for (const im of images.results) if (im.r2_key) byKey.set(im.r2_key, im.size_bytes ?? 0);
+
+  // A PROJECT DELETED FOR GOOD TAKES ALL ITS PICTURES WITH IT — NOW, NOT TONIGHT
+  // (Roman, 16 Nov: "we are deleting a project this moment — why don't we sweep
+  // them as well?" and "why are we keeping the previews? where does this rule
+  // come from?"). Two things were left for the nightly cleaner, and neither by
+  // anybody's decision:
+  //   · pictures taken OFF a card earlier, which only this project's restore
+  //     points still held. The restore points went with the project; the files
+  //     stayed until the night after. They are read out of the restore points
+  //     here, BEFORE those are gone, and go with the rest.
+  //   · the library's previews of the project's pictures. Delete now was built
+  //     (21 Sept) before the previews existed (27 Oct); the library's own
+  //     DELETE learned to take a preview with its picture, this never did.
+  // The one protection stays exactly as it was: a file another project's card
+  // or restore point names is kept (keysNamedElsewhere).
+  const { keysInText, thumbOfPicture } = await import("./cleaner");
+  const snaps = await db.prepare(`SELECT id FROM project_snapshots WHERE project_id = ?`).bind(projectId).all<{ id: string }>();
+  let fromRestorePoints = 0;
+  for (const sn of snaps.results) {
+    const row = await db.prepare(`SELECT tree_json FROM project_snapshots WHERE id = ?`).bind(sn.id).first<{ tree_json: string }>();
+    if (!row?.tree_json) continue;
+    for (const k of keysInText(row.tree_json)) {
+      if (!k.startsWith(`users/${userId}/`) || k.includes("/thumbs/") || byKey.has(k)) continue;   // this account's own pictures only
+      byKey.set(k, 0);
+      fromRestorePoints++;
+    }
+  }
   const keys = Array.from(byKey.keys());
   const shared = await keysNamedElsewhere(db, userId, projectId, keys);
   const toDelete = keys.filter((k) => !shared.has(k));
 
-  let bytesFreed = 0;
+  // What each file really weighs — from the store itself, in one listing of the
+  // account's folder (a row may not know its size; a preview has no row at all).
+  const sizeOf = new Map<string, number>();
+  if (toDelete.length > 0) {
+    let cursor: string | undefined;
+    do {
+      const page = await bucket.list({ prefix: `users/${userId}/`, cursor, limit: 1000 });
+      for (const o of page.objects) sizeOf.set(o.key, o.size);
+      cursor = page.truncated ? page.cursor : undefined;
+    } while (cursor);
+  }
+  let bytesFreed = 0, thumbsFreed = 0;
   for (let i = 0; i < toDelete.length; i += 100) {
     const batch = toDelete.slice(i, i + 100);
-    await Promise.all(batch.map((key) => bucket.delete(key)));
-    for (const k of batch) bytesFreed += byKey.get(k) ?? 0;
+    const thumbs = batch.map((k) => thumbOfPicture(k)).filter((t): t is string => !!t && sizeOf.has(t));
+    await bucket.delete(batch);
+    if (thumbs.length) await bucket.delete(thumbs);
+    for (const k of batch) bytesFreed += sizeOf.get(k) ?? byKey.get(k) ?? 0;
+    for (const t of thumbs) thumbsFreed += sizeOf.get(t) ?? 0;
+  }
+  if (fromRestorePoints > 0 || thumbsFreed > 0) {
+    console.log(`[storage] project ${projectId}: ${fromRestorePoints} picture(s) held only by its restore points and ${Math.round(thumbsFreed / 1024)} KB of previews went with it`);
   }
 
   // THE DELETION RECORDS DO NOT CASCADE (Roman, 21 Sept: "Uboot and Workflow
@@ -177,8 +236,9 @@ export async function deleteProjectForGood(
   }
   // The running totals come down with the files (12 Oct), so Delete now frees
   // room at the upload door at once, not only after the nightly recount.
-  await addBytes(db, userId, -bytesFreed);
-  return { deletedFiles: toDelete.length, keptShared: shared.size, bytesFreed };
+  await addBytes(db, userId, -(bytesFreed + thumbsFreed));
+  if (thumbsFreed > 0) { const { addThumbBytes } = await import("./totals"); await addThumbBytes(db, userId, -thumbsFreed); }
+  return { deletedFiles: toDelete.length, keptShared: shared.size, bytesFreed: bytesFreed + thumbsFreed };
 }
 
 /**

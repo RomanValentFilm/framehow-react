@@ -1,7 +1,16 @@
-// THE DEAD-PICTURE CLEANER — COUNTING MODE (22 Sept).
+// THE DEAD-PICTURE CLEANER (22 Sept): IT COUNTS — AND, EVERY NIGHT, IT DELETES.
 //
-// Roman: "we cannot ever lose real work." So the cleaner is built in two
-// steps, and this is the first: it only COUNTS. Nothing here deletes.
+// (This heading said "COUNTING MODE … nothing here deletes" until 16 Nov, long
+// after the delete mode below was built and put into the nightly job
+// (index.ts, "THE DEAD-PICTURE CLEANER RUNS HERE TOO"). On 16 Nov that stale
+// line was read instead of the code, and Roman was told — wrongly — that a
+// picture taken off a card stays on the server for ever. It does not: the
+// night after it is 24 hours old, and no project and no restore point names
+// it, it is deleted and comes off the account's figure.)
+//
+// Roman: "we cannot ever lose real work." So the cleaner was built in two
+// steps: first it only counted (countDeadPictures); then, once the count was
+// read and right, the same decision deletes (deleteDeadPictures, below).
 //
 // A picture file in the bucket is DEAD when nobody can get back to it:
 //

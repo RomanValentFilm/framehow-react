@@ -172,3 +172,73 @@ test('dead pictures: the count calls only the truly dead files dead, and a resto
 
   await desktop.close();
 });
+
+// DELETE NOW TAKES ALL OF THE PROJECT — AT ONCE (16 Nov, Roman: "we are deleting a
+// project this moment — why don't we sweep them as well?" and "why are we
+// keeping the previews?"). Two things used to wait for the nightly cleaner:
+// a picture taken off a card earlier that only the project's restore point
+// still held, and the library's previews of the project's pictures. After
+// Delete now the account's folder holds what the OTHER project has, and not
+// one byte more — and the storage figure says exactly that.
+test('delete now: the project takes every one of its pictures and previews with it, at once — and only its own', async ({ browser }) => {
+  const { token } = await freshAccount();
+  const desktop = await Device.open(browser, 'desktop', token, false);
+  const png = () => noisePng(64, 48).toString('base64');
+  type Pic = { key: string; size: number; thumb?: boolean; thumb_size?: number | null };
+  const folder = async () => ((await (await fetch(`${API}/user/pictures`, { headers: { Authorization: `Bearer ${token}` } })).json()) as { pictures: Pic[] }).pictures;
+  const figure = async () => ((await (await fetch(`${API}/user/storage`, { headers: { Authorization: `Bearer ${token}` } })).json()) as { storage: { used: number } }).storage.used;
+
+  say('desktop: project GOING with three pictures, each with its preview');
+  const goingId = await desktop.newProject('GOING', 2);
+  await desktop.settle();
+  await desktop.uploadPictures(0, 'ver', [png(), png()]);
+  await desktop.uploadPictures(1, 'ver', [png()]);
+  await desktop.settle();
+  await expect.poll(async () => (await keysOf(token, goingId!)).length, { timeout: 30_000, message: 'three pictures on the server' }).toBe(3);
+  const goingKeys = await keysOf(token, goingId!);
+  await expect.poll(async () => (await folder()).filter((p) => p.thumb).length, { timeout: 30_000, message: 'each has its preview on the server' }).toBe(3);
+
+  say('a restore point, then shot 2 is deleted: its picture lives on only in the restore point');
+  await desktop.saveRestorePoint('before the delete');
+  await desktop.settle();
+  await desktop.deleteFrame(1);
+  await desktop.push();
+  await desktop.settle();
+  expect((await keysOf(token, goingId!)).length, 'two pictures left on the cards').toBe(2);
+  expect((await folder()).length, 'the third is still in the account\'s folder').toBe(3);
+
+  say('desktop: project STAYING with one picture — it must not be touched');
+  const stayingId = await desktop.newProject('STAYING', 1);
+  await desktop.settle();
+  await desktop.uploadPictures(0, 'ver', [png()]);
+  await desktop.settle();
+  await expect.poll(async () => (await keysOf(token, stayingId!)).length, { timeout: 30_000 }).toBe(1);
+  const stayingKeys = await keysOf(token, stayingId!);
+  await expect.poll(async () => (await folder()).filter((p) => p.thumb).length, { timeout: 30_000, message: 'four previews now' }).toBe(4);
+  const before = await figure();
+  say(`   before: ${(await folder()).length} pictures in the folder, storage ${before} bytes`);
+
+  say('DELETE NOW on GOING');
+  await desktop.deleteProjectNow(goingId!);
+  await desktop.settle();
+
+  const left = await folder();
+  say(`   after: ${left.length} picture(s) in the folder — ${left.map((p) => p.key.split('/').pop()).join(', ')}`);
+  expect(left.map((p) => p.key), 'only the other project\'s picture is left in the account\'s folder').toEqual(stayingKeys);
+  for (const k of goingKeys) {
+    const file = await fetch(`${API}/images/${k}`, { headers: { Authorization: `Bearer ${token}` } });
+    const thumb = await fetch(`${API}/thumbs/${k}`, { headers: { Authorization: `Bearer ${token}` } });
+    expect(file.status, `the picture is gone: ${k.split('/').pop()}`).toBe(404);
+    expect(thumb.status, `and its preview: ${k.split('/').pop()}`).toBe(404);
+  }
+  const stays = await fetch(`${API}/images/${stayingKeys[0]}`, { headers: { Authorization: `Bearer ${token}` } });
+  expect(stays.status, 'the other project\'s picture is there').toBe(200);
+  expect((await fetch(`${API}/thumbs/${stayingKeys[0]}`, { headers: { Authorization: `Bearer ${token}` } })).status, 'and its preview').toBe(200);
+
+  const after = await figure();
+  const really = left.reduce((s, p) => s + p.size + (p.thumb_size ?? 0), 0);
+  say(`   storage ${before} → ${after} bytes; the folder really holds ${really}`);
+  expect(after, 'THE FIGURE IS WHAT IS ON THE SERVER — to the byte').toBe(really);
+
+  await desktop.close();
+});

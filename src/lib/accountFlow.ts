@@ -4522,6 +4522,11 @@ async function applyCloudTreeToStore(
   // the server", or nothing sends it until some unrelated edit does.
   _framesWithKeptVersions.clear();
   let _keptInThisShot = false;
+  // WHICH VERSIONS, AND WHY (16 Nov). Roman's iPad sends the same five shots of
+  // WF 7 again at every opening ("5 shot(s) hold a version the server has not
+  // got") — 12:21, 13:39, 13:56, 14:05 — gets 350 rows back and draws the whole
+  // project for it. The line said how many shots, never which version or why.
+  const _keptWhy: string[] = [];
   const mergeVersionsPerVersion = (
     built: Version[],
     local: Version[] | undefined,
@@ -4540,7 +4545,10 @@ async function applyCloudTreeToStore(
         // anything with work on it was made here and not sent — it stays.
         const blank = lv.type === 'empty' && !(lv.strokes && lv.strokes.length > 0) && !lv.bgImage
           && !lv.r2Key && !lv.note && !lv.setupTagged && !lv.hidden && !versionStars(lv);
-        if (!blank) { out.push(lv); _keptInThisShot = true; }
+        if (!blank) {
+          out.push(lv); _keptInThisShot = true;
+          _keptWhy.push(`${lv.serverVersionId.slice(0, 6)} "${lv.label || '?'}" NOT IN THE ANSWER · ${lv.type}${lv.r2Key ? ' · picture ' + lv.r2Key.split('/').pop()!.slice(0, 8) : lv.bgImage ? ' · picture not sent yet' : ''}${(lv as { pictureDeleted?: boolean }).pictureDeleted ? ' · picture deleted' : ''}${lv.setupTagged ? ' · tag ' + lv.setupTagged : ''}${lv.hidden ? ' · hidden' : ''}${lv.strokes?.length ? ' · ' + lv.strokes.length + ' stroke(s)' : ''}`);
+        }
         continue;
       }
       const mineAt = versionChangedAt(lv.serverVersionId);
@@ -4557,7 +4565,10 @@ async function applyCloudTreeToStore(
       if (takeMine) {
         keptMineVersionIds.add(lv.serverVersionId);
         // Kept as mine AND different from theirs: the server has not got it.
-        if (theirsAt === undefined || (mineAt !== undefined && mineAt > theirsAt)) _keptInThisShot = true;
+        if (theirsAt === undefined || (mineAt !== undefined && mineAt > theirsAt)) {
+          _keptInThisShot = true;
+          _keptWhy.push(`${lv.serverVersionId.slice(0, 6)} "${lv.label || '?'}" MINE IS LATER · mine@${mineAt ?? 'none'} theirs@${theirsAt ?? 'none'}`);
+        }
         out[i] = { ...lv, id: out[i].id, bgImage: lv.bgImage ?? out[i].bgImage };
       }
     }
@@ -4917,7 +4928,11 @@ async function applyCloudTreeToStore(
         verVersions[localId] = settle(mapVersions(verVers, 'ver'), 'ver');
         floorVersions[localId] = settle(mapVersions(floorVers, 'floor'), 'floor');
         refsVersions[localId] = settle(mapVersions(refsVers, 'refs'), 'refs');
-        if (_keptInThisShot) _framesWithKeptVersions.add(sf.id);
+        if (_keptInThisShot) {
+          _framesWithKeptVersions.add(sf.id);
+          trace(`    shot ${sf.id.slice(0, 6)} "${sf.label ?? ''}" keeps as its own: ${_keptWhy.join(' | ')}`);
+        }
+        _keptWhy.length = 0;
       }
       // Put back what this card was showing, if it is still there (#341).
       const wasViewing = sf.id ? viewedBefore.get(sf.id) : undefined;

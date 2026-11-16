@@ -13,6 +13,8 @@ finish() {
   afplay /System/Library/Sounds/Glass.aiff 2>/dev/null & SND="sound played"
   osascript -e "display notification \"$1 — say zzz\" with title \"Framehow server\"" 2>/dev/null
   echo "--- $1 (server, run $RUN: $MSG) — say zzz — $SND ---"
+  # ...and written down, as the app's deploy does (16 Nov): "zzz" is answered from this file.
+  mkdir -p ../e2e-log && echo "$(date '+%Y-%m-%d %H:%M:%S') — $1 (SERVER, run $RUN: $MSG)" >> ../e2e-log/deploys.log
 }
 echo "=== SERVER DEPLOY — run $RUN: $MSG ==="
 if [ -n "$FH_MIGRATION" ]; then

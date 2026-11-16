@@ -783,7 +783,7 @@ projects.post("/:id/sync", async (c) => {
     : {};
   // The account's storage figure, as it stands after this push (#533). One
   // small sum; the app shows it and raises the 80/90/95 % notices from it.
-  const storage = { used: await sumUserImageBytes(c.env.DB, me.id), limit: storageLimit, verified: !!me.email_verified, full_limit: storageLimitBytes(c.env, c.req.header(STORAGE_HEADER), true) };
+  const storage = { used: await userBytes(c.env.DB, me.id) /* what is on the server — one figure everywhere (16 Nov, see storageFigure) */, limit: storageLimit, verified: !!me.email_verified, full_limit: storageLimitBytes(c.env, c.req.header(STORAGE_HEADER), true) };
   // Some frames were refused because they moved underneath this device. The
   // rest went in. The client shows the picker for these and nothing else.
   if (rejectedFrames.length > 0) {
