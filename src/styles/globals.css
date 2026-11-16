@@ -582,15 +582,26 @@
   .draw-undo-btn svg{display:block;}
   .color-label{font-size:10px;font-family:var(--mono);color:var(--text-faint);margin-right:4px;}
   .exp-title{font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:10px;font-family:var(--mono);}
-  .startup-loading-line{position:fixed;top:0;left:0;width:100%;height:3px;z-index:500;pointer-events:none;overflow:hidden;}
-  .startup-loading-line .bar{width:30%;height:100%;background:var(--accent);border-radius:0 2px 2px 0;animation:startupSlide 1.2s ease-in-out infinite;}
-  @keyframes startupSlide{0%{transform:translateX(-100%)}50%{transform:translateX(200%)}100%{transform:translateX(400%)}}
+  /* THE BAR, ONE DESIGN, TWO PLACES (16 Nov, Roman): thin red line, small white
+     words, on the Mac, the iPad and the iPhone alike.
+       · IN THE MIDDLE, on a black screen = you wait: a project arriving,
+         restoring, a PDF, loading files. Nothing behind it can be touched, and
+         the bar is where the eye is ("a tiny line at the bottom of a black
+         screen looks like the app died").
+       · AT THE BOTTOM = carry on, nothing to wait for: the app starting (the
+         line striped and moving, "Opening app…") and pictures arriving
+         (#picturesBar below, the line growing with the count).
+     The line along the top of the screen is gone. */
+  .startup-loading-line{position:fixed;left:0;right:0;bottom:0;height:calc(16px + env(safe-area-inset-bottom));padding-bottom:env(safe-area-inset-bottom);box-sizing:border-box;background:#0c0c0c;z-index:900;pointer-events:none;overflow:hidden;display:flex;align-items:center;justify-content:center;}
+  .startup-loading-line .bar{position:absolute;left:0;right:0;bottom:env(safe-area-inset-bottom);height:3px;width:auto;background:repeating-linear-gradient(-45deg,var(--accent,#d52632) 0 8px,transparent 8px 16px);background-size:22.63px 3px;animation:startupStripes .6s linear infinite;}
+  .startup-loading-line .startup-loading-text{position:relative;top:-1px;font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;color:#fff;text-align:center;line-height:1;}
+  @keyframes startupStripes{from{background-position:0 0}to{background-position:22.63px 0}}
   .startup-loading-line.hidden{display:none;}
-  .progress-overlay{position:fixed;inset:0;background:rgba(0,0,0,.95);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;z-index:200;}
+  .progress-overlay{position:fixed;inset:0;background:rgba(0,0,0,.95);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px;z-index:200;}
   .progress-overlay.hidden{display:none;}
-  .progress-bar-wrap{width:260px;height:4px;background:var(--border);border-radius:2px;overflow:hidden;}
-  .progress-bar{height:100%;background:var(--accent);border-radius:2px;transition:width .2s;}
-  .progress-label{font-family:var(--mono);font-size:12px;color:var(--text-muted);}
+  .progress-bar-wrap{width:260px;max-width:70vw;height:3px;background:#2a2a2a;overflow:hidden;}
+  .progress-bar{height:100%;background:var(--accent,#d52632);transition:width .2s;}
+  .progress-label{font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;color:#fff;text-align:center;line-height:1;}
   .toast{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) scale(.92);opacity:0;background:#fff;color:#111;font-size:12px;font-weight:500;padding:8px 18px;border-radius:20px;transition:transform .25s,opacity .25s;z-index:350000;pointer-events:none;white-space:nowrap;}
   .toast.show{transform:translate(-50%,-50%) scale(1);opacity:1;pointer-events:auto;}
   .rotate-msg{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.85);z-index:400;opacity:0;pointer-events:none;transition:opacity .3s;}

@@ -7,6 +7,7 @@ export function Modals() {
     <>
       <div className="startup-loading-line hidden" id="startupLoadingLine">
         <div className="bar"></div>
+        <span className="startup-loading-text">Opening app…</span>
       </div>
       <div className="progress-overlay hidden" id="progressOverlay">
         <div className="progress-label" id="progressLabel">Loading PDF…</div>

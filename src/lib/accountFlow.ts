@@ -5471,10 +5471,11 @@ async function applyCloudTreeToStore(
   // Drawn here so the shots are on the screen while their pictures come. A
   // fetch that has no picture to wait for draws once itself, a moment later.
   const picturesToWaitFor = [...mainImageTasks, ...versionImageTasks].some((t) => !_gonePictures.has(t.r2Key));
-  if (!theCallerDraws || picturesToWaitFor) (window as any).__fh_renderAll?.();
+  // (pictures that follow in the background are not waited for: the caller draws at once)
+  if (!theCallerDraws || (picturesToWaitFor && !background)) (window as any).__fh_renderAll?.();
 
   // The pictures: see bringThePictures, below.
-  await bringThePictures(mainImageTasks, versionImageTasks, background, onImageProgress, theCallerDraws);
+  await bringThePictures(mainImageTasks, versionImageTasks, background, onImageProgress, theCallerDraws && !background);
 }
 
 // PICTURES THE LIBRARY DELETED ARE REMEMBERED AS GONE (13 Nov, Roman: "comes a
@@ -5553,6 +5554,8 @@ async function bringThePictures(
   // (what is told to whoever shows progress: only pictures really fetched — the
   // thirteen known to be gone flashed a "Loading image 13 of 13" bar at every start)
   let reallyFetched = 0;
+  // (pictures that really ARRIVED — an answer "gone" is not one: its card is told by itself)
+  let landed = 0;
   const progressFor = (r2Key: string): void => {
     if (knownGone.has(r2Key)) return;
     reallyFetched++;
@@ -5719,6 +5722,7 @@ async function bringThePictures(
           dropStandIn(task.r2Key);
           redrawSoon(task.localId);
           fetchedImageCount++;
+          landed++;
           progressFor(task.r2Key);
         })
         .catch((e) => {
@@ -5787,6 +5791,7 @@ async function bringThePictures(
           dropStandIn(task.r2Key);
           redrawSoon(task.localId);
           fetchedImageCount++;
+          landed++;
           progressFor(task.r2Key);
         })
         .catch((e) => {
@@ -5824,7 +5829,9 @@ async function bringThePictures(
   if (redrawTimer !== null) { window.clearTimeout(redrawTimer); redrawTimer = null; }
   // the last word: every picture is on its card — when one really came (13 Nov:
   // with nothing fetched this drew all 26 shots of WF 7 again for nothing, 650 ms)
-  if (reallyFetched > 0 && !theCallerDraws && !anotherProjectIsOnScreen()) { (window as any).__fh_renderWhy = 'pictures: all in'; (window as any).__fh_renderAll?.(); }
+  // …and when one really LANDED (16 Nov, Roman's iPad 12:36:49: five pictures asked for, all five
+  // "deleted in the library" — and all 28 shots drawn again for it, 849 ms)
+  if (landed > 0 && !theCallerDraws && !anotherProjectIsOnScreen()) { (window as any).__fh_renderWhy = 'pictures: all in'; (window as any).__fh_renderAll?.(); }
 
   if (background && anotherProjectIsOnScreen()) { endArriving(picturesFor); return; }
   // Always update count baselines — pushes preserve r2Keys for any
@@ -7911,20 +7918,21 @@ async function tryPullFromCloud(force = false): Promise<void> {
       try {
         // The first picture that needs fetching is what makes a pull worth
         // showing a bar for (#290).
-        const syncImageProgress = (loaded: number, total: number) => {
-          if (total === 0) return;
-          showBar(`Loading image ${loaded} of ${total}…`);
-        };
+        // AN OPEN PROJECT WAITS FOR NOTHING (16 Nov, Roman). A fetch that brought
+        // pictures threw a black curtain over the work — "Loading image 3 of 5…"
+        // — and held everything until the last one was in. Now the fetch does
+        // what an opening does since 13 Nov: the shots at once, the pictures
+        // behind them in the background, previews standing in, and the thin bar
+        // at the bottom counting — "Loading pictures 3 / 5". No curtain.
+        //
+        // (And it is the SAFER way round: the wait for the pictures sat inside
+        // the system action, where a change is taken for the app's own. Behind
+        // a curtain nobody could make one; without it, nothing may wait here.)
         if (keepLocalIds && keepLocalIds.size > 0) {
           // Per-frame merge: keep selected local frames, take cloud for the rest
           if (progressBar) progressBar.style.width = '70%';
           storeWasRebuilt = true;
-          await applyCloudTreeToStore(tree, keepLocalIds, (loaded, total) => {
-            syncImageProgress(loaded, total);
-            if (total === 0) return;
-            const pct = 70 + Math.round((loaded / total) * 20);
-            if (progressBar) progressBar.style.width = pct + '%';
-          }, { theCallerDraws: true });
+          await applyCloudTreeToStore(tree, keepLocalIds, undefined, { picturesInBackground: true, theCallerDraws: true });
           if (progressBar) progressBar.style.width = '90%';
           // Only worth telling the user about frames kept because they had work
           // of their own. Frames kept merely because the answer did not mention
@@ -7949,12 +7957,7 @@ async function tryPullFromCloud(force = false): Promise<void> {
           // No local changes (or user chose cloud for everything) — take cloud fully
           if (progressBar) progressBar.style.width = '40%';
           storeWasRebuilt = true;
-          await applyCloudTreeToStore(tree, undefined, (loaded, total) => {
-            syncImageProgress(loaded, total);
-            if (total === 0) return;
-            const pct = 40 + Math.round((loaded / total) * 50);
-            if (progressBar) progressBar.style.width = pct + '%';
-          }, { theCallerDraws: true });
+          await applyCloudTreeToStore(tree, undefined, undefined, { picturesInBackground: true, theCallerDraws: true });
           if (progressBar) progressBar.style.width = '90%';
         }
         // renderAll calls setState — keep it inside the system action so it
