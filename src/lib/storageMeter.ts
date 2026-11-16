@@ -112,10 +112,18 @@ export function noteStorage(f: StorageFigure | undefined | null): void {
   // middle of the black screen, on the bar, in the very second of the wait. It
   // is said when the project is in.
   const say = (): void => { void import('./modals').then(({ showToast }) => showToast(text)); };
-  const arriving = (): boolean => { const el = document.getElementById('progressOverlay'); return !!el && !el.classList.contains('hidden'); };
+  // …AND NOT OVER A BOX (Roman, 16 Nov, the pill across the project list: "it
+  // has to come later. You cannot have two modals over each other"). While a
+  // box is open — the project list, a notice, a question — it waits; and the
+  // project list shows the figure itself, in its own line.
+  const arriving = (): boolean => {
+    const el = document.getElementById('progressOverlay');
+    return (!!el && !el.classList.contains('hidden'))
+      || !!document.querySelector('.account-modal:not(.hidden), #importantNote');
+  };
   if (!arriving()) { say(); return; }
   let tries = 0;
-  const t = window.setInterval(() => { if (!arriving() || ++tries > 120) { window.clearInterval(t); window.setTimeout(say, 600); } }, 250);
+  const t = window.setInterval(() => { if (!arriving() || ++tries > 1200) { window.clearInterval(t); if (!arriving()) window.setTimeout(() => { if (!arriving()) say(); }, 600); } }, 250);
 }
 
 /**

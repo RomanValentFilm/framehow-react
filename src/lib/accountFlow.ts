@@ -1037,7 +1037,8 @@ export async function openProjectList(startInEdit = false): Promise<void> {
 
     /** DELETE NOW (#533): frees the project's space at once; no recovery. */
     async function onDeleteNow(p: CloudProject): Promise<void> {
-      hide('projectListModal');
+      // THE LIST STAYS (Roman, 16 Nov: "the list disappears and appears again — it should stay there").
+      // The question comes on top of it; the list is not taken away and brought back around it.
       // TWICE, as Roman asked (21 Sept): there is no way back from this one.
       const sure = await showConfirmDefaultNo(
         `Are you sure you want to delete project "${p.name}" and all its files?\n\n` +
@@ -1050,7 +1051,11 @@ export async function openProjectList(startInEdit = false): Promise<void> {
         await deleteCloudProjectNow(p);
         projects = projects.filter((x) => x.id !== p.id);
         await refreshLocalCopies();
-        showToast(`"${p.name}" deleted. ${storageLineText(lastStorageFigure())}`);
+        // NO WHITE PILL OVER THE LIST (Roman, 16 Nov: "you cannot have two modals
+        // over each other"). It said '"…" deleted. Storage 463 of 500 MB · 93 %'
+        // across the rows. The row is gone and the list's own storage line has
+        // the new figure — that is the answer, in the box itself.
+        trace(`delete now: "${p.name}" gone from the list — ${storageLineText(lastStorageFigure())}`);
       } catch (e) {
         // SAID IN THE LOG TOO (21 Sept): a toast alone left "it does not delete"
         // with nothing to trace.
@@ -1091,7 +1096,8 @@ export async function openProjectList(startInEdit = false): Promise<void> {
     }
 
     async function onDelete(p: CloudProject): Promise<void> {
-      hide('projectListModal');
+      // THE LIST STAYS (Roman, 16 Nov: "the list disappears and appears again — it should stay there").
+      // The question comes on top of it; the list is not taken away and brought back around it.
       const confirmed = await promptDeleteConfirm();
       if (!confirmed) { show('projectListModal'); return; }
       const accepted = await promptDeleteNotice();
@@ -1108,7 +1114,8 @@ export async function openProjectList(startInEdit = false): Promise<void> {
     }
 
     async function onRecover(p: CloudProject): Promise<void> {
-      hide('projectListModal');
+      // THE LIST STAYS (Roman, 16 Nov: "the list disappears and appears again — it should stay there").
+      // The question comes on top of it; the list is not taken away and brought back around it.
       const confirmed = await promptRecoverConfirm();
       if (!confirmed) { show('projectListModal'); return; }
       try {

@@ -9,7 +9,9 @@
 // direction — and if nothing can, nothing moves.
 
 function openBox(): HTMLElement | null {
-  return document.querySelector<HTMLElement>('.account-modal:not(.hidden)');
+  // (the one on top: a question may stand over the project list)
+  const open = document.querySelectorAll<HTMLElement>('.account-modal:not(.hidden)');
+  return open.length ? open[open.length - 1] : null;
 }
 
 /** Something between the touched element and the box that can still scroll that way. */

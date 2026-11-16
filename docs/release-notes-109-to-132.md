@@ -526,5 +526,10 @@ v5.0.225 · #777 (10 Nov, night)
 ## v5.0.283 · #835 (dev, run 749, 16 Nov)
 - THE BAR, after Roman's first look (16 Nov): the stripes at the start are wide (a red piece and a gap = a fifth of the screen; the narrow ones were "too busy"); ONE BAR AT A TIME — while the middle one is up the bottom one is not shown; the storage notice ("Storage 92 % full …") is said when the project is in, not over the black screen in the second of the wait (nothing waited for it, it only looked so).
 
-## v5.0.284 · #836 (next)
+## v5.0.284 · #836 (dev, run 750, 16 Nov)
 - A BOX ON TOP: THE BOX MOVES, NEVER THE PAGE BEHIND (Roman, iPad, 16 Nov: moving the project list moved the page behind it). The iPad keeps a scroll inside a box only if the box can scroll that way; a short list, or one at its end, handed the finger to the page. One guard for every account box (project list, name box, sign-in): finger or wheel moves what can move inside, otherwise nothing. Why it showed today is not known — nothing of today's work touches it.
+
+## v5.0.285 · #837 (next)
+- NO WHITE PILL OVER A BOX (Roman, 16 Nov, screenshot 13:49: '"…" deleted. Storage 463 of 500 MB · 93 %' across the rows of the project list). After Delete now nothing is said on top of the list — the row is gone and the list's own storage line has the figure. The storage step notice ('Storage 95 % full …') waits while any box is open (project list, a notice, a project arriving) and comes when it is closed.
+- THE PROJECT LIST STAYS while a question is asked about one of its rows (Delete, Delete now, Recover): the question comes on top; the list is no longer taken away and brought back around it.
+- SEEN, NOT YET LOOKED AT: two storage figures two seconds apart (13:48:30 '93 % — 466 MB', 13:48:32 '95 % — 475 MB'; the pill said 463, the list's line 472) — two answers of the server that do not count the same things.
