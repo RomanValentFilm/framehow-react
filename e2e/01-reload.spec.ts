@@ -56,7 +56,12 @@ test('two devices reload and quietly agree', async ({ browser }) => {
 
   // And each one knows what the server holds, so the next push is small.
   for (const d of [desktop, tablet]) {
-    await d.waitForLog('recorded 6 frames as matching the server');
+    // (Since 13 Nov a start that finds nothing new on the server does not fetch
+    // the project again — it KNOWS from its own save what the server holds. So
+    // either line says it: fetched and recorded, or restored from the device.)
+    await expect.poll(async () => (await d.log()).some((l) =>
+      l.includes('recorded 6 frames as matching the server') || l.includes('restored 6 frames known to be on the server')),
+      { timeout: 30_000, message: `${d.name} knows what the server holds` }).toBe(true);
     const state = await d.read();
     expect(state.frames, `${d.name} should still have six frames`).toHaveLength(6);
     expect(state.unsent, `${d.name} should have nothing unsent`).toEqual([]);

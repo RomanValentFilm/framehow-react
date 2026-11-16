@@ -241,6 +241,12 @@ export function initFramehow(): void {
         });
       }
       if (!drawn) renderAll();
+      // …AND IT IS WRITTEN TO THIS DEVICE (13 Nov 19:50, found reading Roman's log).
+      // The redraw of everything used to tell the store "something moved", and
+      // that is what started the save on the device. Drawing one card says
+      // nothing — a star set with no connection would have stayed in memory
+      // only. Said here, plainly.
+      else useStore.setState((prev) => ({ renderTick: prev.renderTick + 1 }));
     }
     if (oldIdx !== newIdx) {
       const dir = newIdx < oldIdx ? '-20px' : '20px';

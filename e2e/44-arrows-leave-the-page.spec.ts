@@ -44,12 +44,25 @@ test('fitting: the version arrows leave the page where it is', async ({ browser 
   // The card a third of the way down the screen, as a person reading would have
   // it — clear of the bars at the top and of the sync log at the bottom (run 393:
   // it sat at -21 px, under the bars).
+  // WHERE THE CARD IS — ASKED AGAIN IF IT WAS BEING REDRAWN THAT INSTANT (runs
+  // 742, 743). A fetch that lands in the same moment rebuilds the card; for a
+  // few milliseconds the old one is gone and the new one is not yet measured,
+  // and the question came back empty. The page itself had not moved. So: ask
+  // again — and a page that DID move under a redraw still turns this test red.
+  const boxOf = async () => {
+    for (let i = 0; i < 20; i++) {
+      const box = await card.boundingBox();
+      if (box) return box;
+      await desktop.page.waitForTimeout(50);
+    }
+    throw new Error('the card with the arrows is not on the screen (asked for a second)');
+  };
   {
-    const box = (await card.boundingBox())!;
+    const box = await boxOf();
     await desktop.scrollTo((await desktop.scrollPosition()) + Math.round(box.y - 250));
     await desktop.page.waitForTimeout(400);
   }
-  const topOf = async () => Math.round((await card.boundingBox())!.y);
+  const topOf = async () => Math.round((await boxOf()).y);
   const start = await topOf();
   say(`   the card sits at ${start} px from the top of the screen`);
 
