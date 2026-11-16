@@ -910,6 +910,13 @@ export function adoptLocalProjectId(id: string | undefined | null): void {
   if (id) _localId = id;
 }
 
+/** Does this device hold work of that project the server has not got yet?
+ *  (16 Nov: a project was deleted from the list while its save was waiting.) */
+export function hasUnsentWork(projectId: string): boolean {
+  if (_pendingSyncIds.has(projectId)) return true;
+  return cp.projectId === projectId && _dirty;
+}
+
 /** Unsent projects sitting on this device — shown in the project list. */
 export function pendingOnDevice(): ReadonlyArray<{ projectId: string | null; name: string | null; savedAt: number }> {
   return _pendingOnDevice;

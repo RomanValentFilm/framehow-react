@@ -148,6 +148,7 @@ export interface TestDoor {
   /** Press NEW on a frame, as the button does. Returns the new frame's id (#392). */
   newFrameAfter(frameIndex: number): number;
   /** Rename a strip, as renaming a version does (#392). */
+  renameOpenProject(name: string): void;
   renameStrip(strip: StripType, label: string): void;
   /** What that strip's versions are called. */
   stripName(strip: StripType): string;
@@ -943,6 +944,9 @@ export function installTestDoor(): void {
 
     // Rename a strip — what a person calls "renaming a version". The app's own
     // function, so the marking and the push that follow it are the app's (#392).
+    /** The open project gets a new name on this device, as the name box does (16 Nov). */
+    renameOpenProject(name: string) { setProjectName(name); },
+
     renameStrip(strip, label) {
       const f = useStore.getState().frames[0];
       if (!f) throw new Error('no frames');

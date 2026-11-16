@@ -450,6 +450,33 @@ export function showVersionChoice(): Promise<'hide' | 'delete' | null> {
   });
 }
 
+/** A question with NO red button — Cancel and Yes both plain (Roman, 16 Nov:
+ *  the second Delete-account question: "Both are gray. That's what we want."). */
+export function showConfirmBothPlain(msg: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const modal = document.getElementById('confirmModal')!;
+    document.getElementById('confirmMsg')!.textContent = msg;
+    modal.classList.remove('hidden');
+    const yes = document.getElementById('confirmYes') as HTMLButtonElement;
+    const no = document.getElementById('confirmNo') as HTMLButtonElement;
+    yes.style.background = '';
+    yes.style.borderColor = '';
+    yes.style.color = '';
+    function cleanup(result: boolean) {
+      modal.classList.add('hidden');
+      yes.onclick = null;
+      no.onclick = null;
+      // Yes is red again for every other question.
+      yes.style.background = '#d52632';
+      yes.style.borderColor = '#d52632';
+      yes.style.color = '#fff';
+      resolve(result);
+    }
+    yes.onclick = () => cleanup(true);
+    no.onclick = () => cleanup(false);
+  });
+}
+
 export function showConfirmDefaultNo(msg: string): Promise<boolean> {
   return new Promise((resolve) => {
     const modal = document.getElementById('confirmModal')!;

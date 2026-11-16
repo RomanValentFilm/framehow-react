@@ -61,6 +61,7 @@ import {
   isSystemAction,
   endSystemAction,
   pendingOnDevice,
+  hasUnsentWork,
   markSomethingToSend,
   registerTombstoneBridge,
   handIsBusy,
@@ -93,7 +94,7 @@ import { mergeDelta, lastMergeRefusal, answerIsSafeToApply, untouchedByDelta, de
 import { settingsForPush, adoptSettingsFromServer, applySettingsToStore, importSettingStamps, stampChangedSettings, seedSettings, forgetAnotherProjectsSettings, settingsNeedPush, reconcileRestoredSettings, captureMySettings, keepMyUnsentSettings, unsentSettingNames, settingsMemorySummary, seedSettingsAgeUnknown, type SettingItem } from './projectSettings';
 import { clearDeviceOnLogout, wipeDeviceOnAccountDeletion, applySnapshotToStore, loadSnapshot, savedProjectId, savedProjectLocalKey, snapshotFromStore, givePendingItsProject, listPending, getPendingLight, isArchived, getPending, markPendingUploaded, markPendingParked, saveProjectListCache, loadProjectListCache, deletePending, deleteEveryCopyOf, recoverPending, isDeletedCopy, requestDurableStorage, clearPending } from './persistence';
 import type { PendingRecord, PendingMeta } from './persistence';
-import { showThreeWayConflict, showConfirm, showConfirmDefaultNo, showToast, showLabelEdit } from './modals';
+import { showThreeWayConflict, showConfirm, showConfirmDefaultNo, showConfirmBothPlain, showToast, showLabelEdit } from './modals';
 import { saveOpenTextEdits, saveOpenTableEdits, versionStars, inStarOrder } from './helpers';
 import { closeSortMode, refreshOpenSortView, removeFrameFromSortOrders } from './sortOrder';
 import { resetStoryboardState, state, useStore, bumpRenderTick, freshNeedDefinitions, DEFAULT_STRIP_DEFS, migrateNeedDefinitions, createDefaultExportMeta, blankNeeds, blankNote } from '../store/state';
@@ -1039,13 +1040,20 @@ export async function openProjectList(startInEdit = false): Promise<void> {
     async function onDeleteNow(p: CloudProject): Promise<void> {
       // THE LIST STAYS (Roman, 16 Nov: "the list disappears and appears again — it should stay there").
       // The question comes on top of it; the list is not taken away and brought back around it.
+      // UNSENT WORK IS SAID FIRST (16 Nov). No = nothing happens, the save keeps trying.
+      const unsent = unsentHere(p, deviceOnly);
+      const shown = unsent?.name ?? p.name;
+      if (unsent) {
+        trace(`delete now asked for "${shown}" (server name "${p.name}") — this device holds unsent work of it; asking first`);
+        if (!(await showConfirmDefaultNo(UNSENT_DELETE_QUESTION))) { trace('  answered No — nothing deleted'); show('projectListModal'); return; }
+      }
       // TWICE, as Roman asked (21 Sept): there is no way back from this one.
       const sure = await showConfirmDefaultNo(
-        `Are you sure you want to delete project "${p.name}" and all its files?\n\n` +
+        `Are you sure you want to delete project "${shown}" and all its files?\n\n` +
         'This cannot be undone.',
       );
       if (!sure) { show('projectListModal'); return; }
-      const ok = await showConfirmDefaultNo(`Deleting project "${p.name}"?`);
+      const ok = await showConfirmDefaultNo(`Deleting project "${shown}"?`);
       if (!ok) { show('projectListModal'); return; }
       try {
         await deleteCloudProjectNow(p);
@@ -1098,6 +1106,11 @@ export async function openProjectList(startInEdit = false): Promise<void> {
     async function onDelete(p: CloudProject): Promise<void> {
       // THE LIST STAYS (Roman, 16 Nov: "the list disappears and appears again — it should stay there").
       // The question comes on top of it; the list is not taken away and brought back around it.
+      // UNSENT WORK IS SAID FIRST (16 Nov). No = nothing happens, the save keeps trying.
+      if (p.deleted_at == null && unsentHere(p, deviceOnly)) {
+        trace(`delete asked for "${p.name}" — this device holds unsent work of it; asking first`);
+        if (!(await showConfirmDefaultNo(UNSENT_DELETE_QUESTION))) { trace('  answered No — nothing deleted'); show('projectListModal'); return; }
+      }
       const confirmed = await promptDeleteConfirm();
       if (!confirmed) { show('projectListModal'); return; }
       const accepted = await promptDeleteNotice();
@@ -1224,6 +1237,24 @@ export async function openProjectList(startInEdit = false): Promise<void> {
 }
 
 // ── Project list rendering ──────────────────────────────────────────────────
+
+/**
+ * WHAT THIS DEVICE STILL HOLDS OF A PROJECT IN THE LIST (16 Nov, Roman).
+ *
+ * A save that the server refuses (storage full) stops whole — the new name
+ * with it. The list showed the server's old name, and a project renamed on
+ * this device was deleted under a name nobody recognised. So: the row carries
+ * the name this device has while its save is waiting, and Delete asks first.
+ */
+function unsentHere(p: CloudProject, deviceOnly: ReadonlyArray<PendingMeta>): { name: string } | null {
+  const open = getCurrentProject();
+  if (open.projectId === p.id && hasUnsentWork(p.id)) return { name: open.name || p.name };
+  const rec = deviceOnly.find((w) => w.projectId === p.id) ?? pendingOnDevice().find((w) => w.projectId === p.id);
+  if (rec) return { name: rec.name || p.name };
+  return hasUnsentWork(p.id) ? { name: p.name } : null;
+}
+const UNSENT_DELETE_QUESTION =
+  'This project has work on this device that is not saved to the server yet. Delete anyway?';
 
 function renderProjectList(
   projects: CloudProject[],
@@ -1385,7 +1416,7 @@ function renderProjectList(
   }
   let openRow: Entry | null = null;
   for (const p of projects) {
-    const e: Entry = { name: nameOf(p.name), at: p.updated_at || 0, render: () => cloudRow(p) };
+    const e: Entry = { name: nameOf(unsentHere(p, deviceOnly)?.name ?? p.name), at: p.updated_at || 0, render: () => cloudRow(p) };
     if (p.id === openId) openRow = { ...e };
     entries.push(e);
   }
@@ -1424,7 +1455,8 @@ function renderProjectList(
     if (offlineListing) row.style.opacity = '0.45';
     const name = document.createElement('span');
     name.className = 'project-list-name';
-    name.textContent = p.name;
+    // The name this device has, while its save is still waiting (16 Nov).
+    name.textContent = unsentHere(p, deviceOnly)?.name ?? p.name;
     row.appendChild(name);
 
     if (p.id === openId) {
@@ -2558,11 +2590,20 @@ export async function openAccountSettings(): Promise<void> {
       // THE WORDS MATCH WHAT HAPPENS (A11, 9 Nov). The account is kept for
       // seven days and signing in again within them brings it back; after
       // that everything is erased for good. "Cannot be undone" was untrue.
-      const okDelete = await showConfirm(
+      // FIRST QUESTION: CANCEL IS THE RED ONE (Roman, 16 Nov) — the eye goes to Cancel.
+      const okDelete = await showConfirmDefaultNo(
         'Delete your account? Your account and all your projects will be erased for good after 7 days. '
         + 'If you change your mind, sign in again within those 7 days and everything is restored.',
       );
       if (!okDelete) return;
+      // ASKED TWICE (16 Nov, Roman: "we need two"). No red button on the second: both plain.
+      const reallySure = await showConfirmBothPlain(
+        'Are you sure you want to delete your account with all its content? '
+        + 'If you do, your account and all its content will be deleted. '
+        + 'You can recover it for 7 days by signing in with your email and password. '
+        + 'After that it is deleted for good.',
+      );
+      if (!reallySure) return;
       try {
         await api.delete('/user/me', getToken());
         clearSession();

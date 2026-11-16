@@ -314,8 +314,19 @@ extension CameraModel: AVCapturePhotoCaptureDelegate {
     nonisolated static func croppedAndResized(_ photo: AVCapturePhoto, ratio: CGFloat, maxSide: CGFloat) -> (data: Data?, w: Int, h: Int, hdrKept: Bool) {
         guard let file = photo.fileDataRepresentation(),
               let raw = CIImage(data: file, options: [.applyOrientationProperty: true]) else { return (nil, 0, 0, false) }
+        // THE BRIGHTNESS LAYER IS LEFT OUT (16 Nov, Roman). On 3 Nov it was kept, on
+        // how the photo looked in the PHOTOS app. On 16 Nov it was looked at INSIDE
+        // Framehow for the first time, the photo as shot beside a plain copy of
+        // it: "The bright one is too bright. It is wrong. The highlights are
+        // totally over. The one on the right" — the plain one — "is close to what
+        // the iPhone does." And it was measured: with the layer inside, the phone
+        // needs 594 ms to unpack a photo; a plain photo of the same 2400 px, 15 ms
+        // — thirty-three shots drawn again was nine seconds of standstill.
+        // So the photo is saved as Apple's finished picture and nothing else.
+        // (To bring the layer back: set this to true. Nothing else changes.)
+        let keepBrightnessLayer = false
         var gainIn: CIImage? = nil
-        if #available(iOS 18, *) {
+        if keepBrightnessLayer, #available(iOS 18, *) {
             gainIn = CIImage(data: file, options: [.auxiliaryHDRGainMap: true, .applyOrientationProperty: true])
         }
         let r = cropAndResize(raw, gain: gainIn, ratio: ratio, maxSide: maxSide)

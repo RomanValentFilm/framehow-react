@@ -140,8 +140,26 @@ test('account: the delete question is in front, and deleting erases everything a
   expect(inFront.questionIsAncestor, `the question must be the thing in front — found ${inFront.chain.join(' < ')}`).toBe(true);
   await expect(desktop.page.getByText('delete your account', { exact: false })).toBeVisible();
 
+  // FIRST QUESTION: CANCEL IS THE RED ONE, YES IS PLAIN (Roman, 16 Nov).
+  const reds1 = await desktop.page.evaluate(() => ['confirmYes', 'confirmNo'].map((id) => getComputedStyle(document.getElementById(id)!).backgroundColor));
+  expect(reds1[1], 'first question: Cancel is red').toBe('rgb(213, 38, 50)');
+  expect(reds1[0], 'first question: Yes is not red').not.toBe('rgb(213, 38, 50)');
+
   // ── DELETE ──────────────────────────────────────────────────────────────
-  say('desktop: Yes — the account is deleted');
+  // ASKED TWICE (16 Nov): the first Yes brings the second question, not the deletion.
+  say('desktop: Yes — the second question comes');
+  await desktop.page.getByRole('button', { name: 'Yes' }).click();
+  await desktop.page.waitForTimeout(600);
+  await expect(desktop.page.locator('#confirmModal')).toBeVisible();
+  expect(await desktop.page.locator('#confirmMsg').textContent(), 'the second question').toBe(
+    'Are you sure you want to delete your account with all its content? '
+    + 'If you do, your account and all its content will be deleted. '
+    + 'You can recover it for 7 days by signing in with your email and password. '
+    + 'After that it is deleted for good.');
+  // NO RED BUTTON ON THE SECOND QUESTION (Roman, 16 Nov): both are plain.
+  const reds = await desktop.page.evaluate(() => ['confirmYes', 'confirmNo'].map((id) => getComputedStyle(document.getElementById(id)!).backgroundColor));
+  expect(reds, 'neither button is red').not.toContain('rgb(213, 38, 50)');
+  say('desktop: Yes again — the account is deleted');
   await desktop.page.getByRole('button', { name: 'Yes' }).click();
   await desktop.page.waitForTimeout(2_000);
 

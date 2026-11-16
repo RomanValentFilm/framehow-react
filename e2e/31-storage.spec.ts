@@ -204,6 +204,32 @@ test('storage: the figure, the 80/90/95 % notices, full, DELETE NOW, and the wai
   const whole26 = JSON.parse(await desktop.whole()) as { shots: Array<{ versions: Record<string, unknown[]> }> };
   expect(whole26.shots[2].versions['ver']?.length ?? 0, 'the refused picture survives the pull').toBe(3);
 
+  // ── A PROJECT WITH UNSENT WORK IS NOT DELETED BLIND (16 Nov, Roman) ─────
+  // The save is stopped while the storage is full — the new name with it. The
+  // list must carry the name THIS device has, and Delete now must ask first.
+  say('desktop: renames BIG while full → the list shows the new name, Delete now asks about the unsent work');
+  await desktop.page.evaluate(() => (window as never as { __fh_test: { renameOpenProject(n: string): void } }).__fh_test.renameOpenProject('BIG RENAMED'));
+  await desktop.page.waitForTimeout(1_500);
+  expect((await Device.projectsWithState(token)).map((p) => p.name).sort(), 'the server still has the old name').toEqual(['BIG', 'OLD']);
+  await desktop.page.evaluate(() => { void (window as never as { __fh_test: { openProjectList(): Promise<void> } }).__fh_test.openProjectList(); });
+  await desktop.page.waitForFunction(() => (document.getElementById('projectListStorage')?.textContent ?? '').includes('Storage'), undefined, { timeout: 15_000 });
+  const renamedRow = desktop.page.locator('#projectListContent .project-list-row', { hasText: 'BIG RENAMED' }).first();
+  await expect(renamedRow, 'the row carries the name this device has').toBeVisible({ timeout: 10_000 });
+  await desktop.page.locator('#projectListEdit').click();
+  await desktop.page.waitForTimeout(300);
+  await desktop.page.locator('#projectListContent .project-list-row', { hasText: 'BIG RENAMED' }).first().locator('.project-list-delete-now').click();
+  await expect(desktop.page.locator('#confirmModal')).toBeVisible({ timeout: 5_000 });
+  expect(await desktop.page.locator('#confirmMsg').textContent(), 'the unsent work is said first')
+    .toBe('This project has work on this device that is not saved to the server yet. Delete anyway?');
+  await desktop.page.locator('#confirmNo').click();
+  await expect(desktop.page.locator('#confirmModal'), 'No closes the question').toBeHidden({ timeout: 5_000 });
+  await expect(desktop.page.locator('#projectListModal'), 'the list stays').toBeVisible();
+  expect((await Device.projectsWithState(token)).map((p) => p.name).sort(), 'No deleted nothing').toEqual(['BIG', 'OLD']);
+  await desktop.page.locator('#projectListClose').click();   // leaves Edit mode
+  await desktop.page.locator('#projectListClose').click();   // closes
+  await expect(desktop.page.locator('#projectListModal')).toBeHidden({ timeout: 10_000 });
+  await desktop.page.evaluate(() => (window as never as { __fh_test: { renameOpenProject(n: string): void } }).__fh_test.renameOpenProject('BIG'));
+
   // ── DELETE NOW ──────────────────────────────────────────────────────────
   say('desktop: DELETE NOW on "OLD" — space at once, and the waiting picture goes up by itself');
   const markFreed = await desktop.mark();
