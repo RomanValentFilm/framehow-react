@@ -20,7 +20,7 @@ import { APP_VERSION } from '../store/state';
  *  It is bumped BY HAND, which is why it sat at #309 through #310, #311, #312
  *  and #313 — telling the screen a version of events that was four changes out
  *  of date. Worth remembering the next time it is trusted in a log. */
-export const SYNC_BUILD_TAG = '#843';
+export const SYNC_BUILD_TAG = '#844';
 
 let box: HTMLElement | null = null;
 
@@ -167,6 +167,31 @@ function ensureBox(): HTMLElement | null {
     });
   };
   box.appendChild(fill);
+
+  // DROP TEST — the way out of a FILL 25 measurement (16 Nov). Roman had 308 test
+  // pictures in a project on a signed-out iPad, and the only way on was to sign
+  // in — which would have sent 190 MB of them to his account. This button is
+  // there only on a device where FILL 25 was pressed, and works only signed
+  // out: it empties the app's LOCAL APP STORAGE on this device and starts the
+  // app anew. Two taps, so a slip of the finger does nothing.
+  let hasTest = false;
+  try { hasTest = localStorage.getItem('fh_fill_test') === '1'; } catch { /* no storage */ }
+  if (hasTest) {
+    const drop = document.createElement('button');
+    drop.id = 'dropFillTestBtn';
+    drop.textContent = 'DROP TEST';
+    drop.style.cssText =
+      'position:absolute;top:2px;right:160px;background:#333;color:#fff;border:1px solid #666;' +
+      'border-radius:4px;font:10px monospace;padding:2px 8px;cursor:pointer;';
+    let armed = 0;
+    drop.onclick = () => {
+      const run = (window as unknown as { __fh_dropFillTest?: (say: (word: string) => void) => void }).__fh_dropFillTest;
+      if (!run) return;
+      if (Date.now() - armed > 4000) { armed = Date.now(); drop.textContent = 'TAP AGAIN — EMPTIES THIS DEVICE'; setTimeout(() => { if (drop.textContent?.startsWith('TAP AGAIN')) drop.textContent = 'DROP TEST'; }, 4000); return; }
+      run((word) => { drop.textContent = word; });
+    };
+    box.appendChild(drop);
+  }
 
   const copy = document.createElement('button');
   copy.textContent = 'COPY LOG';

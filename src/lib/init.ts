@@ -1316,6 +1316,7 @@ export function initFramehow(): void {
   void import('./modals').then((m) => m.watchTheFingerForNotices());
   window.setTimeout(() => { void import('./accountFlow').then((m) => m.sayAppMemory('six seconds after the start')); }, 6_000);
   (window as unknown as { __fh_fill25?: (say: (word: string) => void) => void }).__fh_fill25 = (say) => { void import('./fill25').then(({ fill25 }) => fill25(say)); };
+  (window as unknown as { __fh_dropFillTest?: (say: (word: string) => void) => void }).__fh_dropFillTest = (say) => { void import('./fill25').then(({ dropFillTest }) => dropFillTest(say)); };
 
   // iOS :active CSS enabler
   document.addEventListener('touchstart', () => {}, { passive: true });

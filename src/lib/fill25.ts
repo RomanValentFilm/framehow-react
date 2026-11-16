@@ -103,6 +103,7 @@ export async function fill25(say: (word: string) => void): Promise<void> {
     const signedIn = !!(await import('./session')).getToken?.();
     if (signedIn) trace('FILL 25: SIGNED IN — these 25 pictures will be sent to the SERVER and count in the 500 MB. For the measurement, sign out and use a new project.');
     if (_made === 0) _made = picturesInAppMemory().pictures;   // after a restart the numbers go on where the project stands
+    try { localStorage.setItem('fh_fill_test', '1'); } catch { /* the DROP TEST button will not show; nothing else */ }
     const madeFrom = performance.now();
     let kb = 0;
     for (let i = 0; i < 25; i++) {
@@ -140,5 +141,23 @@ export async function fill25(say: (word: string) => void): Promise<void> {
     say('FAILED');
   } finally {
     _busy = false;
+  }
+}
+
+/** DROP TEST: empty the app's LOCAL APP STORAGE on this device and start anew.
+ *  Signed out only — signed in, the device may hold real work not sent yet. */
+export async function dropFillTest(say: (word: string) => void): Promise<void> {
+  const signedIn = !!(await import('./session')).getToken?.();
+  if (signedIn) { trace('DROP TEST: signed in — not done. Sign out first; signed in, delete the test project in the project list with Delete now.'); say('SIGN OUT FIRST'); return; }
+  say('EMPTYING…');
+  trace('DROP TEST: emptying the app\'s LOCAL APP STORAGE on this device');
+  try {
+    await (await import('./persistence')).wipeDeviceOnAccountDeletion();
+    try { localStorage.removeItem('fh_fill_test'); } catch { /* gone with the rest */ }
+    say('DONE');
+    setTimeout(() => window.location.reload(), 600);
+  } catch (e) {
+    trace(`DROP TEST: could not empty it — ${(e as Error)?.message ?? e}`);
+    say('FAILED');
   }
 }
