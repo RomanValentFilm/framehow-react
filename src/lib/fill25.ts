@@ -94,6 +94,8 @@ export function picturesInAppMemory(): { pictures: number; mb: number } {
 
 export async function fill25(say: (word: string) => void): Promise<void> {
   if (_busy) return;
+  // (first of all — also when there is nothing to fill: a tap on FILL 25 is what makes DROP TEST appear; Roman, 17:27, got "NO PROJECT" and no way out)
+  try { localStorage.setItem('fh_fill_test', '1'); } catch { /* the DROP TEST button will not show; nothing else */ }
   const s0 = useStore.getState();
   if (s0.frames.length === 0) { trace('FILL 25: no project open — make a new one first'); say('NO PROJECT'); return; }
   _busy = true;
@@ -103,7 +105,6 @@ export async function fill25(say: (word: string) => void): Promise<void> {
     const signedIn = !!(await import('./session')).getToken?.();
     if (signedIn) trace('FILL 25: SIGNED IN — these 25 pictures will be sent to the SERVER and count in the 500 MB. For the measurement, sign out and use a new project.');
     if (_made === 0) _made = picturesInAppMemory().pictures;   // after a restart the numbers go on where the project stands
-    try { localStorage.setItem('fh_fill_test', '1'); } catch { /* the DROP TEST button will not show; nothing else */ }
     const madeFrom = performance.now();
     let kb = 0;
     for (let i = 0; i < 25; i++) {

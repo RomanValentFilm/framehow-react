@@ -570,6 +570,9 @@ v5.0.225 · #777 (10 Nov, night)
 - APP MEMORY, SAID: 'APP MEMORY <when>: the open project holds N picture(s), X MB · beside it: N fetched picture(s) no card shows, Y MB · N preview(s) standing in' — six seconds after a start, right after an opening, and with every picture in. The line of step A now reads '… let go from APP MEMORY (the side copy of what was fetched)'.
 - CAMERA, asked and settled 16 Nov: the photo follows how the device is held (sideways in a vertical project = a wide picture, the person standing) — Roman: 'all is good', nothing to change.
 
-## v5.0.292 · #844 (next)
+## v5.0.292 · #844 (dev, run 764, 16 Nov)
 - FILL 25 ON ROMAN'S iPAD, 16 Nov 17:16–17:18 (signed out, a new project of 8 shots, 12 taps): 108 pictures 90 MB in APP MEMORY · 208 → 168 MB · 308 → 247 MB — THE PAGE NEVER STARTED ANEW. One drawing of the project 103–108 ms at every size (drawing does not depend on the number of pictures; WF 7's 400–900 ms come from its 28 shots). A batch of 25 saved into LOCAL APP STORAGE in 1.3–1.9 s + 0.2 s, the same at 300 as at 100. LOCAL APP STORAGE 756 MB used at the end. So: step C is not urgent for the iPad; the iPhone (where the crashing was, 11 Nov) is still to be measured.
 - DROP TEST: a button in the log panel, only on a device where FILL 25 was pressed, only signed out, two taps: empties the app's LOCAL APP STORAGE on this device and starts the app anew. (Signed out there is no other way to be rid of a test project — the project list asks for a sign-in, and signing in would send the 308 test pictures, 190 MB, to the account.)
+
+## v5.0.293 · #845 (next)
+- DROP TEST appears after ANY tap on FILL 25 — also one that answers 'NO PROJECT' — and at once, without closing the log (Roman, 17:27: FILL said NO PROJECT, so the flag was never set and there was no way out).

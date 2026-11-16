@@ -20,7 +20,7 @@ import { APP_VERSION } from '../store/state';
  *  It is bumped BY HAND, which is why it sat at #309 through #310, #311, #312
  *  and #313 — telling the screen a version of events that was four changes out
  *  of date. Worth remembering the next time it is trusted in a log. */
-export const SYNC_BUILD_TAG = '#844';
+export const SYNC_BUILD_TAG = '#845';
 
 let box: HTMLElement | null = null;
 
@@ -174,9 +174,8 @@ function ensureBox(): HTMLElement | null {
   // there only on a device where FILL 25 was pressed, and works only signed
   // out: it empties the app's LOCAL APP STORAGE on this device and starts the
   // app anew. Two taps, so a slip of the finger does nothing.
-  let hasTest = false;
-  try { hasTest = localStorage.getItem('fh_fill_test') === '1'; } catch { /* no storage */ }
-  if (hasTest) {
+  const hasTest = (): boolean => { try { return localStorage.getItem('fh_fill_test') === '1'; } catch { return false; } };
+  {
     const drop = document.createElement('button');
     drop.id = 'dropFillTestBtn';
     drop.textContent = 'DROP TEST';
@@ -190,6 +189,10 @@ function ensureBox(): HTMLElement | null {
       if (Date.now() - armed > 4000) { armed = Date.now(); drop.textContent = 'TAP AGAIN — EMPTIES THIS DEVICE'; setTimeout(() => { if (drop.textContent?.startsWith('TAP AGAIN')) drop.textContent = 'DROP TEST'; }, 4000); return; }
       run((word) => { drop.textContent = word; });
     };
+    // (there from the start, shown only once FILL 25 was tapped on this device —
+    // and it appears the moment FILL 25 has answered, without closing the log)
+    drop.style.display = hasTest() ? '' : 'none';
+    fill.addEventListener('click', () => { const look = window.setInterval(() => { if (hasTest()) { drop.style.display = ''; window.clearInterval(look); } }, 300); window.setTimeout(() => window.clearInterval(look), 8000); });
     box.appendChild(drop);
   }
 
