@@ -28,6 +28,9 @@ finish() {
   else SND="sound failed: ${SND_ERR:-no reason given} — beeped instead"; osascript -e 'beep 2' 2>/dev/null; fi
   osascript -e "display notification \"$1 — say zzz\" with title \"Framehow\"" 2>/dev/null
   echo "--- $1 ($VERSION · $TAG, run $RUN) — say zzz — $SND ---"
+  # ...AND WRITTEN DOWN (16 Nov, Roman: "how come you cannot read if dev is up?"):
+  # the last line also goes into a file, so "zzz" can be answered from it.
+  mkdir -p e2e-log && echo "$(date '+%Y-%m-%d %H:%M:%S') — $1 ($VERSION · $TAG, run $RUN)" >> e2e-log/deploys.log
 }
 # THE DEVICE-SAVE BENCH, EVERY TIME (12 Nov): 35 checks in five seconds that the
 # code which writes work onto the device loses nothing. No deploy without it.

@@ -4287,9 +4287,12 @@ async function applyCloudTreeToStore(
   onImageProgress?: (loaded: number, total: number) => void,
   // LAZY LOADING (13 Nov): when a project is OPENED, the call returns once its
   // shots are on the screen; the pictures follow in the background.
-  opts?: { picturesInBackground?: boolean },
+  // `theCallerDraws` (16 Nov): a fetch draws the project itself, once, when
+  // everything is in and the view is put back — see "ONE FETCH, ONE REDRAW".
+  opts?: { picturesInBackground?: boolean; theCallerDraws?: boolean },
 ): Promise<void> {
   const background = opts?.picturesInBackground === true;
+  const theCallerDraws = opts?.theCallerDraws === true;
   // ANOTHER PROJECT'S MEMORY MUST NOT JUDGE THIS ONE (22 Sept, run 320).
   //
   // Roman's iPad, 21 Sept: opened a project, deleted it while open, opened
@@ -5465,10 +5468,13 @@ async function applyCloudTreeToStore(
     stampChangedContent(tree.project?.id ?? undefined, receivedTimes);
   }
 
-  (window as any).__fh_renderAll?.();
+  // Drawn here so the shots are on the screen while their pictures come. A
+  // fetch that has no picture to wait for draws once itself, a moment later.
+  const picturesToWaitFor = [...mainImageTasks, ...versionImageTasks].some((t) => !_gonePictures.has(t.r2Key));
+  if (!theCallerDraws || picturesToWaitFor) (window as any).__fh_renderAll?.();
 
   // The pictures: see bringThePictures, below.
-  await bringThePictures(mainImageTasks, versionImageTasks, background, onImageProgress);
+  await bringThePictures(mainImageTasks, versionImageTasks, background, onImageProgress, theCallerDraws);
 }
 
 // PICTURES THE LIBRARY DELETED ARE REMEMBERED AS GONE (13 Nov, Roman: "comes a
@@ -5526,6 +5532,7 @@ async function bringThePictures(
   versionImageTasks: VersionPictureTask[],
   background: boolean,
   onImageProgress?: (loaded: number, total: number) => void,
+  theCallerDraws = false,
 ): Promise<void> {
   // Now fetch images from R2 in parallel and patch them into the store.
   // …INTO THE PROJECT THEY WERE FETCHED FOR, AND NO OTHER (12 Nov). The pictures
@@ -5817,7 +5824,7 @@ async function bringThePictures(
   if (redrawTimer !== null) { window.clearTimeout(redrawTimer); redrawTimer = null; }
   // the last word: every picture is on its card — when one really came (13 Nov:
   // with nothing fetched this drew all 26 shots of WF 7 again for nothing, 650 ms)
-  if (reallyFetched > 0 && !anotherProjectIsOnScreen()) { (window as any).__fh_renderWhy = 'pictures: all in'; (window as any).__fh_renderAll?.(); }
+  if (reallyFetched > 0 && !theCallerDraws && !anotherProjectIsOnScreen()) { (window as any).__fh_renderWhy = 'pictures: all in'; (window as any).__fh_renderAll?.(); }
 
   if (background && anotherProjectIsOnScreen()) { endArriving(picturesFor); return; }
   // Always update count baselines — pushes preserve r2Keys for any
@@ -7917,7 +7924,7 @@ async function tryPullFromCloud(force = false): Promise<void> {
             if (total === 0) return;
             const pct = 70 + Math.round((loaded / total) * 20);
             if (progressBar) progressBar.style.width = pct + '%';
-          });
+          }, { theCallerDraws: true });
           if (progressBar) progressBar.style.width = '90%';
           // Only worth telling the user about frames kept because they had work
           // of their own. Frames kept merely because the answer did not mention
@@ -7947,7 +7954,7 @@ async function tryPullFromCloud(force = false): Promise<void> {
             if (total === 0) return;
             const pct = 40 + Math.round((loaded / total) * 50);
             if (progressBar) progressBar.style.width = pct + '%';
-          });
+          }, { theCallerDraws: true });
           if (progressBar) progressBar.style.width = '90%';
         }
         // renderAll calls setState — keep it inside the system action so it
@@ -7965,10 +7972,15 @@ async function tryPullFromCloud(force = false): Promise<void> {
         // happen seldom. #320 made a pull follow every push, and then it was
         // constant. Opening a project still sets the view — that call is
         // elsewhere and stays.
-        (window as any).__fh_renderAll?.();
-      } finally {
-        endSystemAction();
-      }
+        //
+        // ONE FETCH, ONE REDRAW (16 Nov). Roman's iPad, 12:21:36–38: one fetch
+        // drew all 28 shots of WF 7 three times — 922 + 679 + 675 ms, 2.3 s in
+        // which nothing answered. Once inside the rebuild, once here, and once
+        // more a few lines down, after the view was put back. The one that
+        // counts is the last: it shows the project as it now is, in the view
+        // the person was in. So the redraw that stood here is gone, the view
+        // is put back first, and THEN everything is drawn — once, and still
+        // inside the system action.
 
       // Put the user back where they were (#288). A group or frame the answer
       // no longer contains is simply skipped.
@@ -8018,6 +8030,11 @@ async function tryPullFromCloud(force = false): Promise<void> {
       } catch (e) {
         console.warn('[sync] could not restore the view after a pull', e);
         trace('  could not put the view back — carrying on');
+        // (the redraw must not be lost with it: the store was rebuilt)
+        try { (window as any).__fh_renderWhy = 'fetch: the view could not be put back'; (window as any).__fh_renderAll?.(); } catch { /* said above */ }
+      }
+      } finally {
+        endSystemAction();
       }
 
       lastKnownUpdatedAt = remoteUpdatedAt;

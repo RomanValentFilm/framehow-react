@@ -481,6 +481,7 @@ async function pool<T, R>(items: T[], n: number, fn: (t: T) => Promise<R>): Prom
 const _tileSeen = new Set<string>();
 const _tileHealed = new Set<string>();
 let _probe: HTMLCanvasElement | null = null;
+let _looks = 0, _lookMs = 0, _lookTimer: number | null = null;
 function looksBlack(img: HTMLImageElement): boolean {
   try {
     if (!img.naturalWidth) return false;
@@ -499,7 +500,12 @@ function watchTile(img: HTMLImageElement, p: Loaded): void {
   img.addEventListener('load', () => {
     if (_tileSeen.has(p.key)) return;
     _tileSeen.add(p.key);
-    if (looksBlack(img)) void healTile(img, p, 'is black');
+    const t0 = performance.now();
+    const black = looksBlack(img);
+    // WHAT THE LOOKING COSTS, SAID (Roman, 16 Nov: "will these not be too many looks?")
+    _lookMs += performance.now() - t0; _looks++;
+    if (_lookTimer === null) _lookTimer = window.setTimeout(() => { _lookTimer = null; trace(`PICTS: looked at ${_looks} tile(s) in ${Math.round(_lookMs)} ms altogether`); _looks = 0; _lookMs = 0; }, 3_000);
+    if (black) void healTile(img, p, 'is black');
   }, { once: true });
 }
 async function healTile(img: HTMLImageElement, p: Loaded, what: string): Promise<void> {

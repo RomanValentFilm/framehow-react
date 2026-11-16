@@ -63,6 +63,8 @@ export function renderAll(): void {
   // SAY HOW LONG A REDRAW TAKES (#517). Roman: "a bit slower on the strip
   // buttons and NEEDS". A number instead of a feeling: one line whenever a
   // whole redraw takes longer than 100 ms, with who asked for it.
+  // (counted, so a test can say "one fetch, one redraw" — 16 Nov)
+  { const w = window as unknown as { __fh_redraws?: number }; w.__fh_redraws = (w.__fh_redraws ?? 0) + 1; }
   const began = performance.now();
   // (who asked: the caller's own word when it left one — after a wait the
   // stack has forgotten, and the log said "(?)" for the redraws that mattered)

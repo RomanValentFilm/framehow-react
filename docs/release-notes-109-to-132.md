@@ -508,6 +508,10 @@ v5.0.225 · #777 (10 Nov, night)
 - FULL RUN 742 (13 Nov 19:55–21:11, on the files of v5.0.279): 169 passed, 2 red, 6 parked. Red 1 = test 01 (two devices reload): it waited for the fetch at the start that no longer happens — the test now takes 'restored … known to be on the server' as the same knowledge. Red 2 = test 44 (fitting, version arrows): the card was measured in the instant a fetch redrew the page (boundingBox null) — looks like timing, to be run alone.
 - Run 743: test 44 red again. Cause read from the trace and the log: five seconds after its first saves a device fetched ITS OWN work back ('pull: remote is newer (Desktop)') and redrew the page; the test asked for the card in that instant. The test asks again now (run 744 green, the card stays at 250 px over five taps). The needless redraw itself is on the list (LAUNCH.md, FOUND 16 Nov).
 
-## v5.0.280 · #832 (next)
+## v5.0.280 · #832 (dev, run 745, 16 Nov)
 - LIBRARY, DELETE: only the shots that lost a picture are drawn again — not the whole project behind the library (iPad, WF 7: 870 ms of standstill at every delete). A view where the shot has no card of its own draws everything, as before. Test 48 (DELETE) checks the log line.
 - LIBRARY, A TILE THAT SHOWS NOTHING: every tile is looked at once; a preview on this device that cannot be drawn or is black from corner to corner is replaced by the server's (or made again from the full picture), and the log says which picture, how big, kept since when, and what came instead — the cause of a preview going bad on the iPad is NOT known yet; this line is there to find it. A picture that really is black is left alone.
+
+## v5.0.281 · #833 (next)
+- The library says what its looking costs: 'PICTS: looked at N tile(s) in X ms altogether'. The deploy writes its last line into e2e-log/deploys.log, so 'Dev is up' can be read.
+- ONE FETCH, ONE REDRAW (16 Nov, Roman's iPad 12:21:36–38: one fetch drew all 28 shots of WF 7 three times — 922 + 679 + 675 ms, 2.3 s of standstill; the same three at every start that fetched). The rebuild no longer draws when the fetch has no picture to wait for, the redraw after it is gone, and the view is put back BEFORE the one drawing that remains (inside the system action). With pictures to wait for: once so the shots stand, once when all are in. Test 73.
