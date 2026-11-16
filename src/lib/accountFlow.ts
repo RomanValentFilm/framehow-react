@@ -1725,6 +1725,17 @@ async function loadCloudProject(p: CloudProject): Promise<void> {
     // touched them); the server refused them all as older; the forced fetch
     // took its copy; that counted as a change; and it pushed again, for ever.
     adoptFingerprintsFromStore();
+    // OPENING A PROJECT IS HAVING HEARD THE SERVER (16 Nov, Roman's iPad). The
+    // whole project was just fetched and put on the screen as it is — and
+    // nothing wrote down "heard, up to here". So the first fetch after the
+    // first save asked for the WHOLE project again, could not be told from
+    // news ("pull: remote is newer (Tablet)" — its own name), rebuilt
+    // everything, drew all 28 shots (0.9 s of standstill: 12:21, 13:56, 14:05,
+    // 15:28) and started the pictures coming a second time. Now the opening
+    // stands on what it took, as a fetch does: the next fetch asks only for
+    // what changed since, and its own save coming back is known for what it is.
+    holdTree(p.id, tree, true);   // (kept under this project's id — a fetch for another project does not fold into it)
+    _lastSent = null;
     clearDirtyState(); // Fresh project load — nothing dirty
     fhTrack('project_opened', { name: p.name });
     (window as any).__fh_renderAll?.();
@@ -7195,6 +7206,16 @@ export function forgetTheServerEverHadIt(): void {
 }
 
 export function resetProjectSyncGuards(): void {
+  // THE PICTURES OF THE PROJECT THAT IS LEFT ARE LET GO (16 Nov, Roman: "you don't
+  // need pictures of another project on your app"). Every picture ever fetched
+  // was kept here for the whole session, so that a fetch need not download it
+  // twice — and nothing ever took one out. Open WF 7 (261 pictures, about
+  // 300 MB), then a fitting, then another project: all of them stayed in the
+  // page's memory until the app was restarted, which on the iPad is the likely
+  // reason the page was sometimes thrown out and started anew. The open
+  // project's pictures are held by the project itself; this is only the copy
+  // kept beside it, and it starts empty with every project.
+  if (r2ImageCache.size > 0) { trace(`  ${r2ImageCache.size} picture(s) of the project before are let go from memory`); r2ImageCache.clear(); }
   _serverKind = null;
   _lastKnownImageCount = 0;
   _lastKnownFrameCount = 0;

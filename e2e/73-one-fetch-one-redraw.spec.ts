@@ -114,6 +114,73 @@ test('a fetch that brings pictures throws no curtain: the pictures come in the b
   await tablet.close();
 });
 
+// OPENING A PROJECT IS HAVING HEARD THE SERVER (16 Nov, Roman's iPad). After every
+// opening, the first fetch — five seconds after the first save — asked for the
+// whole project again, took its own save for news ("pull: remote is newer",
+// under its own name), and drew all 28 shots: 0.9 s of standstill, each time.
+test('after opening a project, its own first save coming back is not news: no rebuild, no drawing', async ({ browser }) => {
+  const { token } = await freshAccount();
+  const desktop = await Device.open(browser, 'desktop', token);
+  const tablet = await Device.open(browser, 'tablet', token, true);
+  const projectId = await tablet.newProject('Opened here', 6);
+  await tablet.settle();
+
+  say('the desktop OPENS the project the tablet made');
+  await desktop.openProject(projectId!);
+  await Device.waitUntilTheyAgree(desktop, tablet);
+  await desktop.settle();
+  await desktop.page.waitForTimeout(1500);
+
+  const redraws = () => desktop.page.evaluate(() => (window as never as { __fh_redraws?: number }).__fh_redraws ?? 0);
+  const news = async () => (await desktop.log()).filter((l) => l.includes('pull: remote is newer')).length;
+  const newsBefore = await news();
+  const logBefore = await desktop.log();
+
+  say('the desktop writes under shot 2 — its first save in this project — and its fetch comes five seconds later');
+  await desktop.writeUnder(1, 'the first thing written after opening');
+  await desktop.settle();
+  const drawnBefore = await redraws();
+  for (let i = 0; i < 40; i++) {
+    await desktop.nudge();
+    const log = await desktop.log();
+    if (log.length > logBefore.length && (log.some((l) => l.includes('its own push')) || await news() > newsBefore)) break;
+    await desktop.page.waitForTimeout(500);
+  }
+  await desktop.page.waitForTimeout(1500);
+  const line = (await desktop.log()).find((l) => l.includes('its own push')) ?? 'NO "its own push" LINE';
+  say(`   ${line.trim()}`);
+  expect(await news(), 'ITS OWN SAVE WAS TAKEN FOR NEWS after an opening ("pull: remote is newer")').toBe(newsBefore);
+  expect(line, 'the fetch knew its own save for what it is').toContain('its own push');
+  const drawn = (await redraws()) - drawnBefore;
+  say(`   the whole project was drawn ${drawn} time(s) for that fetch`);
+  expect(drawn, 'no drawing of the whole project for one\'s own save coming back').toBe(0);
+  await Device.waitUntilTheyAgree(desktop, tablet);
+
+  // …AND WHAT IS REALLY NEWER STILL WINS (Roman, 16 Nov: "if you didn't touch the
+  // screen and there is something newer coming from the server, then the newer
+  // has to win. Is that considered?"). The desktop is left alone; the tablet
+  // writes; the desktop must take it — as news, with its one drawing.
+  say('the desktop is not touched; the tablet writes under shot 4 — that IS news, and must arrive');
+  const newsBeforeTheirs = await news();
+  await tablet.writeUnder(3, 'written on the tablet after the desktop opened');
+  await tablet.settle();
+  // (up to a minute and a half: run 760 gave it 28 s, and the tablet's save and
+  // the desktop's next look took 24 — the news came, the test had stopped waiting)
+  for (let i = 0; i < 130; i++) {
+    await desktop.nudge();
+    if (await news() > newsBeforeTheirs) break;
+    await desktop.page.waitForTimeout(500);
+  }
+  expect(await news(), 'the other device\'s newer work was taken as news').toBeGreaterThan(newsBeforeTheirs);
+  const both = await Device.waitUntilTheyAgree(desktop, tablet);
+  say(`   both show: ${both}`);
+  const onDesktop = await desktop.whole();
+  expect(onDesktop, 'the tablet\'s sentence is on the desktop').toContain('written on the tablet after the desktop opened');
+
+  await desktop.close();
+  await tablet.close();
+});
+
 /** A small one-colour PNG — each colour a different picture. */
 function colourPng(r: number, g: number, b: number): string {
   const W = 48, H = 32;
