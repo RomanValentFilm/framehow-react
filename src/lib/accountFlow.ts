@@ -1077,7 +1077,7 @@ export async function openProjectList(startInEdit = false): Promise<void> {
     }
 
     async function onEdit(p: CloudProject): Promise<void> {
-      hide('projectListModal');
+      // (the list stays; the name box comes on top of it — 16 Nov)
       const newName = await promptRenameProject(p.name);
       if (newName && newName !== p.name) {
         try {

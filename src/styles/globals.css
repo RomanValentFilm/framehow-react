@@ -1940,5 +1940,7 @@ html.island #maxView .max-next{right:max(8px,var(--ir,0px));}
 #picturesBar .pictures-bar-fill{position:absolute;left:0;bottom:env(safe-area-inset-bottom);height:3px;width:0;background:var(--accent,#d52632);transition:width .3s linear;}
 #picturesBar .pictures-bar-text{position:relative;top:-1px;font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;color:#fff;text-align:center;line-height:1;}
 body.pictures-bar-on{padding-bottom:calc(16px + env(safe-area-inset-bottom));}
+/* A QUESTION OVER THE PROJECT LIST LEAVES THE LIST TO BE SEEN (Roman, 16 Nov: "the list goes away while you delete projects — that's wrong"). The list is no longer taken away for the question; and the question's own dark ground, 85 % black, hid it all the same. Over the list it is lighter: the list stands there, dimmed, the question on top. */
+body:has(#projectListModal:not(.hidden)) #confirmModal,body:has(#projectListModal:not(.hidden)) #deleteConfirmModal,body:has(#projectListModal:not(.hidden)) #deleteNoticeModal,body:has(#projectListModal:not(.hidden)) #recoverConfirmModal,body:has(#projectListModal:not(.hidden)) #renameProjectModal{background:rgba(0,0,0,.5);}
 /* ONE BAR AT A TIME (Roman, 16 Nov: opening WF 7 showed the middle and the bottom bar together). While the middle one is up, the bottom one is not shown; it comes when the middle one has gone. */
 body:has(#progressOverlay:not(.hidden)) #picturesBar,body:has(#progressOverlay:not(.hidden)) .startup-loading-line{display:none;}

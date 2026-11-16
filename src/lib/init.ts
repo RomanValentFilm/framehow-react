@@ -318,12 +318,20 @@ export function initFramehow(): void {
   let _menuGuard = false;
   const menuBtn = document.getElementById('mainMenuBtn')!;
   menuBtn.style.touchAction = 'manipulation'; // remove 300ms double-tap delay
+  // THE MENU SAYS WHAT HAPPENED TO A TAP (16 Nov, Roman's iPad: "when you click on
+  // Menu, it didn't open — I had to click 3 times"; the log had not a word about
+  // it). A finger on the button, and what became of it: opened, closed, locked —
+  // or nothing, which then shows as a touch with no line after it.
+  let _menuTouchedAt = 0;
+  menuBtn.addEventListener('pointerdown', () => { _menuTouchedAt = performance.now(); void import('./syncTrace').then(({ trace }) => trace('menu: finger on the button')); }, { passive: true });
   menuBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     e.preventDefault();
-    if (state().setupMode) return; // locked while setup bar is open
+    const after = _menuTouchedAt ? `${Math.round(performance.now() - _menuTouchedAt)} ms after the finger` : 'no finger seen';
+    if (state().setupMode) { void import('./syncTrace').then(({ trace }) => trace(`menu: tap taken (${after}) — locked, SETUPS is open`)); return; } // locked while setup bar is open
     const menu = document.getElementById('mainMenu')!;
     menu.classList.toggle('open');
+    { const now = menu.classList.contains('open'); void import('./syncTrace').then(({ trace }) => trace(`menu: tap taken (${after}) — ${now ? 'opened' : 'closed'}`)); }
     _menuGuard = true;
     setTimeout(() => { _menuGuard = false; }, 80);
     void flushSyncNow(); // non-blocking save — ensures current work is safe
@@ -333,9 +341,11 @@ export function initFramehow(): void {
   document.getElementById('mainMenu')!.addEventListener('click', (e) => {
     e.stopPropagation();
   });
-  document.addEventListener('click', () => {
+  document.addEventListener('click', (e) => {
     if (_menuGuard) return;
-    document.getElementById('mainMenu')!.classList.remove('open');
+    const m = document.getElementById('mainMenu')!;
+    if (m.classList.contains('open')) void import('./syncTrace').then(({ trace }) => trace(`menu: closed by a tap elsewhere (${(e.target as HTMLElement)?.id || (e.target as HTMLElement)?.className?.toString().slice(0, 30) || (e.target as HTMLElement)?.tagName})`));
+    m.classList.remove('open');
   });
 
   // ── Global: dismiss any active MOVE/reorder when clicking elsewhere ─

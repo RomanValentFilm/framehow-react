@@ -529,7 +529,12 @@ v5.0.225 · #777 (10 Nov, night)
 ## v5.0.284 · #836 (dev, run 750, 16 Nov)
 - A BOX ON TOP: THE BOX MOVES, NEVER THE PAGE BEHIND (Roman, iPad, 16 Nov: moving the project list moved the page behind it). The iPad keeps a scroll inside a box only if the box can scroll that way; a short list, or one at its end, handed the finger to the page. One guard for every account box (project list, name box, sign-in): finger or wheel moves what can move inside, otherwise nothing. Why it showed today is not known — nothing of today's work touches it.
 
-## v5.0.285 · #837 (next)
+## v5.0.285 · #837 (dev, run 751, 16 Nov)
 - NO WHITE PILL OVER A BOX (Roman, 16 Nov, screenshot 13:49: '"…" deleted. Storage 463 of 500 MB · 93 %' across the rows of the project list). After Delete now nothing is said on top of the list — the row is gone and the list's own storage line has the figure. The storage step notice ('Storage 95 % full …') waits while any box is open (project list, a notice, a project arriving) and comes when it is closed.
 - THE PROJECT LIST STAYS while a question is asked about one of its rows (Delete, Delete now, Recover): the question comes on top; the list is no longer taken away and brought back around it.
 - SEEN, NOT YET LOOKED AT: two storage figures two seconds apart (13:48:30 '93 % — 466 MB', 13:48:32 '95 % — 475 MB'; the pill said 463, the list's line 472) — two answers of the server that do not count the same things.
+
+## v5.0.286 · #838 (next)
+- THE LIST IS SEEN BEHIND THE QUESTION (Roman tested again: "it's the same, the list goes away"). Two reasons: his iPad was still running the build before (the log shows the same file name as the start before the deploy), and — the real one — the question's own ground is 85 % black, so a list left in place was hidden all the same. Over the project list a question's ground is 50 % now; rename keeps the list too.
+- THE MENU SAYS WHAT HAPPENED TO A TAP: 'menu: finger on the button' / 'tap taken (N ms after) — opened | closed | locked' / 'closed by a tap elsewhere'. Roman had to tap three times at about 13:57; the log had nothing about it.
+- FOUND IN THE SAME LOG, TO LOOK AT NEXT: every time WF 7 is opened the device sends the same five shots again ('5 shot(s) hold a version the server has not got — still to send': fd75af, e5d976, 719253, dc194e, 28ef7b — also at 13:39 and 12:21), fetches 361 rows back as 'remote is newer (Tablet)' and draws the whole project twice (912 + 902 ms, 13:56:18–24) — and a fetch replaced the version under an open WRITE box ('written to the live one').
