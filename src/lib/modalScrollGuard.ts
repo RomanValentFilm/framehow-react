@@ -32,10 +32,36 @@ function canScrollInside(from: EventTarget | null, box: HTMLElement, dy: number)
   return false;
 }
 
+// …AND THE PAGE ITSELF IS HELD (16 Nov, an hour later — Roman, v5.0.286: "why is
+// the page moving behind the box? we said we don't want that"). The guard below
+// was not enough on his iPad, and I do not know which way the swipe got past
+// it. So the page is held the way it is held behind the export boxes, where
+// the same fault was cured before (exports.ts, lockPageScroll): while a box is
+// open the page is pinned in place and CANNOT scroll, whatever reaches it. It
+// is let go, at the same place, when the last box closes.
+let _held = false;
+function holdOrLetGo(): void {
+  const open = !!openBox();
+  if (open === _held) return;
+  _held = open;
+  void import('./exports').then(({ lockPageScroll, unlockPageScroll }) => {
+    if (open) lockPageScroll(); else unlockPageScroll();
+    void import('./syncTrace').then(({ trace }) => trace(open ? `box open: the page behind is held at ${Math.round(parseFloat(document.body.dataset.fhLockTop || '0'))} px` : 'box closed: the page is let go'));
+  });
+}
+function watchTheBoxes(): void {
+  const boxes = document.querySelectorAll<HTMLElement>('.account-modal');
+  if (!boxes.length) { window.setTimeout(watchTheBoxes, 1000); return; }
+  const mo = new MutationObserver(holdOrLetGo);
+  boxes.forEach((b) => mo.observe(b, { attributes: true, attributeFilter: ['class'] }));
+  holdOrLetGo();
+}
+
 let _wired = false;
 export function wireModalScrollGuard(): void {
   if (_wired) return;
   _wired = true;
+  watchTheBoxes();
   let startY = 0;
   document.addEventListener('touchstart', (e) => { startY = e.touches[0]?.clientY ?? 0; }, { passive: true, capture: true });
   document.addEventListener('touchmove', (e) => {
