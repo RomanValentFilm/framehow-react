@@ -6,7 +6,7 @@
 
 import { autoPhoneMainView, setViewMode, scrollAnchorTo } from './view';
 import { dismissNewProjectModal } from './modals';
-import { hasStandIn, setStandIn, dropStandIn, beginArriving, oneArrived, endArriving, picturesArriving, arrivingFor } from './lazyPictures';
+import { hasStandIn, setStandIn, dropStandIn, beginArriving, oneArrived, endArriving, picturesArriving, arrivingFor, standInCount } from './lazyPictures';
 import { api, API_BASE_URL, requestsBelongToAStep } from './api';
 import { fhTrack } from './tracking';
 import type { ApiError } from './api';
@@ -1735,6 +1735,7 @@ async function loadCloudProject(p: CloudProject): Promise<void> {
     // stands on what it took, as a fetch does: the next fetch asks only for
     // what changed since, and its own save coming back is known for what it is.
     holdTree(p.id, tree, true);   // (kept under this project's id — a fetch for another project does not fold into it)
+    sayAppMemory('right after the opening');
     _lastSent = null;
     clearDirtyState(); // Fresh project load — nothing dirty
     fhTrack('project_opened', { name: p.name });
@@ -3057,6 +3058,24 @@ async function uploadImageToR2(
 // R2 image cache: avoids re-downloading the same image when pulling updates
 // that didn't actually change the images. Keyed by r2_key → data URL.
 const r2ImageCache = new Map<string, string>();
+
+/** WHAT APP MEMORY HOLDS, SAID (16 Nov, Roman: "how can APP MEMORY be empty when
+ *  there is a project on screen?" — it cannot; I had no number to show). The
+ *  open project's pictures, each once, and what lies beside them: the side copy
+ *  of pictures fetched from the SERVER in this session, and the previews
+ *  standing in for pictures still on their way. */
+export function sayAppMemory(when: string): void {
+  void import('./fill25').then(({ picturesInAppMemory }) => {
+    const p = picturesInAppMemory();
+    const held = new Set<string>();
+    const st = state();
+    for (const f of st.frames) if (f.src) held.add(f.src);
+    for (const strip of Object.keys(st.stripVersions)) for (const fid of Object.keys(st.stripVersions[strip] ?? {})) for (const v of st.stripVersions[strip][+fid] ?? []) if (v.bgImage) held.add(v.bgImage);
+    let besideN = 0, besideChars = 0;
+    for (const v of r2ImageCache.values()) if (!held.has(v)) { besideN++; besideChars += v.length; }
+    trace(`APP MEMORY ${when}: the open project holds ${p.pictures} picture(s), ${p.mb} MB · beside it: ${besideN} fetched picture(s) no card shows, ${Math.round((besideChars / 1048576) * 10) / 10} MB · ${standInCount()} preview(s) standing in`);
+  }).catch(() => { /* a line for the log, nothing more */ });
+}
 
 /** The server has no such file any more: deleted in the PICTS library on
  *  another device, before this one pulled the mark (28 Oct, Roman's iPad:
@@ -5878,6 +5897,7 @@ async function bringThePictures(
   }
   if (background) {
     endArriving(picturesFor);
+    if (comingCount > 0) sayAppMemory('with every picture in');
     if (comingCount > 0) trace(`  every picture of the project is on this device (${comingCount - failedTasks.length} of ${comingCount}${failedTasks.length ? ` — ${failedTasks.length} did not come` : ''}${knownGone.size ? ` · ${knownGone.size} deleted in the library` : ''})`);
     // (what loadCloudProject did after its wait, when it still waited)
     if (isPullIncomplete()) showIncompleteLoadOverlay(); else hideIncompleteLoadOverlay();
@@ -7215,7 +7235,7 @@ export function resetProjectSyncGuards(): void {
   // reason the page was sometimes thrown out and started anew. The open
   // project's pictures are held by the project itself; this is only the copy
   // kept beside it, and it starts empty with every project.
-  if (r2ImageCache.size > 0) { trace(`  ${r2ImageCache.size} picture(s) of the project before are let go from memory`); r2ImageCache.clear(); }
+  if (r2ImageCache.size > 0) { trace(`  ${r2ImageCache.size} picture(s) of the project before are let go from APP MEMORY (the side copy of what was fetched)`); r2ImageCache.clear(); }
   _serverKind = null;
   _lastKnownImageCount = 0;
   _lastKnownFrameCount = 0;

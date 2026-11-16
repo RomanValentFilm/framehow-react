@@ -1314,6 +1314,8 @@ export function initFramehow(): void {
   void import('./picts').then(({ wirePictsButton }) => wirePictsButton());
   void import('./modalScrollGuard').then(({ wireModalScrollGuard }) => wireModalScrollGuard());
   void import('./modals').then((m) => m.watchTheFingerForNotices());
+  window.setTimeout(() => { void import('./accountFlow').then((m) => m.sayAppMemory('six seconds after the start')); }, 6_000);
+  (window as unknown as { __fh_fill25?: (say: (word: string) => void) => void }).__fh_fill25 = (say) => { void import('./fill25').then(({ fill25 }) => fill25(say)); };
 
   // iOS :active CSS enabler
   document.addEventListener('touchstart', () => {}, { passive: true });

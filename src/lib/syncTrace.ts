@@ -20,7 +20,7 @@ import { APP_VERSION } from '../store/state';
  *  It is bumped BY HAND, which is why it sat at #309 through #310, #311, #312
  *  and #313 — telling the screen a version of events that was four changes out
  *  of date. Worth remembering the next time it is trusted in a log. */
-export const SYNC_BUILD_TAG = '#842';
+export const SYNC_BUILD_TAG = '#843';
 
 let box: HTMLElement | null = null;
 
@@ -146,6 +146,27 @@ function ensureBox(): HTMLElement | null {
   tag.style.cssText =
     'position:absolute;top:5px;left:8px;color:#fff;font:10px monospace;opacity:.85;';
   box.appendChild(tag);
+
+  // FILL 25 — the measurement (see fill25.ts). Here, in the log panel, and
+  // nowhere else: only someone who opened the log finds it.
+  const fill = document.createElement('button');
+  fill.id = 'fill25Btn';
+  fill.textContent = 'FILL 25';
+  fill.style.cssText =
+    'position:absolute;top:2px;right:92px;background:#333;color:#fff;border:1px solid #666;' +
+    'border-radius:4px;font:10px monospace;padding:2px 8px;cursor:pointer;';
+  fill.onclick = () => {
+    // (through a door the app opens at its start — init.ts — and not by naming
+    // the file here: this file is read by the device-save bench too, and a name
+    // here pulled the whole app into the bench: run 762, "bench RED")
+    const run = (window as unknown as { __fh_fill25?: (say: (word: string) => void) => void }).__fh_fill25;
+    if (!run) { fill.textContent = 'NOT READY'; setTimeout(() => (fill.textContent = 'FILL 25'), 1500); return; }
+    run((word) => {
+      fill.textContent = word;
+      if (word === 'DONE' || word === 'FAILED' || word === 'NO PROJECT') setTimeout(() => (fill.textContent = 'FILL 25'), 1500);
+    });
+  };
+  box.appendChild(fill);
 
   const copy = document.createElement('button');
   copy.textContent = 'COPY LOG';
