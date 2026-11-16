@@ -119,9 +119,13 @@ export async function fill25(say: (word: string) => void): Promise<void> {
       // is shown from the full photo itself, and every redraw of the page
       // unpacks it again; a version is painted onto its 960 surface. The first
       // run of FILL 25 only ever made versions, and so never met the slow kind.
-      const emptyMain = frames.find((f) => !f.src && !(f.strokes?.length) && !f.drawMode);
+      // (a shot made with New is in drawing mode until it gets a picture — the
+      // first try looked only for shots NOT in drawing mode and so filled one
+      // main shot of thirty; Roman, 19:05. The photo lands as the camera's does:
+      // the picture in, drawing mode off.)
+      const emptyMain = frames.find((f) => !f.src && !(f.strokes?.length));
       if (emptyMain) {
-        useStore.setState({ frames: frames.map((f) => (f.id === emptyMain.id ? { ...f, src } : f)) });
+        useStore.setState({ frames: frames.map((f) => (f.id === emptyMain.id ? { ...f, src, drawMode: false } : f)) });
         onMain++;
         await new Promise<void>((go) => setTimeout(go, 0));
         continue;

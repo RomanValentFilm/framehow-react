@@ -581,6 +581,9 @@ v5.0.225 · #777 (10 Nov, night)
 ## v5.0.294 · #846 (dev, run 766, 16 Nov)
 - DROP TEST holds the device's saves and waits 3.5 s before it empties the device, so a save in the air cannot write the test back.
 
-## v5.0.295 · #847 (next)
+## v5.0.295 · #847 (dev, run 767, 16 Nov)
 - FILL 25 fills the MAIN shots first (every shot without a main picture gets one), then versions as before; the log line says how many main shots hold a picture. For the test Roman asked for: how 30 full main photos behave at a redraw, without the camera's HDR layer in the question.
 - READ IN THE SWIFT (CameraModel.croppedAndResized): the camera's JPEG is written in Display P3 at quality 0.92 WITH Apple's HDR gain map inside when the photo has one (iOS 18+) — on purpose, proven 3 Nov. So 'HDR layer in the file' on the iPhone is what the file really carries; whether it is why the phone unpacks slowly (750 ms) is NOT known.
+
+## v5.0.296 · #848 (next)
+- FILL 25 really fills every empty main shot (v5.0.295 filled one: shots made with New are in drawing mode, and it had skipped those).
