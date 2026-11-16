@@ -516,9 +516,12 @@ v5.0.225 · #777 (10 Nov, night)
 - The library says what its looking costs: 'PICTS: looked at N tile(s) in X ms altogether'. The deploy writes its last line into e2e-log/deploys.log, so 'Dev is up' can be read.
 - ONE FETCH, ONE REDRAW (16 Nov, Roman's iPad 12:21:36–38: one fetch drew all 28 shots of WF 7 three times — 922 + 679 + 675 ms, 2.3 s of standstill; the same three at every start that fetched). The rebuild no longer draws when the fetch has no picture to wait for, the redraw after it is gone, and the view is put back BEFORE the one drawing that remains (inside the system action). With pictures to wait for: once so the shots stand, once when all are in. Test 73.
 
-## v5.0.282 · #834 (next)
+## v5.0.282 · #834 (dev, run 748, 16 Nov — run 747 red: the new test looked before the fetch)
 - CONFIRMED on Roman's iPad 12:37:36: the fetch after a library delete draws once (951 ms) where it drew three times (2.3 s). The looking at tiles costs under 1 ms a tile ('looked at 59 tile(s) in 42 ms').
 - 'pictures: all in' draws the project only when a picture really landed — not when every asked picture was answered 'deleted in the library' (iPad 12:36:49, 849 ms for nothing).
 - OPEN (same log): at a start that finds real news the project is still drawn several times (start 411 + rebuild 683 + view put back 674); and a device fetches its own library delete back and draws for it (951 ms) although its cards already say so.
 - THE BAR: ONE DESIGN, TWO PLACES (Roman, 16 Nov: 'middle means wait, bottom means carry on'). Thin red line, small white words. IN THE MIDDLE on a black screen when one must wait — a project arriving, restoring, a PDF, loading files; words unchanged. AT THE BOTTOM when one can carry on — the app starting (striped moving line, 'Opening app…'; the line along the top is gone) and pictures arriving ('Loading pictures N / M'). The same on the Mac, the iPad and the iPhone.
 - AN OPEN PROJECT WAITS FOR NOTHING — ALSO DURING A FETCH: a fetch that brought pictures put the black curtain over the work ("Loading image 3 of 5…") until the last one was in. It now does what an opening does: the shots at once, the pictures in the background, the thin bar counting "Loading pictures 3 / 5". (The wait sat inside the system action; nothing waits there any more.) Test 73, second test.
+
+## v5.0.283 · #835 (next)
+- THE BAR, after Roman's first look (16 Nov): the stripes at the start are wide (a red piece and a gap = a fifth of the screen; the narrow ones were "too busy"); ONE BAR AT A TIME — while the middle one is up the bottom one is not shown; the storage notice ("Storage 92 % full …") is said when the project is in, not over the black screen in the second of the wait (nothing waited for it, it only looked so).

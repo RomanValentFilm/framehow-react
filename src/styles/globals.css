@@ -593,9 +593,10 @@
          (#picturesBar below, the line growing with the count).
      The line along the top of the screen is gone. */
   .startup-loading-line{position:fixed;left:0;right:0;bottom:0;height:calc(16px + env(safe-area-inset-bottom));padding-bottom:env(safe-area-inset-bottom);box-sizing:border-box;background:#0c0c0c;z-index:900;pointer-events:none;overflow:hidden;display:flex;align-items:center;justify-content:center;}
-  .startup-loading-line .bar{position:absolute;left:0;right:0;bottom:env(safe-area-inset-bottom);height:3px;width:auto;background:repeating-linear-gradient(-45deg,var(--accent,#d52632) 0 8px,transparent 8px 16px);background-size:22.63px 3px;animation:startupStripes .6s linear infinite;}
+  .startup-loading-line .bar{position:absolute;left:0;right:0;bottom:env(safe-area-inset-bottom);height:3px;width:auto;background:linear-gradient(90deg,var(--accent,#d52632) 0 50%,transparent 50% 100%);background-size:20vw 100%;animation:startupStripes 1.4s linear infinite;}
+  /* (wide stripes — Roman, 16 Nov: the narrow ones were "too busy"; a red piece and a gap are a fifth of the screen together) */
   .startup-loading-line .startup-loading-text{position:relative;top:-1px;font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;color:#fff;text-align:center;line-height:1;}
-  @keyframes startupStripes{from{background-position:0 0}to{background-position:22.63px 0}}
+  @keyframes startupStripes{from{background-position:0 0}to{background-position:20vw 0}}
   .startup-loading-line.hidden{display:none;}
   .progress-overlay{position:fixed;inset:0;background:rgba(0,0,0,.95);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px;z-index:200;}
   .progress-overlay.hidden{display:none;}
@@ -1939,3 +1940,5 @@ html.island #maxView .max-next{right:max(8px,var(--ir,0px));}
 #picturesBar .pictures-bar-fill{position:absolute;left:0;bottom:env(safe-area-inset-bottom);height:3px;width:0;background:var(--accent,#d52632);transition:width .3s linear;}
 #picturesBar .pictures-bar-text{position:relative;top:-1px;font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;color:#fff;text-align:center;line-height:1;}
 body.pictures-bar-on{padding-bottom:calc(16px + env(safe-area-inset-bottom));}
+/* ONE BAR AT A TIME (Roman, 16 Nov: opening WF 7 showed the middle and the bottom bar together). While the middle one is up, the bottom one is not shown; it comes when the middle one has gone. */
+body:has(#progressOverlay:not(.hidden)) #picturesBar,body:has(#progressOverlay:not(.hidden)) .startup-loading-line{display:none;}

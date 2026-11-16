@@ -106,7 +106,16 @@ export function noteStorage(f: StorageFigure | undefined | null): void {
   const text = `Storage ${pct} % full — ${mbText(f.used)} of ${mbText(f.limit)} MB`
     + (confirmingGivesMore(f) ? `. Confirm your email (link in your inbox) to unlock ${mbText(f.full_limit ?? f.limit)} MB.` : '');
   trace(`storage: ${text}`);
-  void import('./modals').then(({ showToast }) => showToast(text));
+  // NOT OVER A PROJECT THAT IS ARRIVING (Roman, 16 Nov: "the project loading was
+  // held back by the storage pill — at least it looks like it"). Nothing waited
+  // for it; but the figure comes with the project, so the pill stood in the
+  // middle of the black screen, on the bar, in the very second of the wait. It
+  // is said when the project is in.
+  const say = (): void => { void import('./modals').then(({ showToast }) => showToast(text)); };
+  const arriving = (): boolean => { const el = document.getElementById('progressOverlay'); return !!el && !el.classList.contains('hidden'); };
+  if (!arriving()) { say(); return; }
+  let tries = 0;
+  const t = window.setInterval(() => { if (!arriving() || ++tries > 120) { window.clearInterval(t); window.setTimeout(say, 600); } }, 250);
 }
 
 /**
