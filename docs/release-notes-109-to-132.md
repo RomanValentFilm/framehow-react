@@ -578,5 +578,9 @@ v5.0.225 · #777 (10 Nov, night)
 - DROP TEST appears after ANY tap on FILL 25 — also one that answers 'NO PROJECT' — and at once, without closing the log (Roman, 17:27: FILL said NO PROJECT, so the flag was never set and there was no way out).
 - Roman's iPad 17:27–17:33: the first DROP TEST (17:27:56) was undone three seconds later by a save already on its way ('25 picture(s) put on this device') — the app started anew with the test project; the second (17:31:04) held: 'start: 0 whole-project copies … nothing saved', 'APP MEMORY … 0 picture(s)'. He signed in; storage stayed at 406 MB — nothing of the test reached the SERVER. STEP A SEEN WORKING: '124 picture(s) of the project before are let go from APP MEMORY'. APP MEMORY per project: Workflow 02 = 111 pictures, 121.8 MB; the next = 22 pictures, 8.4 MB.
 
-## v5.0.294 · #846 (next)
+## v5.0.294 · #846 (dev, run 766, 16 Nov)
 - DROP TEST holds the device's saves and waits 3.5 s before it empties the device, so a save in the air cannot write the test back.
+
+## v5.0.295 · #847 (next)
+- FILL 25 fills the MAIN shots first (every shot without a main picture gets one), then versions as before; the log line says how many main shots hold a picture. For the test Roman asked for: how 30 full main photos behave at a redraw, without the camera's HDR layer in the question.
+- READ IN THE SWIFT (CameraModel.croppedAndResized): the camera's JPEG is written in Display P3 at quality 0.92 WITH Apple's HDR gain map inside when the photo has one (iOS 18+) — on purpose, proven 3 Nov. So 'HDR layer in the file' on the iPhone is what the file really carries; whether it is why the phone unpacks slowly (750 ms) is NOT known.

@@ -107,12 +107,25 @@ export async function fill25(say: (word: string) => void): Promise<void> {
     if (_made === 0) _made = picturesInAppMemory().pictures;   // after a restart the numbers go on where the project stands
     const madeFrom = performance.now();
     let kb = 0;
+    let onMain = 0;
     for (let i = 0; i < 25; i++) {
       _made++;
       say(`${i + 1} / 25`);
       const src = makePicture(_made, w, h);
       kb += (src.length * 0.75) / 1024;
       const frames = useStore.getState().frames;
+      // THE MAIN SHOTS FIRST (16 Nov, Roman: "we didn't fill the main shot cards —
+      // maybe that is the test we should do"). A main shot with a plain photo
+      // is shown from the full photo itself, and every redraw of the page
+      // unpacks it again; a version is painted onto its 960 surface. The first
+      // run of FILL 25 only ever made versions, and so never met the slow kind.
+      const emptyMain = frames.find((f) => !f.src && !(f.strokes?.length) && !f.drawMode);
+      if (emptyMain) {
+        useStore.setState({ frames: frames.map((f) => (f.id === emptyMain.id ? { ...f, src } : f)) });
+        onMain++;
+        await new Promise<void>((go) => setTimeout(go, 0));
+        continue;
+      }
       const fid = frames[(_made - 1) % frames.length].id;
       const vers = ensureStripVersions(fid, 'ver');
       const blank = vers.length === 1 && vers[0].type === 'empty' && !vers[0].bgImage && !(vers[0].strokes?.length);
@@ -135,7 +148,8 @@ export async function fill25(say: (word: string) => void): Promise<void> {
     let storage = '';
     try { const est = await (await import('./persistence')).storageEstimate(); if (est) storage = ` · LOCAL APP STORAGE ${Math.round(est.usage / 1048576)} MB used`; } catch { /* not told */ }
     const m = picturesInAppMemory();
-    trace(`FILL 25: ${m.pictures} picture(s) in the open project · ${m.mb} MB in APP MEMORY · these 25: ${Math.round(kb / 25)} KB each, made in ${madeMs} ms · one drawing of the project ${drawMs} ms · ${saved} in ${saveMs} ms${storage}`);
+    const mains = useStore.getState().frames.filter((f) => !!f.src).length;
+    trace(`FILL 25: ${m.pictures} picture(s) in the open project (${mains} of ${useStore.getState().frames.length} main shots have one${onMain ? `, ${onMain} new` : ''}) · ${m.mb} MB in APP MEMORY · these 25: ${Math.round(kb / 25)} KB each, made in ${madeMs} ms · one drawing of the project ${drawMs} ms · ${saved} in ${saveMs} ms${storage}`);
     say('DONE');
   } catch (e) {
     trace(`FILL 25: stopped — ${(e as Error)?.message ?? e}`);
