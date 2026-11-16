@@ -347,6 +347,15 @@ test('picts library: DELETE — confirm, the card says "You deleted this picture
   await expect(d.page.locator('.picts-deleted').first(), 'the card says "You deleted this picture"').toBeVisible();
   expect((await d.page.locator('.picts-deleted').first().textContent())!.trim()).toBe('You deleted this picture');
   say(`   ${(await d.log()).find((l) => l.includes('PICTS: deleted')) ?? ''}`);
+  // ONLY THE SHOT THAT LOST ITS PICTURE IS DRAWN AGAIN (16 Nov; the iPad drew all
+  // 27 shots of WF 7 behind the library at every delete, 870 ms each time).
+  {
+    const log = await d.log();
+    const drew = log.find((l) => l.includes('PICTS: drew '));
+    say(`   ${drew ?? 'NO "drew … shot(s) again" LINE'}`);
+    expect(drew, 'the delete drew the shot\'s own cards, not the whole project').toContain('drew 1 shot(s) again, not the project');
+    expect(log.some((l) => l.includes('library: a shot without a card of its own')), 'the whole project was NOT drawn again for the delete').toBe(false);
+  }
 
   say('the offline device writes under shot 2, then comes back: its push still carries the picture — the server does not take it back');
   await d2.setView('main');   // the text box lives on the main card, not in 3x2 (run 507)

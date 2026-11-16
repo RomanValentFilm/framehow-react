@@ -467,6 +467,76 @@ async function pool<T, R>(items: T[], n: number, fn: (t: T) => Promise<R>): Prom
   return out;
 }
 
+// ---- A TILE THAT SHOWS NOTHING (16 Nov) ---------------------------------------
+// Roman's iPad, 13 Nov 19:49: one black tile in the library; still black after
+// the library was opened again; the same picture fine on the desktop. So the
+// server's preview is good and THIS DEVICE's copy of it is not — and the device
+// went on showing its own copy for ever, because nothing ever looked at it.
+//
+// Now every tile is looked at once: a preview that cannot be drawn, or that is
+// black from corner to corner, is thrown away and fetched again from the server
+// (or made again from the full picture) — and the log says which picture, how
+// big its preview was and what came instead, so the next one tells us how a
+// preview goes bad. A picture that really is black stays as it is.
+const _tileSeen = new Set<string>();
+const _tileHealed = new Set<string>();
+let _probe: HTMLCanvasElement | null = null;
+function looksBlack(img: HTMLImageElement): boolean {
+  try {
+    if (!img.naturalWidth) return false;
+    _probe ??= Object.assign(document.createElement('canvas'), { width: 8, height: 8 });
+    const ctx = _probe.getContext('2d', { willReadFrequently: true })!;
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, 8, 8);   // a probe that cannot draw reads white, not black
+    ctx.drawImage(img, 0, 0, 8, 8);
+    const d = ctx.getImageData(0, 0, 8, 8).data;
+    for (let i = 0; i < d.length; i += 4) if (d[i] > 12 || d[i + 1] > 12 || d[i + 2] > 12) return false;
+    return true;
+  } catch { return false; }
+}
+function watchTile(img: HTMLImageElement, p: Loaded): void {
+  img.addEventListener('error', () => void healTile(img, p, 'cannot be drawn'), { once: true });
+  if (_tileSeen.has(p.key)) return;
+  img.addEventListener('load', () => {
+    if (_tileSeen.has(p.key)) return;
+    _tileSeen.add(p.key);
+    if (looksBlack(img)) void healTile(img, p, 'is black');
+  }, { once: true });
+}
+async function healTile(img: HTMLImageElement, p: Loaded, what: string): Promise<void> {
+  if (_tileHealed.has(p.key)) return;
+  _tileHealed.add(p.key);
+  const name = p.key.split('/').pop();
+  const was = Math.round((p.url.length * 3) / 4 / 1024);
+  const token = getToken();
+  if (p.local || !token || navigator.onLine === false) { trace(`PICTS: the preview of ${name} (${whereUsed(p)}) ${what} — ${was} KB on this device; nothing to fetch it from just now`); return; }
+  try {
+    let bytes: ArrayBuffer | null = null, from = 'the server\'s preview', madeHere = false;
+    const r = await authed(`/thumbs/${p.key}`, token);
+    if (r.ok) bytes = await r.arrayBuffer();
+    let url = bytes ? bytesToDataUrl(bytes) : '';
+    let fresh = url ? await loadImg(url).catch(() => null) : null;
+    if (!fresh || looksBlack(fresh)) {
+      const serverToo = !!bytes;
+      const full = await fullUrl(p.key, token);
+      const m = full ? await shrinkWithSize(full) : null;   // from the full picture
+      madeHere = !!m;
+      if (m) { bytes = m.bytes; url = bytesToDataUrl(m.bytes); fresh = await loadImg(url).catch(() => null); from = `the full picture${serverToo ? ' (the server\'s preview was no better)' : ''}`; }
+    }
+    if (!bytes || !fresh) { trace(`PICTS: the preview of ${name} (${whereUsed(p)}) ${what} — ${was} KB on this device; no better one to be had`); return; }
+    if (looksBlack(fresh)) { trace(`PICTS: the preview of ${name} (${whereUsed(p)}) ${what} — and so is the picture itself; left as it is`); return; }
+    if (madeHere) void keepThumb(p.key, bytes, token, 'a good one for a bad one');
+    _thumbs.set(p.key, url);
+    _dims.set(p.key, { w: fresh.naturalWidth, h: fresh.naturalHeight });
+    p.url = url;
+    if (img.isConnected) img.src = url;
+    const ids = [`r2:${p.key}:preview`]; if (p.fp) ids.push(previewId(p.fp));
+    const old = (await Promise.all(ids.map((id) => getPreview(id)))).find(Boolean);
+    await deletePreviews(ids);
+    await putPreview({ id: p.fp ? previewId(p.fp) : `r2:${p.key}:preview`, fp: p.fp, r2Key: p.key, at: p.uploaded_at, madeAt: old?.madeAt, label: whereUsed(p), w: fresh.naturalWidth, h: fresh.naturalHeight, bytes, sent: true });
+    trace(`PICTS: the preview of ${name} (${whereUsed(p)}) ${what} — ${was} KB on this device${old ? `, kept since ${new Date(old.madeAt ?? old.at).toLocaleString()}` : ''}; replaced by ${from} (${Math.round(bytes.byteLength / 1024)} KB)`);
+  } catch (e) { trace(`PICTS: the preview of ${name} ${what} — could not be replaced (${(e as Error).message})`); }
+}
+
 const GAP = 4;   // the lines between pictures (Roman, 27 Oct: 4 px)
 type Row = { pics: Loaded[]; weight: number; el: HTMLElement };
 
@@ -491,6 +561,7 @@ function buildDay(host: HTMLElement, pics: Loaded[]): Row[] {
       // the side, beforehand — not in the middle of a scroll.
       const img = document.createElement('img');
       img.decoding = 'async'; img.loading = 'lazy'; img.alt = ''; img.draggable = false;
+      watchTile(img, p);
       img.src = p.url;
       t.appendChild(img);
       t.insertAdjacentHTML('beforeend', '<span class="picts-tick"></span>');
@@ -557,11 +628,12 @@ async function deletePicturesForGood(chosen: Pic[], token: string, online: boole
   // 1. The open project's cards: picture out, mark on, drawings and text kept.
   const s = useStore.getState();
   const touched: string[] = [];
+  const shots = new Set<number>();   // the shots that lose a picture — only their cards are drawn again
   let cards = 0;
   const gone = (src: string | null | undefined, r2: string | undefined) =>
     (r2 && keys.has(r2)) || (src && src.startsWith('data:image') && keys.has(`local:${_fpOf.get(src) ?? ''}`));
   const frames = s.frames.map((f) => {
-    if (gone(f.src, f.r2Key)) { cards++; if (f.serverFrameId) touched.push(f.serverFrameId); return { ...f, src: '', r2Key: undefined, pictureDeleted: true }; }
+    if (gone(f.src, f.r2Key)) { cards++; shots.add(f.id); if (f.serverFrameId) touched.push(f.serverFrameId); return { ...f, src: '', r2Key: undefined, pictureDeleted: true }; }
     return f;
   });
   const stripVersions: typeof s.stripVersions = {};
@@ -571,7 +643,7 @@ async function deletePicturesForGood(chosen: Pic[], token: string, online: boole
       const fid = Number(fidStr);
       stripVersions[st][fid] = (s.stripVersions[st][fid] || []).map((v) => {
         if (gone(v.bgImage, v.r2Key)) {
-          cards++;
+          cards++; shots.add(fid);
           const f = s.frames.find((x) => x.id === fid);
           if (f?.serverFrameId) touched.push(f.serverFrameId);
           return { ...v, bgImage: null, r2Key: undefined, pictureDeleted: true };
@@ -584,7 +656,26 @@ async function deletePicturesForGood(chosen: Pic[], token: string, online: boole
     useStore.setState({ frames, stripVersions } as never);
     for (const id of new Set(touched)) markFrameDirty(id);
     stampChangedContent();
-    (window as never as { __fh_renderAll?: () => void }).__fh_renderAll?.();
+    // ONLY THE SHOTS THAT LOST A PICTURE ARE DRAWN AGAIN (16 Nov; Roman's iPad,
+    // 13 Nov 19:48: "redraw: 27 shots in 871 ms" behind the library at every
+    // delete — the scrolling stood still for it). A shot with no card of its
+    // own in this view (the lists, a shooting order) → everything, as before.
+    const w = window as never as {
+      __fh_renderAll?: () => void;
+      __fh_renderGrid3x2Card?: (el: HTMLElement, fid: number) => void;
+      __fh_renderMainFrame?: (el: HTMLElement, fid: number) => void;
+      __fh_renderVersionFrame?: (el: HTMLElement, fid: number, strip: string) => void;
+    };
+    let all = !!useStore.getState().sortEditingId;
+    if (!all) for (const fid of shots) {
+      let found = false;
+      document.querySelectorAll<HTMLElement>(`#overviewScroll .grid3x2-card-wrap[data-g3fid="${fid}"]`).forEach((el) => { found = true; w.__fh_renderGrid3x2Card?.(el, fid); });
+      document.querySelectorAll<HTMLElement>(`.frame-card[data-mfid="${fid}"]`).forEach((el) => { found = true; w.__fh_renderMainFrame?.(el, fid); });
+      document.querySelectorAll<HTMLElement>(`.frame-card[data-vfid="${fid}"]`).forEach((el) => { if (el.dataset.strip) { found = true; w.__fh_renderVersionFrame?.(el, fid, el.dataset.strip); } });
+      if (!found) { all = true; break; }
+    }
+    if (all) { (window as never as { __fh_renderWhy?: string }).__fh_renderWhy = 'library: a shot without a card of its own'; w.__fh_renderAll?.(); }
+    else trace(`PICTS: drew ${shots.size} shot(s) again, not the project`);
   }
   // 2. This device's previews and full copies.
   const ids: string[] = [];
