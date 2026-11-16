@@ -585,5 +585,9 @@ v5.0.225 · #777 (10 Nov, night)
 - FILL 25 fills the MAIN shots first (every shot without a main picture gets one), then versions as before; the log line says how many main shots hold a picture. For the test Roman asked for: how 30 full main photos behave at a redraw, without the camera's HDR layer in the question.
 - READ IN THE SWIFT (CameraModel.croppedAndResized): the camera's JPEG is written in Display P3 at quality 0.92 WITH Apple's HDR gain map inside when the photo has one (iOS 18+) — on purpose, proven 3 Nov. So 'HDR layer in the file' on the iPhone is what the file really carries; whether it is why the phone unpacks slowly (750 ms) is NOT known.
 
-## v5.0.296 · #848 (next)
+## v5.0.296 · #848 (dev, run 768, 16 Nov)
 - FILL 25 really fills every empty main shot (v5.0.295 filled one: shots made with New are in drawing mode, and it had skipped those).
+
+## v5.0.297 · #849 (next)
+- FILL 25 WITH MAIN SHOTS, Roman's iPhone 19:06 (35 shots, every main shot a full 2400 px test picture, 600 KB, plain JPEG): a whole redraw 194–617 ms. The same phone at 17:52 with 33 shots holding CAMERA photos: 8790 ms. In the same 19:06 log three camera photos: 'real photo unpacked in 711 / 740 / 755 ms'. So it is not the 2400 pixels; it is something about the camera's photo. WHAT, is not known — hence:
+- PHOTO TEST: a button in the log panel. For the newest pictures of the open project (up to four) it says what is IN the file (how many pictures it holds, whether a gain map is named, which colour profile), what it costs to unpack and paint AS IT IS, and what a PLAIN copy costs at full size, at 1280 and at 960, with each one's weight. Changes nothing, saves nothing.

@@ -20,7 +20,7 @@ import { APP_VERSION } from '../store/state';
  *  It is bumped BY HAND, which is why it sat at #309 through #310, #311, #312
  *  and #313 — telling the screen a version of events that was four changes out
  *  of date. Worth remembering the next time it is trusted in a log. */
-export const SYNC_BUILD_TAG = '#848';
+export const SYNC_BUILD_TAG = '#849';
 
 let box: HTMLElement | null = null;
 
@@ -167,6 +167,22 @@ function ensureBox(): HTMLElement | null {
     });
   };
   box.appendChild(fill);
+
+  // PHOTO TEST — what is in a photo, and what it costs to unpack (photoProbe.ts).
+  {
+    const probe = document.createElement('button');
+    probe.id = 'photoTestBtn';
+    probe.textContent = 'PHOTO TEST';
+    probe.style.cssText =
+      'position:absolute;top:2px;right:240px;background:#333;color:#fff;border:1px solid #666;' +
+      'border-radius:4px;font:10px monospace;padding:2px 8px;cursor:pointer;';
+    probe.onclick = () => {
+      const run = (window as unknown as { __fh_photoTest?: (say: (word: string) => void) => void }).__fh_photoTest;
+      if (!run) return;
+      run((word) => { probe.textContent = word; if (word === 'DONE' || word === 'FAILED' || word === 'NO PICTURE') setTimeout(() => (probe.textContent = 'PHOTO TEST'), 1500); });
+    };
+    box.appendChild(probe);
+  }
 
   // DROP TEST — the way out of a FILL 25 measurement (16 Nov). Roman had 308 test
   // pictures in a project on a signed-out iPad, and the only way on was to sign
