@@ -523,5 +523,8 @@ v5.0.225 · #777 (10 Nov, night)
 - THE BAR: ONE DESIGN, TWO PLACES (Roman, 16 Nov: 'middle means wait, bottom means carry on'). Thin red line, small white words. IN THE MIDDLE on a black screen when one must wait — a project arriving, restoring, a PDF, loading files; words unchanged. AT THE BOTTOM when one can carry on — the app starting (striped moving line, 'Opening app…'; the line along the top is gone) and pictures arriving ('Loading pictures N / M'). The same on the Mac, the iPad and the iPhone.
 - AN OPEN PROJECT WAITS FOR NOTHING — ALSO DURING A FETCH: a fetch that brought pictures put the black curtain over the work ("Loading image 3 of 5…") until the last one was in. It now does what an opening does: the shots at once, the pictures in the background, the thin bar counting "Loading pictures 3 / 5". (The wait sat inside the system action; nothing waits there any more.) Test 73, second test.
 
-## v5.0.283 · #835 (next)
+## v5.0.283 · #835 (dev, run 749, 16 Nov)
 - THE BAR, after Roman's first look (16 Nov): the stripes at the start are wide (a red piece and a gap = a fifth of the screen; the narrow ones were "too busy"); ONE BAR AT A TIME — while the middle one is up the bottom one is not shown; the storage notice ("Storage 92 % full …") is said when the project is in, not over the black screen in the second of the wait (nothing waited for it, it only looked so).
+
+## v5.0.284 · #836 (next)
+- A BOX ON TOP: THE BOX MOVES, NEVER THE PAGE BEHIND (Roman, iPad, 16 Nov: moving the project list moved the page behind it). The iPad keeps a scroll inside a box only if the box can scroll that way; a short list, or one at its end, handed the finger to the page. One guard for every account box (project list, name box, sign-in): finger or wheel moves what can move inside, otherwise nothing. Why it showed today is not known — nothing of today's work touches it.

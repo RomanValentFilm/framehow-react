@@ -923,7 +923,7 @@
   .account-header-row h2{margin:0;}
 
   /* Project list */
-  .project-list{display:flex;flex-direction:column;gap:6px;max-height:50dvh;overflow-y:auto;margin-bottom:14px;}
+  .project-list{display:flex;flex-direction:column;gap:6px;max-height:50dvh;overflow-y:auto;margin-bottom:14px;overscroll-behavior:contain;}
   .project-list-empty{font-size:13px;color:var(--text-faint);text-align:center;padding:32px 8px;}
   .project-list-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 14px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);font-family:var(--font);text-align:left;cursor:pointer;color:#fff;font-size:14px;}
   @media (hover:hover){.project-list-row:hover{border-color:var(--accent);background:#1a1a1a;}}
