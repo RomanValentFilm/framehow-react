@@ -121,9 +121,41 @@ export async function photoTest(say: (word: string) => void): Promise<void> {
         await new Promise<void>((go) => setTimeout(go, 0));
       }
     }
+    // …AND THE EYE (16 Nov, Roman: "does the brightness thing show in Framehow, or
+    // only in the Photos app? If only there, we don't care"). The newest
+    // picture twice, side by side: as it was shot, and its plain copy at full
+    // size. Two plain pictures, nothing laid over them. A tap closes it.
+    await showSideBySide(found[0].src);
     say('DONE');
   } catch (e) {
     trace(`PHOTO TEST: stopped — ${(e as Error)?.message ?? e}`);
     say('FAILED');
   } finally { _busy = false; }
+}
+
+async function showSideBySide(src: string): Promise<void> {
+  const bytes = bytesOf(src);
+  const type = src.slice(5, src.indexOf(';'));
+  const asShot = URL.createObjectURL(new Blob([bytes as Uint8Array<ArrayBuffer>], { type }));
+  const plain = URL.createObjectURL(await plainCopy(new Blob([bytes as Uint8Array<ArrayBuffer>], { type }), null));
+  const wall = document.createElement('div');
+  wall.id = 'photoTestWall';
+  wall.style.cssText = 'position:fixed;inset:0;z-index:2147483646;background:#000;display:flex;flex-direction:row;align-items:center;justify-content:center;gap:2px;';
+  const half = (url: string, word: string): HTMLElement => {
+    const box = document.createElement('div');
+    box.style.cssText = 'flex:1 1 0;min-width:0;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;';
+    const img = document.createElement('img');
+    img.src = url;
+    img.style.cssText = 'max-width:100%;max-height:88%;display:block;';
+    const label = document.createElement('div');
+    label.textContent = word;
+    label.style.cssText = 'color:#fff;font:11px ui-monospace,monospace;letter-spacing:.08em;padding:6px 0 0;text-align:center;';
+    box.appendChild(img); box.appendChild(label);
+    return box;
+  };
+  wall.appendChild(half(asShot, 'AS SHOT'));
+  wall.appendChild(half(plain, 'PLAIN COPY'));
+  wall.addEventListener('click', () => { wall.remove(); URL.revokeObjectURL(asShot); URL.revokeObjectURL(plain); });
+  document.body.appendChild(wall);
+  trace('PHOTO TEST: the newest picture twice on the screen — AS SHOT on the left, PLAIN COPY on the right; a tap closes it');
 }

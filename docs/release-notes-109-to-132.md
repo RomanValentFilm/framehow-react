@@ -588,6 +588,11 @@ v5.0.225 · #777 (10 Nov, night)
 ## v5.0.296 · #848 (dev, run 768, 16 Nov)
 - FILL 25 really fills every empty main shot (v5.0.295 filled one: shots made with New are in drawing mode, and it had skipped those).
 
-## v5.0.297 · #849 (next)
+## v5.0.297 · #849 (dev, run 769, 16 Nov)
 - FILL 25 WITH MAIN SHOTS, Roman's iPhone 19:06 (35 shots, every main shot a full 2400 px test picture, 600 KB, plain JPEG): a whole redraw 194–617 ms. The same phone at 17:52 with 33 shots holding CAMERA photos: 8790 ms. In the same 19:06 log three camera photos: 'real photo unpacked in 711 / 740 / 755 ms'. So it is not the 2400 pixels; it is something about the camera's photo. WHAT, is not known — hence:
 - PHOTO TEST: a button in the log panel. For the newest pictures of the open project (up to four) it says what is IN the file (how many pictures it holds, whether a gain map is named, which colour profile), what it costs to unpack and paint AS IT IS, and what a PLAIN copy costs at full size, at 1280 and at 960, with each one's weight. Changes nothing, saves nothing.
+- THE CAMERA'S RECIPE, AS DECIDED 3 Nov (TOMORROW.md) and as the Swift does it — re-read 16 Nov after I had spoken about HDR from memory: the shutter gives Apple's finished picture; Framehow crops to the frame, shrinks to 2400, saves a JPEG (Display P3, 0.92) — nothing is pressed into the picture ('keep the HDR off', 16:45); Apple's gain map is carried along inside the same file untouched (decision 17:10, 'HDR kept — works' 17:30). NOT KNOWN: whether it is in today's files, what it costs to unpack, whether Framehow shows the boost anywhere (the note says newer Safari does for an <img>; 'check the views' was never done).
+
+## v5.0.298 · #850 (next)
+- PHOTO TEST, Roman's iPhone 19:27, one fresh camera photo (2400×1349, 807 KB): IN THE FILE: 2 pictures, listed (MPF) — the gain map is there. AS IT IS: unpacked in 594 ms. A PLAIN COPY of the same 2400×1349 (727 KB): 15 ms. At 1280 (211 KB): 4 ms. At 960 (131 KB): 3 ms. So the 0.6–0.75 s per camera photo on the phone is the second picture in the file, not the pixels: a plain photo of FULL size unpacks forty times faster. A smaller twin is not needed for speed.
+- PHOTO TEST ends by showing the newest picture twice, side by side — AS SHOT and PLAIN COPY — so the eye can say whether Framehow shows any difference at all.
