@@ -153,6 +153,14 @@ export async function dropFillTest(say: (word: string) => void): Promise<void> {
   say('EMPTYING…');
   trace('DROP TEST: emptying the app\'s LOCAL APP STORAGE on this device');
   try {
+    // NO SAVE MAY COME AFTER THE EMPTYING (Roman's iPad, 16 Nov 17:27:56–59: the
+    // device was emptied — and three seconds later a save that was already on
+    // its way wrote the test project and its 25 pictures back; the app started
+    // anew WITH them, and it took a second DROP TEST). The device's saves are
+    // held first, a save in the air is given time to land, and only then is
+    // the device emptied. They stay held until the page has started anew.
+    (await import('./currentProject')).standInForAnotherProject(true);
+    await new Promise<void>((go) => setTimeout(go, 3500));
     await (await import('./persistence')).wipeDeviceOnAccountDeletion();
     try { localStorage.removeItem('fh_fill_test'); } catch { /* gone with the rest */ }
     say('DONE');

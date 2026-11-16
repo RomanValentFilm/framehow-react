@@ -574,5 +574,9 @@ v5.0.225 · #777 (10 Nov, night)
 - FILL 25 ON ROMAN'S iPAD, 16 Nov 17:16–17:18 (signed out, a new project of 8 shots, 12 taps): 108 pictures 90 MB in APP MEMORY · 208 → 168 MB · 308 → 247 MB — THE PAGE NEVER STARTED ANEW. One drawing of the project 103–108 ms at every size (drawing does not depend on the number of pictures; WF 7's 400–900 ms come from its 28 shots). A batch of 25 saved into LOCAL APP STORAGE in 1.3–1.9 s + 0.2 s, the same at 300 as at 100. LOCAL APP STORAGE 756 MB used at the end. So: step C is not urgent for the iPad; the iPhone (where the crashing was, 11 Nov) is still to be measured.
 - DROP TEST: a button in the log panel, only on a device where FILL 25 was pressed, only signed out, two taps: empties the app's LOCAL APP STORAGE on this device and starts the app anew. (Signed out there is no other way to be rid of a test project — the project list asks for a sign-in, and signing in would send the 308 test pictures, 190 MB, to the account.)
 
-## v5.0.293 · #845 (next)
+## v5.0.293 · #845 (dev, run 765, 16 Nov)
 - DROP TEST appears after ANY tap on FILL 25 — also one that answers 'NO PROJECT' — and at once, without closing the log (Roman, 17:27: FILL said NO PROJECT, so the flag was never set and there was no way out).
+- Roman's iPad 17:27–17:33: the first DROP TEST (17:27:56) was undone three seconds later by a save already on its way ('25 picture(s) put on this device') — the app started anew with the test project; the second (17:31:04) held: 'start: 0 whole-project copies … nothing saved', 'APP MEMORY … 0 picture(s)'. He signed in; storage stayed at 406 MB — nothing of the test reached the SERVER. STEP A SEEN WORKING: '124 picture(s) of the project before are let go from APP MEMORY'. APP MEMORY per project: Workflow 02 = 111 pictures, 121.8 MB; the next = 22 pictures, 8.4 MB.
+
+## v5.0.294 · #846 (next)
+- DROP TEST holds the device's saves and waits 3.5 s before it empties the device, so a save in the air cannot write the test back.
