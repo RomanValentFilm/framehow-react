@@ -37,6 +37,18 @@ function has(bytes: Uint8Array, word: string): boolean {
   return false;
 }
 
+/** DOES THIS PICTURE STILL CARRY THE BRIGHTNESS LAYER? — looked at cheaply: a
+ *  file with the layer lists its pictures near its beginning ("MPF"), so only
+ *  the first 90 KB are unpacked. Good enough to FIND such pictures among
+ *  hundreds; the exact count is made afterwards on the ones found. */
+function looksLayered(dataUrl: string): boolean {
+  try {
+    const from = dataUrl.indexOf(',') + 1;
+    const bin = atob(dataUrl.slice(from, from + 120_000));
+    return bin.includes('MPF\0');
+  } catch { return false; }
+}
+
 /** How many JPEG pictures start inside this file (FF D8 FF). One = a plain
  *  photo; more = something rides along (a gain map, an embedded thumbnail). */
 function picturesInside(bytes: Uint8Array): number {
@@ -143,7 +155,28 @@ export async function photoTest(say: (word: string) => void): Promise<void> {
       for (const strip of Object.keys(s.stripVersions)) for (const v of [...(s.stripVersions[strip]?.[f.id] ?? [])].reverse()) take(`shot ${f.label || f.id} · ${strip} ${v.label || ''}`, v.bgImage);
       take(`shot ${f.label || f.id} · main`, f.src);
     }
+    // THE NEWEST ARE PLAIN SINCE 16 NOV — SO THE PROJECT IS SEARCHED FOR OLDER ONES
+    // (17 Nov, Roman: "not sure I have found one with the brightness layer"). Every
+    // picture of the open project is looked at; up to two that still carry the
+    // layer are measured for the glow, wherever in the project they are.
+    const all: Array<{ where: string; src: string }> = [];
+    {
+      const seenAll = new Set<string>();
+      const put = (where: string, src: string | null | undefined): void => {
+        if (!src || !src.startsWith('data:image') || seenAll.has(src)) return;
+        seenAll.add(src); all.push({ where, src });
+      };
+      for (const f of s.frames) {
+        put(`shot ${f.label || f.id} · main`, f.src);
+        for (const strip of Object.keys(s.stripVersions)) for (const v of s.stripVersions[strip]?.[f.id] ?? []) put(`shot ${f.label || f.id} · ${strip} ${v.label || ''}`, v.bgImage);
+      }
+    }
+    say('LOOKING…');
+    await new Promise<void>((go) => setTimeout(go, 30));
+    const withLayer = all.filter((p) => looksLayered(p.src));
+    trace(`PHOTO TEST: ${all.length} picture(s) in the open project in full · ${withLayer.length} of them still carry the brightness layer${withLayer.length ? ` (the first: ${withLayer.slice(0, 3).map((p) => p.where).join(' | ')})` : ' — for the glow, open a project with camera photos shot between 3 and 16 November'}`);
     if (!found.length) { trace('PHOTO TEST: the open project has no picture'); say('NO PICTURE'); return; }
+    for (const p of withLayer.slice(0, 2)) if (!found.some((x) => x.src === p.src)) found.push(p);
     const kb = (n: number) => `${Math.round(n / 1024)} KB`;
     let i = 0;
     let layered = 0;

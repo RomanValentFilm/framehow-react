@@ -67,8 +67,16 @@ struct FrameGeometry {
         }
         let h = w / r
         frame = rect(w)
-        let cw = landscape ? w : h * 3 / 4
-        let ch = landscape ? w * 3 / 4 : h
+        // THE CHIP'S PICTURE ALWAYS FILLS THE FRAME (Roman, 17 Nov, 1:1: "it's inside a
+        // box, but it's cropped somehow"). The chip is 4:3. Its width was always made
+        // the frame's width — right for every frame WIDER than 4:3, where the frame is a
+        // band across the chip. A frame NARROWER than 4:3 (1:1 is the only one) is
+        // higher than that picture: black bars stood above and below, inside the frame
+        // lines. Now the chip's picture is as large as the frame needs on BOTH sides —
+        // for 1:1 its height is the frame's height and the sides lie outside the lines,
+        // dimmed like everything outside a frame. Nothing changes for any other ratio.
+        let cw = landscape ? max(w, h * 4 / 3) : max(h, w * 4 / 3) * 3 / 4
+        let ch = landscape ? max(w, h * 4 / 3) * 3 / 4 : max(h, w * 4 / 3)
         chip = CGRect(x: c.x - cw / 2, y: c.y - ch / 2, width: cw, height: ch)
     }
 
@@ -143,7 +151,19 @@ struct CameraScreen: View {
                                    screen: geo.size, corner: Self.screenCornerRadius())
             // THE PICTURE AS IT IS SEEN: the camera's picture where it is on the screen and
             // not black. The corner buttons are placed from ITS edges (see `cornerGap`).
-            let pic = fg.chip.intersection(free).intersection(CGRect(origin: .zero, size: geo.size))
+            // THE BUTTONS SIT IN THE CORNERS OF THE SCREEN, WHATEVER THE RATIO (Roman, 17 Nov:
+            // "now we are always moving them with the aspect ratio … I would rather keep them
+            // in the corners of the screen"). They used to sit inside the picture and moved
+            // with every ratio. `pic` is now the screen the camera may use (it still ends
+            // where the island ends); on a side that is the glass's own edge the buttons
+            // keep clear of its round corner.
+            let whole = free.intersection(CGRect(origin: .zero, size: geo.size))
+            let round: CGFloat = Self.screenCornerRadius() > 0 ? 10 : 2      // + cornerGap (12) = 22 / 14 from the glass
+            let pic = CGRect(
+                x: whole.minX + (whole.minX > 0 ? 0 : round),
+                y: whole.minY + (whole.minY > 0 ? 0 : round),
+                width: whole.width - (whole.minX > 0 ? 0 : round) - (whole.maxX < geo.size.width ? 0 : round),
+                height: whole.height - (whole.minY > 0 ? 0 : round) - round)
             let _ = { cam.frameRatio = current.value; cam.maxSide = maxSide; cam.frameOnScreen = fg.frame }()
             let touch = DragGesture(minimumDistance: 0)
                 .onChanged { g in
@@ -268,10 +288,6 @@ struct CameraScreen: View {
         // were the system's bordered button, a size larger and another face.
         let ratioButton = Button(action: { showRatios.toggle() }) { Self.pillLabel("RATIO") }
             .tint(.white).background(pill, in: Capsule())
-        let ev = Button(action: { cam.exposureBias = 0 }) {
-            Self.pillLabel("EV \(String(format: "%+.1f", cam.exposureBias))")
-        }
-        .tint(.white).background(pill, in: Capsule())
         let lens = Button(action: { cam.setLens(wide: !cam.wide) }) { Self.pillLabel(cam.lensName.isEmpty ? "1x" : cam.lensName) }
             .tint(.white).background(pill, in: Capsule())
         // CANCEL left of the shutter (Roman, 6 Nov: the top right is the EV's place) — the
@@ -304,10 +320,11 @@ struct CameraScreen: View {
                 // (For an hour on 13 Nov the row stood 56 points down on the iPad — a wrong
                 // guess at why RATIO did not answer. It was the screen not redrawing; see the
                 // plugin. The row is back in the corner, as on the iPhone: Roman.)
-                VStack { HStack { ratioButton; Spacer(); ev }; Spacer() }
+                // RATIO top left · the lens button top right, where EV was (Roman, 17 Nov). The
+                // EV button is gone; sliding up and down for brightness stays. Bottom left is
+                // kept free for the picture box of the series.
+                VStack { HStack { ratioButton; Spacer(); lens }; Spacer() }
                     .padding(.leading, pic.minX + d).padding(.trailing, W - pic.maxX + d).padding(.top, pic.minY + d)
-                VStack { Spacer(); HStack { lens; Spacer() } }
-                    .padding(.leading, pic.minX + d).padding(.trailing, W - pic.maxX + d).padding(.bottom, H - pic.maxY + d)
                 if landscape {
                     // shutter right-middle (Camera app), Cancel under it, info bottom right
                     shutter.position(x: W - right - 24 - 33, y: H / 2)
