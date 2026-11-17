@@ -103,7 +103,10 @@ export async function getPicture(name: string): Promise<string | undefined> {
 // is good for TWENTY hours; after that the picture is simply sent again.
 const SENT_AHEAD_KEY = '__sentAhead';
 const SENT_AHEAD_GOOD_MS = 20 * 60 * 60 * 1000;
-export interface SentAhead { r2_key: string; size_bytes: number; content_type: string; at: number }
+/** `project`: the project the picture was sent for (17 Nov). A note is only good
+ *  for that project — the server lets a project take such a file with it when it
+ *  is deleted for good, and a note must never hand a deleted file to another one. */
+export interface SentAhead { r2_key: string; size_bytes: number; content_type: string; at: number; project?: string }
 type SentAheadNotes = Record<string, SentAhead>;
 
 async function readSentAhead(): Promise<SentAheadNotes> {
@@ -114,10 +117,14 @@ async function readSentAhead(): Promise<SentAheadNotes> {
 }
 
 /** The server's file for this picture, if it was sent ahead and the note is still good. */
-export async function sentAheadFor(name: string): Promise<SentAhead | null> {
+export async function sentAheadFor(name: string, forProject?: string | null): Promise<SentAhead | null> {
   try {
     const n = (await readSentAhead())[name];
-    return n && Date.now() - n.at < SENT_AHEAD_GOOD_MS ? n : null;
+    if (!n || Date.now() - n.at >= SENT_AHEAD_GOOD_MS) return null;
+    // Sent for ANOTHER project → not this one's (a note without a project is an
+    // older one, or of a project that had no id yet: good for whoever asks).
+    if (n.project && forProject && n.project !== forProject) return null;
+    return n;
   } catch { return null; }
 }
 

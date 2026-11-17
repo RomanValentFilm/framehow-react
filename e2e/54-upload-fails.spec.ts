@@ -42,7 +42,7 @@ test('upload fails: the save fails with it, and the next push carries the pictur
 
   say('the upload route answers 503 — a server hiccup');
   let refused = 0;
-  await desktop.page.route('**/upload', async (route) => {
+  await desktop.page.route(/\/upload(\?|$)/, async (route) => {
     refused++;
     await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { code: 'hiccup', message: 'try later' } }) });
   });
@@ -60,7 +60,7 @@ test('upload fails: the save fails with it, and the next push carries the pictur
     .toBe(oks(before));
 
   say('the server is back — the next push carries the picture');
-  await desktop.page.unroute('**/upload');
+  await desktop.page.unroute(/\/upload(\?|$)/);
   const again = await desktop.mark();
   await desktop.push();
   await desktop.waitForLogAfter(again, 'push OK', 30_000);

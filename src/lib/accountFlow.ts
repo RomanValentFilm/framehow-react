@@ -2178,8 +2178,8 @@ async function sendCopyPicturesAhead(copies: PendingMeta[]): Promise<void> {
         const src = carried ?? await getPicture(name);
         if (!src) { trace(`  a picture of "${rec.name ?? rec.key.slice(0, 8)}" is not on this device (${name.slice(0, 10)}) — it cannot be sent ahead`); continue; }
         try {
-          const r = await uploadImageToR2(src, token);
-          await noteSentAhead(name, r);
+          const r = await uploadImageToR2(src, token, rec.projectId);
+          await noteSentAhead(name, { ...r, project: rec.projectId ?? undefined });
           sent++;
         } catch (e) {
           const st = (e as { status?: number })?.status ?? 0;
@@ -3055,15 +3055,26 @@ async function localImageToBlob(src: string): Promise<{ blob: Blob; contentType:
   throw new Error('Not a local image');
 }
 
+/** "TOO MANY PICTURES AT ONCE" IS WAITED OUT, NOT FAILED (17 Nov). The server
+ *  takes 60 pictures a minute per account and answers 429 beyond that. Until
+ *  today a 429 failed the whole save, and the retry sent every picture again.
+ *  Now every upload waits here while the door is shut, and tries again. */
+let _uploadDoorShutUntil = 0;
+const UPLOAD_DOOR_WAIT_MS = 15_000;
+const UPLOAD_DOOR_TRIES = 6;          // 6 × 15 s: the server's minute is over well before
+
 async function uploadImageToR2(
   src: string,
   token: string,
+  /** The project the picture is sent for: rides on the file, so the project
+   *  takes it along when it is deleted for good (17 Nov, the "125 pictures"). */
+  forProject?: string | null,
 ): Promise<{ r2_key: string; size_bytes: number; content_type: string }> {
   const { blob, contentType } = await localImageToBlob(src);
   // (the simulator only: a slow line, without a proxy that loses the picture)
   const slowMs = Number((window as never as { __fh_slowUploadMs?: number }).__fh_slowUploadMs ?? 0);
   if (slowMs > 0 && (window as never as { __fh_test?: unknown }).__fh_test) await new Promise((r) => setTimeout(r, slowMs));
-  const res = await fetch(`${API_BASE_URL}/upload`, {
+  const send = () => fetch(`${API_BASE_URL}/upload${forProject ? `?project=${encodeURIComponent(forProject)}` : ''}`, {
     method: 'POST',
     headers: {
       'Content-Type': contentType,
@@ -3071,6 +3082,18 @@ async function uploadImageToR2(
     },
     body: blob,
   });
+  let res!: Response;
+  for (let attempt = 1; ; attempt++) {
+    const shut = _uploadDoorShutUntil - Date.now();
+    if (shut > 0) await new Promise((r) => setTimeout(r, shut));
+    res = await send();
+    if (res.status !== 429 || attempt >= UPLOAD_DOOR_TRIES) break;
+    const waitMs = Number((window as never as { __fh_test?: unknown; __fh_uploadDoorWaitMs?: number }).__fh_test ? ((window as never as { __fh_uploadDoorWaitMs?: number }).__fh_uploadDoorWaitMs ?? UPLOAD_DOOR_WAIT_MS) : UPLOAD_DOOR_WAIT_MS);
+    if (_uploadDoorShutUntil <= Date.now()) {
+      _uploadDoorShutUntil = Date.now() + waitMs;
+      trace(`  the server takes no more pictures this minute (429) — waiting ${Math.round(waitMs / 1000)} s, then the pictures go on by themselves`);
+    }
+  }
   if (!res.ok) {
     const text = await res.text();
     let body: any = {};
@@ -3852,10 +3875,20 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
     // and is said in a box instead of swallowed.
     let saidTooLarge = false;
     let saidRefused = false;
+    let alreadyUp = 0;
     let failed: unknown = null;
     let full: (ApiError & { storage?: { used: number; limit: number; pending?: number } }) | null = null;
-    const results = await Promise.all(
-      imageUploads.map(async (task) => {
+    // FOUR AT A TIME, AND WHAT WENT UP IS REMEMBERED (17 Nov, Roman's phone:
+    // 100 test pictures, "picture upload failed (429)", 516 of 500 MB, and 125
+    // pictures in the library that no project owned). Every picture of a save
+    // used to go up AT THE SAME MOMENT, and when one of them failed the save
+    // failed — and the retry sent ALL of them again, the ones that had arrived
+    // too. Those first copies were on the server, counted in the storage, on no
+    // card. Now: four at a time; and each picture that arrives is noted on the
+    // device under its own content name (the sent-ahead note, 13 Nov — until
+    // today only for a project standing in), so the next try takes the file the
+    // server already has and sends only what is still missing.
+    const uploadOne = async (task: typeof imageUploads[0]) => {
         if (full) return null;
         try {
           // SENT AHEAD ALREADY? (13 Nov) The pictures of a project that was left
@@ -3864,13 +3897,13 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
           // the note instead of sending the picture again. And a picture it
           // does have to send is noted, so a push that is stopped half way
           // (a touch, the three seconds) has not sent it in vain.
-          const aheadName = isStandingIn() && task.src.startsWith('data:') ? await nameOfPicture(task.src).catch(() => null) : null;
+          const aheadName = task.src.startsWith('data:') ? await nameOfPicture(task.src).catch(() => null) : null;
           if (aheadName) {
-            const ahead = await sentAheadFor(aheadName);
-            if (ahead) { usedAhead.push(aheadName); return { task, versionId: task.versionId, r2_key: ahead.r2_key, size_bytes: ahead.size_bytes, content_type: ahead.content_type }; }
+            const ahead = await sentAheadFor(aheadName, cp.projectId);
+            if (ahead) { usedAhead.push(aheadName); alreadyUp++; return { task, versionId: task.versionId, r2_key: ahead.r2_key, size_bytes: ahead.size_bytes, content_type: ahead.content_type }; }
           }
-          const r = await uploadImageToR2(task.src, token);
-          if (aheadName) { await noteSentAhead(aheadName, r).catch(() => undefined); usedAhead.push(aheadName); }
+          const r = await uploadImageToR2(task.src, token, cp.projectId);
+          if (aheadName) { await noteSentAhead(aheadName, { ...r, project: cp.projectId ?? undefined }).catch(() => undefined); usedAhead.push(aheadName); }
           return { task, versionId: task.versionId, ...r };
         } catch (e) {
           const err = e as ApiError & { storage?: { used: number; limit: number; pending?: number } };
@@ -3904,12 +3937,22 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
             }
             return null;
           }
-          trace(`  picture upload failed (status ${st || 'no response'}) (version ${task.versionId.slice(0, 6)}) — the save fails and will be retried`);
+          trace(`  picture upload failed (status ${st || 'no response'}) (version ${task.versionId.slice(0, 6)}) — the save fails and will be retried; the pictures that did arrive are remembered and not sent again`);
           failed = e;
           return null;
         }
-      }),
-    );
+    };
+    const results: Array<Awaited<ReturnType<typeof uploadOne>>> = new Array(imageUploads.length).fill(null);
+    let nextUpload = 0;
+    const worker = async (): Promise<void> => {
+      for (;;) {
+        const i = nextUpload++;
+        if (i >= imageUploads.length) return;
+        results[i] = await uploadOne(imageUploads[i]);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(4, imageUploads.length) }, worker));
+    if (alreadyUp > 0) trace(`  ${alreadyUp} picture(s) were on the server already from an earlier try — taken from there, not sent again`);
     if (full) throw full;
     if (failed) throw failed;
     for (const r of results) {

@@ -1,4 +1,70 @@
 # LAUNCH — THE ONE LIST (9 Nov 2026). Nothing else counts; TOMORROW.md is history + notes.
+
+## THE TO-DO LIST (17 Nov 2026, Roman: "one to-do list that we go back to and go through always"). THIS BLOCK IS THE LIST; everything below it is history and detail. Tick with [x] and the date. New finds: does it lose work or stop the app? No → "After the App Store".
+STATE 17 Nov 11:52: LIVE = DEV = v5.0.301 · #853 (run 777; full run 775 green, 175 passed). Server run 758. Files at v5.0.302 · #854.
+
+JOB 1 — UPLOADS (17 Nov)
+- [ ] 1. Uploaded pictures belong to their project → Delete now takes them too (the "125 pictures")
+- [ ] 2. The 500 MB wall holds when many pictures upload at once (was 516 of 500)
+- [ ] 3. A 429 is retried by itself, the save does not fail
+- [ ] 4. PHOTO TEST: glow lines (layered photo unpacked plain / a little glow / none; time to switch a card) — Roman taps it once on an old camera photo
+
+JOB 2 — CAMERA SERIES AS THE ONLY CAMERA (agreed 13 Nov, point 5 of that list — the words are below)
+- [ ] 5. Read the landing code, say honestly how long
+- [ ] 6. Build: camera stays open · box bottom left with the shots (names V7, V8… can come later) · lens button top right · EV button gone · Cancel becomes DONE · all shots land as versions, ONE save. Xcode rounds with Roman
+  - DECIDED 17 Nov (Roman): A SERIES IS 4 SHOTS AT MOST. After the 4th the camera closes by itself and the shots land (same as DONE). Cancel becomes DONE the moment there is one picture; DONE closes earlier. How the box looks (four small pictures, or V1 V2 V3 V4, or else) is decided later, with him, before building. Why a limit: shots of an open series are not saved in the project yet. 4 also equals the four-at-a-time of the uploads (job 1): a whole series travels together.
+  - ALSO 17 Nov (Roman): DONE → the whole camera picture shrinks to the version window / frame card where the shots land. A TAP ON THE ICON OF THE SHOTS (in the camera) OPENS THEM AT ONCE IN THE MAX VIEW: flip through, see which one likes or not; closing the MAX view lands on the version card where the pictures are. Later, maybe: a DELETE button in the MAX view. (This moves list item 33 'a tap on the box opens the MAX view' into the series itself — to agree with him whether it is in the first build or the second.)
+
+JOB 3 — MAX VIEW
+- [ ] 7. Three stars in the MAX view (re-sort only when it is closed)
+- [ ] 8. Coming back up to a shot, land on the version one was on
+
+JOB 4 — WHAT IS LEFT OF THE SAVE PATH (measure again after the series)
+- [ ] 9. Start fetch after an unsaved mark
+- [ ] 10. Own work comes back and redraws
+- [ ] 11. "scroll: centre" logged once, not many times
+
+JOB 5 — SMALL THINGS BEFORE SUBMISSION
+- [ ] 12. "Free during launch" line in the account box
+- [ ] 13. Odd file names from the Photos picker
+- [ ] 14. The island covers the left edge when the phone is held the other way
+- [ ] 15. Limits on how many projects / shots one account can have
+- [ ] 16. Roman: regenerate the GitHub token; a reply-to on the welcome mail that someone reads
+
+JOB 6 — THE PATH TO APPLE
+- [ ] 17. Full run, live
+- [ ] 18. TestFlight build 2 on the iPhone, then the iPad (rotation, Pencil, keyboard, camera)
+- [ ] 19. A fresh start with no connection opens the project with its pictures — proven in the app
+- [ ] 20. The app points at framehow.com/app instead of dev, one more build
+- [ ] 21. Terms and Privacy rewritten (they still say "Beta"; OCR CDN note)
+- [ ] 22. App Store Connect: EU trader status, untick Mac and Vision, age rating
+- [ ] 23. 2FA on the Cloudflare account
+- [ ] 24. Screenshots (iPhone + iPad), description, keywords, review account → SUBMIT (aim: by 5 December; latest 12 December in the store)
+
+WATCH ONLY
+- The page restart under the camera — if it happens again: Xcode attached, send the console.
+
+AFTER THE APP STORE
+- [ ] 25. The glow, the way Photos does it: cards plain, glow fades in in MAX view and when the scroll rests — only if the test (4) says it costs no speed
+- [ ] 26. Soft version cards (960 surface; idea "photo underneath, drawing on top")
+- [ ] 27. Draw only the cards near the screen (moved here 16 Nov: redraws measured 0.2–0.6 s with 35 photos — Roman may move it back)
+- [ ] 28. Export waits while pictures load (moved here 16 Nov, same reason)
+- [ ] 29. 3 saves per photo, if the series leaves any
+- [ ] 30. "Save on this device failed — AbortError" in the background (retried, nothing lost)
+- [ ] 31. Pills "Project still loading…" and "Loading PDF…" look like leftovers (look with Roman, his texts)
+- [ ] 32. SAVE AS NEW after Delete now on another device, with the rule who may delete (Roman: probably only the admin)
+- [ ] 33. In the camera: a tap on the box opens the MAX view of the shots
+- [ ] 34. STORY GRID
+- [ ] 35. Fitting as its own app
+- [ ] 36. One storage limit (500 MB for everyone)
+- [ ] 37. Face ID sign-in
+- [ ] 38. Guest link (view and rate)
+- [ ] 39. "Keep me signed in"
+- [ ] 40. "Tell phone users about the desktop" note
+- [ ] 41. Website: the video, Fitting page, pricing page
+
+DONE 13–17 Nov (all live in v5.0.301): one redraw per fetch, no curtain · opening counts as heard · one bar / start bar / pictures bar · library delete fast, black previews heal · one storage figure, the truth · Delete now takes pictures + previews · storage pill only at start/90/95, never over a box, never costs a tap · Menu on first tap · page held behind boxes · list stays behind its questions · lazy loading step A (B dropped, C not needed) · FILL 25 measured (iPad 308, iPhone 428 pictures) · camera saves plain (29–51 ms instead of 594) · Delete asks first with unsent work, list shows the device's name · Delete account asks twice · a picture deleted elsewhere is always news.
+
 TOMORROW (11 Nov): FULL RUN 665 (10 Nov night, v5.0.225 · #777) COUNTS AS GREEN — 150 green, the 1 red ("a random day", seed 793634) was the TEST's fault (a rightful sort-order decision inside the day; the per-step check had no allowance), fixed and replayed green in run 666. No app code changed since run 665. → C1 GO LIVE is Roman's call. Then: G12 + G13 (frame-set cards), the four phone checks, C2 build 2.
 Cross out with [x] and the date. Blocks are groups; the RUNNING ORDER is:
 1 done 9 Nov → 2 C1 live, C2, C2b →

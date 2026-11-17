@@ -65,6 +65,51 @@ async function costOf(blob: Blob): Promise<{ unpack: number; paint: number; w: n
   } finally { URL.revokeObjectURL(url); }
 }
 
+/** THE GLOW, MEASURED (17 Nov, Roman: "keep that Apple push … and at the same
+ *  time we want to be fast with everything"). A picture that still carries the
+ *  brightness layer is put ON THE SCREEN (small, top left, for a moment) with
+ *  the screen told how much glow it may show: 'standard' = none (plain),
+ *  'constrained' = a little, 'no-limit' = all of it. Milliseconds from handing
+ *  the file over until it is unpacked, and until the screen has drawn it. Then
+ *  a picture shown plain is switched to full glow, and that is timed too —
+ *  what a card would cost when the scroll comes to rest. */
+const twoFrames = (): Promise<void> => new Promise((go) => requestAnimationFrame(() => requestAnimationFrame(() => go())));
+async function shownWith(blob: Blob, limit: string): Promise<{ unpack: number; shown: number; img: HTMLImageElement; done: () => void }> {
+  const url = URL.createObjectURL(blob);
+  const img = new Image();
+  img.style.cssText = 'position:fixed;left:0;top:0;width:320px;height:auto;z-index:2147483646;pointer-events:none;';
+  img.style.setProperty('dynamic-range-limit', limit);
+  const t0 = performance.now();
+  img.src = url;
+  await img.decode();
+  const t1 = performance.now();
+  document.body.appendChild(img);
+  await twoFrames();
+  const t2 = performance.now();
+  return { unpack: Math.round(t1 - t0), shown: Math.round(t2 - t0), img, done: () => { img.remove(); URL.revokeObjectURL(url); } };
+}
+async function glowLines(i: number, blob: Blob): Promise<void> {
+  const knows = typeof CSS !== 'undefined' && !!CSS.supports && CSS.supports('dynamic-range-limit', 'standard');
+  const out: string[] = [];
+  for (const [limit, word] of [['standard', 'PLAIN (no glow)'], ['constrained', 'A LITTLE GLOW'], ['no-limit', 'FULL GLOW']] as const) {
+    const r = await shownWith(blob, limit);
+    out.push(`${word}: unpacked in ${r.unpack} ms, on the screen after ${r.shown} ms`);
+    await new Promise<void>((go) => setTimeout(go, 250));
+    r.done();
+    await new Promise<void>((go) => setTimeout(go, 50));
+  }
+  // a picture already shown plain is told it may glow — the card when the scroll rests
+  const r = await shownWith(blob, 'standard');
+  await new Promise<void>((go) => setTimeout(go, 150));
+  const t0 = performance.now();
+  r.img.style.setProperty('dynamic-range-limit', 'no-limit');
+  await twoFrames();
+  const sw = Math.round(performance.now() - t0);
+  await new Promise<void>((go) => setTimeout(go, 600));     // (long enough for the eye to see whether it glows)
+  r.done();
+  trace(`PHOTO TEST ${i}:   THE GLOW — this screen ${knows ? 'understands' : 'DOES NOT understand'} the glow setting · ${out.join(' · ')} · SWITCHING a shown picture from plain to full glow: ${sw} ms (two screen frames, about 17–33 ms, are in every "on the screen" and in the switch)`);
+}
+
 async function plainCopy(blob: Blob, longSide: number | null): Promise<Blob> {
   const url = URL.createObjectURL(blob);
   try {
@@ -101,6 +146,7 @@ export async function photoTest(say: (word: string) => void): Promise<void> {
     if (!found.length) { trace('PHOTO TEST: the open project has no picture'); say('NO PICTURE'); return; }
     const kb = (n: number) => `${Math.round(n / 1024)} KB`;
     let i = 0;
+    let layered = 0;
     for (const p of found) {
       say(`${++i} / ${found.length}`);
       const bytes = bytesOf(p.src);
@@ -114,6 +160,7 @@ export async function photoTest(say: (word: string) => void): Promise<void> {
       const blob = new Blob([bytes as Uint8Array<ArrayBuffer>], { type });
       const asIs = await costOf(blob);
       trace(`PHOTO TEST ${i}: ${p.where} — ${asIs.w}×${asIs.h}, ${kb(bytes.length)}, ${type} · IN THE FILE: ${inside} picture(s) · ${marks} · AS IT IS: unpacked in ${asIs.unpack} ms, painted small in ${asIs.paint} ms`);
+      if (inside >= 2) { layered++; await glowLines(i, blob); }
       for (const side of [null, 1280, 960] as const) {
         const copy = await plainCopy(blob, side);
         const c = await costOf(copy);
@@ -125,6 +172,7 @@ export async function photoTest(say: (word: string) => void): Promise<void> {
     // only in the Photos app? If only there, we don't care"). The newest
     // picture twice, side by side: as it was shot, and its plain copy at full
     // size. Two plain pictures, nothing laid over them. A tap closes it.
+    if (!layered) trace('PHOTO TEST:   THE GLOW was not measured — none of these pictures carries the brightness layer (the camera saves plain since 16 Nov evening). Open a project with camera photos shot before that, and tap PHOTO TEST again.');
     await showSideBySide(found[0].src);
     say('DONE');
   } catch (e) {

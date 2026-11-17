@@ -193,21 +193,36 @@ export async function deleteProjectForGood(
       fromRestorePoints++;
     }
   }
-  const keys = Array.from(byKey.keys());
-  const shared = await keysNamedElsewhere(db, userId, projectId, keys);
-  const toDelete = keys.filter((k) => !shared.has(k));
-
   // What each file really weighs — from the store itself, in one listing of the
   // account's folder (a row may not know its size; a preview has no row at all).
+  //
+  // ...AND THE PICTURES SENT FOR THIS PROJECT THAT NEVER GOT ONTO A CARD (17 Nov,
+  // Roman's "125 pictures"): a picture goes up before the save that names it;
+  // when that save was refused, or never came, nothing in the database knows
+  // the file. Since 17 Nov the file itself says which project it was sent for
+  // (customMetadata.project_id, routes/upload.ts). The same listing reads that,
+  // and those files go with their project — under the same protection as every
+  // other: one that another project's card or restore point names is kept.
   const sizeOf = new Map<string, number>();
-  if (toDelete.length > 0) {
+  let neverOnACard = 0;
+  {
     let cursor: string | undefined;
     do {
-      const page = await bucket.list({ prefix: `users/${userId}/`, cursor, limit: 1000 });
-      for (const o of page.objects) sizeOf.set(o.key, o.size);
+      const page = await bucket.list({ prefix: `users/${userId}/`, cursor, limit: 1000, include: ["customMetadata"] });
+      for (const o of page.objects) {
+        sizeOf.set(o.key, o.size);
+        if (o.customMetadata?.project_id === projectId && !o.key.includes("/thumbs/") && !byKey.has(o.key)) {
+          byKey.set(o.key, o.size);
+          neverOnACard++;
+        }
+      }
       cursor = page.truncated ? page.cursor : undefined;
     } while (cursor);
   }
+  if (neverOnACard > 0) console.log(`[storage] project ${projectId}: ${neverOnACard} picture(s) sent for it that never got onto a card go with it`);
+  const keys = Array.from(byKey.keys());
+  const shared = await keysNamedElsewhere(db, userId, projectId, keys);
+  const toDelete = keys.filter((k) => !shared.has(k));
   let bytesFreed = 0, thumbsFreed = 0;
   for (let i = 0; i < toDelete.length; i += 100) {
     const batch = toDelete.slice(i, i + 100);

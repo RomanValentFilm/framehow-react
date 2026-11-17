@@ -55,7 +55,7 @@ test('logout keeps the unsent copy of offline work, and clears the project cache
   // answers, so the list can be looked at with the copy unsent.
   const cut = (r: { abort(code: string): Promise<void> }) => r.abort('connectionfailed');
   await desktop.page.route('**/127.0.0.1:8787/projects/*/sync*', cut);
-  await desktop.page.route('**/127.0.0.1:8787/upload', cut);
+  await desktop.page.route(/127\.0\.0\.1:8787\/upload(\?|$)/, cut);
   await desktop.uploadPicture(0, 'ver', PICTURE);
   await desktop.page.waitForTimeout(1500);
   const mark = await desktop.mark();
@@ -103,6 +103,6 @@ test('logout keeps the unsent copy of offline work, and clears the project cache
   expect(agree.list, 'THE LIST OF DEVICE COPIES NAMES EXACTLY THE COPIES ON THE DEVICE').toEqual(agree.store);
 
   await desktop.page.unroute('**/127.0.0.1:8787/projects/*/sync*');
-  await desktop.page.unroute('**/127.0.0.1:8787/upload');
+  await desktop.page.unroute(/127\.0\.0\.1:8787\/upload(\?|$)/);
   await desktop.close();
 });

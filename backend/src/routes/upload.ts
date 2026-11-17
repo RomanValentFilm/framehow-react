@@ -5,7 +5,7 @@ import { requireUser } from "../lib/auth";
 import { newId } from "../lib/crypto";
 import { jsonError } from "../lib/response";
 import { storageLimitBytes } from "../lib/storage";
-import { addBytes, addThumbBytes, ceilingBytes, mailIfStepCrossed, totalBytes, userBytes } from "../lib/totals";
+import { addBytes, addThumbBytes, ceilingBytes, mailIfStepCrossed, reserveBytes, totalBytes, userBytes } from "../lib/totals";
 import { thumbOfPicture } from "../lib/cleaner";
 import { allow } from "../lib/rateLimit";
 
@@ -86,15 +86,17 @@ upload.post("/upload", requireUser, async (c) => {
 
   const me = c.get("user");
 
-  // THE WALL: this account, orphans included, may not pass its limit.
+  // THE WALL: this account, orphans included, may not pass its limit. The room
+  // is TAKEN further down, in one step (reserveBytes) — see there.
   const limit = storageLimitBytes(c.env, c.req.header("X-FH-Storage-Limit-MB"), !!me.email_verified);
   const mine = await userBytes(c.env.DB, me.id);
+  const fullAnswer = (used: number) => c.json({
+    error: { code: "storage_full", message: "This account's storage is full." },
+    storage: { used, limit, pending: buf.byteLength, verified: !!me.email_verified, full_limit: storageLimitBytes(c.env, c.req.header("X-FH-Storage-Limit-MB"), true) },
+  }, 413);
   if (mine + buf.byteLength > limit) {
     console.log(`[upload] refused: account ${me.id} at ${mine} + ${buf.byteLength} > ${limit}`);
-    return c.json({
-      error: { code: "storage_full", message: "This account's storage is full." },
-      storage: { used: mine, limit, pending: buf.byteLength, verified: !!me.email_verified, full_limit: storageLimitBytes(c.env, c.req.header("X-FH-Storage-Limit-MB"), true) },
-    }, 413);
+    return fullAnswer(mine);
   }
   // THE CEILING: the whole of Framehow may not pass the number Roman set.
   const ceiling = ceilingBytes(c.env, c.req.header("X-FH-Global-Limit-MB"));
@@ -107,13 +109,36 @@ upload.post("/upload", requireUser, async (c) => {
     }, 413);
   }
 
+  // THE ROOM IS TAKEN BEFORE THE FILE IS STORED, IN ONE STEP (17 Nov). Pictures
+  // arriving at the same moment each read the same figure above and all passed
+  // (516 of 500 MB, 16 Nov); here only as many get through as there is room for.
+  if (!await reserveBytes(c.env.DB, me.id, buf.byteLength, limit)) {
+    const now = await userBytes(c.env.DB, me.id);
+    console.log(`[upload] refused at the wall (arrived together with others): account ${me.id} at ${now} + ${buf.byteLength} > ${limit}`);
+    return fullAnswer(now);
+  }
+
+  // THE PICTURE SAYS WHICH PROJECT IT WAS SENT FOR (17 Nov, Roman's "125
+  // pictures"). A picture goes up BEFORE the save that puts it on a card. When
+  // that save never arrives — refused, or the project deleted meanwhile — no
+  // card and no restore point names the file, and Delete now could not know it
+  // belonged to the project. The project's id rides on the file itself, so the
+  // project takes it along when it goes (lib/storage.ts, deleteProjectForGood).
+  const forProject = c.req.query("project") ?? "";
+  const customMetadata: Record<string, string> = { user_id: me.id };
+  if (/^[A-Za-z0-9_-]{8,64}$/.test(forProject)) customMetadata.project_id = forProject;
+
   const r2Key = `users/${me.id}/${newId()}.${extForContentType(contentType)}`;
 
-  await c.env.IMAGES_BUCKET.put(r2Key, buf, {
-    httpMetadata: { contentType },
-    customMetadata: { user_id: me.id },
-  });
-  await addBytes(c.env.DB, me.id, buf.byteLength);
+  try {
+    await c.env.IMAGES_BUCKET.put(r2Key, buf, {
+      httpMetadata: { contentType },
+      customMetadata,
+    });
+  } catch (e) {
+    await addBytes(c.env.DB, me.id, -buf.byteLength);   // the room goes back: nothing was stored
+    throw e;
+  }
   // AT ONCE, if this upload crossed a step Roman wants to hear about. Never in
   // the way of the answer: a mail that fails is logged, the upload stands.
   c.executionCtx.waitUntil(mailIfStepCrossed(c.env, c.env.DB, all + buf.byteLength).catch((e) => console.log(`[upload] step mail failed: ${String(e)}`)));

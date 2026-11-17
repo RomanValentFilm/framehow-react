@@ -90,6 +90,35 @@ export async function addBytes(db: D1Database, userId: string | null, delta: num
   await db.batch(stmts);
 }
 
+/**
+ * ROOM FOR THIS FILE, TAKEN IN ONE STEP (17 Nov; Roman's account stood at 516
+ * of 500 MB on 16 Nov). The wall used to read the figure, compare, store the
+ * file and only then add its bytes — so twenty-five pictures sent at the same
+ * moment all read the same figure and all passed. Now the bytes are added and
+ * the limit is checked in ONE statement: of pictures arriving together, only
+ * as many get through as there is room for. False = no room, nothing added.
+ * The caller gives the bytes back (addBytes, negative) if storing then fails.
+ */
+export async function reserveBytes(db: D1Database, userId: string, bytes: number, limit: number): Promise<boolean> {
+  if (bytes <= 0) return true;
+  const now = Date.now();
+  const scope = `user:${userId}`;
+  await db.prepare(`INSERT OR IGNORE INTO storage_totals (scope, bytes, updated_at) VALUES (?, 0, ?)`).bind(scope, now).run();
+  const took = await db
+    .prepare(`UPDATE storage_totals SET bytes = bytes + ?, updated_at = ? WHERE scope = ? AND bytes + ? <= ?`)
+    .bind(bytes, now, scope, bytes, limit)
+    .run();
+  if (!took.meta?.changes) return false;
+  await db
+    .prepare(
+      `INSERT INTO storage_totals (scope, bytes, updated_at) VALUES ('all', ?, ?)
+       ON CONFLICT(scope) DO UPDATE SET bytes = MAX(0, storage_totals.bytes + excluded.bytes), updated_at = excluded.updated_at`,
+    )
+    .bind(bytes, now)
+    .run();
+  return true;
+}
+
 /** THE LIBRARY'S PREVIEWS COUNT TOO (27 Oct, Roman: "put it in"). A preview
  *  belongs to no card, so the sum over the cards cannot see it; its bytes are
  *  kept per account here ('thumbs:<id>'): a new preview adds, a removed one
