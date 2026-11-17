@@ -362,6 +362,8 @@ test('picts library: DELETE — confirm, the card says "You deleted this picture
   await d2.typeUnder(1, 'still here');
   await d2.offline(false);
   await d2.settle();
+  // What the returning device did with the server's answer, said before the check (run 773).
+  for (const l of (await d2.log()).filter((x) => /pull:|leaving the screen alone|the next fetch is applied in full|pictures deleted in the library|heartbeat:/.test(x)).slice(-6)) say(`   d2: ${l}`);
   await expect.poll(async () => d2.page.locator('.picts-deleted').count(), { timeout: 60_000, message: 'the other device\'s card says so' }).toBeGreaterThanOrEqual(1);
   say(`   ${(await d2.log()).find((l) => l.includes('pictures deleted in the library')) ?? 'no marker line'}`);
   await d.settle();

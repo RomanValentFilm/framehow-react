@@ -67,6 +67,15 @@ test('a photo in 3x2 does not move the page', async ({ browser }) => {
   await desktop.setView('grid3x2');
   await desktop.page.waitForTimeout(500);
 
+  // THE OPEN-PROJECT BOX OF A FRESH ACCOUNT IS CLOSED FIRST (run 772, 16 Nov).
+  // Since 16 Nov the page behind an open box is held in place on purpose, so
+  // with the box still open the page cannot scroll and this test saw nothing.
+  if (await desktop.page.locator('#projectListModal:not(.hidden)').count()) {
+    await desktop.page.locator('#projectListClose').click();
+    await expect(desktop.page.locator('#projectListModal')).toBeHidden({ timeout: 5_000 });
+    await desktop.page.waitForTimeout(300);
+  }
+
   // Deliberately NOT centred on anything: partway down, where a person's page
   // usually is.
   await desktop.scrollTo(730);

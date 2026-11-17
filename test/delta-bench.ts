@@ -113,6 +113,14 @@ const ids = (rows: Array<{ id: string }>) => rows.map((r) => r.id).sort().join('
   const same = emptyDelta({ project: { ...(held.project as object) }, frames: [{ ...(f3 as object) } as never], images: [{ ...(img as object) } as never] });
   check('the pull brings back exactly my own push → nothing new', deltaAlreadyHeld(held, same, sent), true);
 
+  // A picture deleted in the library elsewhere: the server hands my sent row back marked deleted (16 Nov).
+  {
+    const dead = { ...(img as object), deleted_at: 4900 } as never;
+    const heldDead = { ...held, images: held.images.map((i) => ((i as { version_id: string }).version_id === 'f3-v0' ? dead : i)) } as MergeableTree;
+    const back = emptyDelta({ project: { ...(held.project as object) }, frames: [{ ...(f3 as object) } as never], images: [{ ...(dead as object) } as never] });
+    check('my sent picture comes back marked DELETED elsewhere → news, never "my own push"', deltaAlreadyHeld(heldDead, back, sent), false);
+  }
+
   const other = emptyDelta({ project: { ...(held.project as object) }, frames: [frame('f3', 5200, { text_content: 'the iPad wrote' })] });
   check('one field differs (another device wrote f3) → news', deltaAlreadyHeld(held, other, sent), false);
 

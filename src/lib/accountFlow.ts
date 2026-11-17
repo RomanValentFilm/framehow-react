@@ -4099,7 +4099,9 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
     }
     for (const i of images) {
       const r = replyImages.get(i.version_id);
-      if (!r || r.r2_key !== i.r2_key) notAsSent.push(`picture of ${i.version_id.slice(0, 6)}`);
+      // ...or the server holds it DELETED (deleted in the library on another
+      // device while this one was away — run 773, test 48): sent live, held dead.
+      if (!r || r.r2_key !== i.r2_key || r.deleted_at) notAsSent.push(`picture of ${i.version_id.slice(0, 6)}${r?.deleted_at ? ' (deleted elsewhere)' : ''}`);
     }
     if (notAsSent.length > 0) trace(`  the server holds something else than sent for ${notAsSent.length} row(s) (${notAsSent.slice(0, 4).join(', ')}) — the next fetch is applied in full`);
     const refusedAnything = notAsSent.length > 0 || (res.rejected_frames?.length ?? 0) + (res.stale_frames?.length ?? 0)

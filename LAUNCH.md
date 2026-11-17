@@ -34,7 +34,7 @@ D7 video + Fitting page text, F1 new token.
 ## THE PATH TO APPLE (Roman, 11 Nov late: "we need to be in the App Store" — nothing is announced before that; everything not on this path waits)
 1. G21 step 0: the start-up loop in the iPhone app · 2. G21 step 1: FILL 25 in the app and the web app · 3. G21 steps 2–3 as far as the numbers demand
 4. C2 build 2 on the iPhone, C2b on the iPad, C2c start with no connection · 5. C3 the app points at framehow.com/app · 6. D1/D10 Terms + Privacy, D3–D5 forms, D9 2FA · 7. D11 screenshots, texts, review account → SUBMIT
-WAITS UNTIL AFTER SUBMISSION: G19 camera series, A7/D6 Fitting as its own app, G20 one storage limit, G8 Face ID, G11 guest link, D7 website extras, G4, G6, G7, A10, G2.
+(17 Nov: G19 CAMERA SERIES IS BEFORE SUBMISSION — agreed 13 Nov as 'the only camera', confirmed by Roman 16 Nov; the 11 Nov line was stale.) WAITS UNTIL AFTER SUBMISSION: A7/D6 Fitting as its own app, G20 one storage limit, G8 Face ID, G11 guest link, D7 website extras, G4, G6, G7, A10, G2.
 
 ## A. Code — the app itself
 - [x] A1 (9 Nov, v5.0.172) Busy page after the shutter: own push comes back as "remote is newer" and redraws all cards → recognise own push, skip redraw (bench test first)
@@ -60,6 +60,8 @@ WAITS UNTIL AFTER SUBMISSION: G19 camera series, A7/D6 Fitting as its own app, G
 - [x] A18 (10 Nov, v5.0.195) The version's setup button reads "+NAME" (old grey look) instead of "TAG"; tagged = NAME filled, as before. Stars do NOT spread to the copies (agreed)
 
 ## G. Small bugs and comforts carried over from TOMORROW.md (one list, Roman 9 Nov)
+- ORDER AGREED 16 Nov LATE (Roman): (1) job 1 — uploaded pictures belong to their project (Delete now takes them), the 500 MB wall holds under parallel uploads, a 429 is retried by itself; PHOTO TEST gets the glow lines. (2) CAMERA SERIES as the only camera — read the landing code first, say how long. (3) MAX view: three stars; lands on the version one was on. (4) what is left of the save path (start fetch after an unsaved mark, scroll log lines), measured again after the series. (5) the Apple path. WATCH ONLY: page restart under the camera (Xcode console if it happens again). OFF FOR NOW: SAVE AS NEW after Delete now (one account; later, probably 'only the admin deletes').
+- AFTER APPLE (Roman 16 Nov): THE GLOW — keep Apple's brightness layer and show it the way Photos does: cards plain, glow fades in in MAX view and when the scroll rests for a second, ONLY if it costs no speed. Proven 16 Nov: the glow in Photos IS the layer (Settings → Photos → View Full HDR off = no glow; a screenshot never glows). First step: PHOTO TEST measures a layered photo unpacked with dynamic-range-limit standard / constrained / none, and the time to switch a card from plain to glow. Also after Apple: soft version cards (960 surface), leftover pills, AbortError in the background, 3 saves per photo if the series leaves any.
 - (16 Nov, in files v5.0.299, not yet on dev) Delete / Delete now ask first when this device holds unsent work of the project; the list shows the device's name while its save waits; DELETE ACCOUNT asks twice. Texts agreed with Roman — see release notes v5.0.299.
 - (16 Nov, OPEN) pictures uploaded but never attached (save refused: storage full / 429) are not taken by Delete now — only by LIBRARY delete or the nightly sweep. Cure: the upload names its project. To agree.
 - [x] G1 (9 Nov, test 60 green) Multi-load into an EMPTY version strip — already fine, guarded by test 60

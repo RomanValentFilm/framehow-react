@@ -240,7 +240,15 @@ export function deltaAlreadyHeld(held: MergeableTree, delta: MergeableTree, sent
   const heldVersions = byId(held.versions);
   for (const v of delta.versions) if (!sent.versions.has(v.id) || !same(heldVersions.get(v.id), v)) return false;
   const heldImages = new Map(held.images.map((i) => [i.version_id, i]));
-  for (const i of delta.images) if (!sent.images.has(i.version_id) || !same(heldImages.get(i.version_id), i)) return false;
+  for (const i of delta.images) {
+    if (!sent.images.has(i.version_id) || !same(heldImages.get(i.version_id), i)) return false;
+    // A PICTURE DELETED ELSEWHERE IS ALWAYS NEWS (run 772/773, 16 Nov, test 48).
+    // A device that was offline sends its shot WITH the picture; the server
+    // keeps the picture deleted and hands the row back marked so. "Sent by me
+    // and equal to the reply" was true — and the card went on showing a picture
+    // that no longer exists, for good. A deleted mark is never my own push.
+    if ((i as { deleted_at?: number | null }).deleted_at) return false;
+  }
   const heldDrawings = new Map(held.drawings.map((d) => [d.version_id, d]));
   for (const d of delta.drawings) if (!sent.drawings.has(d.version_id) || !same(heldDrawings.get(d.version_id), d)) return false;
   const heldSettings = new Map((held.settings ?? []).map((s) => [`${s.kind}/${s.item_id}`, s]));
