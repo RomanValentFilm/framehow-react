@@ -10,6 +10,7 @@ import { trace, markLanding } from './syncTrace';
 import { resetToolbarState, captureFrameAnchor, handleOrientationFlip, cancelOrientAnchors } from './view';
 import { getPictureReady } from './drawing';
 import { flushSyncNow, holdSyncFor, photoIsLanding } from './currentProject';
+import { isMainEmpty, getStripVersions, getStripActiveTab, stripTabPrefix } from './helpers';
 import { getCamMode, getFramelineLater, wireCamModeButton, shrinkForSaving, fillCrop, loadPhoneShot } from './camMode';
 import type { PhoneShot } from './camMode';
 import { buildToneLUT, applyLUT, satFor } from './camLook';
@@ -46,6 +47,42 @@ export function setOnFinalPhoto(fn: (landing: any, dataURL: string) => void): vo
 }
 
 /** Aspect ratio of the frame's own canvas (the 'canvas' preset). */
+/** A shot of a SERIES that lands without the move (17 Nov): put on its card or
+ *  into a new version, nothing drawn — the last shot of the series draws. Returns
+ *  where it landed, as applyCapturedImage notes it. */
+let onSeriesShot: ((dataURL: string, target: CameraTarget) => any) | null = null;
+export function setOnSeriesShot(fn: (dataURL: string, target: CameraTarget) => any): void {
+  onSeriesShot = fn;
+}
+
+/** THE SERIES IS FOUR SHOTS AT MOST (Roman, 17 Nov). */
+const SERIES_MAX = 4;
+
+/** THE NAMES THE SHOTS OF A SERIES WILL LAND ON, for the camera's picture box: the
+ *  first on an empty main card is the main picture ("M"); an empty version on
+ *  screen takes the next; after that the strip goes on counting from where it is
+ *  (v1–v7 are there → v8, v9, v10). The same rule the landing itself follows. */
+function seriesNamesFor(fid: number, target: any, max: number): string[] {
+  try {
+    const strip = target.stripType || 'ver';
+    const f = state().frames.find((x: any) => x.id === fid);
+    let mainFree = !!target.fromMain && !!f && isMainEmpty(f);
+    const vers = getStripVersions(fid, strip);
+    const ai = getStripActiveTab(fid, strip);
+    const cur = vers[ai];
+    let reuse = !!cur && !(cur.bgImage || (cur.strokes && cur.strokes.length > 0));
+    const prefix = stripTabPrefix(strip);
+    let n = vers.length;
+    const out: string[] = [];
+    for (let i = 0; i < max; i++) {
+      if (mainFree) { out.push('M'); mainFree = false; continue; }
+      if (reuse) { out.push(cur.label || `${prefix}${ai + 1}`); reuse = false; continue; }
+      n += 1; out.push(`${prefix}${n}`);
+    }
+    return out;
+  } catch { return []; }
+}
+
 function canvasAspectRatio(fid: number): number {
   const f = state().frames.find((fr) => fr.id === fid);
   return f && f.cropW && f.cropH ? f.cropW / f.cropH : 16 / 9;
@@ -145,17 +182,113 @@ async function takeNativePhoto(fid: number): Promise<boolean> {
     };
     cam.close().then(start('answered')).catch(start('failed'));
   };
-  let sub: any = null;
-  try { sub = await cam.addListener('preview', landPreview); } catch { sub = null; }
+  // ── THE SERIES (17 Nov, Roman) ────────────────────────────────────────────
+  // The camera stays open for up to four shots. Each shot sends its live frame
+  // at the shutter ('preview', with its place in the series) and its real photo
+  // about a second later ('seriesPhoto'); nothing lands, nothing is saved, the
+  // page behind is not touched. The visit ends with the last shot ('preview'
+  // says last), with DONE, or with a tap on the picture box ('seriesDone') —
+  // then every shot lands at once: the earlier ones without a move, the last one
+  // travels into the card as a single shot always did, and the save that
+  // follows carries them all. A shell from before the series knows none of
+  // this and answers as it always did; the lines further down serve it.
+  type Slot = { preview?: string; real?: string; landing?: any };
+  const slots: Slot[] = [];
+  const names = seriesNamesFor(fid, target, SERIES_MAX);
+  let seriesLanded = false;
+  const awaitReal = (l: any) => {
+    if (!l) return;
+    if (l.main) { const f = state().frames.find((x: any) => x.id === fid); if (f) f.awaitingPhoto = true; } else if (l.version) l.version.awaitingPhoto = true;
+  };
+  const openMaxOnTheLanded = () => {
+    for (const sel of [
+      `.frame-card[data-vfid="${fid}"] .canvas-wrap > .max-btn`,
+      `.grid3x2-card-wrap[data-g3fid="${fid}"] .canvas-wrap > .max-btn`,
+      `.frame-card[data-mfid="${fid}"] .canvas-wrap > .max-btn`,
+    ]) {
+      for (const el of Array.from(document.querySelectorAll<HTMLElement>(sel))) {
+        if (el.offsetParent) { trace('camera: the picture box was tapped — MAX view on the last shot'); el.click(); return; }
+      }
+    }
+    trace('camera: the picture box was tapped — no MAX button on the landed card to open');
+  };
+  const landSeries = (reason: string, e: any) => {
+    if (seriesLanded) return;
+    const taken = slots.filter((sl) => sl && (sl.real || sl.preview));
+    if (!taken.length) { trace(`camera: series ended (${reason}) with no picture to land`); return; }
+    seriesLanded = true;
+    previewAt = Date.now();
+    markLanding(); watchForStandstill();
+    holdSyncFor(600);
+    const newRatio: string | null = e?.ratioKey && e.ratioKey !== ratioKey ? e.ratioKey : null;
+    if (newRatio) setTimeout(() => { useStore.setState({ camAspectRatio: newRatio as never }); void flushSyncNow(); }, 700);
+    target.aspectRatio = effectiveAspectRatio(fid, newRatio ?? undefined);
+    if (e?.frame && e.frame.w > 0) target.startRect = { left: e.frame.x, top: e.frame.y, width: e.frame.w, height: e.frame.h };
+    let waiting = 0;
+    for (let i = 0; i < taken.length - 1; i++) {
+      const sl = taken[i];
+      fhTrack('photo_taken');
+      sl.landing = onSeriesShot ? onSeriesShot((sl.real ?? sl.preview)!, target) : null;
+      if (!sl.real) { awaitReal(sl.landing); waiting++; }
+    }
+    const lastSl = taken[taken.length - 1];
+    fhTrack('photo_taken');
+    if (onCapturedImage) onCapturedImage((lastSl.real ?? lastSl.preview)!, target);
+    lastSl.landing = lastLandingOf();
+    if (!lastSl.real) { awaitReal(lastSl.landing); waiting++; }
+    landing = lastSl.landing;
+    trace(`camera: series of ${taken.length} landed (${reason === 'full' ? 'the last shot' : reason === 'box' ? 'the picture box' : 'DONE'}) on ${names.slice(0, taken.length).join(' ') || '?'} · ${Math.round((previewAt - t0) / 100) / 10} s from CAM · ${waiting ? `${waiting} real photo(s) still on their way` : 'every real photo was there'}`);
+    closeCamera();
+    const askedAt = Date.now();
+    const start = (how: string) => () => {
+      const f = (window as any).__fh_startShrink as (() => void) | undefined;
+      trace(`camera: shrink starts ${Date.now() - previewAt} ms after the landing (camera ${how} ${Date.now() - askedAt} ms after being asked)${f ? '' : ' — nothing to start'}`);
+      f?.();
+      if (reason === 'box') setTimeout(openMaxOnTheLanded, 450);     // after the move (300 ms)
+    };
+    cam.close().then(start('answered')).catch(start('failed'));
+  };
+  const onPreviewEvent = (e: any) => {
+    if (!e?.series) { landPreview(e); return; }           // a shell from before the series
+    if (!e.jpegBase64) return;
+    const i = typeof e.index === 'number' ? e.index : slots.length;
+    (slots[i] ??= {}).preview = `data:image/jpeg;base64,${e.jpegBase64}`;
+    trace(`camera: series shot ${i + 1}${names[i] ? ` (→ ${names[i]})` : ''} · live frame ${e.width}×${e.height}${e.last ? ' · the last one — the camera closes' : ' · the camera stays open'}`);
+    if (e.last) landSeries('full', e);
+  };
+  const onSeriesPhoto = async (e: any) => {
+    if (!e?.jpegBase64) return;
+    const i = typeof e.index === 'number' ? e.index : 0;
+    const url = `data:image/jpeg;base64,${e.jpegBase64}`;
+    const sl = (slots[i] ??= {});
+    sl.real = url;
+    trace(`camera: series photo ${i + 1} · ${e.width}×${e.height} · ${Math.round(e.jpegBase64.length * 3 / 4 / 1024)} KB · HDR layer ${e.hdrKept ? 'in' : 'not in'} the file · shutter→photo ${e.msCapture ?? '?'} ms · crop+resize ${e.msProcess ?? '?'} ms`);
+    if (!seriesLanded) return;                              // it lands with the others
+    // the series has landed already, this shot on its live frame: the real photo takes its place
+    while (photoIsLanding()) await new Promise((r) => setTimeout(r, 80));
+    await getPictureReady(url);
+    if (sl.landing && onFinalPhoto) onFinalPhoto(sl.landing, url);
+    else if (onSeriesShot) { sl.landing = onSeriesShot(url, target); trace(`camera: series photo ${i + 1} came after the landing and had no live frame — put on the card now`); useStore.setState((p: any) => ({ renderTick: (p.renderTick ?? 0) + 1 })); }
+  };
+  let sub: any = null, sub2: any = null, sub3: any = null;
+  try { sub = await cam.addListener('preview', onPreviewEvent); } catch { sub = null; }
+  try { sub2 = await cam.addListener('seriesPhoto', (e: any) => { void onSeriesPhoto(e); }); } catch { sub2 = null; }
+  try { sub3 = await cam.addListener('seriesDone', (e: any) => landSeries(e?.reason || 'done', e)); } catch { sub3 = null; }
+  const unlisten = () => { for (const x of [sub, sub2, sub3]) { try { x?.remove?.(); } catch { /* gone */ } } };
   let res: any;
   try {
-    res = await cam.take({ ratios, ratioKey, maxSide: 2400 });
+    res = await cam.take({ ratios, ratioKey, maxSide: 2400, series: { max: SERIES_MAX, names } });
   } catch (e: any) {
-    try { sub?.remove?.(); } catch { /* gone */ }
+    unlisten();
     trace(`camera: native failed — ${e?.message || e}; falling back to the web camera`);
     return false;
   }
-  try { sub?.remove?.(); } catch { /* gone */ }
+  unlisten();
+  if (res?.series) {
+    trace(`camera: the visit is over — ${res.count ?? '?'} photo(s), ended by ${res.reason ?? '?'} · ${Math.round((Date.now() - t0) / 100) / 10} s from CAM`);
+    if (!seriesLanded) closeCamera();
+    return true;
+  }
   if (!res || res.cancelled || !res.jpegBase64) {
     trace(`camera: native closed without a photo (${Math.round((Date.now() - t0) / 100) / 10} s)`);
     if (!landing) closeCamera();

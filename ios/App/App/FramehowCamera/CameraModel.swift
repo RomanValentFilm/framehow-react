@@ -51,6 +51,21 @@ final class CameraModel: NSObject, ObservableObject {
     var frameOnScreen: CGRect = .zero
     @Published var busy = 0
     @Published var photoSize = ""
+
+    // THE SERIES (17 Nov, Roman: "the camera stays open … a series is 4 shots at most").
+    // 0 = one shot and the camera closes, as it always did. Above 0 the camera stays
+    // open until that many shots are taken, or DONE, or a tap on the picture box.
+    var seriesMax = 0
+    /// How many times the shutter was pressed in this visit.
+    private(set) var shotsTaken = 0
+    /// The shot just taken closes the camera (a single shot always; in a series the last one).
+    private(set) var shotIsLast = true
+    /// The shots of this visit, small, for the picture box (the newest last).
+    @Published var seriesThumbs: [UIImage] = []
+    /// The small second flash, in the box, when a shot arrives there.
+    @Published var boxFlash = false
+    /// DONE was pressed: the buttons go, the camera waits for the web app to take over.
+    @Published var closing = false
     @Published var wide = false
 
     /// The finished photo: JPEG data, its size, whether the HDR layer is in it,
@@ -218,6 +233,10 @@ final class CameraModel: NSObject, ObservableObject {
         }
         busy += 1
         shutterAt = Date()
+        shotsTaken += 1
+        shotIsLast = seriesMax == 0 || shotsTaken >= seriesMax
+        let closesTheCamera = shotIsLast
+        let inSeries = seriesMax > 0
         onShutter?()
         // THE FLASH FIRST (Roman, 6 Nov): black at once, 90 ms; the frozen shot appears as
         // the flash lifts, never under it.
@@ -226,7 +245,9 @@ final class CameraModel: NSObject, ObservableObject {
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(90))
             self.flash = false
-            if let p = self.frozenPending { self.frozen = p; self.frozenPending = nil }
+            // (a shot that leaves the camera open is not frozen: the camera is live again at once)
+            if closesTheCamera, let p = self.frozenPending { self.frozen = p }
+            self.frozenPending = nil
         }
         photoOutput.capturePhoto(with: settings, delegate: self)
         // THE LIVE FRAME GOES FIRST: rotated upright by the same angle the photo
@@ -241,11 +262,23 @@ final class CameraModel: NSObject, ObservableObject {
             img = img.oriented(forExifOrientation: exif)
             // THE SCREEN FREEZES AS IT IS (Roman, 6 Nov): the whole live picture, not the
             // crop — the mask and the frame line stay exactly where they were.
-            let whole = Self.cropAndResize(img, gain: nil, ratio: 1, maxSide: 1600).image
+            // (ratio 0 = the whole frame, uncut — it lies under the frame lines like the live picture)
+            let whole = Self.cropAndResize(img, gain: nil, ratio: 0, maxSide: 1600).image
             let frozenUI = Self.ci.createCGImage(whole, from: whole.extent).map { UIImage(cgImage: $0) }
+            // the picture box of the series: the shot as it was framed, small
+            let small = Self.cropAndResize(img, gain: nil, ratio: ratio, maxSide: 360).image
+            let boxUI: UIImage? = inSeries ? Self.ci.createCGImage(small, from: small.extent).map { UIImage(cgImage: $0) } : nil
             Task { @MainActor in
                 guard let self else { return }
-                if self.flash { self.frozenPending = frozenUI } else { self.frozen = frozenUI }
+                if closesTheCamera {
+                    if self.flash { self.frozenPending = frozenUI } else { self.frozen = frozenUI }
+                }
+                if let b = boxUI {
+                    self.seriesThumbs.append(b)
+                    self.boxFlash = true
+                    try? await Task.sleep(for: .milliseconds(140))
+                    self.boxFlash = false
+                }
             }
             let r = Self.cropAndResize(img, gain: nil, ratio: ratio, maxSide: 1200)
             let opts: [CIImageRepresentationOption: Any] = [kCGImageDestinationLossyCompressionQuality as CIImageRepresentationOption: 0.8]
@@ -284,12 +317,27 @@ extension CameraModel: AVCapturePhotoCaptureDelegate {
         var gain = gainIn
         let w = image.extent.width, h = image.extent.height
         let long = max(w, h), short = min(w, h)
-        if ratio > 4.0 / 3.0 + 0.001 {
-            var band = min(short, (long / ratio).rounded())
+        // A FRAME NARROWER THAN THE CHIP IS CUT TOO (17 Nov, Roman, 1:1). Until today only
+        // frames WIDER than 4:3 were cut (a band across the chip); 1:1 came out as the
+        // whole 4:3 picture — more than the frame lines showed. Now the SHORT side stays
+        // and the long side is cut to short × ratio: 1:1 is a square, as framed.
+        // ratio ≤ 0 means "do not cut" (the frozen picture under the frame lines).
+        let wider = ratio > 4.0 / 3.0 + 0.001
+        let narrower = ratio > 0 && ratio < 4.0 / 3.0 - 0.001
+        if wider || narrower {
             let k = gain.map { $0.extent.width / w } ?? 1
-            if k < 1 { band = (band * k).rounded(.down) / k }
-            let rect = w >= h ? CGRect(x: 0, y: ((h - band) / 2 * k).rounded(.down) / k, width: w, height: band)
+            let rect: CGRect
+            if wider {
+                var band = min(short, (long / ratio).rounded())
+                if k < 1 { band = (band * k).rounded(.down) / k }
+                rect = w >= h ? CGRect(x: 0, y: ((h - band) / 2 * k).rounded(.down) / k, width: w, height: band)
                               : CGRect(x: ((w - band) / 2 * k).rounded(.down) / k, y: 0, width: band, height: h)
+            } else {
+                var len = min(long, (short * ratio).rounded())
+                if k < 1 { len = (len * k).rounded(.down) / k }
+                rect = w >= h ? CGRect(x: ((w - len) / 2 * k).rounded(.down) / k, y: 0, width: len, height: h)
+                              : CGRect(x: 0, y: ((h - len) / 2 * k).rounded(.down) / k, width: w, height: len)
+            }
             image = image.cropped(to: rect.offsetBy(dx: image.extent.minX, dy: image.extent.minY))
             image = image.transformed(by: CGAffineTransform(translationX: -image.extent.minX, y: -image.extent.minY))
             if let g = gain {

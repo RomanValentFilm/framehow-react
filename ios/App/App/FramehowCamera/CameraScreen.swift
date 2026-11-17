@@ -110,6 +110,10 @@ struct CameraScreen: View {
     /// The RATIO in force changed (the plugin reports it with both answers).
     let onRatio: (String) -> Void
     let onCancel: () -> Void
+    /// THE SERIES (17 Nov): the names the shots will land on ("v8", "v9" … — the web app
+    /// knows them), and what DONE or a tap on the picture box calls: "done" or "box".
+    var names: [String] = []
+    var onDone: (String) -> Void = { _ in }
 
     @State private var showRatios = false
     @State private var focusMark: CGPoint?
@@ -208,7 +212,7 @@ struct CameraScreen: View {
                 // buttons, and a moment later on the bare app. Now everything outside the
                 // frame is black from the flash on, the frame line and the buttons are gone —
                 // and the web's copy starts on the same black (actions.ts), which then fades.
-                let shot = cam.flash || cam.frozen != nil
+                let shot = cam.flash || cam.frozen != nil || cam.closing
                 FrameLine(frame: fg.frame, solid: shot)
                 Color.clear.contentShape(Rectangle()).gesture(touch).simultaneousGesture(pinch)
                 if let m = focusMark {
@@ -284,6 +288,8 @@ struct CameraScreen: View {
             Circle().fill(.white).frame(width: 66, height: 66)
                 .overlay(Circle().stroke(.gray, lineWidth: 3).padding(4))
         }
+        // (in a series the shutter is pale for the second the last shot is still being made)
+        .opacity(cam.seriesMax > 0 && cam.busy > 0 ? 0.4 : 1)
         // ONE LOOK FOR ALL THREE (Roman, 11 Nov): the EV's — the smaller one. RATIO and 1x
         // were the system's bordered button, a size larger and another face.
         let ratioButton = Button(action: { showRatios.toggle() }) { Self.pillLabel("RATIO") }
@@ -297,8 +303,11 @@ struct CameraScreen: View {
         // button was only as big as the word itself — 16 points high; the padding round
         // it was not part of it. Now the word sits in a clear field of 96 × 48 that is
         // all button. Still a plain word, no pill (Roman, 6 Nov).
-        let cancel = Button(action: { onCancel() }) {
-            Text("Cancel").font(.footnote).foregroundStyle(Color.white.opacity(0.85))
+        // ONCE THERE IS A SHOT, CANCEL IS DONE (Roman, 17 Nov): a series is not thrown away
+        // inside the camera; DONE closes it and the shots land.
+        let hasShots = cam.seriesMax > 0 && !cam.seriesThumbs.isEmpty
+        let cancel = Button(action: { if hasShots { onDone("done") } else { onCancel() } }) {
+            Text(hasShots ? "DONE" : "Cancel").font(.footnote).foregroundStyle(Color.white.opacity(hasShots ? 1 : 0.85))
                 .frame(width: 96, height: 48)
                 .contentShape(Rectangle())
         }
@@ -325,6 +334,33 @@ struct CameraScreen: View {
                 // kept free for the picture box of the series.
                 VStack { HStack { ratioButton; Spacer(); lens }; Spacer() }
                     .padding(.leading, pic.minX + d).padding(.trailing, W - pic.maxX + d).padding(.top, pic.minY + d)
+                // THE PICTURE BOX OF THE SERIES, bottom left (Roman, 17 Nov): the newest shot,
+                // fitted into a square with black beside it; above it, in the same grey shape
+                // and with no boxes of their own, the names the shots land on. A tap = DONE and
+                // the MAX view on the last shot.
+                if hasShots {
+                    let box = Button(action: { onDone("box") }) {
+                        VStack(spacing: 4) {
+                            Text(names.prefix(cam.seriesThumbs.count).joined(separator: " "))
+                                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                .lineLimit(1).minimumScaleFactor(0.5)
+                                .frame(width: 72)
+                            ZStack {
+                                Color.black
+                                if let last = cam.seriesThumbs.last { Image(uiImage: last).resizable().scaledToFit() }
+                                if cam.boxFlash { Color.white }
+                            }
+                            .frame(width: 72, height: 72)
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
+                        }
+                        .padding(6)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .background(pill, in: RoundedRectangle(cornerRadius: 12))
+                    VStack { Spacer(); HStack { box; Spacer() } }
+                        .padding(.leading, pic.minX + d).padding(.trailing, W - pic.maxX + d).padding(.bottom, H - pic.maxY + d)
+                }
                 if landscape {
                     // shutter right-middle (Camera app), Cancel under it, info bottom right
                     shutter.position(x: W - right - 24 - 33, y: H / 2)
@@ -333,7 +369,7 @@ struct CameraScreen: View {
                 } else {
                     // shutter bottom-middle, Cancel to its left, info under
                     shutter.position(x: W / 2, y: H - 28 - 33 - 24)
-                    cancel.position(x: W / 2 - 90, y: H - 28 - 33 - 24)   // left of the shutter (Roman), a plain word — short enough to stay clear of 1x
+                    cancel.position(x: W / 2 + 90, y: H - 28 - 33 - 24)   // RIGHT of the shutter since 17 Nov (Roman): the left is the picture box's   // left of the shutter (Roman), a plain word — short enough to stay clear of 1x
                     info.position(x: W / 2, y: H - 28)
                 }
             }

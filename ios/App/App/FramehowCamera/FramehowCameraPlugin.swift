@@ -37,6 +37,9 @@ public class FramehowCameraPlugin: CAPPlugin, CAPBridgedPlugin {
     private var timeUp = false
     private var webReady = false
     private var webReadyCall: CAPPluginCall?
+    /// THE SERIES (17 Nov): called when something happened that may end the visit —
+    /// a real photo arrived, the web app took the screen over. Nil outside a series.
+    private var seriesMayFinish: ((Bool) -> Void)?
 
     /// THE CLOCK AND BATTERY, HIDDEN OR SHOWN (Roman, 13 Nov: not over a picture in
     /// the MAX view). `hidden: true` takes them away, `false` brings them back.
@@ -58,6 +61,12 @@ public class FramehowCameraPlugin: CAPPlugin, CAPBridgedPlugin {
         let ratios = list.isEmpty ? [RatioChoice(key: "16:9", label: "16:9", value: 16.0 / 9.0)] : list
         let ratioKey = call.getString("ratioKey") ?? ratios[0].key
         let maxSide = CGFloat(call.getDouble("maxSide") ?? 2400)
+        // THE SERIES (17 Nov, Roman): { max: 4, names: ["v8", "v9", …] }. Without it the
+        // camera takes one shot and closes, exactly as before — an older web app is served
+        // the old way.
+        let seriesOpt = call.getObject("series")
+        let seriesMax = max(0, min(8, (seriesOpt?["max"] as? NSNumber)?.intValue ?? 0))
+        let seriesNames = (seriesOpt?["names"] as? [Any])?.compactMap { $0 as? String } ?? []
         call.keepAlive = true
 
         DispatchQueue.main.async { [weak self] in
@@ -72,10 +81,19 @@ public class FramehowCameraPlugin: CAPPlugin, CAPBridgedPlugin {
                 if let c = self.webReadyCall { self.webReadyCall = nil; c.resolve(); self.bridge?.releaseCall(c) }
             }
             let cam = CameraModel()
+            cam.seriesMax = seriesMax
             self.model = cam
+            self.seriesMayFinish = nil
             weak var screenOfThisShot: UIViewController?
             var keyInForce = ratioKey
+            // the series: how it ended ("full" = the last shot was taken, "done", "box"),
+            // how many real photos went to the web app, and whether the call is answered
+            var endedBy = ""
+            var photosOut = 0
+            var answered = false
             cam.onShutter = { [weak self] in
+                // (a shot that leaves the camera open changes nothing here: the screen stays)
+                guard cam.shotIsLast else { return }
                 self?.timeUp = false; self?.webReady = false
                 // NO FREEZE (Roman, 11 Nov: "A feels better" — like the web camera, where the
                 // shot leaves at once and it "feels super fast"). It was 390 ms: 90 of flash and
@@ -93,9 +111,45 @@ public class FramehowCameraPlugin: CAPPlugin, CAPBridgedPlugin {
                 self?.notifyListeners("preview", data: [
                     "jpegBase64": data.base64EncodedString(), "width": w, "height": h, "ratioKey": keyInForce,
                     "frame": ["x": f.minX, "y": f.minY, "w": f.width, "h": f.height],
+                    // the series: which shot of the visit this is, and whether it closes the camera
+                    "series": seriesMax > 0, "index": cam.shotsTaken - 1, "last": cam.shotIsLast,
                 ])
             }
+            if seriesMax > 0 {
+                // THE VISIT ENDS when it was ended (last shot, DONE, the box), every real photo
+                // has gone to the web app, and the web app has taken the screen over (the
+                // camera's own screen is hidden) — or after six seconds, whatever happens.
+                self.seriesMayFinish = { [weak self] force in
+                    guard !answered, !endedBy.isEmpty else { return }
+                    let mine = screenOfThisShot
+                    let screenGone = mine == nil || self?.host !== mine || mine?.view.isHidden == true
+                    guard force || (cam.busy == 0 && screenGone) else { return }
+                    answered = true
+                    if let s = self, let mine, s.host === mine { s.dismissScreen() }
+                    cam.stop()
+                    if let s = self, s.model === cam { s.model = nil }
+                    self?.seriesMayFinish = nil
+                    call.resolve(["series": true, "count": photosOut, "reason": endedBy, "ratioKey": keyInForce])
+                    self?.bridge?.releaseCall(call)
+                }
+            }
             cam.onPhoto = { [weak self] data, w, h, kept, msCapture, msProcess in
+                if seriesMax > 0 {
+                    // each real photo goes to the web app the moment it is made; the camera stays
+                    let index = photosOut
+                    photosOut += 1
+                    self?.notifyListeners("seriesPhoto", data: [
+                        "index": index, "jpegBase64": data.base64EncodedString(),
+                        "width": w, "height": h, "hdrKept": kept, "ratioKey": keyInForce,
+                        "msCapture": msCapture, "msProcess": msProcess,
+                    ])
+                    if cam.shotIsLast && endedBy.isEmpty {
+                        endedBy = "full"
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in self?.seriesMayFinish?(true) }
+                    }
+                    self?.seriesMayFinish?(false)
+                    return
+                }
                 // (only its own screen and its own camera — a newer one may be up already)
                 if let s = self, let mine = screenOfThisShot, s.host === mine { s.dismissScreen() }
                 cam.stop()
@@ -114,8 +168,25 @@ public class FramehowCameraPlugin: CAPPlugin, CAPBridgedPlugin {
                     self?.dismissScreen()
                     cam.stop()
                     self?.model = nil
+                    self?.seriesMayFinish = nil
                     call.resolve(["cancelled": true])
                     self?.bridge?.releaseCall(call)
+                },
+                names: seriesNames,
+                onDone: { [weak self] reason in
+                    // DONE, or a tap on the picture box. The buttons go; the web app is told
+                    // where the frame stands, lands the shots and takes the screen over
+                    // (close) — the hand-over of a single shot, without a new photo.
+                    guard endedBy.isEmpty else { return }
+                    endedBy = reason
+                    cam.closing = true
+                    self?.timeUp = true; self?.webReady = false
+                    let f = cam.frameOnScreen
+                    self?.notifyListeners("seriesDone", data: [
+                        "reason": reason, "count": cam.shotsTaken, "ratioKey": keyInForce,
+                        "frame": ["x": f.minX, "y": f.minY, "w": f.width, "h": f.height],
+                    ])
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in self?.seriesMayFinish?(true) }
                 })
             // THE CLOCK AND BATTERY GO BEFORE THE CAMERA COMES, NOT WHILE IT IS COMING (13 Nov,
             // measured on Roman's iPad). Twice today the camera screen was told to hide them
@@ -160,6 +231,7 @@ public class FramehowCameraPlugin: CAPPlugin, CAPBridgedPlugin {
         // here; it is taken down in onPhoto, when the chip has finished.
         vc.view.isHidden = true
         if let c = webReadyCall { webReadyCall = nil; c.resolve(); bridge?.releaseCall(c) }
+        seriesMayFinish?(false)          // (a series: the web app has the screen — the visit may end)
         // never left there unseen: if no photo comes (a failed capture), it goes after 4 s
         DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self, weak vc] in
             guard let self, let vc, self.host === vc, vc.view.isHidden else { return }

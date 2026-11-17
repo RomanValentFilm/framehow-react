@@ -35,7 +35,7 @@ import { fhTrack } from './tracking';
 import { trace } from './syncTrace';
 import { newFrameId } from './ids';
 import { drawFit } from './drawing';
-import { openCamera, getCameraTarget, clearCameraTarget, setOnCapturedImage, setOnFinalPhoto, setLastLandingReader, cameraSessionEnd } from './camera';
+import { openCamera, getCameraTarget, clearCameraTarget, setOnCapturedImage, setOnFinalPhoto, setOnSeriesShot, setLastLandingReader, cameraSessionEnd } from './camera';
 import { recordTombstone } from './accountFlow';
 import { openFullscreen } from './fullscreen';
 import { openLoadPicturesSheet } from './loadPictures';
@@ -1058,4 +1058,31 @@ export function applyFinalPhoto(landing: { fid: number; main: boolean; strip: St
   window.setTimeout(() => void flushSyncNow(), 8000);
 }
 setOnFinalPhoto(applyFinalPhoto);
+
+/** A SHOT OF A SERIES THAT LANDS WITHOUT THE MOVE (17 Nov, Roman: "the first on an
+ *  empty card becomes the main picture, the rest V1, V2 …; if the first lands on
+ *  V3, the next is V4"). The same rule as applyCapturedImage — an empty main card
+ *  takes it when the camera was opened from there, otherwise the strip's empty
+ *  version on screen, otherwise a new version — but nothing is drawn and nothing
+ *  moves: the last shot of the series goes through applyCapturedImage and draws
+ *  the cards, with these already in them. */
+export function landSeriesShotQuietly(dataURL: string, target: any): { fid: number; main: boolean; strip: StripType; version: Version | null } | null {
+  const s = state();
+  const fid = target.fid as number;
+  const strip: StripType = target.stripType || 'ver';
+  const f = s.frames.find((fr) => fr.id === fid);
+  if (!f) return null;
+  if (target.fromMain && isMainEmpty(f)) {
+    f.src = dataURL;
+    f.r2Key = undefined;
+    f.drawMode = false;
+    return { fid, main: true, strip, version: null };
+  }
+  const t = autoNewStripVersionIfNeeded(fid, strip);
+  t.type = 'upload';
+  t.bgImage = dataURL;
+  t.r2Key = undefined;
+  return { fid, main: false, strip, version: t };
+}
+setOnSeriesShot(landSeriesShotQuietly);
 setLastLandingReader(() => lastCaptureLanding);
