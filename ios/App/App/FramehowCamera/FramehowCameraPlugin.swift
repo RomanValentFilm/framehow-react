@@ -133,10 +133,11 @@ public class FramehowCameraPlugin: CAPPlugin, CAPBridgedPlugin {
                     self?.bridge?.releaseCall(call)
                 }
             }
-            cam.onPhoto = { [weak self] data, w, h, kept, msCapture, msProcess in
+            cam.onPhoto = { [weak self] data, w, h, kept, msCapture, msProcess, shotIndex in
                 if seriesMax > 0 {
-                    // each real photo goes to the web app the moment it is made; the camera stays
-                    let index = photosOut
+                    // each real photo goes to the web app the moment it is made; the camera stays.
+                    // Shot after shot, several are being made at once: each says which shot it is.
+                    let index = shotIndex >= 0 ? shotIndex : photosOut
                     photosOut += 1
                     self?.notifyListeners("seriesPhoto", data: [
                         "index": index, "jpegBase64": data.base64EncodedString(),

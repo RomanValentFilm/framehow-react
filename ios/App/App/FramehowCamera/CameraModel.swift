@@ -70,7 +70,8 @@ final class CameraModel: NSObject, ObservableObject {
 
     /// The finished photo: JPEG data, its size, whether the HDR layer is in it,
     /// and the two times — shutter→photo from the chip (ms), crop+resize+encode (ms).
-    var onPhoto: ((Data, Int, Int, Bool, Int, Int) -> Void)?
+    /// …and which shot of the visit it is (0, 1, 2 …; -1 if that could not be told).
+    var onPhoto: ((Data, Int, Int, Bool, Int, Int, Int) -> Void)?
     /// The live frame at the shutter: a small JPEG (long side 1200), same crop, at once.
     var onPreview: ((Data, Int, Int) -> Void)?
     /// The shutter was pressed (the plugin starts its fixed clock here).
@@ -213,8 +214,17 @@ final class CameraModel: NSObject, ObservableObject {
     }
 
     nonisolated(unsafe) private var pending: (CGFloat, CGFloat) = (16.0 / 9.0, 2400)
+    // SHOT AFTER SHOT WITHOUT WAITING (17 Nov, Roman: "the user should be able to shoot
+    // 4 pictures immediately — 1, 2, 3, 4"). The shutter no longer waits for the photo
+    // before; several photos are being made at once. So what belongs to ONE shot — its
+    // frame, its size, its moment, its place in the series — is kept under that shot's
+    // own number (the system's id of the capture) and taken out when its photo arrives.
+    nonisolated(unsafe) private var shotInfo: [Int64: (ratio: CGFloat, maxSide: CGFloat, at: Date, index: Int)] = [:]
+    nonisolated private let shotLock = NSLock()
 
     func takePhoto() {
+        // (a series takes no more than its number of shots; and none once DONE was pressed)
+        if closing || (seriesMax > 0 && shotsTaken >= seriesMax) { return }
         pending = (frameRatio, maxSide)
         let settings: AVCapturePhotoSettings
         if photoOutput.availablePhotoCodecTypes.contains(.hevc) {
@@ -235,6 +245,9 @@ final class CameraModel: NSObject, ObservableObject {
         shutterAt = Date()
         shotsTaken += 1
         shotIsLast = seriesMax == 0 || shotsTaken >= seriesMax
+        shotLock.lock()
+        shotInfo[settings.uniqueID] = (ratio: frameRatio, maxSide: maxSide, at: Date(), index: shotsTaken - 1)
+        shotLock.unlock()
         let closesTheCamera = shotIsLast
         let inSeries = seriesMax > 0
         onShutter?()
@@ -296,16 +309,20 @@ extension CameraModel: AVCapturePhotoCaptureDelegate {
 
     nonisolated func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
         let err = error?.localizedDescription
-        let (ratio, maxSide) = pending
+        shotLock.lock()
+        let mine = shotInfo.removeValue(forKey: photo.resolvedSettings.uniqueID)
+        shotLock.unlock()
+        let (ratio, maxSide) = mine.map { ($0.ratio, $0.maxSide) } ?? pending
+        let shotIndex = mine?.index ?? -1
         let t1 = Date()
-        let msCapture = Int(t1.timeIntervalSince(shutterAt) * 1000)
+        let msCapture = Int(t1.timeIntervalSince(mine?.at ?? shutterAt) * 1000)
         let result = Self.croppedAndResized(photo, ratio: ratio, maxSide: maxSide)
         let msProcess = Int(Date().timeIntervalSince(t1) * 1000)
         Task { @MainActor in
             self.busy = max(0, self.busy - 1)
             if let err { self.status = "capture failed: \(err)"; return }
             guard let data = result.data else { self.status = "no photo data"; return }
-            self.onPhoto?(data, result.w, result.h, result.hdrKept, msCapture, msProcess)
+            self.onPhoto?(data, result.w, result.h, result.hdrKept, msCapture, msProcess, shotIndex)
         }
     }
 

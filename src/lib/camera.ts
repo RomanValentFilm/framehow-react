@@ -200,17 +200,18 @@ async function takeNativePhoto(fid: number): Promise<boolean> {
     if (!l) return;
     if (l.main) { const f = state().frames.find((x: any) => x.id === fid); if (f) f.awaitingPhoto = true; } else if (l.version) l.version.awaitingPhoto = true;
   };
-  const openMaxOnTheLanded = () => {
+  const openMaxOnTheLanded = (lastTry = true): boolean => {
     for (const sel of [
       `.frame-card[data-vfid="${fid}"] .canvas-wrap > .max-btn`,
       `.grid3x2-card-wrap[data-g3fid="${fid}"] .canvas-wrap > .max-btn`,
       `.frame-card[data-mfid="${fid}"] .canvas-wrap > .max-btn`,
     ]) {
       for (const el of Array.from(document.querySelectorAll<HTMLElement>(sel))) {
-        if (el.offsetParent) { trace('camera: the picture box was tapped — MAX view on the last shot'); el.click(); return; }
+        if (el.offsetParent) { trace('camera: the picture box was tapped — MAX view on the last shot'); el.click(); return true; }
       }
     }
-    trace('camera: the picture box was tapped — no MAX button on the landed card to open');
+    if (lastTry) trace('camera: the picture box was tapped — no MAX button on the landed card to open');
+    return false;
   };
   const landSeries = (reason: string, e: any) => {
     if (seriesLanded) return;
@@ -224,6 +225,13 @@ async function takeNativePhoto(fid: number): Promise<boolean> {
     if (newRatio) setTimeout(() => { useStore.setState({ camAspectRatio: newRatio as never }); void flushSyncNow(); }, 700);
     target.aspectRatio = effectiveAspectRatio(fid, newRatio ?? undefined);
     if (e?.frame && e.frame.w > 0) target.startRect = { left: e.frame.x, top: e.frame.y, width: e.frame.w, height: e.frame.h };
+    // A TAP ON THE PICTURE BOX GOES STRAIGHT TO THE MAX VIEW (Roman, 17 Nov: "I've seen the
+    // animation first and then landing and then MAX view … we want to go to MAX right away
+    // without any disturbance"). No move into the card: the shots are put on their cards
+    // behind the camera, the MAX view is opened behind the camera, and only then does
+    // the camera's screen go — what comes out from under it is the MAX view.
+    const straightToMax = reason === 'box';
+    if (straightToMax) (target as any).noMove = true;
     let waiting = 0;
     for (let i = 0; i < taken.length - 1; i++) {
       const sl = taken[i];
@@ -240,11 +248,23 @@ async function takeNativePhoto(fid: number): Promise<boolean> {
     trace(`camera: series of ${taken.length} landed (${reason === 'full' ? 'the last shot' : reason === 'box' ? 'the picture box' : 'DONE'}) on ${names.slice(0, taken.length).join(' ') || '?'} · ${Math.round((previewAt - t0) / 100) / 10} s from CAM · ${waiting ? `${waiting} real photo(s) still on their way` : 'every real photo was there'}`);
     closeCamera();
     const askedAt = Date.now();
+    if (straightToMax) {
+      // the card's MAX button is put there by the painter a moment after the card is
+      // drawn: looked for every 30 ms, for 0.9 s at most; then the camera goes either way
+      let tries = 0;
+      const go = () => {
+        const opened = openMaxOnTheLanded(tries >= 30);
+        if (!opened && tries++ < 30) { setTimeout(go, 30); return; }
+        trace(`camera: the camera's screen goes ${Date.now() - askedAt} ms after the landing — ${opened ? 'the MAX view is under it' : 'no MAX view (no button on the card)'}`);
+        cam.close().catch(() => undefined);
+      };
+      go();
+      return;
+    }
     const start = (how: string) => () => {
       const f = (window as any).__fh_startShrink as (() => void) | undefined;
       trace(`camera: shrink starts ${Date.now() - previewAt} ms after the landing (camera ${how} ${Date.now() - askedAt} ms after being asked)${f ? '' : ' — nothing to start'}`);
       f?.();
-      if (reason === 'box') setTimeout(openMaxOnTheLanded, 450);     // after the move (300 ms)
     };
     cam.close().then(start('answered')).catch(start('failed'));
   };

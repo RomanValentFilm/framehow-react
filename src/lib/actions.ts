@@ -879,6 +879,9 @@ export function applyCapturedImage(dataURL: string, target: any): void {
   // THE NATIVE CAMERA COVERS THE PAGE (6 Nov): while it does, the page's frame clock
   // (requestAnimationFrame) does not tick — so the copy is placed at once and the
   // shrink is started by a plain timer, not a frame.
+  // THE PICTURE BOX WAS TAPPED: NO MOVE (17 Nov, Roman: "we want to go to MAX right away
+  // without any disturbance") — the shots are on their cards and the MAX view opens.
+  if (target.noMove) return;
   const onFrame = target.startRect ? (fn: () => void) => fn() : requestAnimationFrame;
   onFrame(() => {
     let targetEl: HTMLElement | null = null;

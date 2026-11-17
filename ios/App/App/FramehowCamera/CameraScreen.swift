@@ -284,12 +284,13 @@ struct CameraScreen: View {
     @ViewBuilder
     private func controls(landscape: Bool, right: CGFloat, pic: CGRect) -> some View {
         let pill = Color.black.opacity(0.45)
-        let shutter = Button(action: { if cam.busy == 0 { cam.takePhoto() } }) {
+        // IN A SERIES THE SHUTTER NEVER WAITS (Roman, 17 Nov: "1, 2, 3, 4 … right away"): the
+        // photos are made behind the camera while the next one is taken. A single shot still
+        // takes one photo at a time.
+        let shutter = Button(action: { if cam.seriesMax > 0 || cam.busy == 0 { cam.takePhoto() } }) {
             Circle().fill(.white).frame(width: 66, height: 66)
                 .overlay(Circle().stroke(.gray, lineWidth: 3).padding(4))
         }
-        // (in a series the shutter is pale for the second the last shot is still being made)
-        .opacity(cam.seriesMax > 0 && cam.busy > 0 ? 0.4 : 1)
         // ONE LOOK FOR ALL THREE (Roman, 11 Nov): the EV's — the smaller one. RATIO and 1x
         // were the system's bordered button, a size larger and another face.
         let ratioButton = Button(action: { showRatios.toggle() }) { Self.pillLabel("RATIO") }
@@ -312,9 +313,11 @@ struct CameraScreen: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        let info = Text(cam.busy > 0 ? "processing…" : (cam.status == "ready" ? "" : cam.status))
+        // (no "processing…" any more — Roman, 17 Nov: "what I do not like". Only what is
+        // wrong is said here: no permission, a failed capture.)
+        let info = Text(cam.status == "ready" ? "" : cam.status)
             .font(.caption2).padding(6).background(pill, in: RoundedRectangle(cornerRadius: 8))
-            .opacity(cam.busy > 0 || (cam.status != "ready" && !cam.status.isEmpty) ? 1 : 0)
+            .opacity(cam.status != "ready" && !cam.status.isEmpty ? 1 : 0)
 
         GeometryReader { g in
             let W = g.size.width, H = g.size.height
