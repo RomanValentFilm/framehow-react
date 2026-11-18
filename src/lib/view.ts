@@ -732,6 +732,7 @@ export function setViewMode(mode: ViewMode, keepCompare?: boolean, forceAnchorFi
       const idx = s.crossCompare[+fid];
       if (idx >= 0 && s.versions[+fid] && idx < s.versions[+fid].length) s.activeTab[+fid] = idx;
     });
+    if (affected.length) trace(`view: ${affected.length} main card(s) go back to their own picture (the view was changed to ${mode})`);
     useStore.setState({ crossCompare: {} });
     affected.forEach((fid) => {
       const md = document.querySelector(`#mainScroll .frame-card[data-mfid="${fid}"]`) as HTMLElement | null;

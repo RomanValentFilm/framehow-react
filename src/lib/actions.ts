@@ -753,6 +753,14 @@ export function applyCapturedImage(dataURL: string, target: any): void {
     t.r2Key = undefined; // Clear so sync uploads the new image
     lastCaptureLanding = { fid, main: false, strip, version: t };
     setStripCrossCompare(fid, strip, getStripActiveTab(fid, strip));
+    // THE MAIN CARD GOES TO THE NEW VERSION (18 Nov, Roman's iPhone: main strip, the card
+    // showing a version, CAM — "it stays on the last shot version instead of showing the
+    // new"). CAM pressed on a main card that shows a version lands here. The line above
+    // moves the STRIP's own pointer; the main card reads another one (crossCompare), and
+    // that one stayed on the version shown before — so the new photo was made, and the
+    // card went on showing the old one. Both pointers move now.
+    s.crossCompare[fid] = getStripActiveTab(fid, strip);
+    s.crossCompareStrip[fid] = strip;
     renderMainFrame(div, fid);
     const vd = document.querySelector(`#${scrollId} .frame-card[data-vfid="${fid}"]`) as HTMLElement | null;
     if (vd) renderVersionFrame(vd, fid, strip);
@@ -773,7 +781,9 @@ export function applyCapturedImage(dataURL: string, target: any): void {
     const vcvs = div.querySelector(`#${cvsPfx}`) as HTMLCanvasElement | null;
     if (vcvs) drawFit(vcvs, dataURL);
   }
-  trace(`camera: landed on the card (shot ${s.frames.findIndex((fr) => fr.id === fid) + 1}${capturedToVersion ? `, ${strip} ${getStripActiveTab(fid, strip) + 1}` : ', main'})`);
+  trace(`camera: landed on the card (shot ${s.frames.findIndex((fr) => fr.id === fid) + 1}${capturedToVersion ? `, ${strip} ${getStripActiveTab(fid, strip) + 1}` : ', main'})`
+    // …and what the MAIN card of this shot shows now, and from where CAM was pressed (18 Nov)
+    + ` · the main card shows ${(s.crossCompare[fid] ?? -1) >= 0 ? `${s.crossCompareStrip[fid] || 'ver'} ${(s.crossCompare[fid] ?? -1) + 1}` : 'its own picture'} · CAM from ${fromMain ? 'the main card' : fromCompare ? 'the main card showing a version' : 'a version card'} · view ${s.currentViewMode}`);
   useStore.setState({ centerFid: String(fid) });
   // If fullscreen overlay is open, refresh it instead of strip DOM
   if (s.fsOverlayActive && s.fsOverlayActive.fid === fid) {
