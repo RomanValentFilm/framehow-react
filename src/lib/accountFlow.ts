@@ -783,6 +783,18 @@ async function askAboutTheDeletedProject(projectId: string, forGood = false): Pr
   // too, or a reload would bring it back; unsent work on it goes with it — it
   // is the owner's own delete, agreed.
   if (forGood) {
+    // NOT WHILE AN UNSENT COPY STANDS IN (full run 810, test 39 red — my fault,
+    // found before it went live). At start, and at a quiet moment later, an
+    // unsent copy of ANOTHER project is put in place for a moment to be sent.
+    // If that project was deleted for good, "the open project" here is the
+    // stand-in — and closing it emptied the device's save of the project really
+    // open: the start ended empty, the work of the open project gone from the
+    // screen and from its save. The stand-in is nobody's screen. Its copy is
+    // parked by the upload itself, as before (12 Oct).
+    if (isStandingIn() || _uploadingCopies) {
+      trace('a project deleted for good — it is an unsent copy being sent, not the project on screen: nothing is closed');
+      return;
+    }
     if (getCurrentProject().projectId !== projectId) {
       trace('a project deleted for good that is not the one open — nothing to close');
       return;

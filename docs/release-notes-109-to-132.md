@@ -685,5 +685,8 @@ v5.0.225 · #777 (10 Nov, night)
 - SERVER: SAVE AS NEW on a deleted project sends every shot (Roman's "QQQQQ TEST 2", 18 Nov 18:03 — 3 shots sent, 2 taken; shot 1, changed last on the other device, was judged against the row still under the DELETED project, called stale and left there; the device believed all was sent). The stale test now reads this project's own rows only (frames and versions). Test 77, third play. NEEDS A SERVER DEPLOY.
   (run 805 red: the decision alone was not enough — the upsert carries the same date guard at the moment of writing, #514, and held the shot back silently. Rows carried in from a deleted project are now marked (`payload.carried`) and written as sent.)
 
-## v5.0.319 · #871 (next)
+## v5.0.319 · #871 (dev, run 808, 18 Nov 18:46 — test only on the app side; the cure is SERVER, live since run 809)
 - SERVER: SAVE AS NEW also keeps a shot the other device had DELETED but this screen still shows (Roman: "should be saved because it was showing on this device"). The deletion record was looked up by the shot's name alone at the moment of writing; it now belongs to its own project. Test 77, third play (4 shots: one changed last elsewhere, one deleted elsewhere). NEEDS A SERVER DEPLOY.
+
+## v5.0.320 · #872 (next)
+- FULL RUN 810 (18 Nov, 183 green, 1 red): test 39 "the dead copy at start" — a regression of today's "deleted for good closes the project": an unsent copy of a project deleted for good, put in place at start to be sent, was taken for the open project and closed — which emptied the device's save of the project really open (the start ended empty). Never live. Cure: nothing is closed while a copy stands in; the copy is parked by the upload, as before.
