@@ -313,6 +313,74 @@ export async function putPicturesBack<T>(light: T): Promise<{ whole: T; missing:
 
 // A picture nothing names is removed only at the SECOND look that finds it
 // unnamed, at least a minute after the first.
+// ---------------------------------------------------------------------------
+// THE SHOTS OF A CAMERA SERIES, WHILE THE CAMERA IS STILL OPEN (18 Nov, Roman:
+// "Rule number 1 never lose work").
+//
+// A series is up to four shots with the camera open. Until DONE they are on no
+// card and in no save — if the app is thrown out in that moment (iOS does it
+// under a heavy project) they would be gone. So each real photo is filed here
+// the moment the camera hands it over, under its content name like every other
+// picture, and a small note beside it says which shot of which project the
+// series belongs to and in what order. The landing clears the note. A start
+// that finds a note puts the shots on their card (actions.ts,
+// recoverCameraSeries). The clean-up below never takes a picture the note names.
+// ---------------------------------------------------------------------------
+const SERIES_NOTE = 'fh_camera_series';
+export interface SeriesNote {
+  /** the project: its cloud id if it has one, and the device's own key for it */
+  project: string | null; localProject: string | null;
+  /** the shot: its number in the project, and its server name if it has one */
+  fid: number; frame: string | null;
+  strip: string; fromMain: boolean;
+  /** the pictures' names, by their place in the series (a place not yet filled is '') */
+  names: string[];
+  at: number;
+  /** set when the shots were put on their card: the note only lingers half a minute, for a crash before the save */
+  landedAt?: number;
+}
+type Whose = Omit<SeriesNote, 'names' | 'at'>;
+const sameSeries = (n: SeriesNote, w: Pick<SeriesNote, 'project' | 'localProject' | 'fid' | 'strip'>): boolean =>
+  n.fid === w.fid && n.strip === w.strip && n.project === w.project && n.localProject === w.localProject;
+/** Every series noted on this device — usually none, at most a few (one per project left with its camera open). */
+export function readSeriesNotes(): SeriesNote[] {
+  try {
+    const raw = localStorage.getItem(SERIES_NOTE);
+    if (!raw) return [];
+    const v = JSON.parse(raw) as unknown;
+    const list = Array.isArray(v) ? v : [v];
+    return (list as SeriesNote[]).filter((n) => n && Array.isArray(n.names) && typeof n.fid === 'number');
+  } catch { return []; }
+}
+function writeSeriesNotes(list: SeriesNote[]): void {
+  try { if (list.length) localStorage.setItem(SERIES_NOTE, JSON.stringify(list)); else localStorage.removeItem(SERIES_NOTE); }
+  catch { /* no storage: the pictures are filed, but found by nobody — the caller says so */ }
+}
+/** The note of ONE series is cleared (its shots are on their card); the others stay. */
+export function forgetSeriesNote(whose: Pick<SeriesNote, 'project' | 'localProject' | 'fid' | 'strip'>): void {
+  const list = readSeriesNotes();
+  const rest = list.filter((n) => !sameSeries(n, whose));
+  if (rest.length !== list.length) writeSeriesNotes(rest);
+}
+/** The shots of this series are on their card now (the note stays a little, see camera.ts). */
+export function markSeriesLanded(whose: Pick<SeriesNote, 'project' | 'localProject' | 'fid' | 'strip'>): void {
+  const list = readSeriesNotes();
+  const note = list.find((n) => sameSeries(n, whose));
+  if (note) { note.landedAt = Date.now(); writeSeriesNotes(list); }
+}
+/** One shot of the open series onto the device: the picture, then its name in the note. */
+export async function keepSeriesShot(whose: Whose, index: number, src: string): Promise<string> {
+  const name = await nameOf(src);
+  await step<void>('readwrite', (s) => { s.put(src, name); });
+  const list = readSeriesNotes();
+  let note = list.find((n) => sameSeries(n, whose));
+  if (!note) { note = { ...whose, names: [], at: Date.now() }; list.push(note); }
+  while (note.names.length <= index) note.names.push('');
+  note.names[index] = name;
+  writeSeriesNotes(list);
+  return name;
+}
+
 let _unnamedAtLastLook = new Set<string>();
 let _lastLook = 0;
 
@@ -322,7 +390,9 @@ export function dueForALook(): boolean { return Date.now() - _lastLook >= 60_000
 /** Remove pictures no save and no copy names any more. Returns how many went. */
 export async function removeUnnamedPictures(named: Set<string>, now = false): Promise<number> {
   if (!now && Date.now() - _lastLook < 60_000) return 0;
-  const unnamed = (await picNames()).filter((n) => !named.has(n));
+  // (the shots of an open camera series are named by their note, not yet by a save)
+  const series = new Set(readSeriesNotes().flatMap((n) => n.names).filter(Boolean));
+  const unnamed = (await picNames()).filter((n) => !named.has(n) && !series.has(n));
   const go = now ? unnamed : unnamed.filter((n) => _unnamedAtLastLook.has(n));
   _unnamedAtLastLook = new Set(unnamed);
   _lastLook = Date.now();

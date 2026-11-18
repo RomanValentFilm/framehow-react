@@ -149,6 +149,10 @@ export interface TestDoor {
   newFrameAfter(frameIndex: number): number;
   /** Rename a strip, as renaming a version does (#392). */
   renameOpenProject(name: string): void;
+  /** Shots of a camera series as the open camera files them — on the device, with their note, on no card (18 Nov). */
+  leaveASeriesBehind(frameIndex: number, strip: StripType, fromMain: boolean, pictures: string[]): Promise<string[]>;
+  /** What the device notes about camera series that have not landed (18 Nov). */
+  seriesNotes(): Array<{ fid: number; strip: string; names: number; landed: boolean }>;
   renameStrip(strip: StripType, label: string): void;
   /** What that strip's versions are called. */
   stripName(strip: StripType): string;
@@ -946,6 +950,26 @@ export function installTestDoor(): void {
     // function, so the marking and the push that follow it are the app's (#392).
     /** The open project gets a new name on this device, as the name box does (16 Nov). */
     renameOpenProject(name: string) { setProjectName(name); },
+
+    async leaveASeriesBehind(frameIndex, strip, fromMain, pictures) {
+      const f = useStore.getState().frames[frameIndex];
+      if (!f) throw new Error(`no frame at ${frameIndex}`);
+      const { keepSeriesShot } = await import('./picStore');
+      const { localProjectId } = await import('./currentProject');
+      const whose = { project: getCurrentProject().projectId ?? null, localProject: localProjectId() || null,
+        fid: f.id, frame: ((f as never as { serverFrameId?: string }).serverFrameId ?? null), strip, fromMain };
+      const names: string[] = [];
+      for (let i = 0; i < pictures.length; i++) names.push(await keepSeriesShot(whose, i, pictures[i]));
+      return names;
+    },
+
+    seriesNotes() {
+      try {
+        const raw = localStorage.getItem('fh_camera_series');
+        const list = raw ? (JSON.parse(raw) as Array<{ fid: number; strip: string; names: string[]; landedAt?: number }>) : [];
+        return list.map((n) => ({ fid: n.fid, strip: n.strip, names: n.names.filter(Boolean).length, landed: !!n.landedAt }));
+      } catch { return []; }
+    },
 
     renameStrip(strip, label) {
       const f = useStore.getState().frames[0];

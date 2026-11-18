@@ -1768,6 +1768,8 @@ async function loadCloudProject(p: CloudProject): Promise<void> {
     // what changed since, and its own save coming back is known for what it is.
     holdTree(p.id, tree, true);   // (kept under this project's id — a fetch for another project does not fold into it)
     sayAppMemory('right after the opening');
+    // (shots of a camera series left waiting for THIS project — the app was closed with the camera open — go onto their card now)
+    window.setTimeout(() => { void (window as never as { __fh_recoverCameraSeries?: (atStart?: boolean) => Promise<void> }).__fh_recoverCameraSeries?.(false); }, 1200);
     _lastSent = null;
     clearDirtyState(); // Fresh project load — nothing dirty
     fhTrack('project_opened', { name: p.name });
@@ -8543,6 +8545,11 @@ export async function bootstrapAccountSystem(): Promise<void> {
       // "there is work to send" lived only in memory. The same line the
       // stand-in restore has had since #529.
       if (!snap.projectId) markSomethingToSend();
+      // A CAMERA SERIES THAT NEVER LANDED (18 Nov): shots taken with the camera open when
+      // the app was closed are on this device with a note; with their project on the
+      // screen again they are put on their card (actions.ts). Not in the system action
+      // above: this IS the person's work, and it must be saved and sent.
+      window.setTimeout(() => { void (window as never as { __fh_recoverCameraSeries?: () => Promise<void> }).__fh_recoverCameraSeries?.(); }, 800);
 
       // Kick off a cloud pull now that projectId is set.
       // The focus/visibility events fired before bootstrap set the projectId,

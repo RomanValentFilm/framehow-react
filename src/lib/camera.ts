@@ -9,7 +9,8 @@ import { fhTrack } from './tracking';
 import { trace, markLanding } from './syncTrace';
 import { resetToolbarState, captureFrameAnchor, handleOrientationFlip, cancelOrientAnchors } from './view';
 import { getPictureReady } from './drawing';
-import { flushSyncNow, holdSyncFor, photoIsLanding } from './currentProject';
+import { flushSyncNow, holdSyncFor, photoIsLanding, getCurrentProject, localProjectId } from './currentProject';
+import { keepSeriesShot, forgetSeriesNote, markSeriesLanded } from './picStore';
 import { isMainEmpty, getStripVersions, getStripActiveTab, stripTabPrefix } from './helpers';
 import { getCamMode, getFramelineLater, wireCamModeButton, shrinkForSaving, fillCrop, loadPhoneShot } from './camMode';
 import type { PhoneShot } from './camMode';
@@ -196,6 +197,13 @@ async function takeNativePhoto(fid: number): Promise<boolean> {
   // this and answers as it always did; the lines further down serve it.
   type Slot = { preview?: string; real?: string; landing?: any };
   const slots: Slot[] = [];
+  // whose series this is, for the note that keeps its shots safe on the device (picStore)
+  const seriesOf = () => {
+    const f0 = state().frames.find((x: any) => x.id === fid) as any;
+    return { project: getCurrentProject().projectId ?? null, localProject: localProjectId() || null,
+      fid, frame: (f0?.serverFrameId ?? null) as string | null, strip: (target.stripType || 'ver') as string, fromMain: !!target.fromMain };
+  };
+  forgetSeriesNote(seriesOf());       // (a new visit for this shot: what an older visit noted for it is on the card by now)
   const names = seriesNamesFor(fid, target, SERIES_MAX);
   let seriesLanded = false;
   const awaitReal = (l: any) => {
@@ -249,6 +257,13 @@ async function takeNativePhoto(fid: number): Promise<boolean> {
     landing = lastSl.landing;
     trace(`camera: series of ${taken.length} landed (${reason === 'full' ? 'the last shot' : reason === 'box' ? 'the picture box' : 'DONE'}) on ${names.slice(0, taken.length).join(' ') || '?'} · ${Math.round((previewAt - t0) / 100) / 10} s from CAM · ${waiting ? `${waiting} real photo(s) still on their way` : 'every real photo was there'}`);
     closeCamera();
+    // The shots are on their cards now, and the save that follows names them. The note
+    // of the open series has done its work — but it is kept half a minute longer, for
+    // the case that the app is thrown out before that save is written (a start then
+    // finds the note, and puts on the card only what the card has not got).
+    const landed = seriesOf();
+    markSeriesLanded(landed);
+    window.setTimeout(() => forgetSeriesNote(landed), 30_000);
     const askedAt = Date.now();
     if (straightToMax) {
       // the card's MAX button is put there by the painter a moment after the card is
@@ -284,6 +299,15 @@ async function takeNativePhoto(fid: number): Promise<boolean> {
     const url = `data:image/jpeg;base64,${e.jpegBase64}`;
     const sl = (slots[i] ??= {});
     sl.real = url;
+    // ONTO THE DEVICE AT ONCE (18 Nov): the camera is still open, the shot is on no card
+    // and in no save yet — filed now, it survives the app being thrown out. Not waited
+    // for: the camera and the next shot come first.
+    if (!seriesLanded) {
+      const t1 = Date.now();
+      void keepSeriesShot(seriesOf(), i, url)
+        .then(() => trace(`camera: series photo ${i + 1} is on this device (${Date.now() - t1} ms) — safe if the app is closed now`))
+        .catch((err) => trace(`camera: series photo ${i + 1} could NOT be put on this device (${(err as Error)?.message ?? err}) — it lives only while the app is open`));
+    }
     trace(`camera: series photo ${i + 1} · ${e.width}×${e.height} · ${Math.round(e.jpegBase64.length * 3 / 4 / 1024)} KB · HDR layer ${e.hdrKept ? 'in' : 'not in'} the file · shutter→photo ${e.msCapture ?? '?'} ms · crop+resize ${e.msProcess ?? '?'} ms`);
     if (!seriesLanded) return;                              // it lands with the others
     // the series has landed already, this shot on its live frame: the real photo takes its place

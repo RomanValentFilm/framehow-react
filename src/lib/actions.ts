@@ -1098,4 +1098,60 @@ export function landSeriesShotQuietly(dataURL: string, target: any): { fid: numb
   return { fid, main: false, strip, version: t };
 }
 setOnSeriesShot(landSeriesShotQuietly);
+
+/**
+ * A CAMERA SERIES THAT WAS NEVER LANDED (18 Nov, Roman: "never lose work").
+ *
+ * The app was closed, or thrown out by iOS, while the camera was open with shots
+ * in it. Each of those shots was filed on the device the moment it was taken
+ * (picStore, keepSeriesShot), with a note saying whose they are. A start that
+ * finds the note — and has that very project and shot open — puts the shots on
+ * the card as the landing would have: the first onto an empty main card if the
+ * camera was opened from there, the rest as versions. A picture the card already
+ * has (the app went down AFTER the landing, before the note was cleared) is not
+ * put there twice. Called by the start, once the project is on the screen — and
+ * when a project is opened from the list, for a series that was left waiting for it.
+ */
+export async function recoverCameraSeries(atStart = true): Promise<void> {
+  const { readSeriesNotes, forgetSeriesNote, getPicture } = await import('./picStore');
+  const notes = readSeriesNotes();
+  if (!notes.length) return;
+  const { localProjectId } = await import('./currentProject');
+  const cp = getCurrentProject();
+  let putAll = 0;
+  for (const note of notes) {
+    const names = note.names.filter(Boolean);
+    const sameProject = (!!note.project && cp.projectId === note.project) || (!note.project && !cp.projectId && note.localProject === localProjectId());
+    if (!names.length) { forgetSeriesNote(note); continue; }
+    if (Date.now() - note.at > 7 * 24 * 3600_000) { trace(`camera: a series of ${names.length} shot(s) noted more than a week ago — let go`); forgetSeriesNote(note); continue; }
+    if (!sameProject) { if (!note.landedAt) trace(`camera: ${names.length} shot(s) of a series wait on this device for another project — kept until that project is the open one`); continue; }
+    // A series that DID land is only looked at by a start (the app may have gone down
+    // before its save was written). A project opened from the list was saved when it
+    // was left, and its pictures are still arriving — nothing to compare with yet.
+    if (note.landedAt && !atStart) { if (Date.now() - note.landedAt > 60_000) forgetSeriesNote(note); continue; }
+    const s = state();
+    const f = s.frames.find((fr) => (!!note.frame && fr.serverFrameId === note.frame) || fr.id === note.fid);
+    if (!f) { trace(`camera: ${names.length} shot(s) of a series wait on this device, but their shot is no longer in the project — kept`); continue; }
+    const strip = (note.strip || 'ver') as StripType;
+    const has = (src: string): boolean => f.src === src || getStripVersions(f.id, strip).some((v) => v.bgImage === src);
+    let put = 0, there = 0, missing = 0;
+    const target = { fid: f.id, stripType: strip, fromMain: note.fromMain };
+    for (const name of names) {
+      const src = await getPicture(name);
+      if (!src) { missing++; continue; }
+      if (has(src)) { there++; continue; }
+      if (landSeriesShotQuietly(src, target)) put++;
+    }
+    forgetSeriesNote(note);
+    if (put === 0) { trace(`camera: the series noted on this device was already on its card (${there} of ${names.length}${missing ? `, ${missing} not found` : ''}) — nothing to do`); continue; }
+    putAll += put;
+    trace(`camera: ${put} shot(s) of a series that never landed are put on shot ${s.frames.indexOf(f) + 1} now (the app was closed while the camera was open)${there ? ` · ${there} were there already` : ''}${missing ? ` · ${missing} NOT FOUND on this device` : ''}`);
+  }
+  if (!putAll) return;
+  (window as any).__fh_renderAll?.();
+  bumpRenderTick();
+  markSomethingToSend();
+  void flushSyncNow();
+}
+(window as any).__fh_recoverCameraSeries = recoverCameraSeries;
 setLastLandingReader(() => lastCaptureLanding);
