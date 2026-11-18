@@ -234,7 +234,11 @@ projects.post("/:id/heartbeat", async (c) => {
     .prepare("UPDATE projects SET heartbeat_at = ?, heartbeat_device_id = ?, heartbeat_device_name = ? WHERE id = ? AND user_id = ? AND deleted_at IS NULL")
     .bind(now, body.device_id, body.device_name, id, me.id)
     .run();
-  if (!result.meta.changes) return jsonError(c, 404, "not_found", "Project not found.");
+  // DELETED, AND SAID SO (18 Nov, Roman's phone): the heartbeat is the one thing
+  // a device sends while somebody simply looks at a project, and it answered a
+  // plain "not found" for a deleted one — so that device was told nothing until
+  // its next fetch. Same answer as the sync routes now (410, #465).
+  if (!result.meta.changes) return await missingOrDeleted(c, me.id, id);
 
   // The heartbeat already runs every few seconds while someone is working, and
   // already talks to us — so it is the cheapest place to say "a decision is

@@ -789,6 +789,10 @@ async function askAboutTheDeletedProject(projectId: string, forGood = false): Pr
     }
     trace('the open project was deleted for good — it leaves the screen, the Open project list comes up');
     _goneRegister.answered(projectId);
+    // THE QUESTION MAY BE STANDING THERE (Roman, 18 Nov 17:42: Delete on the
+    // desktop, the phone asks; then Delete now on the desktop — and the phone
+    // went on asking, over a project that had already left). It goes too.
+    (await import('./modals')).dismissProjectDeleted();
     await closeTheDeletedProject(projectId);
     return;
   }
@@ -834,6 +838,11 @@ async function askAboutTheDeletedProject(projectId: string, forGood = false): Pr
     // tap to keep it.
     const wasCalled = getCurrentProject().name ?? '';
     const name = await openProjectNameModal(wasCalled);
+    if (getCurrentProject().projectId !== projectId) {
+      // It left the screen while the name was being typed (deleted for good).
+      trace('the deleted project: it is not on screen any more — nothing is saved as new');
+      return;
+    }
     if (!name) {
       // Backed out of naming it. Nothing has been changed and nothing thrown
       // away — the question comes back the next time a sync is refused.
@@ -6608,7 +6617,17 @@ async function sendHeartbeat(): Promise<void> {
     if ((beat?.open_setting_conflicts ?? 0) > 0) {
       await askAboutOpenSettingConflicts(cp.projectId);
     }
-  } catch { /* silent */ }
+  } catch (e) {
+    // Silent — except for one answer: the project was deleted (18 Nov). The
+    // heartbeat is all a device sends while somebody only looks, so it is where
+    // a device learns that the project on its screen is gone.
+    const err = e as { status?: number; code?: string };
+    if (whatWentWrong(err?.status, err?.code) === 'gone'
+        && getCurrentProject().projectId === cp.projectId && projectSwitchCount() === switchesAtStart) {
+      trace(`heartbeat: the server says this project was deleted${goneForGood(err?.status, err?.code) ? ' for good' : ''}`);
+      noteTheProjectIsGone(cp.projectId, goneForGood(err?.status, err?.code));
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------

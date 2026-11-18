@@ -67,7 +67,7 @@ test('deleted for good: the project leaves the other device\'s screen, the list 
   await desktop.close(); await tablet.close();
 });
 
-test('deleted for good: a project still in the recover list keeps its question', async ({ browser }) => {
+test('deleted for good: a project still in the recover list keeps its question — until it is deleted for good', async ({ browser }) => {
   const { token } = await freshAccount();
   const desktop = await Device.open(browser, 'desktop', token);
   const tablet = await Device.open(browser, 'tablet', token);
@@ -88,6 +88,16 @@ test('deleted for good: a project still in the recover list keeps its question',
   await expect.poll(async () => { await tablet.nudge(); return await tablet.page.locator('[data-gone="new"]').count(); },
     { timeout: 60_000, message: 'the question about the deleted project' }).toBe(1);
   expect(await openId(tablet), 'SOFT is still on screen behind the question').toBe(softId);
+
+  // ...AND THEN IT IS DELETED FOR GOOD WHILE THE QUESTION STANDS THERE (Roman's
+  // phone, 18 Nov 17:42: it went on asking). The question goes, the project
+  // leaves, the list comes up.
+  say('desktop: DELETE NOW on SOFT from the recover list — the tablet\'s question goes, the project leaves');
+  await desktop.deleteProjectNow(softId!);
+  await expect.poll(async () => { await tablet.nudge(); return await openId(tablet); },
+    { timeout: 60_000, message: 'the tablet lets go of the project deleted for good' }).toBeNull();
+  await expect(tablet.page.locator('[data-gone]'), 'the question is off the screen').toHaveCount(0);
+  await expect(tablet.page.locator('#projectListModal'), 'the Open project list is up').toBeVisible({ timeout: 15_000 });
 
   await desktop.close(); await tablet.close();
 });

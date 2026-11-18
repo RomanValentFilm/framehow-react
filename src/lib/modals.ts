@@ -868,6 +868,11 @@ export function showImportantNote(headline: string, body: string,
  * SAVE AS NEW sits first and is the lit button, because it is the one that
  * cannot lose anything.
  */
+/** Take the question off the screen with no answer (18 Nov: the project was
+ *  deleted for good while the question stood there — nothing is left to ask). */
+let _dismissProjectDeleted: (() => void) | null = null;
+export function dismissProjectDeleted(): void { _dismissProjectDeleted?.(); }
+
 export function showProjectDeleted(): Promise<'new' | 'delete' | null> {
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
@@ -893,7 +898,8 @@ export function showProjectDeleted(): Promise<'new' | 'delete' | null> {
     p.style.cssText = 'color:#fff;font-size:13px;line-height:1.5;margin-bottom:20px;';
     box.appendChild(p);
 
-    const done = (answer: 'new' | 'delete' | null) => { overlay.remove(); resolve(answer); };
+    const done = (answer: 'new' | 'delete' | null) => { _dismissProjectDeleted = null; overlay.remove(); resolve(answer); };
+    _dismissProjectDeleted = () => done(null);
 
     const saveNew = document.createElement('button');
     saveNew.textContent = 'SAVE AS NEW';
