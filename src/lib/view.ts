@@ -1269,6 +1269,26 @@ export function handleOrientationFlip(): void {
     // iPad/tablet rotated to portrait while in 3x2:
     // Remember we came from 3x2 so rotating back restores it
     (window as any)._returnTo3x2 = true;
+    // THE VERSIONS OPEN IN 3x2 ARE NOT FORGOTTEN BY A TURN (18 Nov, Roman: "when you are
+    // in 3x2 view and you have some versions open and you change the device orientation,
+    // then it's also no reset"). A card in 3x2 shows a version through the cross
+    // pointer; the turn cleared it here and again on the way back, so every card came
+    // back on its main picture. Now: which cards showed a version (and of which strip)
+    // is noted; in the two strips of the upright view the version strip is put on that
+    // same version; and the way back to 3x2 puts the pointers up again — on the version
+    // the strip is on by then, so flipping while upright is followed too.
+    {
+      const s3 = state();
+      const open: Record<number, StripType> = {};
+      for (const k of Object.keys(s3.crossCompare)) {
+        const idx = s3.crossCompare[+k] ?? -1;
+        if (idx < 0) continue;
+        const st = (s3.crossCompareStrip[+k] || 'ver') as StripType;
+        open[+k] = st;
+        if (idx < getStripVersions(+k, st).length) setStripActiveTab(+k, st, idx);
+      }
+      (window as any)._openIn3x2 = open;
+    }
     // 1. Switch to MAIN+VERSN immediately (3x2 disappears)
     useStore.setState({ activeStrips: ['main', 'ver'] as any, currentViewMode: 'both', crossCompare: {} });
     // 2. Force detail bar visible with display + class + button
@@ -1307,11 +1327,24 @@ export function handleOrientationFlip(): void {
   } else if (!isPhone && newW > newH && (window as any)._returnTo3x2) {
     // iPad rotated back to landscape — restore 3x2 view
     (window as any)._returnTo3x2 = false;
-    useStore.setState({ currentViewMode: 'grid3x2', crossCompare: {} });
+    // (the versions that were open in 3x2 before the turn are open again — see above)
+    const back: Record<number, number> = {};
+    const backStrip: Record<number, StripType> = { ...state().crossCompareStrip };
+    const open = ((window as any)._openIn3x2 || {}) as Record<number, StripType>;
+    (window as any)._openIn3x2 = undefined;
+    for (const k of Object.keys(open)) {
+      const st = open[+k];
+      const n = getStripVersions(+k, st).length;
+      if (!n || !state().frames.some((f) => f.id === +k)) continue;
+      back[+k] = Math.max(0, Math.min(n - 1, getStripActiveTab(+k, st)));
+      backStrip[+k] = st;
+    }
+    if (Object.keys(back).length) trace(`turn back to 3x2: ${Object.keys(back).length} card(s) show their version again`);
+    useStore.setState({ currentViewMode: 'grid3x2', crossCompare: back, crossCompareStrip: backStrip });
     // The detail bar used to be closed here, because 3x2 does not use it. It is
     // ALWAYS OPEN now (#483) and there is no button to bring it back, so this
     // leaves it alone.
-    setViewMode('grid3x2');
+    setViewMode('grid3x2', true);      // (true: the pointers just put back are kept)
     const renderAll = (window as any).__fh_renderAll;
     if (renderAll) renderAll();
     syncCardHeights();

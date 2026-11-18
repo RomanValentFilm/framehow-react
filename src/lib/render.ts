@@ -680,6 +680,11 @@ export function renderMainFrame(div: HTMLElement, fid: number): void {
       if (nw) addNavArrows(nw, fid, 'main');
     }
     scheduleSyncHeights();
+    // THE MAIN CARD SHOWING A VERSION SCROLLS ITS TABS TOO (18 Nov, Roman: "in the single
+    // strip view of shot or of talent … it shows the version you just took, but it
+    // doesn't scroll the tab bar"). This way out of the function left before the step
+    // at its end that brings the active tab into view.
+    revealActiveVersionTab(div);
     return;
   }
 

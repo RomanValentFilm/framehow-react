@@ -1,7 +1,7 @@
 # LAUNCH — THE ONE LIST (9 Nov 2026). Nothing else counts; TOMORROW.md is history + notes.
 
 ## THE TO-DO LIST (17 Nov 2026, Roman: "one to-do list that we go back to and go through always"). THIS BLOCK IS THE LIST; everything below it is history and detail. Tick with [x] and the date. New finds: does it lose work or stop the app? No → "After the App Store".
-STATE 17 Nov 14:40: LIVE v5.0.301 · #853 (run 777). DEV v5.0.305 · #857 (run 783: camera series; Xcode round 3 on Roman's iPhone). Server run 780 (17 Nov 12:3x: job 1 server side — live for everyone). Files at v5.0.306 · #858.
+STATE 18 Nov 14:00: LIVE v5.0.301 · #853 (run 777). DEV v5.0.307 · #859 (run 785: camera series, SH/TL, tabs in sight; Xcode rounds 1–6 on Roman's iPhone). Server run 780 (17 Nov 12:3x: job 1 server side — live for everyone). Files at v5.0.308 · #860.
 
 JOB 1 — UPLOADS (17 Nov)
 - [x] (17 Nov, dev v5.0.302 run 779 + server run 780, test 74) 1. Uploaded pictures belong to their project → Delete now takes them too (the "125 pictures")
