@@ -1765,7 +1765,8 @@ body.portrait-mode .cam-mode-menu{left:16px;top:calc(max(16px,var(--sat)) + 80px
 }
 .cam-mode-ok{align-self:flex-end;}
 /* MAX SCREEN (23 Oct): the corner button on every picture, and the viewer. */
-.max-btn{position:absolute;top:4px;right:4px;width:26px;height:26px;border:none;background:rgba(0,0,0,.45);border-radius:4px;cursor:pointer;z-index:6;padding:0;display:flex;align-items:center;justify-content:center;-webkit-tap-highlight-color:transparent;opacity:.55;transition:opacity .15s;}
+/* FULLY SHOWN, LIKE THE SIDE ARROWS ON THE SAME CARD (Roman, 18 Nov: "not so good visible when the photo is too busy"). It was black 45 % with the whole button at 55 % — about a quarter black behind a grey icon. */
+.max-btn{position:absolute;top:4px;right:4px;width:26px;height:26px;border:none;background:rgba(0,0,0,.45);border-radius:4px;cursor:pointer;z-index:6;padding:0;display:flex;align-items:center;justify-content:center;-webkit-tap-highlight-color:transparent;opacity:1;}
 .max-btn svg{width:14px;height:14px;}
 @media(hover:hover){.max-btn:hover{opacity:1;}}
 .canvas-wrap.draw-active .max-btn,body.setup-lock .max-btn,body.scribble-on .max-btn{display:none;}
@@ -1952,3 +1953,24 @@ body.pictures-bar-on{padding-bottom:calc(16px + env(safe-area-inset-bottom));}
 body:has(#projectListModal:not(.hidden)) #confirmModal,body:has(#projectListModal:not(.hidden)) #deleteConfirmModal,body:has(#projectListModal:not(.hidden)) #deleteNoticeModal,body:has(#projectListModal:not(.hidden)) #recoverConfirmModal,body:has(#projectListModal:not(.hidden)) #renameProjectModal{background:rgba(0,0,0,.5);}
 /* ONE BAR AT A TIME (Roman, 16 Nov: opening WF 7 showed the middle and the bottom bar together). While the middle one is up, the bottom one is not shown; it comes when the middle one has gone. */
 body:has(#progressOverlay:not(.hidden)) #picturesBar,body:has(#progressOverlay:not(.hidden)) .startup-loading-line{display:none;}
+/* ONE LOOK FOR EVERY ICON THAT SITS ON A PICTURE (Roman, 18 Nov: "make it everywhere the same, like the empty setup pill, but no outline on the icons except the setup pill … normal state: black 60 % behind, white icon/letters, the whole button shown at 60 %, hover fully shown"). The stars and the empty setup pill had this look; the others each had their own (MAX button black 45 % at 55 %, side arrows black 45 % with a 70 % white arrow, MAX view's close and share white 12 % at 75 %, its arrows black 45 % at 80 %, DRAW's close white 10 % at 70 %, its arrows black 55 %). Written once, here at the end, over the rules above. The setup pill WITH a setup keeps the setup's own colour; the camera's pills are the camera's own (Swift). */
+.max-btn,.nav-arrow,.star-btn,.fs-btn,.strip-tag-empty,
+.fs-overlay .nav-arrow,.fs-overlay .star-btn,.fs-overlay > .fs-close,
+#maxView .max-close,#maxView .max-share,#maxView .max-nav,#maxView .max-stars,
+body.portrait-mode #maxView .max-close,body.portrait-mode #maxView .max-share{background:rgba(0,0,0,.6);opacity:.6;transition:opacity .15s;}
+.nav-arrow,.fs-overlay .nav-arrow,#maxView .max-nav{color:#fff;}
+/* HOVER IS A MOUSE'S: fully shown, nothing else changes. */
+@media (hover:hover){
+.max-btn:hover,.nav-arrow:hover,.star-btn:hover,.fs-btn:hover,.strip-tag-empty:hover,
+.fs-overlay .nav-arrow:hover,.fs-overlay .star-btn:hover,.fs-overlay > .fs-close:hover,.fs-overlay .fs-close:hover,
+#maxView .max-close:hover,#maxView .max-share:hover,#maxView .max-nav:hover,#maxView .max-stars:hover,
+body.portrait-mode #maxView .max-close:hover,body.portrait-mode #maxView .max-share:hover{background:rgba(0,0,0,.6);opacity:1;color:#fff;}
+}
+/* A FINGER HAS NO HOVER: after a tap the button is as it was (the stars, the setup pill and DRAW's close used to stay bright). */
+@media (hover:none){
+.star-btn:hover,.fs-btn:hover,.strip-tag-empty:hover,.fs-overlay .star-btn:hover,.fs-overlay > .fs-close:hover,.fs-overlay .fs-close:hover{background:rgba(0,0,0,.6);opacity:.6;}
+.strip-tag-empty:hover{border-color:rgba(255,255,255,.5);}
+}
+/* (3×2: its arrows were forced fully shown by an older rule — the same look there) */
+.grid3x2-card-wrap .nav-arrow-left,.grid3x2-card-wrap .nav-arrow-right{opacity:.6!important;}
+@media (hover:hover){.grid3x2-card-wrap .nav-arrow-left:hover,.grid3x2-card-wrap .nav-arrow-right:hover{opacity:1!important;}}

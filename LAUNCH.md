@@ -1,7 +1,7 @@
 # LAUNCH — THE ONE LIST (9 Nov 2026). Nothing else counts; TOMORROW.md is history + notes.
 
 ## THE TO-DO LIST (17 Nov 2026, Roman: "one to-do list that we go back to and go through always"). THIS BLOCK IS THE LIST; everything below it is history and detail. Tick with [x] and the date. New finds: does it lose work or stop the app? No → "After the App Store".
-STATE 18 Nov 14:40: LIVE v5.0.301 · #853 (run 777). DEV v5.0.310 · #862 (run 792: + crash safety of the series; camera series, SH/TL, tabs in sight incl. cross-swipe, 3x2 keeps open versions through a turn). Server run 780 (17 Nov 12:3x: job 1 server side — live for everyone). Files at v5.0.311 · #863.
+STATE 18 Nov 15:50: LIVE v5.0.301 · #853 (run 777). DEV v5.0.311 · #863 (run 794: + MAX view job 3, fresh photo kept against a fetch, crash safety of the series; camera series, SH/TL, tabs in sight incl. cross-swipe, 3x2 keeps open versions through a turn). Server run 780 (17 Nov 12:3x: job 1 server side — live for everyone). Files at v5.0.312 · #864.
 
 JOB 1 — UPLOADS (17 Nov)
 - [x] (17 Nov, dev v5.0.302 run 779 + server run 780, test 74) 1. Uploaded pictures belong to their project → Delete now takes them too (the "125 pictures")
@@ -33,9 +33,9 @@ JOB 2 — CAMERA SERIES AS THE ONLY CAMERA (agreed 13 Nov, point 5 of that list 
   - OPEN QUESTION, ROMAN 17 Nov — M AND V1: today the first shot on an empty main card becomes the main picture and the rest v1, v2, v3. He wonders whether a series of 4 should rather be four VERSIONS, and how the main card would then show that it is "the same as v1" without the user wondering why a picture is there twice (his idea for fittings: the main card zoomed in and moved up, a portrait of the talent — not for landscape projects). To discuss; nothing built. · 17 Nov later: the fitting decides it — it opens on LOOKS, the costume designer shoots, and the first photo is on the main card, not in the looks, and missing from a looks export. Direction B (all shots are versions; the main card POINTS at one of them, one file) "is going towards the right direction, but we are not there yet": how to SHOW the link — nothing written into the picture. Claude's ideas, all in the card's top bar (never exported): a mark on the version's tab (v1•), the main card's bar reading "3 · v1", or one outline colour on both. To be continued.
 
 JOB 3 — MAX VIEW
-- [ ] (built 18 Nov, in the files v5.0.311 — to be seen by Roman) 7. Three stars in the MAX view (re-sort only when it is closed)
-- [ ] (built 18 Nov, in the files v5.0.311 — to be seen by Roman) 8. Coming back up to a shot, land on the version one was on
-- [ ] (built 18 Nov, in the files v5.0.311 — to be seen by Roman) 8b. (Roman, 18 Nov) The version's name in the MAX view stands TOP LEFT, not bottom left — to do together with 7 and 8, not before
+- [ ] (on dev v5.0.311, run 794 — to be seen by Roman) 7. Three stars in the MAX view (re-sort only when it is closed)
+- [ ] (on dev v5.0.311, run 794 — to be seen by Roman) 8. Coming back up to a shot, land on the version one was on
+- [ ] (on dev v5.0.311, run 794 — to be seen by Roman) 8b. (Roman, 18 Nov) The version's name in the MAX view stands TOP LEFT, not bottom left — to do together with 7 and 8, not before
 
 JOB 4 — WHAT IS LEFT OF THE SAVE PATH (measure again after the series)
 - [ ] 9. Start fetch after an unsaved mark

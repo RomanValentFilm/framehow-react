@@ -307,8 +307,14 @@ struct CameraScreen: View {
         // ONCE THERE IS A SHOT, CANCEL IS DONE (Roman, 17 Nov): a series is not thrown away
         // inside the camera; DONE closes it and the shots land.
         let hasShots = cam.seriesMax > 0 && !cam.seriesThumbs.isEmpty
+        // IN THE SAME GREY SHAPE AS RATIO (Roman, 18 Nov: "the same button-style as we have RATIO
+        // with the pill around it … just do not make the CANCEL button bigger — keep the small
+        // letters and gentle button"). Same small letters, same pill; the place a finger may
+        // hit stays 96 × 48 around it, as before.
         let cancel = Button(action: { if hasShots { onDone("done") } else { onCancel() } }) {
-            Text(hasShots ? "DONE" : "Cancel").font(.footnote).foregroundStyle(Color.white.opacity(hasShots ? 1 : 0.85))
+            Self.pillLabel(hasShots ? "DONE" : "Cancel")
+                .foregroundStyle(Color.white.opacity(hasShots ? 1 : 0.85))
+                .background(pill, in: Capsule())
                 .frame(width: 96, height: 48)
                 .contentShape(Rectangle())
         }
