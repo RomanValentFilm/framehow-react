@@ -12,12 +12,12 @@
 //
 // A crop function may come here later (Roman, 23 Oct) — not now.
 
-import { state } from '../store/state';
+import { state, bumpRenderTick } from '../store/state';
 import type { Stroke } from '../store/state';
-import { getStripVersions, getStripActiveTab, followVersion, stripScrollId } from './helpers';
+import { getStripVersions, getStripActiveTab, setStripActiveTab, followVersion, stripScrollId, versionStars, reorderByStars, relabelStripVersions } from './helpers';
 import { drawMainStrokes, drawVersionStrokes } from './drawing';
 import { trace } from './syncTrace';
-import { getCurrentProject } from './currentProject';
+import { getCurrentProject, flushSyncNow, markSomethingToSend } from './currentProject';
 
 // THE DYNAMIC ISLAND (10 Nov): on an iPhone sideways the picture has the screen
 // minus the island's side (island.ts puts the two numbers on <html>); the room
@@ -35,7 +35,51 @@ function roomW(): number { const i = islandSides(); return window.innerWidth - i
 function midX(): number { const i = islandSides(); return i.l + (window.innerWidth - i.l - i.r) / 2; }
 
 type Item = { src: string | null | undefined; strokes: Stroke[] | undefined; main: boolean; w: number; h: number; label: string;
-  strip?: 'ver' | 'floor' | 'refs'; vi?: number };
+  strip?: 'ver' | 'floor' | 'refs'; vi?: number;
+  /** the shot it belongs to, and — for a version — the version itself (18 Nov: the stars are
+   *  set on it, and it is found again after the versions were put in star order) */
+  fid?: number; ver?: ReturnType<typeof getStripVersions>[number] };
+
+// ── THE MAX VIEW REMEMBERS, WHILE IT IS OPEN (18 Nov, job 3 of the list) ──────────────
+// WHERE EACH SHOT WAS LEFT: going down to the next shot and coming back up lands on the
+// version one was on, not on the shot's main picture (Roman, 14 Nov). A shot not visited
+// in this viewing still opens on the shot itself.
+const _leftOn = new Map<number, { main: boolean; ver?: Item['ver'] }>();
+// WHICH STRIPS WERE RATED: three stars can be given in the viewer; the picture stays where
+// it is while one looks, and the versions are put in star order only when the shot is left
+// — the viewer closed, or up / down to another shot (Roman, 13 Nov).
+const _rated = new Set<string>();
+const STAR_ON = '<svg viewBox="0 0 24 24" fill="#fff" stroke="#fff" stroke-width="1.5"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 21 12 17.27 5.82 21 7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>';
+const STAR_OFF = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.5"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 21 12 17.27 5.82 21 7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>';
+
+/** The versions of this shot that were rated in the viewer are put in star order now.
+ *  The cards go on showing the same PICTURES (their pointers follow the versions to
+ *  their new places), `it` learns its new place, and the strip's card is drawn again.
+ *  True if anything was put in order. */
+function settleStars(fid: number, it: Item): boolean {
+  let any = false;
+  const st = state();
+  for (const key of [..._rated]) {
+    const [f, strip] = key.split('|') as [string, Strip];
+    if (Number(f) !== fid) continue;
+    _rated.delete(key);
+    const vers = getStripVersions(fid, strip);
+    const onTab = vers[getStripActiveTab(fid, strip)];
+    const crossIsHere = (st.crossCompare[fid] ?? -1) >= 0 && ((st.crossCompareStrip[fid] || 'ver') as Strip) === strip;
+    const onCross = crossIsHere ? vers[st.crossCompare[fid]] : undefined;
+    reorderByStars(fid, strip);
+    if (onTab && vers.indexOf(onTab) >= 0) setStripActiveTab(fid, strip, vers.indexOf(onTab));
+    if (onCross && vers.indexOf(onCross) >= 0) st.crossCompare[fid] = vers.indexOf(onCross);
+    relabelStripVersions(fid, strip);
+    if (it.ver && it.strip === strip && vers.indexOf(it.ver) >= 0) it.vi = vers.indexOf(it.ver);
+    const vd = document.querySelector<HTMLElement>(`#${stripScrollId(strip)} .frame-card[data-vfid="${fid}"]`);
+    if (vd) (window as unknown as Record<string, (el: HTMLElement, fid: number, strip: Strip) => void>).__fh_renderVersionFrame?.(vd, fid, strip);
+    trace(`max screen: the ${strip} versions of shot ${st.frames.findIndex((x) => x.id === fid) + 1} are put in star order now (rated in the viewer)`);
+    any = true;
+  }
+  if (any) { bumpRenderTick(); markSomethingToSend(); void flushSyncNow(); }
+  return any;
+}
 
 const EXPAND = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>';
 // Drawn at 18 pt, the share icons at 23 pt: a thicker line here (2.55 = 2 × 23/18)
@@ -100,6 +144,7 @@ function openFromCanvas(cvs: HTMLCanvasElement | HTMLImageElement): void {
   const card = cvs.closest<HTMLElement>('.grid3x2-card-wrap') ?? cvs.closest<HTMLElement>('.frame-card');
   const shot = card ? shotOf(card, false) : null;
   if (!shot) return;
+  _leftOn.clear();                 // (a new viewing: no shot has been left yet)
   trace(`max screen: shot ${shot.shotNo}, ${shot.items.length} picture(s), opens on ${shot.items[shot.index].label || 'main'}`);
   openMaxView(shot.items, shot.index, shot.onClose, shot.fileBase, shot.other);
 }
@@ -138,9 +183,9 @@ function shotOf(card: HTMLElement, arriving: boolean): Shot | null {
   const w = f.cropW || 960, h = f.cropH || 540;
   const items: Item[] = [];
   let start = 0;
-  const mainItem = (): Item => ({ src: f.src, strokes: f.strokes, main: true, w, h, label: f.label || '' });
+  const mainItem = (): Item => ({ src: f.src, strokes: f.strokes, main: true, w, h, label: f.label || '', fid });
   const verItem = (v: ReturnType<typeof getStripVersions>[number], strip: Strip, vi: number): Item =>
-    ({ src: v.bgImage, strokes: v.strokes, main: false, w, h, label: v.label || '', strip, vi });
+    ({ src: v.bgImage, strokes: v.strokes, main: false, w, h, label: v.label || '', strip, vi, fid, ver: v });
   const hasSomething = (v: ReturnType<typeof getStripVersions>[number]) => !!v.bgImage || (v.strokes?.length ?? 0) > 0;
 
   const mainOrG3 = card.dataset.mfid !== undefined || card.dataset.g3fid !== undefined;
@@ -198,6 +243,13 @@ function shotOf(card: HTMLElement, arriving: boolean): Shot | null {
   };
   if (!items.length) return null;
   if (arriving && mainOrG3) start = 0;                       // the shot itself, not a version of it
+  // …UNLESS THIS SHOT WAS LEFT ON A VERSION IN THIS VIEWING (Roman, 14 Nov: "coming back
+  // up to a shot, land on the version you were on").
+  const was = arriving ? _leftOn.get(fid) : undefined;
+  if (was) {
+    const k = items.findIndex((x) => (was.main ? x.main : !!was.ver && x.ver === was.ver));
+    if (k >= 0) start = k;
+  }
   const shotNo = s.frames.indexOf(f) + 1;
   const fileBase = `${(getCurrentProject().name || 'Framehow').replace(/[\\/:*?"<>|]+/g, ' ').trim()} – shot ${shotNo}`;
   const came = start;
@@ -206,7 +258,9 @@ function shotOf(card: HTMLElement, arriving: boolean): Shot | null {
     onClose: (it, moved) => {
       // (the page goes to the shot the viewer was left on, when it is another one)
       if (arriving) card.scrollIntoView({ block: 'center' });
-      if ((!moved && items.indexOf(it) === came) || !leave) return;
+      // (versions rated in the viewer go into star order now, as the shot is left)
+      const sorted = settleStars(fid, it);
+      if (((!moved && items.indexOf(it) === came) && !sorted) || !leave) return;
       trace(`max screen: left on ${it.label || 'main'} — the card follows`);
       leave(it);
     },
@@ -276,30 +330,48 @@ let _root: HTMLElement | null = null;
 
 function paintItem(cvs: HTMLCanvasElement, it: Item): void {
   const dpr = Math.min(3, window.devicePixelRatio || 1);
-  const fitK = Math.min(roomW() / it.w, window.innerHeight / it.h);
-  const k = fitK * dpr * 1.5;                           // room to zoom in sharply
-  cvs.width = Math.round(it.w * k); cvs.height = Math.round(it.h * k);
-  cvs.style.width = `${it.w * fitK}px`; cvs.style.height = `${it.h * fitK}px`;
   const ctx = cvs.getContext('2d')!;
-  ctx.setTransform(k, 0, 0, k, 0, 0);
-  ctx.clearRect(0, 0, it.w, it.h);
+  let img: HTMLImageElement | null = null;
   const draw = () => {
+    // A PLAIN PHOTO FILLS THE SCREEN IN ITS OWN SHAPE (18 Nov, Roman: "the 4:3 and 1:1
+    // aspect ratio don't fill the screen. They are kind of small"). The viewer's
+    // surface was always the CARD's shape, with the picture fitted inside it — a 4:3
+    // or 1:1 photo on a 16:9 card sat in a 16:9 box with black beside it, and that box
+    // was fitted to the screen: smaller than the screen allows. A picture with nothing
+    // drawn on it needs no card: its surface is its own shape, as large as the screen
+    // takes. A picture WITH a drawing keeps the card's surface — the strokes are
+    // measured on the card, and must stay where they were drawn.
+    const plain = !!img && img.naturalWidth > 0 && !(it.strokes && it.strokes.length);
+    const bw = plain ? img!.naturalWidth : it.w, bh = plain ? img!.naturalHeight : it.h;
+    const fitK = Math.min(roomW() / bw, window.innerHeight / bh);
+    const k = fitK * dpr * 1.5;                           // room to zoom in sharply
+    cvs.width = Math.round(bw * k); cvs.height = Math.round(bh * k);
+    cvs.style.width = `${bw * fitK}px`; cvs.style.height = `${bh * fitK}px`;
     ctx.setTransform(k, 0, 0, k, 0, 0);
-    ctx.clearRect(0, 0, it.w, it.h);
-    if (img) {
+    ctx.clearRect(0, 0, bw, bh);
+    if (plain) { ctx.drawImage(img!, 0, 0, bw, bh); return; }
+    if (img && img.naturalWidth > 0) {
       const sc = Math.min(it.w / img.width, it.h / img.height);
       const dw = img.width * sc, dh = img.height * sc;
       ctx.drawImage(img, (it.w - dw) / 2, (it.h - dh) / 2, dw, dh);
     }
     (it.main ? drawMainStrokes : drawVersionStrokes)(ctx, it.strokes || []);
   };
-  let img: HTMLImageElement | null = null;
   if (it.src) {
     img = new Image();
     img.onload = draw;
     img.src = it.src;
     if (img.complete && img.naturalWidth) draw();
+    else { const waiting = img; img = null; draw(); img = waiting; }   // (the card's shape, empty, until the picture is unpacked)
   } else draw();
+}
+
+/** THE CLOCK AND BATTERY STAY AWAY WHILE THE VIEWER IS UP (18 Nov, Roman's iPad: opened
+ *  from the camera's picture box, "we see the battery bar"). The viewer hides them when
+ *  it opens — but there it opens BEHIND the camera, and the camera, on leaving, puts
+ *  them back. Whoever knows the camera has just gone calls this. */
+export function maxViewKeepsTheClockAway(): void {
+  if (_root) clockAndBattery(false);
 }
 
 export function openMaxView(items: Item[], index: number, onClose?: (it: Item, moved: boolean) => void, fileBase = 'Framehow',
@@ -317,6 +389,7 @@ export function openMaxView(items: Item[], index: number, onClose?: (it: Item, m
     <button class="max-nav max-down" type="button" title="Next shot">›</button>
     <div class="max-share-row"></div>
     <div class="max-label"></div>
+    <div class="max-stars"></div>
     <div class="max-flash"></div>`;
   document.body.appendChild(root);
   _root = root;
@@ -354,6 +427,7 @@ export function openMaxView(items: Item[], index: number, onClose?: (it: Item, m
     // Only the name of what is on screen (Roman, 24 Oct): the shot's number
     // for the main picture, the version's label (L2, v3) for a version.
     label.textContent = items[i].label;
+    paintStars();
     // THE SIDE ARROWS (26 Oct, Roman): as on the cards — shown only where there
     // is somewhere to go.
     prevBtn.style.display = i > 0 ? '' : 'none';
@@ -365,12 +439,46 @@ export function openMaxView(items: Item[], index: number, onClose?: (it: Item, m
     ready = null;
     if (prepareLater) prepareLater();
   };
+  // THREE STARS, BOTTOM LEFT, AS ON THE CARDS (agreed 13 and 18 Nov): a row in a wide
+  // project, a column (3 at the top) in an upright one or a fitting. Only a version is
+  // rated — the shot's own picture has no stars. A tap on the level it already has takes
+  // the stars away, as on the cards. Nothing moves while one looks: the star order is
+  // made when the shot is left (settleStars).
+  const starsEl = root.querySelector<HTMLElement>('.max-stars')!;
+  function paintStars(): void {
+    const it = items[i];
+    if (!it.ver || it.fid === undefined || !it.strip) { starsEl.style.display = 'none'; starsEl.innerHTML = ''; return; }
+    const upright = state().projectType === 'fitting' || state().projectType === 'portrait';
+    const rating = versionStars(it.ver);
+    starsEl.style.display = '';
+    starsEl.classList.toggle('max-stars-col', upright);
+    starsEl.innerHTML = (upright ? [3, 2, 1] : [1, 2, 3])
+      .map((n) => `<button type="button" class="star-lvl" data-starlevel="${n}" title="${n} star${n > 1 ? 's' : ''}">${rating >= n ? STAR_ON : STAR_OFF}</button>`).join('');
+    starsEl.querySelectorAll<HTMLButtonElement>('.star-lvl').forEach((b) => {
+      ['touchstart', 'touchend', 'mousedown', 'mouseup'].forEach((ev) => b.addEventListener(ev, (e) => { e.stopPropagation(); if (ev.startsWith('touch')) lastTouch = Date.now(); }, { passive: true }));
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const now = items[i];
+        if (!now.ver || now.fid === undefined || !now.strip) return;
+        const level = Number(b.dataset.starlevel);
+        const next = versionStars(now.ver) === level ? 0 : level;
+        now.ver.stars = next;
+        now.ver.starred = next > 0;          // (the old single-star flag, kept in step for exports and sync)
+        _rated.add(`${now.fid}|${now.strip}`);
+        bumpRenderTick();                    // the device's save hears of it; the order waits
+        trace(`max screen: ${now.label || 'this version'} rated ${next} star(s) — it stays where it is until the shot is left`);
+        paintStars();
+      });
+    });
+  }
   const go = (d: number) => { const n = i + d; if (n < 0 || n >= items.length) return; i = n; show(); };
   /** To the shot before (-1) or after (1): the card of the shot being left
    *  follows as if the viewer had been closed on it; the viewer stays open. */
   const goShot = (d: 1 | -1) => {
     const there = otherShot?.(d);
     if (!there) return;
+    // (where this shot is left, for coming back to it in this viewing)
+    { const it = items[i]; if (it.fid !== undefined) _leftOn.set(it.fid, { main: it.main, ver: it.ver }); }
     onClose?.(items[i], i !== startI);
     trace(`max screen: ${d === 1 ? 'down' : 'up'} to shot ${there.shotNo} — opens on ${there.items[there.index].label || 'main'}`);
     items = there.items; onClose = there.onClose; fileBase = there.fileBase;

@@ -11,6 +11,7 @@ import { resetToolbarState, captureFrameAnchor, handleOrientationFlip, cancelOri
 import { getPictureReady } from './drawing';
 import { flushSyncNow, holdSyncFor, photoIsLanding, getCurrentProject, localProjectId } from './currentProject';
 import { keepSeriesShot, forgetSeriesNote, markSeriesLanded } from './picStore';
+import { maxViewKeepsTheClockAway } from './maxView';
 import { isMainEmpty, getStripVersions, getStripActiveTab, stripTabPrefix } from './helpers';
 import { getCamMode, getFramelineLater, wireCamModeButton, shrinkForSaving, fillCrop, loadPhoneShot } from './camMode';
 import type { PhoneShot } from './camMode';
@@ -273,7 +274,10 @@ async function takeNativePhoto(fid: number): Promise<boolean> {
         const opened = openMaxOnTheLanded(tries >= 30);
         if (!opened && tries++ < 30) { setTimeout(go, 30); return; }
         trace(`camera: the camera's screen goes ${Date.now() - askedAt} ms after the landing — ${opened ? 'the MAX view is under it' : 'no MAX view (no button on the card)'}`);
-        cam.close().catch(() => undefined);
+        // (the camera puts the clock and battery back as it goes — over the MAX view they are taken away again)
+        const away = () => maxViewKeepsTheClockAway();
+        cam.close().then(away, away);
+        window.setTimeout(away, 400); window.setTimeout(away, 1500);
       };
       go();
       return;
@@ -333,6 +337,7 @@ async function takeNativePhoto(fid: number): Promise<boolean> {
   if (res?.series) {
     trace(`camera: the visit is over — ${res.count ?? '?'} photo(s), ended by ${res.reason ?? '?'} · ${Math.round((Date.now() - t0) / 100) / 10} s from CAM`);
     if (!seriesLanded) closeCamera();
+    maxViewKeepsTheClockAway();          // (the camera's screen is gone for good now — if the MAX view is up, no clock over it)
     return true;
   }
   if (!res || res.cancelled || !res.jpegBase64) {

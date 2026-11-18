@@ -1,7 +1,7 @@
 # LAUNCH — THE ONE LIST (9 Nov 2026). Nothing else counts; TOMORROW.md is history + notes.
 
 ## THE TO-DO LIST (17 Nov 2026, Roman: "one to-do list that we go back to and go through always"). THIS BLOCK IS THE LIST; everything below it is history and detail. Tick with [x] and the date. New finds: does it lose work or stop the app? No → "After the App Store".
-STATE 18 Nov 14:25: LIVE v5.0.301 · #853 (run 777). DEV v5.0.309 · #861 (run 790: camera series, SH/TL, tabs in sight incl. cross-swipe, 3x2 keeps open versions through a turn). Server run 780 (17 Nov 12:3x: job 1 server side — live for everyone). Files at v5.0.310 · #862.
+STATE 18 Nov 14:40: LIVE v5.0.301 · #853 (run 777). DEV v5.0.310 · #862 (run 792: + crash safety of the series; camera series, SH/TL, tabs in sight incl. cross-swipe, 3x2 keeps open versions through a turn). Server run 780 (17 Nov 12:3x: job 1 server side — live for everyone). Files at v5.0.311 · #863.
 
 JOB 1 — UPLOADS (17 Nov)
 - [x] (17 Nov, dev v5.0.302 run 779 + server run 780, test 74) 1. Uploaded pictures belong to their project → Delete now takes them too (the "125 pictures")
@@ -13,6 +13,7 @@ JOB 2 — CAMERA SERIES AS THE ONLY CAMERA (agreed 13 Nov, point 5 of that list 
 - [x] (17 Nov: 2–3 working days) 5. Read the landing code, say honestly how long
 - [ ] 6. Build: camera stays open · box bottom left with the shots (names V7, V8… can come later) · lens button top right · EV button gone · Cancel becomes DONE · all shots land as versions, ONE save. Xcode rounds with Roman
   - WHERE IT STANDS, 17 Nov 14:50 (Roman had to go: "I'm happy with what we did so far. Today is good."): ON HIS IPHONE (Xcode round 4 + dev v5.0.305): the series, fast shots, box → MAX view at once, the box in the photo's shape. IN THE FILES, NOT YET BUILT (Swift rounds 5–6; uncommitted until the next deploy): photo corners square / bottom straight, four places for the names in both layouts. NEXT: (a) his Xcode build of that; (b) crash safety — each photo to LOCAL APP STORAGE while the camera is open; (c) decide CAM on an EMPTY main/talent card: leave / one shot only (Claude's lean for fittings) / the pointer idea B (lean for landscape); (d) iPad build; (e) a full run before any of the series goes live (live is v5.0.301, without the series and without job 1's app side).
+  - 18 Nov 15:30: FOUND BY RUN 793 — a photo that lands in the half second before a fetch is applied was given to the server's copy (age unknown loses). Cured in the files v5.0.311 (the fetch dates fresh work 'now' before judging). A sync change: full run before live.
   - 18 Nov 14:45: CRASH SAFETY IN THE FILES (v5.0.310, app only, no Xcode build): each photo of an open series onto the device at once, with a note; a start puts un-landed shots on their card. Test 76. After it is on dev and seen on the phone, item 6 is done except the decision on CAM from an EMPTY main/talent card.
   - THE RULE, IN ROMAN'S WORDS (18 Nov): the reset (main cards back on their own picture) "happens only when you change the view" — 3x2 ↔ single ↔ double strip. TURNING THE DEVICE NEVER RESETS: version cards stay on their version, the cross-swipe stays, and (since v5.0.308) the iPad's 3x2 keeps its open versions through upright-and-back. 3x2 itself exists only in landscape. The row of tabs always shows the version on show (v5.0.307; cross-swipe v5.0.308).
   - 18 Nov 13:45: Xcode rounds 5–6 built — "that is correct". In the box the main card's shot is named SH (storyboards) / TL (fittings), capitals, instead of M — app side, needs a dev deploy only.
@@ -32,8 +33,9 @@ JOB 2 — CAMERA SERIES AS THE ONLY CAMERA (agreed 13 Nov, point 5 of that list 
   - OPEN QUESTION, ROMAN 17 Nov — M AND V1: today the first shot on an empty main card becomes the main picture and the rest v1, v2, v3. He wonders whether a series of 4 should rather be four VERSIONS, and how the main card would then show that it is "the same as v1" without the user wondering why a picture is there twice (his idea for fittings: the main card zoomed in and moved up, a portrait of the talent — not for landscape projects). To discuss; nothing built. · 17 Nov later: the fitting decides it — it opens on LOOKS, the costume designer shoots, and the first photo is on the main card, not in the looks, and missing from a looks export. Direction B (all shots are versions; the main card POINTS at one of them, one file) "is going towards the right direction, but we are not there yet": how to SHOW the link — nothing written into the picture. Claude's ideas, all in the card's top bar (never exported): a mark on the version's tab (v1•), the main card's bar reading "3 · v1", or one outline colour on both. To be continued.
 
 JOB 3 — MAX VIEW
-- [ ] 7. Three stars in the MAX view (re-sort only when it is closed)
-- [ ] 8. Coming back up to a shot, land on the version one was on
+- [ ] (built 18 Nov, in the files v5.0.311 — to be seen by Roman) 7. Three stars in the MAX view (re-sort only when it is closed)
+- [ ] (built 18 Nov, in the files v5.0.311 — to be seen by Roman) 8. Coming back up to a shot, land on the version one was on
+- [ ] (built 18 Nov, in the files v5.0.311 — to be seen by Roman) 8b. (Roman, 18 Nov) The version's name in the MAX view stands TOP LEFT, not bottom left — to do together with 7 and 8, not before
 
 JOB 4 — WHAT IS LEFT OF THE SAVE PATH (measure again after the series)
 - [ ] 9. Start fetch after an unsaved mark

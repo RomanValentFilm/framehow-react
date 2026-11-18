@@ -7937,6 +7937,17 @@ async function tryPullFromCloud(force = false): Promise<void> {
           if (cf.content_changed_at != null) cloudChangedAt.set(cf.id, cf.content_changed_at);
         }
 
+        // WORK DONE A MOMENT AGO HAS A TIME: NOW (18 Nov, run 793, test 45 — a photo lost).
+        // A change gets its time when the next save looks at the project. A fetch that is
+        // applied BEFORE that look found the shot "changed, age unknown", and "a copy that
+        // knows when it changed beats one that does not" gave the shot to the server's
+        // copy: a photo that had landed half a second earlier was taken off its card (the
+        // log: "camera: landed on the card (shot 1, ver 1)" → "pull: remote is newer" →
+        // "1 frame(s) changed later elsewhere — taking theirs"). So the look is taken
+        // here, before anything is judged: whatever differs from what was last noted was
+        // changed by now at the latest, and says so.
+        stampChangedContent(cp.projectId);
+
         const keepMine = new Set<string>();
         const takeTheirs: string[] = [];
         for (const sfId of dirtyIds) {

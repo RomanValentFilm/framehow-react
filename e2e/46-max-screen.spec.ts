@@ -207,10 +207,45 @@ test('max screen: up and down go to the shot before and after, landing on the sh
   await d.page.keyboard.press('ArrowUp');
   await expect(label, 'shot 2 again').toHaveText(labels[1]);
 
-  say('close: the app is as it was, nothing changed in the project');
+  // ── 18 NOV, JOB 3 OF THE LIST ────────────────────────────────────────────────────
+  say('up again: shot 1 — on the VERSION it was left on, not on the shot itself');
+  await d.page.keyboard.press('ArrowUp');
+  await expect(label, 'BACK ON SHOT 1: the version it was left on').toHaveText(/^v\d+$/);
+
+  say('the name stands top left; three stars stand bottom left, on a version');
+  const vp = d.page.viewportSize()!;
+  const lb = (await label.boundingBox())!;
+  expect(lb.y, 'the name is in the top part').toBeLessThan(90);
+  expect(lb.x, '…at the left').toBeLessThan(120);
+  const stars = d.page.locator('#maxView .max-stars .star-lvl');
+  await expect(stars, 'three stars').toHaveCount(3);
+  const sb = (await d.page.locator('#maxView .max-stars').boundingBox())!;
+  expect(sb.x, 'the stars are at the left').toBeLessThan(120);
+  expect(sb.y, '…in the bottom half').toBeGreaterThan(vp.height / 2);
+
+  say('two stars: the picture stays where it is; the rating is on it');
+  const nameBefore = (await label.textContent()) ?? '';
+  await d.page.locator('#maxView .max-stars .star-lvl[data-starlevel="2"]').dispatchEvent('click');
+  await expect(d.page.locator('#maxView .max-stars .star-lvl svg[fill="#fff"]'), 'two stars are filled').toHaveCount(2);
+  await expect(label, 'still the same picture').toHaveText(nameBefore);
+
+  say('left: the shot itself has no stars');
+  await d.page.keyboard.press('ArrowLeft');
+  await expect(label, 'shot 1 itself').toHaveText(labels[0]);
+  await expect(d.page.locator('#maxView .max-stars'), 'no stars on the shot\'s own picture').toBeHidden();
+
+  say('close: the shots are the same; the rated version carries its two stars');
   await d.page.locator('#maxView .max-close').click();
   await expect(view).toHaveCount(0);
   expect((await d.read()).frames.map((f) => f.label), 'the shots are the same').toEqual(labels);
+  {
+    const whole = JSON.parse(await d.whole()) as { shots: Array<{ versions: Record<string, Array<{ stars: number }>> }> };
+    expect((whole.shots[0].versions['ver'] ?? []).map((v) => v.stars), 'shot 1: one version with two stars, first in the row').toContain(2);
+    expect(whole.shots[0].versions['ver']?.[0]?.stars, 'the rated version stands first (star order)').toBe(2);
+    const lg = (await d.log()).join('\n');
+    expect(lg, 'the log says the rating').toMatch(/rated 2 star\(s\)/);
+    expect(lg, 'the log says the order was made on leaving').toMatch(/put in star order now/);
+  }
   const log = (await d.log()).join('\n');
   expect(log, 'the log says where it went').toMatch(/max screen: down to shot 2/);
   await d.close();

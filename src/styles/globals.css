@@ -1798,7 +1798,13 @@ body.portrait-mode .cam-mode-menu{left:16px;top:calc(max(16px,var(--sat)) + 80px
 body.portrait-mode #maxView .max-share-row{right:12px;top:calc(max(12px,var(--sat)) + 40px);flex-direction:column;}
 body.portrait-mode #maxView .max-close,body.portrait-mode #maxView .max-share{background:rgba(0,0,0,.45);opacity:.9;}
 body.portrait-mode #maxView .max-flash{right:52px;top:calc(max(12px,var(--sat)) + 44px);}
-#maxView .max-label{position:fixed;left:14px;bottom:max(12px,env(safe-area-inset-bottom));font-family:var(--mono);font-size:12px;letter-spacing:.06em;color:rgba(255,255,255,.7);pointer-events:none;}
+/* THE NAME STANDS TOP LEFT (Roman, 18 Nov) — it was bottom left; that corner is the stars' now, as on the cards. */
+/* …and as tall as the icons at the top right (Roman, 18 Nov: "now it looks a little smaller"): 32 px high like their boxes, letters the size of their drawings. */
+#maxView .max-label{position:fixed;left:14px;top:max(12px,var(--sat));height:32px;display:flex;align-items:center;font-family:var(--mono);font-size:20px;font-weight:500;letter-spacing:.04em;color:rgba(255,255,255,.85);pointer-events:none;z-index:2;}
+#maxView .max-stars{position:fixed;left:14px;bottom:max(12px,env(safe-area-inset-bottom));display:flex;flex-direction:row;gap:2px;padding:3px;background:rgba(0,0,0,.6);border-radius:4px;z-index:2;}
+#maxView .max-stars.max-stars-col{flex-direction:column;}
+#maxView .max-stars .star-lvl{width:30px;height:30px;border:none;background:none;padding:0;display:flex;align-items:center;justify-content:center;cursor:pointer;-webkit-tap-highlight-color:transparent;}
+#maxView .max-stars .star-lvl svg{width:20px;height:20px;}
 body.max-view-open{overflow:hidden;}
 /* CAM SET UP from the Menu (Roman, 23 Oct): the camera exactly as always —
    shutter, flip, RATIO, exposure — only the panel is already open. */
@@ -1916,6 +1922,7 @@ html.island #maxView .max-close{right:calc(12px + var(--ir,0px));}
 html.island #maxView .max-share-row{right:calc(64px + var(--ir,0px));}
 html.island #maxView .max-flash{right:calc(64px + var(--ir,0px));}
 html.island #maxView .max-label{left:calc(14px + var(--il,0px));}
+html.island #maxView .max-stars{left:calc(14px + var(--il,0px));}
 html.island #maxView .max-prev{left:max(8px,var(--il,0px));}
 html.island #maxView .max-next{right:max(8px,var(--ir,0px));}
 
