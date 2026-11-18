@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import type { D1Database } from "@cloudflare/workers-types";
 import type { AppVariables, Env } from "../types";
-import { loadOwnedProject, requireUser, wasDeletedByOwner } from "../lib/auth";
+import { loadOwnedProject, requireUser, wasDeletedByOwner, wasDeletedForGood } from "../lib/auth";
 import { userBytes } from "../lib/totals";
 import { deleteProjectForGood, deletedKeysAmong, fillImageSizes, storageFigure, storageLimitBytes, sumProjectImageBytesOutsideFrames, sumUserImageBytes } from "../lib/storage";
 import { newId } from "../lib/crypto";
@@ -299,6 +299,11 @@ async function missingOrDeleted(
 ) {
   if (await wasDeletedByOwner(c.env.DB, userId, projectId)) {
     return jsonError(c, 410, "deleted", "Project was deleted.");
+  }
+  // Deleted for good: its own word, so the app can tell the two apart — a
+  // project in the recover list is asked about, this one simply closes.
+  if (await wasDeletedForGood(c.env.DB, userId, projectId)) {
+    return jsonError(c, 410, "deleted_for_good", "Project was deleted for good.");
   }
   return jsonError(c, 404, "not_found", "Project not found.");
 }

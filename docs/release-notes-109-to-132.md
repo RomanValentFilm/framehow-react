@@ -671,5 +671,8 @@ v5.0.225 · #777 (10 Nov, night)
 ## v5.0.314 · #866 (dev, run 797, 18 Nov 17:12 — look only: the card's side arrows smaller)
 - The side arrows on a card are a little smaller: the grey box 26 × 40 instead of 28 × 48 (as wide as the MAX button), the arrow itself unchanged, the touch area as before. Cards only — 3×2, DRAW and the MAX view keep their sizes.
 
-## v5.0.315 · #867 (next)
+## v5.0.315 · #867 (dev, run 798, 18 Nov 17:13 — look only: the MAX view arrows smaller)
 - …and the arrows of the MAX view the same way: 36 × 54 instead of 44 × 64, arrow unchanged, touch area as before (up/down follow).
+
+## v5.0.316 · #868 (next)
+- A project deleted for good (Delete now, or the nightly sweep) leaves every screen: the server keeps a small note of it (migration 0035, `projects_gone`) and answers 410 "deleted_for_good"; a device that has it open closes it at its next word with the server, drops its own copy (a reload does not bring it back) and shows the Open project list. Nothing is asked; unsent work on that device goes with it (Roman, 18 Nov: his WF 7 lived on in a browser). A project still in the recover list keeps its question (SAVE AS NEW / DELETE). Test 77. NEEDS THE SERVER DEPLOY with the migration.

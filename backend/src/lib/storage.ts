@@ -242,9 +242,13 @@ export async function deleteProjectForGood(
   // version could not be deleted at all — the database refused, the app said
   // "Something went wrong", and the nightly sweep failed the same way for
   // every such project. They go first, explicitly.
+  // ...AND A SMALL NOTE STAYS (18 Nov, Roman's WF 7): with the row gone, a device
+  // still holding the project got a plain "not found" and was never told. The
+  // note lets the server answer "you deleted it" (lib/auth.ts, wasDeletedForGood).
   await db.batch([
     db.prepare(`DELETE FROM project_deletions WHERE project_id = ?`).bind(projectId),
     db.prepare(`DELETE FROM projects WHERE id = ?`).bind(projectId),
+    db.prepare(`INSERT OR REPLACE INTO projects_gone (project_id, user_id, gone_at) VALUES (?, ?, ?)`).bind(projectId, userId, Date.now()),
   ]);
   if (shared.size > 0) {
     console.log(`[storage] project ${projectId}: ${shared.size} picture file(s) kept — named by another project or restore point`);

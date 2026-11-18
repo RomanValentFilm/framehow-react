@@ -79,7 +79,7 @@ import {
   syncHeldBecause,
   setProjectListOpen,
 } from './currentProject';
-import { makeGoneRegister, whatWentWrong } from './projectGone';
+import { goneForGood, makeGoneRegister, whatWentWrong } from './projectGone';
 import { busyNow, busyToShow, whenQuiet } from './quietMoment';
 import { trace } from './syncTrace';
 import { isProvisionalName, provisionalName } from './provisionalName';
@@ -773,7 +773,25 @@ export async function carryOnAsNewProject(name: string): Promise<void> {
   await saveNow();
 }
 
-async function askAboutTheDeletedProject(projectId: string): Promise<void> {
+async function askAboutTheDeletedProject(projectId: string, forGood = false): Promise<void> {
+  // DELETED FOR GOOD — NOTHING IS ASKED (18 Nov, Roman's WF 7: deleted with
+  // Delete now on one device, still on screen in a browser, and on screen again
+  // after a reload — from that browser's own copy). His rule: "if a user deletes
+  // a project for good, the server knows, and if it's open on any device the
+  // OPEN PROJECT list appears the moment the app checks with the server … and
+  // we remove the deleted project from screen". The copy on this device goes
+  // too, or a reload would bring it back; unsent work on it goes with it — it
+  // is the owner's own delete, agreed.
+  if (forGood) {
+    if (getCurrentProject().projectId !== projectId) {
+      trace('a project deleted for good that is not the one open — nothing to close');
+      return;
+    }
+    trace('the open project was deleted for good — it leaves the screen, the Open project list comes up');
+    _goneRegister.answered(projectId);
+    await closeTheDeletedProject(projectId);
+    return;
+  }
   if (!_goneRegister.shouldAsk(projectId)) return;
   // ONLY ABOUT THE PROJECT IN FRONT OF YOU (#469). The dialog talks about "this
   // project", and both its answers act on the open one — SAVE AS NEW detaches
@@ -859,6 +877,11 @@ async function askAboutTheDeletedProject(projectId: string): Promise<void> {
   //
   // Take the key first, drop the copies, empty the storyboard, let go of the
   // project. The same three steps logout uses.
+  await closeTheDeletedProject(projectId);
+}
+
+/** Every copy on this device goes, the storyboard empties, the list comes up. */
+async function closeTheDeletedProject(projectId: string): Promise<void> {
   const oldLocalKey = localProjectId();
   const gone = await deleteEveryCopyOf(projectId, [oldLocalKey]);
   trace(`the deleted project: dropped ${gone} copy(ies) from this device`);
@@ -8352,7 +8375,7 @@ async function tryPullFromCloud(force = false): Promise<void> {
         trace(`  a deleted-project answer for ${askedFor?.slice(0, 6)}`
           + ` — we are in ${nowIn?.slice(0, 6) ?? 'none'} now, so it is dropped`);
       } else if (askedFor) {
-        noteTheProjectIsGone(askedFor);
+        noteTheProjectIsGone(askedFor, goneForGood(api_err?.status, api_err?.code));
       }
     }
     // What the device knows about the server was cleared on the way in. Put it

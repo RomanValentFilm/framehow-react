@@ -149,3 +149,20 @@ export async function wasDeletedByOwner(
     .first<{ id: string }>();
   return row !== null && row !== undefined;
 }
+
+/**
+ * DELETED FOR GOOD (18 Nov, Roman's WF 7). No row is left, only the note Delete
+ * now and the nightly sweep leave behind (migration 0035) — this user's own, so
+ * still nobody else's. The app closes such a project without asking.
+ */
+export async function wasDeletedForGood(
+  db: D1Database,
+  userId: string,
+  projectId: string,
+): Promise<boolean> {
+  const note = await db
+    .prepare(`SELECT project_id FROM projects_gone WHERE project_id = ? AND user_id = ? LIMIT 1`)
+    .bind(projectId, userId)
+    .first<{ project_id: string }>();
+  return note !== null && note !== undefined;
+}

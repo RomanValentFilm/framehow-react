@@ -68,10 +68,22 @@ export function whatWentWrong(
   // both means a 410 arriving from anywhere else — a proxy rule, a retired
   // address, an intermediary we never wrote — cannot be mistaken for proof that
   // you deleted something. It is treated as an ordinary failure and retried.
-  if (status === 410) return code === 'deleted' ? 'gone' : 'offline';
+  if (status === 410) return code === 'deleted' || code === 'deleted_for_good' ? 'gone' : 'offline';
   if (status === 409) return 'conflict';
   if (status >= 200 && status < 300) return 'fine';
   return 'offline';
+}
+
+/**
+ * DELETED FOR GOOD (18 Nov, Roman's WF 7 — deleted with Delete now, still open
+ * in a browser, never told). Nothing can be recovered and nothing is asked:
+ * the project leaves the screen and the Open project list comes up. A project
+ * still in the recover list (code "deleted") keeps its question.
+ */
+export function goneForGood(
+  status: number | undefined | null, code?: string | null,
+): boolean {
+  return status === 410 && code === 'deleted_for_good';
 }
 
 /** Only a deleted project is beyond asking again. */

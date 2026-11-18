@@ -51,7 +51,7 @@ import { stampChangedSettings, exportSettingStamps, settingsNeedPush } from './p
 import { stampChangedContent, exportChangeStamps } from './changeStamps';
 import { makeRetryClock } from './retryWait';
 import { isStorageFull, storageFullFromServer, onStorageFreed } from './storageMeter';
-import { whatWentWrong } from './projectGone';
+import { goneForGood, whatWentWrong } from './projectGone';
 import { provisionalName } from './provisionalName';
 
 interface CurrentProject {
@@ -303,8 +303,8 @@ export function registerConnectionWatch(fn: () => void): void { _watchForConnect
 
 /** Asked when the server says a project is not there any more (#465). Lives in
  *  accountFlow, where the dialog and the re-save can reach each other. */
-let _projectGoneOut: ((projectId: string) => void) | null = null;
-export function registerProjectGone(fn: (projectId: string) => void): void {
+let _projectGoneOut: ((projectId: string, forGood: boolean) => void) | null = null;
+export function registerProjectGone(fn: (projectId: string, forGood: boolean) => void): void {
   _projectGoneOut = fn;
 }
 
@@ -350,11 +350,11 @@ export function noteTheProjectIsAlive(projectId: string): void {
  * and let accountFlow ask the question. NOT an outage — so no offline notice,
  * which is the message that was lying to Roman all morning.
  */
-export function noteTheProjectIsGone(projectId: string): void {
+export function noteTheProjectIsGone(projectId: string, forGood = false): void {
   const first = !_goneProjectIds.has(projectId);
   _goneProjectIds.add(projectId);
-  if (first) trace('the server does not have this project any more — not trying again');
-  _projectGoneOut?.(projectId);
+  if (first) trace(`the server does not have this project any more${forGood ? ' — deleted for good' : ''} — not trying again`);
+  _projectGoneOut?.(projectId, forGood);
 }
 
 export function registerFingerprintBridge(
@@ -812,7 +812,7 @@ export async function flushSyncNow(askedByTheFetch = false): Promise<void> {
       // NOT an outage. No "you seem to be working offline" — that message was
       // untrue, and no amount of retrying will make this succeed (#465).
       void noticeUnsent(pid, cp.name, withMemory(snapshotFromStore(pid, cp.name)), pid, false);
-      noteTheProjectIsGone(pid);
+      noteTheProjectIsGone(pid, goneForGood(err?.status, (e as { code?: string })?.code));
       return;
     }
     void noticeUnsent(pid, cp.name, withMemory(snapshotFromStore(pid, cp.name)), pid);
@@ -1072,7 +1072,7 @@ async function retryPendingSyncs(why: 'timer' | 'now' = 'timer'): Promise<void> 
         // The status is READ, never typed in. It said 404 for two builds after
         // the rule moved to 410, so the log was telling a story of its own (#474).
         trace(`retry push FAILED status=${st ?? '(no response)'} — the project is not on the server`);
-        noteTheProjectIsGone(currentPid);
+        noteTheProjectIsGone(currentPid, goneForGood(st, stCode));
       } else {
         _retryClock.failed();
         trace(`retry push FAILED status=${st ?? '(no response)'}`
