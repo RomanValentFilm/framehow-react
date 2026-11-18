@@ -1979,3 +1979,8 @@ body.portrait-mode #maxView .max-close:hover,body.portrait-mode #maxView .max-sh
 .nav-arrow::before{content:'';position:absolute;inset:-4px -1px;}
 .fs-overlay .nav-arrow{width:40px;height:60px;}
 .fs-overlay .nav-arrow::before{content:none;}
+/* …AND IN THE MAX VIEW (Roman, 18 Nov: "also in the max view"): the grey box 36 × 54 instead of 44 × 64, the arrow itself unchanged, the touch area as before. The up and down arrows are the same box turned on its side; their pull to the screen's edge follows the new size (9 px, was 10). */
+#maxView .max-nav{width:36px;height:54px;}
+#maxView .max-nav::before{content:'';position:absolute;inset:-5px -4px;}
+#maxView .max-up{margin-top:-9px;}
+#maxView .max-down{margin-bottom:-9px;}

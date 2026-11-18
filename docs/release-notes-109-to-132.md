@@ -668,5 +668,8 @@ v5.0.225 · #777 (10 Nov, night)
 ## v5.0.313 · #865 (dev, run 796, 18 Nov — look only)
 - The icons on a picture are shown at 70 %, not 60 % (Roman, 18 Nov, after seeing v5.0.312): black 60 % behind, white, the whole button at 70 %, fully shown on hover. One number, in the block at the end of globals.css.
 
-## v5.0.314 · #866 (next)
+## v5.0.314 · #866 (dev, run 797, 18 Nov 17:12 — look only: the card's side arrows smaller)
 - The side arrows on a card are a little smaller: the grey box 26 × 40 instead of 28 × 48 (as wide as the MAX button), the arrow itself unchanged, the touch area as before. Cards only — 3×2, DRAW and the MAX view keep their sizes.
+
+## v5.0.315 · #867 (next)
+- …and the arrows of the MAX view the same way: 36 × 54 instead of 44 × 64, arrow unchanged, touch area as before (up/down follow).
