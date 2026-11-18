@@ -59,7 +59,7 @@ export function setOnSeriesShot(fn: (dataURL: string, target: CameraTarget) => a
 const SERIES_MAX = 4;
 
 /** THE NAMES THE SHOTS OF A SERIES WILL LAND ON, for the camera's picture box: the
- *  first on an empty main card is the main picture ("M"); an empty version on
+ *  first on an empty main card is the main picture ("SH", in a fitting "TL"); an empty version on
  *  screen takes the next; after that the strip goes on counting from where it is
  *  (v1–v7 are there → v8, v9, v10). The same rule the landing itself follows. */
 function seriesNamesFor(fid: number, target: any, max: number): string[] {
@@ -75,7 +75,9 @@ function seriesNamesFor(fid: number, target: any, max: number): string[] {
     let n = vers.length;
     const out: string[] = [];
     for (let i = 0; i < max; i++) {
-      if (mainFree) { out.push('M'); mainFree = false; continue; }
+      // NOT "M" (Roman, 18 Nov: "no one knows what it is"): the main card is the SHOT in
+      // a storyboard and the TALENT in a fitting — SH and TL, in capitals.
+      if (mainFree) { out.push(state().projectType === 'fitting' ? 'TL' : 'SH'); mainFree = false; continue; }
       if (reuse) { out.push(cur.label || `${prefix}${ai + 1}`); reuse = false; continue; }
       n += 1; out.push(`${prefix}${n}`);
     }

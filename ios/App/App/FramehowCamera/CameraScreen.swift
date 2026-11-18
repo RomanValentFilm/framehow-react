@@ -342,27 +342,23 @@ struct CameraScreen: View {
                 // and with no boxes of their own, the names the shots land on. A tap = DONE and
                 // the MAX view on the last shot.
                 if hasShots {
-                    let box = Button(action: { onDone("box") }) {
-                        VStack(spacing: 4) {
-                            Text(names.prefix(cam.seriesThumbs.count).joined(separator: " "))
-                                .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                                .lineLimit(1).minimumScaleFactor(0.5)
-                                .frame(width: 72)
-                            ZStack {
-                                Color.black
-                                if let last = cam.seriesThumbs.last { Image(uiImage: last).resizable().scaledToFit() }
-                                if cam.boxFlash { Color.white }
-                            }
-                            .frame(width: 72, height: 72)
-                            .clipShape(RoundedRectangle(cornerRadius: 4))
-                        }
-                        .padding(6)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .background(pill, in: RoundedRectangle(cornerRadius: 12))
+                    // ROUND 4 (Roman, 17 Nov, after shooting with it): the photo fills the grey
+                    // shape edge to edge; the names stand LEFT, so one sees them come one by one
+                    // (v8, then v8 v9 …); and the whole thing sits closer to the edge of the
+                    // screen than the buttons do.
+                    // (the box itself is SeriesBox, below: it has the photo's own shape, no black bars)
+                    let box = SeriesBox(photo: cam.seriesThumbs.last,
+                                        names: Array(names.prefix(cam.seriesThumbs.count)),
+                                        flash: cam.boxFlash, fill: pill, slots: max(1, cam.seriesMax),
+                                        onTap: { onDone("box") })
+                    // 14 from the glass where the glass is the edge (the buttons stand 22 away);
+                    // beside the island it keeps the buttons' distance
+                    let near: CGFloat = Self.screenCornerRadius() > 0 ? 8 : 0
+                    let islandLeft = Self.islandInsets().left > 0
                     VStack { Spacer(); HStack { box; Spacer() } }
-                        .padding(.leading, pic.minX + d).padding(.trailing, W - pic.maxX + d).padding(.bottom, H - pic.maxY + d)
+                        .padding(.leading, pic.minX + d - (islandLeft ? 0 : near))
+                        .padding(.trailing, W - pic.maxX + d)
+                        .padding(.bottom, H - pic.maxY + d - near)
                 }
                 if landscape {
                     // shutter right-middle (Camera app), Cancel under it, info bottom right
@@ -416,6 +412,96 @@ struct CameraScreen: View {
             .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.25), lineWidth: 1))
             .position(x: pic.minX + Self.cornerGap + 75, y: menuTop + h / 2)
         }
+    }
+}
+
+/// THE PICTURE BOX OF A SERIES (17 Nov). IT HAS THE PHOTO'S OWN SHAPE (Roman: "that black
+/// looks funny … if it could be in the ratio we shoot it, that would be the best"). No
+/// black bars: the long side is always 88, the other follows the photo. A photo that lies
+/// (or a square one) has the names of its shots ABOVE it, left to right; a photo that
+/// stands has them at its RIGHT side, coming from the bottom upwards. The photo fills the
+/// grey shape from edge to edge; the names stand on the grey.
+struct SeriesBox: View {
+    let photo: UIImage?
+    let names: [String]
+    let flash: Bool
+    let fill: Color
+    /// How many shots a series takes (4): beside a standing photo there is one place
+    /// for each, spread over the photo's height — so one sees that after four it is full.
+    var slots: Int = 4
+    let onTap: () -> Void
+
+    private static let long: CGFloat = 88
+    private static let nameFont = Font.system(size: 11, weight: .semibold, design: .monospaced)
+
+    private var stands: Bool {
+        guard let p = photo else { return false }
+        return p.size.height > p.size.width * 1.02
+    }
+    private var boxSize: CGSize {
+        let pw = max(1, photo?.size.width ?? 1), ph = max(1, photo?.size.height ?? 1)
+        return stands ? CGSize(width: max(36, Self.long * pw / ph), height: Self.long)
+                      : CGSize(width: Self.long, height: max(30, Self.long * ph / pw))
+    }
+
+    private var picture: some View {
+        ZStack {
+            if let photo { Image(uiImage: photo).resizable().scaledToFill() }
+            if flash { Color.white }
+        }
+        .frame(width: boxSize.width, height: boxSize.height)
+        .clipped()
+    }
+
+    var body: some View {
+        Button(action: onTap) {
+            Group {
+                if stands {
+                    HStack(alignment: .bottom, spacing: 0) {
+                        picture
+                        // FOUR PLACES, SPREAD EVENLY OVER THE HEIGHT (Roman, 17 Nov: "so that you
+                        // understand that you can't shoot 6 versions"). The first shot's name
+                        // takes the bottom place, the next the one above it; a place not yet
+                        // taken stays empty.
+                        VStack(alignment: .leading, spacing: 0) {
+                            ForEach(Array((0..<max(slots, names.count)).reversed()), id: \.self) { i in
+                                Text(i < names.count ? names[i] : " ")
+                                    .font(Self.nameFont).lineLimit(1)
+                                    .frame(maxHeight: .infinity)
+                            }
+                        }
+                        .padding(.horizontal, 6)
+                        .frame(height: boxSize.height)
+                    }
+                } else {
+                    VStack(alignment: .leading, spacing: 0) {
+                        // FOUR PLACES ACROSS THE WIDTH TOO (Roman, 17 Nov: "so that you expect the
+                        // fourth one to fill"): each name stands at the left of its own quarter,
+                        // the first at the far left; a place not yet taken stays empty.
+                        HStack(spacing: 0) {
+                            ForEach(Array(0..<max(slots, names.count)), id: \.self) { i in
+                                Text(i < names.count ? names[i] : " ")
+                                    .font(Self.nameFont)
+                                    .lineLimit(1).minimumScaleFactor(0.5)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                        .frame(width: boxSize.width - 10)
+                        .padding(.horizontal, 5).padding(.top, 5).padding(.bottom, 4)
+                        picture
+                    }
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.white)
+        .background(fill)
+        // THE PHOTO KEEPS ITS SQUARE CORNERS (Roman, 17 Nov: "now you're rounding up the photo
+        // as well"). Only the grey that carries the names is round: its two top corners above
+        // a lying photo, its one free top corner beside a standing one. The bottom is straight.
+        .clipShape(UnevenRoundedRectangle(topLeadingRadius: stands ? 0 : 10, bottomLeadingRadius: 0,
+                                          bottomTrailingRadius: 0, topTrailingRadius: 10))
     }
 }
 
