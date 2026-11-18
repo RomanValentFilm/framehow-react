@@ -1009,11 +1009,20 @@ export function flashNewFrame(fid: number): void {
  * Called after any render that rebuilds the tabs, which is also every action
  * that changes which tab is active: new, move, draw, photo, opening fullscreen.
  */
-export function revealActiveVersionTab(root: ParentNode = document): void {
+export function revealActiveVersionTab(root: ParentNode = document, again = true): void {
   const rows = root.querySelectorAll<HTMLElement>('.version-tabs');
+  // A CARD THAT IS NOT ON THE PAGE YET HAS NO WIDTH (18 Nov, Roman: "you land on
+  // version 7 and the tabs above the card are on v1 … if you're on version 38 the
+  // tab should show v38"). A whole-page redraw — a turn, a fetch, a change of view,
+  // the landing of a camera series — draws each card first and puts it on the page
+  // afterwards; this was called in between, measured nothing, and left the row at
+  // its beginning. Such a row is looked at again once it is on the page: at the
+  // next frame, and after 0.3 s (frames do not tick while the camera covers the page).
+  let notYet = false;
   rows.forEach((row) => {
     const active = row.querySelector<HTMLElement>('.vtab.active');
     if (!active) return;
+    if (!row.isConnected || row.clientWidth === 0) { notYet = true; return; }
     if (row.scrollWidth <= row.clientWidth + 1) return; // everything already fits
     const rowRect = row.getBoundingClientRect();
     const tabRect = active.getBoundingClientRect();
@@ -1027,6 +1036,10 @@ export function revealActiveVersionTab(root: ParentNode = document): void {
     if (overLeft > 0) row.scrollLeft -= overLeft;
     else if (overRight > 0) row.scrollLeft += overRight;
   });
+  if (notYet && again) {
+    requestAnimationFrame(() => revealActiveVersionTab(root, false));
+    window.setTimeout(() => revealActiveVersionTab(root, false), 300);
+  }
 }
 
 /** THE VERSION AS IT IS NOW (17 Oct). A box or view opened on a version may
