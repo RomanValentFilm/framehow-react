@@ -1867,7 +1867,7 @@ async function applySyncFull(db: D1Database, projectId: string, payload: SyncPay
       ).bind(s.id, projectId, s.label, s.sort_order, s.updated_at),
     );
   }
-  appendFrameInserts(db, stmts, payload, now);
+  appendFrameInserts(db, stmts, payload, now, projectId);
 
   // Tombstones: INSERT OR IGNORE — idempotent, same tombstone may arrive multiple times
   appendTombstoneInserts(db, stmts, payload, projectId, now);
@@ -1970,7 +1970,7 @@ async function applySyncPartial(db: D1Database, projectId: string, payload: Sync
   }
 
   // Re-insert dirty frames and their children
-  appendFrameInserts(db, stmts, payload, now);
+  appendFrameInserts(db, stmts, payload, now, projectId);
 
   // Record tombstones for future pulls by other devices
   appendTombstoneInserts(db, stmts, payload, projectId, now);
@@ -2025,13 +2025,19 @@ async function applySyncPartial(db: D1Database, projectId: string, payload: Sync
 // written last won, undated over dated. The WHERE on each upsert below is
 // the same rule at the moment of writing, atomically: a dated row is never
 // overwritten by an undated or older one, whatever the decision read.
-function appendFrameInserts(db: D1Database, stmts: D1PreparedStatement[], payload: SyncPayload, now: number) {
+// THE DEAD STAY DEAD — IN THEIR OWN PROJECT (18 Nov, Roman: "a shot deleted on
+// the other device, still showing on this device which presses save, should be
+// saved because it was showing on this device"). The deletion record was looked
+// up by the shot's name alone, so a shot deleted in the OLD project was quietly
+// not written into the new one SAVE AS NEW makes. A deletion belongs to the
+// project it was made in.
+function appendFrameInserts(db: D1Database, stmts: D1PreparedStatement[], payload: SyncPayload, now: number, projectId: string) {
   for (const f of payload.frames) {
     stmts.push(
       db.prepare(
         `INSERT INTO frames (id, strip_id, label, sort_order, crop_w, crop_h, text_content, table_data, version_label, strip_labels, hidden, note, scribbles, updated_at, changed_offline, needs, notes, setup_id, content_changed_at)
          SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-         WHERE NOT EXISTS (SELECT 1 FROM project_deletions WHERE entity_type = 'frame' AND entity_id = ?)
+         WHERE NOT EXISTS (SELECT 1 FROM project_deletions WHERE project_id = ? AND entity_type = 'frame' AND entity_id = ?)
          ON CONFLICT(id) DO UPDATE SET
            content_changed_at = excluded.content_changed_at,
            strip_id = excluded.strip_id, label = excluded.label,
@@ -2044,7 +2050,7 @@ function appendFrameInserts(db: D1Database, stmts: D1PreparedStatement[], payloa
            needs = excluded.needs, notes = excluded.notes, setup_id = excluded.setup_id
          WHERE ? = 1 OR frames.content_changed_at IS NULL
             OR (excluded.content_changed_at IS NOT NULL AND excluded.content_changed_at >= frames.content_changed_at)`,
-      ).bind(f.id, f.strip_id, f.label, f.sort_order, f.crop_w, f.crop_h, f.text_content, f.table_data, f.version_label, f.strip_labels, f.hidden ? 1 : 0, f.note ?? null, f.scribbles ?? null, now, f.changed_offline ? 1 : 0, f.needs ?? null, f.notes ?? null, f.setup_id ?? null, f.content_changed_at ?? null, f.id, payload.carried?.frames.has(f.id) ? 1 : 0),
+      ).bind(f.id, f.strip_id, f.label, f.sort_order, f.crop_w, f.crop_h, f.text_content, f.table_data, f.version_label, f.strip_labels, f.hidden ? 1 : 0, f.note ?? null, f.scribbles ?? null, now, f.changed_offline ? 1 : 0, f.needs ?? null, f.notes ?? null, f.setup_id ?? null, f.content_changed_at ?? null, projectId, f.id, payload.carried?.frames.has(f.id) ? 1 : 0),
     );
   }
   for (const v of payload.versions) {
@@ -2052,7 +2058,7 @@ function appendFrameInserts(db: D1Database, stmts: D1PreparedStatement[], payloa
       db.prepare(
         `INSERT INTO versions (id, frame_id, label, type, hidden, starred, note, updated_at, tags, content_changed_at, sort_order)
          SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-         WHERE NOT EXISTS (SELECT 1 FROM project_deletions WHERE entity_type = 'version' AND entity_id = ?)
+         WHERE NOT EXISTS (SELECT 1 FROM project_deletions WHERE project_id = ? AND entity_type = 'version' AND entity_id = ?)
          ON CONFLICT(id) DO UPDATE SET
            content_changed_at = excluded.content_changed_at,
            frame_id = excluded.frame_id, label = excluded.label, type = excluded.type,
@@ -2061,7 +2067,7 @@ function appendFrameInserts(db: D1Database, stmts: D1PreparedStatement[], payloa
            sort_order = COALESCE(excluded.sort_order, versions.sort_order)
          WHERE ? = 1 OR versions.content_changed_at IS NULL
             OR (excluded.content_changed_at IS NOT NULL AND excluded.content_changed_at >= versions.content_changed_at)`,
-      ).bind(v.id, v.frame_id, v.label, v.type, v.hidden ? 1 : 0, Number(v.starred) || 0, v.note ?? null, now, v.tags ?? null, v.content_changed_at ?? null, v.sort_order ?? null, v.id, payload.carried?.versions.has(v.id) ? 1 : 0),
+      ).bind(v.id, v.frame_id, v.label, v.type, v.hidden ? 1 : 0, Number(v.starred) || 0, v.note ?? null, now, v.tags ?? null, v.content_changed_at ?? null, v.sort_order ?? null, projectId, v.id, payload.carried?.versions.has(v.id) ? 1 : 0),
     );
   }
   for (const img of payload.images) {

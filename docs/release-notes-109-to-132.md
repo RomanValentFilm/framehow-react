@@ -681,6 +681,9 @@ v5.0.225 · #777 (10 Nov, night)
 - Deleted for good while the question "IT SEEMS YOU DELETED THIS PROJECT ALREADY" stands on another device (Roman's phone, 17:42: plain Delete, then Delete now — the phone went on asking): the question goes off the screen with the project. A SAVE AS NEW being named at that moment saves nothing. Test 77, second play.
 - The heartbeat says "deleted" too (run 802 red showed it: a device that only looks at a project sends nothing but heartbeats, and those answered a plain 404 — it learned nothing until its next fetch). Server: the heartbeat route answers like the sync routes (410 deleted / deleted_for_good). App: that answer on a heartbeat closes the project (for good) or asks (recover list). NEEDS A SERVER DEPLOY.
 
-## v5.0.318 · #870 (next)
+## v5.0.318 · #870 (dev, run 806, 18 Nov 18:19 — the test and the heartbeat part; the SAVE AS NEW cure is SERVER, live since run 807)
 - SERVER: SAVE AS NEW on a deleted project sends every shot (Roman's "QQQQQ TEST 2", 18 Nov 18:03 — 3 shots sent, 2 taken; shot 1, changed last on the other device, was judged against the row still under the DELETED project, called stale and left there; the device believed all was sent). The stale test now reads this project's own rows only (frames and versions). Test 77, third play. NEEDS A SERVER DEPLOY.
   (run 805 red: the decision alone was not enough — the upsert carries the same date guard at the moment of writing, #514, and held the shot back silently. Rows carried in from a deleted project are now marked (`payload.carried`) and written as sent.)
+
+## v5.0.319 · #871 (next)
+- SERVER: SAVE AS NEW also keeps a shot the other device had DELETED but this screen still shows (Roman: "should be saved because it was showing on this device"). The deletion record was looked up by the shot's name alone at the moment of writing; it now belongs to its own project. Test 77, third play (4 shots: one changed last elsewhere, one deleted elsewhere). NEEDS A SERVER DEPLOY.

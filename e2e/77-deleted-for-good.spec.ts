@@ -113,12 +113,12 @@ test('deleted for good: a project still in the recover list keeps its question �
 // project — newer there — called stale and left behind. The phone believed all
 // was sent. The other device opened the new project with a shot missing, and
 // the sweep of the old project would have taken that shot for good.
-test('deleted for good: SAVE AS NEW on a deleted project sends every shot — also one the other device changed last', async ({ browser }) => {
+test('deleted for good: SAVE AS NEW on a deleted project sends every shot — also one the other device changed last, and one it deleted', async ({ browser }) => {
   const { token } = await freshAccount();
   const desktop = await Device.open(browser, 'desktop', token);
   const tablet = await Device.open(browser, 'tablet', token);
 
-  const oldId = await desktop.newProject('OLD', 3);
+  const oldId = await desktop.newProject('OLD', 4);
   await desktop.settle();
   await tablet.openProject(oldId!);
   await tablet.settle();
@@ -127,6 +127,12 @@ test('deleted for good: SAVE AS NEW on a deleted project sends every shot — al
   await tablet.offline(true);
   say('desktop: changes shot 1 (the server now holds a newer shot 1), then deletes the project');
   await desktop.writeUnder(0, 'changed last on the desktop');
+  await desktop.push();
+  await desktop.settle();
+  // ...and deletes shot 4. The tablet never hears of it, so shot 4 is still on
+  // its screen — and what is on the screen is what SAVE AS NEW saves (Roman).
+  say('desktop: deletes shot 4 — the tablet, off the air, still shows it');
+  await desktop.deleteFrame(3);
   await desktop.push();
   await desktop.settle();
   await desktop.deleteThisProject();
@@ -144,12 +150,12 @@ test('deleted for good: SAVE AS NEW on a deleted project sends every shot — al
 
   const framesOnServer = async (): Promise<number> =>
     ((await (await fetch(`http://127.0.0.1:8787/projects/${newId}/sync`, { headers: { Authorization: `Bearer ${token}` } })).json()) as { frames: unknown[] }).frames.length;
-  await expect.poll(framesOnServer, { timeout: 30_000, message: 'the server holds all three shots of the new project' }).toBe(3);
+  await expect.poll(framesOnServer, { timeout: 30_000, message: 'the server holds all four shots of the new project — the one changed last elsewhere and the one deleted elsewhere too' }).toBe(4);
 
-  say('desktop: opens the new project — three shots, at once');
+  say('desktop: opens the new project — four shots, at once');
   await desktop.openProject(newId!);
   await desktop.settle();
-  expect((await desktop.read()).frames.length, 'three shots on the other device').toBe(3);
+  expect((await desktop.read()).frames.length, 'four shots on the other device').toBe(4);
 
   await desktop.close(); await tablet.close();
 });
