@@ -665,5 +665,8 @@ v5.0.225 · #777 (10 Nov, night)
 - Roman on v5.0.311 (18 Nov): MAX view — "all other things checked and all is good". Two small ones, agreed: the card's MAX button (the two arrows) is fully shown — black 45 % behind a white icon, like the side arrows on the same card (it was the whole button at 55 %); in the camera, Cancel / DONE stand in the same grey pill as RATIO, same small letters, not bigger (Swift — needs an Xcode build).
 - ONE LOOK FOR EVERY ICON ON A PICTURE (Roman, 18 Nov, after the tables of what each icon had): "make it everywhere the same, like the empty setup pill, but no outline on the icons except the setup pill": black 60 % behind, white icon or letters, the whole button shown at 60 %, fully shown on hover (a mouse's hover only — after a finger's tap nothing stays bright). On the cards: MAX button, side arrows, stars, empty setup pill; in the MAX view: close, share, arrows, stars; in the DRAW view: close, arrows, stars, setup pill. One block at the end of globals.css. This REPLACES the "MAX button fully shown" of an hour earlier (never deployed). The setup pill with a setup keeps its colour; the camera's pills are black 45 % with full white letters (Swift) — to decide whether they join.
 
-## v5.0.313 · #865 (next)
+## v5.0.313 · #865 (dev, run 796, 18 Nov — look only)
 - The icons on a picture are shown at 70 %, not 60 % (Roman, 18 Nov, after seeing v5.0.312): black 60 % behind, white, the whole button at 70 %, fully shown on hover. One number, in the block at the end of globals.css.
+
+## v5.0.314 · #866 (next)
+- The side arrows on a card are a little smaller: the grey box 26 × 40 instead of 28 × 48 (as wide as the MAX button), the arrow itself unchanged, the touch area as before. Cards only — 3×2, DRAW and the MAX view keep their sizes.

@@ -1974,3 +1974,8 @@ body.portrait-mode #maxView .max-close:hover,body.portrait-mode #maxView .max-sh
 /* (3×2: its arrows were forced fully shown by an older rule — the same look there) */
 .grid3x2-card-wrap .nav-arrow-left,.grid3x2-card-wrap .nav-arrow-right{opacity:.7!important;}
 @media (hover:hover){.grid3x2-card-wrap .nav-arrow-left:hover,.grid3x2-card-wrap .nav-arrow-right:hover{opacity:1!important;}}
+/* THE CARD'S SIDE ARROWS ARE A LITTLE SMALLER (Roman, 18 Nov: "now it's the biggest, a lot bigger than the max button — without making the arrow inside smaller, only the button's padding"). The grey box was 28 × 48; it is 26 × 40, as wide as the MAX button. The arrow itself keeps its size. The place a finger may hit stays as large as before (the unseen edge around it). Not in 3×2, DRAW or the MAX view: those have their own sizes. */
+.nav-arrow{width:26px;height:40px;}
+.nav-arrow::before{content:'';position:absolute;inset:-4px -1px;}
+.fs-overlay .nav-arrow{width:40px;height:60px;}
+.fs-overlay .nav-arrow::before{content:none;}

@@ -1,7 +1,7 @@
 # LAUNCH — THE ONE LIST (9 Nov 2026). Nothing else counts; TOMORROW.md is history + notes.
 
 ## THE TO-DO LIST (17 Nov 2026, Roman: "one to-do list that we go back to and go through always"). THIS BLOCK IS THE LIST; everything below it is history and detail. Tick with [x] and the date. New finds: does it lose work or stop the app? No → "After the App Store".
-STATE 18 Nov 16:45: LIVE v5.0.301 · #853 (run 777). DEV v5.0.312 · #864 (run 795: + one look for every icon on a picture; + MAX view job 3, fresh photo kept against a fetch, crash safety of the series; camera series, SH/TL, tabs in sight incl. cross-swipe, 3x2 keeps open versions through a turn). Server run 780 (17 Nov 12:3x: job 1 server side — live for everyone). Files at v5.0.313 · #865.
+STATE 18 Nov 17:00: LIVE v5.0.301 · #853 (run 777). DEV v5.0.313 · #865 (run 796: icons at 70 %; + one look for every icon on a picture; + MAX view job 3, fresh photo kept against a fetch, crash safety of the series; camera series, SH/TL, tabs in sight incl. cross-swipe, 3x2 keeps open versions through a turn). Server run 780 (17 Nov 12:3x: job 1 server side — live for everyone). Files at v5.0.314 · #866.
 
 JOB 1 — UPLOADS (17 Nov)
 - [x] (17 Nov, dev v5.0.302 run 779 + server run 780, test 74) 1. Uploaded pictures belong to their project → Delete now takes them too (the "125 pictures")
