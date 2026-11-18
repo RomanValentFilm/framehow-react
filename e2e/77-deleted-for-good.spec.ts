@@ -13,6 +13,9 @@
 //   · unsent work on that device goes with it (his own delete; agreed)
 //   · a project still in the recover list keeps its question, as before
 //
+//   · SAVE AS NEW on such a project sends EVERY shot on that screen — also one
+//     the other device had changed last (Roman's "QQQQQ TEST 2": 2 of 3 went)
+//
 //     npm run t -- -g "deleted for good"
 
 import { test, expect } from '@playwright/test';
@@ -98,6 +101,55 @@ test('deleted for good: a project still in the recover list keeps its question �
     { timeout: 60_000, message: 'the tablet lets go of the project deleted for good' }).toBeNull();
   await expect(tablet.page.locator('[data-gone]'), 'the question is off the screen').toHaveCount(0);
   await expect(tablet.page.locator('#projectListModal'), 'the Open project list is up').toBeVisible({ timeout: 15_000 });
+
+  await desktop.close(); await tablet.close();
+});
+
+// SAVE AS NEW TAKES EVERY SHOT ON THE SCREEN (18 November, Roman's "QQQQQ TEST 2").
+//
+// The desktop changed shot 1, then deleted the project. The phone, still on its
+// older copy, was asked and chose SAVE AS NEW. Three shots went up; the server
+// took two. Shot 1 was judged against the row still lying under the DELETED
+// project — newer there — called stale and left behind. The phone believed all
+// was sent. The other device opened the new project with a shot missing, and
+// the sweep of the old project would have taken that shot for good.
+test('deleted for good: SAVE AS NEW on a deleted project sends every shot — also one the other device changed last', async ({ browser }) => {
+  const { token } = await freshAccount();
+  const desktop = await Device.open(browser, 'desktop', token);
+  const tablet = await Device.open(browser, 'tablet', token);
+
+  const oldId = await desktop.newProject('OLD', 3);
+  await desktop.settle();
+  await tablet.openProject(oldId!);
+  await tablet.settle();
+
+  say('tablet: off the air — it keeps its older copy');
+  await tablet.offline(true);
+  say('desktop: changes shot 1 (the server now holds a newer shot 1), then deletes the project');
+  await desktop.writeUnder(0, 'changed last on the desktop');
+  await desktop.push();
+  await desktop.settle();
+  await desktop.deleteThisProject();
+  await desktop.page.waitForTimeout(1000);
+
+  say('tablet: back on the air — it is asked, and saves what it has as a new project');
+  await tablet.offline(false);
+  await expect.poll(async () => { await tablet.nudge(); return await tablet.page.locator('[data-gone="new"]').count(); },
+    { timeout: 60_000, message: 'the question about the deleted project' }).toBe(1);
+  await tablet.saveAsNewProject('SAVED AS NEW');
+  await tablet.settle();
+  const newId = await openId(tablet);
+  expect(newId, 'a new project, not the old one').not.toBe(oldId);
+  expect(newId).not.toBeNull();
+
+  const framesOnServer = async (): Promise<number> =>
+    ((await (await fetch(`http://127.0.0.1:8787/projects/${newId}/sync`, { headers: { Authorization: `Bearer ${token}` } })).json()) as { frames: unknown[] }).frames.length;
+  await expect.poll(framesOnServer, { timeout: 30_000, message: 'the server holds all three shots of the new project' }).toBe(3);
+
+  say('desktop: opens the new project — three shots, at once');
+  await desktop.openProject(newId!);
+  await desktop.settle();
+  expect((await desktop.read()).frames.length, 'three shots on the other device').toBe(3);
 
   await desktop.close(); await tablet.close();
 });

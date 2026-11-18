@@ -677,6 +677,10 @@ v5.0.225 · #777 (10 Nov, night)
 ## v5.0.316 · #868 (dev, run 800, 18 Nov 17:38 — app side; server side live since run 801, migration 0035 done)
 - A project deleted for good (Delete now, or the nightly sweep) leaves every screen: the server keeps a small note of it (migration 0035, `projects_gone`) and answers 410 "deleted_for_good"; a device that has it open closes it at its next word with the server, drops its own copy (a reload does not bring it back) and shows the Open project list. Nothing is asked; unsent work on that device goes with it (Roman, 18 Nov: his WF 7 lived on in a browser). A project still in the recover list keeps its question (SAVE AS NEW / DELETE). Test 77. NEEDS THE SERVER DEPLOY with the migration.
 
-## v5.0.317 · #869 (next)
+## v5.0.317 · #869 (dev, run 803, 18 Nov 17:52 — app side; the heartbeat part waits for its server deploy)
 - Deleted for good while the question "IT SEEMS YOU DELETED THIS PROJECT ALREADY" stands on another device (Roman's phone, 17:42: plain Delete, then Delete now — the phone went on asking): the question goes off the screen with the project. A SAVE AS NEW being named at that moment saves nothing. Test 77, second play.
 - The heartbeat says "deleted" too (run 802 red showed it: a device that only looks at a project sends nothing but heartbeats, and those answered a plain 404 — it learned nothing until its next fetch). Server: the heartbeat route answers like the sync routes (410 deleted / deleted_for_good). App: that answer on a heartbeat closes the project (for good) or asks (recover list). NEEDS A SERVER DEPLOY.
+
+## v5.0.318 · #870 (next)
+- SERVER: SAVE AS NEW on a deleted project sends every shot (Roman's "QQQQQ TEST 2", 18 Nov 18:03 — 3 shots sent, 2 taken; shot 1, changed last on the other device, was judged against the row still under the DELETED project, called stale and left there; the device believed all was sent). The stale test now reads this project's own rows only (frames and versions). Test 77, third play. NEEDS A SERVER DEPLOY.
+  (run 805 red: the decision alone was not enough — the upsert carries the same date guard at the moment of writing, #514, and held the shot back silently. Rows carried in from a deleted project are now marked (`payload.carried`) and written as sent.)

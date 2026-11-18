@@ -479,15 +479,33 @@ projects.post("/:id/sync", async (c) => {
   const staleFrames: string[] = [];
   const staleVersions: string[] = [];
 
+  // Rows this push carries in from ANOTHER project — by now only a deleted one's
+  // (a live one's were taken out above, #523). Not judged, and not held back.
+  const carried = { frames: new Set<string>(), versions: new Set<string>() };
+  payload.carried = carried;
+
   if (perFrame) {
     const ids = payload.frames.map((f) => f.id);
     type ServerFrame = { id: string; updated_at: number; changed_offline: number; text_content: string | null; table_data: string | null; content_changed_at: number | null };
     const existingResults: ServerFrame[] = [];
     for (const part of inChunks(ids)) {
       const r = await c.env.DB.prepare(
-        `SELECT id, updated_at, changed_offline, text_content, table_data, content_changed_at FROM frames WHERE id IN (${part.map(() => "?").join(",")})`,
-      ).bind(...part).all<ServerFrame>();
-      existingResults.push(...r.results);
+        // THIS PROJECT'S OWN ROWS ONLY (18 Nov, Roman's "QQQQQ TEST 2"). SAVE AS
+        // NEW on a deleted project carries its shots into the new one — and a
+        // shot the other device had changed last was judged against the row
+        // still lying under the DELETED project, called stale, and left there:
+        // the new project went up with 2 shots of 3, the device believed all
+        // was sent, and the third would have gone with the old project at the
+        // sweep. A row under another project is not this project's copy of
+        // anything: what is on the saver's screen is what the new project is.
+        `SELECT f.id, f.updated_at, f.changed_offline, f.text_content, f.table_data, f.content_changed_at, s.project_id AS pid
+           FROM frames f JOIN strips s ON s.id = f.strip_id
+          WHERE f.id IN (${part.map(() => "?").join(",")})`,
+      ).bind(...part).all<ServerFrame & { pid: string }>();
+      for (const row of r.results) {
+        if (row.pid === project.id) existingResults.push(row);
+        else carried.frames.add(row.id);   // the write must not hold it back either (appendFrameInserts)
+      }
     }
     const existing = { results: existingResults };
 
@@ -557,9 +575,15 @@ projects.post("/:id/sync", async (c) => {
       const heldById = new Map<string, { id: string; updated_at: number; content_changed_at: number | null }>();
       for (const part of inChunks(vids)) {
         const held = await c.env.DB.prepare(
-          `SELECT id, updated_at, content_changed_at FROM versions WHERE id IN (${part.map(() => "?").join(",")})`,
-        ).bind(...part).all<{ id: string; updated_at: number; content_changed_at: number | null }>();
-        for (const r of held.results) heldById.set(r.id, r);
+          // ...this project's own rows only, as for the frames above.
+          `SELECT v.id, v.updated_at, v.content_changed_at, s.project_id AS pid
+             FROM versions v JOIN frames f ON f.id = v.frame_id JOIN strips s ON s.id = f.strip_id
+            WHERE v.id IN (${part.map(() => "?").join(",")})`,
+        ).bind(...part).all<{ id: string; updated_at: number; content_changed_at: number | null; pid: string }>();
+        for (const r of held.results) {
+          if (r.pid === project.id) heldById.set(r.id, r);
+          else carried.versions.add(r.id);
+        }
       }
 
       const staleVersionIds = new Set<string>();
@@ -1530,6 +1554,10 @@ async function loadProjectTree(db: D1Database, projectId: string, since?: number
 // ---------------------------------------------------------------------------
 
 interface SyncPayload {
+  /** Not from the device: rows held under another (deleted) project that this
+   *  push carries into this one — SAVE AS NEW (18 Nov). The upsert takes them
+   *  as sent, whatever the old row's date. */
+  carried?: { frames: Set<string>; versions: Set<string> };
   project: { name: string; updated_at: number; base_updated_at?: number; device_id?: string; device_name?: string; metadata?: string | null };
   /** When true, only dirty frames are included — server UPSERTs instead of full replace. */
   partial: boolean;
@@ -2014,9 +2042,9 @@ function appendFrameInserts(db: D1Database, stmts: D1PreparedStatement[], payloa
            note = excluded.note, scribbles = excluded.scribbles,
            updated_at = excluded.updated_at, changed_offline = excluded.changed_offline,
            needs = excluded.needs, notes = excluded.notes, setup_id = excluded.setup_id
-         WHERE frames.content_changed_at IS NULL
+         WHERE ? = 1 OR frames.content_changed_at IS NULL
             OR (excluded.content_changed_at IS NOT NULL AND excluded.content_changed_at >= frames.content_changed_at)`,
-      ).bind(f.id, f.strip_id, f.label, f.sort_order, f.crop_w, f.crop_h, f.text_content, f.table_data, f.version_label, f.strip_labels, f.hidden ? 1 : 0, f.note ?? null, f.scribbles ?? null, now, f.changed_offline ? 1 : 0, f.needs ?? null, f.notes ?? null, f.setup_id ?? null, f.content_changed_at ?? null, f.id),
+      ).bind(f.id, f.strip_id, f.label, f.sort_order, f.crop_w, f.crop_h, f.text_content, f.table_data, f.version_label, f.strip_labels, f.hidden ? 1 : 0, f.note ?? null, f.scribbles ?? null, now, f.changed_offline ? 1 : 0, f.needs ?? null, f.notes ?? null, f.setup_id ?? null, f.content_changed_at ?? null, f.id, payload.carried?.frames.has(f.id) ? 1 : 0),
     );
   }
   for (const v of payload.versions) {
@@ -2031,9 +2059,9 @@ function appendFrameInserts(db: D1Database, stmts: D1PreparedStatement[], payloa
            hidden = excluded.hidden, starred = excluded.starred, note = excluded.note,
            updated_at = excluded.updated_at, tags = excluded.tags,
            sort_order = COALESCE(excluded.sort_order, versions.sort_order)
-         WHERE versions.content_changed_at IS NULL
+         WHERE ? = 1 OR versions.content_changed_at IS NULL
             OR (excluded.content_changed_at IS NOT NULL AND excluded.content_changed_at >= versions.content_changed_at)`,
-      ).bind(v.id, v.frame_id, v.label, v.type, v.hidden ? 1 : 0, Number(v.starred) || 0, v.note ?? null, now, v.tags ?? null, v.content_changed_at ?? null, v.sort_order ?? null, v.id),
+      ).bind(v.id, v.frame_id, v.label, v.type, v.hidden ? 1 : 0, Number(v.starred) || 0, v.note ?? null, now, v.tags ?? null, v.content_changed_at ?? null, v.sort_order ?? null, v.id, payload.carried?.versions.has(v.id) ? 1 : 0),
     );
   }
   for (const img of payload.images) {
