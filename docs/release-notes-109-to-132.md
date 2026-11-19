@@ -711,5 +711,8 @@ v5.0.225 · #777 (10 Nov, night)
 ## v5.0.326 · #878 (dev, run 819, 19 Nov — look only)
 - The prompt on an empty main card: smaller (10 px), lines closer (1.3), PICTURE / TALENT PROFILE PICTURE and CONTENT white (Roman, 19 Nov, after seeing v5.0.325: "too big, the spaces between the lines on iphone are huge … you forgot to make white"). Look only.
 
-## v5.0.327 · #879 (next)
+## v5.0.327 · #879 (dev, run 820, 19 Nov 13:50 — look only; Roman: "works")
 - The prompt on an empty main card, second look (Roman, 19 Nov): lines a little further apart (1.5, was 1.3); PICTURE and CONTENT grey like the rest in a storyboard — white only in a fitting ("we keep that white in FITTINGS").
+
+## v5.0.328 · #880 (next)
+- The prompt's key words in a storyboard are not bold any more (Roman's iPhone screenshot, 13:53: PICTURE looked white — the colour was the same grey, the bold strokes read brighter). A fitting keeps bold and white.
