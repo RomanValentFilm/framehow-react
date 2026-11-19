@@ -688,5 +688,7 @@ v5.0.225 · #777 (10 Nov, night)
 ## v5.0.319 · #871 (dev, run 808, 18 Nov 18:46 — test only on the app side; the cure is SERVER, live since run 809)
 - SERVER: SAVE AS NEW also keeps a shot the other device had DELETED but this screen still shows (Roman: "should be saved because it was showing on this device"). The deletion record was looked up by the shot's name alone at the moment of writing; it now belongs to its own project. Test 77, third play (4 shots: one changed last elsewhere, one deleted elsewhere). NEEDS A SERVER DEPLOY.
 
-## v5.0.320 · #872 (next)
+## v5.0.320 · #872 (dev, run 811, 18 Nov 20:44 — FULL RUN 812 green on this code: 184 passed)
 - FULL RUN 810 (18 Nov, 183 green, 1 red): test 39 "the dead copy at start" — a regression of today's "deleted for good closes the project": an unsent copy of a project deleted for good, put in place at start to be sent, was taken for the open project and closed — which emptied the device's save of the project really open (the start ended empty). Never live. Cure: nothing is closed while a copy stands in; the copy is parked by the upload, as before.
+
+## v5.0.321 · #873 (next)
