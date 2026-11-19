@@ -729,6 +729,14 @@ export async function flushSyncNow(askedByTheFetch = false): Promise<void> {
       return;
     }
     trace('push OK');
+    // WHAT THE SERVER NOW HAS IS WRITTEN TO THE DEVICE SOON, TOO (19 Nov, Roman's
+    // iPhone 15:24–15:25: a photo, its push OK at 15:25:02, the app closed a few
+    // seconds later — he had turned the phone, a fetch was running, the quiet two
+    // seconds never came. The start at 15:25:12 found the photo on the card but no
+    // word that it had been sent: "local frames not yet on the server: 1", the shot
+    // pushed again and its picture uploaded A SECOND TIME, the first file left on
+    // no card). The same short wait as the mark's, which nothing restarts.
+    saveSoonForTheMark();
 
     // The server answered. Only now is the work known to be in the cloud, so
     // only now is it safe to drop the copy held on this device — and only the
@@ -1133,7 +1141,32 @@ function scheduleAutosave(): void {
 /** The mark of what was taken from the server has moved and nothing on the
  *  screen has (the device's own save came back as "nothing new"): the save on
  *  this device is written again, so the mark is in it (13 Nov). */
-export function saveSoonForTheMark(): void { scheduleAutosave(); }
+/* …AND WRITTEN SOON WHATEVER THE HANDS DO (19 Nov, job 4 item 9 — Roman's iPhone,
+   15:21–15:22: three starts in a row said "holds everything the server had up to
+   15:03:30", each fetched the same 49 rows again and rebuilt the storyboard from
+   them — "pull: remote is newer" at every start). The mark went into the ordinary
+   save, which waits for two seconds with NO change at all and starts waiting again
+   at every touch: someone who keeps working, or puts the app away a few seconds
+   after a fetch, never got it written (the one start that was left alone for two
+   seconds did: "saving: 18 frame(s)…" at 15:22:05). So the mark has its own short
+   wait that nothing restarts: 0.8 s after the fetch the save is written; while a
+   fetch or a stand-in is still busy it looks again every half second, for 15 s. */
+let _markTimer: number | null = null;
+export function saveSoonForTheMark(): void {
+  scheduleAutosave();
+  if (_markTimer !== null) return;                 // one is on its way already
+  let tries = 0;
+  const go = (): void => {
+    _markTimer = null;
+    if (_pullInFlight || _projectSwitchInFlight || _localSavesHeld || _autosaveInFlight) {
+      if (tries++ < 30) _markTimer = window.setTimeout(go, 500);
+      return;
+    }
+    trace('  what the server has is written to the device now (not waiting for a quiet two seconds)');
+    void saveLocalNow();
+  };
+  _markTimer = window.setTimeout(go, 800);
+}
 
 /**
  * Save to this device NOW, without waiting out the two-second pause (#269).
