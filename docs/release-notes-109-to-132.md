@@ -714,5 +714,8 @@ v5.0.225 · #777 (10 Nov, night)
 ## v5.0.327 · #879 (dev, run 820, 19 Nov 13:50 — look only; Roman: "works")
 - The prompt on an empty main card, second look (Roman, 19 Nov): lines a little further apart (1.5, was 1.3); PICTURE and CONTENT grey like the rest in a storyboard — white only in a fitting ("we keep that white in FITTINGS").
 
-## v5.0.328 · #880 (next)
+## v5.0.328 · #880 (dev, run 821, 19 Nov 13:59 — look only)
 - The prompt's key words in a storyboard are not bold any more (Roman's iPhone screenshot, 13:53: PICTURE looked white — the colour was the same grey, the bold strokes read brighter). A fitting keeps bold and white.
+
+## v5.0.329 · #881 (next)
+- The prompt in 3x2 on the phone: much smaller (6.5 px), each line on one line (Roman's iPhone screenshot, 14:13: at 10 px "by choosing an action below" broke in two and the longer text ran out of the card, under its edge).
