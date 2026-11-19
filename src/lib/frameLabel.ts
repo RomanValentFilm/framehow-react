@@ -66,3 +66,39 @@ export function nextFrameLabel(
   for (let guard = 0; taken.has(name.trim()) && guard < 1000; guard++) name = hashLabel(name);
   return name;
 }
+
+// ---------------------------------------------------------------------------
+// A PROJECT MADE FROM PICTURES: THE NAME OF A FILE THAT IS ONLY A CODE (19 Nov,
+// list item 13 — found in the simulator on 5 Nov).
+//
+// "Load Images from Folder" names each shot after its file: beach_01.jpg, 02,
+// 03… From the Photos picker on an iPhone or iPad there is no such name: every
+// picture arrives as a long random code ("9406091e-2a71-4759-80ad-76b1b6478787"),
+// the shots were labelled "9406091e 2a7", and they were put in order by the
+// first digits of that code — any order at all.
+//
+// A name that is only a code is no name. Such pictures are NUMBERED, in the
+// order they were picked: after the highest number the other files bring, or
+// 1, 2, 3 when all of them are codes. Files with real names keep them.
+// ---------------------------------------------------------------------------
+
+/** Is this file name (without its ending) only a random code? */
+export function nameIsOnlyACode(base: string): boolean {
+  const n = (base || '').trim();
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(n)) return true;   // a UUID
+  // …or a long run of hex digits and dashes with both letters and digits in it
+  return n.length >= 16 && /^[0-9a-f-]+$/i.test(n) && /[a-f]/i.test(n) && /\d/.test(n);
+}
+
+/** The labels for a project made from pictures: `labels[i]` is what file i would
+ *  be called by its name; where that name is only a code, a number takes its place. */
+export function labelsForPickedPictures(baseNames: readonly string[], labels: readonly string[]): string[] {
+  let highest = 0;
+  baseNames.forEach((n, i) => {
+    if (nameIsOnlyACode(n)) return;
+    const m = (labels[i] || '').match(/\d+/);
+    if (m && parseInt(m[0], 10) > highest) highest = parseInt(m[0], 10);
+  });
+  let next = highest;
+  return baseNames.map((n, i) => (nameIsOnlyACode(n) ? String(++next) : labels[i]));
+}

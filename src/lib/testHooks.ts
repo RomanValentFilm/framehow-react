@@ -117,7 +117,8 @@ export interface TestDoor {
   importPdfProject(name: string, base64: string): Promise<string | null>;
   /** A new project from `count` pictures made on the spot, through the app's
    *  own folder import. Returns the cloud id. */
-  importPicturesProject(name: string, count: number): Promise<string | null>;
+  /** (`names`: the file names the pictures arrive with — default shot_01.jpg, shot_02.jpg… — 19 Nov) */
+  importPicturesProject(name: string, count: number, names?: string[]): Promise<string | null>;
   /** THE WHOLE PROJECT, FLAT — everything a person could see, in the order the
    *  screen shows it, with no private numbers in it. Two devices holding the
    *  same project must return the same thing. */
@@ -797,7 +798,7 @@ export function installTestDoor(): void {
       return getCurrentProject().projectId;
     },
 
-    async importPicturesProject(name, count) {
+    async importPicturesProject(name, count, names) {
       await beginNewProject();
       const files: File[] = [];
       for (let i = 0; i < count; i++) {
@@ -806,7 +807,7 @@ export function installTestDoor(): void {
         ctx.fillStyle = `hsl(${(i * 67) % 360},60%,45%)`; ctx.fillRect(0, 0, 960, 540);
         ctx.fillStyle = '#fff'; ctx.font = 'bold 120px sans-serif'; ctx.fillText(`PIC ${i + 1}`, 200, 320);
         const blob = await new Promise<Blob>((r) => c.toBlob((b) => r(b!), 'image/jpeg', 0.9));
-        files.push(new File([blob], `shot_${String(i + 1).padStart(2, '0')}.jpg`, { type: 'image/jpeg' }));
+        files.push(new File([blob], names?.[i] ?? `shot_${String(i + 1).padStart(2, '0')}.jpg`, { type: 'image/jpeg' }));
       }
       // handleFolderImages reads the files off the input that fired the event,
       // so give it one — the same thing the picker hands it.

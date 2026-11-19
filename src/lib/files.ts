@@ -1,5 +1,6 @@
 // Folder-image loader and "start from scratch" — port of original handlers.
 
+import { labelsForPickedPictures, nameIsOnlyACode } from './frameLabel';
 import { applyDefaultNames } from './userDefaults';
 import { COLORS, state, useStore, resetStoryboardState } from '../store/state';
 import { resetProjectSyncGuards, clearPushedFingerprints } from './accountFlow';
@@ -36,20 +37,29 @@ export function handleFolderImages(e: Event): void {
       )
   );
   let commonWords = new Set<string>();
-  if (wordSets.length > 1) {
-    commonWords = new Set([...wordSets[0]].filter((w) => wordSets.every((ws) => ws.has(w))));
+  // (the words the NAMED files share — a file named by a code has no words of
+  // its own and must not stop "scene" being dropped from scene_03, scene_07; 19 Nov)
+  const namedSets = wordSets.filter((_, i) => !nameIsOnlyACode(baseNames[i]));
+  if (namedSets.length > 1) {
+    commonWords = new Set([...namedSets[0]].filter((w) => namedSets.every((ws) => ws.has(w))));
   }
 
-  const labels = baseNames.map((n) => {
+  const byName = baseNames.map((n) => {
     const parts = n.replace(/[_\-]/g, ' ').split(/\s+/);
     const kept = parts.filter((p) => !commonWords.has(p.toLowerCase()));
     const label = kept.join(' ').trim();
     return label || n;
   });
+  // A NAME THAT IS ONLY A CODE IS NO NAME (19 Nov — frameLabel.ts): pictures from
+  // the Photos picker are numbered in the order they were picked.
+  const labels = labelsForPickedPictures(baseNames, byName);
+  const coded = baseNames.filter(nameIsOnlyACode).length;
+  if (coded > 0) trace(`pictures: ${coded} of ${files.length} file name(s) are only a code (the Photos picker) — numbered in the order picked`);
 
   const withNum = files.map((f, i) => {
-    const m = f.name.match(/(\d+)/);
-    return { file: f, num: m ? parseInt(m[1], 10) : Infinity, name: f.name, label: labels[i] };
+    // (a code's own digits say nothing about its place: its number does)
+    const m = (nameIsOnlyACode(baseNames[i]) ? labels[i] : f.name).match(/(\d+)/);
+    return { file: f, num: m ? parseInt(m[1], 10) : Infinity, name: nameIsOnlyACode(baseNames[i]) ? labels[i] : f.name, label: labels[i] };
   });
   withNum.sort((a, b) => (a.num !== b.num ? a.num - b.num : a.name.localeCompare(b.name)));
 

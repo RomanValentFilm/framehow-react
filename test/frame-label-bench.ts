@@ -5,7 +5,7 @@
 // Every line of the rule in src/lib/frameLabel.ts, as a plain statement with
 // the answer next to it. One second, no browser.
 
-import { nextFrameLabel } from '../src/lib/frameLabel';
+import { nextFrameLabel, nameIsOnlyACode, labelsForPickedPictures } from '../src/lib/frameLabel';
 
 let failed = 0;
 function is(what: string, got: string, want: string): void {
@@ -48,6 +48,18 @@ is('…and again, 7#1 now taken',             nextFrameLabel(['7', '7#1', '7', '
 console.log('\nFITTING keeps its own rule');
 is('fitting, NEW anywhere',                 nextFrameLabel(['Name', 'Name'], 1, 'fitting'), 'Name');
 is('fitting, NEW in the middle',            nextFrameLabel(['Name', 'Name'], 0, 'fitting'), 'Name');
+
+console.log('\nA PROJECT FROM PICTURES: a file name that is only a code is no name (19 Nov)');
+is('a UUID from the Photos picker is a code',   String(nameIsOnlyACode('9406091e-2a71-4759-80ad-76b1b6478787')), 'true');
+is('a long hex run is a code',                  String(nameIsOnlyACode('3f2a91bc77de0041aa')), 'true');
+is('IMG_4021 is a name',                        String(nameIsOnlyACode('IMG_4021')), 'false');
+is('beach_01 is a name',                        String(nameIsOnlyACode('beach_01')), 'false');
+is('20261119-153000 (only digits) is a name',   String(nameIsOnlyACode('20261119-153000')), 'false');
+is('"deadbeef" (short) is a name',              String(nameIsOnlyACode('deadbeef')), 'false');
+const codes = ['9406091e-2a71-4759-80ad-76b1b6478787', '0a11c3d2-7b6e-4f00-9a1b-2c3d4e5f6a7b', 'fe01aa22-0000-4bbb-8ccc-123456789abc'];
+is('three pictures from Photos → 1 2 3, in the order picked', labelsForPickedPictures(codes, ['9406091e 2a71', '0a11c3d2 7b6e', 'fe01aa22 0000']).join(' '), '1 2 3');
+is('real names keep theirs',                    labelsForPickedPictures(['beach_01', 'beach_02'], ['01', '02']).join(' '), '01 02');
+is('mixed: codes go on after the highest number', labelsForPickedPictures(['shot_07', codes[0], 'shot_03', codes[1]], ['07', 'x', '03', 'y']).join(' '), '07 8 03 9');
 
 console.log(failed ? `\n${failed} FAILED` : '\nall green');
 process.exit(failed ? 1 : 0);
