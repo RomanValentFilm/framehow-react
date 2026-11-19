@@ -68,7 +68,7 @@ test('names of imported shots: named files keep their names, files named by a co
   await expect(box, 'THE QUESTION NEVER CAME').toBeVisible({ timeout: 10_000 });
   await expect(box).toContainText('PLEASE CHECK THE IMPORTED SHOT NAMES:');
   await expect(box).toContainText('These pictures carry names (IMG_8813 … IMG_8820).');
-  await expect(box).toContainText('CHANGE NUMBERS TO');
+  await expect(box).toContainText('CHANGE NUMBERS TO:');
   await expect(box).toContainText('Start numbering at:');
   await expect(box).toContainText('KEEP ORIGINAL NUMBERS');
   await expect(d.page.locator('#shotNamesStart')).toHaveValue('01');

@@ -1163,7 +1163,7 @@ export function askImportedShotNames(first: string, last: string): Promise<{ cha
     box.innerHTML =
       '<div style="font-weight:700;font-size:14px;margin-bottom:8px;">PLEASE CHECK THE IMPORTED SHOT NAMES:</div>'
       + '<div id="shotNamesSays" style="color:#aaa;font-size:13px;line-height:1.5;margin-bottom:18px;"></div>'
-      + `<label style="${row}"><input type="radio" name="shotNamesHow" id="shotNamesChange" checked style="width:18px;height:18px;accent-color:#d52632;"> CHANGE NUMBERS TO</label>`
+      + `<label style="${row}"><input type="radio" name="shotNamesHow" id="shotNamesChange" checked style="width:18px;height:18px;accent-color:#d52632;"> CHANGE NUMBERS TO:</label>`
       + '<div style="display:flex;align-items:center;gap:10px;margin:8px 0 16px 28px;font-size:13px;color:#ddd;">Start numbering at:'
       + ' <input type="text" id="shotNamesStart" value="01" inputmode="numeric" maxlength="5" autocomplete="off"'
       + ' style="width:70px;padding:6px 8px;background:#000;border:1px solid #555;border-radius:6px;color:#fff;font-size:14px;text-align:center;"></div>'
