@@ -90,7 +90,7 @@ import { frameChangedAt, versionChangedAt, frameChangedAtForSending, versionChan
 import { shouldSendOnlyChanges } from './pushMode';
 import { tagText, readTagText } from './ids';
 import { serverHasSomethingNew, whoseFrameWins, type DeviceMemory } from './sessionRules';
-import { mergeDelta, lastMergeRefusal, answerIsSafeToApply, untouchedByDelta, deltaAlreadyHeld, type MergeableTree, type SentRows } from './deltaMerge';
+import { mergeDelta, lastMergeRefusal, answerIsSafeToApply, untouchedByDelta, deltaAlreadyHeld, carrySent, type MergeableTree, type SentRows } from './deltaMerge';
 import { settingsForPush, adoptSettingsFromServer, applySettingsToStore, importSettingStamps, stampChangedSettings, seedSettings, forgetAnotherProjectsSettings, settingsNeedPush, reconcileRestoredSettings, captureMySettings, keepMyUnsentSettings, unsentSettingNames, settingsMemorySummary, seedSettingsAgeUnknown, type SettingItem } from './projectSettings';
 import { clearDeviceOnLogout, wipeDeviceOnAccountDeletion, applySnapshotToStore, loadSnapshot, savedProjectId, savedProjectLocalKey, snapshotFromStore, givePendingItsProject, listPending, getPendingLight, isArchived, getPending, markPendingUploaded, markPendingParked, saveProjectListCache, loadProjectListCache, deletePending, deleteEveryCopyOf, recoverPending, isDeletedCopy, requestDurableStorage, clearPending } from './persistence';
 import type { PendingRecord, PendingMeta } from './persistence';
@@ -4154,6 +4154,7 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
   // Good ground, but NOT proof of having heard — the frames in this reply are
   // not applied to the store, so the mark must not move (#320).
   if (cp.projectId && res.frames) {
+    const heldBefore = _heldTree as unknown as MergeableTree | null;   // the reply before this one (19 Nov, carrySent)
     holdTree(cp.projectId, res as CloudProjectTree, false);
     // ...and WHAT THIS PUSH CARRIED, by id (A1, 9 Nov): the only rows the pull
     // that follows may call "my own push coming back" — see deltaAlreadyHeld.
@@ -4195,7 +4196,7 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
     if (notAsSent.length > 0) trace(`  the server holds something else than sent for ${notAsSent.length} row(s) (${notAsSent.slice(0, 4).join(', ')}) — the next fetch is applied in full`);
     const refusedAnything = notAsSent.length > 0 || (res.rejected_frames?.length ?? 0) + (res.stale_frames?.length ?? 0)
       + (res.stale_versions?.length ?? 0) + (res.foreign_frames?.length ?? 0) + (res.foreign_versions?.length ?? 0) > 0;
-    _lastSent = refusedAnything ? null : {
+    const sentNow: SentRows = {
       frames: new Set(frames.map((f) => f.id)),
       versions: new Set(versions.map((v) => v.id)),
       images: new Set(images.map((i) => i.version_id)),
@@ -4205,6 +4206,14 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
       settings: new Map(settingsOut.map((x) => [`${x.kind}/${x.item_id}`, x.deleted_at ?? x.changed_at])),
       deletions: new Set(sentTombstones.map((t) => `${t.entity_type}/${t.entity_id}`)),
     };
+    // TWO PUSHES BEFORE ONE FETCH (19 Nov): what the push before sent stays
+    // "mine" where this reply still holds it exactly as the reply before did.
+    const carriedBefore = _lastSent ? _lastSent.frames.size : 0;
+    _lastSent = refusedAnything ? null : carrySent(_lastSent, heldBefore, res as unknown as MergeableTree, sentNow);
+    if (_lastSent && carriedBefore > 0) {
+      const kept = [..._lastSent.frames].filter((id) => !sentNow.frames.has(id)).length;
+      if (kept > 0) trace(`  ${kept} shot(s) of the push before are still mine as sent — a fetch bringing them back is not news`);
+    }
     if (refusedAnything) trace('  the server kept its own copy of something — the next fetch is applied in full');
   }
   // The reply carries the MERGED settings — ours where ours were newer, the

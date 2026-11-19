@@ -1,7 +1,7 @@
 # LAUNCH — THE ONE LIST (9 Nov 2026). Nothing else counts; TOMORROW.md is history + notes.
 
 ## THE TO-DO LIST (17 Nov 2026, Roman: "one to-do list that we go back to and go through always"). THIS BLOCK IS THE LIST; everything below it is history and detail. Tick with [x] and the date. New finds: does it lose work or stop the app? No → "After the App Store".
-STATE 19 Nov 11:58: LIVE v5.0.321 · #873 (run 813, after FULL RUN 812 = 184 green). DEV v5.0.322 · #874 (run 815: +SH / +TL on a card that shows a version — a try, to be seen by Roman; not in 3x2). Everything of 17–18 Nov is live: job 1 uploads, camera series + crash safety, SH/TL, tabs in sight, cross-swipe, 3x2 through a turn, MAX view job 3, one icon look, smaller arrows, deleted for good leaves every screen, SAVE AS NEW keeps every shot (server runs 801/804/807/809). Files at v5.0.323 · #875. OPEN: Roman's Xcode build for Cancel / DONE in the RATIO pill; decision on CAM on an empty main/talent card; owed test for the cross-swipe tab row; backend server-bench is broken since the 9 Nov key rule (after-Apple, tests only).
+STATE 19 Nov 12:13: LIVE v5.0.321 · #873 (run 813, after FULL RUN 812 = 184 green). DEV v5.0.323 · #875 (run 816: +SH / +TL on a card that shows a version, also 3x2 cross-swipe (not on the phone) — Roman: "works good"; on the last tab the + comes into sight — Roman 19 Nov: "love it, works"). Not live yet: goes with the next green full run. Everything of 17–18 Nov is live: job 1 uploads, camera series + crash safety, SH/TL, tabs in sight, cross-swipe, 3x2 through a turn, MAX view job 3, one icon look, smaller arrows, deleted for good leaves every screen, SAVE AS NEW keeps every shot (server runs 801/804/807/809). Files at v5.0.324 · #876. OPEN: decision on CAM on an empty main/talent card (to discuss again); NOW: JOB 4; owed test for the cross-swipe tab row; backend server-bench is broken since the 9 Nov key rule (after-Apple, tests only).
 
 JOB 1 — UPLOADS (17 Nov)
 - [x] (17 Nov, dev v5.0.302 run 779 + server run 780, test 74) 1. Uploaded pictures belong to their project → Delete now takes them too (the "125 pictures")
@@ -11,7 +11,8 @@ JOB 1 — UPLOADS (17 Nov)
 
 JOB 2 — CAMERA SERIES AS THE ONLY CAMERA (agreed 13 Nov, point 5 of that list — the words are below)
 - [x] (17 Nov: 2–3 working days) 5. Read the landing code, say honestly how long
-- [ ] 6. Build: camera stays open · box bottom left with the shots (names V7, V8… can come later) · lens button top right · EV button gone · Cancel becomes DONE · all shots land as versions, ONE save. Xcode rounds with Roman
+- [x] (19 Nov: live v5.0.321; Xcode build with Cancel / DONE in the RATIO pill on iPhone and iPad — Roman: "yes"; iPad series seen 11:21, log clean. ONE THING LEFT, not a build: the decision on CAM on an EMPTY main/talent card — see the line below) 6. Build: camera stays open · box bottom left with the shots (names V7, V8… can come later) · lens button top right · EV button gone · Cancel becomes DONE · all shots land as versions, ONE save. Xcode rounds with Roman
+  - CAM ON AN EMPTY MAIN/TALENT CARD — ROMAN 19 Nov, NOT DECIDED ("let's discuss again"): he gravitates to: when the main shot is empty and the first photos are shot in a version strip, the user should KNOW his pictures are there — either told ("you created your content into ANGLES") or the main card shows the first photo taken from any version (but then a drawing too? "too much"). Landing on the last photo taken already gives orientation; open: only one photo taken; how costume designers know where they are (TALENTS or LOOKS). Also 19 Nov: upright device with a lying ratio gives an upright photo — "it's ok", stays.
   - WHERE IT STANDS, 17 Nov 14:50 (Roman had to go: "I'm happy with what we did so far. Today is good."): ON HIS IPHONE (Xcode round 4 + dev v5.0.305): the series, fast shots, box → MAX view at once, the box in the photo's shape. IN THE FILES, NOT YET BUILT (Swift rounds 5–6; uncommitted until the next deploy): photo corners square / bottom straight, four places for the names in both layouts. NEXT: (a) his Xcode build of that; (b) crash safety — each photo to LOCAL APP STORAGE while the camera is open; (c) decide CAM on an EMPTY main/talent card: leave / one shot only (Claude's lean for fittings) / the pointer idea B (lean for landscape); (d) iPad build; (e) a full run before any of the series goes live (live is v5.0.301, without the series and without job 1's app side).
   - 18 Nov 16:45, WHERE IT STANDS: job 2 (camera series) and job 3 (MAX view) are on dev v5.0.312 and seen by Roman ("all other things checked and all is good"). In the Swift files, waiting for an Xcode build: Cancel / DONE in the RATIO pill. Camera buttons otherwise stay as they are (Roman). STILL OPEN OF JOB 2: the decision on CAM from an EMPTY main/talent card. DUE: a full run tonight (sync changes on dev: fresh photo vs fetch, uploads) — then live is Roman's call. NEXT IN THE LIST: job 4 (rest of the save path), job 5 (small things), job 6 (Apple).
   - 18 Nov 15:30: FOUND BY RUN 793 — a photo that lands in the half second before a fetch is applied was given to the server's copy (age unknown loses). Cured in the files v5.0.311 (the fetch dates fresh work 'now' before judging). A sync change: full run before live.
@@ -34,13 +35,13 @@ JOB 2 — CAMERA SERIES AS THE ONLY CAMERA (agreed 13 Nov, point 5 of that list 
   - OPEN QUESTION, ROMAN 17 Nov — M AND V1: today the first shot on an empty main card becomes the main picture and the rest v1, v2, v3. He wonders whether a series of 4 should rather be four VERSIONS, and how the main card would then show that it is "the same as v1" without the user wondering why a picture is there twice (his idea for fittings: the main card zoomed in and moved up, a portrait of the talent — not for landscape projects). To discuss; nothing built. · 17 Nov later: the fitting decides it — it opens on LOOKS, the costume designer shoots, and the first photo is on the main card, not in the looks, and missing from a looks export. Direction B (all shots are versions; the main card POINTS at one of them, one file) "is going towards the right direction, but we are not there yet": how to SHOW the link — nothing written into the picture. Claude's ideas, all in the card's top bar (never exported): a mark on the version's tab (v1•), the main card's bar reading "3 · v1", or one outline colour on both. To be continued.
 
 JOB 3 — MAX VIEW
-- [ ] (on dev v5.0.311, run 794 — to be seen by Roman) 7. Three stars in the MAX view (re-sort only when it is closed)
-- [ ] (on dev v5.0.311, run 794 — to be seen by Roman) 8. Coming back up to a shot, land on the version one was on
-- [ ] (on dev v5.0.311, run 794 — to be seen by Roman) 8b. (Roman, 18 Nov) The version's name in the MAX view stands TOP LEFT, not bottom left — to do together with 7 and 8, not before
+- [x] (18 Nov, Roman: "all other things checked and all is good"; live v5.0.321) 7. Three stars in the MAX view (re-sort only when it is closed)
+- [x] (18 Nov, Roman: "all other things checked and all is good"; live v5.0.321) 8. Coming back up to a shot, land on the version one was on
+- [x] (18 Nov, Roman: "all other things checked and all is good"; live v5.0.321) 8b. (Roman, 18 Nov) The version's name in the MAX view stands TOP LEFT, not bottom left — to do together with 7 and 8, not before
 
 JOB 4 — WHAT IS LEFT OF THE SAVE PATH (measure again after the series)
 - [ ] 9. Start fetch after an unsaved mark
-- [ ] 10. Own work comes back and redraws
+- [ ] (19 Nov: cause found in Roman's iPad log — two pushes before one fetch, only the last push was remembered; cure + bench 1c + test 79 in the files v5.0.324, to deploy and to see in his log) 10. Own work comes back and redraws
 - [ ] 11. "scroll: centre" logged once, not many times
 
 JOB 5 — SMALL THINGS BEFORE SUBMISSION
@@ -51,7 +52,7 @@ JOB 5 — SMALL THINGS BEFORE SUBMISSION
 - [ ] 16. Roman: regenerate the GitHub token; a reply-to on the welcome mail that someone reads
 
 JOB 6 — THE PATH TO APPLE
-- [ ] 17. Full run, live
+- [ ] (done once: full run 812 green → live v5.0.321, 19 Nov; to be done again before submission) 17. Full run, live
 - [ ] 18. TestFlight build 2 on the iPhone, then the iPad (rotation, Pencil, keyboard, camera)
 - [ ] 19. A fresh start with no connection opens the project with its pictures — proven in the app
 - [ ] 20. The app points at framehow.com/app instead of dev, one more build

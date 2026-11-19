@@ -206,6 +206,51 @@ export interface SentRows {
 }
 
 /**
+ * TWO PUSHES BEFORE ONE FETCH (19 Nov, job 4 item 10 — Roman's iPad, 11:21:44–48).
+ *
+ * The memory of "what I sent" was the LAST push only. After a camera series a
+ * second push follows the first within a second (the real photos arrive):
+ *
+ *   11:21:44  push 1 sends shots e2a5d6 and 561404
+ *   11:21:45  push 2 sends shot 561404 only
+ *   11:21:48  the fetch brings back both — e2a5d6 is "not what I sent" (push 2
+ *             did not carry it) → "pull: remote is newer (Tablet)", the whole
+ *             storyboard rebuilt and redrawn over the device's own work.
+ *
+ * So what was sent is carried over from push to push until a fetch is really
+ * applied. Carried over ONLY where it is still provably mine: a row an earlier
+ * push sent, and this push did not, stays "sent" only if this push's reply holds
+ * it EXACTLY as the reply before did. Anything else — another device wrote it in
+ * between — is dropped from the memory, and the fetch applies it the ordinary
+ * way. A row this push sent itself is judged as before (the caller has already
+ * checked that it came back as sent).
+ */
+export function carrySent(
+  before: SentRows | null, heldBefore: MergeableTree | null, reply: MergeableTree, now: SentRows,
+): SentRows {
+  if (!before || !heldBefore) return now;
+  const same = (a: unknown, b: unknown): boolean => a !== undefined && JSON.stringify(a) === JSON.stringify(b);
+  const out: SentRows = {
+    frames: new Set(now.frames), versions: new Set(now.versions), images: new Set(now.images),
+    drawings: new Set(now.drawings), settings: new Map(now.settings), deletions: new Set(now.deletions),
+  };
+  const was = { f: byId(heldBefore.frames), v: byId(heldBefore.versions),
+    i: new Map(heldBefore.images.map((x) => [x.version_id, x])), d: new Map(heldBefore.drawings.map((x) => [x.version_id, x])),
+    s: new Map((heldBefore.settings ?? []).map((x) => [`${x.kind}/${x.item_id}`, x])) };
+  const is = { f: byId(reply.frames), v: byId(reply.versions),
+    i: new Map(reply.images.map((x) => [x.version_id, x])), d: new Map(reply.drawings.map((x) => [x.version_id, x])),
+    s: new Map((reply.settings ?? []).map((x) => [`${x.kind}/${x.item_id}`, x])) };
+  for (const id of before.frames) if (!out.frames.has(id) && same(was.f.get(id), is.f.get(id))) out.frames.add(id);
+  for (const id of before.versions) if (!out.versions.has(id) && same(was.v.get(id), is.v.get(id))) out.versions.add(id);
+  for (const id of before.images) if (!out.images.has(id) && same(was.i.get(id), is.i.get(id))) out.images.add(id);
+  for (const id of before.drawings) if (!out.drawings.has(id) && same(was.d.get(id), is.d.get(id))) out.drawings.add(id);
+  for (const [k, at] of before.settings) if (!out.settings.has(k) && same(was.s.get(k), is.s.get(k))) out.settings.set(k, at);
+  // A deletion I sent is mine for good: the same fact, whoever repeats it.
+  for (const k of before.deletions) out.deletions.add(k);
+  return out;
+}
+
+/**
  * IS THIS ANSWER MY OWN PUSH COMING BACK? (#320 → audit 9 Nov, A1)
  *
  * A push's reply is the whole project as the server then holds it, and it is

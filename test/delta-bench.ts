@@ -9,7 +9,7 @@
 
 import {
   mergeDelta, lastMergeRefusal, answerIsSafeToApply,
-  untouchedByDelta, deltaAlreadyHeld, type MergeableTree, type SentRows,
+  untouchedByDelta, deltaAlreadyHeld, carrySent, type MergeableTree, type SentRows,
 } from '../src/lib/deltaMerge';
 import { nextRetryWait, timeToTryAgain, makeRetryClock } from '../src/lib/retryWait';
 import {
@@ -150,6 +150,46 @@ const ids = (rows: Array<{ id: string }>) => rows.map((r) => r.id).sort().join('
   const mySetting = emptyDelta({ project: { ...(held.project as object) }, settings: [{ kind: 'sortOrder', item_id: 'day1', changed_at: 4192, deleted_at: null } as never] });
   check('a setting I sent and the server holds MY change time → nothing new', deltaAlreadyHeld(heldWithMine, mySetting, sent), true);
   check('a FULL answer is never "already held"', deltaAlreadyHeld(held, { ...same, full: true }, sent), false);
+}
+
+// ---------------------------------------------------------------------------
+// 1c. Two pushes before one fetch (19 Nov, Roman's iPad 11:21:44–48, job 4 item 10)
+// ---------------------------------------------------------------------------
+{
+  const noSent = (frames: string[]): SentRows => ({ frames: new Set(frames), versions: new Set(), images: new Set(), drawings: new Set(), settings: new Map(), deletions: new Set() });
+  // Push 1 sent f3 and f5; its reply:
+  const reply1 = project(45);
+  const f3 = frame('f3', 5000, { text_content: 'series, shot one' });
+  const f5 = frame('f5', 5000, { text_content: 'live frame' });
+  reply1.frames = reply1.frames.map((f) => ((f as { id: string }).id === 'f3' ? f3 : (f as { id: string }).id === 'f5' ? f5 : f));
+  reply1.project = { id: 'p', name: 'Bench', updated_at: 5000, last_device_id: 'me' };
+  const sent1 = noSent(['f3', 'f5']);
+  // Push 2, a second later, sends f5 only (its real photo arrived); its reply:
+  const f5b = frame('f5', 5100, { text_content: 'real photo' });
+  const reply2 = { ...reply1, frames: reply1.frames.map((f) => ((f as { id: string }).id === 'f5' ? f5b : f)), project: { id: 'p', name: 'Bench', updated_at: 5100, last_device_id: 'me' } } as MergeableTree;
+  const sent2 = noSent(['f5']);
+  // The fetch that follows asks "since I last heard" and brings back both.
+  const back = emptyDelta({ project: { ...(reply2.project as object) }, frames: [{ ...(f3 as object) } as never, { ...(f5b as object) } as never] });
+  check('THE FAULT: with the memory of the last push only, my own two pushes look like news', deltaAlreadyHeld(reply2, back, sent2), false);
+  const carried = carrySent(sent1, reply1, reply2, sent2);
+  check('carried over: f3 of the push before is still mine', carried.frames.has('f3'), true);
+  check('...and with it the fetch is my own work coming back → nothing new', deltaAlreadyHeld(reply2, back, carried), true);
+
+  // The other device wrote f3 between my two pushes: reply 2 holds ITS f3.
+  const f3theirs = frame('f3', 5050, { text_content: 'the iPad wrote' });
+  const reply2b = { ...reply2, frames: reply2.frames.map((f) => ((f as { id: string }).id === 'f3' ? f3theirs : f)) } as MergeableTree;
+  const carriedB = carrySent(sent1, reply1, reply2b, sent2);
+  check('another device wrote f3 in between → f3 is NOT carried over', carriedB.frames.has('f3'), false);
+  const backB = emptyDelta({ project: { ...(reply2b.project as object) }, frames: [{ ...(f3theirs as object) } as never, { ...(f5b as object) } as never] });
+  check('...so the fetch that brings their f3 is news, and is applied', deltaAlreadyHeld(reply2b, backB, carriedB), false);
+
+  check('no push before → just this push', [...carrySent(null, null, reply2, sent2).frames].join(','), 'f5');
+  check('a row of the push before that the reply no longer holds at all → not carried', carrySent(noSent(['gone']), reply1, reply2, sent2).frames.has('gone'), false);
+  // A setting carried over keeps MY change time; one the server now holds differently is dropped.
+  const withSet = (at: number): MergeableTree => ({ ...reply1, settings: [{ kind: 'sortOrder', item_id: 'day1', changed_at: at } as never] });
+  const sentSet: SentRows = { ...noSent([]), settings: new Map([['sortOrder/day1', 4192]]) };
+  check('a setting of the push before, unchanged in this reply → carried with my time', carrySent(sentSet, withSet(4192), withSet(4192), sent2).settings.get('sortOrder/day1'), 4192);
+  check('a setting the other device changed in between → not carried', carrySent(sentSet, withSet(4192), withSet(5000), sent2).settings.has('sortOrder/day1'), false);
 }
 
 // ---------------------------------------------------------------------------
