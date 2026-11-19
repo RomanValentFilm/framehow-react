@@ -433,11 +433,11 @@ function restoreWrapSizing(div: HTMLElement, saved: [string, string, string] | n
 // the + in the tab row), so it carries the shot's own name from the camera box
 // — +SH, in a fitting +TL — and a thin line after it, as between REFS | NEEDS.
 // It does exactly what New does: a new shot after this one.
-function newShotButtonHTML(fid: number): string {
+export function newShotButtonHTML(fid: number): string {
   const label = state().projectType === 'fitting' ? '+TL' : '+SH';
   return `<button class="act-btn act-new-shot" data-newshot="${fid}">${label}</button><span class="act-sep"></span>`;
 }
-function wireNewShotButton(div: HTMLElement, fid: number): void {
+export function wireNewShotButton(div: HTMLElement, fid: number): void {
   div.querySelectorAll('[data-newshot]').forEach((b) =>
     b.addEventListener('click', () => {
       const mainDiv = document.querySelector(`#mainScroll .frame-card[data-mfid="${fid}"]`) as HTMLElement | null;

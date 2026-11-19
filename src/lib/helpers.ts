@@ -1042,6 +1042,22 @@ export function revealActiveVersionTab(root: ParentNode = document, again = true
     const overRight = tabRect.right - (rowRect.right - pad);
     if (overLeft > 0) row.scrollLeft -= overLeft;
     else if (overRight > 0) row.scrollLeft += overRight;
+
+    // ON THE LAST TAB, THE "+" COMES INTO SIGHT TOO (19 Nov, Roman: "the tabs
+    // could slide even more, so the + is visible as well … but if there is only
+    // space for one tab, e.g. v12, then the tab has to be visible"). Only when
+    // the active tab is the last one, and only if the tab AND the + both fit:
+    // the tab always wins.
+    const tabsAll = row.querySelectorAll<HTMLElement>('.vtab');
+    const plus = row.querySelector<HTMLElement>('.vtab-add');
+    if (plus && tabsAll.length > 0 && tabsAll[tabsAll.length - 1] === active) {
+      const r = row.getBoundingClientRect();
+      const t = active.getBoundingClientRect();
+      const p = plus.getBoundingClientRect();
+      const need = p.right - (r.right - pad);            // how far the + is out of sight
+      const room = t.left - (r.left + pad);              // how far the tab may move left
+      if (need > 0 && need <= room) row.scrollLeft += need;
+    }
   });
   if (notYet && again) {
     requestAnimationFrame(() => revealActiveVersionTab(root, false));

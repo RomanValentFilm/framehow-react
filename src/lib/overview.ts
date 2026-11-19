@@ -24,7 +24,7 @@ import {
   ensureStripVersions,
   clearReorder, canvasHintFor, talentHintHTML, isNewlyAddedFrame, revealActiveVersionTab } from './helpers';
 import { restoreCanvas, restoreMainCanvas, setupMainDrawing } from './drawing';
-import { renderVersionFrame } from './render';
+import { renderVersionFrame, newShotButtonHTML, wireNewShotButton } from './render';
 import { showLabelEdit, showVerLabelEdit, showDeleteChoice, showConfirm } from './modals';
 import { renameFrame, unhideFrame } from './actions';
 import { getVisibleFrames, removeFrameFromGroup } from './groups';
@@ -854,6 +854,7 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
       }${starHTML(fid, ai, companionStrip)}${stripTagHTML(fid, ai, companionStrip)}</div></div>
       ${s.drawActive[fid] === companionStrip ? `<div class="color-row">${colorDots}</div>` : ''}
       <div class="version-actions">
+        ${newShotButtonHTML(fid)}
         <button class="act-btn" data-action="upload" data-fid="${fid}">Load</button>
         <button class="act-btn${s.drawActive[fid] === companionStrip ? ' active' : ''}" data-action="draw" data-fid="${fid}">DRAW</button>
         <button class="act-btn" data-action="camera" data-fid="${fid}">◎ CAM</button>
@@ -912,6 +913,9 @@ export function renderGrid3x2Card(wrap: HTMLElement, fid: number): void {
       renderGrid3x2Card(wrap, fid);
     });
     // Wire action buttons (same pattern as grid4 version cards)
+    // +SH / +TL on a 3x2 card cross-swiped to a version (19 Nov) — not on the
+    // phone, where the 3x2 row has no New either (globals.css, the 430 px rule).
+    wireNewShotButton(wrap, fid);
     wrap.querySelectorAll('.act-btn[data-action]').forEach((b) =>
       b.addEventListener('click', () => {
         setStripActiveTab(fid, companionStrip, ai);
