@@ -1991,5 +1991,8 @@ body.portrait-mode #maxView .max-close:hover,body.portrait-mode #maxView .max-sh
 
 /* The prompt on an empty main card looks the same in every kind of project
    (19 Nov) — the look the fitting had: centred lines, the key word bold. */
-.canvas-hint.main-hint b{font-weight:700;color:inherit;letter-spacing:.04em;}
-.canvas-hint.main-hint span{font-size:13px;text-align:center;line-height:1.7;padding:0 8px;max-width:100%;}
+/* Smaller and tighter, the key words white (Roman, 19 Nov: "the text is too big and
+   the spaces between the lines on iphone are huge … PICTURE and CONTENT white").
+   `body` in front so it also wins over the fitting's own, larger prompt rule. */
+body .canvas-hint.main-hint b{font-weight:700;color:rgba(255,255,255,.9);letter-spacing:.04em;}
+body .canvas-hint.main-hint span{font-size:10px;text-align:center;line-height:1.3;padding:0 8px;max-width:100%;}

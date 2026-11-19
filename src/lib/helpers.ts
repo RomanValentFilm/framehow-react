@@ -956,7 +956,7 @@ export function talentHintHTML(f: Frame): string {
   const what = fitting ? 'TALENT PROFILE PICTURE' : 'PICTURE';
   const elsewhere = DEFAULT_STRIP_DEFS.some((d) =>
     getStripVersions(f.id, d.id as StripType).some((v) => !v.hidden && (v.bgImage || (v.strokes && v.strokes.length > 0))));
-  const more = elsewhere ? '<br><br>or see your other<br>CONTENT<br>by pressing buttons above' : '';
+  const more = elsewhere ? '<br><br>or see your other<br><b>CONTENT</b><br>by pressing buttons above' : '';
   return `<div class="canvas-hint main-hint"><span>add a<br><b>${what}</b><br>by choosing an action below${more}</span></div>`;
 }
 
