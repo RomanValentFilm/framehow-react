@@ -337,6 +337,20 @@ test('the switch: an app told to stop sends nothing more and shows its own box, 
   await expect(desktop.page.locator('#updateCard'), 'the update cards are not part of this').toHaveCount(0);
   expect((JSON.parse(await desktop.whole()) as { shots: Array<{ text: string }> }).shots[1].text, 'the work is on the device').toBe('written after the switch');
 
+  say('our own words for the day: the file carries a message — the box says that, as plain text');
+  await desktop.page.unroute('**/app/update-rules.json?v=*');
+  await desktop.page.route('**/app/update-rules.json?v=*', (r) => r.fulfill({ status: 200, contentType: 'application/json',
+    body: JSON.stringify({ stop_and_update_below: 'v99.0.0', message: 'Please update now. <b>Sorry</b> for the trouble.' }) }));
+  await desktop.reload();                 // (a fresh page: the box of a moment ago is gone, the switch is read anew)
+  for (const sel of ['#projectListClose', '#accountCancel']) {
+    const b = desktop.page.locator(sel);
+    if (await b.isVisible().catch(() => false)) await b.click();
+  }
+  await readTheSwitch();
+  await expect(box, 'the box, with the message').toBeVisible({ timeout: 40_000 });
+  await expect(desktop.page.locator('#safetySwitchText')).toHaveText('Please update now. <b>Sorry</b> for the trouble.');
+  await expect(box.locator('b'), 'the message is text, never page code').toHaveCount(0);
+
   say('the line goes while the box is up: UPDATE NOW restarts nothing and says so');
   const born = await desktop.page.evaluate(() => (window as never as { __same_page?: number }).__same_page ??= Date.now());
   await desktop.page.unroute('**/app/index.html?v=*');

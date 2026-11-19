@@ -13,6 +13,7 @@
 //
 //     "stop_and_update_below": null          ← off, the normal state
 //     "stop_and_update_below": "v5.0.400"    ← ON for every app older than that
+//     "message": "…"                         ← optional: our own words for the box
 //
 // WHAT AN APP DOES WHEN THE SWITCH IS ON FOR IT — and only when a newer version
 // really is out (a switch set by mistake above the newest version must lock
@@ -55,6 +56,11 @@ function older(a: string, b: string): boolean {
 
 /** The version below which an app must stop — as last read; null = off. */
 let below: string | null = null;
+/** OUR OWN WORDS FOR THE DAY IT IS USED (Roman, 19 Nov: "could we eventually change
+ *  that text should we want to when using the switch?"). The file may carry a
+ *  "message"; the box then says that instead of the two agreed sentences. Plain
+ *  words only — shown as text, never as page code — and 300 letters at most. */
+let message: string | null = null;
 /** A newer version of the app is really out (asked by this file itself). */
 let newerIsOut = false;
 let askedAt = 0;
@@ -95,6 +101,8 @@ async function ask(): Promise<void> {
     try { localStorage.setItem(DAY_KEY, today()); } catch { /* asked again sooner, no harm */ }
     if (said !== below) trace(`the switch: ${said ? `versions older than ${said} must stop sending and update — this is ${APP_VERSION}` : 'off'}`);
     below = said;
+    const r2 = r as { message?: unknown };
+    message = typeof r2.message === 'string' && r2.message.trim() ? r2.message.trim().slice(0, 300) : null;
     if (!below || !older(APP_VERSION, below)) { newerIsOut = false; return; }
     // It is about this version. Is there really a newer one to go to?
     const mine = runningBuild();
@@ -115,11 +123,12 @@ function showBox(): void {
   box.style.cssText = 'position:fixed;inset:0;z-index:999990;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;padding:20px;'
     + 'font-family:-apple-system,BlinkMacSystemFont,sans-serif;';
   box.innerHTML = '<div style="background:#1a1a1a;border-radius:12px;padding:24px;max-width:380px;width:100%;color:#fff;text-align:center;">'
-    + '<div style="font-size:14px;line-height:1.5;margin-bottom:18px;">This version is no longer supported.<br>Please update Framehow to continue.</div>'
+    + '<div id="safetySwitchText" style="font-size:14px;line-height:1.5;margin-bottom:18px;white-space:pre-line;">This version is no longer supported.<br>Please update Framehow to continue.</div>'
     + '<button class="btn" type="button" id="safetySwitchNow">UPDATE NOW</button>'
     + '<div id="safetySwitchSays" style="font-size:12px;line-height:1.5;color:#aaa;margin-top:12px;min-height:18px;"></div></div>';
+  if (message) (box.querySelector('#safetySwitchText') as HTMLElement).textContent = message;   // as text, never as page code
   document.body.appendChild(box);
-  trace('the switch: the box is up — UPDATE NOW is the only button');
+  trace(`the switch: the box is up — UPDATE NOW is the only button${message ? ' · with the message from the file' : ''}`);
   const gone = () => { window.removeEventListener('offline', lineGone); box.remove(); boxUp = false; };
   // NO LINE, NOTHING BLOCKS: the box goes if the line goes, and comes back with it.
   const lineGone = () => { trace('the switch: the line went — the box goes too'); gone(); };

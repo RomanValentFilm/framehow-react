@@ -1,4 +1,5 @@
 {
-  "_what": "THE SWITCH (19 Nov 2026). Normally null = off. To use it: put an app version here, e.g. \"v5.0.400\", and deploy. Every app OLDER than that version then stops sending to the server (the work stays on the device) and shows 'This version is no longer supported. Please update Framehow to continue.' at its next safe moment. Each app asks once a day, the first time it comes to the front with a connection. Only for an old version that does harm. Never flip it on the day of a release.",
-  "stop_and_update_below": null
+  "_what": "THE SWITCH (19 Nov 2026). Normally null = off. To use it: put an app version in stop_and_update_below, e.g. \"v5.0.400\", and deploy. Every app OLDER than that version then stops sending to the server (the work stays on the device) and shows a box with UPDATE NOW at its next safe moment. The box says 'This version is no longer supported. Please update Framehow to continue.' — or, if message is filled in, those words instead (plain text, 300 letters at most). Each app asks once a day, the first time it comes to the front with a connection. Only for an old version that does harm. Never flip it on the day of a release.",
+  "stop_and_update_below": null,
+  "message": null
 }
