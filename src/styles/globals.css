@@ -1988,3 +1988,8 @@ body.portrait-mode #maxView .max-close:hover,body.portrait-mode #maxView .max-sh
 /* +SH / +TL on a card that shows a version (19 Nov): the thin line after it, as
    between REFS | NEEDS in the view bar. */
 .version-actions .act-sep{width:1px;height:16px;background:var(--border);margin:0 2px;flex-shrink:0;align-self:center;}
+
+/* The prompt on an empty main card looks the same in every kind of project
+   (19 Nov) — the look the fitting had: centred lines, the key word bold. */
+.canvas-hint.main-hint b{font-weight:700;color:inherit;letter-spacing:.04em;}
+.canvas-hint.main-hint span{font-size:13px;text-align:center;line-height:1.7;padding:0 8px;max-width:100%;}

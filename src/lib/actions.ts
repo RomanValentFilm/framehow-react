@@ -1032,7 +1032,7 @@ setOnCapturedImage(applyCapturedImage);
  *  not by what is on screen, so a turn, a scroll or a strip change in between
  *  does not matter. Strokes drawn meanwhile live beside the picture and stay.
  *  Only now is the picture uploaded (the live frame never was). */
-export function applyFinalPhoto(landing: { fid: number; main: boolean; strip: StripType; version: Version | null }, dataURL: string): void {
+export function applyFinalPhoto(landing: { fid: number; main: boolean; strip: StripType; version: Version | null; mainCopy?: string }, dataURL: string): void {
   const s = state();
   const f = s.frames.find((fr) => fr.id === landing.fid);
   if (!f) { trace('camera: the shot of the live frame is gone — real photo dropped'); return; }
@@ -1044,6 +1044,14 @@ export function applyFinalPhoto(landing: { fid: number; main: boolean; strip: St
     landing.version.bgImage = dataURL;
     landing.version.r2Key = undefined;
     landing.version.awaitingPhoto = false;
+    // …and the copy on the main card gets the real photo too (19 Nov) — if it still
+    // is that copy: a picture put there since is not touched.
+    if (landing.mainCopy && f.src === landing.mainCopy) {
+      f.src = dataURL;
+      f.r2Key = undefined;
+      f.awaitingPhoto = false;
+      landing.mainCopy = dataURL;
+    }
   } else return;
   const fid = landing.fid;
   const md = document.querySelector(`#mainScroll .frame-card[data-mfid="${fid}"]`) as HTMLElement | null;
@@ -1079,22 +1087,31 @@ setOnFinalPhoto(applyFinalPhoto);
  *  version on screen, otherwise a new version — but nothing is drawn and nothing
  *  moves: the last shot of the series goes through applyCapturedImage and draws
  *  the cards, with these already in them. */
-export function landSeriesShotQuietly(dataURL: string, target: any): { fid: number; main: boolean; strip: StripType; version: Version | null } | null {
+export function landSeriesShotQuietly(dataURL: string, target: any): { fid: number; main: boolean; strip: StripType; version: Version | null; mainCopy?: string } | null {
   const s = state();
   const fid = target.fid as number;
   const strip: StripType = target.stripType || 'ver';
   const f = s.frames.find((fr) => fr.id === fid);
   if (!f) return null;
-  if (target.fromMain && isMainEmpty(f)) {
+  if (target.fromMain && isMainEmpty(f) && !target.mainGetsCopy) {
     f.src = dataURL;
     f.r2Key = undefined;
     f.drawMode = false;
     return { fid, main: true, strip, version: null };
   }
+  // (two or more from an empty main card, 19 Nov: this one is a version AND its
+  // picture is copied onto the main card — the same picture, one file on the server)
+  const copyToMain = !!target.mainGetsCopy && !!target.fromMain && isMainEmpty(f);
   const t = autoNewStripVersionIfNeeded(fid, strip);
   t.type = 'upload';
   t.bgImage = dataURL;
   t.r2Key = undefined;
+  if (copyToMain) {
+    f.src = dataURL;
+    f.r2Key = undefined;
+    f.drawMode = false;
+    return { fid, main: false, strip, version: t, mainCopy: dataURL };
+  }
   return { fid, main: false, strip, version: t };
 }
 setOnSeriesShot(landSeriesShotQuietly);
@@ -1135,7 +1152,9 @@ export async function recoverCameraSeries(atStart = true): Promise<void> {
     const strip = (note.strip || 'ver') as StripType;
     const has = (src: string): boolean => f.src === src || getStripVersions(f.id, strip).some((v) => v.bgImage === src);
     let put = 0, there = 0, missing = 0;
-    const target = { fid: f.id, stripType: strip, fromMain: note.fromMain };
+    // (the landing's own rule, 19 Nov: two or more from an empty main card are all
+    // versions, the first copied onto the main card)
+    const target = { fid: f.id, stripType: strip, fromMain: note.fromMain, mainGetsCopy: !!note.fromMain && isMainEmpty(f) && names.length >= 2 };
     for (const name of names) {
       const src = await getPicture(name);
       if (!src) { missing++; continue; }

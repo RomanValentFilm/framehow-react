@@ -3934,6 +3934,11 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
     // device under its own content name (the sent-ahead note, 13 Nov — until
     // today only for a project standing in), so the next try takes the file the
     // server already has and sends only what is still missing.
+    // THE SAME PICTURE ON TWO CARDS GOES UP ONCE (19 Nov: the first shot of a series
+    // from an empty main card is a version AND a copy on the main card). Both would
+    // start at the same moment, neither finding the other's note: two files of one
+    // picture. The second waits for the first and takes its file.
+    const goingUp = new Map<string, Promise<{ r2_key: string; size_bytes: number; content_type: string }>>();
     const uploadOne = async (task: typeof imageUploads[0]) => {
         if (full) return null;
         try {
@@ -3948,7 +3953,11 @@ async function syncCurrentToServer(projectId: string): Promise<void> {
             const ahead = await sentAheadFor(aheadName, cp.projectId);
             if (ahead) { usedAhead.push(aheadName); alreadyUp++; return { task, versionId: task.versionId, r2_key: ahead.r2_key, size_bytes: ahead.size_bytes, content_type: ahead.content_type }; }
           }
-          const r = await uploadImageToR2(task.src, token, cp.projectId);
+          const twin = aheadName ? goingUp.get(aheadName) : undefined;
+          if (twin) { const r2 = await twin; alreadyUp++; return { task, versionId: task.versionId, ...r2 }; }
+          const sending = uploadImageToR2(task.src, token, cp.projectId);
+          if (aheadName) { goingUp.set(aheadName, sending as never); sending.catch(() => undefined); }
+          const r = await sending;
           if (aheadName) { await noteSentAhead(aheadName, { ...r, project: cp.projectId ?? undefined }).catch(() => undefined); usedAhead.push(aheadName); }
           return { task, versionId: task.versionId, ...r };
         } catch (e) {

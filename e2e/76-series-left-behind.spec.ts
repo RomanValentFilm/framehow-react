@@ -96,3 +96,40 @@ test('series left behind: shots taken with the camera open land at the next star
 
   await d.close();
 });
+
+// TWO OR MORE FROM AN EMPTY MAIN CARD (19 November, agreed with Roman): "when more
+// than 1 photo in MAIN CARD they land in v1, v2… and the v1's photo is copied into
+// MAIN CARD as well". One photo lands on the main card alone. The same picture on
+// two cards is ONE file on the server. Played through the same door as above (the
+// native camera cannot be played here); the landing and this start share the rule.
+test('series left behind, from an empty main card: three shots are three versions and the first is also on the main card — one file for it; one shot is the main picture only', async ({ browser }) => {
+  const { token } = await freshAccount();
+  const d = await Device.open(browser, 'desktop', token);
+  const pid = await d.newProject('SERIES FROM MAIN', 2);
+  await d.settle();
+  const fromMain = (i: number, pics: string[]) => d.page.evaluate(([n, p]) =>
+    (window as never as { __fh_test: Door }).__fh_test.leaveASeriesBehind(n as number, 'ver', true, p as string[]), [i, pics] as [number, string[]]);
+  const shot = async (i: number) => (JSON.parse(await d.whole()) as { shots: Array<{ picture: boolean; versions: Record<string, Array<{ picture: boolean }>> }> }).shots[i];
+  const filesOnServer = async (): Promise<{ rows: number; files: number }> => {
+    const t = (await (await fetch(`${API}/projects/${pid}/sync`, { headers: { Authorization: `Bearer ${token}` } })).json()) as { images: Array<{ r2_key: string }> };
+    return { rows: t.images.length, files: new Set(t.images.map((i) => i.r2_key)).size };
+  };
+
+  say('shot 1: three shots from its empty main card · shot 2: one shot from its empty main card');
+  await fromMain(0, [noisePng(48, 32), noisePng(48, 32), noisePng(48, 32)]);
+  await fromMain(1, [noisePng(48, 32)]);
+  await d.page.waitForTimeout(800);
+  await d.reload();
+  await expect.poll(async () => ((await shot(0)).versions['ver'] ?? []).filter((v) => v.picture).length,
+    { timeout: 20_000, message: 'shot 1: three versions with a picture' }).toBe(3);
+  expect((await shot(0)).picture, 'shot 1: the main card has the first one too').toBe(true);
+  expect((await shot(1)).picture, 'shot 2: the one photo is the main picture').toBe(true);
+  expect(((await shot(1)).versions['ver'] ?? []).filter((v) => v.picture).length, 'shot 2: and no version got it').toBe(0);
+
+  say('saved and sent: five cards carry a picture, four files hold them (the copy is no second file)');
+  await d.push().catch(() => undefined);
+  await expect.poll(async () => (await filesOnServer()).rows, { timeout: 45_000, message: 'five picture rows on the server' }).toBe(5);
+  expect((await filesOnServer()).files, 'four files: the copy on the main card shares the first version\'s file').toBe(4);
+
+  await d.close();
+});

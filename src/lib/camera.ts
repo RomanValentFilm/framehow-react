@@ -79,7 +79,15 @@ function seriesNamesFor(fid: number, target: any, max: number): string[] {
     for (let i = 0; i < max; i++) {
       // NOT "M" (Roman, 18 Nov: "no one knows what it is"): the main card is the SHOT in
       // a storyboard and the TALENT in a fitting — SH and TL, in capitals.
-      if (mainFree) { out.push(state().projectType === 'fitting' ? 'TL' : 'SH'); mainFree = false; continue; }
+      // …AND IT IS A VERSION TOO (19 Nov): with two or more shots from an empty main
+      // card they all land as versions and the first is copied onto the main card. So
+      // the first one's name stays SH / TL — true for one shot and for many — and it
+      // takes a version's place in the count: SH v2 v3 v4.
+      if (mainFree) {
+        out.push(state().projectType === 'fitting' ? 'TL' : 'SH'); mainFree = false;
+        if (reuse) reuse = false; else n += 1;
+        continue;
+      }
       if (reuse) { out.push(cur.label || `${prefix}${ai + 1}`); reuse = false; continue; }
       n += 1; out.push(`${prefix}${n}`);
     }
@@ -210,6 +218,8 @@ async function takeNativePhoto(fid: number): Promise<boolean> {
   const awaitReal = (l: any) => {
     if (!l) return;
     if (l.main) { const f = state().frames.find((x: any) => x.id === fid); if (f) f.awaitingPhoto = true; } else if (l.version) l.version.awaitingPhoto = true;
+    // (the copy on the main card waits for the real photo too — its live frame must not go up as a picture, 19 Nov)
+    if (l.mainCopy) { const f = state().frames.find((x: any) => x.id === fid); if (f && f.src === l.mainCopy) f.awaitingPhoto = true; }
   };
   const openMaxOnTheLanded = (lastTry = true): boolean => {
     for (const sel of [
@@ -243,6 +253,19 @@ async function takeNativePhoto(fid: number): Promise<boolean> {
     // the camera's screen go — what comes out from under it is the MAX view.
     const straightToMax = reason === 'box';
     if (straightToMax) (target as any).noMove = true;
+    // TWO OR MORE FROM AN EMPTY MAIN CARD: ALL ARE VERSIONS, THE FIRST IS COPIED ONTO
+    // THE MAIN CARD (19 Nov, agreed with Roman: "when more than 1 photo in MAIN CARD
+    // they land in v1, v2… and the v1's photo is copied into MAIN CARD as well"). One
+    // photo lands on the main card alone, as before; a main card that has a picture is
+    // left alone, as before. Why: in a fitting the first photo was on the talent card
+    // only — missing from LOOKS and from a looks export.
+    {
+      const f0 = state().frames.find((x: any) => x.id === fid);
+      if (target.fromMain && f0 && isMainEmpty(f0) && taken.length >= 2) {
+        (target as any).mainGetsCopy = true;
+        trace(`camera: ${taken.length} shots from an empty main card — all land as versions, the first is copied onto the main card`);
+      }
+    }
     let waiting = 0;
     for (let i = 0; i < taken.length - 1; i++) {
       const sl = taken[i];

@@ -935,13 +935,29 @@ export function firstVerLabel(): string {
 }
 
 /**
- * Prompt shown on an empty TALENTS (main frame) canvas in fitting projects.
- * Returns '' for every other project type and for frames that have content.
+ * Prompt shown on an EMPTY main card — the SHOT of a storyboard, the TALENT of a
+ * fitting. Returns '' for a card that has content.
+ *
+ * 19 Nov, words agreed with Roman. A fitting had its three lines already; a
+ * storyboard's empty main card said nothing at all. And a second half, ONLY
+ * when the shot's other strips hold something — the question that started it:
+ * photos shot in a version strip leave the main card empty, "the user should
+ * know his picts are there". No strip names in it (they can be renamed).
+ *
+ *   add a                          or see your other
+ *   PICTURE                        CONTENT
+ *   by choosing an action below    by pressing buttons above
+ *
+ * (a fitting says TALENT PROFILE PICTURE)
  */
 export function talentHintHTML(f: Frame): string {
-  if (state().projectType !== 'fitting') return '';
   if (f.src || (f.strokes && f.strokes.length)) return '';
-  return '<div class="canvas-hint"><span>add a<br><b>TALENT PROFILE PICTURE</b><br>by choosing an action below</span></div>';
+  const fitting = state().projectType === 'fitting';
+  const what = fitting ? 'TALENT PROFILE PICTURE' : 'PICTURE';
+  const elsewhere = DEFAULT_STRIP_DEFS.some((d) =>
+    getStripVersions(f.id, d.id as StripType).some((v) => !v.hidden && (v.bgImage || (v.strokes && v.strokes.length > 0))));
+  const more = elsewhere ? '<br><br>or see your other<br>CONTENT<br>by pressing buttons above' : '';
+  return `<div class="canvas-hint main-hint"><span>add a<br><b>${what}</b><br>by choosing an action below${more}</span></div>`;
 }
 
 /**
