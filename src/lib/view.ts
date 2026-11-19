@@ -45,6 +45,21 @@ const _isIOS = isTouch
       || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
 const _isPWA = !!(window.navigator as any).standalone;   // "Added to Home Screen"
 
+/* The app's own shell (not Safari, not a home-screen page): no browser bars. */
+const _inTheApp = (): boolean => !!(window as any).Capacitor?.isNativePlatform?.();
+/* The height the home bar takes at the bottom, read off a probe (px). */
+let _safeBottomPx: number | null = null;
+function _safeBottom(): number {
+  if (_safeBottomPx !== null) return _safeBottomPx;
+  const p = document.createElement('div');
+  p.style.cssText = 'position:fixed;left:0;bottom:0;width:0;height:0;visibility:hidden;padding-bottom:env(safe-area-inset-bottom);';
+  document.body.appendChild(p);
+  _safeBottomPx = parseFloat(getComputedStyle(p).paddingBottom) || 0;
+  p.remove();
+  return _safeBottomPx;
+}
+let _fitSaid = 0;
+
 /* Lock innerHeight on first call for iOS Safari portrait projects.
    Prevents jumps when bars hide and a later scheduleSyncHeights re-runs. */
 let _lockedIH: number | null = null;
@@ -221,6 +236,25 @@ export function syncCardHeights(): void {
         // came out about 17 % lower, and the star column ran into the arrows.
         // Upright holding and the iPad keep the hand-tuned sums above.
         const sideways = isPhone && window.innerWidth > window.innerHeight;
+        // IN THE APP, UPRIGHT, THE WHOLE CARD FITS THE SCREEN (19 Nov, Roman's iPhone,
+        // a fitting: "now that we allowed for the glass look on the iphone, the space
+        // is shorter for the frame card … make the card fit the screen, so the card is
+        // not cut off at the bottom" — the second row of buttons was half out of sight).
+        // The sums above were tuned by hand for Safari, whose bars come and go. The app
+        // has no such bars, so it can be measured: from where the first card starts to
+        // the bottom of the screen, less what the card needs around its picture, less
+        // a little room above the home bar. Only ever SMALLER than the tuned height.
+        // (the iPad too — Roman: "same for ipad" — upright and lying; only the phone held
+        // sideways keeps its own rule, half the screen)
+        if (!sideways && _inTheApp()) {
+          const first = (card.parentElement?.querySelector('.frame-card') ?? card) as HTMLElement;
+          const firstTop = first.getBoundingClientRect().top + window.scrollY;
+          const room = Math.floor(window.innerHeight - firstTop - overhead - (_safeBottom() * 0.6 + 6));
+          if (room >= 200 && room < ph) {
+            if (_fitSaid !== room) { _fitSaid = room; trace(`card: fitted to the screen in the app — picture ${room} px high (was ${ph}); screen ${window.innerHeight}, card starts at ${Math.round(firstTop)}, around the picture ${Math.round(overhead)}, home bar ${Math.round(_safeBottom())}`); }
+            ph = room;
+          }
+        }
         wrap.style.setProperty('--ph', sideways ? '50vh' : ph + 'px');
         wrap.style.maxWidth = '';
         wrap.style.maxHeight = '';

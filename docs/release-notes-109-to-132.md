@@ -717,5 +717,8 @@ v5.0.225 · #777 (10 Nov, night)
 ## v5.0.328 · #880 (dev, run 821, 19 Nov 13:59 — look only)
 - The prompt's key words in a storyboard are not bold any more (Roman's iPhone screenshot, 13:53: PICTURE looked white — the colour was the same grey, the bold strokes read brighter). A fitting keeps bold and white.
 
-## v5.0.329 · #881 (next)
+## v5.0.329 · #881 (dev, run 822, 19 Nov 14:15 — look only)
 - The prompt in 3x2 on the phone: much smaller (6.5 px), each line on one line (Roman's iPhone screenshot, 14:13: at 10 px "by choosing an action below" broke in two and the longer text ran out of the card, under its edge).
+
+## v5.0.330 · #882 (next)
+- IN THE APP, AN UPRIGHT CARD FITS THE iPHONE'S SCREEN (Roman, 19 Nov 14:23, a fitting in LOOKS: the second row of buttons was half out of sight since the app draws under the clock). The picture's height was a hand-tuned sum made for Safari; in the app it is now measured — screen height, less where the first card starts, less what the card needs around the picture, less a little room above the home bar — and only ever made smaller. The app only, upright projects (fittings and 9:16 storyboards): the iPhone held upright, and the iPad either way (Roman: "same for ipad"). Safari and the phone held sideways are untouched. A log line says the numbers once. The shutter sound stays (Roman: "let's keep the sound").
