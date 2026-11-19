@@ -708,5 +708,8 @@ v5.0.225 · #777 (10 Nov, night)
 - CAM ON AN EMPTY MAIN / TALENT CARD — DECIDED AND BUILT (Roman, 19 Nov, in his words): "when shooting photos in versions, they land in versions (as we have) · when 1 photo in MAIN CARD it lands in main card · when more than 1 photo in MAIN CARD they land in v1, v2… and the v1's photo is copied into MAIN CARD as well". Also with versions already there (v1–v3 → the series is v4, v5…, the main card gets a copy of v4). A main card that has a picture is left alone, as before. A plain copy, not a link (drawing on one leaves the other). The same picture on two cards goes up ONCE (one file; the second upload waits for the first). The camera box says SH v2 v3 v4 (TL in a fitting): the first is on the main card AND takes the first version's place. The start that recovers a series follows the same rule. Test 76, second play. App only, no Xcode build.
 - THE PROMPT ON AN EMPTY MAIN CARD (words agreed 19 Nov): "add a / PICTURE / by choosing an action below" — new for storyboards (their empty main card said nothing); a fitting keeps TALENT PROFILE PICTURE. When the shot's other strips hold something, three more lines after an empty one: "or see your other / CONTENT / by pressing buttons above". No strip names in it.
 
-## v5.0.326 · #878 (next)
+## v5.0.326 · #878 (dev, run 819, 19 Nov — look only)
 - The prompt on an empty main card: smaller (10 px), lines closer (1.3), PICTURE / TALENT PROFILE PICTURE and CONTENT white (Roman, 19 Nov, after seeing v5.0.325: "too big, the spaces between the lines on iphone are huge … you forgot to make white"). Look only.
+
+## v5.0.327 · #879 (next)
+- The prompt on an empty main card, second look (Roman, 19 Nov): lines a little further apart (1.5, was 1.3); PICTURE and CONTENT grey like the rest in a storyboard — white only in a fitting ("we keep that white in FITTINGS").
