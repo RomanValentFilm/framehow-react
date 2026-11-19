@@ -2008,3 +2008,8 @@ body .canvas-hint.main-hint span{font-size:10px;text-align:center;line-height:1.
 @media (max-height:430px) and (orientation:landscape){
   body .grid3x2-card-wrap .canvas-hint.main-hint span{font-size:6.5px;line-height:1.35;white-space:nowrap;padding:0;-webkit-text-size-adjust:none;}
 }
+
+/* The plan line in the account boxes (19 Nov). */
+.account-plan{margin:2px 0 14px;}
+.account-plan-name{font-size:13px;font-weight:700;color:#fff;letter-spacing:.02em;}
+.account-plan-note{font-size:12px;color:#aaa;line-height:1.45;margin-top:3px;}

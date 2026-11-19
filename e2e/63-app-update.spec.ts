@@ -24,7 +24,7 @@ test.describe.configure({ timeout: 240_000 });
 const NEW_PAGE = '<!doctype html><html><head><link rel="stylesheet" href="/app/assets/index-NEWBUILD.css">'
   + '<script type="module" src="/app/assets/index-NEWBUILD.js"></script></head><body></body></html>';
 
-test('new version: the person is told, twice at most — NOT NOW changes nothing, RELOAD brings them back where they were', async ({ browser }) => {
+test('new version: the person is told — NOT NOW changes nothing; two days later a date, after it UPDATE NOW only; the update brings them back where they were', async ({ browser }) => {
   const { token } = await freshAccount();
   const desktop = await Device.open(browser, 'desktop', token);
   const pid = await desktop.newProject('UPDATE ME', 6);
@@ -84,23 +84,54 @@ test('new version: the person is told, twice at most — NOT NOW changes nothing
   await expect(card, 'SHOWN AGAIN THE SAME DAY').toHaveCount(0);
   expect(await stamp()).toBe(pageBorn);
 
-  say('a later day: shown once more — NOT NOW again; and then NEVER AGAIN for this version');
-  const asked = (days: string[]) => desktop.page.evaluate((d) =>
-    localStorage.setItem('fh_update_asked', JSON.stringify({ build: 'index-NEWBUILD.js', days: d })), days);
-  await asked(['1999-1-1']);
-  await ask();
-  await expect(card, 'NOT SHOWN THE SECOND TIME, a day later').toBeVisible({ timeout: 20_000 });
-  await desktop.page.locator('#updateCardLater').click();
-  await asked(['1999-1-1', '1999-1-2']);
+  // THE TIMELINE (19 Nov, agreed with Roman): day 0 the card above · day 2 the card
+  // with the date · day 14 "no longer supported", UPDATE NOW only. The count
+  // started when the first card was shown; the test moves it back by hand.
+  const countStarted = (daysAgo: number) => desktop.page.evaluate((d) => {
+    const c = JSON.parse(localStorage.getItem('fh_update_clock') ?? 'null') as { at: number; v: string } | null;
+    if (!c) throw new Error('the first card did not start the count');
+    localStorage.setItem('fh_update_clock', JSON.stringify({ ...c, at: Date.now() - d * 24 * 60 * 60 * 1000 }));
+    return c.v;
+  }, daysAgo);
+
+  say('ONE day later: nothing — the person is left in peace until the second day');
+  await countStarted(1);
   await ask();
   await desktop.page.waitForTimeout(7000);
-  await expect(card, 'A THIRD TIME for the same version').toHaveCount(0);
+  await expect(card, 'A CARD ON THE DAY AFTER').toHaveCount(0);
 
-  say('a NEWER version still is out: told again — RELOAD');
+  say('TWO days later: the card with the date — NOT NOW; and then nothing more until that date');
+  await countStarted(3);
+  await ask();
+  await expect(card, 'THE CARD WITH THE DATE NEVER CAME').toBeVisible({ timeout: 20_000 });
+  const ends = new Date(Date.now() + 11 * 24 * 60 * 60 * 1000);       // 14 days after a count started 3 days ago
+  const month = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][ends.getMonth()];
+  await expect(card.locator('b'), 'the date, in bold').toHaveText(`Update by ${ends.getDate()} ${month}`);
+  await expect(card).toContainText('This version will stop being supported after that date.');
+  await expect(desktop.page.locator('#updateCardLater')).toHaveText('NOT NOW');
+  await expect(desktop.page.locator('#updateCardNow')).toHaveText('UPDATE NOW');
+  await desktop.page.locator('#updateCardLater').click();
+  await ask();
+  await desktop.page.waitForTimeout(7000);
+  await expect(card, 'THE CARD WITH THE DATE A SECOND TIME').toHaveCount(0);
+  expect(await stamp()).toBe(pageBorn);
+
+  say('the date has passed: "no longer supported" — UPDATE NOW is the only button, the app behind cannot be touched');
+  await countStarted(15);
+  await ask();
+  await expect(card, 'THE LAST CARD NEVER CAME').toBeVisible({ timeout: 20_000 });
+  await expect(card).toContainText('This version is no longer supported.');
+  await expect(card).toContainText('Please update Framehow to continue.');
+  await expect(desktop.page.locator('#updateCardLater'), 'no NOT NOW on the last card').toHaveCount(0);
+  await expect(desktop.page.locator('#updateCardNow')).toHaveText('UPDATE NOW');
+  await expect(desktop.page.locator('#updateMustVeil'), 'the app behind is covered').toHaveCount(1);
+  expect(await stamp(), 'NOTHING HAPPENS UNTIL THE PERSON PRESSES').toBe(pageBorn);
+
+  say('a NEWER version still is out by now: UPDATE NOW takes the newest');
   await desktop.page.unroute('**/app/index.html?v=*');
   await desktop.page.route('**/app/index.html?v=*', (r) => r.fulfill({ status: 200, contentType: 'text/html', body: NEWER_PAGE }));
   await ask();
-  await expect(card, 'NOT TOLD ABOUT THE NEWER VERSION').toBeVisible({ timeout: 20_000 });
+  await expect(card, 'the last card stands').toBeVisible({ timeout: 20_000 });
   await desktop.page.locator('#updateCardNow').click();
   await expect(note, 'the box that says what is happening').toBeVisible({ timeout: 20_000 });
   await expect(note).toContainText('UPDATING FRAMEHOW');
@@ -245,5 +276,74 @@ test('new version, nobody signed in, the line drops: RELOAD restarts nothing and
   say('the app is back: the same three shots and the text, from the device');
   await expect.poll(async () => (JSON.parse(await desktop.whole()) as { shots: unknown[] }).shots.length, { timeout: 20_000 }).toBe(3);
   expect(await desktop.textOnCard(1, 'main', 0), 'THE UNSAVED WORK IS THERE AFTER THE UPDATE').toContain('NOT SIGNED IN');
+  await desktop.close();
+});
+
+// THE SWITCH — its own piece of safety code (safetySwitch.ts; Roman, 19 Nov: "if
+// shit hits the fan, we want to be able to help people right away" and "the
+// switch should just never be mistaken with the 3rd card"). update-rules.json,
+// next to the app: "versions older than X: stop sending to the server, and
+// update". An app it is about sends nothing more and shows ITS OWN box at the
+// first safe moment — no five minutes of use, no fourteen days, and not the
+// update cards' code.
+test('the switch: an app told to stop sends nothing more and shows its own box, UPDATE NOW only; with the switch off nothing happens', async ({ browser }) => {
+  const { token } = await freshAccount();
+  const desktop = await Device.open(browser, 'desktop', token);
+  await desktop.newProject('THE SWITCH', 3);
+  await desktop.settle();
+  for (const sel of ['#projectListClose', '#accountCancel']) {
+    const b = desktop.page.locator(sel);
+    if (await b.isVisible().catch(() => false)) await b.click();
+  }
+  const readTheSwitch = () => desktop.page.evaluate(() =>
+    (window as never as { __fh_test: { readTheSwitch(b: string): Promise<void> } }).__fh_test.readTheSwitch('index-OLDBUILD.js'));
+  const box = desktop.page.locator('#safetySwitchOverlay');
+  await desktop.page.route('**/app/index.html?v=*', (r) => r.fulfill({ status: 200, contentType: 'text/html', body: NEW_PAGE }));
+
+  say('the switch is OFF (as the file in the project is): a newer build is out, the app sends as ever, no box');
+  await readTheSwitch();
+  const before = await desktop.mark();
+  await desktop.writeUnder(0, 'sent while the switch is off');
+  await desktop.push();
+  await desktop.waitForLogAfter(before, 'push OK', 20_000);
+  await desktop.page.waitForTimeout(5000);
+  await expect(box, 'A BOX WITH THE SWITCH OFF').toHaveCount(0);
+
+  say('the switch names a version BELOW this one: not about this app — it sends as ever, no box');
+  await desktop.page.route('**/app/update-rules.json?v=*', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ stop_and_update_below: 'v1.0.0' }) }));
+  await readTheSwitch();
+  await desktop.page.waitForTimeout(5000);
+  await expect(box, 'A BOX FOR A VERSION THE SWITCH DOES NOT NAME').toHaveCount(0);
+
+  say('the switch is ON for every version below v99: this app sends nothing more');
+  await desktop.page.unroute('**/app/update-rules.json?v=*');
+  await desktop.page.route('**/app/update-rules.json?v=*', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ stop_and_update_below: 'v99.0.0' }) }));
+  await readTheSwitch();
+  await desktop.page.waitForTimeout(1500);
+  const held = await desktop.mark();
+  const sentBefore = held.filter((l) => l.includes('push start')).length;
+  await desktop.writeUnder(1, 'written after the switch');
+  await desktop.push().catch(() => undefined);
+  await desktop.waitForLogAfter(held, 'told to stop sending', 20_000);
+  await desktop.page.waitForTimeout(3000);
+  expect((await desktop.log()).filter((l) => l.includes('push start')).length, 'NOTHING WAS SENT after the switch').toBe(sentBefore);
+
+  say('and at the first safe moment: its own box — "no longer supported", UPDATE NOW only; not one of the update cards');
+  await expect(box, 'THE BOX NEVER CAME').toBeVisible({ timeout: 30_000 });
+  await expect(box).toContainText('This version is no longer supported.');
+  await expect(box).toContainText('Please update Framehow to continue.');
+  await expect(box.getByRole('button')).toHaveCount(1);
+  await expect(desktop.page.locator('#safetySwitchNow')).toHaveText('UPDATE NOW');
+  await expect(desktop.page.locator('#updateCard'), 'the update cards are not part of this').toHaveCount(0);
+  expect((JSON.parse(await desktop.whole()) as { shots: Array<{ text: string }> }).shots[1].text, 'the work is on the device').toBe('written after the switch');
+
+  say('the line goes while the box is up: UPDATE NOW restarts nothing and says so');
+  const born = await desktop.page.evaluate(() => (window as never as { __same_page?: number }).__same_page ??= Date.now());
+  await desktop.page.unroute('**/app/index.html?v=*');
+  await desktop.page.route('**/app/index.html?v=*', (r) => r.abort('connectionfailed'));
+  await desktop.page.locator('#safetySwitchNow').click();
+  await expect(desktop.page.locator('#safetySwitchSays')).toContainText('Framehow was not reloaded', { timeout: 15_000 });
+  expect(await desktop.page.evaluate(() => (window as never as { __same_page?: number }).__same_page), 'THE APP WAS NOT RESTARTED WITHOUT A LINE').toBe(born);
+
   await desktop.close();
 });

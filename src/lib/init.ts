@@ -1308,6 +1308,8 @@ export function initFramehow(): void {
 
   // The newest version by itself, once a day, at a quiet moment (10 Nov).
   void import('./appUpdate').then((m) => m.startUpdateCheck());
+  // THE SWITCH — its own piece of safety code, started by itself (19 Nov).
+  void import('./safetySwitch').then((m) => m.startSafetySwitch());
 
   // MAX SCREEN (23 Oct): the corner button on plain photos too.
   void import('./maxView').then(({ watchForPlainPictures }) => watchForPlainPictures());

@@ -688,6 +688,9 @@ export async function flushSyncNow(askedByTheFetch = false): Promise<void> {
     if (_dirty) traceOnce('push skipped: a push is already running');
     return;
   }
+  // TOLD TO STOP (19 Nov, the switch — appUpdate.ts): this version must not send
+  // one more thing; the work stays on this device and goes up after the update.
+  if (_sendingStopped?.()) { if (_dirty) traceOnce('push held: this version was told to stop sending — the work stays on this device until the update'); return; }
   // THE ACCOUNT IS FULL (#533): the server has said no, and every try would
   // upload the pictures again for the same no. The work is filed on the
   // device instead, and goes up by itself the moment space is freed.
@@ -1042,6 +1045,7 @@ async function retryPendingSyncs(why: 'timer' | 'now' = 'timer'): Promise<void> 
   const currentPid = cp.projectId;
   // A project the server does not have is not coming back by asking again.
   if (currentPid && _goneProjectIds.has(currentPid)) return;
+  if (_sendingStopped?.()) return;             // told to stop sending (the switch, 19 Nov)
   // A SHOT THE SERVER NEVER GOT IS STILL TO SEND (#533, run 312). A push
   // refused for storage, then a pull a second later: the pull gave the shot's
   // record to the server's copy and cleared the flag, while the per-version
@@ -1138,6 +1142,12 @@ function scheduleAutosave(): void {
   if (autosaveTimer !== null) clearTimeout(autosaveTimer);
   autosaveTimer = window.setTimeout(runAutosave, AUTOSAVE_DEBOUNCE_MS);
 }
+/** Asked before anything is sent: has this version been told to stop? (the
+ *  switch, 19 Nov — the answer lives in appUpdate.ts) */
+let _sendingStopped: (() => boolean) | null = null;
+export function registerSendingStopped(fn: () => boolean): void { _sendingStopped = fn; }
+export function sendingStopped(): boolean { return !!_sendingStopped?.(); }
+
 /** The mark of what was taken from the server has moved and nothing on the
  *  screen has (the device's own save came back as "nothing new"): the save on
  *  this device is written again, so the mark is in it (13 Nov). */

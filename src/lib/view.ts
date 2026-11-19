@@ -677,7 +677,7 @@ export function restoreFrameAnchor(a: { fid: string; rel: number } | null): void
 }
 
 
-export function scrollAnchorTo(fid: string | number | null): void {
+export function scrollAnchorTo(fid: string | number | null, quiet = false): void {
   if (!fid) return;
   // Not while the PICTS library lies over the page (27 Oct, iPhone): a turn
   // scrolled the page behind it, the bars moved, the library sat elsewhere and
@@ -686,7 +686,7 @@ export function scrollAnchorTo(fid: string | number | null): void {
   // SAY WHO MOVED THE PAGE (#363), the same way the app says who changed the
   // view. Roman reports the page jumping to the middle after a photo and after
   // a drawing; three readings of the code have each blamed the wrong caller.
-  sayWhoScrolled(`centre on ${fid}`);
+  if (!quiet) sayWhoScrolled(`centre on ${fid}`);
   // Uses the shared lookup, which picks the column that is actually visible.
   // This used to carry its own copy that always looked in the main column, so
   // any layout without the main strip silently failed to anchor.
@@ -1407,10 +1407,12 @@ export function handleOrientationFlip(): void {
   // Cancel any previous orientation-anchor timers
   _orientAnchorTimers.forEach(clearTimeout);
   _orientAnchorTimers.length = 0;
+  // (after a turn the shot is centred seven times in 1.2 s while the layout settles —
+  // on purpose; it is SAID once: list item 11, Roman's log 19 Nov 15:41:53)
   [0, 50, 150, 300, 500, 800, 1200].forEach((delay) => {
     const tid = window.setTimeout(() => {
       syncCardHeights();
-      scrollAnchorTo(fid);
+      scrollAnchorTo(fid, delay > 0);
     }, delay);
     _orientAnchorTimers.push(tid);
   });

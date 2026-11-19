@@ -95,6 +95,54 @@ user.get("/storage", async (c) => {
   return c.json({ storage: await storageFigure(c.env.DB, c.env, me.id, c.req.header("X-FH-Storage-Limit-MB"), !!me.email_verified) });
 });
 
+// THE UPDATE CLOCK OF AN ACCOUNT (19 Nov, list item 16b — migration 0037).
+//
+// The app tells a person "a new version is available"; NOT NOW → two days
+// later a card with a date; fourteen days after the first card the old
+// version stops. The date is the same on every device of the account, so the
+// moment of the first card lives here.
+//
+//   POST   { version }  the first card was just shown on a device running
+//                       `version`. A clock that is still running (younger than
+//                       21 days) and was started by the same or a NEWER
+//                       version is kept — earliest wins. Otherwise it starts now.
+//   GET                 the clock, or null (also null when older than 21 days)
+//   DELETE              the card could not do its work (RELOAD wanted, no
+//                       line): that showing does not count
+const UPDATE_CLOCK_LIVES_MS = 21 * 24 * 60 * 60 * 1000;
+const versionParts = (v: string): number[] => (v.match(/\d+/g) ?? []).map(Number);
+const versionIsOlder = (a: string, b: string): boolean => {
+  const x = versionParts(a), y = versionParts(b);
+  for (let i = 0; i < Math.max(x.length, y.length); i++) {
+    if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) < (y[i] ?? 0);
+  }
+  return false;
+};
+async function readUpdateClock(db: D1Database, userId: string): Promise<{ at: number; version: string } | null> {
+  const row = await db.prepare(`SELECT update_clock_at AS at, update_clock_version AS version FROM users WHERE id = ?`)
+    .bind(userId).first<{ at: number | null; version: string | null }>();
+  if (!row?.at || !row.version || Date.now() - row.at > UPDATE_CLOCK_LIVES_MS) return null;
+  return { at: row.at, version: row.version };
+}
+user.get("/update-clock", async (c) => c.json({ clock: await readUpdateClock(c.env.DB, c.get("user").id) }));
+user.post("/update-clock", async (c) => {
+  const me = c.get("user");
+  let body: { version?: unknown } = {};
+  try { body = await c.req.json(); } catch { /* no body */ }
+  const version = typeof body.version === "string" && /^v?\d+(\.\d+){1,3}$/.test(body.version) ? body.version : null;
+  if (!version) return jsonError(c, 400, "invalid_version", "A version is needed.");
+  const held = await readUpdateClock(c.env.DB, me.id);
+  // Kept when it already covers this device (started by the same or a newer version).
+  if (held && !versionIsOlder(held.version, version)) return c.json({ clock: held });
+  const at = Date.now();
+  await c.env.DB.prepare(`UPDATE users SET update_clock_at = ?, update_clock_version = ? WHERE id = ?`).bind(at, version, me.id).run();
+  return c.json({ clock: { at, version } });
+});
+user.delete("/update-clock", async (c) => {
+  await c.env.DB.prepare(`UPDATE users SET update_clock_at = NULL, update_clock_version = NULL WHERE id = ?`).bind(c.get("user").id).run();
+  return c.json({ clock: null });
+});
+
 user.get("/me", (c) => {
   return c.json({ user: c.get("user") });
 });

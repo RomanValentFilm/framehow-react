@@ -54,7 +54,7 @@ import {
   setPullIncomplete,
   setProjectSwitchInFlight, isProjectSwitchInFlight, projectSwitchCount,
   openProjectToken, isAnotherProjectNow, AnotherProjectNow, retryIsCreating, fileOpenProjectAsUnsent, newLocalProjectIdentity,
-  isStandingIn, holdProjectListeners,
+  isStandingIn, holdProjectListeners, sendingStopped,
   flushSyncNow,
   cancelPendingPush,
   beginSystemAction,
@@ -310,6 +310,7 @@ export function openAccountModal(initialMode: AccountMode = 'signup'): Promise<A
       setVisible('accountRowProfession', true);
       setVisible('accountRowTerms', true);
       setVisible('accountRowNews', true);
+      setVisible('accountRowPlan', true);
       // Top toggle hidden in signup; bottom toggle visible
       topToggleWrap.style.display = 'none';
       toggle.style.display = '';
@@ -323,6 +324,7 @@ export function openAccountModal(initialMode: AccountMode = 'signup'): Promise<A
       setVisible('accountRowProfession', false);
       setVisible('accountRowTerms', false);      // logging in agrees to nothing new
       setVisible('accountRowNews', false);
+      setVisible('accountRowPlan', false);       // (19 Nov) the plan line is for creating an account
       // Top toggle visible in login; bottom toggle hidden
       topToggleWrap.style.display = '';
       toggle.style.display = 'none';
@@ -2334,6 +2336,7 @@ async function sendOneCopyUnseen(rec: PendingMeta): Promise<void> {
 
 async function uploadUnsentCopies(reason: 'start' | 'reconnect'): Promise<void> {
   // (one is going up right now: looked at again when it has — not forgotten)
+  if (sendingStopped()) return;                // this version was told to stop sending (the switch, 19 Nov)
   if (_uploadingCopies) { if (reason === 'reconnect') lookForUnsentCopiesSoon(3_500); return; }
   if (!isLoggedIn() || !navigator.onLine) return;
   if (reason === 'reconnect') {

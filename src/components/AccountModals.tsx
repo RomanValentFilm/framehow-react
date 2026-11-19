@@ -113,6 +113,15 @@ export function AccountModals() {
             </label>
           </div>
 
+          {/* THE PLAN, SAID BEFORE ANYBODY PAYS ANYTHING (19 Nov, words agreed with
+              Roman): free now, and nobody is to be surprised when prices come.
+              Shown when creating an account and in Account settings — not on
+              Log in, where the account exists already. */}
+          <div className="account-plan" id="accountRowPlan">
+            <div className="account-plan-name">PLAN: Free during launch.</div>
+            <div className="account-plan-note">Framehow is currently free to use. Pricing may be introduced later.</div>
+          </div>
+
           <div className="account-error" id="accountError" />
 
           <div className="account-btns">
@@ -295,6 +304,15 @@ export function AccountModals() {
           <div className="account-row">
             <label>Email</label>
             <div className="account-readonly" id="settingsEmail" />
+          </div>
+
+          {/* THE PLAN, SAID BEFORE ANYBODY PAYS ANYTHING (19 Nov, words agreed with
+              Roman): free now, and nobody is to be surprised when prices come.
+              Shown when creating an account and in Account settings — not on
+              Log in, where the account exists already. */}
+          <div className="account-plan">
+            <div className="account-plan-name">PLAN: Free during launch.</div>
+            <div className="account-plan-note">Framehow is currently free to use. Pricing may be introduced later.</div>
           </div>
 
           <div className="account-error" id="settingsError" />

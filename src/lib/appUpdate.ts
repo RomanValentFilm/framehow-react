@@ -37,8 +37,10 @@ import { getActiveMs } from './activity';
 import { framesNeedingPush, projectSettingsUnsent, isToasterShowing } from './accountFlow';
 import { captureFrameAnchor, scrollAnchorToRel, setViewMode } from './view';
 import { getStripActiveTab, setStripActiveTab, getStripVersions, setStripCrossCompare } from './helpers';
-import { flushSyncNow, getCurrentProject, saveLocalNow } from './currentProject';
-import { isLoggedIn } from './session';
+import { flushSyncNow, getCurrentProject, saveLocalNow, isLoadInFlight, sendingStopped } from './currentProject';
+import { isLoggedIn, getToken } from './session';
+import { api } from './api';
+import { APP_VERSION } from '../store/state';
 import { enterGroup, updateGroupButtonState } from './groups';
 
 const DAY_KEY = 'fh_update_checked_day';
@@ -73,6 +75,7 @@ const CARD_ID = 'updateCard';
 const useBeforeAsking = () => 5 * 60_000;
 
 /** Where the person is — written down for the page that comes back. */
+export function rememberPlaceForReload(): void { rememberThePlace(); }
 function rememberThePlace(): void {
   try {
     const a = captureFrameAnchor();
@@ -155,7 +158,8 @@ async function switchNow(): Promise<void> {
     heldUntil = Date.now() + waitFor(10 * 60_000);
     // The person WANTED the update — so this showing is not one of the two:
     // the card comes back (ten minutes on, with a line), as the box promises.
-    if (newer) forgetToday(newer);
+    if (newer) { forgetToday(newer); comesBackToday = newer; }
+    dropClockIfJustStarted();
     try { sessionStorage.removeItem(PLACE_KEY); } catch { /* fine */ }
     void import('./modals').then((m) => m.showImportantNote('NO CONNECTION',
       'Framehow was not reloaded.'));
@@ -167,7 +171,9 @@ async function switchNow(): Promise<void> {
   // ...and to the server, where there is one to send to: signed in, a project
   // that has been saved, a line. Eight seconds at most — what does not go now
   // is on the device and goes after the restart, as any unsent work does.
-  if (navigator.onLine && isLoggedIn() && getCurrentProject().projectId !== null
+  // (a version told to stop sending — the switch, safetySwitch.ts — sends nothing here either)
+  if (sendingStopped()) trace('new version: this version was told to stop sending — the work is on the device and goes up after the update');
+  else if (navigator.onLine && isLoggedIn() && getCurrentProject().projectId !== null
     && (framesNeedingPush().size > 0 || projectSettingsUnsent())) {
     trace('new version: something still to send — sending first');
     await within(flushSyncNow(), 8000);
@@ -188,7 +194,7 @@ function learnWhetherUpdated(): void {
   if (!from || !now) return;
   if (now !== from) {
     trace(`new version: UPDATED — was ${from}, now ${now}`);
-    try { localStorage.removeItem(ASKED_KEY); } catch { /* fine */ }
+    try { localStorage.removeItem(ASKED_KEY); localStorage.removeItem(CLOCK_KEY); localStorage.removeItem(DATED_KEY); } catch { /* fine */ }
     // ...and ONLY that line: the "swipe over the image" hint every start shows
     // came up on top of it on Roman's phone (10 Nov) — two dark boxes with
     // white words, and the wrong one read. Not after an update.
@@ -224,10 +230,104 @@ function sayInTheMiddle(text: string): void {
   }, 300);
 }
 
+// ---------------------------------------------------------------------------
+// UPDATE BY A DATE (19 November, list item 16b — every word
+// agreed with Roman that day).
+//
+// THE TIMELINE, fourteen days at most:
+//   day 0   the card above, as it always was          NOT NOW · RELOAD
+//   day 2   "Update by 3 December" (the date bold)
+//           "This version will stop being supported
+//            after that date."                         NOT NOW · UPDATE NOW
+//   day 14  "This version is no longer supported.
+//            Please update Framehow to continue."      UPDATE NOW
+// Each card once. Every one of them comes ONLY in the quiet moment the first
+// card always waited for (quietMoment.ts) — never at the start, never over a
+// box, a drawing, the camera, a project being opened. The last one cannot be
+// refused, so it also waits while a fetch is being applied.
+//
+// PER ACCOUNT (Roman): the count starts with the first card on ANY device of
+// the account, and is the same date on all of them — it is kept on the server
+// (users.update_clock_*). Nobody signed in: it is kept on the device.
+//
+// THE FIVE MINUTES OF USE are for the first two cards. The last card does not
+// wait for them.
+//
+// NO LINE, NOTHING BLOCKS: no card is ever shown offline (as before), and the
+// last card goes if the line goes.
+//
+// THE SWITCH is not here: it is a piece of safety code of its own, safetySwitch.ts.
+// ---------------------------------------------------------------------------
+const CLOCK_KEY = 'fh_update_clock';      // { at, v } — when the first card was shown, on which version
+const DATED_KEY = 'fh_update_dated';      // the clock (its `at`) the dated card was shown for
+const DAY_MS = 24 * 60 * 60 * 1000;
+const DATED_AFTER_MS = 2 * DAY_MS;
+const ENDS_AFTER_MS = 14 * DAY_MS;
+const CLOCK_LIVES_MS = 21 * DAY_MS;
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+const parts = (v: string): number[] => (v.match(/\d+/g) ?? []).map(Number);
+/** Is version a older than version b? ("v5.0.99" < "v5.0.100") */
+export function versionIsOlder(a: string, b: string): boolean {
+  const x = parts(a), y = parts(b);
+  for (let i = 0; i < Math.max(x.length, y.length); i++) {
+    if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) < (y[i] ?? 0);
+  }
+  return false;
+}
+
+type Clock = { at: number; v: string };
+function readClock(): Clock | null {
+  try {
+    const c = JSON.parse(localStorage.getItem(CLOCK_KEY) ?? 'null') as Clock | null;
+    if (!c || !(c.at > 0) || Date.now() - c.at > CLOCK_LIVES_MS) return null;
+    // A count started on an OLDER version of this app is over: this device has updated since.
+    if (typeof c.v === 'string' && versionIsOlder(c.v, APP_VERSION)) return null;
+    return c;
+  } catch { return null; }
+}
+function writeClock(c: Clock): void { try { localStorage.setItem(CLOCK_KEY, JSON.stringify(c)); } catch { /* counted from the next card */ } }
+/** The account's clock, where it covers this device: the earlier one counts. */
+function adopt(server: { at: number; version: string } | null | undefined): void {
+  if (!server || !(server.at > 0)) return;
+  if (versionIsOlder(server.version, APP_VERSION)) return;      // started by an OLDER app than this one: not about this device
+  const mine = readClock();
+  if (!mine || server.at < mine.at) { writeClock({ at: server.at, v: server.version }); trace(`new version: the account's count started ${new Date(server.at).toLocaleDateString()} — taken`); }
+}
+/** The first card is on the screen: the fourteen days start (unless they run already). */
+function startClock(): void {
+  if (!readClock()) writeClock({ at: Date.now(), v: APP_VERSION });
+  if (isLoggedIn()) void api.post<{ clock: { at: number; version: string } | null }>('/user/update-clock', { version: APP_VERSION }, getToken()).then((r) => adopt(r?.clock)).catch(() => undefined);
+}
+async function syncClock(): Promise<void> {
+  if (!isLoggedIn()) return;
+  try { adopt((await api.get<{ clock: { at: number; version: string } | null }>('/user/update-clock', getToken()))?.clock); } catch { /* the device's own count stands */ }
+}
+/** A showing that could not do its work (RELOAD wanted, no line) does not count. */
+function dropClockIfJustStarted(): void {
+  const c = readClock();
+  if (!c || Date.now() - c.at > 60 * 60_000) return;            // only the count this very card started
+  try { localStorage.removeItem(CLOCK_KEY); localStorage.removeItem(DATED_KEY); } catch { /* fine */ }
+  if (isLoggedIn()) void api.delete('/user/update-clock', getToken()).catch(() => undefined);
+}
+function datedShownFor(c: Clock): boolean { try { return localStorage.getItem(DATED_KEY) === String(c.at); } catch { return false; } }
+function noteDatedShown(c: Clock): void { try { localStorage.setItem(DATED_KEY, String(c.at)); } catch { /* shown once more, no harm */ } }
+/** "3 December" — the day the old version stops. */
+function endDay(c: Clock): string { const d = new Date(c.at + ENDS_AFTER_MS); return `${d.getDate()} ${MONTHS[d.getMonth()]}`; }
+
+/** The fourteen days are over: the old version must go. */
+function mustUpdate(): boolean {
+  const c = readClock();
+  return !!c && Date.now() - c.at >= ENDS_AFTER_MS;
+}
+
 let newer: string | null = null;   // the build that is out, when it is not this one
 let cardUp = false;
 /** The card stepped aside for a box today, unanswered: it may come back today. */
 let comesBackToday: string | null = null;
+/** ...and which of the three cards it was. */
+let comesBackKind: CardKind = 'first';
+type CardKind = 'first' | 'dated' | 'must';
 let benchSaysUsedEnough = false;
 
 /** May the card show for this build today? At most twice per build, on two days. */
@@ -257,34 +357,55 @@ function forgetToday(build: string): void {
   } catch { /* fine */ }
 }
 
-/** The card. Small, in the middle like the save reminder, blocking nothing. */
-function showCard(build: string): void {
+/** The card. Small, in the middle like the save reminder, blocking nothing —
+ *  except the last of the three ('must'), which stands over the app: there is
+ *  nothing to do but update. */
+function showCard(build: string, kind: CardKind = 'first'): void {
   if (cardUp || planned) return;
   cardUp = true;
+  const clock = readClock();
   const card = document.createElement('div');
   card.id = CARD_ID;
+  card.dataset.kind = kind;
   card.className = 'save-toaster hidden';
   card.setAttribute('role', 'status');
-  card.innerHTML = '<div class="save-toaster-card"><div class="save-toaster-msg" style="text-align:center">A new version of Framehow is available.<br>'
-    + 'Reload only if you are on a stable internet connection.</div>'
+  const msg = kind === 'first'
+    ? 'A new version of Framehow is available.<br>Reload only if you are on a stable internet connection.'
+    : kind === 'dated'
+      ? `<b>Update by ${clock ? endDay(clock) : ''}</b><br>This version will stop being supported after that date.`
+      : 'This version is no longer supported.<br>Please update Framehow to continue.';
+  card.innerHTML = `<div class="save-toaster-card"><div class="save-toaster-msg" style="text-align:center">${msg}</div>`
     // NEITHER BUTTON IS LIT (Roman): this tells, it does not push.
-    + '<div class="save-toaster-btns" style="justify-content:center"><button class="btn" type="button" id="updateCardLater">NOT NOW</button>'
-    + '<button class="btn" type="button" id="updateCardNow">RELOAD</button></div></div>';
+    + '<div class="save-toaster-btns" style="justify-content:center">'
+    + (kind === 'must' ? '' : '<button class="btn" type="button" id="updateCardLater">NOT NOW</button>')
+    + `<button class="btn" type="button" id="updateCardNow">${kind === 'first' ? 'RELOAD' : 'UPDATE NOW'}</button></div></div>`;
+  // The last card stands over the app: nothing behind it can be touched.
+  let veil: HTMLElement | null = null;
+  if (kind === 'must') {
+    veil = document.createElement('div');
+    veil.id = 'updateMustVeil';
+    veil.style.cssText = 'position:fixed;inset:0;z-index:299000;background:rgba(0,0,0,0.75);';
+    document.body.appendChild(veil);
+    card.style.zIndex = '299500';
+  }
   document.body.appendChild(card);
   requestAnimationFrame(() => card.classList.remove('hidden'));
-  trace('new version: telling the person — NOT NOW or RELOAD');
+  trace(kind === 'first' ? 'new version: telling the person — NOT NOW or RELOAD'
+    : kind === 'dated' ? `new version: the card with the date — update by ${clock ? endDay(clock) : '?'} · NOT NOW or UPDATE NOW`
+      : 'new version: this version is no longer supported (the fourteen days are over) — UPDATE NOW only');
   // SHOWN IS TOLD (Roman: "if someone closes the iPad, the question disappears
   // and comes back next day?" — yes). The day counts from the moment the card
   // is on the screen, answered or not: left unanswered and the device put
   // away, it is gone, and comes once more on a later day.
-  noteNotNow(build);
-  const gone = () => { window.clearInterval(aside); document.removeEventListener('visibilitychange', away); window.removeEventListener('offline', lineGone); card.remove(); cardUp = false; };
+  if (kind === 'first') { noteNotNow(build); startClock(); }
+  if (kind === 'dated' && clock) noteDatedShown(clock);
+  const gone = () => { window.clearInterval(aside); document.removeEventListener('visibilitychange', away); window.removeEventListener('offline', lineGone); card.remove(); veil?.remove(); cardUp = false; };
   // It steps aside for a box, the keyboard, DRAW, the camera — and comes back
   // the same day when that is done (it was not answered, only in the way).
   const aside = window.setInterval(() => {
     if (!busyNow()) return;
     trace(`new version: the card steps aside (${busyNow()})`);
-    comesBackToday = build;
+    comesBackToday = build; comesBackKind = kind;
     gone();
   }, 500);
   // The app put away (the iPad closed, another app): the card goes with it.
@@ -292,9 +413,10 @@ function showCard(build: string): void {
   document.addEventListener('visibilitychange', away);
   // NO LINE, NO QUESTION (Roman): the card is never shown offline — and if the
   // line goes while it is up, it goes too, uncounted, and returns with the line.
-  const lineGone = () => { trace('new version: the line went — the card goes too'); comesBackToday = build; forgetToday(build); gone(); };
+  const lineGone = () => { trace('new version: the line went — the card goes too'); comesBackToday = build; comesBackKind = kind; if (kind === 'first') forgetToday(build); gone(); };
   window.addEventListener('offline', lineGone, { once: true });
-  (card.querySelector('#updateCardLater') as HTMLElement).onclick = () => {
+  const later = card.querySelector('#updateCardLater') as HTMLElement | null;
+  if (later) later.onclick = () => {
     comesBackToday = null;
     heldUntil = Date.now() + waitFor(2 * 60_000);   // a debug device is told every time — but not at once again
     trace('new version: NOT NOW');
@@ -319,8 +441,14 @@ async function askTheServer(): Promise<void> {
     const out = (await res.text()).match(/assets\/(index-[\w-]+\.js)/)?.[1];
     if (!out) return;
     try { localStorage.setItem(DAY_KEY, today()); } catch { /* asked again sooner, no harm */ }
-    if (out === mine) { newer = null; trace('new version: asked — this is the newest'); return; }
+    if (out === mine) {
+      newer = null; trace('new version: asked — this is the newest');
+      // (up to date: whatever count this device kept is over)
+      try { localStorage.removeItem(CLOCK_KEY); localStorage.removeItem(DATED_KEY); } catch { /* fine */ }
+      return;
+    }
     newer = out;
+    await syncClock();                       // the account's count, if another device started one
     trace(`new version: ${out} is out, this is ${mine}${mayAsk(out) ? '' : ' — the person has been told twice, not again for this one'}`);
   } catch (e) { trace(`new version: no answer (${e instanceof Error ? e.message : '?'}) — asked again later`); }
   finally { asking = false; }
@@ -337,21 +465,34 @@ function watch(): void {
     if (planned || cardUp) { quietLooks = 0; return; }
     if (document.visibilityState !== 'visible' || !navigator.onLine) { quietLooks = 0; return; }
     if (!(window as unknown as { __fh_booted?: boolean }).__fh_booted) return;
+    // The last card does not wait for the five minutes of use (Roman, 19 Nov).
+    const pressing = mustUpdate();
     // NOT AT THE START (Roman): five minutes of use first — the question too.
-    if (!benchSaysUsedEnough && getActiveMs() < useBeforeAsking()) return;
+    if (!pressing && !benchSaysUsedEnough && getActiveMs() < useBeforeAsking()) return;
     let said: string | null = null;
     try { said = localStorage.getItem(DAY_KEY); } catch { /* asked again, no harm */ }
-    if (!newer && !asking && said !== today() && Date.now() - lastAsked > 60_000) {
+    if (!newer && !asking && (pressing || said !== today()) && Date.now() - lastAsked > 60_000) {
       lastAsked = Date.now();
       void askTheServer();
       return;
     }
-    if (!newer || !(mayAsk(newer) || comesBackToday === newer) || Date.now() < heldUntil) { quietLooks = 0; return; }
+    if (!newer || Date.now() < heldUntil) { quietLooks = 0; return; }
+    // WHICH OF THE THREE CARDS, if any (the timeline at the top of this part).
+    const clock = readClock();
+    const age = clock ? Date.now() - clock.at : -1;
+    let kind: CardKind | null = null;
+    if (mustUpdate()) kind = 'must';
+    else if (comesBackToday === newer) kind = comesBackKind === 'must' ? null : comesBackKind;   // it only stepped aside
+    else if (!clock) kind = mayAsk(newer) ? 'first' : null;
+    else if (age >= DATED_AFTER_MS && !datedShownFor(clock)) kind = 'dated';
+    if (!kind) { quietLooks = 0; return; }
     // One thing at a time: the save reminder first — it protects work.
     if (busyToShow() || isToasterShowing()) { quietLooks = 0; return; }
+    // The card that cannot be refused also waits while a fetch is being applied.
+    if (kind === 'must' && isLoadInFlight()) { quietLooks = 0; return; }
     if (++quietLooks < 2) return;
     quietLooks = 0;
-    showCard(newer);
+    showCard(newer, kind);
   }, 2000);
 }
 let lastAsked = 0;

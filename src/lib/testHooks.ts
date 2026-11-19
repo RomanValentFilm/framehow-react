@@ -296,6 +296,8 @@ export interface TestDoor {
   fireSaveReminder(): void;
   /** Ask about a new version now, as if `build` were the one running (10 Nov). */
   askForUpdate(build: string): Promise<void>;
+  /** Read update-rules.json (the switch) now, as if `build` were running (19 Nov). */
+  readTheSwitch(build: string): Promise<void>;
   /** WRITE on the main card ('main') or TEXT on a strip card's version — the
    *  app's own text box, filled and OK'd. */
   writeOnCard(index: number, strip: 'main' | StripType, versionIndex: number, text: string): Promise<void>;
@@ -1589,6 +1591,7 @@ export function installTestDoor(): void {
     },
     fireSaveReminder() { showSaveToaster(); },
     async askForUpdate(build) { const m = await import('./appUpdate'); await m.askNowAsIfRunning(build); },
+    async readTheSwitch(build) { const m = await import('./safetySwitch'); await m.benchAskTheSwitch(build); },
     openWriteBox(index, strip, versionIndex) {
       const f = useStore.getState().frames[index];
       if (!f) throw new Error(`no frame at ${index}`);
