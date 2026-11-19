@@ -691,4 +691,8 @@ v5.0.225 · #777 (10 Nov, night)
 ## v5.0.320 · #872 (dev, run 811, 18 Nov 20:44 — FULL RUN 812 green on this code: 184 passed)
 - FULL RUN 810 (18 Nov, 183 green, 1 red): test 39 "the dead copy at start" — a regression of today's "deleted for good closes the project": an unsent copy of a project deleted for good, put in place at start to be sent, was taken for the open project and closed — which emptied the device's save of the project really open (the start ended empty). Never live. Cure: nothing is closed while a copy stands in; the copy is parked by the upload, as before.
 
-## v5.0.321 · #873 (next)
+## v5.0.321 · #873 (DEV AND LIVE, run 813, 19 Nov — everything since v5.0.301 is live; full run 812 green on this code)
+
+## v5.0.322 · #874 (next)
+- +SH / +TL: a card that shows a VERSION (in a strip view, or the main card cross-swiped to one) has a button for a new shot, first in its row, with a thin line after it (Roman, 19 Nov; words agreed: +SH in a storyboard, +TL in a fitting — the names from the camera box). It does what New does on the main card: a new shot after this one. The main card keeps New. NOT in the 3x2 and overview cards (their own rows, untouched). After a cross-swipe the new shot shows its main card (no pointer is made up for it). Test 78. TO BE SEEN BY ROMAN (does WRITE stay in the first row on the iPhone).
+  …and the new shot is slid to and outlined in red in a strip view too, as in the SHOT view (Roman, 19 Nov): the slide picked the main card, which a strip view does not show; the strip's card had no outline class.

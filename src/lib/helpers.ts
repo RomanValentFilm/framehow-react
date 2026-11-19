@@ -990,12 +990,19 @@ export function flashNewFrame(fid: number): void {
   const rerender = (window as any).__fh_renderAll;
   if (rerender) rerender();
   requestAnimationFrame(() => {
-    const card =
-      document.querySelector(`.grid3x2-card-wrap[data-g3fid="${fid}"]`) ||
-      document.querySelector(`.overview-row[data-ofid="${fid}"]`) ||
-      document.querySelector(`.frame-card[data-mfid="${fid}"]`) ||
-      document.querySelector(`.frame-card[data-vfid="${fid}"]`);
-    if (card) (card as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' });
+    // THE CARD THAT IS ON SCREEN (19 Nov, +SH / +TL from a version strip: "it has
+    // to slide to the new shot"). In a strip view the main card is in the page
+    // but not shown, and it was the one picked — a card that is not shown cannot
+    // be slid to, so nothing moved. The first of these that is really shown
+    // wins; the old pick stays as the fallback.
+    const all = [
+      ...document.querySelectorAll(`.grid3x2-card-wrap[data-g3fid="${fid}"]`),
+      ...document.querySelectorAll(`.overview-row[data-ofid="${fid}"]`),
+      ...document.querySelectorAll(`.frame-card[data-mfid="${fid}"]`),
+      ...document.querySelectorAll(`.frame-card[data-vfid="${fid}"]`),
+    ] as HTMLElement[];
+    const card = all.find((c) => c.getClientRects().length > 0) || all[0];
+    if (card) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
   });
 }
 

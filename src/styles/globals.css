@@ -1984,3 +1984,7 @@ body.portrait-mode #maxView .max-close:hover,body.portrait-mode #maxView .max-sh
 #maxView .max-nav::before{content:'';position:absolute;inset:-5px -4px;}
 #maxView .max-up{margin-top:-9px;}
 #maxView .max-down{margin-bottom:-9px;}
+
+/* +SH / +TL on a card that shows a version (19 Nov): the thin line after it, as
+   between REFS | NEEDS in the view bar. */
+.version-actions .act-sep{width:1px;height:16px;background:var(--border);margin:0 2px;flex-shrink:0;align-self:center;}

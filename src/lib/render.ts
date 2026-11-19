@@ -385,7 +385,8 @@ export function buildMainFrame(f: any): HTMLElement {
 
 export function buildVersionFrame(fid: number, strip: StripType = 'ver'): HTMLElement {
   const div = document.createElement('div');
-  div.className = 'frame-card';
+  // The red outline of a shot just made, on its card in a strip too (19 Nov).
+  div.className = 'frame-card' + (isNewlyAddedFrame(fid) ? ' frame-just-added' : '');
   div.dataset.vfid = String(fid);
   div.dataset.sfid = String(fid);
   div.dataset.strip = strip;
@@ -422,6 +423,28 @@ function restoreWrapSizing(div: HTMLElement, saved: [string, string, string] | n
     if (maxWidth) w.style.maxWidth = maxWidth;
     if (margin) w.style.margin = margin;
   });
+}
+
+// A NEW SHOT FROM A CARD THAT SHOWS A VERSION (19 Nov, Roman: "we do not have the
+// NEW button in the version strips, only in MAIN SHOT … when you cross-swipe over
+// to angle, then you are not able to do a new main shot"). A card showing the
+// main shot has New; a card showing a version — in a strip, or the main card
+// cross-swiped to one — had nothing. It must not read as "new version" (that is
+// the + in the tab row), so it carries the shot's own name from the camera box
+// — +SH, in a fitting +TL — and a thin line after it, as between REFS | NEEDS.
+// It does exactly what New does: a new shot after this one.
+function newShotButtonHTML(fid: number): string {
+  const label = state().projectType === 'fitting' ? '+TL' : '+SH';
+  return `<button class="act-btn act-new-shot" data-newshot="${fid}">${label}</button><span class="act-sep"></span>`;
+}
+function wireNewShotButton(div: HTMLElement, fid: number): void {
+  div.querySelectorAll('[data-newshot]').forEach((b) =>
+    b.addEventListener('click', () => {
+      const mainDiv = document.querySelector(`#mainScroll .frame-card[data-mfid="${fid}"]`) as HTMLElement | null;
+      const fn = (window as any).__fh_handleMainAction;
+      if (fn) fn('new', fid, mainDiv || div);
+    })
+  );
 }
 
 export function renderMainFrame(div: HTMLElement, fid: number): void {
@@ -518,6 +541,7 @@ export function renderMainFrame(div: HTMLElement, fid: number): void {
       </div>
       ${!cVerHidden && s.drawActive[fid] === ccStrip ? `<div class="color-row">${colorDots}</div>` : ''}
       <div class="version-actions"${cVerHidden ? ' style="pointer-events:none;opacity:0.3;"' : ''}>
+        ${newShotButtonHTML(fid)}
         <button class="act-btn${cVerHidden ? ' disabled' : ''}" data-cact="upload" data-cfid="${fid}">Load</button>
         <button class="act-btn${cVerHidden ? ' disabled' : s.drawActive[fid] === ccStrip ? ' active' : ''}" data-cact="draw" data-cfid="${fid}">DRAW</button>
         <button class="act-btn${cVerHidden ? ' disabled' : ''}" data-cact="camera" data-cfid="${fid}">◎ CAM</button>
@@ -656,6 +680,7 @@ export function renderMainFrame(div: HTMLElement, fid: number): void {
         renderMainFrame(div, fid);
       })
     );
+    wireNewShotButton(div, fid);
     div.querySelectorAll('[data-cact]').forEach((b) =>
       b.addEventListener('click', () => {
         const ccS: StripType = (s.crossCompareStrip[fid] || 'ver') as StripType;
@@ -1028,6 +1053,7 @@ export function renderVersionFrame(div: HTMLElement, fid: number, strip: StripTy
           : ''
       }
       <div class="version-actions"${_verHidden ? ' style="pointer-events:none;opacity:0.3;"' : ''}>
+        ${newShotButtonHTML(fid)}
         <button class="act-btn${_verHidden ? ' disabled' : ''}" ${_verHidden ? '' : 'data-action="upload" data-fid="' + fid + '"'}>Load</button>
         <button class="act-btn${_verHidden ? ' disabled' : !_verHidden && s.drawActive[fid] === strip ? ' active' : ''}" ${_verHidden ? '' : 'data-action="draw" data-fid="' + fid + '"'}>DRAW</button>
         <button class="act-btn${_verHidden ? ' disabled' : ''}" ${_verHidden ? '' : 'data-action="camera" data-fid="' + fid + '"'}>◎ CAM</button>
@@ -1039,6 +1065,7 @@ export function renderVersionFrame(div: HTMLElement, fid: number, strip: StripTy
       </div>
     </div>`;
   restoreWrapSizing(div, _wrapSizing);
+  wireNewShotButton(div, fid);
   div.querySelectorAll('.vtab[data-fid]').forEach((t) =>
     t.addEventListener('click', () => {
       if (s.reorderFid === fid || s.verReorderFid === fid) return;
