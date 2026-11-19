@@ -1,10 +1,10 @@
 // Folder-image loader and "start from scratch" — port of original handlers.
 
-import { labelsForPickedPictures, nameIsOnlyACode } from './frameLabel';
+import { labelsForPickedPictures, nameIsOnlyACode, cameraNumberOf, numberedFrom } from './frameLabel';
 import { applyDefaultNames } from './userDefaults';
 import { COLORS, state, useStore, resetStoryboardState } from '../store/state';
 import { resetProjectSyncGuards, clearPushedFingerprints } from './accountFlow';
-import { setProgress, showToast } from './modals';
+import { setProgress, showToast, askImportedShotNames } from './modals';
 import { fhTrack } from './tracking';
 import { newFrameId } from './ids';
 import { renderAll } from './render';
@@ -26,6 +26,40 @@ export function handleFolderImages(e: Event): void {
   applyDefaultNames(true);          // the user's own names (#510)
 
   const baseNames = files.map((f) => f.name.replace(/\.[^.]+$/, ''));
+  // THE NAMES AS THE DEVICE HANDS THEM OVER (19 Nov): what a real iPhone or iPad
+  // gives for pictures from Photos is to be read here, not guessed.
+  trace(`pictures: ${files.length} file(s) picked — named ${files.slice(0, 8).map((f) => `"${f.name}"`).join(' · ')}${files.length > 8 ? ' …' : ''}`);
+  // A CAMERA'S OWN NAMES (IMG_8813 …): THE PERSON IS ASKED (19 Nov, Roman's phone —
+  // "that's weird if an image is called 8813"): number them from a start of
+  // their choosing, or keep the camera's numbers. Asked only when every picture
+  // carries a camera's name (or only a code); a folder somebody named goes
+  // straight in, as before.
+  const camera = baseNames.map(cameraNumberOf);
+  const allFromACamera = camera.some((n) => n !== null) && baseNames.every((n, i) => camera[i] !== null || nameIsOnlyACode(n));
+  if (!allFromACamera) { buildFromPictures(files, baseNames, null); input.value = ''; return; }
+  const inOrder = baseNames.map((n, i) => ({ n, c: camera[i] })).filter((x) => x.c !== null).sort((a, b) => (a.c as number) - (b.c as number));
+  input.value = '';
+  void askImportedShotNames(inOrder[0].n, inOrder[inOrder.length - 1].n).then((answer) => {
+    if (!answer.change) { trace('pictures: camera names — the original numbers are kept'); buildFromPictures(files, baseNames, null); return; }
+    // In the order the pictures were taken (the camera's counter); pictures named
+    // only by a code go after them, in the order picked.
+    const order = baseNames.map((_, i) => i).sort((a, b) => {
+      const ca = camera[a], cb = camera[b];
+      if (ca !== null && cb !== null) return ca - cb;
+      if (ca === null && cb === null) return a - b;
+      return ca === null ? 1 : -1;
+    });
+    const numbers = numberedFrom(answer.start, files.length);
+    const given: string[] = [];
+    order.forEach((fileIndex, place) => { given[fileIndex] = numbers[place]; });
+    trace(`pictures: camera names — numbered from ${numbers[0]} (${files.length} shot(s))`);
+    buildFromPictures(files, baseNames, given);
+  });
+}
+
+/** The project is built from the pictures. `given`: the names already decided
+ *  (the person chose to number camera pictures) — else they come from the files. */
+function buildFromPictures(files: File[], baseNames: string[], given: string[] | null): void {
   const wordSets = baseNames.map(
     (n) =>
       new Set(
@@ -52,14 +86,15 @@ export function handleFolderImages(e: Event): void {
   });
   // A NAME THAT IS ONLY A CODE IS NO NAME (19 Nov — frameLabel.ts): pictures from
   // the Photos picker are numbered in the order they were picked.
-  const labels = labelsForPickedPictures(baseNames, byName);
-  const coded = baseNames.filter(nameIsOnlyACode).length;
+  const labels = given ?? labelsForPickedPictures(baseNames, byName);
+  const coded = given ? 0 : baseNames.filter(nameIsOnlyACode).length;
   if (coded > 0) trace(`pictures: ${coded} of ${files.length} file name(s) are only a code (the Photos picker) — numbered in the order picked`);
 
   const withNum = files.map((f, i) => {
     // (a code's own digits say nothing about its place: its number does)
-    const m = (nameIsOnlyACode(baseNames[i]) ? labels[i] : f.name).match(/(\d+)/);
-    return { file: f, num: m ? parseInt(m[1], 10) : Infinity, name: nameIsOnlyACode(baseNames[i]) ? labels[i] : f.name, label: labels[i] };
+    const byLabel = !!given || nameIsOnlyACode(baseNames[i]);
+    const m = (byLabel ? labels[i] : f.name).match(/(\d+)/);
+    return { file: f, num: m ? parseInt(m[1], 10) : Infinity, name: byLabel ? labels[i] : f.name, label: labels[i] };
   });
   withNum.sort((a, b) => (a.num !== b.num ? a.num - b.num : a.name.localeCompare(b.name)));
 
@@ -134,7 +169,6 @@ export function handleFolderImages(e: Event): void {
     probe.src = (fe.target as FileReader).result as string;
   };
   firstReader.readAsDataURL(withNum[0].file);
-  input.value = '';
 }
 
 

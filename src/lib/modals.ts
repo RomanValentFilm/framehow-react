@@ -1140,3 +1140,48 @@ export function showSortOrderConflict(info: {
     }, 4000);
   });
 }
+
+/**
+ * THE NAMES OF SHOTS MADE FROM A CAMERA'S PICTURES (19 Nov, words agreed with
+ * Roman). Pictures picked from Photos or a camera folder are called IMG_8813,
+ * DSC_0042 … — the camera's running counter, not a shot number. Before the
+ * project is made the person chooses: number them from a start of their own
+ * (the form typed is kept: 01 → 01 02 03, 5 → 5 6 7), or keep the numbers.
+ * One of the two is always ticked; OK is the only button.
+ */
+export function askImportedShotNames(first: string, last: string): Promise<{ change: true; start: string } | { change: false }> {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.id = 'shotNamesOverlay';
+    overlay.style.cssText =
+      'position:fixed;inset:0;z-index:999999;background:rgba(0,0,0,0.75);'
+      + 'display:flex;align-items:center;justify-content:center;padding:20px;'
+      + 'font-family:-apple-system,BlinkMacSystemFont,sans-serif;';
+    const box = document.createElement('div');
+    box.style.cssText = 'background:#1a1a1a;border-radius:12px;padding:24px;max-width:380px;width:100%;color:#fff;text-align:left;';
+    const row = 'display:flex;align-items:center;gap:10px;font-size:13px;font-weight:700;color:#fff;cursor:pointer;';
+    box.innerHTML =
+      '<div style="font-weight:700;font-size:14px;margin-bottom:8px;">PLEASE CHECK THE IMPORTED SHOT NAMES:</div>'
+      + '<div id="shotNamesSays" style="color:#aaa;font-size:13px;line-height:1.5;margin-bottom:18px;"></div>'
+      + `<label style="${row}"><input type="radio" name="shotNamesHow" id="shotNamesChange" checked style="width:18px;height:18px;accent-color:#d52632;"> CHANGE NUMBERS TO</label>`
+      + '<div style="display:flex;align-items:center;gap:10px;margin:8px 0 16px 28px;font-size:13px;color:#ddd;">Start numbering at:'
+      + ' <input type="text" id="shotNamesStart" value="01" inputmode="numeric" maxlength="5" autocomplete="off"'
+      + ' style="width:70px;padding:6px 8px;background:#000;border:1px solid #555;border-radius:6px;color:#fff;font-size:14px;text-align:center;"></div>'
+      + `<label style="${row}margin-bottom:22px;"><input type="radio" name="shotNamesHow" id="shotNamesKeep" style="width:18px;height:18px;accent-color:#d52632;"> KEEP ORIGINAL NUMBERS</label>`
+      + '<button type="button" id="shotNamesOk" style="display:block;width:100%;padding:12px;background:#2a2a2a;border:1px solid #555;border-radius:8px;color:#fff;font-size:14px;font-weight:700;cursor:pointer;">OK</button>';
+    (box.querySelector('#shotNamesSays') as HTMLElement).textContent =
+      `These pictures carry names (${first}${last && last !== first ? ` … ${last}` : ''}).`;
+    const start = box.querySelector('#shotNamesStart') as HTMLInputElement;
+    const change = box.querySelector('#shotNamesChange') as HTMLInputElement;
+    // Typing a start is choosing to change.
+    start.addEventListener('input', () => { start.value = start.value.replace(/\D/g, ''); change.checked = true; });
+    start.addEventListener('focus', () => { change.checked = true; });
+    (box.querySelector('#shotNamesOk') as HTMLElement).onclick = () => {
+      overlay.remove();
+      resolve(change.checked ? { change: true, start: start.value.trim() || '01' } : { change: false });
+    };
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+  });
+}
+

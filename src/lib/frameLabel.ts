@@ -102,3 +102,26 @@ export function labelsForPickedPictures(baseNames: readonly string[], labels: re
   let next = highest;
   return baseNames.map((n, i) => (nameIsOnlyACode(n) ? String(++next) : labels[i]));
 }
+
+// ---------------------------------------------------------------------------
+// …AND A FILE NAMED BY THE CAMERA (19 Nov, Roman's iPhone: five pictures from
+// Photos, "IMG_8813.jpeg" … — the shots were called 8813, 8814, 8817: "that's
+// weird if an image is called 8813"). That number is the phone's running photo
+// counter, not a shot number. The person is asked (modals.ts,
+// askImportedShotNames): number them from a start they choose, or keep them.
+// ---------------------------------------------------------------------------
+
+/** The counter in a camera's own file name — IMG_8813, DSC_0042, PXL_2026…,
+ *  GOPR0123 — or null when the name is not a camera's. */
+export function cameraNumberOf(base: string): number | null {
+  const m = (base || '').trim().match(/^(?:IMG|DSC|DSCN|DSCF|PXL|MVI|GOPR|DJI|SAM|PICT|P)[ _-]?(\d{3,})(?:[ _-]\d+)*$/i);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+/** "01" → 01 02 03 …; "5" → 5 6 7; "010" → 010 011. The form that was typed is kept. */
+export function numberedFrom(start: string, count: number): string[] {
+  const typed = /^\d+$/.test((start || '').trim()) ? start.trim() : '01';
+  const from = parseInt(typed, 10);
+  return Array.from({ length: count }, (_, i) => String(from + i).padStart(typed.length, '0'));
+}
+

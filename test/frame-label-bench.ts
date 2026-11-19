@@ -5,7 +5,7 @@
 // Every line of the rule in src/lib/frameLabel.ts, as a plain statement with
 // the answer next to it. One second, no browser.
 
-import { nextFrameLabel, nameIsOnlyACode, labelsForPickedPictures } from '../src/lib/frameLabel';
+import { nextFrameLabel, nameIsOnlyACode, labelsForPickedPictures, cameraNumberOf, numberedFrom } from '../src/lib/frameLabel';
 
 let failed = 0;
 function is(what: string, got: string, want: string): void {
@@ -60,6 +60,20 @@ const codes = ['9406091e-2a71-4759-80ad-76b1b6478787', '0a11c3d2-7b6e-4f00-9a1b-
 is('three pictures from Photos → 1 2 3, in the order picked', labelsForPickedPictures(codes, ['9406091e 2a71', '0a11c3d2 7b6e', 'fe01aa22 0000']).join(' '), '1 2 3');
 is('real names keep theirs',                    labelsForPickedPictures(['beach_01', 'beach_02'], ['01', '02']).join(' '), '01 02');
 is('mixed: codes go on after the highest number', labelsForPickedPictures(['shot_07', codes[0], 'shot_03', codes[1]], ['07', 'x', '03', 'y']).join(' '), '07 8 03 9');
+
+console.log('\nA CAMERA\'S OWN FILE NAMES, and numbering from a start (19 Nov)');
+is('IMG_8813 is a camera name',            String(cameraNumberOf('IMG_8813')), '8813');
+is('DSC_0042',                             String(cameraNumberOf('DSC_0042')), '42');
+is('GOPR0123 (no underscore)',             String(cameraNumberOf('GOPR0123')), '123');
+is('PXL_20261119_153000',                  String(cameraNumberOf('PXL_20261119_153000')), '20261119');
+is('beach_01 is not a camera name',        String(cameraNumberOf('beach_01')), 'null');
+is('kitchen wide is not a camera name',    String(cameraNumberOf('kitchen wide')), 'null');
+is('IMG_12 (two digits) is not taken for one', String(cameraNumberOf('IMG_12')), 'null');
+is('from 01 → 01 02 03',                   numberedFrom('01', 3).join(' '), '01 02 03');
+is('from 5 → 5 6 7',                       numberedFrom('5', 3).join(' '), '5 6 7');
+is('from 010 → 010 011',                   numberedFrom('010', 2).join(' '), '010 011');
+is('from 09 → 09 10 11',                   numberedFrom('09', 3).join(' '), '09 10 11');
+is('nothing typed → from 01',              numberedFrom('', 2).join(' '), '01 02');
 
 console.log(failed ? `\n${failed} FAILED` : '\nall green');
 process.exit(failed ? 1 : 0);
