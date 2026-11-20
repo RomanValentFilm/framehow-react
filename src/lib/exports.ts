@@ -10,7 +10,8 @@ import JSZip from 'jszip';
 import { state, useStore, DEFAULT_STRIP_DEFS, createDefaultExportMeta, SETUP_COLORS, columnName } from '../store/state';
 import type { Frame, StripType, ExportMeta, SortBreak, TableData } from '../store/state';
 import { rasterizeMain, rasterizeVersion, versionHasContent, canvasToBlob, withBakedBorder } from './rasterize';
-import { showToast } from './modals';
+import { showToast, showImportantNote } from './modals';
+import { picturesArriving } from './lazyPictures';
 import { fhTrack } from './tracking';
 import { getCurrentProject, flushSyncNow } from './currentProject';
 import { registerPdfFont, PDF_FONT } from './pdfFont';
@@ -763,7 +764,29 @@ export function openPptxModal(): void {
   updateExportVisibility(layout, 'pptx');
 }
 
+/**
+ * NO EXPORT WHILE THE PROJECT'S PICTURES ARE STILL ARRIVING (20 Nov, Roman moved
+ * this up from after the App Store: "is this not necessary to have before apple
+ * submission?"). A project opens at once and its pictures follow in the
+ * background; the small previews that stand on the cards meanwhile are never
+ * exported (lazyPictures.ts). So an export pressed in those first seconds or
+ * minutes made a document with empty cards — and said nothing. A wrong PDF
+ * handed to a crew.
+ *
+ * His way, and no second bar: the bar at the bottom is already counting, so the
+ * export says so and stops. The export box stays as it is; when the bar is
+ * gone, Export does its work.
+ */
+function picturesStillLoading(): boolean {
+  const a = picturesArriving();
+  if (!a) return false;
+  trace(`export: held — the project's pictures are still arriving (${a.done} of ${a.total})`);
+  void showImportantNote('PICTURES ARE LOADING', 'See the progress in the bar at the bottom of the screen.');
+  return true;
+}
+
 export async function runExport(): Promise<void> {
+  if (picturesStillLoading()) return;
   fhTrack('export_pdf');
   const s = state();
   const layout = (document.querySelector('input[name="exportLayout"]:checked') as HTMLInputElement).value;
@@ -1760,6 +1783,7 @@ export async function runExport(): Promise<void> {
 }
 
 export async function runPptxExport(): Promise<void> {
+  if (picturesStillLoading()) return;
   fhTrack('export_pptx');
   const s = state();
   const layout = (document.querySelector('input[name="pptxLayout"]:checked') as HTMLInputElement).value;
@@ -2628,6 +2652,7 @@ export function openImageExportModal(): void {
 }
 
 export async function runImageExport(): Promise<void> {
+  if (picturesStillLoading()) return;
   fhTrack('export_images');
   const s = state();
   const nameInput = document.getElementById('imageExportProjectName') as HTMLInputElement;
@@ -2705,6 +2730,7 @@ export function openPortraitExportModal(mode: 'pdf' | 'pptx'): void {
 }
 
 export async function runPortraitExport(): Promise<void> {
+  if (picturesStillLoading()) return;
   if (_portraitExportMode === 'pptx') {
     await runPortraitPptxExport();
   } else {
@@ -3117,6 +3143,7 @@ export function openPortraitImageExportModal(): void {
 }
 
 export async function runPortraitImageExport(): Promise<void> {
+  if (picturesStillLoading()) return;
   fhTrack('export_portrait_images');
   const s = state();
   const baseName = safeName((document.getElementById('portraitImageExportName') as HTMLInputElement)?.value || 'Storyboard');
@@ -3304,6 +3331,7 @@ function noFittingPhotos(): void {
 }
 
 export async function runFittingExport(): Promise<void> {
+  if (picturesStillLoading()) return;
   if (_fittingExportMode === 'pptx') await runFittingPptxExport();
   else await runFittingPdfExport();
 }
@@ -3503,6 +3531,7 @@ export function openFittingImageExportModal(): void {
 /** Same names and numbering as the other image exports: NAME_talent.jpg and
  *  NAME_talent~look_L1.jpg, in one zip. */
 export async function runFittingImageExport(): Promise<void> {
+  if (picturesStillLoading()) return;
   fhTrack('export_fitting_images');
   const on = (id: string) => (document.getElementById(id) as HTMLInputElement | null)?.checked ?? false;
   const baseName = safeName((document.getElementById('fittingImageExportName') as HTMLInputElement)?.value || 'Fitting');

@@ -748,5 +748,8 @@ v5.0.225 · #777 (10 Nov, night)
 ## v5.0.336 · #888 (dev, run 831, 19 Nov — look only)
 - The question about camera names: "CHANGE NUMBERS TO:" with the colon (Roman, after seeing it).
 
-## v5.0.337 · #889 (next)
+## v5.0.337 · #889 (dev, run 833, 20 Nov 13:16 — tests 59, 60, 74, 76 green)
 - FULL RUN 832 (19 Nov 19:09–20:34): 190 green, 1 red — test 60 "three pictures loaded at once fill v1, v2, v3 … on both devices": the iPad had v1● v2● v3○. A fault of THE SAME DAY's work, never live: since "the same picture goes up once" two versions can name one file; on the receiving device both arrivals of that file looked for "the version with this name" and both took the first — the other stayed empty. Cure (accountFlow, the background picture arrivals — both the arriving and the 'picture gone' path): the version the arrival was meant for, if it still carries the name; else one with the name and no picture yet; else the first.
+
+## v5.0.338 · #890 (next)
+- NO EXPORT WHILE THE PROJECT'S PICTURES ARE STILL ARRIVING (list item 28, moved up by Roman 20 Nov). A project opens at once, ALL its pictures follow in the background (the bar at the bottom counts); the previews on the cards are never exported — an export pressed in that window made a document with empty cards and said nothing. Now every export (PDF, PowerPoint, images; 9:16; fitting) stops there with a note — his words: "PICTURES ARE LOADING" / "See the progress in the bar at the bottom of the screen." / OK — and makes nothing; the export box stays as it was. No second bar, no waiting code. Test 70, third play.

@@ -179,3 +179,40 @@ test('lazy loading: the app is closed while the pictures come — it starts in t
   await expect.poll(async () => (await toCome(desktop)).bar, { timeout: 30_000 }).toBeNull();
   await desktop.close();
 });
+
+// NO EXPORT WHILE THE PICTURES ARE STILL ARRIVING (20 November; Roman moved it up:
+// "is this not necessary to have before apple submission?"). The previews on the
+// cards are never exported — so an export pressed in the first seconds after an
+// opening made a document with empty cards, and said nothing. His way, without a
+// second bar: the export says the pictures are still loading, points at the bar
+// at the bottom, and makes nothing. When the bar is gone, Export does its work.
+test('lazy loading: an export while the pictures are still arriving makes nothing and says why; when they are in, it exports', async ({ browser }) => {
+  const { token } = await freshAccount();
+  const desktop = await Device.open(browser, 'desktop', token);
+  const { bigId } = await makeBig(desktop);
+
+  say('BIG is opened; each of its pictures takes four seconds — and Export is pressed at once');
+  await slowPictures(desktop, 4_000);
+  await openAndBeIn(desktop, bigId);
+  expect((await toCome(desktop)).arriving, 'pictures are still to come').not.toBeNull();
+  let downloads = 0;
+  desktop.page.on('download', () => { downloads++; });
+  await desktop.page.evaluate(() => (window as never as { __fh_test: { exportVia(k: string): void } }).__fh_test.exportVia('pdf'));
+  const note = desktop.page.locator('#importantNote');
+  await expect(note, 'IT SAYS WHY').toBeVisible({ timeout: 10_000 });
+  await expect(note).toContainText('PICTURES ARE LOADING');
+  await expect(note).toContainText('See the progress in the bar at the bottom of the screen.');
+  await note.getByRole('button').click();
+  await desktop.page.waitForTimeout(2500);
+  expect(downloads, 'NO DOCUMENT WAS MADE with pictures missing').toBe(0);
+  expect((await toCome(desktop)).bar ?? '', 'the bar at the bottom goes on counting').toMatch(/^Loading pictures \d+ \/ 6$/);
+
+  say('every picture is in, the bar is gone: Export makes the PDF');
+  await expect.poll(async () => (await toCome(desktop)).bar, { timeout: 90_000 }).toBeNull();
+  await desktop.page.unroute('**/images/**');
+  const file = await desktop.exportAndCatch('pdf');
+  expect(file.head, 'a PDF').toBe('%PDF');
+  expect(file.size, 'with the pictures in it').toBeGreaterThan(2000);
+  await desktop.close();
+});
+
