@@ -745,5 +745,8 @@ v5.0.225 · #777 (10 Nov, night)
 - MEASURED (Roman's iPhone, 17:57, v5.0.334): pictures from Photos arrive as "IMG_8813.jpeg" etc. — the shots are 8813, 8814, 8817, 8819, 8820. Real names; nothing more to build for item 13.
 - PICTURES WITH A CAMERA'S OWN NAMES: THE PERSON IS ASKED (Roman, 19 Nov, after his phone made shots called 8813, 8814 …: "that's weird"; the box and its words are his). When every picked picture is named by a camera (IMG_, DSC_, PXL_, GOPR … — or only by a code), before the project is made: "PLEASE CHECK THE IMPORTED SHOT NAMES:" / "These pictures carry names (IMG_8813 … IMG_8820)." / ○ CHANGE NUMBERS TO — Start numbering at: [01] / ○ KEEP ORIGINAL NUMBERS / OK. One of the two is always ticked (CHANGE to begin with). CHANGE numbers them from the start typed, in the form typed (01 → 01 02 03; 5 → 5 6 7), in the order the photos were taken. KEEP is as before. A folder somebody named is not asked about. frameLabel.ts (cameraNumberOf, numberedFrom; bench +12), modals.ts (askImportedShotNames), files.ts. Test 81.
 
-## v5.0.336 · #888 (next)
+## v5.0.336 · #888 (dev, run 831, 19 Nov — look only)
 - The question about camera names: "CHANGE NUMBERS TO:" with the colon (Roman, after seeing it).
+
+## v5.0.337 · #889 (next)
+- FULL RUN 832 (19 Nov 19:09–20:34): 190 green, 1 red — test 60 "three pictures loaded at once fill v1, v2, v3 … on both devices": the iPad had v1● v2● v3○. A fault of THE SAME DAY's work, never live: since "the same picture goes up once" two versions can name one file; on the receiving device both arrivals of that file looked for "the version with this name" and both took the first — the other stayed empty. Cure (accountFlow, the background picture arrivals — both the arriving and the 'picture gone' path): the version the arrival was meant for, if it still carries the name; else one with the name and no picture yet; else the first.

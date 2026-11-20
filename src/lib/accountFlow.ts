@@ -5958,6 +5958,17 @@ async function bringThePictures(
     );
   }
 
+  // TWO VERSIONS MAY CARRY ONE FILE (full run 832, test 60 red, 19 Nov: three
+  // pictures loaded at once, two of them the same picture — since that day the
+  // same picture goes up once, and both versions name the one file. On the other
+  // device both arrivals looked for "the version with this name", both found the
+  // FIRST, and the second version stayed empty for good.) The version this
+  // arrival was meant for, if it still carries the name; else one with the name
+  // that has no picture yet; else the first with it; -1 when none has it.
+  const versionForThisArrival = (vers: Version[] | undefined, key: string, meantFor: number): number => {
+    const named = (vers ?? []).map((v, i) => ({ v, i })).filter((x) => x.v.r2Key === key);
+    return (named.find((x) => x.i === meantFor) ?? named.find((x) => !x.v.bgImage) ?? named[0])?.i ?? -1;
+  };
   for (const task of versionImageTasks) {
     allFetches.push(
       oneOfEight(() => fetchWithRetry(task.r2Key))
@@ -5971,7 +5982,7 @@ async function bringThePictures(
           // (in the background the person may have added, moved or removed
           // versions meanwhile: the picture goes to the version that carries
           // its name, wherever it stands now — or nowhere)
-          const at = background ? (vers ?? []).findIndex((v) => v.r2Key === task.r2Key) : task.versionIdx;
+          const at = background ? versionForThisArrival(vers, task.r2Key, task.versionIdx) : task.versionIdx;
           if (background && at < 0) { fetchedImageCount++; return; }
           if (!vers || !vers[at]) return;
           const updatedVers = [...vers];
@@ -6004,7 +6015,7 @@ async function bringThePictures(
           if (e instanceof PictureGone) {
             const st = useStore.getState();
             const vers = st.stripVersions[task.strip]?.[task.localId];
-            const at = background ? (vers ?? []).findIndex((v) => v.r2Key === task.r2Key) : task.versionIdx;
+            const at = background ? versionForThisArrival(vers, task.r2Key, task.versionIdx) : task.versionIdx;
             if (vers && vers[at]) {
               const updatedVers = [...vers];
               updatedVers[at] = { ...updatedVers[at], bgImage: null, r2Key: undefined, pictureDeleted: true };
