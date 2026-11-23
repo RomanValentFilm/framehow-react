@@ -27,6 +27,7 @@ export function handleFolderImages(e: Event): void {
   // asked before the storyboard is emptied for it.
   if (files.length > MAX_SHOTS) {
     trace(`limit: ${files.length} pictures picked for a new project — ${MAX_SHOTS} shots is the most; nothing is made`);
+    fhTrack('limit_reached', { which: 'shots' });
     void showImportantNote('SHOT LIMIT REACHED', `A project can hold ${MAX_SHOTS} shots. Create a new project for more.`);
     input.value = '';
     return;

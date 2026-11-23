@@ -30,6 +30,7 @@ export function shotLimitReached(adding = 1): boolean {
   const have = state().frames.length;
   if (have + adding <= MAX_SHOTS) return false;
   trace(`limit: ${have} shot(s) in the project, ${adding} more asked for — ${MAX_SHOTS} is the most; nothing is made`);
+  void import('./tracking').then((m) => m.fhTrack('limit_reached', { which: 'shots' }));
   void import('./modals').then((m) => m.showImportantNote('SHOT LIMIT REACHED',
     `A project can hold ${MAX_SHOTS} shots. Create a new project for more.`));
   return true;
@@ -50,6 +51,7 @@ export async function projectLimitReached(): Promise<boolean> {
   if (live < MAX_PROJECTS) return false;
   trace(`limit: the account has ${live} project(s) — ${MAX_PROJECTS} is the most; no new one is started`);
   const { showImportantNote } = await import('./modals');
+  void import('./tracking').then((m) => m.fhTrack('limit_reached', { which: 'projects' }));
   await showImportantNote('PROJECT LIMIT REACHED',
     `An account can hold ${MAX_PROJECTS} projects. Delete the old projects you no longer need to make a new one.`);
   return true;

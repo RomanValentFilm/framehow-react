@@ -69,7 +69,7 @@ router.post("/track", async (c) => {
       `INSERT INTO analytics_events (ts, event, uid, sid, device, browser, pwa, country, meta)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-      .bind(now, event, uid || null, sid, device || null, browser || null, pwa ? 1 : 0, country, metaStr)
+      .bind(now, event, uid || null, sid, device || null, browser || null, pwa === 2 ? 2 : pwa ? 1 : 0, country, metaStr)
       .run();
 
     // Upsert session
@@ -81,7 +81,7 @@ router.post("/track", async (c) => {
          last_seen = excluded.last_seen,
          events = analytics_sessions.events + 1`
     )
-      .bind(sid, uid || null, device || null, browser || null, pwa ? 1 : 0, country, now, now)
+      .bind(sid, uid || null, device || null, browser || null, pwa === 2 ? 2 : pwa ? 1 : 0, country, now, now)
       .run();
 
     return c.json({ ok: true });
@@ -191,6 +191,65 @@ router.get("/analytics/funnel", async (c) => {
 });
 
 // ─── Shared helpers ───────────────────────────────────────────────────────
+// A CLICK ON A COLUMN'S TITLE SORTS BY IT (23 Nov, Roman: "can we make the data
+// fields on top of each section also clickable?"). One script for every table
+// on every page. A cell's value is its data-v when it has one; else a date
+// (23/11/2026 15:55:41), a duration (5s, 4m, 313.0h), a number, or plain text.
+// Rows behind "Show more" are sorted along and stay behind it.
+const SORT_SCRIPT = `<script>
+(function () {
+  function val(td) {
+    if (!td) return '';
+    var v = td.getAttribute('data-v');
+    if (v !== null) return isNaN(Number(v)) || v === '' ? v : Number(v);
+    var t = (td.textContent || '').trim();
+    var d = t.match(/^(\\d\\d)\\/(\\d\\d)\\/(\\d{4})(?: (\\d\\d):(\\d\\d)(?::(\\d\\d))?)?$/);
+    if (d) return new Date(+d[3], +d[2] - 1, +d[1], +(d[4] || 0), +(d[5] || 0), +(d[6] || 0)).getTime();
+    var u = t.match(/^([\\d.]+)(s|m|h)$/);
+    if (u) return parseFloat(u[1]) * (u[2] === 's' ? 1000 : u[2] === 'm' ? 60000 : 3600000);
+    var n = t.match(/^-?[\\d.,]+(?=$|[ %])/);
+    if (n) return parseFloat(n[0].replace(/,/g, ''));
+    return t.toLowerCase();
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('table'), function (table) {
+    if (!table.tHead || !table.tHead.rows.length || !table.tBodies.length) return;
+    var heads = table.tHead.rows[0].cells, at = -1, down = false;
+    Array.prototype.forEach.call(heads, function (h, i) {
+      if (!(h.textContent || '').trim()) return;
+      h.style.cursor = 'pointer'; h.title = 'Sort';
+      h.addEventListener('click', function () {
+        var bodies = Array.prototype.slice.call(table.tBodies);
+        var sizes = bodies.map(function (b) { return b.rows.length; });
+        var rows = [];
+        bodies.forEach(function (b) { Array.prototype.push.apply(rows, Array.prototype.slice.call(b.rows)); });
+        if (rows.some(function (r) { return r.cells.length !== heads.length; })) return;
+        var vals = rows.map(function (r) { return val(r.cells[i]); });
+        var numbers = vals.every(function (v) { return typeof v === 'number' || v === ''; });
+        var desc = at === i ? !down : numbers;
+        var order = rows.map(function (r, n) { return n; }).sort(function (a, b) {
+          var x = vals[a], y = vals[b], r;
+          if (numbers) r = (x === '' ? -Infinity : x) - (y === '' ? -Infinity : y);
+          else r = String(x).localeCompare(String(y));
+          return (desc ? -r : r) || a - b;
+        });
+        var k = 0;
+        bodies.forEach(function (b, n) { for (var c = 0; c < sizes[n]; c++) b.appendChild(rows[order[k++]]); });
+        Array.prototype.forEach.call(heads, function (o, n) {
+          o.textContent = o.textContent.replace(/ [\\u25B2\\u25BC]$/, '') + (n === i ? (desc ? ' \\u25BC' : ' \\u25B2') : '');
+        });
+        at = i; down = desc;
+      });
+    });
+  });
+})();
+</script>`;
+
+// HOW IT IS INSTALLED (23 Nov, Roman: "we do not need the PWA, but the real
+// app then"): 2 = the app from the App Store, 1 = the web app on the home
+// screen, 0 = a browser.
+function installBadge(pwa: number | null | undefined): string {
+  return pwa === 2 ? ' <span class="pwa">APP</span>' : pwa ? ' <span class="pwa">PWA</span>' : '';
+}
 function fmtDuration(ms: number): string {
   if (ms < 60000) return Math.round(ms / 1000) + "s";
   if (ms < 3600000) return Math.round(ms / 60000) + "m";
@@ -299,7 +358,7 @@ button { padding: 10px 16px; border-radius: 8px; border: 0; background: #4fc3f7;
 <body><h1>Framehow Analytics</h1>
 <form method="post" action="/analytics/login" autocomplete="off"><input type="password" name="password" placeholder="admin password" autofocus><button>Sign in</button></form>
 ${wrong ? '<p style="color:#ef5350;margin-top:12px">Wrong password.</p>' : ''}${says ? `<p style="color:#ef5350;margin-top:12px">${says}</p>` : ''}
-</body></html>`;
+${SORT_SCRIPT}</body></html>`;
 }
 
 router.post("/analytics/login", async (c) => {
@@ -359,8 +418,8 @@ router.get("/analytics", async (c) => {
     db.prepare("SELECT COUNT(*) as n FROM analytics_sessions WHERE device = 'phone'").first<{ n: number }>(),
     // Unique users by device/pwa
     db.prepare("SELECT COUNT(DISTINCT uid) as n FROM analytics_sessions WHERE uid IS NOT NULL AND device = 'desktop'").first<{ n: number }>(),
-    db.prepare("SELECT COUNT(DISTINCT uid) as n FROM analytics_sessions WHERE uid IS NOT NULL AND device = 'tablet' AND pwa = 1").first<{ n: number }>(),
-    db.prepare("SELECT COUNT(DISTINCT uid) as n FROM analytics_sessions WHERE uid IS NOT NULL AND device = 'phone' AND pwa = 1").first<{ n: number }>(),
+    db.prepare("SELECT COUNT(DISTINCT uid) as n FROM analytics_sessions WHERE uid IS NOT NULL AND device = 'tablet' AND pwa = 2").first<{ n: number }>(),
+    db.prepare("SELECT COUNT(DISTINCT uid) as n FROM analytics_sessions WHERE uid IS NOT NULL AND device = 'phone' AND pwa = 2").first<{ n: number }>(),
     // Browser mobile sessions (not PWA, phone or tablet)
     db.prepare("SELECT COUNT(*) as n FROM analytics_sessions WHERE device IN ('phone','tablet') AND pwa = 0").first<{ n: number }>(),
     // Projects
@@ -373,26 +432,55 @@ router.get("/analytics", async (c) => {
        FROM analytics_sessions s LEFT JOIN users u ON s.uid = u.id
        ORDER BY s.last_seen DESC LIMIT 50`
     ).all(),
-    Promise.all(
-      [
+    (async () => {
+      const steps = [
         { name: "app_opened", label: "Opened app" },
-        { name: "signpost_choice", label: "Chose project type" },
+        { name: "signpost_choice", label: "Chose how to start" },
         { name: "signup", label: "Created account" },
+        { name: "email_confirmed", label: "Confirmed email" },
+        { name: "login", label: "Signed in" },
         { name: "project_created", label: "Created project" },
-        { name: "draw_used", label: "Used draw" },
-        { name: "write_used", label: "Used write" },
-        { name: "camera_opened", label: "Used camera" },
-        { name: "export_pdf", label: "Exported PDF (landscape)" },
-        { name: "export_pptx", label: "Exported PPTX (landscape)" },
-        { name: "export_images", label: "Exported Images (landscape)" },
-        { name: "export_portrait_pdf", label: "Exported PDF (portrait)" },
-        { name: "export_portrait_pptx", label: "Exported PPTX (portrait)" },
-        { name: "export_portrait_images", label: "Exported Images (portrait)" },
-      ].map(async (step) => {
-        const r = await db.prepare("SELECT COUNT(DISTINCT sid) as n FROM analytics_events WHERE event = ?").bind(step.name).first<{ n: number }>();
-        return { ...step, sessions: r?.n || 0 };
-      })
-    ),
+        { name: "project_opened", label: "Opened a project" },
+        { name: "pdf_loaded", label: "Loaded a storyboard PDF" },
+        { name: "images_loaded", label: "Loaded pictures from a folder" },
+        { name: "camera_opened", label: "Opened the camera" },
+        { name: "photo_taken", label: "Took a photo" },
+        { name: "draw_used", label: "Used DRAW" },
+        { name: "write_used", label: "Used WRITE" },
+        { name: "version_added", label: "Added a version (ANGLES / SKETCHES / REFS / LOOKS)" },
+        { name: "star_used", label: "Used stars" },
+        { name: "view_grid3x2", label: "Used the 3x2 view" },
+        { name: "max_view_opened", label: "Opened the MAX view" },
+        { name: "library_opened", label: "Opened the PICTS library" },
+        { name: "picture_shared", label: "Shared a picture" },
+        { name: "needs_used", label: "Used NEEDS" },
+        { name: "notes_used", label: "Used NOTES" },
+        { name: "setups_used", label: "Used SETUPS" },
+        { name: "group_used", label: "Used GROUP" },
+        { name: "shooting_order_used", label: "Used SORT BY / shooting order" },
+        { name: "export_pdf", label: "Exported PDF (storyboard 16×9)" },
+        { name: "export_pptx", label: "Exported PPTX (storyboard 16×9)" },
+        { name: "export_images", label: "Exported images (storyboard 16×9)" },
+        { name: "export_portrait_pdf", label: "Exported PDF (upright 9×16)" },
+        { name: "export_portrait_pptx", label: "Exported PPTX (upright 9×16)" },
+        { name: "export_portrait_images", label: "Exported images (upright 9×16)" },
+        { name: "export_fitting_pdf", label: "Exported PDF (fitting)" },
+        { name: "export_fitting_pptx", label: "Exported PPTX (fitting)" },
+        { name: "export_fitting_images", label: "Exported images (fitting)" },
+        { name: "restore_point_used", label: "Went back to a restore point" },
+        { name: "project_deleted", label: "Deleted a project" },
+        { name: "project_recovered", label: "Recovered a deleted project" },
+        { name: "update_card_shown", label: "Saw an update card" },
+        { name: "update_card_update", label: "Tapped UPDATE / RELOAD on it" },
+        { name: "limit_reached", label: "Hit a limit (50 projects / 300 shots)" },
+        { name: "storage_notice_shown", label: "Saw a storage notice" },
+      ];
+      // ONE question for all the lines (23 Nov): forty lines asked one by one
+      // would be forty trips to the database for one page.
+      const r = await db.prepare("SELECT event, COUNT(DISTINCT sid) as n FROM analytics_events GROUP BY event").all<{ event: string; n: number }>();
+      const by = new Map(r.results.map((x) => [x.event, x.n]));
+      return steps.map((step) => ({ ...step, sessions: by.get(step.name) || 0 }));
+    })(),
     db.prepare("SELECT ts, event, uid, sid, device, browser, pwa, country, meta FROM analytics_events ORDER BY ts DESC LIMIT 100").all(),
     // Top users by session count
     db.prepare(
@@ -495,13 +583,13 @@ ${await storageBarHtml(c.env)}
   <a href="/analytics/users-list" class="expand-btn" style="font-size:13px;padding:8px 14px">All registered users (${totalUsers})</a>
   <a href="/analytics/projects" class="expand-btn" style="font-size:13px;padding:8px 14px">Projects created (${totalProjects})</a>
   <a href="/analytics/device-users?device=desktop" class="expand-btn" style="font-size:13px;padding:8px 14px">Desktop (${desktopUsers} users)</a>
-  <a href="/analytics/device-users?device=tablet&pwa=1" class="expand-btn" style="font-size:13px;padding:8px 14px">PWA Tablet (${pwaTabletUsers} users)</a>
-  <a href="/analytics/device-users?device=phone&pwa=1" class="expand-btn" style="font-size:13px;padding:8px 14px">PWA iPhone (${pwaPhoneUsers} users)</a>
+  <a href="/analytics/device-users?device=phone&pwa=2" class="expand-btn" style="font-size:13px;padding:8px 14px">App iPhone (${pwaPhoneUsers} users)</a>
+  <a href="/analytics/device-users?device=tablet&pwa=2" class="expand-btn" style="font-size:13px;padding:8px 14px">App iPad (${pwaTabletUsers} users)</a>
   <a href="/analytics/browser-mobile" class="expand-btn" style="font-size:13px;padding:8px 14px">Browser Mobile (${browserMobileSessions})</a>
   <a href="/analytics/storage" class="expand-btn" style="font-size:13px;padding:8px 14px">Storage</a>
 </div>
 
-<h2>Funnel <span style="font-size:12px;color:#666;font-weight:400">(unique sessions per step, since tracking deployed)</span></h2>
+<h2>What people do <span style="font-size:12px;color:#666;font-weight:400">(sessions in which it happened at least once · lines added on 23 Nov 2026 count from that day)</span></h2>
 ${funnelSteps.map((s: any) => {
   const pct = funnelMax > 0 ? Math.max(2, (s.sessions / funnelMax) * 100) : 0;
   return `<div class="funnel-bar"><div class="funnel-track"><div class="funnel-fill" style="width:${pct}%"></div><span class="funnel-label">${s.label}</span></div><span class="funnel-count">${s.sessions}</span></div>`;
@@ -515,7 +603,7 @@ ${top10Sessions.map((s: any) => {
     ? `<a href="/analytics/user/${s.uid}">${esc(s.name || s.email || s.uid)}</a>`
     : `<a href="/analytics/session/${s.sid}" class="meta">anonymous</a>`;
   return `<tr>
-  <td>${who}${s.pwa ? ' <span class="pwa">PWA</span>' : ''}</td>
+  <td>${who}${installBadge(s.pwa)}</td>
   <td>${esc(s.device) || '-'}</td>
   <td>${esc(s.browser) || '-'}</td>
   <td>${flag(s.country)} ${esc(s.country) || '-'}</td>
@@ -531,7 +619,7 @@ ${restSessions.map((s: any) => {
     ? `<a href="/analytics/user/${s.uid}">${esc(s.name || s.email || s.uid)}</a>`
     : `<a href="/analytics/session/${s.sid}" class="meta">anonymous</a>`;
   return `<tr>
-  <td>${who}${s.pwa ? ' <span class="pwa">PWA</span>' : ''}</td>
+  <td>${who}${installBadge(s.pwa)}</td>
   <td>${esc(s.device) || '-'}</td>
   <td>${esc(s.browser) || '-'}</td>
   <td>${flag(s.country)} ${esc(s.country) || '-'}</td>
@@ -589,7 +677,7 @@ ${restEvents.length > 0 ? `<a class="expand-btn" onclick="document.getElementByI
 ${top10RecentEvents.map((e: any) => `<tr>
   <td style="white-space:nowrap">${fmtTime(e.ts)}</td>
   <td>${esc(e.event)}</td>
-  <td>${esc(e.device) || '-'}${e.pwa ? ' <span class="pwa">PWA</span>' : ''}</td>
+  <td>${esc(e.device) || '-'}${installBadge(e.pwa)}</td>
   <td>${flag(e.country)} ${esc(e.country) || '-'}</td>
   <td class="meta">${esc((e.sid || '').slice(0, 8))}</td>
   <td class="meta">${esc(e.meta)}</td>
@@ -599,7 +687,7 @@ ${restRecentEvents.length > 0 ? `<tbody id="more-recent" class="hidden-rows">
 ${restRecentEvents.map((e: any) => `<tr>
   <td style="white-space:nowrap">${fmtTime(e.ts)}</td>
   <td>${esc(e.event)}</td>
-  <td>${esc(e.device) || '-'}${e.pwa ? ' <span class="pwa">PWA</span>' : ''}</td>
+  <td>${esc(e.device) || '-'}${installBadge(e.pwa)}</td>
   <td>${flag(e.country)} ${esc(e.country) || '-'}</td>
   <td class="meta">${esc((e.sid || '').slice(0, 8))}</td>
   <td class="meta">${esc(e.meta)}</td>
@@ -608,7 +696,7 @@ ${restRecentEvents.map((e: any) => `<tr>
 </table>
 ${restRecentEvents.length > 0 ? `<a class="expand-btn" onclick="document.getElementById('more-recent').classList.toggle('show');this.textContent=this.textContent.includes('more')?'Show less':'Show ${restRecentEvents.length} more &darr;'">Show ${restRecentEvents.length} more &darr;</a>` : ''}
 
-</body></html>`;
+${SORT_SCRIPT}</body></html>`;
 
   return c.html(html);
 });
@@ -649,7 +737,7 @@ router.get("/analytics/user/:uid", async (c) => {
 <tr><th>Started</th><th>Device</th><th>Browser</th><th>Country</th><th>Duration</th><th>Events</th></tr>
 ${allSessions.map((s: any) => `<tr>
   <td><a href="/analytics/session/${s.sid}">${fmtTime(s.started_at)}</a></td>
-  <td>${esc(s.device) || '-'}${s.pwa ? ' <span class="pwa">PWA</span>' : ''}</td>
+  <td>${esc(s.device) || '-'}${installBadge(s.pwa)}</td>
   <td>${esc(s.browser) || '-'}</td>
   <td>${flag(s.country)} ${esc(s.country) || '-'}</td>
   <td>${fmtDuration(s.duration_ms || 0)}</td>
@@ -657,7 +745,7 @@ ${allSessions.map((s: any) => `<tr>
 </tr>`).join("")}
 </table>
 
-</body></html>`;
+${SORT_SCRIPT}</body></html>`;
 
   return c.html(html);
 });
@@ -683,7 +771,7 @@ router.get("/analytics/session/:sid", async (c) => {
 <a class="back" href="/analytics">&larr; Dashboard</a>
 <div class="user-header">
   <div class="name">Session ${esc(sid.slice(0, 12))}...</div>
-  ${s ? `<div class="detail">${esc(s.device)} / ${esc(s.browser)} ${s.pwa ? '<span class="pwa">PWA</span>' : ''} &middot; ${flag(s.country)} ${esc(s.country)}</div>
+  ${s ? `<div class="detail">${esc(s.device)} / ${esc(s.browser)} ${installBadge(s.pwa)} &middot; ${flag(s.country)} ${esc(s.country)}</div>
   <div class="detail">Started: <b>${fmtTime(s.started_at)}</b> &middot; Duration: <b>${fmtDuration((s.last_seen || 0) - (s.started_at || 0))}</b> &middot; ${s.events} events</div>` : ''}
 </div>
 
@@ -705,7 +793,7 @@ ${allEvents.map((e: any) => {
 }).join('')}
 </div>
 
-</body></html>`;
+${SORT_SCRIPT}</body></html>`;
 
   return c.html(html);
 });
@@ -764,7 +852,7 @@ ${users.map((u: any) => `<tr>
 </table>
 <p style="margin-top:16px"><a href="/analytics/deleted-users" class="expand-btn">Deleted accounts (${closing.length})</a></p>
 
-</body></html>`;
+${SORT_SCRIPT}</body></html>`;
 
   return c.html(html);
 });
@@ -805,7 +893,7 @@ router.get("/analytics/deleted-users", async (c) => {
     <button class="expand-btn" style="margin:0">Restore</button></form></td>
 </tr>`;
 }).join('') || '<tr><td colspan="6" class="meta">None — nobody has deleted their account.</td></tr>'}</tbody></table>
-</body></html>`;
+${SORT_SCRIPT}</body></html>`;
   return c.html(html);
 });
 
@@ -874,7 +962,7 @@ ${projects.map((p: any) => `<tr>
 </tr>`).join("")}
 </table>
 
-</body></html>`;
+${SORT_SCRIPT}</body></html>`;
 
   return c.html(html);
 });
@@ -882,13 +970,19 @@ ${projects.map((p: any) => `<tr>
 // ─── GET /analytics/device-users — Users filtered by device + pwa ──────────
 router.get("/analytics/device-users", async (c) => {
 
-  const device = c.req.query("device") || "desktop";
+  // Only the three known words go into the question (it is put together as
+  // text): anything else asked for is "desktop".
+  const asked = c.req.query("device") || "desktop";
+  const device = ["desktop", "tablet", "phone"].includes(asked) ? asked : "desktop";
   const pwaFilter = c.req.query("pwa");
   const db = c.env.DB;
 
   let label = device.charAt(0).toUpperCase() + device.slice(1);
   let whereClause = `s.device = '${device}'`;
-  if (pwaFilter === "1") {
+  if (pwaFilter === "2") {
+    whereClause += " AND s.pwa = 2";
+    label = device === "phone" ? "App iPhone" : device === "tablet" ? "App iPad" : `App ${label}`;
+  } else if (pwaFilter === "1") {
     whereClause += " AND s.pwa = 1";
     label = `PWA ${label}`;
   } else if (pwaFilter === "0") {
@@ -936,7 +1030,7 @@ ${users.map((u: any) => `<tr>
 </tr>`).join("")}
 </table>
 
-</body></html>`;
+${SORT_SCRIPT}</body></html>`;
 
   return c.html(html);
 });
@@ -1013,7 +1107,7 @@ ${sessions.map((s: any) => {
 }).join("")}
 </table>
 
-</body></html>`;
+${SORT_SCRIPT}</body></html>`;
 
   return c.html(html);
 });
@@ -1038,7 +1132,8 @@ router.get("/analytics/storage", async (c) => {
 
   const [perUserR, liveR, deletedR, unknownR] = await Promise.all([
     db.prepare(
-      `SELECT u.email, u.name,
+      `SELECT u.email, u.name, u.last_used_at,
+              (SELECT MAX(a.last_seen) FROM analytics_sessions a WHERE a.uid = u.id) AS stat_seen,
               COUNT(DISTINCT CASE WHEN p.deleted_at IS NULL THEN p.id END) AS live_projects,
               COUNT(DISTINCT CASE WHEN p.deleted_at IS NOT NULL THEN p.id END) AS deleted_projects,
               COUNT(CASE WHEN p.deleted_at IS NULL THEN i.id END) AS pictures,
@@ -1052,7 +1147,7 @@ router.get("/analytics/storage", async (c) => {
          LEFT JOIN versions v ON v.frame_id = f.id
          LEFT JOIN images i ON i.version_id = v.id
         GROUP BY u.id ORDER BY live_bytes DESC`,
-    ).all<{ email: string; name: string | null; live_projects: number; deleted_projects: number; pictures: number; live_bytes: number; deleted_bytes: number; unknown_size: number }>(),
+    ).all<{ email: string; name: string | null; last_used_at: number | null; stat_seen: number | null; live_projects: number; deleted_projects: number; pictures: number; live_bytes: number; deleted_bytes: number; unknown_size: number }>(),
     db.prepare(
       `SELECT COUNT(DISTINCT p.id) AS projects, COUNT(i.id) AS pictures, COALESCE(SUM(i.size_bytes), 0) AS bytes
          FROM projects p
@@ -1098,16 +1193,22 @@ router.get("/analytics/storage", async (c) => {
   }
 
   const sweepDay = deletedR?.oldest ? fmtDay(deletedR.oldest + 7 * 24 * 60 * 60 * 1000) : "—";
+  // LAST SEEN = the server's own date (since 23 Nov), and before that what the
+  // statistics know — one word on every page (Roman: "last used, or last seen?").
+  const seenOf = (u: { last_used_at: number | null; stat_seen: number | null }) => Math.max(u.last_used_at ?? 0, u.stat_seen ?? 0);
+  perUserR.results.sort((x, y) => seenOf(y) - seenOf(x));
   const rows = perUserR.results.map((u) => {
     const pct = limit > 0 ? Math.round((u.live_bytes / limit) * 100) : 0;
     const color = pct >= 80 ? "#ff6b6b" : "#ccc";
+    // data-v = what a click on the column's title sorts by (23 Nov).
     return `<tr>
-      <td>${esc(u.name || u.email)}<div class="meta">${esc(u.email)}</div></td>
-      <td>${u.live_projects}${u.deleted_projects ? ` <span class="meta">+${u.deleted_projects} deleted</span>` : ""}</td>
-      <td>${u.pictures}${u.unknown_size ? ` <span class="meta">(${u.unknown_size} size unknown)</span>` : ""}</td>
-      <td style="color:${color}">${mb(u.live_bytes)} MB</td>
-      <td style="color:${color}">${pct} %</td>
-      <td class="meta">${u.deleted_bytes ? `${mb(u.deleted_bytes)} MB` : ""}</td>
+      <td data-v="${esc((u.name || u.email).toLowerCase())}">${esc(u.name || u.email)}<div class="meta">${esc(u.email)}</div></td>
+      <td class="last-used" data-v="${seenOf(u)}">never</td>
+      <td data-v="${u.live_projects}">${u.live_projects}${u.deleted_projects ? ` <span class="meta">+${u.deleted_projects} deleted</span>` : ""}</td>
+      <td data-v="${u.pictures}">${u.pictures}${u.unknown_size ? ` <span class="meta">(${u.unknown_size} size unknown)</span>` : ""}</td>
+      <td data-v="${u.live_bytes}" style="color:${color}">${mb(u.live_bytes)} MB</td>
+      <td data-v="${u.live_bytes}" style="color:${color}">${pct} %</td>
+      <td data-v="${u.deleted_bytes}" class="meta">${u.deleted_bytes ? `${mb(u.deleted_bytes)} MB` : ""}</td>
     </tr>`;
   }).join("");
 
@@ -1128,11 +1229,31 @@ ${await storageBarHtml(c.env)}
 </div>
 
 <h2>Per account</h2>
-<table><thead><tr><th>Account</th><th>Projects</th><th>Pictures</th><th>Used</th><th>Of limit</th><th>In deleted</th></tr></thead>
+<table id="perAccount"><thead><tr><th>Account</th><th>Last seen</th><th>Projects</th><th>Pictures</th><th>Used</th><th>Of limit</th><th>In deleted</th></tr></thead>
 <tbody>${rows}</tbody></table>
+<script>
+// LAST SEEN in this browser's own time (23 Nov, Roman). "online now" = the account talked to the server in
+// the last six minutes (the date is stamped every five).
+(function () {
+  var table = document.getElementById('perAccount'); if (!table) return;
+  var body = table.tBodies[0], now = Date.now();
+  var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  function two(n) { return (n < 10 ? '0' : '') + n; }
+  function dayStart(d) { return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(); }
+  Array.prototype.forEach.call(body.querySelectorAll('td.last-used'), function (td) {
+    var ts = Number(td.getAttribute('data-v')); if (!ts) { td.className += ' meta'; return; }
+    var d = new Date(ts), clock = two(d.getHours()) + ':' + two(d.getMinutes());
+    var days = Math.round((dayStart(new Date(now)) - dayStart(d)) / 86400000);
+    if (now - ts < 360000) { td.textContent = 'online now'; td.style.color = '#6fdc8c'; }
+    else if (days === 0) td.textContent = 'today ' + clock;
+    else if (days === 1) td.textContent = 'yesterday ' + clock;
+    else td.textContent = d.getDate() + ' ' + months[d.getMonth()] + (d.getFullYear() !== new Date(now).getFullYear() ? ' ' + d.getFullYear() : '');
+  });
+})();
+</script>
 <p class="meta">Named files in the bucket: ${mb(namedBytes)} MB.</p>
 <p><a href="/analytics/dead-pictures" class="expand-btn">Dead pictures — the cleaner's count (checks restore points and age; deletes nothing)</a></p>
-</body></html>`;
+${SORT_SCRIPT}</body></html>`;
   return c.html(html);
 });
 
@@ -1168,7 +1289,7 @@ router.post("/analytics/restore-account", async (c) => {
 <p><a href="/analytics/users-list">← All users</a></p>
 <h1>The account is back</h1>
 <p class="meta">They can sign in again, and the projects deleted with the account are back in their list.</p>
-</body></html>`);
+${SORT_SCRIPT}</body></html>`);
 });
 
 // ---------------------------------------------------------------------------
@@ -1210,7 +1331,7 @@ router.get("/analytics/dead-pictures", async (c) => {
 
 <h2>A few of them</h2>
 <p class="meta">${count.deadSample.map(esc).join("<br>") || "none"}</p>
-</body></html>`;
+${SORT_SCRIPT}</body></html>`;
   return c.html(html);
 });
 
@@ -1230,7 +1351,7 @@ router.post("/analytics/dead-pictures/delete", async (c) => {
 <p><a href="/analytics/dead-pictures">← Dead pictures</a></p>
 <h1>Deleted ${result.deleted} dead picture file(s) — ${mb(result.bytesFreed)} MB freed</h1>
 <p class="meta">Every file is listed in the worker log. Open the Dead pictures page again for the new count.</p>
-</body></html>`);
+${SORT_SCRIPT}</body></html>`);
 });
 
 export default router;

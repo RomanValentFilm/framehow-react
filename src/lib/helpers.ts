@@ -318,6 +318,7 @@ export function relabelVersions(fid: number): void {
 }
 
 export function addNewVersion(fid: number, newVer: Version): void {
+  void import('./tracking').then((m) => m.fhUsed('version_added'));
   // fhTrack is imported in init; calling site can wrap if needed
   const vers = state().versions[fid];
   let lastVisible = -1;
@@ -381,6 +382,7 @@ export function setVersionStars(fid: number, vi: number, strip: StripType, level
 }
 
 export function toggleStar(fid: number, vi: number, strip: StripType = 'ver'): void {
+  void import('./tracking').then((m) => m.fhUsed('star_used'));
   const vers = getStripVersions(fid, strip);
   if (!vers || !vers[vi]) return;
   const ver = vers[vi];

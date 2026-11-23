@@ -35,6 +35,7 @@ export function createSetup(name: string, colorIndex: number): string {
 }
 
 export function toggleSetupMode(): void {
+  void import('./tracking').then((m) => m.fhUsed('setups_used'));
   const s = state();
   const bar = document.getElementById('setupBar');
   if (!bar) return;

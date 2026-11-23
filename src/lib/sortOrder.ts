@@ -1728,6 +1728,7 @@ function renderDropdown(el: HTMLElement): void {
 
 /** Open frame-set view for any order — handles story flow + auto-creates shooting order */
 export function openOrderView(orderId: string): void {
+  void import('./tracking').then((m) => m.fhUsed('shooting_order_used'));
   if (orderId === '__shooting_new__') {
     // Auto-create first shooting order on first click
     const s = state();

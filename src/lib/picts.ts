@@ -725,6 +725,7 @@ export async function sendPendingDeletions(): Promise<void> {
 }
 
 export async function openPicts(): Promise<void> {
+  void import('./tracking').then((m) => m.fhUsed('library_opened'));
   const token = getToken();
   if (!token) {
     // THE BUTTON SAYS WHY (Roman, 10 Nov): signed out, LIBRARY did nothing at
@@ -1019,6 +1020,7 @@ export async function openPicts(): Promise<void> {
       if (missing.length) { say('One moment…'); for (const p of missing) void fullBlob(p.key, token); return; }
       const files = chosen.map((p, i) => { const b = _full.get(p.key)!; return new File([b], names[i], { type: b.type || 'image/jpeg' }); });
       trace(`PICTS: share sheet — ${files.length} picture(s)`);
+      void import('./tracking').then((m) => m.fhUsed('picture_shared'));
       navigator.share({ files }).catch(() => { /* closed without sharing */ });
       return;
     }

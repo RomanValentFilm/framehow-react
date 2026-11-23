@@ -640,6 +640,7 @@ const _goneRegister = makeGoneRegister();
  */
 export async function deleteCloudProject(p: CloudProject): Promise<void> {
   await api.delete(`/projects/${encodeURIComponent(p.id)}`, getToken());
+  fhTrack('project_deleted');
   p.deleted_at = Date.now();
   clearRectsForProject(p.id);
   // THE ONE YOU WERE LOOKING AT (#471).
@@ -726,6 +727,7 @@ export async function deleteCloudProjectNow(p: CloudProject): Promise<void> {
 /** RECOVER A DELETED PROJECT — the list's Recover after its confirm (#515). */
 export async function recoverCloudProject(p: CloudProject): Promise<void> {
   await api.post(`/projects/${encodeURIComponent(p.id)}/recover`, undefined, getToken());
+  fhTrack('project_recovered');
   p.deleted_at = null;
 }
 
@@ -755,6 +757,7 @@ export async function deleteRestorePoint(projectId: string, snapshotId: string):
 /** RESTORE to a point — the modal's choice, lifted (#515). */
 export async function restoreToPoint(projectId: string, snapshotId: string): Promise<void> {
   await performRestore(projectId, snapshotId);
+  fhTrack('restore_point_used');
 }
 
 /**

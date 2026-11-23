@@ -37,6 +37,14 @@ const _BROWSER = (() => {
 const _PWA = !!(window.navigator as any).standalone
   || window.matchMedia('(display-mode: standalone)').matches;
 
+// ── The App Store app (23 Nov, Roman: "we do not need the PWA, but the real
+// app then"). Until today the app from the App Store was counted as a phone
+// in a browser. Now it says what it is: pwa 2 = the App Store app, 1 = the
+// web app on the home screen, 0 = a browser. Asked at each event, not once at
+// load: the bridge may come up a moment after this file.
+const _installed = (): number =>
+  (window as any).Capacitor?.isNativePlatform?.() ? 2 : _PWA ? 1 : 0;
+
 // ── User ID (set when user logs in) ────────────────────────────────────────
 let _uid: string | null = null;
 
@@ -53,12 +61,23 @@ export function fhTrack(event: string, meta?: Record<string, any>): void {
       sid: _SESSION_ID,
       device: _DEVICE,
       browser: _BROWSER,
-      pwa: _PWA,
+      pwa: _installed(),
     };
     if (_uid) payload.uid = _uid;
     if (meta) payload.meta = meta;
     navigator.sendBeacon(_TRACK_URL, JSON.stringify(payload));
   } catch {}
+}
+
+// ── A feature was used (23 Nov) ─────────────────────────────────────────────
+// Told ONCE per session and feature: the page counts sessions, and a star
+// given forty times is still one session that uses stars.
+const _told = new Set<string>();
+export function fhUsed(event: string, meta?: Record<string, any>): void {
+  const key = meta ? `${event}:${JSON.stringify(meta)}` : event;
+  if (_told.has(key)) return;
+  _told.add(key);
+  fhTrack(event, meta);
 }
 
 // ── Heartbeat (tracks session duration) ────────────────────────────────────

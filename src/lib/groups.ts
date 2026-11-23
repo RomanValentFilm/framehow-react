@@ -201,6 +201,7 @@ export function updateGroupButtonState(): void {
 // ── Sidebar ──
 
 export function toggleGroupSidebar(): void {
+  void import('./tracking').then((m) => m.fhUsed('group_used'));
   if (_sidebarEl) {
     closeGroupSidebar();
     return;

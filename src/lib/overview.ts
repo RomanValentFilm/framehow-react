@@ -1820,9 +1820,9 @@ export function wireGrid3x2PinchZoom(): void {
  *  Exported for the test door (#391) — the two places that open it are both
  *  taps on a card, and a test has to be able to reach the same function. */
 export function openNeedsModal(fid: number, onClosed?: () => void, from?: () => HTMLElement | null,
-                               busyText?: string): void { _openNeedsModal(fid, onClosed, from, busyText); }
+                               busyText?: string): void { void import('./tracking').then((m) => m.fhUsed('needs_used')); _openNeedsModal(fid, onClosed, from, busyText); }
 /** The NOTES box, for a frame-set card in SORT BY (11 Nov). */
-export function openNotesModal(fid: number, onClosed?: () => void, from?: () => HTMLElement | null): void { _openNotesModal(fid, onClosed, from); }
+export function openNotesModal(fid: number, onClosed?: () => void, from?: () => HTMLElement | null): void { void import('./tracking').then((m) => m.fhUsed('notes_used')); _openNotesModal(fid, onClosed, from); }
 
 /** WHERE THE BOX GROWS OUT OF, AND SHRINKS BACK INTO (Roman, 11 Nov: opened
  *  from a frame-set card it "appears from the left upper corner"). In 3x2 that

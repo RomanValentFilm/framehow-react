@@ -62,6 +62,9 @@ async function loadSession(
  * Middleware that requires a valid session. Sets `user` and `sessionId` in the
  * Hono context for downstream handlers.
  */
+const LAST_USED_EVERY_MS = 5 * 60_000;   // Roman 23 Nov: "every 5 mins? so we do not clutter"
+const _lastStamped = new Map<string, number>();
+
 export const requireUser: MiddlewareHandler<{ Bindings: Env; Variables: AppVariables }> = async (
   c,
   next,
@@ -79,6 +82,18 @@ export const requireUser: MiddlewareHandler<{ Bindings: Env; Variables: AppVaria
     const renew = c.env.DB.prepare("UPDATE sessions SET expires_at = ? WHERE id = ?")
       .bind(now + ttl, result.session.id).run().then(() => undefined, () => undefined);
     try { c.executionCtx.waitUntil(renew); } catch { void renew; }
+  }
+  // LAST USED (23 Nov, Roman: "i'd like to see last time used… or online
+  // now"). The account's own date, stamped at most once in five minutes: this
+  // server's memory skips the rest, and the WHERE keeps a second server from
+  // writing again. Never in the way of the request; a failure costs nothing.
+  if (now - (_lastStamped.get(result.user.id) ?? 0) > LAST_USED_EVERY_MS) {
+    _lastStamped.set(result.user.id, now);
+    if (_lastStamped.size > 5000) _lastStamped.clear();
+    const stamp = c.env.DB.prepare(
+      "UPDATE users SET last_used_at = ? WHERE id = ? AND (last_used_at IS NULL OR last_used_at < ?)",
+    ).bind(now, result.user.id, now - LAST_USED_EVERY_MS).run().then(() => undefined, () => undefined);
+    try { c.executionCtx.waitUntil(stamp); } catch { void stamp; }
   }
   c.set("user", {
     id: result.user.id,

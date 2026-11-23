@@ -397,6 +397,7 @@ function showCard(build: string, kind: CardKind = 'first'): void {
   // and comes back next day?" — yes). The day counts from the moment the card
   // is on the screen, answered or not: left unanswered and the device put
   // away, it is gone, and comes once more on a later day.
+  void import('./tracking').then((m) => m.fhTrack('update_card_shown', { kind }));
   if (kind === 'first') { noteNotNow(build); startClock(); }
   if (kind === 'dated' && clock) noteDatedShown(clock);
   const gone = () => { window.clearInterval(aside); document.removeEventListener('visibilitychange', away); window.removeEventListener('offline', lineGone); card.remove(); veil?.remove(); cardUp = false; };
@@ -420,9 +421,10 @@ function showCard(build: string, kind: CardKind = 'first'): void {
     comesBackToday = null;
     heldUntil = Date.now() + waitFor(2 * 60_000);   // a debug device is told every time — but not at once again
     trace('new version: NOT NOW');
+    void import('./tracking').then((m) => m.fhTrack('update_card_not_now', { kind }));
     gone();
   };
-  (card.querySelector('#updateCardNow') as HTMLElement).onclick = () => { gone(); void switchNow(); };
+  (card.querySelector('#updateCardNow') as HTMLElement).onclick = () => { void import('./tracking').then((m) => m.fhTrack('update_card_update', { kind })); gone(); void switchNow(); };
 }
 
 /** THE BENCH (test 63): the five minutes of use have passed. */

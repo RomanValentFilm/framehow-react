@@ -377,6 +377,7 @@ export function maxViewKeepsTheClockAway(): void {
 export function openMaxView(items: Item[], index: number, onClose?: (it: Item, moved: boolean) => void, fileBase = 'Framehow',
                             otherShot?: (dir: 1 | -1) => { items: Item[]; index: number; onClose: (it: Item, moved: boolean) => void; fileBase: string; shotNo: number; other: (dir: 1 | -1) => unknown } | null): void {
   closeMaxView();
+  void import('./tracking').then((m) => m.fhUsed('max_view_opened'));
   let i = Math.max(0, Math.min(index, items.length - 1));
   let startI = i;
   const root = document.createElement('div');
@@ -515,6 +516,7 @@ export function openMaxView(items: Item[], index: number, onClose?: (it: Item, m
     button(SHARE, 'Share', () => {
       if (!ready || ready.at !== i) { say('One moment…'); prepare(); return; }
       trace(`max screen: share sheet — ${ready.file.name}`);
+      void import('./tracking').then((m) => m.fhUsed('picture_shared'));
       holdUntil = Infinity;
       navigator.share({ files: [ready.file] }).catch(() => { /* closed without sharing */ })
         .finally(() => { holdUntil = Date.now() + 1000; });

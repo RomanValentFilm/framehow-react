@@ -95,6 +95,7 @@ export function noteStorage(f: StorageFigure | undefined | null, opts?: { fromHe
   // this device learns it from the next figure and says so once.
   if (_figure?.verified === false && f.verified === true) {
     trace(`storage: email confirmed — ${mbText(f.limit)} MB unlocked`);
+    void import('./tracking').then((m) => m.fhTrack('email_confirmed', {}));
     void import('./modals').then(({ showToast }) => showToast(`Email confirmed — ${mbText(f.limit)} MB unlocked`));
     void import('./session').then((m) => { const u = m.getUser(); if (u && !u.email_verified) m.setUser({ ...u, email_verified: true }); });
   }

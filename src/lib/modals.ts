@@ -135,6 +135,7 @@ export function watchTheFingerForNotices(): void {
   document.addEventListener('touchcancel', up, { passive: true, capture: true });
 }
 export function showStorageNotice(msg: string): void {
+  void import('./tracking').then((m) => m.fhUsed('storage_notice_shown'));
   watchTheFingerForNotices();
   let waited = 0;
   const show = (): void => {
