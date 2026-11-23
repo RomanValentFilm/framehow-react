@@ -759,6 +759,10 @@ v5.0.225 · #777 (10 Nov, night)
 - THE ANALYTICS SIGN-IN LOCKS (Roman, 23 Nov): 5 wrong passwords from one internet address, then five minutes shut ("Too many wrong tries. Wait five minutes."); the right password clears the count. Server only.
 - THE GITHUB TOKEN (list item 16, 23 Nov, done by Roman): new fine-grained token for this one repository, the old ones deleted, the address in the project carries no token any more, the Mac's keychain keeps it.
 
-## v5.0.340 · #892 (next)
+## v5.0.340 · #892
 
 - **The statistics know the app as it is today (23 Nov).** Until now the app from the App Store was counted as "a phone in a browser"; it now says what it is, and the Analytics page has its own cards App iPhone / App iPad (the PWA cards are gone). The app also reports, once per session, the features built since the statistics were made: the PICTS library, the MAX view, sharing a picture, NEEDS, NOTES, SETUPS, GROUP, SORT BY / shooting order, versions added, stars, restore points, a project deleted or recovered, the update cards and what was tapped, a limit reached, a storage notice, the email confirmed. Nothing on the screen changes. The page (server runs 837–839) lists all of it under "What people do", shows fitting exports, sorts every table on a click on a column title, and shows "Last seen" per account on the Storage page (the server's own date, collected from 23 Nov).
+
+## v5.0.341 · #893 (next)
+
+- **Statistics: versions per strip, projects per kind (23 Nov, Roman).** The app writes beside "a version was added" which strip it was (first, second, third) and in which kind of project, and beside "a project was created" whether it is horizontal 16×9, upright 9×16 or a fitting. The Analytics page shows them as their own lines: ANGLE, SKETCH, REFS for storyboards; LOOKS, REFS for fittings (a fitting has no middle strip); three lines for the kinds of project. Nothing on the screen changes.

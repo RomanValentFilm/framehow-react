@@ -433,13 +433,16 @@ router.get("/analytics", async (c) => {
        ORDER BY s.last_seen DESC LIMIT 50`
     ).all(),
     (async () => {
-      const steps = [
+      const steps: Array<{ name: string; label: string; type?: string[]; strip?: string }> = [
         { name: "app_opened", label: "Opened app" },
         { name: "signpost_choice", label: "Chose how to start" },
         { name: "signup", label: "Created account" },
         { name: "email_confirmed", label: "Confirmed email" },
         { name: "login", label: "Signed in" },
         { name: "project_created", label: "Created project" },
+        { name: "project_created", type: ["landscape"], label: "Created project: horizontal 16×9" },
+        { name: "project_created", type: ["portrait"], label: "Created project: upright 9×16" },
+        { name: "project_created", type: ["fitting"], label: "Created project: fitting" },
         { name: "project_opened", label: "Opened a project" },
         { name: "pdf_loaded", label: "Loaded a storyboard PDF" },
         { name: "images_loaded", label: "Loaded pictures from a folder" },
@@ -447,7 +450,11 @@ router.get("/analytics", async (c) => {
         { name: "photo_taken", label: "Took a photo" },
         { name: "draw_used", label: "Used DRAW" },
         { name: "write_used", label: "Used WRITE" },
-        { name: "version_added", label: "Added a version (ANGLES / SKETCHES / REFS / LOOKS)" },
+        { name: "version_added", type: ["landscape", "portrait"], strip: "ver", label: "Added a version in ANGLE" },
+        { name: "version_added", type: ["landscape", "portrait"], strip: "floor", label: "Added a version in SKETCH" },
+        { name: "version_added", type: ["landscape", "portrait"], strip: "refs", label: "Added a version in REFS" },
+        { name: "version_added", type: ["fitting"], strip: "ver", label: "Added a version in LOOKS (fitting)" },
+        { name: "version_added", type: ["fitting"], strip: "refs", label: "Added a version in REFS (fitting)" },
         { name: "star_used", label: "Used stars" },
         { name: "view_grid3x2", label: "Used the 3x2 view" },
         { name: "max_view_opened", label: "Opened the MAX view" },
@@ -479,7 +486,20 @@ router.get("/analytics", async (c) => {
       // would be forty trips to the database for one page.
       const r = await db.prepare("SELECT event, COUNT(DISTINCT sid) as n FROM analytics_events GROUP BY event").all<{ event: string; n: number }>();
       const by = new Map(r.results.map((x) => [x.event, x.n]));
-      return steps.map((step) => ({ ...step, sessions: by.get(step.name) || 0 }));
+      // SPLIT BY KIND OF PROJECT AND BY STRIP (23 Nov, Roman: "each strip
+      // separately… the project type created"): these lines are counted
+      // each on its own, by what the app wrote beside the event. Strips are
+      // counted by their place (first, second, third) — a user may rename them.
+      const split = await Promise.all(steps.map(async (step) => {
+        if (!step.type) return null;
+        const marks = step.type.map(() => "?").join(",");
+        const q = `SELECT COUNT(DISTINCT sid) as n FROM analytics_events
+                    WHERE event = ? AND json_extract(meta, '$.type') IN (${marks})`
+                  + (step.strip ? ` AND json_extract(meta, '$.strip') = ?` : ``);
+        const got = await db.prepare(q).bind(step.name, ...step.type, ...(step.strip ? [step.strip] : [])).first<{ n: number }>();
+        return got?.n || 0;
+      }));
+      return steps.map((step, i) => ({ ...step, sessions: split[i] ?? (by.get(step.name) || 0) }));
     })(),
     db.prepare("SELECT ts, event, uid, sid, device, browser, pwa, country, meta FROM analytics_events ORDER BY ts DESC LIMIT 100").all(),
     // Top users by session count

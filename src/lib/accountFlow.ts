@@ -2930,7 +2930,7 @@ export async function saveNow(opts: { pressed?: boolean } = {}): Promise<void> {
         return;
       }
       markSaved(projectId);
-      fhTrack('project_created', { name: cp.name });
+      fhTrack('project_created', { name: cp.name, type: state().projectType });   // which kind (23 Nov)
     } catch (e) {
       // A named project the user asked to save, which cannot reach the server:
       // this is exactly the moment to explain what happens next.

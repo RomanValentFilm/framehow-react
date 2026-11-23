@@ -318,7 +318,8 @@ export function relabelVersions(fid: number): void {
 }
 
 export function addNewVersion(fid: number, newVer: Version): void {
-  void import('./tracking').then((m) => m.fhUsed('version_added'));
+  // Which strip, in which kind of project (23 Nov, Roman: "each strip separately").
+  void import('./tracking').then((m) => m.fhUsed('version_added', { strip: 'ver', type: state().projectType }));
   // fhTrack is imported in init; calling site can wrap if needed
   const vers = state().versions[fid];
   let lastVisible = -1;
@@ -889,6 +890,7 @@ export function relabelStripVersions(fid: number, strip: StripType): void {
 
 /** Add a new version to any strip, after the last visible tab */
 export function addNewStripVersion(fid: number, strip: StripType, newVer: Version): void {
+  void import('./tracking').then((m) => m.fhUsed('version_added', { strip, type: state().projectType }));
   const vers = getStripVersions(fid, strip);
   let lastVisible = -1;
   for (let i = vers.length - 1; i >= 0; i--) {
