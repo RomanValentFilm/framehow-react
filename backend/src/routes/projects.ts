@@ -99,6 +99,16 @@ projects.post("/", async (c) => {
     return jsonError(c, 400, "invalid_name", "Project name is required.");
   }
   const me = c.get("user");
+  // A CEILING AGAINST ABUSE ONLY (23 Nov, list item 15). The app stops at 50
+  // projects, at the tap that would make the 51st. Here the number is 100: a
+  // project made with no connection reaches us uncounted, and refusing it would
+  // leave work stuck on a device — a limit must never do that. Nobody gets near
+  // 100 by working; a script does.
+  const live = await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM projects WHERE user_id = ? AND deleted_at IS NULL`)
+    .bind(me.id).first<{ n: number }>();
+  if ((live?.n ?? 0) >= 100) {
+    return jsonError(c, 403, "project_limit", "An account can hold 50 projects. Delete the old projects you no longer need to make a new one.");
+  }
   const now = Date.now();
   const id = newId();
   await c.env.DB

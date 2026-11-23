@@ -22,6 +22,8 @@ export const LIMITS = {
   forgotIp: { n: 20, ms: 60 * 60_000 },
   upload: { n: 60, ms: 60_000 },
   track: { n: 600, ms: 60 * 60_000 },
+  // the analytics page's password: 5 wrong tries per address, then five minutes shut (Roman, 23 Nov)
+  adminLogin: { n: 5, ms: 5 * 60_000 },
 } as const;
 
 /** The caller's address as Cloudflare saw it; "?" when there is none (tests). */
@@ -62,6 +64,16 @@ export async function allow(env: Env, door: keyof typeof LIMITS, who: string,
     console.error("[rate] counting failed — allowing", e);
     return true;
   }
+}
+
+/** Is this door shut for `who` right now? Reads only — counts nothing. */
+export async function shut(env: Env, door: keyof typeof LIMITS, who: string): Promise<boolean> {
+  const { n, ms } = LIMITS[door];
+  try {
+    const row = await env.DB.prepare(`SELECT window_start, n FROM rate_hits WHERE k = ?`).bind(`${door}:${who}`)
+      .first<{ window_start: number; n: number }>();
+    return !!row && Date.now() - row.window_start < ms && row.n >= n;
+  } catch { return false; }             // a counting fault must never close a door for everyone
 }
 
 /** Forget a door for one who — a successful sign-in clears the wrong tries. */

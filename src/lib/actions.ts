@@ -1,5 +1,6 @@
 // Action handlers for Main strip and Version/Floor/Refs strip cards.
 
+import { shotLimitReached } from './limits';
 import { COLORS, state, useStore, bumpRenderTick } from '../store/state';
 import type { Frame, StripType, Version } from '../store/state';
 import { reorderFrameInGroup, addFrameToActiveGroup, removeFrameFromGroup, hideFrameInGroup } from './groups';
@@ -179,6 +180,7 @@ export function handleMainAction(action: string, fid: number, div: HTMLElement):
   const wasDrawing = s.drawActive[fid] === 'main';
   clearAllDrawActive();
 
+  if ((action === 'new' || action === 'duplicate') && shotLimitReached()) return;   // 300 shots a project (limits.ts)
   if (action === 'new') {
     // WHAT IT IS CALLED: one rule, in frameLabel.ts (9 Oct, Roman). Portrait
     // and landscape used to be two near-identical copies of this block that

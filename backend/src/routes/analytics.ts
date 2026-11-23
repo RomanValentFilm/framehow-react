@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import type { Env, AppVariables } from "../types";
 import { storageLimitBytes } from "../lib/storage";
 import { countDeadPictures, deleteDeadPictures } from "../lib/cleaner";
-import { allow, ipOf } from "../lib/rateLimit";
+import { allow, clear, ipOf, shut } from "../lib/rateLimit";
 
 // ---------------------------------------------------------------------------
 // THE STORAGE BAR (12 Oct, Roman): how much the whole of Framehow holds at
@@ -292,13 +292,13 @@ async function isAdminRequest(c: { req: { header(n: string): string | undefined 
   return !!cookie && cookie === await adminCookieValue(want);
 }
 
-function loginPage(wrong = false): string {
+function loginPage(wrong = false, says = ""): string {
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="robots" content="noindex"><title>Framehow Analytics</title>
 <style>${PAGE_STYLES} form { margin-top: 40px; display: flex; gap: 8px; } input { padding: 10px 12px; border-radius: 8px; border: 1px solid #333; background: #1a1a1a; color: #fff; font-size: 15px; width: 280px; }
 button { padding: 10px 16px; border-radius: 8px; border: 0; background: #4fc3f7; color: #000; font-weight: 600; font-size: 15px; cursor: pointer; }</style></head>
 <body><h1>Framehow Analytics</h1>
 <form method="post" action="/analytics/login" autocomplete="off"><input type="password" name="password" placeholder="admin password" autofocus><button>Sign in</button></form>
-${wrong ? '<p style="color:#ef5350;margin-top:12px">Wrong password.</p>' : ''}
+${wrong ? '<p style="color:#ef5350;margin-top:12px">Wrong password.</p>' : ''}${says ? `<p style="color:#ef5350;margin-top:12px">${says}</p>` : ''}
 </body></html>`;
 }
 
@@ -306,7 +306,18 @@ router.post("/analytics/login", async (c) => {
   const form = await c.req.parseBody();
   const given = String(form["password"] ?? "");
   const want = c.env.ADMIN_API_TOKEN;
-  if (!want || given !== want) return c.html(loginPage(true), 401);
+  // FIVE WRONG TRIES, THEN FIVE MINUTES SHUT (23 Nov, Roman). The password could
+  // be guessed at without end by anyone who found this address. Counted per
+  // internet address, wrong tries only; the right password clears the count.
+  const who = `ip:${ipOf(c.req)}`;
+  if (await shut(c.env, "adminLogin", who)) {
+    return c.html(loginPage(false, "Too many wrong tries. Wait five minutes."), 429);
+  }
+  if (!want || given !== want) {
+    await allow(c.env, "adminLogin", who);
+    return c.html(loginPage(true), 401);
+  }
+  await clear(c.env, "adminLogin", who);
   const value = await adminCookieValue(want);
   c.header("Set-Cookie", `${ADMIN_COOKIE}=${value}; Path=/analytics; HttpOnly; Secure; SameSite=Strict; Max-Age=${30 * 86400}`);
   return c.redirect("/analytics", 303);

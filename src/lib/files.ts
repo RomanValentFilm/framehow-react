@@ -4,7 +4,8 @@ import { labelsForPickedPictures, nameIsOnlyACode, cameraNumberOf, numberedFrom 
 import { applyDefaultNames } from './userDefaults';
 import { COLORS, state, useStore, resetStoryboardState } from '../store/state';
 import { resetProjectSyncGuards, clearPushedFingerprints } from './accountFlow';
-import { setProgress, showToast, askImportedShotNames } from './modals';
+import { setProgress, showToast, askImportedShotNames, showImportantNote } from './modals';
+import { MAX_SHOTS } from './limits';
 import { fhTrack } from './tracking';
 import { newFrameId } from './ids';
 import { renderAll } from './render';
@@ -19,6 +20,14 @@ export function handleFolderImages(e: Event): void {
   const files = Array.from(input.files || []).filter((f) => f.type.startsWith('image/'));
   if (!files.length) {
     showToast('No images selected');
+    input.value = '';
+    return;
+  }
+  // 300 SHOTS A PROJECT (limits.ts, 23 Nov): a folder of more makes nothing —
+  // asked before the storyboard is emptied for it.
+  if (files.length > MAX_SHOTS) {
+    trace(`limit: ${files.length} pictures picked for a new project — ${MAX_SHOTS} shots is the most; nothing is made`);
+    void showImportantNote('SHOT LIMIT REACHED', `A project can hold ${MAX_SHOTS} shots. Create a new project for more.`);
     input.value = '';
     return;
   }

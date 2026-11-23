@@ -2,6 +2,7 @@
 // handlers, file inputs, and exposes cross-module render hooks via
 // window.__fh_* (used to break circular import cycles between render,
 import { applyCustomise, currentCustomiseValues } from './customise';
+import { projectLimitReached, shotLimitReached } from './limits';
 // overview, actions, and helpers).
 
 import { state, useStore, isTouch, resetStoryboardState } from '../store/state';
@@ -426,7 +427,11 @@ export function initFramehow(): void {
 
   function openNewProjectModal(): void {
     showNewProjectModal((choice: NewProjectChoice) => {
-      openNewProjectModal_dispatch(choice);
+      // 50 PROJECTS AN ACCOUNT (limits.ts, 23 Nov) — on the start chooser too.
+      void (async () => {
+        if (choice !== 'open' && choice !== 'cancel' && await projectLimitReached()) return;
+        openNewProjectModal_dispatch(choice);
+      })();
     });
   }
 
@@ -467,7 +472,12 @@ export function initFramehow(): void {
     // Show modal — clear only if user picks something (not cancel)
     showNewProjectModal((choice: NewProjectChoice) => {
       if (choice === 'cancel') return;
-      void clearBeforeNew().then(() => openNewProjectModal_dispatch(choice));
+      // 50 PROJECTS AN ACCOUNT (limits.ts, 23 Nov): asked BEFORE the open project is left.
+      void (async () => {
+        if (choice !== 'open' && await projectLimitReached()) return;
+        await clearBeforeNew();
+        openNewProjectModal_dispatch(choice);
+      })();
     });
   });
   document.getElementById('menuExport')!.addEventListener('click', () => {
@@ -1141,6 +1151,9 @@ export function initFramehow(): void {
     // The first used to follow the one-picture rule and become a VERSION of the
     // shot — five pictures gave one new version and four new shots. One picture
     // alone still becomes a version, as it always has.
+    // 300 SHOTS A PROJECT (limits.ts, 23 Nov): pictures that would become new shots
+    // past the limit make none — and none is put on the card either.
+    if (shotLimitReached(toVersion && more.length > 0 ? picked.length : more.length)) { (e.target as HTMLInputElement).value = ''; return; }
     if (toVersion && more.length > 0) {
       trace(`LOAD: ${picked.length} pictures on a shot that has one — all become new shots after it`);
       void (async () => {

@@ -3056,6 +3056,8 @@ export async function beginNewProject(): Promise<void> {
 }
 
 async function startNewProject(): Promise<void> {
+  // 50 PROJECTS AN ACCOUNT (limits.ts, 23 Nov) — asked before anything is left.
+  if (await (await import('./limits')).projectLimitReached()) return;
   // Spec: only one unsaved project at a time.
   const cp = getCurrentProject();
   if (cp.dirty) {
