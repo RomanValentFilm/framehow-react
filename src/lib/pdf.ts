@@ -650,6 +650,24 @@ export async function handlePDF(file: File): Promise<void> {
     await showImportantNote('PDF IMAGE EXTRACTION\nAND IMPORT', 'is available only on a tablet or computer, because it needs a bigger screen.', { centred: true });
     return;
   }
+  // THE FILE IS READ FIRST, THE SCREEN CLEARED AFTER (23 Nov, Roman). A PDF
+  // kept in iCloud and not yet downloaded still shows in the picker; with a
+  // weak line it arrives empty, or cannot be read at all. Until today the
+  // project on the screen was emptied before the file was looked at, and the
+  // person got "Could not read this PDF." in front of an empty project. Now
+  // nothing on the screen changes, and the box says what he has to do — it is
+  // his file that is not there, not Framehow that failed (Roman's words).
+  let ab: ArrayBuffer;
+  try {
+    ab = await file.arrayBuffer();
+    if (!ab.byteLength) throw new Error('the file is empty');
+  } catch (err) {
+    void import('./syncTrace').then(({ trace }) => trace(`PDF: "${file.name}" did not arrive (${String((err as Error)?.message || err).slice(0, 80)}; size ${file.size}) — nothing on the screen is changed`));
+    const { showImportantNote } = await import('./modals');
+    await showImportantNote('THIS PDF DOES NOT SEEM TO BE ON YOUR DEVICE',
+      'It may still be in iCloud. Download it in the Files app first, then load it into Framehow again.');
+    return;
+  }
   fhTrack('pdf_loaded');
   const lastPdfName = file.name.replace(/\.pdf$/i, '');
   resetStoryboardState();
@@ -658,7 +676,6 @@ export async function handlePDF(file: File): Promise<void> {
   document.getElementById('progressOverlay')!.classList.remove('hidden');
   setProgress(0, 'Loading PDF…');
   try {
-    const ab = await file.arrayBuffer();
     await preparePdfWorker();
   const pdf = await pdfjsLib.getDocument({ data: ab }).promise;
 

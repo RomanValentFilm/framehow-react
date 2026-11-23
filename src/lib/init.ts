@@ -574,19 +574,8 @@ export function initFramehow(): void {
     if (!file) return;
 
     // A file kept in iCloud Drive but not downloaded to this iPad still appears
-    // in the picker. Offline, nothing can be read from it and it arrives empty
-    // — which used to look identical to a broken PDF.
-    if (file.size === 0) {
-      const { showImportantNote } = await import('./modals');
-      await showImportantNote(
-        'FILE NOT ON THIS DEVICE',
-        'This PDF is stored in iCloud and has not been downloaded to this iPad. ' +
-        'Open it once in the Files app while you have a connection, then import it here.',
-      );
-      (e.target as HTMLInputElement).value = '';
-      return;
-    }
-
+    // in the picker and can arrive empty or unreadable. handlePDF reads the
+    // file before it touches the screen and says so in ONE box (23 Nov).
     await handlePDF(file);
     renderAll();
     autoPhoneMainView();

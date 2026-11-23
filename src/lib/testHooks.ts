@@ -115,6 +115,8 @@ export interface TestDoor {
   /** A new project from a real PDF (base64), through the app's own PDF import
    *  and the ADJUST window's APPLY. Returns the cloud id. */
   importPdfProject(name: string, base64: string): Promise<string | null>;
+  /** A PDF picked that did not arrive: empty, or one that cannot be read (23 Nov). */
+  pickPdfThatDidNotArrive(how: 'empty' | 'unreadable'): void;
   /** A new project from `count` pictures made on the spot, through the app's
    *  own folder import. Returns the cloud id. */
   /** (`names`: the file names the pictures arrive with — default shot_01.jpg, shot_02.jpg… — 19 Nov) */
@@ -761,6 +763,13 @@ export function installTestDoor(): void {
       return getCurrentProject().projectId;
     },
 
+    pickPdfThatDidNotArrive(how) {
+      const file = how === 'empty'
+        ? new File([], 'IN ICLOUD.pdf', { type: 'application/pdf' })
+        : Object.assign(new File([new Uint8Array([37, 80, 68, 70])], 'IN ICLOUD.pdf', { type: 'application/pdf' }),
+            { arrayBuffer: () => Promise.reject(new DOMException('The file could not be read.', 'NotReadableError')) });
+      void handlePDF(file);     // not waited for: it ends when the person presses OK
+    },
     async importPdfProject(name, base64) {
       await beginNewProject();
       // ONE OF ROMAN'S OWN STORYBOARD PDFs, handed in by the test (run 184: a

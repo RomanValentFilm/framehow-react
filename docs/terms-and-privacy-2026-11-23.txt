@@ -1,0 +1,294 @@
+Framehow
+Terms of Service + Privacy Policy
+23 November 2026
+
+Framehow Terms of Service
+Last updated: 23 November 2026
+These Terms of Service (“Terms”) govern your use of Framehow.
+Framehow is operated by Tinge Films s.r.o., Mělnická 579/7, 150 00 Prague, Czech Republic, Company ID 01574400 (“Framehow”, “we”, “us”).
+Contact: info@framehow.com
+By creating an account or using Framehow, you agree to these Terms.
+1. Framehow
+Framehow is a visual planning and workflow application for storyboards, shooting angles, references, sketches, production information and related project materials.
+Framehow is currently free to use. Pricing may be introduced later.
+You will not be charged unless you actively choose a paid plan. If paid plans or paid features are introduced, applicable pricing, renewal, cancellation and payment terms will be shown before you purchase them.
+Features and functionality may change as Framehow develops.
+2. Accounts
+You are responsible for information provided through your account and for keeping your account secure.
+You must be at least 16 years old to create or use a Framehow account.
+Accounts are currently individual accounts. Team, collaboration and project-sharing functionality may be introduced in the future.
+3. Your Content
+“User Content” includes photographs, storyboard images, content extracted from PDFs, references, sketches, drawings, text, notes, names, location information and other material you upload, create or store in Framehow.
+You retain ownership of your User Content.
+You grant Framehow a limited, non-exclusive right to store, process, resize, synchronise, display, transmit and export your User Content only as reasonably necessary to provide and operate Framehow.
+Framehow does not acquire ownership of your work merely because it is stored in Framehow.
+Private project content is not used for advertising or general AI training without separate permission.
+4. Privacy and Confidential Project Content
+Projects and uploaded content are private by default.
+Framehow uses reasonable technical and organisational measures to protect stored content against unauthorised access, disclosure, alteration or loss.
+Private project content is not publicly accessible and is not used for advertising or general AI training.
+Access by authorised Framehow personnel is limited to circumstances reasonably necessary to operate, secure, maintain or support the Service, or where required by law.
+Framehow does not claim to meet any particular government, defence or industry-specific security classification unless expressly stated.
+5. Your Responsibility for Content
+You are responsible for the content you upload or store in Framehow.
+You must have the necessary rights and, where applicable, a lawful basis to upload and use that material.
+You must not use Framehow to knowingly upload or distribute:
+unlawful content;
+material that infringes copyright or other intellectual-property rights;
+material you are not authorised to possess, process or share;
+malicious software;
+material intended to compromise Framehow or other users; or
+other unlawful or abusive content.
+User Content may include photographs or information relating to actors, crew, clients, children or other individuals. You are responsible for ensuring that your use of such material is lawful.
+6. Storage
+Each account currently includes 150 MB of storage until the account email address is confirmed, and 500 MB after the email address is confirmed.
+The current storage allowance and applicable limits are shown in the app. Framehow may change storage limits, project limits, shot limits or introduce different storage tiers in the future.
+Framehow currently provides storage warnings at approximately 80%, 90% and 95% of the account limit.
+Once the limit is reached, Framehow may refuse further server saves or uploads until you make space available, for example by deleting projects or pictures you no longer need. Unsynchronised work may remain stored locally on your device until it can be uploaded. Local storage depends on the free space of your device, and the browser or operating system may clear it.
+Individual uploaded images are currently limited to 10 MB per image.
+An account can currently hold up to 50 projects, and each project can currently hold up to 300 shots.
+These limits are shown in the app and may change as Framehow develops.
+Pictures captured through Framehow, and pictures added from a device by loading, folder import, or drag and drop, are resized to at most approximately 2400 pixels on the long side and re-encoded before storage. Re-encoding removes embedded image metadata such as EXIF data and GPS location information.
+7. Framehow Is Not an Archive or Backup Service
+Framehow is designed as a working tool and not as permanent archival storage.
+Framehow currently operates no separate user-restorable backup system.
+Your work may exist on Framehow's servers and on devices on which you use Framehow, but you should keep independent copies of anything important or irreplaceable, including original photographs, PDFs and exports.
+Restore points and locally stored copies are working and recovery features, not guaranteed permanent backups.
+We do not guarantee that every deleted, damaged or unavailable file or project can always be recovered.
+8. Deleting Projects
+When you normally delete a project, it remains recoverable for approximately 7 days.
+During this period it remains available through the “Recover” function.
+After the recovery period, the project and its associated server content are permanently deleted.
+Because permanent deletion is performed by a scheduled daily process, final deletion may occur shortly after the exact seven-day period.
+If you choose “Delete now”, the project is permanently deleted immediately.
+Storage used by a normally deleted project may continue to count toward your server storage limit until the permanent deletion takes place.
+9. Deleted Shots, Versions and Pictures
+A deleted shot, deleted version or picture replaced on a card disappears from the active project immediately.
+An earlier picture may temporarily remain referenced by an automatic restore point. Automatic restore points are retained for up to approximately 48 hours.
+A restore point that you deliberately save may keep its associated project state and picture references until you delete that restore point.
+A picture deleted directly from the Framehow picture library using “Delete” is permanently removed and cannot be restored through Framehow.
+10. Account Deletion
+If you delete your Framehow account:
+all active sessions are signed out;
+the account and associated projects remain recoverable for approximately 7 days;
+signing in again during that period restores the account and associated projects;
+after the recovery period, the account, projects and pictures are permanently deleted from Framehow's active systems.
+During the recovery period, another account cannot be registered using the same email address.
+Some infrastructure or service-provider records may remain for a limited period where required for technical operation, security or legal compliance.
+11. Inactive Accounts
+Framehow may delete an account, together with all of its projects and pictures, if the account has not been used for 12 months.
+Before deleting an inactive account, Framehow will send a warning to the account email address at least 30 days in advance.
+Signing in during that warning period keeps the account active and prevents that inactivity deletion.
+12. Export and Sharing
+Framehow currently supports export of project material as PDF, PowerPoint/PPTX, and image files.
+Some exports or individual images may also be shared using the sharing functions provided by your device.
+Exports are currently created on your device rather than being emailed or publicly hosted by Framehow.
+Framehow may introduce additional sharing features, including shareable project links, guest access and collaboration tools. When you use these features, you are responsible for choosing what you share and who you share it with.
+13. Service Availability and Changes
+We aim to keep Framehow available and reliable, but we do not guarantee uninterrupted, error-free or permanent operation.
+We may modify, replace, suspend or discontinue features where reasonably necessary for development, security, technical, legal or commercial reasons.
+Where a material change significantly affects users, we will provide reasonable notice where appropriate.
+14. Suspension and Termination
+We may suspend or terminate an account where reasonably necessary because of serious or repeated breach of these Terms, unlawful activity, misuse of the Service, a security risk, attempts to interfere with Framehow or other users, non-payment of future paid services, or a legal requirement.
+Where circumstances reasonably permit, we will provide notice before permanent termination.
+Immediate action may be taken where necessary for security, legal compliance or prevention of harm.
+15. Discontinuing Framehow
+We may permanently discontinue Framehow.
+Where reasonably possible, we will provide at least 30 days' advance notice and an opportunity to export available project content before the Service closes.
+After the announced closure period, accounts and User Content may be permanently deleted.
+Users should therefore never rely on Framehow as the only copy of important project material.
+16. Framehow Intellectual Property
+Framehow itself — including its software, design, brand, interfaces, documentation and original functionality — belongs to Tinge Films s.r.o. or its licensors.
+These Terms do not transfer ownership of Framehow to users.
+Third-party and open-source components remain subject to their applicable licences.
+You may not deliberately interfere with, circumvent, misuse, copy or reverse-engineer Framehow except where such activity is expressly permitted by applicable law.
+17. Feedback
+If you voluntarily send suggestions, ideas or feedback about Framehow, we may use them freely and without restriction to develop and improve the Service, including by building new features. You are not entitled to payment, credit or any rights in Framehow or in features developed from your feedback.
+This applies to feedback about Framehow only. It does not give Framehow ownership of, or any further rights in, your User Content.
+18. Liability
+Framehow is a workflow tool and not a guaranteed archival or disaster-recovery service.
+You are responsible for keeping independent copies of important originals and exports.
+To the maximum extent permitted by applicable law, Framehow is not responsible for indirect or consequential loss, loss of opportunity, loss caused by unlawful or unauthorised User Content, or loss that could reasonably have been avoided by keeping appropriate independent copies.
+We do not guarantee that every file, project or version will always remain recoverable.
+Nothing in these Terms excludes or limits liability that cannot legally be excluded or limited, or any mandatory consumer rights.
+19. Transfer of Framehow
+Framehow or the business operating it may in the future be reorganised, sold or transferred.
+Where legally permitted, relevant contracts, accounts and associated data may be transferred to a successor operating Framehow, subject to applicable data-protection requirements.
+20. Changes to These Terms
+We may update these Terms as Framehow develops or where required for legal, technical or commercial reasons.
+For material changes, we will provide reasonable advance notice where appropriate.
+If applicable law requires renewed agreement, we may ask you to accept the revised Terms before continuing to use Framehow.
+21. Governing Law
+These Terms are governed by the laws of the Czech Republic.
+For users acting as consumers, this does not remove mandatory rights granted by the law of their country of residence where those rights apply.
+For business users, disputes will be subject to the competent courts of the Czech Republic to the extent permitted by law.
+22. Contact
+Tinge Films s.r.o.
+Mělnická 579/7
+150 00 Prague
+Czech Republic
+Company ID: 01574400
+info@framehow.com
+
+
+=====
+
+Framehow Privacy Policy
+Last updated: 23 November 2026
+This Privacy Policy explains how personal data is processed when you use Framehow.
+1. Who Is Responsible
+Framehow is operated by:
+Tinge Films s.r.o.
+Mělnická 579/7
+150 00 Prague
+Czech Republic
+Company ID: 01574400
+Email: info@framehow.com
+Tinge Films s.r.o. is the controller of personal data processed for Framehow's own purposes, such as managing accounts, communicating with users and operating and securing the Service.
+Where a user or organisation uploads personal data relating to other people into a Framehow project and determines why that information is being processed, Framehow may process that information on the user's or organisation's behalf.
+2. Information We Process
+Account information
+name;
+email address;
+optional profession;
+account preferences;
+account and session identifiers;
+information relating to acceptance of the Terms.
+Passwords are not stored in readable form.
+Project content
+Framehow may store content that you choose to upload or create, including:
+storyboard images;
+photographs;
+images extracted from PDFs;
+references;
+sketches and drawings;
+project names and shot information;
+notes and text;
+names or other details of people, if you choose to enter them;
+production and location information; and
+other project material.
+Some project content may contain personal data relating to actors, crew, clients, children or other individuals, if you choose to enter or upload it.
+Technical and usage information
+Framehow may process technical information necessary to operate, secure and improve the Service, including:
+device and browser type;
+session and device identifiers;
+country derived from network information;
+feature usage;
+project activity;
+storage usage;
+the date an account was last used;
+error and security information; and
+server logs.
+Framehow does not intentionally store raw IP addresses in its application database, although infrastructure providers such as Cloudflare necessarily process IP addresses when delivering the Service.
+3. Why We Process Information
+We process personal data where necessary to create and manage accounts, authenticate users, store and synchronise projects, provide offline and synchronisation functionality, enforce storage limits, provide exports and sharing, provide support, operate and secure Framehow, diagnose technical problems, understand how the Service is used, improve Framehow, communicate important operational or legal information, and comply with applicable law.
+Where processing is necessary to provide Framehow, the legal basis is generally performance of our agreement with you.
+For security, service improvement, fraud prevention and protection of the Service, we may rely on our legitimate interests where appropriate.
+Where processing requires consent, consent will be requested separately.
+4. Project Content and Other People's Personal Data
+Framehow users decide what material they upload.
+If you upload personal data relating to another person, you are responsible for ensuring that you have the necessary rights or lawful basis to do so.
+For professional or organisational use, you or your organisation may be the controller of personal data contained in your project while Framehow acts as a processor providing technical storage and processing.
+Where required, this relationship may be governed by a separate Framehow Data Processing Addendum.
+5. Confidentiality and Security
+Projects and uploaded content are private by default.
+Framehow uses reasonable technical and organisational measures to protect stored content against unauthorised access, disclosure, alteration or loss.
+Private project content is not publicly accessible and is not used for advertising or general AI training.
+Access by authorised Framehow personnel is limited to circumstances reasonably necessary to operate, secure, maintain or support the Service, or where required by law.
+Framehow currently uses HTTPS/TLS for production traffic. Stored project data is hosted using Cloudflare infrastructure.
+Stored content is encrypted in transit and on Cloudflare's storage, but Framehow does not provide end-to-end encryption. This means the content is not locked with a key that only you hold, and authorised administrators of Framehow or its infrastructure could technically access it where necessary.
+6. AI and Automated Processing
+Framehow does not currently send project images, text or other User Content to generative AI services such as Anthropic, OpenAI or Google for processing or training.
+PDF processing and storyboard extraction take place in the user's browser.
+Where OCR is required to read text from a PDF, Framehow currently uses Tesseract.js, which performs the image recognition locally on the user's device.
+The application itself has been developed using development tools that may include AI-assisted coding tools. This does not mean production User Content is sent to those tools.
+7. Storage and Image Processing
+Each account currently has 150 MB of storage until the account email address is confirmed, and 500 MB after the email address is confirmed.
+Individual uploaded images are currently limited to 10 MB per image.
+An account can currently hold up to 50 projects, and each project can currently hold up to 300 shots.
+These limits are shown in the app and may change as Framehow develops.
+Pictures captured through Framehow, and pictures added from a device by loading, folder import, or drag and drop, are resized to at most approximately 2400 pixels on the long side and re-encoded before storage.
+Re-encoding removes embedded image metadata such as EXIF data and GPS location information before storage.
+Project information is stored using Cloudflare infrastructure and may also remain locally on devices used to access Framehow.
+Framehow's R2 file storage is located in Cloudflare's Eastern Europe region (EEUR), selected automatically by Cloudflare. The D1 database uses Cloudflare's automatic location selection. No EU-only jurisdiction restriction is configured.
+Cloudflare may process data in other countries under its standard data-transfer safeguards, including Standard Contractual Clauses and, where applicable, the EU-U.S. Data Privacy Framework.
+PDF files imported into Framehow are currently processed locally in the browser and are not uploaded to Framehow's server as PDF files. Extracted images may subsequently be stored as part of the project.
+8. Local Device Storage
+Framehow stores certain information locally on the user's device so that the app can function, synchronise and support offline work.
+This may include account/session information, the currently open project, unsynchronised project changes, temporary local project copies, image previews, preferences and application cache data.
+Some local copies may remain temporarily on a device even after logout.
+Users can normally remove local application data using their browser or device storage controls.
+Device permissions
+The iPhone and iPad app may ask for access to the camera (to take pictures for a shot), the photo library (to pick pictures you choose), and Files (to select storyboards, PDFs or other supported files you choose). It may also ask for permission to add pictures to Photos when you save exported images.
+Framehow only receives the pictures or files you actively take, pick or select. It does not read the rest of your photo library or Files, and it does not use the microphone or location.
+
+9. Deletion and Retention
+Deleted projects
+A normally deleted project remains recoverable for approximately 7 days.
+It is then permanently deleted from Framehow's active systems.
+Choosing "Delete now" permanently deletes it immediately.
+Deleted shots, versions and replaced pictures
+These disappear from the active project immediately.
+Earlier pictures may remain referenced by automatic restore points for up to approximately 48 hours.
+A restore point deliberately saved by the user may remain until the user deletes it.
+Deleted library pictures
+Pictures deleted directly from the Framehow library are permanently removed and cannot be restored through Framehow.
+Deleted accounts
+When you delete your account, your active sessions are ended and your account is retained for approximately 7 days so that it can be restored by signing in again.
+After that period, the account, associated projects and pictures are permanently deleted from Framehow's active systems.
+Inactive accounts
+Framehow may delete an account, together with all of its projects and pictures, if the account has not been used for 12 months.
+Before deleting an inactive account, Framehow will send a warning to the account email address at least 30 days in advance.
+Signing in during that warning period keeps the account active and prevents that inactivity deletion.
+Infrastructure retention
+Framehow operates no separate user backup system.
+Cloudflare may maintain infrastructure-level redundancy, technical logs or database recovery mechanisms for limited periods as part of operating its services. Object-level access logging for Framehow file storage is switched off. These mechanisms are not user-accessible Framehow backups.
+Other Cloudflare technical logs may remain for a limited period under Cloudflare's own policies, including after application-level deletion.
+10. Analytics
+Framehow currently uses its own first-party analytics to understand how the Service is being used.
+These first-party analytics may include information such as feature or screen used, device category, browser family, whether Framehow is used in a browser, as an installed web app, or as the App Store app, country, session identifier, user identifier when signed in, and limited project-related metadata such as project name. Framehow does not store the user's IP address in this analytics data; only the country derived from network information is stored.
+When a user is signed in, analytics events may be linked to that user account. Analytics data linked to an account is deleted when the account is deleted. All other analytics data is retained for up to 12 months.
+Framehow does not currently use Google Analytics, Meta Pixel, Hotjar, PostHog or similar third-party behavioural analytics tools.
+Framehow may introduce additional analytics tools, including third-party tools, in the future.
+11. Service Providers
+Framehow relies on service providers to operate the Service.
+Cloudflare — used for application hosting, database, image/file storage, email delivery, DNS, TLS and related technical infrastructure.
+jsDelivr and Tesseract-related CDN services — used to load software components and language data used for browser-based OCR. These providers receive normal network information such as IP address, but Framehow does not send project images to them for OCR processing.
+Apple — where Framehow is distributed through Apple's App Store or TestFlight, Apple processes information under its own terms and privacy arrangements.
+We do not sell personal data.
+12. International Data Transfers
+Some service providers may process information outside the European Economic Area.
+Where required, transfers are made using an appropriate legal mechanism, such as an adequacy decision, the EU-U.S. Data Privacy Framework or Standard Contractual Clauses.
+Framehow's R2 file storage is located in Cloudflare's Eastern Europe region (EEUR), selected automatically by Cloudflare. The D1 database also uses Cloudflare's automatic location selection. Framehow has not configured an EU-only jurisdiction restriction. Cloudflare may therefore process data in other countries under its standard safeguards, including Standard Contractual Clauses and, where applicable, the EU-U.S. Data Privacy Framework.
+13. Cookies and Similar Storage
+Framehow currently does not use ordinary user authentication cookies.
+Instead, account sessions and offline functionality use browser storage such as localStorage, IndexedDB, session storage and application caching.
+These technologies are used for functions including keeping the user signed in, storing unsynchronised work, offline functionality, project synchronisation, device identification, preferences and first-party analytics.
+If Framehow later introduces non-essential marketing or third-party tracking technologies, any consent required by applicable law will be requested before they are activated.
+14. Emails
+Framehow may send operational emails necessary to provide the Service, including welcome/account messages, password-reset emails, storage-related information, inactivity warnings, security or account notices, important changes to the Service, changes to legal terms, and Service-closure notices.
+Operational messages are separate from marketing communications.
+When creating an account you can tick an optional box, "Send me news and updates about Framehow." It is unticked by default. Framehow records when you ticked it.
+Framehow does not currently send newsletters. You can withdraw this consent at any time by writing to info@framehow.com; an in-app switch will follow.
+15. Your Rights
+Subject to applicable law, you may have the right to access personal data concerning you, correct inaccurate data, request deletion, request restriction of processing, object to certain processing, receive certain information in a portable format, withdraw consent where processing is based on consent, and lodge a complaint with a competent data-protection authority.
+To make a request, contact info@framehow.com.
+We may need to verify your identity before fulfilling certain requests.
+16. Children
+You must be at least 16 years old to create or use a Framehow account.
+Users may include photographs or other project material concerning children only where they have the necessary lawful right to do so.
+17. Discontinuation or Transfer of Framehow
+If Framehow is permanently discontinued, we intend, where reasonably possible, to provide at least 30 days' notice and an opportunity to export available project content.
+After the closure period, User Content may be permanently deleted.
+If Framehow or the business operating it is sold, reorganised or transferred, relevant account information and User Content may be transferred to a new operator where permitted by law.
+Users will be informed where legally required.
+18. Changes to This Privacy Policy
+We may update this Privacy Policy as Framehow, its infrastructure or applicable legal requirements change.
+For material changes, we will provide appropriate notice.
+19. Contact
+Tinge Films s.r.o.
+Mělnická 579/7
+150 00 Prague
+Czech Republic
+Company ID: 01574400
+info@framehow.com

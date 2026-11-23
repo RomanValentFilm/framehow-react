@@ -128,7 +128,11 @@ for (const how of ['back', 'portrait'] as const) test(`turn while shooting in 3x
   const wraps = d.page.locator('#overviewScroll .grid3x2-card-wrap[data-g3fid]');
   const fid = (await wraps.nth(9).getAttribute('data-g3fid'))!;
   const wrap = d.page.locator(`#overviewScroll .grid3x2-card-wrap[data-g3fid="${fid}"]`);
-  await wrap.scrollIntoViewIfNeeded();
+  // THE GRID MAY BE DRAWN AGAIN JUST NOW (full run 844, 23 Nov: "Element is not
+  // attached to the DOM"): the project's first fetch lands a moment after the
+  // view is switched and the cards are made anew, so the card this line held
+  // was gone. The scroll is tried again on the card that is there.
+  await expect(async () => { await wrap.scrollIntoViewIfNeeded({ timeout: 2_000 }); }).toPass({ timeout: 15_000 });
   const pic = await photo(d.page);
   { // shot 10 gets its main picture first (no turn), so the next photo is a version
     const [ch] = await Promise.all([d.page.waitForEvent('filechooser', { timeout: 10_000 }), wrap.locator('[data-mact="camera"]').first().click()]);

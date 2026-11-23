@@ -825,6 +825,7 @@ router.get("/analytics/users-list", async (c) => {
   const result = await db.prepare(
     `SELECT
        u.id, u.name, u.email, u.profession, u.created_at as user_created,
+       u.newsletter_consent_at, u.deleted_at,
        COUNT(DISTINCT s.sid) as session_count,
        COALESCE(SUM(s.events), 0) as total_events,
        MIN(s.started_at) as first_seen,
@@ -854,14 +855,18 @@ router.get("/analytics/users-list", async (c) => {
 <a class="back" href="/analytics">&larr; Dashboard</a>
 <h1>All Users (${users.length})</h1>
 
+<p>News and updates: <b>${users.filter((u: any) => u.newsletter_consent_at && !u.deleted_at).length}</b> of ${users.filter((u: any) => !u.deleted_at).length} accounts
+  <a href="/analytics/news-list.csv" class="expand-btn" style="margin-left:12px">Download the list (opens in Excel or Numbers)</a></p>
 
 <table>
-<tr><th>Name</th><th>Email</th><th>Profession</th><th>Registered</th><th>Sessions</th><th>Events</th><th>Time in app</th><th>Devices</th><th>Countries</th><th>Last seen</th><th></th></tr>
+<thead><tr><th>Name</th><th>Email</th><th>Profession</th><th>Registered</th><th>News</th><th>Sessions</th><th>Events</th><th>Time in app</th><th>Devices</th><th>Countries</th><th>Last seen</th></tr></thead>
+<tbody>
 ${users.map((u: any) => `<tr>
   <td><a href="/analytics/user/${u.id}">${esc(u.name) || '<span class="meta">—</span>'}</a></td>
   <td>${esc(u.email)}</td>
   <td>${esc(u.profession) || '-'}</td>
   <td style="white-space:nowrap">${u.user_created ? fmtDate(u.user_created) : '-'}</td>
+  <td style="white-space:nowrap">${u.newsletter_consent_at ? fmtDate(u.newsletter_consent_at) : ''}</td>
   <td>${u.session_count}</td>
   <td>${u.total_events}</td>
   <td>${fmtDuration(u.total_time_ms || 0)}</td>
@@ -869,12 +874,43 @@ ${users.map((u: any) => `<tr>
   <td>${(u.countries || '').split(',').filter(Boolean).map((cc: string) => flag(cc.trim())).join(' ') || '-'}</td>
   <td style="white-space:nowrap">${u.last_seen ? fmtTime(u.last_seen) : '<span class="meta">no activity</span>'}</td>
 </tr>`).join("")}
-</table>
+</tbody></table>
 <p style="margin-top:16px"><a href="/analytics/deleted-users" class="expand-btn">Deleted accounts (${closing.length})</a></p>
 
 ${SORT_SCRIPT}</body></html>`;
 
   return c.html(html);
+});
+
+// WHO TICKED "Send me news and updates about Framehow." (23 Nov, Roman: "we
+// should have a list of people then with emails… adresses and names, so i can
+// call them by name… i download it as what? an excel file?"). A file Excel
+// and Numbers open, made from the database at the moment of the click — so it
+// is always the list of today. Accounts on their way out are not on it.
+router.get("/analytics/news-list.csv", async (c) => {
+  const r = await c.env.DB.prepare(
+    `SELECT name, email, newsletter_consent_at FROM users
+      WHERE newsletter_consent_at IS NOT NULL AND deleted_at IS NULL
+      ORDER BY newsletter_consent_at DESC`,
+  ).all<{ name: string | null; email: string; newsletter_consent_at: number }>();
+  // A cell is quoted; one that begins like a formula gets a ' in front, so a
+  // name typed as "=…" is never run by the spreadsheet.
+  const cell = (v: string) => {
+    const t = /^[=+\-@]/.test(v) ? `'${v}` : v;
+    return `"${t.replace(/"/g, '""')}"`;
+  };
+  const lines = ["Name,Email,Ticked on"];
+  for (const u of r.results) {
+    lines.push([cell(u.name || ""), cell(u.email), cell(new Date(u.newsletter_consent_at).toISOString().slice(0, 10))].join(","));
+  }
+  const day = new Date().toISOString().slice(0, 10);
+  return new Response("﻿" + lines.join("\r\n") + "\r\n", {
+    headers: {
+      "Content-Type": "text/csv; charset=utf-8",
+      "Content-Disposition": `attachment; filename="framehow-news-${day}.csv"`,
+      "Cache-Control": "no-store",
+    },
+  });
 });
 
 // THE "NEW PASSWORD" BUTTON IS GONE (A13, 9 Nov). It existed because the beta

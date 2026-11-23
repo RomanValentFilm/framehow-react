@@ -763,6 +763,10 @@ v5.0.225 · #777 (10 Nov, night)
 
 - **The statistics know the app as it is today (23 Nov).** Until now the app from the App Store was counted as "a phone in a browser"; it now says what it is, and the Analytics page has its own cards App iPhone / App iPad (the PWA cards are gone). The app also reports, once per session, the features built since the statistics were made: the PICTS library, the MAX view, sharing a picture, NEEDS, NOTES, SETUPS, GROUP, SORT BY / shooting order, versions added, stars, restore points, a project deleted or recovered, the update cards and what was tapped, a limit reached, a storage notice, the email confirmed. Nothing on the screen changes. The page (server runs 837–839) lists all of it under "What people do", shows fitting exports, sorts every table on a click on a column title, and shows "Last seen" per account on the Storage page (the server's own date, collected from 23 Nov).
 
-## v5.0.341 · #893 (next)
+## v5.0.341 · #893
 
 - **Statistics: versions per strip, projects per kind (23 Nov, Roman).** The app writes beside "a version was added" which strip it was (first, second, third) and in which kind of project, and beside "a project was created" whether it is horizontal 16×9, upright 9×16 or a fitting. The Analytics page shows them as their own lines: ANGLE, SKETCH, REFS for storyboards; LOOKS, REFS for fittings (a fitting has no middle strip); three lines for the kinds of project. Nothing on the screen changes.
+
+## v5.0.342 · #894 (next)
+
+- **A PDF that is not on the device (23 Nov, Roman).** A PDF kept in iCloud and not yet downloaded still shows in the Files picker and, with a weak line, arrives empty or cannot be read. Framehow used to empty the project on the screen before it looked at the file, and then said only "Could not read this PDF." Now the file is read first: if it did not arrive, nothing on the screen changes and a box says "THIS PDF DOES NOT SEEM TO BE ON YOUR DEVICE — It may still be in iCloud. Download it in the Files app first, then load it into Framehow again." The older box for an empty file ("FILE NOT ON THIS DEVICE") is replaced by this one. Test 83.
