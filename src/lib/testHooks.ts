@@ -417,6 +417,8 @@ export interface TestDoor {
 
   /** Which view the app is in: 'grid3x2', 'main', 'overview'… */
   viewMode(): string;
+  /** Which camera a tap on CAM would open now: 'fh' or 'phone' (24 Nov). */
+  camModeNow(): Promise<string>;
 
   /** WHERE THE PAGE IS (#363). How far down whatever is scrolling right now.
    *  A test can watch this across an action and insist it did not move. */
@@ -1581,6 +1583,9 @@ export function installTestDoor(): void {
     setCamChoice(mode, framelineLater) {
       try {
         localStorage.setItem(useStore.getState().projectType === 'fitting' ? 'fh_camMode_fitting' : 'fh_camMode', mode);
+        // The simulator's desktop stands in for a device with a phone camera
+        // (24 Nov): a real desktop is FH CAM always — see camMode.ts.
+        localStorage.setItem('fh_camForTests', mode);
         localStorage.setItem(useStore.getState().projectType === 'fitting' ? 'fh_camFramelineLater_fitting' : 'fh_camFramelineLater', framelineLater ? 'yes' : 'no');
       } catch { /* */ }
     },
@@ -1776,6 +1781,7 @@ export function installTestDoor(): void {
     },
 
     viewMode() { return String(useStore.getState().currentViewMode); },
+    async camModeNow() { return (await import('./camMode')).getCamMode(); },
 
     setView(mode) { setViewMode(mode as never); },
 

@@ -13,6 +13,10 @@ import '@fontsource/dm-mono/500.css';
 import './styles/globals.css';
 import App from './App';
 
+// A DESKTOP has one camera, ours: no FH CAM / PHONE CAM switch (24 Nov, Roman).
+// The same rule as camMode.ts isDesktop — a device without touch.
+if (!(navigator.maxTouchPoints > 1)) document.documentElement.classList.add('fh-desktop');
+
 // THE FRAMEHOW APP: no glass bar (arrows + tick) above the keyboard (Roman, 4 Nov).
 if ((window as any).Capacitor?.isNativePlatform?.()) {
   document.documentElement.classList.add('fh-shell');   // CSS: what only the iPhone app hides/shows

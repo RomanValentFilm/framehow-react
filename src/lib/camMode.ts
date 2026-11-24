@@ -31,8 +31,19 @@ function write(key: string, v: string): void {
 
 /** A desktop has no phone camera: PHONE CAM there is only a file picker, and
  *  LOAD does that already (Roman, 29 Oct). So FH CAM is the default on every
- *  desktop project, fittings included; the choice window stays. */
-const isDesktop = (): boolean => !(navigator.maxTouchPoints > 1);
+ *  desktop project, fittings included.
+ *
+ *  ON A DESKTOP THERE IS NOTHING TO CHOOSE (24 Nov, Roman: "let's not show
+ *  the FH button, and keep only the FH cam as basic (which cannot be switched
+ *  elsewhere, because there is no button)"). FH CAM always, the switch hidden
+ *  (.fh-desktop, set in main.tsx by the same rule) — also for someone who
+ *  chose PHONE CAM there before: with no button he could never go back.
+ *  An iPad or iPhone in a browser keeps the choice; so does a touch laptop. */
+export const isDesktop = (): boolean => !(navigator.maxTouchPoints > 1);
+/** THE SIMULATOR ONLY: its "desktop" stands in for a device with a phone
+ *  camera in many tests (a photo handed over by a file chooser). The test
+ *  door writes this key; no button and no person ever does. */
+const TEST_KEY = 'fh_camForTests';
 
 /** The iPhone app: its camera IS the phone's camera, so there is nothing to
  *  choose (Roman, 6 Nov) — FH CAM always, the FH/PHONE switch hidden (.fh-shell). */
@@ -40,9 +51,9 @@ const inShell = (): boolean => !!(window as any).Capacitor?.isNativePlatform?.()
 
 export function getCamMode(): CamMode {
   if (inShell()) return 'fh';
+  if (isDesktop()) return read(TEST_KEY) === 'phone' ? 'phone' : 'fh';
   const v = read(modeKey());
   if (v === 'fh' || v === 'phone') return v;
-  if (isDesktop()) return 'fh';
   return isFitting() ? 'phone' : 'fh';
 }
 export function setCamMode(m: CamMode): void {
