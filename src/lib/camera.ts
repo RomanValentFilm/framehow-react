@@ -13,7 +13,7 @@ import { flushSyncNow, holdSyncFor, photoIsLanding, getCurrentProject, localProj
 import { keepSeriesShot, forgetSeriesNote, markSeriesLanded } from './picStore';
 import { maxViewKeepsTheClockAway } from './maxView';
 import { isMainEmpty, getStripVersions, getStripActiveTab, stripTabPrefix } from './helpers';
-import { getCamMode, getFramelineLater, wireCamModeButton, shrinkForSaving, fillCrop, loadPhoneShot } from './camMode';
+import { getCamMode, getFramelineLater, wireCamModeButton, shrinkForSaving, fillCrop, loadPhoneShot, isDesktop } from './camMode';
 import type { PhoneShot } from './camMode';
 import { buildToneLUT, applyLUT, satFor } from './camLook';
 import { makeGpuViewfinder } from './camGpu';
@@ -441,6 +441,7 @@ export async function openCamera(
 
   let hasCamera = false;
   let camBlocked = false;
+  let whyNot = 'no camera interface';
   if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
     const t0 = Date.now();
     try {
@@ -457,6 +458,7 @@ export async function openCamera(
       } catch { /* */ }
     } catch (e: any) {
       hasCamera = false;
+      whyNot = String(e?.name || e);
       if (e.name === 'NotAllowedError' && Date.now() - t0 < 500) camBlocked = true;
     }
   }
@@ -478,11 +480,53 @@ export async function openCamera(
     vid.addEventListener('loadedmetadata', posGuide, { once: true });
     [50, 150, 300, 600, 1000, 1500].forEach((d) => setTimeout(posGuide, d));
     if (setup) document.getElementById('cameraModeBtn')?.click();   // the panel opens by itself
+    void showFlipOnlyWithTwoCameras();
+  } else if (isDesktop()) {
+    // A DESKTOP WITH NO CAMERA TO GIVE (24 Nov, Roman). Until today the Finder
+    // window opened without a word — he pressed CAM, he wants the camera. Now a
+    // box says why and what to do, and TRY AGAIN asks the browser once more.
+    cameraSessionEnd();
+    trace(`camera: the browser gave no camera (${whyNot}) — the box`);
+    sayNoCamera(whyNot === 'NotAllowedError' || whyNot === 'SecurityError',
+      () => { void openCamera(fid, div, fromCompare, fromMain, strip, setup); });
   } else if (camBlocked) {
     showCamBlockedMsg();
   } else {
     (document.getElementById('camFallbackInput') as HTMLInputElement).click();
   }
+}
+
+/** THE BOX FOR A DESKTOP WITHOUT A CAMERA (24 Nov; every word agreed with Roman).
+ *  Two cases the browser tells apart: the permission is missing (he said no
+ *  once, or the Mac's own settings shut the browser out), or there is no
+ *  camera to give (none built in, or another program holds it). Where the
+ *  permission is changed differs per browser: Chrome has an icon left of the
+ *  address, Safari a menu; anything else gets the plain sentence. */
+function sayNoCamera(noPermission: boolean, again: () => void): void {
+  const ua = navigator.userAgent;
+  const chrome = /Chrome\//.test(ua) && !/Edg\/|OPR\//.test(ua);
+  const safari = /Safari\//.test(ua) && !/Chrome\/|Chromium\//.test(ua);
+  const then = 'allow the camera and then click the "TRY AGAIN" button.';
+  const head = noPermission ? 'FRAMEHOW DOES NOT HAVE PERMISSION TO REACH YOUR CAMERA' : 'FRAMEHOW FOUND NO CAMERA';
+  const body = !noPermission ? 'This computer has no camera, or another program is using it.'
+    : chrome ? `To allow it, click the icon at the left end of the address bar (two small sliders), ${then}`
+    : safari ? `To allow it, open the menu Safari → Settings for ${location.hostname}, ${then}`
+    : `To allow it, allow the camera for this site in your browser's settings, ${then.replace('allow the camera and then', 'then')}`;
+  void import('./modals').then(({ showImportantNote }) =>
+    showImportantNote(head, body, { action: { label: 'TRY AGAIN', run: again }, okLabel: 'Cancel' }));   // Cancel, not "OK, got it.": here he chooses (Roman)
+}
+
+/** THE ROUND ARROW ONLY WHERE IT CAN DO SOMETHING (24 Nov, Roman asked what it
+ *  is for on a desktop): it switches between the front and the back camera, so
+ *  it shows only when the device has more than one. Its place is kept, so
+ *  Cancel and the shutter do not move. */
+async function showFlipOnlyWithTwoCameras(): Promise<void> {
+  const flip = document.getElementById('cameraFlip');
+  if (!flip || !isDesktop()) return;             // a desktop only: phones and tablets keep it as it was
+  let cams = 2;                                  // not known: leave the arrow
+  try { cams = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput').length; } catch { /* */ }
+  flip.style.visibility = cams > 1 ? '' : 'hidden';
+  trace(`camera: ${cams} camera(s) on this device — the switch arrow is ${cams > 1 ? 'shown' : 'not shown'}`);
 }
 
 /** WHERE THE PAGE STOOD STILL (11 Nov, Roman: "the first photo was frozen"). For

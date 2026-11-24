@@ -5,6 +5,7 @@
 #   framehow.com            the front page            ← THIS
 #   framehow.com/terms      the Terms of Service      ← THIS
 #   framehow.com/privacy    the Privacy Policy        ← THIS
+#   framehow.com/support    the Support page          ← THIS (24 Nov)
 #   framehow.com/app        the app                   (Pages project framehow-react)
 #   framehow-api            the server                (backend/)
 #
@@ -40,6 +41,11 @@ zone_name = "framehow.com"
 
 [[routes]]
 pattern = "framehow.com/imprint*"
+zone_name = "framehow.com"
+
+# THE SUPPORT PAGE (24 Nov): App Store Connect asks for a Support URL.
+[[routes]]
+pattern = "framehow.com/support*"
 zone_name = "framehow.com"
 
 [[routes]]

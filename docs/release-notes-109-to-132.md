@@ -781,6 +781,11 @@ v5.0.225 · #777 (10 Nov, night)
   ON THE WEBSITE — the new Terms of Service and Privacy Policy (23 Nov).
   NEVER LIVE, FIXED ON THE WAY — three pictures loaded at once filled only two versions on the other device (a fault of 19 Nov's own work, found by full run 832).
 
-## v5.0.344 · #896 (next)
+## v5.0.344 · #896 (dev, run 848, 24 Nov 12:02 — 13 passed: tests 45, 50, 84; run 847 was red in test 84's own iPad half — the simulator's tablet reports one touch point at most, a real iPad five; the test now tells it to say five)
 
 - **A desktop has one camera (24 Nov, Roman).** PHONE CAM opens the device's own camera; a desktop has none, there it was only a file picker, which LOAD is already. On a desktop (a device without touch) the FH CAM / PHONE CAM switch is no longer shown and CAM always opens our camera — also for someone who chose PHONE CAM there before. An iPad or iPhone in a browser keeps the switch and its choice; the App Store app had none already. Test 84. (The simulator's "desktop" stands in for a phone camera in many tests: its test door sets a key of its own for that; no button and no person ever does.)
+
+## v5.0.345 · #897 (next)
+
+- **A desktop whose browser gives no camera (24 Nov; every word agreed with Roman).** Pressing CAM there opened the Finder window without a word. Now a box: "FRAMEHOW DOES NOT HAVE PERMISSION TO REACH YOUR CAMERA — To allow it, click the icon at the left end of the address bar (two small sliders), allow the camera and then click the "TRY AGAIN" button." (Chrome; Safari: "open the menu Safari → Settings for <the site>"; other browsers: "in your browser's settings"), with TRY AGAIN and Cancel — or, when there is no camera to give, "FRAMEHOW FOUND NO CAMERA — This computer has no camera, or another program is using it." No "load a picture instead": he pressed CAM. Desktop only; phones and tablets keep what they had.
+- **The round arrow in the camera, on a desktop, only with more than one camera.** It switches front and back; with one camera it did nothing. Its place is kept. Test 84 covers the boxes.
